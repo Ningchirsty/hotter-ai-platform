@@ -20,6 +20,8 @@
 | `backend-jar-<SHA>` | `ruoyi-admin.jar` 与 `SHA256SUMS` | 7 天 |
 | `backend-image-<SHA>` | `backend-image.tar.gz` 与 `SHA256SUMS` | 3 天 |
 
+同一次 Actions 运行重试时，上传步骤替换同名构建产物，避免制品名称冲突；仅重试发布 job 时复用原镜像包。
+
 PR 运行的 SHA 是 GitHub 的 PR 合并测试提交，push 运行的 SHA 是分支提交。制品名称和 OCI revision 标签均记录本次实际构建的 SHA。
 
 镜像包下载解压后可以在 Linux 上验证和加载：

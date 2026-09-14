@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 concurrency:
   group: backend-ci-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
@@ -43,6 +47,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: test-reports-${{ github.sha }}
+          overwrite: true
           path: '**/target/surefire-reports/'
           if-no-files-found: warn
           retention-days: 14
@@ -58,6 +63,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: backend-jar-${{ github.sha }}
+          overwrite: true
           path: artifacts/jar/
           if-no-files-found: error
           retention-days: 7
@@ -86,6 +92,7 @@ jobs:
         with:
           name: backend-image-${{ github.sha }}
           path: artifacts/image/
+          overwrite: true
           compression-level: 0
           if-no-files-found: error
           retention-days: 3
