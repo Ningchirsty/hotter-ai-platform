@@ -76,6 +76,8 @@
         <flatten-maven-plugin.version>1.7.3</flatten-maven-plugin.version>
         <!-- 打包默认跳过测试 -->
         <maven.test.skip>true</maven.test.skip>
+        <!-- CI 可覆盖测试标签，日常构建仍按环境筛选 -->
+        <test.groups>${profiles.active}</test.groups>
     </properties>
 
     <profiles>
@@ -523,7 +525,7 @@
                 <configuration>
                     <argLine>-Dfile.encoding=UTF-8</argLine>
                     <!-- 根据打包环境执行对应的@Tag测试方法 -->
-                    <groups>${profiles.active}</groups>
+                    <groups>${test.groups}</groups>
                     <!-- 排除标签 -->
                     <excludedGroups>exclude</excludedGroups>
                 </configuration>

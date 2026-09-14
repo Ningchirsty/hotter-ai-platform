@@ -53,3 +53,9 @@ nbdist/
 
 application-local.yml
 application-ga.yml
+
+# Local credentials and CI build exports
+.env
+.env.*
+!.env.example
+/artifacts/
