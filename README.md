@@ -8,7 +8,7 @@
 
 ## 上游基线
 
-- 后端：Dromara `RuoYi-Vue-Plus` Tag `v6.0.0`，提交 `420f89b`
+- 后端：Dromara `RuoYi-Vue-Plus` Tag `v6.0.0`，提交 `7180b5297`
 - Java：21
 - Spring Boot：4.1.0
 - 前端：官方独立仓库 `plus-ui`，需在实施阶段锁定兼容 Tag
