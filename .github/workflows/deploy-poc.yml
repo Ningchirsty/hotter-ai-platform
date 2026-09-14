@@ -1,0 +1,61 @@
+name: Deploy Shenzhen POC
+
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: Immutable GHCR backend image reference
+        required: true
+        type: string
+        default: ghcr.io/ningchirsty/hotter-ai-platform-backend@sha256:72cc11ba16103a1cd18dee4f8b6c47a46b310cf9f9e6f67532f29fc06232b07a
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shenzhen-poc-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy immutable backend image
+    runs-on: [shenzhen, deploy]
+    timeout-minutes: 20
+    steps:
+      - name: Validate image reference
+        env:
+          IMAGE: ${{ inputs.image }}
+        run: |
+          if ! [[ "$IMAGE" =~ ^ghcr\.io/ningchirsty/hotter-ai-platform-backend@sha256:[0-9a-f]{64}$ ]]; then
+            echo "Image must be the expected immutable GHCR digest." >&2
+            exit 1
+          fi
+
+      - name: Pull and deploy
+        env:
+          IMAGE: ${{ inputs.image }}
+        run: |
+          set -euo pipefail
+          cd /opt/ai-video-poc
+          set -a
+          . ./.env
+          set +a
+
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin
+          trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+
+          docker pull "$IMAGE"
+          sed -i "s|^BACKEND_IMAGE=.*|BACKEND_IMAGE=$IMAGE|" .env
+          docker compose --env-file .env -f compose.yaml up -d --no-deps backend
+
+          for attempt in $(seq 1 24); do
+            health=$(docker inspect --format '{{.State.Health.Status}}' ai-video-poc-backend-1 2>/dev/null || true)
+            if [ "$health" = healthy ]; then
+              docker image inspect "$IMAGE" --format '{{index .RepoDigests 0}}'
+              exit 0
+            fi
+            sleep 5
+          done
+
+          docker compose --env-file .env -f compose.yaml logs --tail=100 backend
+          exit 1
