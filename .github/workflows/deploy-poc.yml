@@ -37,7 +37,6 @@ jobs:
           cd /opt/ai-video-poc
           id
           test -r .env
-          test -w .env
           test -s .env
           docker version --format '{{.Server.Version}}'
 
@@ -59,21 +58,13 @@ jobs:
           set -euo pipefail
           docker pull "$IMAGE"
 
-      - name: Update deployment image
+      - name: Start backend
         env:
           IMAGE: ${{ inputs.image }}
         run: |
           set -euo pipefail
           cd /opt/ai-video-poc
-          grep -q '^BACKEND_IMAGE=' .env
-          sed -i "s|^BACKEND_IMAGE=.*|BACKEND_IMAGE=$IMAGE|" .env
-          grep -Fqx "BACKEND_IMAGE=$IMAGE" .env
-
-      - name: Start backend
-        run: |
-          set -euo pipefail
-          cd /opt/ai-video-poc
-          docker compose --env-file .env -f compose.yaml up -d --no-deps backend
+          BACKEND_IMAGE="$IMAGE" docker compose --env-file .env -f compose.yaml up -d --no-deps backend
 
       - name: Verify backend health
         env:
