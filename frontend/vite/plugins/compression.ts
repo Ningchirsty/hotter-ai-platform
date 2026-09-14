@@ -29,7 +29,15 @@ const compressionHandlers: Record<CompressionKind, { ext: string; compress: (con
 };
 
 async function collectFiles(rootDir: string): Promise<string[]> {
-  const entries = await fs.readdir(rootDir, { withFileTypes: true });
+  let entries;
+  try {
+    entries = await fs.readdir(rootDir, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return [];
+    }
+    throw error;
+  }
   const files = await Promise.all(
     entries.map(async entry => {
       const fullPath = path.join(rootDir, entry.name);
