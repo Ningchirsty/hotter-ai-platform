@@ -6,6 +6,8 @@
 
 当前开发分支使用功能分支，所有改动必须提交并通过 CI 后合并到 `main`。
 
+GitHub 编译、测试、镜像产物与 GHCR 使用方式见 [`docs/github-ci.md`](docs/github-ci.md)。
+
 ## 上游基线
 
 - 后端：Dromara `RuoYi-Vue-Plus` Tag `v6.0.0`，提交 `7180b5297`
