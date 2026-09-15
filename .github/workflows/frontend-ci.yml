@@ -60,7 +60,7 @@ jobs:
 
       - name: Smoke test frontend image
         run: |
-          docker run -d --name frontend-smoke "$IMAGE"
+          docker run -d --name frontend-smoke --add-host backend:127.0.0.1 "$IMAGE"
           trap 'docker rm -f frontend-smoke >/dev/null 2>&1 || true' EXIT
           for attempt in $(seq 1 12); do
             if docker exec frontend-smoke wget --spider --quiet http://127.0.0.1:8080/; then exit 0; fi
