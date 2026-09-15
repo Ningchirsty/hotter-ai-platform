@@ -5,12 +5,6 @@
         <h3 class="title">{{ title }}</h3>
         <lang-select />
       </div>
-      <el-form-item v-if="tenantEnabled" prop="tenantId">
-        <el-select v-model="loginForm.tenantId" filterable :placeholder="proxy.$t('login.selectPlaceholder')" style="width: 100%">
-          <el-option v-for="item in tenantList" :key="item.tenantId" :label="item.companyName" :value="item.tenantId"></el-option>
-          <template #prefix><svg-icon icon-class="company" class="el-input__icon input-icon" /></template>
-        </el-select>
-      </el-form-item>
       <el-form-item prop="username">
         <el-input v-model="loginForm.username" type="text" size="large" auto-complete="off" :placeholder="proxy.$t('login.username')">
           <template #prefix><svg-icon icon-class="user" class="el-input__icon input-icon" /></template>
@@ -62,9 +56,9 @@
 </template>
 
 <script setup lang="ts">
-import { getCodeImg, getTenantList } from '@/api/login';
+import { getCodeImg } from '@/api/login';
 import { useUserStore } from '@/store/modules/user';
-import { LoginData, TenantVO } from '@/api/types';
+import { LoginData } from '@/api/types';
 import { to } from 'await-to-js';
 import { useI18n } from 'vue-i18n';
 
@@ -76,7 +70,6 @@ const router = useRouter();
 const { t } = useI18n();
 
 const loginForm = ref<LoginData>({
-  tenantId: '000000',
   username: 'admin',
   password: 'admin123',
   rememberMe: false,
@@ -85,7 +78,6 @@ const loginForm = ref<LoginData>({
 } as LoginData);
 
 const loginRules: ElFormRules = {
-  tenantId: [{ required: true, trigger: 'blur', message: t('login.rule.tenantId.required') }],
   username: [{ required: true, trigger: 'blur', message: t('login.rule.username.required') }],
   password: [{ required: true, trigger: 'blur', message: t('login.rule.password.required') }],
   code: [{ required: true, trigger: 'change', message: t('login.rule.code.required') }]
@@ -95,15 +87,11 @@ const codeUrl = ref('');
 const loading = ref(false);
 // 验证码开关
 const captchaEnabled = ref(true);
-// 租户开关
-const tenantEnabled = ref(true);
 
 // 注册开关
 const register = ref(false);
 const redirect = ref('/');
 const loginRef = ref<ElFormInstance>();
-// 租户列表
-const tenantList = ref<TenantVO[]>([]);
 
 watch(
   () => router.currentRoute.value,
@@ -119,13 +107,11 @@ const handleLogin = () => {
       loading.value = true;
       // 勾选了需要记住密码设置在 localStorage 中设置记住用户名和密码
       if (loginForm.value.rememberMe) {
-        localStorage.setItem('tenantId', String(loginForm.value.tenantId));
         localStorage.setItem('username', String(loginForm.value.username));
         localStorage.setItem('password', String(loginForm.value.password));
         localStorage.setItem('rememberMe', String(loginForm.value.rememberMe));
       } else {
         // 否则移除
-        localStorage.removeItem('tenantId');
         localStorage.removeItem('username');
         localStorage.removeItem('password');
         localStorage.removeItem('rememberMe');
@@ -165,35 +151,18 @@ const getCode = async () => {
 };
 
 const getLoginData = () => {
-  const tenantId = localStorage.getItem('tenantId');
   const username = localStorage.getItem('username');
   const password = localStorage.getItem('password');
   const rememberMe = localStorage.getItem('rememberMe');
   loginForm.value = {
-    tenantId: tenantId === null ? String(loginForm.value.tenantId) : tenantId,
     username: username === null ? String(loginForm.value.username) : username,
     password: password === null ? String(loginForm.value.password) : String(password),
     rememberMe: rememberMe === null ? false : Boolean(rememberMe)
   } as LoginData;
 };
 
-/**
- * 获取租户列表
- */
-const initTenantList = async () => {
-  const { data } = await getTenantList(false);
-  tenantEnabled.value = data.tenantEnabled === undefined ? true : data.tenantEnabled;
-  if (tenantEnabled.value) {
-    tenantList.value = data.voList;
-    if (tenantList.value != null && tenantList.value.length !== 0) {
-      loginForm.value.tenantId = tenantList.value[0].tenantId;
-    }
-  }
-};
-
 onMounted(() => {
   getCode();
-  initTenantList();
   getLoginData();
 });
 </script>
