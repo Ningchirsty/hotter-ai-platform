@@ -2,23 +2,11 @@
   <div class="studio">
     <div v-if="showGuide" class="guide-bar">
       <el-icon><MagicStick /></el-icon>
-      <span>三步出片：选择能力与模型，上传素材并填写描述，提交后可离开等待通知</span>
+      <span>三步出片：① 选模块与模型 → ② 上传素材、写描述 → ③ 提交后即可离开，完成时通知你</span>
       <button type="button" title="关闭引导" aria-label="关闭引导" @click="showGuide = false">
         <el-icon><Close /></el-icon>
       </button>
     </div>
-
-    <section class="studio-heading">
-      <div>
-        <p>AI CREATIVE STUDIO</p>
-        <h1>视频创作</h1>
-        <span>选择能力与模型，把创意变成成片。</span>
-      </div>
-      <div class="heading-status">
-        <i />
-        GPU 集群运行正常
-      </div>
-    </section>
 
     <div class="workbench-grid">
       <section class="studio-card create-card">
@@ -140,7 +128,7 @@
               v-model="values.desc"
               type="textarea"
               :rows="4"
-              maxlength="2000"
+              maxlength="200"
               show-word-limit
               :placeholder="currentModule.placeholder"
             />
@@ -153,6 +141,24 @@
               <button class="optimize" type="button" @click="optimizePrompt">
                 <el-icon><MagicStick /></el-icon>
                 优化描述
+              </button>
+            </div>
+          </div>
+
+          <div v-else-if="field === 'tier' || field === 'dur'" class="field-block">
+            <label>
+              {{ fieldLabels[field] }}
+              <em>*</em>
+            </label>
+            <div class="choice-grid">
+              <button
+                v-for="item in fieldOptions[field]"
+                :key="item"
+                type="button"
+                :class="{ active: values[field] === item }"
+                @click="values[field] = item"
+              >
+                {{ item }}
               </button>
             </div>
           </div>
@@ -180,9 +186,9 @@
               <Loading v-if="submitting" class="is-loading" />
               <MagicStick v-else />
             </el-icon>
-            {{ submitting ? '正在提交' : '提交生成' }}
+            {{ submitting ? '正在提交' : submitButtonText }}
           </button>
-          <span>{{ billingText }}</span>
+          <span>当前排队 {{ queueCount }} 个任务</span>
         </div>
       </section>
 
@@ -208,10 +214,10 @@
               <small>VIDEO-20260911-017 · 5 分钟前</small>
             </div>
             <div>
-              <button type="button" title="下载" aria-label="下载">
+              <button type="button" title="下载" aria-label="下载" @click="ElMessage.success('开始下载成片')">
                 <el-icon><Download /></el-icon>
               </button>
-              <button type="button" title="分享" aria-label="分享">
+              <button type="button" title="分享" aria-label="分享" @click="ElMessage.success('分享链接已复制')">
                 <el-icon><Share /></el-icon>
               </button>
               <button type="button" class="recreate" @click="useInspiration(INSPIRATIONS[1])">
@@ -233,11 +239,11 @@
           </div>
           <div>
             <b>6</b>
-            <span>可用素材</span>
+            <span>素材库</span>
           </div>
           <div>
             <b>98%</b>
-            <span>成功率</span>
+            <span>生成成功率</span>
           </div>
         </section>
 
@@ -325,7 +331,7 @@ import {
 
 const currentModule = ref(VIDEO_MODULES[0]!);
 const currentModel = ref(VIDEO_MODELS[0]!);
-const values = reactive<Partial<Record<FieldKey, string>>>({ tier: '高质量', dur: '5 秒' });
+const values = reactive<Partial<Record<FieldKey, string>>>({ tier: '高清 · 1080P', dur: '5 秒' });
 const uploads = reactive<Partial<Record<FieldKey, string[]>>>({});
 const showGuide = ref(true);
 const submitting = ref(false);
@@ -362,8 +368,8 @@ const fieldLabels: Record<FieldKey, string> = {
   fps: '帧率'
 };
 const fieldOptions: Partial<Record<FieldKey, string[]>> = {
-  tier: ['标准', '高质量'],
-  dur: ['5 秒', '10 秒', '20 秒', '最长 54 秒'],
+  tier: ['流畅 · 720P', '高清 · 1080P'],
+  dur: ['5 秒', '10 秒'],
   move: ['推近', '拉远', '左摇', '右摇', '环绕', '旋转'],
   extend: ['5 秒', '10 秒', '20 秒'],
   target: ['1080P', '4K'],
@@ -372,7 +378,6 @@ const fieldOptions: Partial<Record<FieldKey, string[]>> = {
 const uploadFields: FieldKey[] = ['first', 'last', 'frames', 'img', 'audio'];
 const requiredFields: FieldKey[] = [
   'first',
-  'last',
   'frames',
   'source',
   'audio',
@@ -386,17 +391,17 @@ const requiredFields: FieldKey[] = [
 
 const closedModels = computed(() => VIDEO_MODELS.filter(item => item.license === 'closed'));
 const openModels = computed(() => VIDEO_MODELS.filter(item => item.license === 'open'));
-const billingText = computed(() =>
+const submitButtonText = computed(() =>
   currentModel.value.license === 'closed'
-    ? `本次预计消耗 ${MODEL_COSTS[currentModel.value.code]} 积分`
-    : `本地 GPU · ${MODEL_ETAS[currentModel.value.code]}`
+    ? `提交生成 · 消耗 ${MODEL_COSTS[currentModel.value.code]} 积分`
+    : `提交生成 · ${MODEL_ETAS[currentModel.value.code]}`
 );
 
 function selectModule(item: StudioModule) {
   currentModule.value = item;
   Object.keys(values).forEach(key => delete values[key as FieldKey]);
   Object.keys(uploads).forEach(key => delete uploads[key as FieldKey]);
-  values.tier = '高质量';
+  values.tier = '高清 · 1080P';
   values.dur = '5 秒';
 }
 
@@ -803,6 +808,24 @@ button {
 .studio :deep(.el-input__count) {
   color: var(--t3);
   background: transparent;
+}
+.choice-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.choice-grid button {
+  min-height: 42px;
+  color: var(--t2);
+  cursor: pointer;
+  background: var(--sunken);
+  border: 1px solid var(--line2);
+  border-radius: 6px;
+}
+.choice-grid button.active {
+  color: #fff;
+  background: var(--tint);
+  border-color: var(--p);
 }
 .prompt-tools {
   display: flex;
