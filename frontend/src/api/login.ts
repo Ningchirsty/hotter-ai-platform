@@ -78,6 +78,7 @@ export function getCodeImg(): AxiosPromise<VerifyCodeResult> {
       isToken: false
     },
     method: 'get',
+    params: { _t: Date.now() },
     timeout: 20000
   });
 }
