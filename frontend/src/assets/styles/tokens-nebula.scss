@@ -1,0 +1,27 @@
+/**
+ * HOTTER AI 星云品牌色板（Nebula）
+ * 覆盖 Element Plus 主色系列；在 index.scss 之后引入确保优先级。
+ * 规格来源：hotter-adaptation-pack/SPEC.md §3
+ */
+:root {
+  /* 品牌 token */
+  --p: #8b5cf6;
+  --p-h: #a78bfa;
+  --acc: #d946ef;
+  --grad: linear-gradient(135deg, #8b5cf6, #d946ef);
+  --tint: rgba(139, 92, 246, 0.12);
+  --glow: rgba(139, 92, 246, 0.35);
+  --ok: #34d399;
+  --warn: #fbbf24;
+  --danger: #f87171;
+  --info: #60a5fa;
+
+  /* Element Plus 主色及派生（由 #8b5cf6 推导） */
+  --el-color-primary: #8b5cf6;
+  --el-color-primary-light-3: #ae8df9;
+  --el-color-primary-light-5: #c5aefb;
+  --el-color-primary-light-7: #e3dafa;
+  --el-color-primary-light-8: #ece7fc;
+  --el-color-primary-light-9: #f6f3fe;
+  --el-color-primary-dark-2: #6f4ace;
+}

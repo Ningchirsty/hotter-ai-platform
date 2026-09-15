@@ -1,0 +1,16 @@
+/**
+ * HOTTER AI 创作壳暗色中性 token（.studio 作用域）
+ * 规格来源：hotter-adaptation-pack/SPEC.md §3 暗色中性
+ */
+.studio {
+  --bg: #0a0c10;
+  --surface: #12151c;
+  --elevated: #171b24;
+  --sunken: #0d1016;
+  --line: rgba(255, 255, 255, 0.07);
+  --line2: rgba(255, 255, 255, 0.12);
+  --t1: #f2f4f8;
+  --t2: #9aa3b2;
+  --t3: #7b8598;
+  --poster: linear-gradient(135deg, #141021, #221a3d 45%, #331d4a);
+}
