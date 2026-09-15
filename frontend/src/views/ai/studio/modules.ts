@@ -1,3 +1,17 @@
+/**
+ * 视频创作模块 ↔ ComfyUI 工作流契约（前端安全视图）
+ *
+ * 边界规则（AGENTS 章程硬约束）：
+ *  - 前端只持有：能力编码、workflowCode、模型编码、字段 Schema 白名单、计费展示。
+ *  - 节点 ID、API Format JSON、模型路径、大服务器地址只存在于后端，
+ *    完整契约见 script/workflows/video-workflow-contracts.json（后端工件）。
+ *  - 提交任务按此结构组装 payload：{ capabilityCode, workflowCode, modelCode, fields }，
+ *    后端收到后深拷贝对应工作流模板，仅覆写 mapping_json 白名单内的节点输入键。
+ *
+ * 状态说明：所有 workflowCode 均为 DRAFT，待 ComfyUI 同事交付 API Format JSON 后
+ * 在 contracts 文件中填充节点映射并置为 PUBLISHED；矩阵调整只改本文件数据，不改组件。
+ */
+
 export type FieldKey =
   | 'first'
   | 'last'
@@ -13,16 +27,7 @@ export type FieldKey =
   | 'target'
   | 'fps';
 
-export interface StudioModule {
-  code: string;
-  name: string;
-  desc: string;
-  version: string;
-  fields: FieldKey[];
-  promptLabel?: string;
-  placeholder?: string;
-}
-
+/** 生成模型注册表（闭源按次积分 / 开源显示时长） */
 export interface StudioModel {
   code: string;
   name: string;
@@ -30,6 +35,30 @@ export interface StudioModel {
   version: string;
   license: 'closed' | 'open';
   recommended?: boolean;
+}
+
+/** 固定工具工作流（不消费生成底模，如补帧、对口型） */
+export interface FixedWorkflow {
+  code: string;
+  name: string;
+  version: string;
+  eta: string;
+}
+
+export interface StudioModule {
+  /** 能力编码，与后端契约 capabilityCode 一致 */
+  code: string;
+  name: string;
+  desc: string;
+  /** 字段 Schema 白名单：后端仅接受这些键并映射到工作流节点输入 */
+  fields: FieldKey[];
+  /** 该模块可用的生成模型（VIDEO_MODELS 的 code）；空数组 = 使用固定工作流 */
+  models: string[];
+  /** models 为空时的固定工作流绑定 */
+  fixedWorkflow?: FixedWorkflow;
+  defaultModel?: string;
+  promptLabel?: string;
+  placeholder?: string;
 }
 
 export interface Inspiration {
@@ -45,8 +74,9 @@ export const VIDEO_MODULES: StudioModule[] = [
     code: 'I2V',
     name: '首尾帧生视频',
     desc: '首尾帧 + 描述生成视频',
-    version: '多底模',
     fields: ['first', 'last', 'desc', 'tier', 'dur'],
+    models: ['H3', 'H3P', 'WAN', 'HUN', 'LTX', 'COG'],
+    defaultModel: 'H3',
     promptLabel: '视频描述',
     placeholder: '例如：从产品特写缓缓拉远，镜头聚焦包装纹理，光影自然流动。'
   },
@@ -54,8 +84,9 @@ export const VIDEO_MODULES: StudioModule[] = [
     code: 'T2V',
     name: '文生视频',
     desc: '纯文字描述生成视频',
-    version: '多底模',
     fields: ['desc', 'tier', 'dur'],
+    models: ['H3', 'H3P', 'WAN', 'HUN', 'LTX', 'COG'],
+    defaultModel: 'H3',
     promptLabel: '视频描述',
     placeholder: '例如：城市夜景延时，霓虹灯光汇聚成品牌 LOGO，大气收尾。'
   },
@@ -63,8 +94,10 @@ export const VIDEO_MODULES: StudioModule[] = [
     code: 'MFRAME',
     name: '智能多帧',
     desc: '2-10 张关键帧生成长视频',
-    version: '多底模',
     fields: ['frames', 'desc', 'dur'],
+    // 多帧拼接依赖开源底模的帧条件能力；闭源 H3 是否支持待契约交付确认
+    models: ['WAN', 'HUN'],
+    defaultModel: 'WAN',
     promptLabel: '视频描述',
     placeholder: '例如：产品多角度连续展示，镜头平滑衔接。'
   },
@@ -72,8 +105,9 @@ export const VIDEO_MODULES: StudioModule[] = [
     code: 'CAMMOVE',
     name: '运镜视频',
     desc: '图片 + 推拉摇移环绕运镜',
-    version: '多底模',
     fields: ['img', 'move', 'desc', 'dur'],
+    models: ['H3P', 'WAN', 'LTX'],
+    defaultModel: 'WAN',
     promptLabel: '补充描述（可选）',
     placeholder: '例如：夜色中的门店门头，灯光渐亮。'
   },
@@ -81,8 +115,9 @@ export const VIDEO_MODULES: StudioModule[] = [
     code: 'VEXT',
     name: '视频续写',
     desc: '选成片延长 · 最长 2 分钟',
-    version: '多底模',
     fields: ['source', 'extend', 'desc'],
+    models: ['H3', 'H3P', 'WAN', 'LTX'],
+    defaultModel: 'H3',
     promptLabel: '续写描述（可选）',
     placeholder: '例如：镜头继续拉远，露出城市天际线。'
   },
@@ -90,15 +125,17 @@ export const VIDEO_MODULES: StudioModule[] = [
     code: 'VHD',
     name: '补帧高清化',
     desc: '成片补帧 · 升级 1080P/4K',
-    version: '多底模',
-    fields: ['source', 'target', 'fps']
+    fields: ['source', 'target', 'fps'],
+    models: [],
+    fixedWorkflow: { code: 'wf-vhd-rife-upscale', name: 'RIFE 补帧 + 4K 超分', version: 'v0.1.0-draft', eta: '约 2 分钟' }
   },
   {
     code: 'LIP',
     name: '对口型',
     desc: '音频驱动口型 · 数字人',
-    version: '多底模',
-    fields: ['source', 'audio']
+    fields: ['source', 'audio'],
+    models: [],
+    fixedWorkflow: { code: 'wf-lip-latentsync', name: 'LatentSync 口型同步', version: 'v0.1.0-draft', eta: '约 3 分钟' }
   }
 ];
 
@@ -121,6 +158,15 @@ export const MODEL_ETAS: Record<string, string> = {
 
 export const PROMPT_CHIPS = ['镜头缓慢推进', '自然光流动', '电影级质感', '平滑连续运动'];
 export const COMPLETED_VIDEOS = ['新品发布主视频', '品牌 LOGO 动效', '门店氛围短片'];
+
+/**
+ * 由模块 + 模型推导 workflowCode。
+ * 命名规则：wf-{module}-{model}（固定工作流直接取 fixedWorkflow.code）。
+ */
+export function resolveWorkflowCode(module: StudioModule, modelCode?: string): string {
+  if (module.models.length === 0) return module.fixedWorkflow!.code;
+  return `wf-${module.code.toLowerCase()}-${(modelCode ?? module.defaultModel ?? module.models[0])!.toLowerCase()}`;
+}
 
 export const INSPIRATIONS: Inspiration[] = [
   {

@@ -15,7 +15,7 @@
             <span>创建任务</span>
             <h2>{{ currentModule.name }}</h2>
           </div>
-          <span class="version-pill">{{ currentModel.name }} · {{ currentModel.version }}</span>
+          <span class="version-pill">{{ versionPill }}</span>
         </div>
 
         <div class="capability-grid" aria-label="视频能力">
@@ -35,16 +35,16 @@
 
         <div class="form-divider" />
 
-        <div class="field-block">
+        <div v-if="currentModule.models.length" class="field-block">
           <label>
             生成模型
             <em>*</em>
           </label>
-          <p class="model-group-label">
+          <p v-if="closedModels.length" class="model-group-label">
             <el-icon><Lock /></el-icon>
             闭源商用 · 按次消耗积分
           </p>
-          <div class="model-grid">
+          <div v-if="closedModels.length" class="model-grid">
             <button
               v-for="item in closedModels"
               :key="item.code"
@@ -59,11 +59,11 @@
               <small>{{ item.desc }} · {{ MODEL_COSTS[item.code] }} 积分/次</small>
             </button>
           </div>
-          <p class="model-group-label">
+          <p v-if="openModels.length" class="model-group-label">
             <el-icon><Cpu /></el-icon>
             开源模型 · 本地 GPU · 显示时间进展
           </p>
-          <div class="model-grid">
+          <div v-if="openModels.length" class="model-grid">
             <button
               v-for="item in openModels"
               :key="item.code"
@@ -76,6 +76,19 @@
               </span>
               <small>{{ item.desc }} · {{ MODEL_ETAS[item.code] }}</small>
             </button>
+          </div>
+        </div>
+        <div v-else class="field-block">
+          <label>
+            处理工作流
+            <em>*</em>
+          </label>
+          <div class="fixed-workflow">
+            <span>
+              <b>{{ currentModule.fixedWorkflow!.name }}</b>
+              <i>固定工作流</i>
+            </span>
+            <small>{{ currentModule.fixedWorkflow!.version }} · 本地 GPU · {{ currentModule.fixedWorkflow!.eta }}</small>
           </div>
         </div>
 
@@ -324,13 +337,16 @@ import {
   PROMPT_CHIPS,
   VIDEO_MODELS,
   VIDEO_MODULES,
+  resolveWorkflowCode,
   type FieldKey,
   type Inspiration,
   type StudioModule
-} from './mock';
+} from './modules';
 
 const currentModule = ref(VIDEO_MODULES[0]!);
-const currentModel = ref(VIDEO_MODELS[0]!);
+const currentModel = ref(
+  VIDEO_MODELS.find(item => item.code === VIDEO_MODULES[0]!.defaultModel) ?? VIDEO_MODELS[0]!
+);
 const values = reactive<Partial<Record<FieldKey, string>>>({ tier: '高清 · 1080P', dur: '5 秒' });
 const uploads = reactive<Partial<Record<FieldKey, string[]>>>({});
 const showGuide = ref(true);
@@ -389,16 +405,32 @@ const requiredFields: FieldKey[] = [
   'fps'
 ];
 
-const closedModels = computed(() => VIDEO_MODELS.filter(item => item.license === 'closed'));
-const openModels = computed(() => VIDEO_MODELS.filter(item => item.license === 'open'));
-const submitButtonText = computed(() =>
-  currentModel.value.license === 'closed'
-    ? `提交生成 · 消耗 ${MODEL_COSTS[currentModel.value.code]} 积分`
-    : `提交生成 · ${MODEL_ETAS[currentModel.value.code]}`
+const closedModels = computed(() =>
+  VIDEO_MODELS.filter(item => currentModule.value.models.includes(item.code) && item.license === 'closed')
 );
+const openModels = computed(() =>
+  VIDEO_MODELS.filter(item => currentModule.value.models.includes(item.code) && item.license === 'open')
+);
+const versionPill = computed(() =>
+  currentModule.value.models.length
+    ? `${currentModel.value.name} · ${currentModel.value.version}`
+    : `${currentModule.value.fixedWorkflow!.name} · ${currentModule.value.fixedWorkflow!.version}`
+);
+const submitButtonText = computed(() => {
+  if (!currentModule.value.models.length) {
+    return `提交生成 · ${currentModule.value.fixedWorkflow!.eta}`;
+  }
+  return currentModel.value.license === 'closed'
+    ? `提交生成 · 消耗 ${MODEL_COSTS[currentModel.value.code]} 积分`
+    : `提交生成 · ${MODEL_ETAS[currentModel.value.code]}`;
+});
 
 function selectModule(item: StudioModule) {
   currentModule.value = item;
+  currentModel.value =
+    VIDEO_MODELS.find(candidate => candidate.code === item.defaultModel) ??
+    VIDEO_MODELS.find(candidate => item.models.includes(candidate.code)) ??
+    VIDEO_MODELS[0]!;
   Object.keys(values).forEach(key => delete values[key as FieldKey]);
   Object.keys(uploads).forEach(key => delete uploads[key as FieldKey]);
   values.tier = '高清 · 1080P';
@@ -460,6 +492,18 @@ function submitTask() {
     ElMessage.error(error);
     return;
   }
+  // 契约 payload：后端按 capabilityCode+workflowCode 深拷贝工作流模板，
+  // 仅覆写 mapping_json 白名单内的节点输入键（上传文件在真实对接时替换为 fileIds）
+  const payload = {
+    capabilityCode: currentModule.value.code,
+    workflowCode: resolveWorkflowCode(currentModule.value, currentModel.value.code),
+    modelCode: currentModule.value.models.length ? currentModel.value.code : undefined,
+    fields: {
+      ...values,
+      ...Object.fromEntries(Object.entries(uploads).filter(([, files]) => files?.length))
+    }
+  };
+  console.debug('[ai-studio] submit payload', payload);
   submitting.value = true;
   window.clearTimeout(submitTimer.value);
   submitTimer.value = window.setTimeout(() => {
@@ -481,7 +525,7 @@ function useInspiration(item: Inspiration) {
   const module = VIDEO_MODULES.find(candidate => candidate.code === item.module);
   const model = VIDEO_MODELS.find(candidate => candidate.code === item.model);
   if (module) selectModule(module);
-  if (model) currentModel.value = model;
+  if (module && model && module.models.includes(item.model)) currentModel.value = model;
   values.desc = item.prompt;
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -741,6 +785,38 @@ button {
   border-radius: 3px;
 }
 .model-option small {
+  margin-top: 5px;
+  color: var(--t3);
+  font-size: 10px;
+}
+.fixed-workflow {
+  padding: 11px 12px;
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.fixed-workflow span,
+.fixed-workflow small {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.fixed-workflow span {
+  justify-content: space-between;
+}
+.fixed-workflow b {
+  color: var(--t1);
+  font-size: 12px;
+}
+.fixed-workflow i {
+  padding: 2px 5px;
+  color: #ddd6fe;
+  font-size: 9px;
+  font-style: normal;
+  background: var(--tint);
+  border-radius: 3px;
+}
+.fixed-workflow small {
   margin-top: 5px;
   color: var(--t3);
   font-size: 10px;
