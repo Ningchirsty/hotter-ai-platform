@@ -1,0 +1,103 @@
+name: Frontend CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: frontend-ci-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  build-test-image:
+    name: Build and test frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      IMAGE: hotter-ai-platform-frontend:${{ github.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+
+      - name: Install pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.34.5 --activate
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint frontend
+        working-directory: frontend
+        run: pnpm lint
+
+      - name: Build frontend
+        working-directory: frontend
+        run: pnpm build:prod
+
+      - name: Build frontend image
+        run: |
+          docker build --pull \
+            --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --tag "$IMAGE" frontend
+
+      - name: Smoke test frontend image
+        run: |
+          docker run -d --name frontend-smoke --add-host backend:127.0.0.1 "$IMAGE"
+          trap 'docker rm -f frontend-smoke >/dev/null 2>&1 || true' EXIT
+          for attempt in $(seq 1 12); do
+            if docker exec frontend-smoke wget --spider --quiet http://127.0.0.1:8080/; then exit 0; fi
+            sleep 2
+          done
+          docker logs frontend-smoke
+          exit 1
+
+  publish-image:
+    name: Publish frontend image to GHCR
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build-test-image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Log in to GHCR
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push frontend image
+        env:
+          IMAGE: ghcr.io/ningchirsty/hotter-ai-platform-frontend:sha-${{ github.sha }}
+        run: |
+          docker build --pull \
+            --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --tag "$IMAGE" frontend
+          docker push "$IMAGE"
+          docker inspect "$IMAGE" --format '{{index .RepoDigests 0}}'
