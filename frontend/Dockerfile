@@ -1,5 +1,7 @@
 FROM node:22-alpine AS build
 
+ARG BUILD_SHA=unknown
+
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN corepack enable && corepack prepare pnpm@10.34.5 --activate
@@ -7,6 +9,7 @@ RUN pnpm install --frozen-lockfile
 
 COPY . .
 RUN pnpm build:prod
+RUN printf '{"gitSha":"%s"}\n' "$BUILD_SHA" > /app/dist/version.json
 
 FROM nginx:1.27-alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf

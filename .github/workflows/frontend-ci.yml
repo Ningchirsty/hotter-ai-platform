@@ -33,6 +33,8 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
 
       - name: Install pnpm
         run: |
@@ -47,13 +49,10 @@ jobs:
         working-directory: frontend
         run: pnpm lint
 
-      - name: Build frontend
-        working-directory: frontend
-        run: pnpm build:prod
-
       - name: Build frontend image
         run: |
           docker build --pull \
+            --build-arg "BUILD_SHA=${GITHUB_SHA}" \
             --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
             --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
             --tag "$IMAGE" frontend
@@ -69,9 +68,31 @@ jobs:
           docker logs frontend-smoke
           exit 1
 
+      - name: Verify build version probe
+        run: |
+          docker exec frontend-smoke wget -qO- http://127.0.0.1:8080/version.json | \
+            grep -F '"gitSha":"${GITHUB_SHA}"'
+
+      - name: Export frontend image with checksum
+        run: |
+          mkdir -p artifacts/image
+          docker save "$IMAGE" | gzip -1 > artifacts/image/frontend-image.tar.gz
+          cd artifacts/image
+          sha256sum frontend-image.tar.gz > SHA256SUMS
+
+      - name: Upload frontend image
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: frontend-image-${{ github.sha }}
+          path: artifacts/image/
+          overwrite: true
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 3
+
   publish-image:
     name: Publish frontend image to GHCR
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     needs: build-test-image
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -79,25 +100,23 @@ jobs:
       contents: read
       packages: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Download verified image
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          persist-credentials: false
+          name: frontend-image-${{ github.sha }}
+          path: image
 
-      - name: Log in to GHCR
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push frontend image
+      - name: Verify, load, and push frontend image
         env:
           IMAGE: ghcr.io/ningchirsty/hotter-ai-platform-frontend:sha-${{ github.sha }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          docker build --pull \
-            --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
-            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
-            --tag "$IMAGE" frontend
+          cd image
+          sha256sum --check SHA256SUMS
+          docker load --input frontend-image.tar.gz
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          trap 'docker logout ghcr.io' EXIT
+          docker tag "hotter-ai-platform-frontend:${GITHUB_SHA}" "$IMAGE"
           docker push "$IMAGE"
-          docker inspect "$IMAGE" --format '{{index .RepoDigests 0}}'
+          digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE")
+          printf '### Published image\n\n`%s`\n\nDigest: `%s`\n' "$IMAGE" "$digest" >> "$GITHUB_STEP_SUMMARY"

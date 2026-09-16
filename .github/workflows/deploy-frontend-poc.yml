@@ -7,12 +7,16 @@ on:
         description: Immutable GHCR frontend image reference
         required: true
         type: string
+      git_sha:
+        description: Git commit SHA embedded in the frontend image
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: shenzhen-poc-frontend-deploy
+  group: shenzhen-poc-production
   cancel-in-progress: false
 
 jobs:
@@ -24,9 +28,14 @@ jobs:
       - name: Validate image reference
         env:
           IMAGE: ${{ inputs.image }}
+          GIT_SHA: ${{ inputs.git_sha }}
         run: |
           if ! [[ "$IMAGE" =~ ^ghcr\.io/ningchirsty/hotter-ai-platform-frontend@sha256:[0-9a-f]{64}$ ]]; then
             echo "Image must be the expected immutable GHCR frontend digest." >&2
+            exit 1
+          fi
+          if ! [[ "$GIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "git_sha must be a full lowercase Git SHA." >&2
             exit 1
           fi
 
@@ -54,28 +63,58 @@ jobs:
           IMAGE: ${{ inputs.image }}
         run: docker pull "$IMAGE"
 
-      - name: Replace frontend container
+      - name: Start and verify candidate frontend
         env:
           IMAGE: ${{ inputs.image }}
+          GIT_SHA: ${{ inputs.git_sha }}
         run: |
           set -euo pipefail
-          docker rm -f ai-video-poc-frontend-1 >/dev/null 2>&1 || true
+          docker rm -f ai-video-poc-frontend-candidate >/dev/null 2>&1 || true
+          docker run -d \
+            --name ai-video-poc-frontend-candidate \
+            --restart unless-stopped \
+            --network ai-video-poc-edge \
+            --publish 127.0.0.1:18082:8080 \
+            "$IMAGE"
+          trap 'docker rm -f ai-video-poc-frontend-candidate >/dev/null 2>&1 || true' EXIT
+          for attempt in $(seq 1 18); do
+            if docker inspect --format '{{.State.Health.Status}}' ai-video-poc-frontend-candidate 2>/dev/null | grep -qx healthy && \
+              curl --fail --silent --show-error http://127.0.0.1:18082/version.json | grep -F '"gitSha":"'"$GIT_SHA"'"'; then
+              exit 0
+            fi
+            sleep 5
+          done
+          docker logs --tail=100 ai-video-poc-frontend-candidate
+          exit 1
+
+      - name: Switch frontend and verify rollback safety
+        env:
+          IMAGE: ${{ inputs.image }}
+          GIT_SHA: ${{ inputs.git_sha }}
+        run: |
+          set -euo pipefail
+          previous="ai-video-poc-frontend-previous-${GITHUB_RUN_ID}"
+          docker rename ai-video-poc-frontend-1 "$previous"
+          docker stop "$previous"
+          rollback() {
+            docker rm -f ai-video-poc-frontend-1 >/dev/null 2>&1 || true
+            docker start "$previous" >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          docker rm -f ai-video-poc-frontend-candidate
           docker run -d \
             --name ai-video-poc-frontend-1 \
             --restart unless-stopped \
             --network ai-video-poc-edge \
             --publish 127.0.0.1:18081:8080 \
             "$IMAGE"
-
-      - name: Verify frontend health
-        env:
-          IMAGE: ${{ inputs.image }}
-        run: |
-          set -euo pipefail
           for attempt in $(seq 1 18); do
             health=$(docker inspect --format '{{.State.Health.Status}}' ai-video-poc-frontend-1 2>/dev/null || true)
-            if [ "$health" = healthy ]; then
+            if [ "$health" = healthy ] && \
+              curl --fail --silent --show-error http://127.0.0.1:18081/version.json | grep -F '"gitSha":"'"$GIT_SHA"'"'; then
               docker image inspect "$IMAGE" --format '{{index .RepoDigests 0}}'
+              docker rm -f "$previous" >/dev/null 2>&1 || true
+              trap - ERR
               exit 0
             fi
             sleep 5
