@@ -48,6 +48,8 @@ export interface FixedWorkflow {
 export interface StudioModule {
   /** 能力编码，与后端契约 capabilityCode 一致 */
   code: string;
+  /** 后端工作流能力编码；图生和首尾帧共用 I2V 契约时用于保持提交兼容。 */
+  workflowCapabilityCode?: string;
   name: string;
   desc: string;
   /** 字段 Schema 白名单：后端仅接受这些键并映射到工作流节点输入 */
@@ -72,9 +74,9 @@ export interface Inspiration {
 export const VIDEO_MODULES: StudioModule[] = [
   {
     code: 'I2V',
-    name: '首尾帧生视频',
-    desc: '首尾帧 + 描述生成视频',
-    fields: ['first', 'last', 'desc', 'tier', 'dur'],
+    name: '图生视频',
+    desc: '单张图片 + 描述生成视频',
+    fields: ['img', 'desc', 'tier', 'dur'],
     models: ['H3', 'H3P', 'WAN', 'HUN', 'LTX', 'COG'],
     defaultModel: 'H3',
     promptLabel: '视频描述',
@@ -91,51 +93,15 @@ export const VIDEO_MODULES: StudioModule[] = [
     placeholder: '例如：城市夜景延时，霓虹灯光汇聚成品牌 LOGO，大气收尾。'
   },
   {
-    code: 'MFRAME',
-    name: '智能多帧',
-    desc: '2-10 张关键帧生成长视频',
-    fields: ['frames', 'desc', 'dur'],
-    // 多帧拼接依赖开源底模的帧条件能力；闭源 H3 是否支持待契约交付确认
-    models: ['WAN', 'HUN'],
-    defaultModel: 'WAN',
-    promptLabel: '视频描述',
-    placeholder: '例如：产品多角度连续展示，镜头平滑衔接。'
-  },
-  {
-    code: 'CAMMOVE',
-    name: '运镜视频',
-    desc: '图片 + 推拉摇移环绕运镜',
-    fields: ['img', 'move', 'desc', 'dur'],
-    models: ['H3P', 'WAN', 'LTX'],
-    defaultModel: 'WAN',
-    promptLabel: '补充描述（可选）',
-    placeholder: '例如：夜色中的门店门头，灯光渐亮。'
-  },
-  {
-    code: 'VEXT',
-    name: '视频续写',
-    desc: '选成片延长 · 最长 2 分钟',
-    fields: ['source', 'extend', 'desc'],
-    models: ['H3', 'H3P', 'WAN', 'LTX'],
+    code: 'F2V',
+    workflowCapabilityCode: 'I2V',
+    name: '首尾帧生视频',
+    desc: '首帧、尾帧 + 描述生成视频',
+    fields: ['first', 'last', 'desc', 'tier', 'dur'],
+    models: ['H3', 'H3P', 'WAN', 'HUN', 'LTX', 'COG'],
     defaultModel: 'H3',
-    promptLabel: '续写描述（可选）',
-    placeholder: '例如：镜头继续拉远，露出城市天际线。'
-  },
-  {
-    code: 'VHD',
-    name: '补帧高清化',
-    desc: '成片补帧 · 升级 1080P/4K',
-    fields: ['source', 'target', 'fps'],
-    models: [],
-    fixedWorkflow: { code: 'wf-vhd-rife-upscale', name: 'RIFE 补帧 + 4K 超分', version: 'v0.1.0-draft', eta: '约 2 分钟' }
-  },
-  {
-    code: 'LIP',
-    name: '对口型',
-    desc: '音频驱动口型 · 数字人',
-    fields: ['source', 'audio'],
-    models: [],
-    fixedWorkflow: { code: 'wf-lip-latentsync', name: 'LatentSync 口型同步', version: 'v0.1.0-draft', eta: '约 3 分钟' }
+    promptLabel: '视频描述',
+    placeholder: '例如：从产品特写切换至完整场景，镜头运动平滑自然。'
   }
 ];
 
@@ -165,7 +131,8 @@ export const COMPLETED_VIDEOS = ['新品发布主视频', '品牌 LOGO 动效', 
  */
 export function resolveWorkflowCode(module: StudioModule, modelCode?: string): string {
   if (module.models.length === 0) return module.fixedWorkflow!.code;
-  return `wf-${module.code.toLowerCase()}-${(modelCode ?? module.defaultModel ?? module.models[0])!.toLowerCase()}`;
+  const workflowCapability = module.workflowCapabilityCode ?? module.code;
+  return `wf-${workflowCapability.toLowerCase()}-${(modelCode ?? module.defaultModel ?? module.models[0])!.toLowerCase()}`;
 }
 
 export const INSPIRATIONS: Inspiration[] = [
@@ -184,10 +151,10 @@ export const INSPIRATIONS: Inspiration[] = [
     tone: 'cyan'
   },
   {
-    title: '门店空间巡游',
-    module: 'CAMMOVE',
-    model: 'WAN',
-    prompt: '镜头平稳穿过门店空间，暖色灯光依次点亮，最终停留在品牌墙。',
+    title: '新品发布转场',
+    module: 'F2V',
+    model: 'H3P',
+    prompt: '从产品细节平滑过渡到整体场景，主体保持稳定，光影层次自然。',
     tone: 'rose'
   }
 ];

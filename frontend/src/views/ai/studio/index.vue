@@ -88,7 +88,9 @@
               <b>{{ currentModule.fixedWorkflow!.name }}</b>
               <i>固定工作流</i>
             </span>
-            <small>{{ currentModule.fixedWorkflow!.version }} · 本地 GPU · {{ currentModule.fixedWorkflow!.eta }}</small>
+            <small>
+              {{ currentModule.fixedWorkflow!.version }} · 本地 GPU · {{ currentModule.fixedWorkflow!.eta }}
+            </small>
           </div>
         </div>
 
@@ -165,11 +167,11 @@
             </label>
             <div class="choice-grid">
               <button
-                v-for="item in fieldOptions[field]"
+                v-for="item in optionsFor(field)"
                 :key="item"
                 type="button"
                 :class="{ active: values[field] === item }"
-                @click="values[field] = item"
+                @click="selectChoice(field, item)"
               >
                 {{ item }}
               </button>
@@ -314,18 +316,14 @@ import {
   Close,
   Cpu,
   Download,
-  Film,
   Loading,
   Lock,
   MagicStick,
-  Microphone,
   Picture,
   RefreshRight,
   Share,
-  Timer,
   UploadFilled,
   VideoCamera,
-  VideoCameraFilled,
   VideoPlay
 } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
@@ -344,9 +342,7 @@ import {
 } from './modules';
 
 const currentModule = ref(VIDEO_MODULES[0]!);
-const currentModel = ref(
-  VIDEO_MODELS.find(item => item.code === VIDEO_MODULES[0]!.defaultModel) ?? VIDEO_MODELS[0]!
-);
+const currentModel = ref(VIDEO_MODELS.find(item => item.code === VIDEO_MODULES[0]!.defaultModel) ?? VIDEO_MODELS[0]!);
 const values = reactive<Partial<Record<FieldKey, string>>>({ tier: '高清 · 1080P', dur: '5 秒' });
 const uploads = reactive<Partial<Record<FieldKey, string[]>>>({});
 const showGuide = ref(true);
@@ -362,11 +358,7 @@ const recentTasks = ref([
 const moduleIcons: Record<string, Component> = {
   I2V: VideoCamera,
   T2V: MagicStick,
-  MFRAME: Picture,
-  CAMMOVE: VideoCameraFilled,
-  VEXT: Timer,
-  VHD: Film,
-  LIP: Microphone
+  F2V: Picture
 };
 const fieldLabels: Record<FieldKey, string> = {
   first: '首帧图片',
@@ -384,8 +376,8 @@ const fieldLabels: Record<FieldKey, string> = {
   fps: '帧率'
 };
 const fieldOptions: Partial<Record<FieldKey, string[]>> = {
-  tier: ['流畅 · 720P', '高清 · 1080P'],
-  dur: ['5 秒', '10 秒'],
+  tier: ['高清 · 1080P', '流畅 · 720P', '标清 · 480P'],
+  dur: ['5 秒', '10 秒', '20 秒'],
   move: ['推近', '拉远', '左摇', '右摇', '环绕', '旋转'],
   extend: ['5 秒', '10 秒', '20 秒'],
   target: ['1080P', '4K'],
@@ -394,6 +386,7 @@ const fieldOptions: Partial<Record<FieldKey, string[]>> = {
 const uploadFields: FieldKey[] = ['first', 'last', 'frames', 'img', 'audio'];
 const requiredFields: FieldKey[] = [
   'first',
+  'img',
   'frames',
   'source',
   'audio',
@@ -442,8 +435,28 @@ function isUploadField(field: FieldKey) {
 }
 
 function isRequired(field: FieldKey) {
-  if (field === 'desc') return ['I2V', 'T2V', 'MFRAME'].includes(currentModule.value.code);
+  if (field === 'desc') return ['I2V', 'T2V', 'F2V'].includes(currentModule.value.code);
+  if (field === 'last') return currentModule.value.code === 'F2V';
   return requiredFields.includes(field);
+}
+
+function optionsFor(field: FieldKey) {
+  if (field !== 'dur') return fieldOptions[field] ?? [];
+  switch (values.tier) {
+    case '标清 · 480P':
+      return ['5 秒', '10 秒', '20 秒'];
+    case '流畅 · 720P':
+      return ['5 秒', '10 秒'];
+    default:
+      return ['5 秒'];
+  }
+}
+
+function selectChoice(field: FieldKey, value: string) {
+  values[field] = value;
+  if (field === 'tier' && !optionsFor('dur').includes(values.dur ?? '')) {
+    values.dur = optionsFor('dur')[0];
+  }
 }
 
 function handleFiles(field: FieldKey, event: Event) {
@@ -495,7 +508,7 @@ function submitTask() {
   // 契约 payload：后端按 capabilityCode+workflowCode 深拷贝工作流模板，
   // 仅覆写 mapping_json 白名单内的节点输入键（上传文件在真实对接时替换为 fileIds）
   const payload = {
-    capabilityCode: currentModule.value.code,
+    capabilityCode: currentModule.value.workflowCapabilityCode ?? currentModule.value.code,
     workflowCode: resolveWorkflowCode(currentModule.value, currentModel.value.code),
     modelCode: currentModule.value.models.length ? currentModel.value.code : undefined,
     fields: {
