@@ -2,7 +2,7 @@
   <div class="studio">
     <div v-if="showGuide" class="guide-bar">
       <el-icon><MagicStick /></el-icon>
-      <span>三步出片：① 选模块与模型 → ② 上传素材、写描述 → ③ 提交后即可离开，完成时通知你</span>
+      <span>创建任务：选择视频方式和模型，添加素材与描述，确认输出档位。</span>
       <button type="button" title="关闭引导" aria-label="关闭引导" @click="showGuide = false">
         <el-icon><Close /></el-icon>
       </button>
@@ -56,7 +56,7 @@
           </label>
           <p v-if="closedModels.length" class="model-group-label">
             <el-icon><Lock /></el-icon>
-            闭源商用 · 按次消耗积分
+            闭源模型
           </p>
           <div v-if="closedModels.length" class="model-grid">
             <button
@@ -64,18 +64,19 @@
               :key="item.code"
               type="button"
               :class="['model-option', { active: item.code === currentModel.code }]"
+              :disabled="item.code !== 'H3'"
               @click="currentModel = item"
             >
               <span>
                 <b>{{ item.name }}</b>
                 <i v-if="item.recommended">推荐</i>
               </span>
-              <small>{{ item.desc }} · {{ MODEL_COSTS[item.code] }} 积分/次</small>
+              <small>{{ item.code === 'H3' ? '模板已导入 · 待服务接入' : '工作流待接入' }}</small>
             </button>
           </div>
           <p v-if="openModels.length" class="model-group-label">
             <el-icon><Cpu /></el-icon>
-            开源模型 · 本地 GPU · 显示时间进展
+            开源模型
           </p>
           <div v-if="openModels.length" class="model-grid">
             <button
@@ -83,12 +84,13 @@
               :key="item.code"
               type="button"
               :class="['model-option', { active: item.code === currentModel.code }]"
+              disabled
               @click="currentModel = item"
             >
               <span>
                 <b>{{ item.name }}</b>
               </span>
-              <small>{{ item.desc }} · {{ MODEL_ETAS[item.code] }}</small>
+              <small>工作流待接入</small>
             </button>
           </div>
         </div>
@@ -185,6 +187,7 @@
                 :key="item"
                 type="button"
                 :class="{ active: values[field] === item }"
+                :disabled="field === 'tier' && item !== '高清 · 1080P'"
                 @click="selectChoice(field, item)"
               >
                 {{ item }}
@@ -203,28 +206,28 @@
           </div>
         </template>
 
+        <p class="workflow-note">
+          MiniMax H3 三种工作流模板已导入；当前只展示高清 1080P、最多 5 秒的目标档位，实际输出仍待验证。任务服务接入并验收后开放提交。
+        </p>
         <div class="submit-row">
           <button
             v-hasPermi="['ai:studio:submit']"
             type="button"
             class="submit-button"
-            :disabled="submitting"
-            @click="submitTask"
+            disabled
+            title="任务服务尚未接入"
           >
-            <el-icon>
-              <Loading v-if="submitting" class="is-loading" />
-              <MagicStick v-else />
-            </el-icon>
-            {{ submitting ? '正在提交' : submitButtonText }}
+            <el-icon><MagicStick /></el-icon>
+            待任务服务接入
           </button>
-          <span>当前排队 {{ queueCount }} 个任务</span>
+          <span>任务服务尚未接入</span>
         </div>
       </section>
 
       <aside class="right-column">
         <section class="latest-player">
           <div class="player-badges">
-            <span>最新成片</span>
+            <span>成片示意</span>
             <span>1080P</span>
             <span>00:05</span>
           </div>
@@ -233,7 +236,7 @@
             class="play-button"
             title="播放最新成片"
             aria-label="播放最新成片"
-            @click="ElMessage.info('成片预览准备中')"
+            @click="ElMessage.info('示例成片暂无真实视频')"
           >
             <el-icon><VideoPlay /></el-icon>
           </button>
@@ -243,10 +246,10 @@
               <small>VIDEO-20260911-017 · 5 分钟前</small>
             </div>
             <div>
-              <button type="button" title="下载" aria-label="下载" @click="ElMessage.success('开始下载成片')">
+              <button type="button" title="示例成片不可下载" aria-label="下载" disabled>
                 <el-icon><Download /></el-icon>
               </button>
-              <button type="button" title="分享" aria-label="分享" @click="ElMessage.success('分享链接已复制')">
+              <button type="button" title="示例成片不可分享" aria-label="分享" disabled>
                 <el-icon><Share /></el-icon>
               </button>
               <button type="button" class="recreate" @click="useInspiration(INSPIRATIONS[1])">
@@ -325,7 +328,7 @@
         <div>
           <span>视频创作</span>
           <h2>我的任务</h2>
-          <p>查看视频的生成进度和已完成作品。</p>
+          <p>当前为示例记录，任务服务接入后显示真实任务。</p>
         </div>
         <button type="button" class="primary-action" @click="activeView = 'create'">
           <el-icon><MagicStick /></el-icon>
@@ -367,7 +370,7 @@
             <small>{{ task.id }} · {{ task.createdAt }}</small>
           </div>
           <div class="task-actions">
-            <button type="button" title="查看任务" aria-label="查看任务" @click="previewTask(task)">
+            <button type="button" title="查看任务" aria-label="查看任务" @click="previewTask()">
               <el-icon><View /></el-icon>
             </button>
             <button v-if="task.status === 'done'" type="button" class="recreate" @click="recreateTask(task)">
@@ -433,7 +436,6 @@ import {
   Download,
   Document,
   FolderOpened,
-  Loading,
   Lock,
   MagicStick,
   Picture,
@@ -450,12 +452,9 @@ import { ElMessage } from 'element-plus';
 import {
   COMPLETED_VIDEOS,
   INSPIRATIONS,
-  MODEL_COSTS,
-  MODEL_ETAS,
   PROMPT_CHIPS,
   VIDEO_MODELS,
   VIDEO_MODULES,
-  resolveWorkflowCode,
   type FieldKey,
   type Inspiration,
   type StudioModule
@@ -495,9 +494,7 @@ const currentModel = ref(VIDEO_MODELS.find(item => item.code === VIDEO_MODULES[0
 const values = reactive<Partial<Record<FieldKey, string>>>({ tier: '高清 · 1080P', dur: '5 秒' });
 const uploads = reactive<Partial<Record<FieldKey, string[]>>>({});
 const showGuide = ref(true);
-const submitting = ref(false);
 const queueCount = ref(1);
-const submitTimer = ref<number>();
 const tasks = ref<StudioTask[]>([
   {
     id: 'VIDEO-20260911-018',
@@ -556,7 +553,7 @@ const filteredTasks = computed(() => {
 const moduleIcons: Record<string, Component> = {
   I2V: VideoCamera,
   T2V: MagicStick,
-  F2V: Picture
+  FL2V: Picture
 };
 const fieldLabels: Record<FieldKey, string> = {
   first: '首帧图片',
@@ -607,14 +604,6 @@ const versionPill = computed(() =>
     ? `${currentModel.value.name} · ${currentModel.value.version}`
     : `${currentModule.value.fixedWorkflow!.name} · ${currentModule.value.fixedWorkflow!.version}`
 );
-const submitButtonText = computed(() => {
-  if (!currentModule.value.models.length) {
-    return `提交生成 · ${currentModule.value.fixedWorkflow!.eta}`;
-  }
-  return currentModel.value.license === 'closed'
-    ? `提交生成 · 消耗 ${MODEL_COSTS[currentModel.value.code]} 积分`
-    : `提交生成 · ${MODEL_ETAS[currentModel.value.code]}`;
-});
 
 function selectModule(item: StudioModule) {
   currentModule.value = item;
@@ -633,8 +622,8 @@ function isUploadField(field: FieldKey) {
 }
 
 function isRequired(field: FieldKey) {
-  if (field === 'desc') return ['I2V', 'T2V', 'F2V'].includes(currentModule.value.code);
-  if (field === 'last') return currentModule.value.code === 'F2V';
+  if (field === 'desc') return ['I2V', 'T2V', 'FL2V'].includes(currentModule.value.code);
+  if (field === 'last') return currentModule.value.code === 'FL2V';
   return requiredFields.includes(field);
 }
 
@@ -684,61 +673,11 @@ function optimizePrompt() {
   ElMessage.success('描述已优化');
 }
 
-function validate() {
-  for (const field of currentModule.value.fields) {
-    if (!isRequired(field)) continue;
-    if (isUploadField(field)) {
-      const count = uploads[field]?.length ?? 0;
-      if (!count || (field === 'frames' && count < 2)) return `请完成${fieldLabels[field]}上传`;
-    } else if (!values[field]?.trim()) {
-      return `请填写或选择${fieldLabels[field]}`;
-    }
-  }
-  return '';
-}
-
-function submitTask() {
-  const error = validate();
-  if (error) {
-    ElMessage.error(error);
-    return;
-  }
-  // 契约 payload：后端按 capabilityCode+workflowCode 深拷贝工作流模板，
-  // 仅覆写 mapping_json 白名单内的节点输入键（上传文件在真实对接时替换为 fileIds）
-  const payload = {
-    capabilityCode: currentModule.value.workflowCapabilityCode ?? currentModule.value.code,
-    workflowCode: resolveWorkflowCode(currentModule.value, currentModel.value.code),
-    modelCode: currentModule.value.models.length ? currentModel.value.code : undefined,
-    fields: {
-      ...values,
-      ...Object.fromEntries(Object.entries(uploads).filter(([, files]) => files?.length))
-    }
-  };
-  console.debug('[ai-studio] submit payload', payload);
-  submitting.value = true;
-  window.clearTimeout(submitTimer.value);
-  submitTimer.value = window.setTimeout(() => {
-    submitting.value = false;
-    queueCount.value += 1;
-    tasks.value.unshift({
-      id: `VIDEO-${String(Date.now()).slice(-6)}`,
-      name: values.desc?.slice(0, 18) || currentModule.value.name,
-      module: currentModule.value.name,
-      model: currentModel.value.name,
-      tier: values.tier ?? '高清 · 1080P',
-      duration: values.dur ?? '5 秒',
-      status: 'queued',
-      createdAt: '刚刚'
-    });
-    ElMessage.success('任务已提交，完成后将通知你');
-  }, 700);
-}
-
 function useInspiration(item: Inspiration) {
   const module = VIDEO_MODULES.find(candidate => candidate.code === item.module);
   const model = VIDEO_MODELS.find(candidate => candidate.code === item.model);
   if (module) selectModule(module);
-  if (module && model && module.models.includes(item.model)) currentModel.value = model;
+  if (module && model && item.model === 'H3') currentModel.value = model;
   values.desc = item.prompt;
   activeView.value = 'create';
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -748,17 +687,15 @@ function taskStatusText(status: StudioTaskStatus) {
   return status === 'running' ? '生成中' : status === 'queued' ? '排队中' : '已完成';
 }
 
-function previewTask(task: StudioTask) {
-  ElMessage.info(task.status === 'done' ? '成片预览准备中' : '任务仍在生成中');
+function previewTask() {
+  ElMessage.info('示例任务暂无真实成片');
 }
 
 function recreateTask(task: StudioTask) {
   const module = VIDEO_MODULES.find(item => item.name === task.module);
   if (module) selectModule(module);
   const model = VIDEO_MODELS.find(item => item.name === task.model);
-  if (model && currentModule.value.models.includes(model.code)) currentModel.value = model;
-  values.tier = task.tier;
-  values.dur = task.duration;
+  if (model?.code === 'H3') currentModel.value = model;
   activeView.value = 'create';
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -801,8 +738,6 @@ function moduleName(code: string) {
 function modelName(code: string) {
   return VIDEO_MODELS.find(item => item.code === code)?.name ?? code;
 }
-
-onBeforeUnmount(() => window.clearTimeout(submitTimer.value));
 </script>
 
 <style scoped lang="scss">
@@ -1344,6 +1279,10 @@ button {
   background: var(--tint);
   border-color: var(--p);
 }
+.model-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
 .model-option span,
 .model-option small {
   display: block;
@@ -1483,6 +1422,16 @@ button {
   background: var(--tint);
   border-color: var(--p);
 }
+.choice-grid button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.workflow-note {
+  margin: 20px 0 0;
+  color: var(--t2);
+  font-size: 11px;
+  line-height: 1.6;
+}
 .prompt-tools {
   display: flex;
   align-items: center;
@@ -1536,7 +1485,7 @@ button {
   box-shadow: 0 8px 24px var(--glow);
 }
 .submit-button:disabled {
-  cursor: wait;
+  cursor: not-allowed;
   opacity: 0.65;
 }
 .submit-row > span {

@@ -8,8 +8,8 @@
  *  - 提交任务按此结构组装 payload：{ capabilityCode, workflowCode, modelCode, fields }，
  *    后端收到后深拷贝对应工作流模板，仅覆写 mapping_json 白名单内的节点输入键。
  *
- * 状态说明：所有 workflowCode 均为 DRAFT，待 ComfyUI 同事交付 API Format JSON 后
- * 在 contracts 文件中填充节点映射并置为 PUBLISHED；矩阵调整只改本文件数据，不改组件。
+ * 状态说明：三个 H3 API Format 模板已导入，但任务服务、模型依赖与运行测试未完成，
+ * 均保持 DRAFT；其他模型仍是未交付的占位契约。
  */
 
 export type FieldKey =
@@ -48,8 +48,6 @@ export interface FixedWorkflow {
 export interface StudioModule {
   /** 能力编码，与后端契约 capabilityCode 一致 */
   code: string;
-  /** 后端工作流能力编码；图生和首尾帧共用 I2V 契约时用于保持提交兼容。 */
-  workflowCapabilityCode?: string;
   name: string;
   desc: string;
   /** 字段 Schema 白名单：后端仅接受这些键并映射到工作流节点输入 */
@@ -93,8 +91,7 @@ export const VIDEO_MODULES: StudioModule[] = [
     placeholder: '例如：城市夜景延时，霓虹灯光汇聚成品牌 LOGO，大气收尾。'
   },
   {
-    code: 'F2V',
-    workflowCapabilityCode: 'I2V',
+    code: 'FL2V',
     name: '首尾帧生视频',
     desc: '首帧、尾帧 + 描述生成视频',
     fields: ['first', 'last', 'desc', 'tier', 'dur'],
@@ -106,7 +103,14 @@ export const VIDEO_MODULES: StudioModule[] = [
 ];
 
 export const VIDEO_MODELS: StudioModel[] = [
-  { code: 'H3', name: 'MiniMax H3', desc: '闭源 · 标准快', version: 'v1.0.2', license: 'closed', recommended: true },
+  {
+    code: 'H3',
+    name: 'MiniMax H3',
+    desc: '工作流模板已导入',
+    version: '8-step BF16',
+    license: 'closed',
+    recommended: true
+  },
   { code: 'H3P', name: 'H3 Pro', desc: '闭源 · 高质感', version: 'v1.0.1', license: 'closed' },
   { code: 'WAN', name: 'WAN 2.1', desc: '开源 · 阿里通义', version: 'v0.2.0', license: 'open' },
   { code: 'HUN', name: 'HunyuanVideo', desc: '开源 · 腾讯混元', version: 'v0.1.0', license: 'open' },
@@ -131,8 +135,7 @@ export const COMPLETED_VIDEOS = ['新品发布主视频', '品牌 LOGO 动效', 
  */
 export function resolveWorkflowCode(module: StudioModule, modelCode?: string): string {
   if (module.models.length === 0) return module.fixedWorkflow!.code;
-  const workflowCapability = module.workflowCapabilityCode ?? module.code;
-  return `wf-${workflowCapability.toLowerCase()}-${(modelCode ?? module.defaultModel ?? module.models[0])!.toLowerCase()}`;
+  return `wf-${module.code.toLowerCase()}-${(modelCode ?? module.defaultModel ?? module.models[0])!.toLowerCase()}`;
 }
 
 export const INSPIRATIONS: Inspiration[] = [
@@ -146,14 +149,14 @@ export const INSPIRATIONS: Inspiration[] = [
   {
     title: '新品包装特写',
     module: 'I2V',
-    model: 'H3P',
+    model: 'H3',
     prompt: '镜头从包装细节缓慢拉远，柔和轮廓光勾勒产品边缘，质感高级。',
     tone: 'cyan'
   },
   {
     title: '新品发布转场',
-    module: 'F2V',
-    model: 'H3P',
+    module: 'FL2V',
+    model: 'H3',
     prompt: '从产品细节平滑过渡到整体场景，主体保持稳定，光影层次自然。',
     tone: 'rose'
   }
