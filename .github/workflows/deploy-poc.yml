@@ -1,4 +1,4 @@
-name: Deploy Shenzhen POC
+name: Deploy Shenzhen Production Backend
 
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: shenzhen-poc-production
+  group: shenzhen-production
   cancel-in-progress: false
 
 jobs:
@@ -21,6 +21,9 @@ jobs:
     name: Deploy immutable backend image
     runs-on: [shenzhen, deploy]
     timeout-minutes: 20
+    environment:
+      name: shenzhen-production
+      url: https://pm.hottter.cn
     steps:
       - name: Validate image reference
         env:
@@ -39,6 +42,7 @@ jobs:
           test -r .env
           test -s .env
           docker version --format '{{.Server.Version}}'
+          docker volume inspect ai-video-poc-mysql-data ai-video-poc-redis-data >/dev/null
 
       - name: Sign in to registry
         run: |
