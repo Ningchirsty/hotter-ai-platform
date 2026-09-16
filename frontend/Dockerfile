@@ -18,4 +18,4 @@ ENV LISTEN_PORT=80 \
 COPY nginx.production.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/dist/ /usr/share/nginx/html/
 EXPOSE 80
-HEALTHCHECK --interval=20s --timeout=5s --retries=12 CMD-SHELL wget -q -O /dev/null "http://127.0.0.1:${LISTEN_PORT}/version.json" || exit 1
+HEALTHCHECK --interval=20s --timeout=5s --retries=12 CMD wget -q -O /dev/null "http://127.0.0.1:${LISTEN_PORT}/version.json" || exit 1
