@@ -8,7 +8,21 @@
       </button>
     </div>
 
-    <div class="workbench-grid">
+    <nav class="studio-nav" aria-label="视频创作功能">
+      <button
+        v-for="item in studioViews"
+        :key="item.key"
+        type="button"
+        :class="{ active: activeView === item.key }"
+        :aria-current="activeView === item.key ? 'page' : undefined"
+        @click="activeView = item.key"
+      >
+        <el-icon><component :is="item.icon" /></el-icon>
+        {{ item.label }}
+      </button>
+    </nav>
+
+    <div v-if="activeView === 'create'" class="workbench-grid">
       <section class="studio-card create-card">
         <div class="section-heading">
           <div>
@@ -305,6 +319,106 @@
         </section>
       </aside>
     </div>
+
+    <section v-else-if="activeView === 'tasks'" class="content-view">
+      <div class="view-heading">
+        <div>
+          <span>视频创作</span>
+          <h2>我的任务</h2>
+          <p>查看视频的生成进度和已完成作品。</p>
+        </div>
+        <button type="button" class="primary-action" @click="activeView = 'create'">
+          <el-icon><MagicStick /></el-icon>
+          创建任务
+        </button>
+      </div>
+
+      <div class="task-toolbar">
+        <el-input v-model="taskKeyword" placeholder="搜索任务名称或编号" clearable>
+          <template #prefix>
+            <el-icon><Search /></el-icon>
+          </template>
+        </el-input>
+        <div class="task-filters" aria-label="任务状态筛选">
+          <button
+            v-for="item in taskFilters"
+            :key="item.key"
+            type="button"
+            :class="{ active: taskFilter === item.key }"
+            @click="taskFilter = item.key"
+          >
+            {{ item.label }}
+          </button>
+        </div>
+      </div>
+
+      <div v-if="filteredTasks.length" class="task-list">
+        <article v-for="task in filteredTasks" :key="task.id" class="task-card">
+          <div :class="['task-cover', task.status]">
+            <el-icon><VideoCamera /></el-icon>
+            <span>{{ task.tier.replace(' · ', ' ') }}</span>
+          </div>
+          <div class="task-main">
+            <div class="task-title-row">
+              <b>{{ task.name }}</b>
+              <span :class="['task-status', task.status]">{{ taskStatusText(task.status) }}</span>
+            </div>
+            <p>{{ task.module }} · {{ task.model }} · {{ task.duration }}</p>
+            <small>{{ task.id }} · {{ task.createdAt }}</small>
+          </div>
+          <div class="task-actions">
+            <button type="button" title="查看任务" aria-label="查看任务" @click="previewTask(task)">
+              <el-icon><View /></el-icon>
+            </button>
+            <button v-if="task.status === 'done'" type="button" class="recreate" @click="recreateTask(task)">
+              <el-icon><RefreshRight /></el-icon>
+              再创作
+            </button>
+          </div>
+        </article>
+      </div>
+      <div v-else class="empty-state">
+        <el-icon><Document /></el-icon>
+        <b>没有匹配的任务</b>
+        <span>调整搜索条件，或创建一个新的视频任务。</span>
+      </div>
+    </section>
+
+    <section v-else class="content-view">
+      <div class="view-heading">
+        <div>
+          <span>视频创作</span>
+          <h2>素材库</h2>
+          <p>集中管理用于视频创作的图片、视频和音频素材。</p>
+        </div>
+        <label class="primary-action asset-upload">
+          <input type="file" accept="image/*,video/*,audio/*" multiple @change="handleAssetFiles" />
+          <el-icon><UploadFilled /></el-icon>
+          添加素材
+        </label>
+      </div>
+
+      <div v-if="assets.length" class="asset-grid">
+        <article v-for="asset in assets" :key="asset.id" class="asset-card">
+          <div :class="['asset-preview', asset.kind]">
+            <el-icon><component :is="assetIcon(asset.kind)" /></el-icon>
+            <span>{{ asset.kind === 'image' ? '图片' : asset.kind === 'video' ? '视频' : '音频' }}</span>
+          </div>
+          <div class="asset-info">
+            <b>{{ asset.name }}</b>
+            <small>{{ asset.detail }} · {{ asset.createdAt }}</small>
+          </div>
+          <button type="button" title="移除素材" aria-label="移除素材" @click="removeAsset(asset.id)">
+            <el-icon><Delete /></el-icon>
+          </button>
+        </article>
+      </div>
+      <div v-else class="empty-state">
+        <el-icon><FolderOpened /></el-icon>
+        <b>素材库还是空的</b>
+        <span>添加图片、视频或音频后，即可在创建任务时使用。</span>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -315,16 +429,22 @@ import {
   Check,
   Close,
   Cpu,
+  Delete,
   Download,
+  Document,
+  FolderOpened,
   Loading,
   Lock,
   MagicStick,
   Picture,
   RefreshRight,
   Share,
+  Search,
   UploadFilled,
   VideoCamera,
-  VideoPlay
+  VideoCameraFilled,
+  VideoPlay,
+  View
 } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import {
@@ -341,6 +461,35 @@ import {
   type StudioModule
 } from './modules';
 
+type StudioView = 'create' | 'tasks' | 'assets';
+type StudioTaskStatus = 'queued' | 'running' | 'done';
+type AssetKind = 'image' | 'video' | 'audio';
+
+interface StudioTask {
+  id: string;
+  name: string;
+  module: string;
+  model: string;
+  tier: string;
+  duration: string;
+  status: StudioTaskStatus;
+  createdAt: string;
+}
+
+interface StudioAsset {
+  id: string;
+  name: string;
+  detail: string;
+  kind: AssetKind;
+  createdAt: string;
+}
+
+const activeView = ref<StudioView>('create');
+const studioViews: Array<{ key: StudioView; label: string; icon: Component }> = [
+  { key: 'create', label: '创建任务', icon: MagicStick },
+  { key: 'tasks', label: '我的任务', icon: Document },
+  { key: 'assets', label: '素材库', icon: FolderOpened }
+];
 const currentModule = ref(VIDEO_MODULES[0]!);
 const currentModel = ref(VIDEO_MODELS.find(item => item.code === VIDEO_MODULES[0]!.defaultModel) ?? VIDEO_MODELS[0]!);
 const values = reactive<Partial<Record<FieldKey, string>>>({ tier: '高清 · 1080P', dur: '5 秒' });
@@ -349,11 +498,60 @@ const showGuide = ref(true);
 const submitting = ref(false);
 const queueCount = ref(1);
 const submitTimer = ref<number>();
-const recentTasks = ref([
-  { id: '018', name: '春季宣传片 · 包装特写', module: '首尾帧生视频', model: 'MiniMax H3', status: 'running' },
-  { id: '017', name: '新品发布主视频', module: '首尾帧生视频', model: 'H3 Pro', status: 'done' },
-  { id: '016', name: '品牌 LOGO 动效', module: '文生视频', model: 'WAN 2.1', status: 'done' }
+const tasks = ref<StudioTask[]>([
+  {
+    id: 'VIDEO-20260911-018',
+    name: '春季宣传片 · 包装特写',
+    module: '首尾帧生视频',
+    model: 'MiniMax H3',
+    tier: '高清 · 1080P',
+    duration: '5 秒',
+    status: 'running',
+    createdAt: '2 分钟前'
+  },
+  {
+    id: 'VIDEO-20260911-017',
+    name: '新品发布主视频',
+    module: '图生视频',
+    model: 'H3 Pro',
+    tier: '高清 · 1080P',
+    duration: '5 秒',
+    status: 'done',
+    createdAt: '5 分钟前'
+  },
+  {
+    id: 'VIDEO-20260911-016',
+    name: '品牌 LOGO 动效',
+    module: '文生视频',
+    model: 'WAN 2.1',
+    tier: '流畅 · 720P',
+    duration: '10 秒',
+    status: 'done',
+    createdAt: '12 分钟前'
+  }
 ]);
+const taskKeyword = ref('');
+const taskFilter = ref<'all' | StudioTaskStatus>('all');
+const taskFilters = [
+  { key: 'all', label: '全部' },
+  { key: 'queued', label: '排队中' },
+  { key: 'running', label: '生成中' },
+  { key: 'done', label: '已完成' }
+] as const;
+const assets = ref<StudioAsset[]>([
+  { id: 'asset-1', name: '新品包装主图.png', detail: 'PNG · 2.4 MB', kind: 'image', createdAt: '今天' },
+  { id: 'asset-2', name: '品牌氛围素材.mp4', detail: 'MP4 · 18.6 MB', kind: 'video', createdAt: '今天' },
+  { id: 'asset-3', name: '发布会旁白.wav', detail: 'WAV · 6.1 MB', kind: 'audio', createdAt: '昨天' }
+]);
+const recentTasks = computed(() => tasks.value.slice(0, 4));
+const filteredTasks = computed(() => {
+  const keyword = taskKeyword.value.trim().toLowerCase();
+  return tasks.value.filter(task => {
+    const matchesFilter = taskFilter.value === 'all' || task.status === taskFilter.value;
+    const matchesKeyword = !keyword || `${task.id} ${task.name}`.toLowerCase().includes(keyword);
+    return matchesFilter && matchesKeyword;
+  });
+});
 
 const moduleIcons: Record<string, Component> = {
   I2V: VideoCamera,
@@ -522,14 +720,16 @@ function submitTask() {
   submitTimer.value = window.setTimeout(() => {
     submitting.value = false;
     queueCount.value += 1;
-    recentTasks.value.unshift({
-      id: String(Date.now()),
+    tasks.value.unshift({
+      id: `VIDEO-${String(Date.now()).slice(-6)}`,
       name: values.desc?.slice(0, 18) || currentModule.value.name,
       module: currentModule.value.name,
       model: currentModel.value.name,
-      status: 'queued'
+      tier: values.tier ?? '高清 · 1080P',
+      duration: values.dur ?? '5 秒',
+      status: 'queued',
+      createdAt: '刚刚'
     });
-    recentTasks.value = recentTasks.value.slice(0, 4);
     ElMessage.success('任务已提交，完成后将通知你');
   }, 700);
 }
@@ -540,7 +740,58 @@ function useInspiration(item: Inspiration) {
   if (module) selectModule(module);
   if (module && model && module.models.includes(item.model)) currentModel.value = model;
   values.desc = item.prompt;
+  activeView.value = 'create';
   window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function taskStatusText(status: StudioTaskStatus) {
+  return status === 'running' ? '生成中' : status === 'queued' ? '排队中' : '已完成';
+}
+
+function previewTask(task: StudioTask) {
+  ElMessage.info(task.status === 'done' ? '成片预览准备中' : '任务仍在生成中');
+}
+
+function recreateTask(task: StudioTask) {
+  const module = VIDEO_MODULES.find(item => item.name === task.module);
+  if (module) selectModule(module);
+  const model = VIDEO_MODELS.find(item => item.name === task.model);
+  if (model && currentModule.value.models.includes(model.code)) currentModel.value = model;
+  values.tier = task.tier;
+  values.dur = task.duration;
+  activeView.value = 'create';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function assetIcon(kind: AssetKind): Component {
+  return kind === 'image' ? Picture : kind === 'video' ? VideoCamera : Document;
+}
+
+function handleAssetFiles(event: Event) {
+  const input = event.target as HTMLInputElement;
+  Array.from(input.files ?? []).forEach(file => {
+    const kind: AssetKind = file.type.startsWith('video/')
+      ? 'video'
+      : file.type.startsWith('audio/')
+        ? 'audio'
+        : 'image';
+    assets.value.unshift({
+      id: `asset-${Date.now()}-${file.name}`,
+      name: file.name,
+      detail: `${file.type.split('/')[1]?.toUpperCase() || '文件'} · ${formatFileSize(file.size)}`,
+      kind,
+      createdAt: '刚刚'
+    });
+  });
+  input.value = '';
+}
+
+function removeAsset(id: string) {
+  assets.value = assets.value.filter(asset => asset.id !== id);
+}
+
+function formatFileSize(size: number) {
+  return size >= 1024 * 1024 ? `${(size / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.ceil(size / 1024))} KB`;
 }
 
 function moduleName(code: string) {
@@ -596,6 +847,319 @@ button {
   cursor: pointer;
   background: transparent;
   border: 0;
+}
+
+.studio-nav {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.studio-nav button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 108px;
+  min-height: 38px;
+  padding: 0 12px;
+  color: var(--t2);
+  font-size: 13px;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+.studio-nav button:hover {
+  color: var(--t1);
+  background: var(--sunken);
+}
+.studio-nav button.active {
+  color: #fff;
+  background: var(--tint);
+  border-color: var(--p);
+}
+
+.content-view {
+  max-width: 1180px;
+  margin: 0 auto;
+}
+.view-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 6px 0 18px;
+}
+.view-heading > div > span {
+  color: var(--p-h);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+}
+.view-heading h2 {
+  margin: 5px 0 6px;
+  color: var(--t1);
+  font-size: 22px;
+  letter-spacing: 0;
+}
+.view-heading p {
+  margin: 0;
+  color: var(--t3);
+  font-size: 12px;
+}
+.primary-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 12px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  background: var(--grad);
+  border: 1px solid var(--p);
+  border-radius: 6px;
+}
+.task-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+  margin-bottom: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.task-toolbar :deep(.el-input) {
+  width: min(340px, 100%);
+}
+.task-toolbar :deep(.el-input__wrapper) {
+  background: var(--sunken);
+  box-shadow: 0 0 0 1px var(--line2) inset;
+}
+.task-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.task-filters button {
+  min-height: 32px;
+  padding: 0 10px;
+  color: var(--t2);
+  font-size: 11px;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--line2);
+  border-radius: 5px;
+}
+.task-filters button.active {
+  color: #fff;
+  background: var(--tint);
+  border-color: var(--p);
+}
+.task-list {
+  display: grid;
+  gap: 10px;
+}
+.task-card {
+  display: grid;
+  grid-template-columns: 116px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 15px;
+  padding: 11px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.task-cover {
+  position: relative;
+  display: grid;
+  min-height: 70px;
+  place-items: center;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.8);
+  background: linear-gradient(135deg, #20103c, #6d28d9);
+  border-radius: 6px;
+}
+.task-cover.done {
+  background: linear-gradient(135deg, #083344, #0e7490);
+}
+.task-cover.queued {
+  background: linear-gradient(135deg, #442006, #b45309);
+}
+.task-cover .el-icon {
+  font-size: 24px;
+}
+.task-cover span {
+  position: absolute;
+  right: 6px;
+  bottom: 5px;
+  padding: 3px 5px;
+  color: #e5e7eb;
+  font-size: 9px;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 3px;
+}
+.task-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.task-title-row b {
+  overflow: hidden;
+  color: var(--t1);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-main p,
+.task-main small {
+  display: block;
+  margin: 5px 0 0;
+  color: var(--t3);
+  font-size: 11px;
+}
+.task-main small {
+  font-size: 10px;
+}
+.task-status {
+  flex: 0 0 auto;
+  padding: 3px 6px;
+  color: var(--t3);
+  font-size: 10px;
+  background: var(--sunken);
+  border-radius: 3px;
+}
+.task-status.running {
+  color: #ddd6fe;
+  background: var(--tint);
+}
+.task-status.queued {
+  color: #fef3c7;
+  background: rgba(245, 158, 11, 0.15);
+}
+.task-status.done {
+  color: #bbf7d0;
+  background: rgba(52, 211, 153, 0.12);
+}
+.task-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.task-actions button,
+.asset-card > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  color: var(--t2);
+  cursor: pointer;
+  background: var(--sunken);
+  border: 1px solid var(--line2);
+  border-radius: 5px;
+}
+.task-actions .recreate {
+  gap: 5px;
+  padding: 0 9px;
+  color: #ede9fe;
+  font-size: 11px;
+  background: var(--tint);
+  border-color: rgba(167, 139, 250, 0.28);
+}
+.asset-upload input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+.asset-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.asset-card {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.asset-preview {
+  display: grid;
+  height: 62px;
+  place-items: center;
+  align-content: center;
+  gap: 4px;
+  color: #ddd6fe;
+  background: linear-gradient(135deg, #20103c, #6d28d9);
+  border-radius: 6px;
+}
+.asset-preview.video {
+  color: #a5f3fc;
+  background: linear-gradient(135deg, #083344, #0e7490);
+}
+.asset-preview.audio {
+  color: #fef3c7;
+  background: linear-gradient(135deg, #442006, #b45309);
+}
+.asset-preview .el-icon {
+  font-size: 20px;
+}
+.asset-preview span {
+  font-size: 9px;
+}
+.asset-info {
+  min-width: 0;
+}
+.asset-info b,
+.asset-info small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.asset-info b {
+  color: var(--t1);
+  font-size: 12px;
+}
+.asset-info small {
+  margin-top: 5px;
+  color: var(--t3);
+  font-size: 10px;
+}
+.asset-card > button:hover {
+  color: #fecaca;
+  border-color: rgba(248, 113, 113, 0.4);
+}
+.empty-state {
+  display: grid;
+  min-height: 230px;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  color: var(--t3);
+  background: var(--surface);
+  border: 1px dashed var(--line2);
+  border-radius: 8px;
+}
+.empty-state .el-icon {
+  color: var(--p-h);
+  font-size: 30px;
+}
+.empty-state b {
+  color: var(--t2);
+  font-size: 13px;
+}
+.empty-state span {
+  font-size: 11px;
 }
 
 .studio-heading {
@@ -1254,6 +1818,9 @@ button {
   .studio {
     padding: 16px;
   }
+  .asset-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .capability-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1265,6 +1832,39 @@ button {
   }
 }
 @media (max-width: 520px) {
+  .studio-nav {
+    gap: 5px;
+    overflow-x: auto;
+  }
+  .studio-nav button {
+    min-width: auto;
+    padding: 0 9px;
+    white-space: nowrap;
+  }
+  .view-heading,
+  .task-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .primary-action {
+    width: 100%;
+  }
+  .task-toolbar :deep(.el-input) {
+    width: 100%;
+  }
+  .task-card {
+    grid-template-columns: 74px minmax(0, 1fr);
+    gap: 10px;
+  }
+  .task-cover {
+    min-height: 64px;
+  }
+  .task-actions {
+    grid-column: 2;
+  }
+  .asset-grid {
+    grid-template-columns: 1fr;
+  }
   .studio-heading {
     align-items: flex-start;
     flex-direction: column;
