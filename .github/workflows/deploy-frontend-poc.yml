@@ -42,96 +42,10 @@ jobs:
             exit 1
           fi
 
-      - name: Check deployment prerequisites
-        run: |
-          set -euo pipefail
-          test -r /opt/ai-video-poc/.env
-          docker version --format '{{.Server.Version}}'
-          docker inspect ai-video-poc-backend-1 --format '{{.State.Health.Status}}' | grep -qx healthy
-          docker inspect ruoyi-web --format '{{.HostConfig.NetworkMode}}' | grep -qx host
-          docker volume inspect ai-video-poc-mysql-data ai-video-poc-redis-data >/dev/null
-
-      - name: Sign in to registry
-        run: |
-          set -euo pipefail
-          cd /opt/ai-video-poc
-          set -a
-          . ./.env
-          set +a
-          test -n "${GHCR_USERNAME:-}"
-          test -n "${GHCR_TOKEN:-}"
-          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin
-
-      - name: Pull immutable image
-        env:
-          IMAGE: ${{ inputs.image }}
-        run: docker pull "$IMAGE"
-
-      - name: Start and verify candidate frontend
+      - name: Deploy and verify frontend through audited entrypoint
         env:
           IMAGE: ${{ inputs.image }}
           GIT_SHA: ${{ inputs.git_sha }}
         run: |
           set -euo pipefail
-          candidate="ruoyi-web-candidate-${GITHUB_RUN_ID}"
-          docker run -d \
-            --name "$candidate" \
-            --restart no \
-            --network host \
-            --env LISTEN_PORT=18083 \
-            --env BACKEND_ORIGIN=http://127.0.0.1:18082 \
-            "$IMAGE"
-          ready=false
-          for attempt in $(seq 1 18); do
-            if docker inspect --format '{{.State.Health.Status}}' "$candidate" 2>/dev/null | grep -qx healthy && \
-              curl --fail --silent --show-error http://127.0.0.1:18083/version.json | grep -F '"gitSha":"'"$GIT_SHA"'"'; then
-              ready=true
-              break
-            fi
-            sleep 5
-          done
-          if [ "$ready" = true ]; then
-            exit 0
-          fi
-          docker logs --tail=100 "$candidate"
-          docker rm -f "$candidate" >/dev/null 2>&1 || true
-          exit 1
-
-      - name: Switch frontend and verify rollback safety
-        env:
-          IMAGE: ${{ inputs.image }}
-          GIT_SHA: ${{ inputs.git_sha }}
-        run: |
-          set -euo pipefail
-          candidate="ruoyi-web-candidate-${GITHUB_RUN_ID}"
-          previous="ruoyi-web-previous-${GITHUB_RUN_ID}"
-          docker rename ruoyi-web "$previous"
-          docker stop "$previous"
-          rollback() {
-            docker rm -f ruoyi-web >/dev/null 2>&1 || true
-            docker start "$previous" >/dev/null 2>&1 || true
-            docker rename "$previous" ruoyi-web >/dev/null 2>&1 || true
-          }
-          trap rollback ERR
-          docker rm -f "$candidate"
-          docker run -d \
-            --name ruoyi-web \
-            --restart unless-stopped \
-            --network host \
-            --env LISTEN_PORT=80 \
-            --env BACKEND_ORIGIN=http://127.0.0.1:18082 \
-            "$IMAGE"
-          for attempt in $(seq 1 18); do
-            health=$(docker inspect --format '{{.State.Health.Status}}' ruoyi-web 2>/dev/null || true)
-            if [ "$health" = healthy ] && \
-              curl --fail --silent --show-error http://127.0.0.1/version.json | grep -F '"gitSha":"'"$GIT_SHA"'"' && \
-              curl --fail --silent --show-error --retry 5 --retry-delay 2 https://pm.hottter.cn/version.json | grep -F '"gitSha":"'"$GIT_SHA"'"'; then
-              docker image inspect "$IMAGE" --format '{{index .RepoDigests 0}}'
-              printf 'Previous frontend retained as %s for manual rollback.\n' "$previous" >> "$GITHUB_STEP_SUMMARY"
-              trap - ERR
-              exit 0
-            fi
-            sleep 5
-          done
-          docker logs --tail=100 ruoyi-web
-          exit 1
+          sudo /usr/local/sbin/hotter-release frontend "$IMAGE" "$GIT_SHA"

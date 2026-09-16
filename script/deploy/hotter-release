@@ -1,0 +1,158 @@
+#!/usr/bin/env bash
+# Root-owned production deployment entrypoint. Invoked only through sudoers.
+set -euo pipefail
+
+readonly RUNTIME_DIR=/opt/ai-video-poc
+readonly COMPOSE_FILE="$RUNTIME_DIR/compose.yaml"
+readonly ENV_FILE="$RUNTIME_DIR/.env"
+readonly BACKEND_IMAGE_RE='^ghcr\.io/ningchirsty/hotter-ai-platform-backend@sha256:[0-9a-f]{64}$'
+readonly FRONTEND_IMAGE_RE='^ghcr\.io/ningchirsty/hotter-ai-platform-frontend@sha256:[0-9a-f]{64}$'
+readonly SHA_RE='^[0-9a-f]{40}$'
+readonly PUBLIC_URL=https://pm.hottter.cn
+
+die() { echo "release preflight failed: $*" >&2; exit 1; }
+
+require_root_owned_config() {
+  local path=$1
+  test "$(stat -c '%u' "$path")" -eq 0 || die "$path must be owned by root"
+  if find "$path" -maxdepth 0 -perm /022 -print -quit | grep -q .; then
+    die "$path must not be writable by group or others"
+  fi
+}
+
+require_runtime() {
+  test "$(id -u)" -eq 0 || die "entrypoint must run as root"
+  test -r "$COMPOSE_FILE" || die "missing compose file"
+  test -s "$ENV_FILE" || die "missing deployment environment file"
+  require_root_owned_config "$COMPOSE_FILE"
+  require_root_owned_config "$ENV_FILE"
+  docker version --format '{{.Server.Version}}' >/dev/null || die "Docker is unavailable"
+  docker volume inspect ai-video-poc-mysql-data ai-video-poc-redis-data >/dev/null || die "persistent data volumes missing"
+}
+
+pull_image() {
+  local image=$1
+  set -a
+  # shellcheck disable=SC1090
+  . "$ENV_FILE"
+  set +a
+  test -n "${GHCR_USERNAME:-}" || die "GHCR username unavailable"
+  test -n "${GHCR_TOKEN:-}" || die "GHCR token unavailable"
+  printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin >/dev/null
+  if ! docker pull "$image"; then
+    docker logout ghcr.io >/dev/null 2>&1 || true
+    die "failed to pull image"
+  fi
+  docker logout ghcr.io >/dev/null 2>&1 || true
+  unset GHCR_TOKEN
+}
+
+wait_for_version() {
+  local url=$1 sha=$2 attempts=${3:-18}
+  for _ in $(seq 1 "$attempts"); do
+    if curl --fail --silent --show-error "$url/version.json" | grep -F '"gitSha":"'"$sha"'"' >/dev/null; then
+      return 0
+    fi
+    sleep 5
+  done
+  return 1
+}
+
+wait_for_backend() {
+  local image=$1 attempts=${2:-24}
+  for _ in $(seq 1 "$attempts"); do
+    if test "$(docker inspect ai-video-poc-backend-1 --format '{{.Config.Image}}' 2>/dev/null)" = "$image" && \
+      docker inspect ai-video-poc-backend-1 --format '{{.State.Health.Status}}' 2>/dev/null | grep -qx healthy; then
+      return 0
+    fi
+    sleep 5
+  done
+  return 1
+}
+
+restore_backend() {
+  local previous_image=$1
+  BACKEND_IMAGE="$previous_image" docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --no-deps backend
+}
+
+deploy_backend() {
+  local image=$1
+  [[ "$image" =~ $BACKEND_IMAGE_RE ]] || die "invalid backend image reference"
+  require_runtime
+  local previous_image
+  previous_image=$(docker inspect ai-video-poc-backend-1 --format '{{.Config.Image}}') || die "existing backend container missing"
+  pull_image "$image"
+  if ! BACKEND_IMAGE="$image" docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --no-deps backend; then
+    restore_backend "$previous_image" || die "backend switch and restore both failed"
+    die "backend switch failed; previous image restored"
+  fi
+  if wait_for_backend "$image"; then
+    docker image inspect "$image" --format '{{index .RepoDigests 0}}'
+    return 0
+  fi
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs --tail=100 backend >&2
+  restore_backend "$previous_image" || die "backend health check and restore both failed"
+  wait_for_backend "$previous_image" || die "backend health check failed and previous image did not recover"
+  die "backend did not become healthy; previous image is healthy again"
+}
+
+deploy_frontend() {
+  local image=$1 sha=$2
+  [[ "$image" =~ $FRONTEND_IMAGE_RE ]] || die "invalid frontend image reference"
+  [[ "$sha" =~ $SHA_RE ]] || die "invalid Git SHA"
+  require_runtime
+  docker inspect ai-video-poc-backend-1 --format '{{.State.Health.Status}}' | grep -qx healthy || die "backend is not healthy"
+  docker inspect ruoyi-web --format '{{.HostConfig.NetworkMode}}' | grep -qx host || die "ruoyi-web is not using host networking"
+  pull_image "$image"
+
+  local run_id candidate previous
+  run_id="${GITHUB_RUN_ID:-$(date +%Y%m%d%H%M%S)}-${GITHUB_RUN_ATTEMPT:-1}"
+  candidate="ruoyi-web-candidate-$run_id"
+  previous="ruoyi-web-previous-$run_id"
+  docker rm -f "$candidate" >/dev/null 2>&1 || true
+  docker run -d --name "$candidate" --restart no --network host \
+    --env LISTEN_PORT=18083 --env BACKEND_ORIGIN=http://127.0.0.1:18082 "$image" >/dev/null
+  if ! wait_for_version http://127.0.0.1:18083 "$sha"; then
+    docker logs --tail=100 "$candidate" >&2 || true
+    docker rm -f "$candidate" >/dev/null 2>&1 || true
+    die "candidate did not expose the expected version"
+  fi
+
+  rollback_frontend() {
+    docker rm -f ruoyi-web >/dev/null 2>&1 || true
+    docker rename "$previous" ruoyi-web >/dev/null 2>&1 || return 1
+    docker start ruoyi-web >/dev/null 2>&1 || return 1
+  }
+  if ! docker rename ruoyi-web "$previous"; then
+    docker rm -f "$candidate" >/dev/null 2>&1 || true
+    die "could not preserve current frontend"
+  fi
+  if ! docker stop "$previous" >/dev/null; then
+    docker rename "$previous" ruoyi-web >/dev/null 2>&1 || true
+    docker rm -f "$candidate" >/dev/null 2>&1 || true
+    die "could not stop current frontend"
+  fi
+  docker rm -f "$candidate" >/dev/null
+  if ! docker run -d --name ruoyi-web --restart unless-stopped --network host \
+    --env LISTEN_PORT=80 --env BACKEND_ORIGIN=http://127.0.0.1:18082 "$image" >/dev/null; then
+    rollback_frontend || die "frontend switch and restore both failed"
+    die "frontend switch failed; previous frontend restored"
+  fi
+  if ! wait_for_version http://127.0.0.1 "$sha"; then
+    docker logs --tail=100 ruoyi-web >&2 || true
+    rollback_frontend || die "local frontend check and restore both failed"
+    die "local frontend did not expose the expected version; previous frontend restored"
+  fi
+  if ! wait_for_version "$PUBLIC_URL" "$sha"; then
+    rollback_frontend || die "public frontend check and restore both failed"
+    die "public frontend did not expose the expected version; previous frontend restored"
+  fi
+  docker image inspect "$image" --format '{{index .RepoDigests 0}}'
+  echo "previous frontend retained as $previous for manual rollback"
+}
+
+case "${1:-}" in
+  backend) test "$#" -eq 2 || die "usage: backend <image-digest>"; deploy_backend "$2" ;;
+  frontend) test "$#" -eq 3 || die "usage: frontend <image-digest> <git-sha>"; deploy_frontend "$2" "$3" ;;
+  *) die "operation must be backend or frontend" ;;
+esac
