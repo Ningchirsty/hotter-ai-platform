@@ -1,5 +1,7 @@
 # ZCode 操作交接文档（供 Codex 预览审查）
 
+> 当前路径说明（2026-09-16）：视频页面已迁至 `frontend/src/views/video/`，工作流契约已迁至 `script/video/workflows/`，菜单组件为 `video/index`。下文是 2026-09-15 的历史交接记录，其旧路径和未推送状态仅描述当时的提交。
+
 > 更新时间：2026-09-15 · 操作者：ZCode
 > 状态：**本地提交（未推送 GitHub）**——分支 feature/frontend-plus-ui-v6。
 > 历史脉络：8c6cd2593（我的任务页）→ Codex 4 个提交（studio 工作台替换 video-tasks）→ **本次：工作流契约绑定**。

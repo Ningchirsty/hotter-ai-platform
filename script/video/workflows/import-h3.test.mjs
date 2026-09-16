@@ -18,6 +18,7 @@ for (const [capabilityCode, code, images] of cases) {
   test(`${capabilityCode} contract and sanitized H3 graph`, async () => {
     const capability = contract.capabilities.find(item => item.capabilityCode === capabilityCode);
     const binding = capability.workflows.find(item => item.workflowCode === code);
+    assert.equal(binding.apiJsonFile, `video/workflows/api/${code}-v0.1.0.json`);
     const content = await readFile(path.join(directory, 'api', `${code}-v0.1.0.json`), 'utf8');
     assert.equal(createHash('sha256').update(content).digest('hex'), binding.checksum);
     assert.equal(binding.status, 'DRAFT');

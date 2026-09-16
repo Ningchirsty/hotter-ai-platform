@@ -211,7 +211,7 @@
         </p>
         <div class="submit-row">
           <button
-            v-hasPermi="['ai:studio:submit']"
+            v-hasPermi="['video:creation:submit']"
             type="button"
             class="submit-button"
             disabled

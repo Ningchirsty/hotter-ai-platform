@@ -4,7 +4,7 @@
  * 边界规则（AGENTS 章程硬约束）：
  *  - 前端只持有：能力编码、workflowCode、模型编码、字段 Schema 白名单、计费展示。
  *  - 节点 ID、API Format JSON、模型路径、大服务器地址只存在于后端，
- *    完整契约见 script/workflows/video-workflow-contracts.json（后端工件）。
+ *    完整契约见 script/video/workflows/video-workflow-contracts.json（后端工件）。
  *  - 提交任务按此结构组装 payload：{ capabilityCode, workflowCode, modelCode, fields }，
  *    后端收到后深拷贝对应工作流模板，仅覆写 mapping_json 白名单内的节点输入键。
  *

@@ -9,7 +9,7 @@
       "任务提交时后端深拷贝模板，仅覆写 mapping 白名单内的节点输入键",
       "Three MiniMax H3 API templates have verified node IDs and checksums; runtime dependencies and task API remain untested (DRAFT)",
       "同一 workflowCode 的固定后台参数变化必须递增 version，禁止原地修改 PUBLISHED 版本",
-      "前端仅可见 workflowCode/模型编码/字段白名单/计费展示（见 frontend/src/views/ai/studio/modules.ts）"
+      "前端仅可见 workflowCode/模型编码/字段白名单/计费展示（见 frontend/src/views/video/modules.ts）"
     ]
   },
   "capabilities": [
@@ -60,7 +60,7 @@
           "modelCode": "H3",
           "version": "v0.1.0-draft",
           "status": "DRAFT",
-          "apiJsonFile": "workflows/api/wf-i2v-h3-v0.1.0.json",
+          "apiJsonFile": "video/workflows/api/wf-i2v-h3-v0.1.0.json",
           "checksum": "fd6ce1f4448c8624caf937573a7ce5eade9398f78c9415083f837067773d2284",
           "billing": {
             "type": "credits",
@@ -127,7 +127,7 @@
           "modelCode": "H3P",
           "version": "v0.1.0-draft",
           "status": "DRAFT",
-          "apiJsonFile": "workflows/api/wf-i2v-h3p-v0.1.0.json",
+          "apiJsonFile": "video/workflows/api/wf-i2v-h3p-v0.1.0.json",
           "checksum": "TBD",
           "billing": {
             "type": "credits",
@@ -185,7 +185,7 @@
           "modelCode": "WAN",
           "version": "v0.1.0-draft",
           "status": "DRAFT",
-          "apiJsonFile": "workflows/api/wf-i2v-wan-v0.1.0.json",
+          "apiJsonFile": "video/workflows/api/wf-i2v-wan-v0.1.0.json",
           "checksum": "TBD",
           "billing": {
             "type": "eta",
@@ -243,7 +243,7 @@
           "modelCode": "HUN",
           "version": "v0.1.0-draft",
           "status": "DRAFT",
-          "apiJsonFile": "workflows/api/wf-i2v-hun-v0.1.0.json",
+          "apiJsonFile": "video/workflows/api/wf-i2v-hun-v0.1.0.json",
           "checksum": "TBD",
           "billing": {
             "type": "eta",
@@ -301,7 +301,7 @@
           "modelCode": "LTX",
           "version": "v0.1.0-draft",
           "status": "DRAFT",
-          "apiJsonFile": "workflows/api/wf-i2v-ltx-v0.1.0.json",
+          "apiJsonFile": "video/workflows/api/wf-i2v-ltx-v0.1.0.json",
           "checksum": "TBD",
           "billing": {
             "type": "eta",
@@ -359,7 +359,7 @@
           "modelCode": "COG",
           "version": "v0.1.0-draft",
           "status": "DRAFT",
-          "apiJsonFile": "workflows/api/wf-i2v-cog-v0.1.0.json",
+          "apiJsonFile": "video/workflows/api/wf-i2v-cog-v0.1.0.json",
           "checksum": "TBD",
           "billing": {
             "type": "eta",
@@ -471,7 +471,7 @@
           "modelCode": "H3",
           "version": "v0.1.0-draft",
           "status": "DRAFT",
-          "apiJsonFile": "workflows/api/wf-fl2v-h3-v0.1.0.json",
+          "apiJsonFile": "video/workflows/api/wf-fl2v-h3-v0.1.0.json",
           "checksum": "ec9c817d628a02d8e7599c4f5defe809416a867fb444f5c70110dfce85c502fb",
           "billing": {
             "type": "credits",
@@ -576,7 +576,7 @@
           "modelCode": "H3",
           "version": "v0.1.0-draft",
           "status": "DRAFT",
-          "apiJsonFile": "workflows/api/wf-t2v-h3-v0.1.0.json",
+          "apiJsonFile": "video/workflows/api/wf-t2v-h3-v0.1.0.json",
           "checksum": "620e53c9cf24eeed46eb2023c121d0de7650793d41f04e54d065ea82e78ecf11",
           "billing": {
             "type": "credits",
@@ -637,7 +637,7 @@
           "modelCode": "H3P",
           "version": "v0.1.0-draft",
           "status": "DRAFT",
-          "apiJsonFile": "workflows/api/wf-t2v-h3p-v0.1.0.json",
+          "apiJsonFile": "video/workflows/api/wf-t2v-h3p-v0.1.0.json",
           "checksum": "TBD",
           "billing": {
             "type": "credits",
@@ -690,7 +690,7 @@
           "modelCode": "WAN",
           "version": "v0.1.0-draft",
           "status": "DRAFT",
-          "apiJsonFile": "workflows/api/wf-t2v-wan-v0.1.0.json",
+          "apiJsonFile": "video/workflows/api/wf-t2v-wan-v0.1.0.json",
           "checksum": "TBD",
           "billing": {
             "type": "eta",
@@ -743,7 +743,7 @@
           "modelCode": "HUN",
           "version": "v0.1.0-draft",
           "status": "DRAFT",
-          "apiJsonFile": "workflows/api/wf-t2v-hun-v0.1.0.json",
+          "apiJsonFile": "video/workflows/api/wf-t2v-hun-v0.1.0.json",
           "checksum": "TBD",
           "billing": {
             "type": "eta",
@@ -796,7 +796,7 @@
           "modelCode": "LTX",
           "version": "v0.1.0-draft",
           "status": "DRAFT",
-          "apiJsonFile": "workflows/api/wf-t2v-ltx-v0.1.0.json",
+          "apiJsonFile": "video/workflows/api/wf-t2v-ltx-v0.1.0.json",
           "checksum": "TBD",
           "billing": {
             "type": "eta",
@@ -849,7 +849,7 @@
           "modelCode": "COG",
           "version": "v0.1.0-draft",
           "status": "DRAFT",
-          "apiJsonFile": "workflows/api/wf-t2v-cog-v0.1.0.json",
+          "apiJsonFile": "video/workflows/api/wf-t2v-cog-v0.1.0.json",
           "checksum": "TBD",
           "billing": {
             "type": "eta",
@@ -938,7 +938,7 @@
           "modelCode": "WAN",
           "version": "v0.1.0-draft",
           "status": "DRAFT",
-          "apiJsonFile": "workflows/api/wf-mframe-wan-v0.1.0.json",
+          "apiJsonFile": "video/workflows/api/wf-mframe-wan-v0.1.0.json",
           "checksum": "TBD",
           "billing": {
             "type": "eta",
@@ -992,7 +992,7 @@
           "modelCode": "HUN",
           "version": "v0.1.0-draft",
           "status": "DRAFT",
-          "apiJsonFile": "workflows/api/wf-mframe-hun-v0.1.0.json",
+          "apiJsonFile": "video/workflows/api/wf-mframe-hun-v0.1.0.json",
           "checksum": "TBD",
           "billing": {
             "type": "eta",
@@ -1093,7 +1093,7 @@
           "modelCode": "WAN",
           "version": "v0.1.0-draft",
           "status": "DRAFT",
-          "apiJsonFile": "workflows/api/wf-cammove-wan-v0.1.0.json",
+          "apiJsonFile": "video/workflows/api/wf-cammove-wan-v0.1.0.json",
           "checksum": "TBD",
           "billing": {
             "type": "eta",
@@ -1152,7 +1152,7 @@
           "modelCode": "H3P",
           "version": "v0.1.0-draft",
           "status": "DRAFT",
-          "apiJsonFile": "workflows/api/wf-cammove-h3p-v0.1.0.json",
+          "apiJsonFile": "video/workflows/api/wf-cammove-h3p-v0.1.0.json",
           "checksum": "TBD",
           "billing": {
             "type": "credits",
@@ -1211,7 +1211,7 @@
           "modelCode": "LTX",
           "version": "v0.1.0-draft",
           "status": "DRAFT",
-          "apiJsonFile": "workflows/api/wf-cammove-ltx-v0.1.0.json",
+          "apiJsonFile": "video/workflows/api/wf-cammove-ltx-v0.1.0.json",
           "checksum": "TBD",
           "billing": {
             "type": "eta",
@@ -1300,7 +1300,7 @@
           "modelCode": "H3",
           "version": "v0.1.0-draft",
           "status": "DRAFT",
-          "apiJsonFile": "workflows/api/wf-vext-h3-v0.1.0.json",
+          "apiJsonFile": "video/workflows/api/wf-vext-h3-v0.1.0.json",
           "checksum": "TBD",
           "billing": {
             "type": "credits",
@@ -1354,7 +1354,7 @@
           "modelCode": "H3P",
           "version": "v0.1.0-draft",
           "status": "DRAFT",
-          "apiJsonFile": "workflows/api/wf-vext-h3p-v0.1.0.json",
+          "apiJsonFile": "video/workflows/api/wf-vext-h3p-v0.1.0.json",
           "checksum": "TBD",
           "billing": {
             "type": "credits",
@@ -1408,7 +1408,7 @@
           "modelCode": "WAN",
           "version": "v0.1.0-draft",
           "status": "DRAFT",
-          "apiJsonFile": "workflows/api/wf-vext-wan-v0.1.0.json",
+          "apiJsonFile": "video/workflows/api/wf-vext-wan-v0.1.0.json",
           "checksum": "TBD",
           "billing": {
             "type": "eta",
@@ -1462,7 +1462,7 @@
           "modelCode": "LTX",
           "version": "v0.1.0-draft",
           "status": "DRAFT",
-          "apiJsonFile": "workflows/api/wf-vext-ltx-v0.1.0.json",
+          "apiJsonFile": "video/workflows/api/wf-vext-ltx-v0.1.0.json",
           "checksum": "TBD",
           "billing": {
             "type": "eta",
@@ -1549,7 +1549,7 @@
           "modelCode": null,
           "version": "v0.1.0-draft",
           "status": "DRAFT",
-          "apiJsonFile": "workflows/api/wf-vhd-rife-upscale-v0.1.0.json",
+          "apiJsonFile": "video/workflows/api/wf-vhd-rife-upscale-v0.1.0.json",
           "checksum": "TBD",
           "billing": {
             "type": "eta",
@@ -1628,7 +1628,7 @@
           "modelCode": null,
           "version": "v0.1.0-draft",
           "status": "DRAFT",
-          "apiJsonFile": "workflows/api/wf-lip-latentsync-v0.1.0.json",
+          "apiJsonFile": "video/workflows/api/wf-lip-latentsync-v0.1.0.json",
           "checksum": "TBD",
           "billing": {
             "type": "eta",

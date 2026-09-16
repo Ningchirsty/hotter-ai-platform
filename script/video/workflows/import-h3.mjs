@@ -132,7 +132,7 @@ async function importGraphs(files) {
     if (!capability) throw new Error(`Missing contract capability ${spec.capability}`);
     const binding = capability.workflows.find(item => item.workflowCode === spec.code);
     if (!binding) throw new Error(`Missing contract workflow ${spec.code}`);
-    binding.apiJsonFile = `workflows/api/${spec.code}-v0.1.0.json`;
+    binding.apiJsonFile = `video/workflows/api/${spec.code}-v0.1.0.json`;
     binding.checksum = createHash('sha256').update(content).digest('hex');
     binding.mapping = mappingFor(spec);
     binding.fixedFieldValidation = { tier: '高清 · 1080P', dur: '5 秒' };

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>视频创作 · 本地预览</title>
+    <style>
+      *, *::before, *::after { box-sizing: border-box; }
+      html, body, #app { margin: 0; min-height: 100%; }
+      body { background: #0a0c10; font-family: Arial, "Microsoft YaHei", sans-serif; }
+      .preview-shell { min-height: 100vh; display: grid; grid-template-columns: 196px minmax(0, 1fr); }
+      .preview-sidebar { background: #11151c; border-right: 1px solid #282d37; color: #c4cad5; padding: 22px 12px; }
+      .preview-brand { color: #f2f4f8; font-size: 17px; font-weight: 700; padding: 0 12px 30px; }
+      .preview-section { color: #818b9b; font-size: 12px; padding: 0 12px 12px; }
+      .preview-item { background: #263449; border-radius: 6px; color: #e8f2ff; font-size: 14px; padding: 11px 12px; }
+      .preview-main { min-width: 0; }
+      .preview-header { align-items: center; background: #151922; border-bottom: 1px solid #282d37; color: #f2f4f8; display: flex; height: 52px; padding: 0 24px; }
+      @media (max-width: 760px) {
+        .preview-shell { display: block; }
+        .preview-sidebar { display: none; }
+        .preview-header { padding: 0 16px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp, h } from 'vue';
+      import ElementPlus from 'element-plus';
+      import 'element-plus/dist/index.css';
+      import Studio from './src/views/video/index.vue';
+
+      const app = createApp({
+        render: () => h('div', { class: 'preview-shell' }, [
+          h('aside', { class: 'preview-sidebar' }, [
+            h('div', { class: 'preview-brand' }, '集团AI创作平台'),
+            h('div', { class: 'preview-section' }, 'AI创作平台'),
+            h('div', { class: 'preview-item' }, '视频创作')
+          ]),
+          h('main', { class: 'preview-main' }, [
+            h('header', { class: 'preview-header' }, '视频创作'),
+            h(Studio)
+          ])
+        ])
+      });
+      app.use(ElementPlus);
+      app.directive('hasPermi', {});
+      app.mount('#app');
+    </script>
+  </body>
+</html>
