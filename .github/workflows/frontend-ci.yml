@@ -61,17 +61,20 @@ jobs:
         run: |
           docker run -d --name frontend-smoke -e LISTEN_PORT=8080 "$IMAGE"
           trap 'docker rm -f frontend-smoke >/dev/null 2>&1 || true' EXIT
+          ready=false
           for attempt in $(seq 1 12); do
-            if docker exec frontend-smoke wget --spider --quiet http://127.0.0.1:8080/version.json; then exit 0; fi
+            if docker exec frontend-smoke wget --spider --quiet http://127.0.0.1:8080/version.json; then
+              ready=true
+              break
+            fi
             sleep 2
           done
-          docker logs frontend-smoke
-          exit 1
-
-      - name: Verify build version probe
-        run: |
+          if [ "$ready" != true ]; then
+            docker logs frontend-smoke
+            exit 1
+          fi
           docker exec frontend-smoke wget -qO- http://127.0.0.1:8080/version.json | \
-            grep -F '"gitSha":"${GITHUB_SHA}"'
+            grep -F "\"gitSha\":\"${GITHUB_SHA}\""
 
       - name: Export frontend image with checksum
         run: |
