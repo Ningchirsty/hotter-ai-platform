@@ -179,7 +179,7 @@
               {{ fieldLabels[field] }}
               <em>*</em>
             </label>
-            <div class="choice-grid">
+            <div :class="['choice-grid', { 'tier-choices': field === 'tier' }]">
               <button
                 v-for="item in optionsFor(field)"
                 :key="item"
@@ -1251,7 +1251,7 @@ button {
 
 .capability-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 .capability {
@@ -1466,6 +1466,9 @@ button {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+}
+.choice-grid.tier-choices {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 .choice-grid button {
   min-height: 42px;
@@ -1801,7 +1804,7 @@ button {
     box-shadow: 0 0 0 4px rgba(167, 139, 250, 0.12);
   }
 }
-@media (max-width: 1240px) {
+@media (max-width: 1360px) {
   .workbench-grid {
     grid-template-columns: 1fr;
   }
@@ -1823,6 +1826,9 @@ button {
   }
   .capability-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .choice-grid.tier-choices {
+    grid-template-columns: 1fr;
   }
   .model-grid {
     grid-template-columns: 1fr;
