@@ -88,6 +88,28 @@ public class LocalFileAssetStorage implements AssetStorage {
         return root.relativize(normalized).toString().replace('\\', '/');
     }
 
+    /**
+     * 缩略图统一放在根目录下的 {@code thumbnails/}，与素材本体分开。
+     *
+     * <p>原因：本体目录会被运维清理脚本按「数据库里没有引用」判为无主文件，
+     * 而缩略图本来就不入库，混在一起会被误删。</p>
+     */
+    @Override
+    public Path thumbnailPath(String storageKey) {
+        if (!StringUtils.hasText(storageKey)) {
+            return null;
+        }
+        String safe = storageKey.replace('\\', '/').replaceAll("[/]+", "/");
+        if (safe.startsWith("/") || safe.contains("..")) {
+            return null;
+        }
+        Path candidate = root.resolve("thumbnails").resolve(safe + ".jpg").normalize();
+        if (!candidate.startsWith(root)) {
+            return null;
+        }
+        return candidate;
+    }
+
     private String scopedKey(String tenantId, long userId, String category, String ext) {
         String safeTenant = StringUtils.hasText(tenantId) ? tenantId.replaceAll("[^A-Za-z0-9_-]", "_") : "unknown";
         return safeTenant + "/" + userId + "/" + category + "/"

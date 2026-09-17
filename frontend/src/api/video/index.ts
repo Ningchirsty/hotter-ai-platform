@@ -137,3 +137,21 @@ export const fetchVideoAssetBlobUrl = async (assetId: number | string): Promise<
   // request 拦截器对 blob 响应原样透传，因此这里拿到的就是 Blob。
   return URL.createObjectURL(res.data as unknown as Blob);
 };
+
+/**
+ * 读取图片素材的缩略图，返回可交给 `<img>` 的 blob URL。
+ *
+ * <p>为什么不直接用原图：素材库格子只有一两百像素，而原图可能有几 MB。
+ * 经 Cloudflare 的链路实测吞吐 258 KB/s ~ 790 KB/s，一屏几张图就要好几秒。
+ * 后端用 ffmpeg 生成并缓存缩略图（最长边 480px）。</p>
+ *
+ * <p>取不到时抛错，由调用方回退到原图——缩略图只是为了快，不该成为能不能看的开关。</p>
+ */
+export const fetchVideoAssetThumbnailBlobUrl = async (assetId: number | string): Promise<string> => {
+  const res = await request({
+    url: '/video/assets/' + assetId + '/thumbnail',
+    method: 'get',
+    responseType: 'blob'
+  });
+  return URL.createObjectURL(res.data as unknown as Blob);
+};

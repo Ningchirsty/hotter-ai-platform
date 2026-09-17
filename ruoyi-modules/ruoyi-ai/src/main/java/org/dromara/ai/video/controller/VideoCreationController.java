@@ -27,6 +27,9 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.dromara.ai.video.service.ThumbnailService;
+import org.dromara.ai.video.service.VideoTaskDispatchService;
+import org.dromara.ai.video.service.VideoTaskExecutionService;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -79,8 +82,15 @@ public class VideoCreationController extends BaseController {
     private final WorkflowContractRegistry registry;
     private final H3TemplatePreparer preparer;
     private final VideoTaskRepository repository;
-    private final VideoTaskOrchestrator orchestrator;
+
+    /**
+     * 后台执行器：任务提交后立即返回，真正的生成在守护线程里跑，前端轮询拿结果。
+     * 见 {@link VideoTaskExecutionService} 里记录的 Cloudflare 超时证据。
+     */
+    private final VideoTaskExecutionService executionService;
+    private final VideoTaskDispatchService dispatchService;
     private final AssetStorage assetStorage;
+    private final ThumbnailService thumbnailService;
     private final ObjectMapper mapper;
     private final JdbcTemplate jdbc;
 
@@ -270,6 +280,34 @@ public class VideoCreationController extends BaseController {
     }
 
     /**
+     * 素材缩略图（仅图片素材）。
+     *
+     * <p>素材库格子只有一两百像素，此前直接把原图当缩略图，一张 3.2 MB 的图也得整张拉下来。
+     * 经 Cloudflare 的链路实测吞吐 258 KB/s ~ 790 KB/s，一屏几张图就要好几秒。</p>
+     *
+     * <p>取不到时按业务失败返回，前端回退到原图、再退到图标，不会让卡片空白。</p>
+     */
+    @GetMapping("/assets/{assetId}/thumbnail")
+    @SaCheckPermission("video:creation:view")
+    public ResponseEntity<byte[]> assetThumbnail(@PathVariable Long assetId) {
+        String tenantId = requireTenantId();
+        long userId = LoginHelper.getUserId();
+        VideoTaskRepository.AssetRow asset = repository.requireOwnedAsset(assetId, tenantId, userId);
+
+        byte[] thumb = thumbnailService.thumbnail(asset.storageKey(), asset.contentType());
+        if (thumb == null || thumb.length == 0) {
+            // 视频素材本就不做缩略图；其它情况是环境缺 ffmpeg 或原图不可读。
+            throw VideoTaskException.assetNotFound("该素材暂无缩略图");
+        }
+        return ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_TYPE, "image/jpeg")
+            .header(HttpHeaders.CACHE_CONTROL, "private, max-age=300")
+            .header("X-Content-Type-Options", "nosniff")
+            .contentLength(thumb.length)
+            .body(thumb);
+    }
+
+    /**
      * 解析单区间 Range 头（只支持 {@code bytes=a-b} 形态，足够浏览器视频播放使用）。
      *
      * @return {@code [start, end]}；区间不可满足时返回 null
@@ -414,7 +452,16 @@ public class VideoCreationController extends BaseController {
     }
 
     /**
-     * 执行任务（同步等待成片）。浏览器不能直连 ComfyUI，必须经由本接口。
+     * 提交任务到后台执行，立即返回。
+     *
+     * <p><b>为什么不再同步等出片。</b>一次生成要 130 秒（480P/5 秒）到 11.5 分钟（1080P/5 秒），
+     * 而前端经 Cloudflare（源站是 cloudflared tunnel）访问，Cloudflare 免费版等待源站响应的
+     * 上限在 100 秒量级。实测：任务 2100551562622185473 后端跑满 130,294 毫秒正常结束并写入
+     * SUCCEEDED，前端 nginx 却记 499——连接早已被断开，浏览器什么都没拿到。
+     * 现在改为：认领任务后排进后台执行器，前端轮询 {@code GET /video/tasks/{taskId}} 拿结果。</p>
+     *
+     * <p>认领与入队的细节（防重复提交、队列满回滚）在
+     * {@link VideoTaskDispatchService}，那里有三个明确的不变量和对应单测。</p>
      */
     @PostMapping("/tasks/{taskId}/execute")
     @SaCheckPermission("video:creation:submit")
@@ -423,56 +470,52 @@ public class VideoCreationController extends BaseController {
         long userId = LoginHelper.getUserId();
         Map<String, Object> task = repository.requireOwnedTask(taskId, tenantId, userId);
         String status = String.valueOf(task.get("status"));
-        if (!VideoTaskStatus.QUEUED.name().equals(status)) {
+        if (!VideoTaskStatus.QUEUED.name().equals(status)
+            && !VideoTaskStatus.RUNNING.name().equals(status)) {
             throw VideoTaskException.invalidContract("任务当前状态不可执行：" + status);
         }
-        VideoCapability capability = VideoCapability.parse(String.valueOf(task.get("capability_code")));
-        String inputJson = String.valueOf(task.get("input_json"));
 
-        VideoTaskOrchestrator.ExecutionResult result;
-        try {
-            result = orchestrator.execute(new VideoTaskOrchestrator.TaskContext(
-                taskId, tenantId, userId, LoginHelper.getDeptId(),
-                capability == null ? null : capability.name(),
-                String.valueOf(task.get("workflow_code")),
-                task.get("prompt") == null ? null : String.valueOf(task.get("prompt")),
-                String.valueOf(task.get("tier")),
-                durationLabelOf(task.get("duration_seconds")),
-                assetIdFrom(inputJson, "img"),
-                assetIdFrom(inputJson, "first"),
-                assetIdFrom(inputJson, "last"),
-                false,
-                () -> System.nanoTime(),
-                new AtomicInteger(0)));
-        } catch (VideoTaskException e) {
-            // 失败必须落库，否则任务会一直停在 QUEUED/RUNNING，用户在「我的任务」里
-            // 既看不到失败原因，也等不到结果。
-            // 注意：这里不能用 transition(QUEUED -> FAILED)——任务提交后已经是 RUNNING，
-            // 那样 WHERE 不匹配、影响 0 行，失败会被静默吞掉（曾导致 720P 任务永久卡住）。
-            // 编排器内部失败路径已自行落库，这里是兜底。
-            int moved = repository.markFailedIfActive(taskId, e.getErrorCode(), e.getMessage());
-            if (moved > 0) {
-                log.warn("任务 {} 执行失败，已置为 FAILED：[{}] {}", taskId, e.getErrorCode(), e.getMessage());
-            }
-            // 状态已落库，因此返回成功码并带上真实状态与原因；
-            // 若返回非 200，前端 axios 拦截器会抛出通用错误，反而看不到具体原因。
-            Map<String, Object> failed = new HashMap<>();
-            failed.put("taskId", taskId);
-            failed.put("status", VideoTaskStatus.FAILED.name());
-            failed.put("errorCode", e.getErrorCode());
-            failed.put("errorMessage", e.getMessage());
-            return R.ok(failed);
+        VideoTaskDispatchService.Outcome outcome = dispatchService.dispatch(taskId,
+            () -> buildContext(task, tenantId, userId));
+        if (outcome == VideoTaskDispatchService.Outcome.QUEUE_FULL) {
+            throw VideoTaskException.invalidContract("执行队列已满，请稍后重试");
         }
+
         Map<String, Object> body = new HashMap<>();
         body.put("taskId", taskId);
-        body.put("status", VideoTaskStatus.SUCCEEDED.name());
-        body.put("outputAssetId", result.outputAssetId());
-        body.put("truncated", result.truncated());
-        body.put("width", result.output().width());
-        body.put("height", result.output().height());
-        body.put("fps", result.output().fps());
-        body.put("durationMillis", result.output().durationMillis());
+        if (outcome == VideoTaskDispatchService.Outcome.ACCEPTED) {
+            body.put("status", VideoTaskStatus.RUNNING.name());
+            body.put("accepted", true);
+        } else {
+            // 已经在跑（多半是重复点击）：如实返回当前状态，让前端接着轮询。
+            Map<String, Object> current = repository.requireOwnedTask(taskId, tenantId, userId);
+            body.put("status", String.valueOf(current.get("status")));
+            body.put("accepted", false);
+        }
         return R.ok(body);
+    }
+
+    /**
+     * 由任务行构造执行上下文。延迟到真正入队时才调用，队列满时不必白构造。
+     */
+    private VideoTaskOrchestrator.TaskContext buildContext(Map<String, Object> task,
+                                                           String tenantId, long userId) {
+        VideoCapability capability =
+            VideoCapability.parse(String.valueOf(task.get("capability_code")));
+        String inputJson = String.valueOf(task.get("input_json"));
+        return new VideoTaskOrchestrator.TaskContext(
+            ((Number) task.get("id")).longValue(), tenantId, userId, LoginHelper.getDeptId(),
+            capability == null ? null : capability.name(),
+            String.valueOf(task.get("workflow_code")),
+            task.get("prompt") == null ? null : String.valueOf(task.get("prompt")),
+            String.valueOf(task.get("tier")),
+            durationLabelOf(task.get("duration_seconds")),
+            assetIdFrom(inputJson, "img"),
+            assetIdFrom(inputJson, "first"),
+            assetIdFrom(inputJson, "last"),
+            false,
+            () -> System.nanoTime(),
+            new AtomicInteger(0));
     }
 
     /**

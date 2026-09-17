@@ -430,6 +430,12 @@ class VideoTaskOrchestratorTest {
         final List<String> transitions = new ArrayList<>();
         final Map<Long, AssetRow> ownedAssets = new HashMap<>();
 
+        /**
+         * 已经进入终态（失败）的任务。真实 SQL 用「不在终态」做守卫，
+         * 因此第二次落库必须是 0 行——替身也要照这个语义来，否则测试会掩盖真实行为。
+         */
+        private final java.util.Set<Long> terminalTasks = new java.util.HashSet<>();
+
         @Override
         public long insertAsset(AssetRow asset) {
             ownedAssets.put(asset.id() == null ? 1L : asset.id(), asset);
@@ -459,6 +465,10 @@ class VideoTaskOrchestratorTest {
 
         @Override
         public int markFailedIfActive(long taskId, String errorCode, String errorMessage) {
+            // 与真实 SQL 一致：已经是终态就不再覆盖，返回 0 行。
+            if (!terminalTasks.add(taskId)) {
+                return 0;
+            }
             transitions.add("FAILED_IF_ACTIVE:" + errorCode);
             return 1;
         }
