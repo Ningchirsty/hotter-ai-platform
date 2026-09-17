@@ -626,6 +626,58 @@ proxyTimeout: Number(env.VITE_APP_PROXY_TIMEOUT || 3600000),
 > 注意：同步**只影响这张表**。任务能否提交仍由契约文件的 status 与校验和决定，
 > 已有测试专门断言「同步后 DRAFT 依然不可提交」。
 
+## 6.10 镜像构建迁到仓库根上下文（2026-09-17，已完成并实机验证）
+
+**问题**：`ruoyi-admin/Dockerfile` 的构建上下文是 `ruoyi-admin/`，而工作流契约在
+`script/video/workflows/`。Docker 不允许 `COPY` 构建上下文之外的文件，因此**契约
+从未进过镜像**——线上旧镜像实测 `/ruoyi/server/` 下只有 `app.jar`、`logs`、`temp`。
+这会让视频模块在**任何环境**都把工作流判为不可用，不只是配置问题。
+
+**变更**：新增仓库根 `Dockerfile`（上下文改为仓库根，基础镜像不变）与根 `.dockerignore`；
+契约经 `COPY ./script/video/workflows` 进镜像；CI 改用 `-f Dockerfile ... .`
+并新增镜像冒烟步骤断言契约 JSON、3 个 H3 模板、`ffprobe`、`ffmpeg` 均已就位。
+
+**实测证据**（`aiadmin@192.168.2.134`）：
+
+| 项 | 结果 |
+|---|---|
+| 根上下文构建 | `docker build -f Dockerfile -t hotter-root-ctx-test:tmp .` 成功 |
+| ffmpeg 静态包校验 | `sha256sum -c -` → `OK`，`ffprobe/ffmpeg version 7.0.2-static` |
+| 镜像内容断言 | `app.jar`、`video-workflow-contracts.json`(45998 B)、`api/wf-{t2v,i2v,fl2v}-h3-v0.1.0.json`、`ffprobe`、`ffmpeg`、`java`、`logs`/`temp` 可写 —— 全部 PASS |
+| 容器真实启动（**未挂载任何卷**） | `Started DromaraApplication in 8.211 seconds`；Jetty `0.0.0.0:18086`；`RuoYi-Vue-Plus启动成功` |
+| 契约来源判定 | 22 个**未实现**工作流各自报「模板文件缺失，不予加载」，**3 个 H3 一个都没报缺失**，汇总「可提交版本 3 个」 |
+| 契约同步 | `工作流版本表同步完成：新增 0 条，更新 24 条，表内共 24 条` |
+
+**环境坑（新）**：服务器 DNS 把 `registry-1.docker.io` / `auth.docker.io` 解析到
+`2a03:2880:...:face:b00c:0:25de`（劫持地址），导致 `docker build --pull` 报
+`dial tcp 31.13.84.34:443: i/o timeout`。**这是 DNS 污染，不是 Dockerfile 问题**；
+GitHub 托管 Runner 不受影响。服务器侧改用本机已有的基础镜像离线构建即可绕开。
+
+**ffmpeg 归档源的真实行为（已实测，构建里已做兜底）**：
+
+| 场景 | 实测 | 后果 |
+|---|---|---|
+| 串行、未触发限速 | 41.9 MB / **4.63 秒**，SHA-256 匹配 | 正常 |
+| 某次 CI：curl 退出码 0 但字节不对 | `sha256sum: 1 computed checksum did NOT match` | **构建失败**；同一提交重跑即通过 |
+| 两个构建并发拉同一源 | 卡在 **25.4 / 41.9 MB**，**1306 秒**无进展 | 构建长时间挂住 |
+| 限速冷却期内单请求 | 能下完，耗时 **441.9 秒** | 构建极慢 |
+
+关键点：`curl --retry` **只在连接/传输层失败时重试，校验和不匹配时不会重试**，
+所以第二种情况会直接失败。Dockerfile 已改为显式「下载 + 长度断言 + SHA-256 校验」
+重试循环（最多 3 次），并加 `--speed-limit 10240 --speed-time 30`，
+低于 10 KB/s 持续 30 秒即判失败、换连接重试。负向路径已实测：
+伪造内容连续 3 次校验失败后 `exit 1`。
+
+**备选源**：`github.com` 本身可达（HTTP 200），但从该网络**无法访问 GitHub Releases
+的下载**（`BtbN/FFmpeg-Builds` 与 `eugeneware/ffmpeg-static` 的 release 资源均超时），
+故未改用 GitHub 源。内网部署用 `--build-arg FFMPEG_URL/FFMPEG_SHA256/FFMPEG_EXPECTED_BYTES`
+覆盖即可，**不要在构建里并发拉同一源**。
+
+**连带修复**：`~/.mig/start-isolated.sh` 原先 `docker build "$REPO/ruoyi-admin"`，
+A 落地后该上下文已不存在；已改为 `docker build -f "$REPO/Dockerfile" -t "$IMG" "$REPO"`，
+并**移除 `script` 目录挂载**（契约现已内置在镜像中，挂载会让验证失真）。
+原脚本备份为 `~/.mig/start-isolated.sh.bak-*`。
+
 ## 7. 环境操作上的坑（避免重复踩）
 
 1. **`/tmp` 在 `aiadmin` 下异常**：`sudo -S ... < /dev/null` 曾报 `/dev/null: Permission denied`、
@@ -648,27 +700,37 @@ proxyTimeout: Number(env.VITE_APP_PROXY_TIMEOUT || 3600000),
    `[Security.Cryptography.SHA256]::Create()`。本机 `bash` 走 WSL 但**无 Ubuntu 发行版**，
    无法本地跑 bash 脚本。
 
-## 8. 建议的后续执行顺序
+## 8. 后续执行顺序
 
-1. **用真实浏览器点一次页面**（当前唯一剩下的验证缺口）：
-   登录加密链路已验证可用，直接启动即可：
-   ```bash
-   cd frontend
-   VITE_APP_PORT=18085 VITE_APP_PROXY_TARGET=http://127.0.0.1:18084 pnpm dev
-   ```
-   浏览器打开 `http://192.168.2.134:18085`，用联调账号登录，确认视频创作页
-   渲染出三个真实能力卡片、提交按钮禁用并提示 `DRAFT`/`TESTING` 原因、
-   「我的任务」「素材库」显示真实（空）数据。
-   **注意**：代理默认目标 `localhost:8080` 上是另一台旧后端，务必用覆盖变量指到 18084。
-2. **确认截断精度要求**：当前 `-c copy` 截断得 5.083 秒；如需严格 ≤5.000 秒，
-   改为重编码或按帧截断。
-3. **跨用户越权复验**：用两个真实账号确认彼此看不到/下载不到对方的素材与成片。
-4. **实现契约 → `video_workflow_version` 的种子导入**，让运行时以数据库为权威。
-5. **并发验证**：同时提交多个任务，确认队列与状态流转不会互相污染。
-6. **按需精简镜像**：当前 1.66 GB；若体积敏感，可只保留 ffprobe 的测量能力
-   （但截断需要 ffmpeg），或改用带 ffmpeg 的发行版基础镜像。
-7. **推镜像到内网仓库**：本次前后端镜像已按目标 SHA 构建成功
-   （`hotter-ai-platform-backend:…` 1.66 GB / `hotter-ai-platform-frontend:…` 89.7 MB），
-   但**未推送**到任何仓库。
-8. 全部通过后才把工作流推进为 PUBLISHED 并开放正式环境提交；
-   随后按 `script/deploy/README.md` 走受控发布入口。
+### 8.1 已完成（原 §8 的清单，逐项落地）
+
+1. ✅ **真实浏览器点一次页面**：2026-09-16 完成，见 §6.6（真实点击/渲染，无伪造）。
+2. ✅ **确认截断精度要求**：要求为**严格 ≤5.000 秒**，已按帧精确截断（24fps × 5s = 120 帧），
+   实测 `5.000s / 120 帧`，见 §6.7。旧的 `-c copy` 5.083 秒写法已废弃。
+3. ✅ **跨用户越权复验**：10 项全部通过，见 §6.8。成片下载越权按用户要求**未测**。
+4. ✅ **契约 → `video_workflow_version` 同步镜像**：见 §6.9（定位为镜像，运行时权威仍是文件）。
+5. ✅ **并发验证**：8 项全部通过，3 轮重复一致，见 §6.8。
+6. ✅ **镜像契约与 ffmpeg 打包**：见 §6.10。
+7. ✅ **推送镜像仓库**：GHCR 公共包已发布（backend/frontend 均按 SHA + digest 锁定）。
+
+### 8.2 待完成
+
+| # | 任务 | 阻塞点 / 需要的授权 |
+|---|---|---|
+| 1 | 合并 A+B 的 PR 并在 `main` 上重新发布镜像 | 需要 PR review/merge 批准（CI 须先绿） |
+| 2 | 生产环境变量补齐：`VIDEO_ENABLED` / `VIDEO_CONTRACT_ROOT` / `VIDEO_COMFY_BASE_URL` / `VIDEO_STORAGE_ROOT` / `VIDEO_REQUIRE_PUBLISHED` | `/opt/ai-video-poc/compose.yaml` 属运维/root，需其执行 |
+| 3 | 用新 digest 部署后端到生产（随后前端） | 需 `hotter-release` 放行（root，仅生产环境，无预发） |
+| 4 | 把 3 个 H3 工作流从 `DRAFT` 提升为 `PUBLISHED` | **业务批准**（否则生产提交按钮始终禁用，属预期安全状态） |
+| 5 | 生产端到端验收：真实提交一次 H3 生成并确认成片 ≤5.000s | 依赖 2、3、4 |
+| 6 | 处理 2 个非本项目的 `ruoyi-web-pre-*` 容器 | 待用户指示 |
+
+> **重要**：`VIDEO_REQUIRE_PUBLISHED=true` 下，只要工作流仍是 `DRAFT`，生产提交按钮就会禁用——
+> 这是**有意设计**，不会误触发 GPU 负载。因此「部署完成」与「用户可真正生成」是两件事，
+> 第 4 项必须由业务方批准。
+
+### 8.3 已知未验证项（不得当作已通过）
+
+- **成片下载的文件级越权**：用户明确要求不测，已清理测试信息，**未验证**。
+- **生产环境的视频模块端到端**：当前生产未启用（缺 `VIDEO_*`），**未验证**。
+- **多并发下的 GPU 排队行为**：并发验证是在隔离实例上做的接口级验证，**未在真实 GPU 队列压力下复测**。
+
