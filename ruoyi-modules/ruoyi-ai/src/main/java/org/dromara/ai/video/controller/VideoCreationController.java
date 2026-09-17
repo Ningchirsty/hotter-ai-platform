@@ -30,6 +30,11 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -189,6 +194,116 @@ public class VideoCreationController extends BaseController {
         List<Map<String, Object>> rows = repository.listOwnedAssets(tenantId, userId,
             offset(pageQuery), size(pageQuery));
         return R.ok(new PageResult<>(rows, total));
+    }
+
+    /**
+     * 读取本人素材/成片的内容，用于预览与下载。
+     *
+     * <p>为什么需要它：此前前端只能拿到素材的元数据（文件名/大小），没有任何取文件内容的接口，
+     * 因此素材库只有图标、任务成片无法预览也无法下载。</p>
+     *
+     * <p>安全边界：</p>
+     * <ul>
+     *   <li>必须先通过 {@code requireOwnedAsset}——它同时校验租户与属主，
+     *       不是自己的素材一律 404（不泄露"该 ID 是否存在"）；</li>
+     *   <li>内容类型取自数据库记录，<b>不</b>采信客户端；</li>
+     *   <li>响应头带 {@code X-Content-Type-Options: nosniff}，避免浏览器把
+     *       伪装成图片的文件按其它类型解释；</li>
+     *   <li>一律 {@code inline}，不提供强制下载的文件名，避免被当作下载分发点。</li>
+     * </ul>
+     *
+     * <p>支持 HTTP Range：视频拖动进度条依赖 206 分片响应，否则浏览器只能从头播、无法 seek。</p>
+     */
+    @GetMapping("/assets/{assetId}/content")
+    @SaCheckPermission("video:creation:view")
+    public ResponseEntity<StreamingResponseBody>
+        assetContent(@PathVariable Long assetId, HttpServletRequest request) {
+        String tenantId = requireTenantId();
+        long userId = LoginHelper.getUserId();
+        VideoTaskRepository.AssetRow asset = repository.requireOwnedAsset(assetId, tenantId, userId);
+
+        byte[] content = assetStorage.read(asset.storageKey());
+        if (content == null || content.length == 0) {
+            throw VideoTaskException.assetNotFound("素材内容为空");
+        }
+        long total = content.length;
+        String contentType = asset.contentType() == null || asset.contentType().isBlank()
+            ? "application/octet-stream" : asset.contentType();
+
+        long start = 0;
+        long end = total - 1;
+        boolean partial = false;
+        String range = request.getHeader(HttpHeaders.RANGE);
+        if (range != null && range.startsWith("bytes=")) {
+            long[] parsed = parseRange(range, total);
+            if (parsed == null) {
+                // 区间不可满足：按 RFC 7233 返回 416 并告知总长度。
+                return ResponseEntity.status(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+                    .header(HttpHeaders.CONTENT_RANGE, "bytes */" + total)
+                    .build();
+            }
+            start = parsed[0];
+            end = parsed[1];
+            partial = true;
+        }
+
+        final long from = start;
+        final long to = end;
+        final long length = to - from + 1;
+
+        StreamingResponseBody body = out -> {
+            out.write(content, (int) from, (int) length);
+            out.flush();
+        };
+
+        ResponseEntity.BodyBuilder builder = ResponseEntity.status(
+                partial ? HttpStatus.PARTIAL_CONTENT : HttpStatus.OK)
+            .header(HttpHeaders.CONTENT_TYPE, contentType)
+            .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+            .header(HttpHeaders.CACHE_CONTROL, "private, max-age=300")
+            .header("X-Content-Type-Options", "nosniff")
+            .contentLength(length);
+        if (partial) {
+            builder.header(HttpHeaders.CONTENT_RANGE, "bytes " + from + "-" + to + "/" + total);
+        }
+        return builder.body(body);
+    }
+
+    /**
+     * 解析单区间 Range 头（只支持 {@code bytes=a-b} 形态，足够浏览器视频播放使用）。
+     *
+     * @return {@code [start, end]}；区间不可满足时返回 null
+     */
+    private static long[] parseRange(String header, long total) {
+        java.util.regex.Matcher m =
+            java.util.regex.Pattern.compile("bytes=(\\d*)-(\\d*)").matcher(header.trim());
+        if (!m.find()) {
+            return null;
+        }
+        String rawStart = m.group(1);
+        String rawEnd = m.group(2);
+        long start;
+        long end;
+        try {
+            if (rawStart == null || rawStart.isEmpty()) {
+                // bytes=-N 表示最后 N 字节
+                long suffix = rawEnd == null || rawEnd.isEmpty() ? 0 : Long.parseLong(rawEnd);
+                if (suffix <= 0) {
+                    return null;
+                }
+                start = Math.max(0, total - suffix);
+                end = total - 1;
+            } else {
+                start = Long.parseLong(rawStart);
+                end = rawEnd == null || rawEnd.isEmpty() ? total - 1 : Long.parseLong(rawEnd);
+            }
+        } catch (NumberFormatException e) {
+            return null;
+        }
+        if (start > end || start >= total) {
+            return null;
+        }
+        return new long[] {start, Math.min(end, total - 1)};
     }
 
     /**
