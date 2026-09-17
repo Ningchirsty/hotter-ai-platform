@@ -1,0 +1,223 @@
+package org.dromara.ai.video.config;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.Data;
+import lombok.extern.slf4j.Slf4j;
+import org.dromara.ai.video.comfy.ComfyClient;
+import org.dromara.ai.video.comfy.HttpComfyClient;
+import org.dromara.ai.video.service.AssetStorage;
+import org.dromara.ai.video.service.H3TemplatePreparer;
+import org.dromara.ai.video.service.LocalFileAssetStorage;
+import org.dromara.ai.video.service.MediaProbe;
+import org.dromara.ai.video.service.VideoTaskOrchestrator;
+import org.dromara.ai.video.service.VideoTaskRepository;
+import org.dromara.ai.video.service.VideoWorkflowVersionRepository;
+import org.dromara.ai.video.service.WorkflowContractDbSync;
+import org.dromara.ai.video.service.WorkflowContractRegistry;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import java.nio.file.Path;
+import java.time.Duration;
+
+/**
+ * 视频创作模块装配。
+ *
+ * <p>全部开关集中在 {@code video.*} 前缀下。默认关闭（{@code video.enabled=false}），
+ * 避免在未配置 ComfyUI 的环境里因为缺少地址而启动失败。</p>
+ */
+@Slf4j
+@Configuration
+@EnableConfigurationProperties(VideoModuleConfiguration.VideoProperties.class)
+@ConditionalOnProperty(prefix = "video", name = "enabled", havingValue = "true")
+public class VideoModuleConfiguration {
+
+    /**
+     * 视频创作模块配置。
+     */
+    @Data
+    @ConfigurationProperties(prefix = "video")
+    public static class VideoProperties {
+
+        /**
+         * 是否启用视频创作模块。
+         */
+        private boolean enabled = false;
+
+        /**
+         * 契约与模板所在的后端受控目录。
+         */
+        private String contractRoot = "script";
+
+        /**
+         * 素材存储根目录（联调环境使用）。
+         */
+        private String storageRoot = "/opt/ai-video-poc/data/video-assets";
+
+        /**
+         * ComfyUI 基础地址。容器内的 127.0.0.1 指向容器自身，必须填实际可达地址。
+         */
+        private String comfyBaseUrl = "";
+
+        /**
+         * 是否允许把回环地址作为 ComfyUI 地址（仅同机进程直连联调时放开）。
+         */
+        private boolean comfyAllowLoopback = false;
+
+        /**
+         * 等待一次任务完成的轮询预算（秒）。
+         */
+        private long pollBudgetSeconds = 900;
+
+        /**
+         * 轮询间隔（秒）。
+         */
+        private long pollIntervalSeconds = 5;
+
+        /**
+         * 提交时是否必须为 PUBLISHED。正式环境保持 true；
+         * 隔离联调环境可设为 false 以便验证 TESTING 工作流。
+         */
+        private boolean requirePublished = true;
+
+        /**
+         * 启动时置为 TESTING 的工作流编码（逗号分隔）。
+         *
+         * <p><b>仅限隔离联调环境</b>。交接文档要求在联调环境把已完成单侧验收的工作流设为
+         * TESTING 才能从页面提交验证，而仓库契约必须保持 DRAFT。
+         * 生产环境必须保持为空，工作流转 PUBLISHED 必须走审核流程。</p>
+         */
+        private String testingWorkflows = "";
+
+        /**
+         * ffprobe 可执行文件路径。用于实测成片分辨率与时长。
+         *
+         * <p>ComfyUI 的 SaveVideo 不返回这些字段，而 H3 模板固定产出 124 帧@24fps = 5.167 秒，
+         * 超过产品 5 秒上限；没有 ffprobe 就无法判定超时，也无法填写真实分辨率。</p>
+         */
+        private String ffprobePath = "ffprobe";
+
+        /**
+         * ffmpeg 可执行文件路径。用于把超过上限的成片截断到 5 秒以内。
+         */
+        private String ffmpegPath = "ffmpeg";
+
+        /**
+         * 单次 ffprobe/ffmpeg 调用的超时（秒）。
+         */
+        private long mediaTimeoutSeconds = 120;
+
+        /**
+         * 启动时是否把契约文件同步进 {@code video_workflow_version} 表。
+         *
+         * <p>方案 A：**契约文件是运行时唯一权威**，该表只是同步镜像，供查询与审计。
+         * 同步永不改变「是否可提交」的判定；失败也只告警、不影响启动。</p>
+         */
+        private boolean syncContractToDb = true;
+    }
+
+    /**
+     * 模块自有的 JSON 解析器。
+     *
+     * <p>刻意<b>不</b>复用 Web 层的 {@code JsonMapper}：RuoYi-Vue-Plus v6 只注册定制的
+     * JsonMapper（用于 HTTP 报文），并不提供原始 {@code ObjectMapper} bean；
+     * 而节点图与 timeline_data 的解析属于服务端内部逻辑，用默认配置更可预期，
+     * 也避免被报文层的序列化定制（如 Long 转字符串）影响。</p>
+     */
+    @Bean
+    public ObjectMapper videoObjectMapper() {
+        return new ObjectMapper();
+    }
+
+    @Bean
+    public WorkflowContractRegistry workflowContractRegistry(VideoProperties properties, ObjectMapper mapper) {
+        WorkflowContractRegistry registry =
+            new WorkflowContractRegistry(Path.of(properties.getContractRoot()), mapper);
+        registry.load();
+        if (registry.loadedCount() == 0) {
+            log.warn("视频创作模块已启用，但没有任何模板通过校验并加载；提交接口将全部拒绝");
+        }
+        // 仅隔离联调环境使用：把指定工作流置为 TESTING，使字段校验与提交流程可被真实验证。
+        String testing = properties.getTestingWorkflows();
+        if (testing != null && !testing.isBlank()) {
+            if (properties.isRequirePublished()) {
+                log.error("video.require-published=true 时不允许把工作流置为 TESTING，已忽略 video.testing-workflows");
+            } else {
+                for (String code : testing.split(",")) {
+                    String trimmed = code.trim();
+                    if (trimmed.isEmpty()) {
+                        continue;
+                    }
+                    if (registry.markTesting(trimmed)) {
+                        log.warn("隔离联调：工作流 {} 已置为 TESTING（生产环境不得如此配置）", trimmed);
+                    } else {
+                        log.warn("隔离联调：工作流 {} 无法置为 TESTING（未注册或模板未加载）", trimmed);
+                    }
+                }
+            }
+        }
+        return registry;
+    }
+
+    @Bean
+    public H3TemplatePreparer h3TemplatePreparer(ObjectMapper mapper) {
+        return new H3TemplatePreparer(mapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(ComfyClient.class)
+    public ComfyClient comfyClient(VideoProperties properties, ObjectMapper mapper) {
+        return new HttpComfyClient(properties.getComfyBaseUrl(), mapper, properties.isComfyAllowLoopback());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(AssetStorage.class)
+    public AssetStorage assetStorage(VideoProperties properties) {
+        return new LocalFileAssetStorage(Path.of(properties.getStorageRoot()));
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(MediaProbe.class)
+    public MediaProbe mediaProbe(VideoProperties properties) {
+        return new MediaProbe(properties.getFfprobePath(), properties.getFfmpegPath(),
+            properties.getMediaTimeoutSeconds());
+    }
+
+    /**
+     * 契约 → 数据库 的同步镜像（方案 A）。
+     *
+     * <p>只在显式开启时注册；它不参与运行时读取路径，因此即使同步失败，
+     * 「可否提交」的判定仍完全由契约文件与校验和决定。</p>
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = "video", name = "sync-contract-to-db",
+        havingValue = "true", matchIfMissing = true)
+    public WorkflowContractDbSync workflowContractDbSync(WorkflowContractRegistry registry,
+                                                         VideoWorkflowVersionRepository repository,
+                                                         ObjectMapper mapper,
+                                                         VideoProperties properties) {
+        log.info("已启用契约→数据库同步镜像（运行时仍以契约文件为权威）");
+        return new WorkflowContractDbSync(registry, repository, mapper,
+            Path.of(properties.getContractRoot()));
+    }
+
+    @Bean
+    public VideoTaskOrchestrator videoTaskOrchestrator(WorkflowContractRegistry registry,
+                                                       H3TemplatePreparer preparer,
+                                                       ComfyClient comfyClient,
+                                                       VideoTaskRepository repository,
+                                                       AssetStorage assetStorage,
+                                                       ObjectMapper mapper,
+                                                       MediaProbe mediaProbe,
+                                                       VideoProperties properties) {
+        return new VideoTaskOrchestrator(registry, preparer, comfyClient, repository, assetStorage, mapper,
+            Duration.ofSeconds(properties.getPollBudgetSeconds()),
+            Duration.ofSeconds(properties.getPollIntervalSeconds()),
+            () -> org.dromara.common.mybatis.utils.IdGeneratorUtil.nextLongId(),
+            mediaProbe);
+    }
+}

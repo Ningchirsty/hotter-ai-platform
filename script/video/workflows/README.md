@@ -31,3 +31,41 @@
 - `video-workflow-contracts.json` — 全量契约（三个 H3 模板已导入，其他绑定仍为 DRAFT 占位）
 - 目标表结构见 `../../sql/ry_video_workflow.sql`（video_workflow_version，按 docs/04 数据模型）
 - 已导入旧菜单的数据库可按对应方言的 `ry_video_menu_migration.sql` 更新菜单；MySQL 旧表若已建并有数据，先核对迁移脚本注释中的前置条件再改名。不要在已导入的数据库重复执行新菜单插入脚本。
+
+## 服务端实现现状（2026-09-16）
+
+后端视频任务服务已落地在 `ruoyi-modules/ruoyi-ai` 的 `org.dromara.ai.video` 包里：
+
+- `H3TemplatePreparer` 负责深拷贝模板并**只覆写 `mapping` 白名单内的节点输入键**，
+  其余输入（`cfg`/`steps`/`sampler`/模型路径）一律不动；
+- `WorkflowContractRegistry` 从受控目录加载契约，模板 **SHA-256 与契约不符即拒绝加载**；
+- `HttpComfyClient` 默认**拒绝把回环地址当作 ComfyUI 地址**（容器内的 `localhost` 指向容器自身）；
+- 归属隔离由 `JdbcVideoTaskRepository` 的显式 `tenant_id + user_id` 条件保证，
+  不依赖 MyBatis 租户拦截器。
+
+### 表结构
+
+除本目录对应的 `../../sql/ry_video_workflow.sql` 外，任务/素材/事件三张表见
+`../../sql/ry_video_task.sql`（`video_task` / `video_asset` / `video_task_event`）。
+两个脚本均为 `CREATE TABLE IF NOT EXISTS`，可安全重复执行。
+
+### 启用方式
+
+默认关闭。启用需要在配置文件里显式打开并给出 ComfyUI 实际可达地址：
+
+```yaml
+video:
+  enabled: true
+  contract-root: script                     # 契约与模板所在的后端受控目录
+  storage-root: /opt/ai-video-poc/data/video-assets
+  comfy-base-url: http://192.168.2.223:8188 # 不要填 127.0.0.1
+  comfy-allow-loopback: false               # 仅同机进程直连联调时放开
+  poll-budget-seconds: 900
+  poll-interval-seconds: 5
+  require-published: true                   # 正式环境必须 true
+```
+
+`require-published: true` 时只有 `PUBLISHED` 工作流可提交；隔离联调环境可设为 `false`
+以便验证 `TESTING` 工作流。**DRAFT 在任何配置下都不可提交。**
+
+详细进展、未完成项与环境注意事项见 `../../docs/video-module-implementation-handoff.md`。

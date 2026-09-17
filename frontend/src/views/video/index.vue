@@ -116,7 +116,7 @@
               {{ fieldLabels[field] }}
               <em v-if="isRequired(field)">*</em>
             </label>
-            <label class="upload-zone" :class="{ complete: uploads[field]?.length }">
+            <label class="upload-zone" :class="{ complete: uploadAssetIds[field]?.length }">
               <input
                 type="file"
                 :accept="field === 'audio' ? 'audio/*' : 'image/*'"
@@ -124,7 +124,7 @@
                 @change="handleFiles(field, $event)"
               />
               <el-icon>
-                <Check v-if="uploads[field]?.length" />
+                <Check v-if="uploadAssetIds[field]?.length" />
                 <UploadFilled v-else />
               </el-icon>
               <b>{{ uploadSummary(field) }}</b>
@@ -207,20 +207,25 @@
         </template>
 
         <p class="workflow-note">
-          MiniMax H3 三种工作流模板已导入；当前只展示高清 1080P、最多 5 秒的目标档位，实际输出仍待验证。任务服务接入并验收后开放提交。
+          MiniMax H3 三种工作流模板已导入；当前只展示高清 1080P、最多 5 秒的目标档位。
+          <template v-if="currentWorkflow">
+            服务端状态：<b>{{ currentWorkflow.status }}</b>。
+          </template>
+          提交按钮仅在对应工作流发布（PUBLISHED）后开放，未通过实机验收前保持禁用。
         </p>
         <div class="submit-row">
           <button
             v-hasPermi="['video:creation:submit']"
             type="button"
             class="submit-button"
-            disabled
-            title="任务服务尚未接入"
+            :disabled="!canSubmit || submitting || uploading"
+            :title="canSubmit ? '提交并生成视频' : submitBlockReason"
+            @click="submitTask"
           >
             <el-icon><MagicStick /></el-icon>
-            待任务服务接入
+            {{ submitting ? '提交中…' : canSubmit ? '提交生成' : '暂不可提交' }}
           </button>
-          <span>任务服务尚未接入</span>
+          <span>{{ submitBlockReason || '提交后将经服务端填充模板并交由 ComfyUI 执行' }}</span>
         </div>
       </section>
 
@@ -312,12 +317,20 @@
             </div>
           </div>
           <div v-for="task in recentTasks" :key="task.id" class="recent-task">
-            <span :class="task.status"><i /></span>
+            <span :class="taskStatusClass(task.status)"><i /></span>
             <div>
-              <b>{{ task.name }}</b>
-              <small>{{ task.module }} · {{ task.model }}</small>
+              <b>{{ task.taskName || task.taskNo }}</b>
+              <small>{{ moduleName(task.capabilityCode) }} · {{ modelName(task.modelCode) }}</small>
             </div>
-            <em>{{ task.status === 'running' ? '生成中' : task.status === 'queued' ? '排队中' : '已完成' }}</em>
+            <em>{{ taskStatusText(task.status) }}</em>
+          </div>
+          <div v-if="!recentTasks.length" class="recent-task">
+            <span><i /></span>
+            <div>
+              <b>暂无任务</b>
+              <small>创建后可在此查看进度</small>
+            </div>
+            <em>—</em>
           </div>
         </section>
       </aside>
@@ -328,7 +341,7 @@
         <div>
           <span>视频创作</span>
           <h2>我的任务</h2>
-          <p>当前为示例记录，任务服务接入后显示真实任务。</p>
+          <p>显示服务端真实任务记录，仅本人可见。</p>
         </div>
         <button type="button" class="primary-action" @click="activeView = 'create'">
           <el-icon><MagicStick /></el-icon>
@@ -355,25 +368,42 @@
         </div>
       </div>
 
-      <div v-if="filteredTasks.length" class="task-list">
+      <div v-if="loadingTasks" class="empty-state">
+        <el-icon><Document /></el-icon>
+        <b>正在加载任务…</b>
+      </div>
+      <div v-else-if="filteredTasks.length" class="task-list">
         <article v-for="task in filteredTasks" :key="task.id" class="task-card">
-          <div :class="['task-cover', task.status]">
+          <div :class="['task-cover', taskStatusClass(task.status)]">
             <el-icon><VideoCamera /></el-icon>
             <span>{{ task.tier.replace(' · ', ' ') }}</span>
           </div>
           <div class="task-main">
             <div class="task-title-row">
-              <b>{{ task.name }}</b>
-              <span :class="['task-status', task.status]">{{ taskStatusText(task.status) }}</span>
+              <b>{{ task.taskName || task.taskNo }}</b>
+              <span :class="['task-status', taskStatusClass(task.status)]">{{ taskStatusText(task.status) }}</span>
             </div>
-            <p>{{ task.module }} · {{ task.model }} · {{ task.duration }}</p>
-            <small>{{ task.id }} · {{ task.createdAt }}</small>
+            <p>
+              {{ moduleName(task.capabilityCode) }} · {{ modelName(task.modelCode) }} ·
+              {{ task.durationSeconds }} 秒
+            </p>
+            <small>{{ task.taskNo }} · {{ task.createTime || '—' }}</small>
+            <small v-if="task.errorMessage" class="task-error">{{ task.errorMessage }}</small>
           </div>
           <div class="task-actions">
-            <button type="button" title="查看任务" aria-label="查看任务" @click="previewTask()">
+            <button type="button" title="查看任务" aria-label="查看任务" @click="previewTask(task)">
               <el-icon><View /></el-icon>
             </button>
-            <button v-if="task.status === 'done'" type="button" class="recreate" @click="recreateTask(task)">
+            <button
+              v-if="task.status === 'QUEUED'"
+              type="button"
+              title="取消排队"
+              aria-label="取消排队"
+              @click="cancelTask(task)"
+            >
+              <el-icon><Close /></el-icon>
+            </button>
+            <button v-if="task.status === 'SUCCEEDED'" type="button" class="recreate" @click="recreateTask(task)">
               <el-icon><RefreshRight /></el-icon>
               再创作
             </button>
@@ -392,24 +422,28 @@
         <div>
           <span>视频创作</span>
           <h2>素材库</h2>
-          <p>集中管理用于视频创作的图片、视频和音频素材。</p>
+          <p>素材保存在服务端；任务提交时使用素材 ID，不使用浏览器本地文件名。</p>
         </div>
         <label class="primary-action asset-upload">
-          <input type="file" accept="image/*,video/*,audio/*" multiple @change="handleAssetFiles" />
+          <input type="file" accept="image/*" multiple @change="handleAssetFiles" />
           <el-icon><UploadFilled /></el-icon>
-          添加素材
+          {{ uploading ? '上传中…' : '添加素材' }}
         </label>
       </div>
 
-      <div v-if="assets.length" class="asset-grid">
+      <div v-if="loadingAssets" class="empty-state">
+        <el-icon><UploadFilled /></el-icon>
+        <b>正在加载素材…</b>
+      </div>
+      <div v-else-if="assets.length" class="asset-grid">
         <article v-for="asset in assets" :key="asset.id" class="asset-card">
-          <div :class="['asset-preview', asset.kind]">
-            <el-icon><component :is="assetIcon(asset.kind)" /></el-icon>
-            <span>{{ asset.kind === 'image' ? '图片' : asset.kind === 'video' ? '视频' : '音频' }}</span>
+          <div :class="['asset-preview', assetKind(asset)]">
+            <el-icon><component :is="assetIcon(assetKind(asset))" /></el-icon>
+            <span>{{ assetKindLabel(asset) }}</span>
           </div>
           <div class="asset-info">
-            <b>{{ asset.name }}</b>
-            <small>{{ asset.detail }} · {{ asset.createdAt }}</small>
+            <b>{{ asset.originalName || '素材 ' + asset.id }}</b>
+            <small>{{ assetDetail(asset) }} · {{ asset.createTime || '—' }}</small>
           </div>
           <button type="button" title="移除素材" aria-label="移除素材" @click="removeAsset(asset.id)">
             <el-icon><Delete /></el-icon>
@@ -419,7 +453,7 @@
       <div v-else class="empty-state">
         <el-icon><FolderOpened /></el-icon>
         <b>素材库还是空的</b>
-        <span>添加图片、视频或音频后，即可在创建任务时使用。</span>
+        <span>添加图片后，即可在创建任务时使用。</span>
       </div>
     </section>
   </div>
@@ -450,38 +484,38 @@ import {
 } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import {
-  COMPLETED_VIDEOS,
+  cancelVideoTask,
+  createVideoTask,
+  deleteVideoAsset,
+  executeVideoTask,
+  getVideoTask,
+  listVideoAssets,
+  listVideoTasks,
+  listVideoWorkflows,
+  uploadVideoAsset
+} from '@/api/video';
+import type {
+  VideoAssetVO,
+  VideoCapabilityCode,
+  VideoTaskVO,
+  VideoTaskStatus,
+  VideoWorkflowVO
+} from '@/api/video/types';
+import { extractErrorMessage } from '@/utils/request';
+import {
   INSPIRATIONS,
   PROMPT_CHIPS,
   VIDEO_MODELS,
   VIDEO_MODULES,
+  resolveWorkflowCode,
   type FieldKey,
   type Inspiration,
   type StudioModule
 } from './modules';
 
 type StudioView = 'create' | 'tasks' | 'assets';
-type StudioTaskStatus = 'queued' | 'running' | 'done';
 type AssetKind = 'image' | 'video' | 'audio';
-
-interface StudioTask {
-  id: string;
-  name: string;
-  module: string;
-  model: string;
-  tier: string;
-  duration: string;
-  status: StudioTaskStatus;
-  createdAt: string;
-}
-
-interface StudioAsset {
-  id: string;
-  name: string;
-  detail: string;
-  kind: AssetKind;
-  createdAt: string;
-}
+type TaskFilterKey = 'all' | VideoTaskStatus;
 
 const activeView = ref<StudioView>('create');
 const studioViews: Array<{ key: StudioView; label: string; icon: Component }> = [
@@ -489,66 +523,33 @@ const studioViews: Array<{ key: StudioView; label: string; icon: Component }> = 
   { key: 'tasks', label: '我的任务', icon: Document },
   { key: 'assets', label: '素材库', icon: FolderOpened }
 ];
+
 const currentModule = ref(VIDEO_MODULES[0]!);
 const currentModel = ref(VIDEO_MODELS.find(item => item.code === VIDEO_MODULES[0]!.defaultModel) ?? VIDEO_MODELS[0]!);
 const values = reactive<Partial<Record<FieldKey, string>>>({ tier: '高清 · 1080P', dur: '5 秒' });
-const uploads = reactive<Partial<Record<FieldKey, string[]>>>({});
+/** 已上传素材的 ID，提交任务时传 ID，不传浏览器本地文件名。 */
+const uploadAssetIds = reactive<Partial<Record<FieldKey, Array<number | string>>>>({});
+const uploading = ref(false);
+const submitting = ref(false);
+const loadingTasks = ref(false);
+const loadingAssets = ref(false);
 const showGuide = ref(true);
-const queueCount = ref(1);
-const tasks = ref<StudioTask[]>([
-  {
-    id: 'VIDEO-20260911-018',
-    name: '春季宣传片 · 包装特写',
-    module: '首尾帧生视频',
-    model: 'MiniMax H3',
-    tier: '高清 · 1080P',
-    duration: '5 秒',
-    status: 'running',
-    createdAt: '2 分钟前'
-  },
-  {
-    id: 'VIDEO-20260911-017',
-    name: '新品发布主视频',
-    module: '图生视频',
-    model: 'H3 Pro',
-    tier: '高清 · 1080P',
-    duration: '5 秒',
-    status: 'done',
-    createdAt: '5 分钟前'
-  },
-  {
-    id: 'VIDEO-20260911-016',
-    name: '品牌 LOGO 动效',
-    module: '文生视频',
-    model: 'WAN 2.1',
-    tier: '流畅 · 720P',
-    duration: '10 秒',
-    status: 'done',
-    createdAt: '12 分钟前'
-  }
-]);
+
+/** 服务端返回的工作流视图：提交按钮的可用性完全由它的 status 决定。 */
+const workflows = ref<VideoWorkflowVO[]>([]);
+const tasks = ref<VideoTaskVO[]>([]);
+const assets = ref<VideoAssetVO[]>([]);
+const assetTotal = ref(0);
+
 const taskKeyword = ref('');
-const taskFilter = ref<'all' | StudioTaskStatus>('all');
+const taskFilter = ref<TaskFilterKey>('all');
 const taskFilters = [
   { key: 'all', label: '全部' },
-  { key: 'queued', label: '排队中' },
-  { key: 'running', label: '生成中' },
-  { key: 'done', label: '已完成' }
+  { key: 'QUEUED', label: '排队中' },
+  { key: 'RUNNING', label: '生成中' },
+  { key: 'SUCCEEDED', label: '已完成' },
+  { key: 'FAILED', label: '失败' }
 ] as const;
-const assets = ref<StudioAsset[]>([
-  { id: 'asset-1', name: '新品包装主图.png', detail: 'PNG · 2.4 MB', kind: 'image', createdAt: '今天' },
-  { id: 'asset-2', name: '品牌氛围素材.mp4', detail: 'MP4 · 18.6 MB', kind: 'video', createdAt: '今天' },
-  { id: 'asset-3', name: '发布会旁白.wav', detail: 'WAV · 6.1 MB', kind: 'audio', createdAt: '昨天' }
-]);
-const recentTasks = computed(() => tasks.value.slice(0, 4));
-const filteredTasks = computed(() => {
-  const keyword = taskKeyword.value.trim().toLowerCase();
-  return tasks.value.filter(task => {
-    const matchesFilter = taskFilter.value === 'all' || task.status === taskFilter.value;
-    const matchesKeyword = !keyword || `${task.id} ${task.name}`.toLowerCase().includes(keyword);
-    return matchesFilter && matchesKeyword;
-  });
-});
 
 const moduleIcons: Record<string, Component> = {
   I2V: VideoCamera,
@@ -599,11 +600,93 @@ const closedModels = computed(() =>
 const openModels = computed(() =>
   VIDEO_MODELS.filter(item => currentModule.value.models.includes(item.code) && item.license === 'open')
 );
-const versionPill = computed(() =>
-  currentModule.value.models.length
-    ? `${currentModel.value.name} · ${currentModel.value.version}`
-    : `${currentModule.value.fixedWorkflow!.name} · ${currentModule.value.fixedWorkflow!.version}`
+
+/** 当前模块 + 模型解析出的 workflowCode。 */
+const currentWorkflowCode = computed(() => resolveWorkflowCode(currentModule.value, currentModel.value.code));
+
+/** 当前 workflowCode 对应的服务端工作流视图。 */
+const currentWorkflow = computed(
+  () => workflows.value.find(item => item.workflowCode === currentWorkflowCode.value) ?? null
 );
+
+/**
+ * 只有 PUBLISHED 才允许在正式环境提交。
+ * 三个 H3 模板当前均为 DRAFT，因此默认为不可提交，且提示真实原因。
+ */
+const canSubmit = computed(() => currentWorkflow.value?.submittable === true);
+
+const submitBlockReason = computed(() => {
+  if (!workflows.value.length) return '正在读取工作流状态…';
+  const workflow = currentWorkflow.value;
+  if (!workflow) return `${currentWorkflowCode.value} 尚未在服务端注册`;
+  if (workflow.status === 'DRAFT') return '工作流为 DRAFT，完成实机验收并发布后方可提交';
+  if (workflow.status === 'TESTING') return '工作流处于 TESTING，仅隔离联调环境可提交';
+  if (workflow.status === 'RETIRED') return '工作流已停用';
+  return '';
+});
+
+const versionPill = computed(() => {
+  const workflow = currentWorkflow.value;
+  if (workflow) return `${workflow.modelCode ?? currentModel.value.name} · ${workflow.version} · ${workflow.status}`;
+  return currentModule.value.models.length
+    ? `${currentModel.value.name} · ${currentModel.value.version}`
+    : `${currentModule.value.fixedWorkflow!.name} · ${currentModule.value.fixedWorkflow!.version}`;
+});
+
+const filteredTasks = computed(() => {
+  const keyword = taskKeyword.value.trim().toLowerCase();
+  return tasks.value.filter(task => {
+    const matchesFilter = taskFilter.value === 'all' || task.status === taskFilter.value;
+    const matchesKeyword =
+      !keyword || `${task.taskNo ?? ''} ${task.taskName ?? ''}`.toLowerCase().includes(keyword);
+    return matchesFilter && matchesKeyword;
+  });
+});
+
+const recentTasks = computed(() => tasks.value.slice(0, 4));
+const queueCount = computed(
+  () => tasks.value.filter(task => task.status === 'QUEUED' || task.status === 'RUNNING').length
+);
+
+onMounted(() => {
+  void loadWorkflows();
+  void loadTasks();
+  void loadAssets();
+});
+
+async function loadWorkflows() {
+  try {
+    const res = await listVideoWorkflows();
+    workflows.value = res.data ?? [];
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '读取工作流状态失败');
+  }
+}
+
+async function loadTasks() {
+  loadingTasks.value = true;
+  try {
+    const res = await listVideoTasks({ pageNum: 1, pageSize: 50 });
+    tasks.value = res.data?.rows ?? [];
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '读取任务列表失败');
+  } finally {
+    loadingTasks.value = false;
+  }
+}
+
+async function loadAssets() {
+  loadingAssets.value = true;
+  try {
+    const res = await listVideoAssets({ pageNum: 1, pageSize: 60 });
+    assets.value = res.data?.rows ?? [];
+    assetTotal.value = res.data?.total ?? assets.value.length;
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '读取素材库失败');
+  } finally {
+    loadingAssets.value = false;
+  }
+}
 
 function selectModule(item: StudioModule) {
   currentModule.value = item;
@@ -612,7 +695,7 @@ function selectModule(item: StudioModule) {
     VIDEO_MODELS.find(candidate => item.models.includes(candidate.code)) ??
     VIDEO_MODELS[0]!;
   Object.keys(values).forEach(key => delete values[key as FieldKey]);
-  Object.keys(uploads).forEach(key => delete uploads[key as FieldKey]);
+  Object.keys(uploadAssetIds).forEach(key => delete uploadAssetIds[key as FieldKey]);
   values.tier = '高清 · 1080P';
   values.dur = '5 秒';
 }
@@ -646,18 +729,37 @@ function selectChoice(field: FieldKey, value: string) {
   }
 }
 
-function handleFiles(field: FieldKey, event: Event) {
+/**
+ * 选择文件后立即上传，拿到后端素材 ID。
+ * 提交任务时只用素材 ID，绝不把本地文件名当作素材凭证。
+ */
+async function handleFiles(field: FieldKey, event: Event) {
   const input = event.target as HTMLInputElement;
-  const names = Array.from(input.files ?? [])
-    .slice(0, field === 'frames' ? 10 : 1)
-    .map(file => file.name);
-  uploads[field] = names;
+  const files = Array.from(input.files ?? []).slice(0, field === 'frames' ? 10 : 1);
+  input.value = '';
+  if (!files.length) return;
+
+  uploading.value = true;
+  try {
+    const ids: Array<number | string> = [];
+    for (const file of files) {
+      const res = await uploadVideoAsset(file);
+      if (res.data?.assetId !== undefined) ids.push(res.data.assetId);
+    }
+    uploadAssetIds[field] = ids;
+    ElMessage.success(`已上传 ${ids.length} 个素材`);
+    void loadAssets();
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '素材上传失败');
+  } finally {
+    uploading.value = false;
+  }
 }
 
 function uploadSummary(field: FieldKey) {
-  const files = uploads[field] ?? [];
-  if (!files.length) return field === 'frames' ? '选择关键帧' : '点击上传素材';
-  return field === 'frames' ? `已选择 ${files.length} 张关键帧` : files[0];
+  const ids = uploadAssetIds[field] ?? [];
+  if (!ids.length) return field === 'frames' ? '选择关键帧' : '点击上传素材';
+  return field === 'frames' ? `已上传 ${ids.length} 张关键帧` : `已上传 · 素材 ${ids[0]}`;
 }
 
 function appendPrompt(text: string) {
@@ -673,6 +775,143 @@ function optimizePrompt() {
   ElMessage.success('描述已优化');
 }
 
+/**
+ * 提交任务：创建 → 执行 → 刷新列表。
+ *
+ * 提交前再次校验 workPermit（后端也会独立校验，前端禁用只是体验层）。
+ */
+async function submitTask() {
+  const capabilityCode = currentModule.value.code as VideoCapabilityCode;
+  if (!capabilityCode) return;
+
+  if (capabilityCode === 'I2V' && !uploadAssetIds.img?.length) {
+    ElMessage.warning('请先上传图片素材');
+    return;
+  }
+  if (capabilityCode === 'FL2V' && (!uploadAssetIds.first?.length || !uploadAssetIds.last?.length)) {
+    ElMessage.warning('请上传首帧和尾帧图片');
+    return;
+  }
+  if (!values.desc?.trim()) {
+    ElMessage.warning('请填写视频描述');
+    return;
+  }
+
+  const payload = {
+    capabilityCode,
+    workflowCode: currentWorkflowCode.value,
+    taskName: `${currentModule.value.name} · ${currentModel.value.name}`,
+    fields: {
+      desc: values.desc,
+      tier: values.tier,
+      dur: values.dur,
+      img: uploadAssetIds.img?.[0],
+      first: uploadAssetIds.first?.[0],
+      last: uploadAssetIds.last?.[0]
+    },
+    // 幂等键避免重复点击产生多份成片
+    idempotencyKey: `${currentWorkflowCode.value}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  };
+
+  submitting.value = true;
+  try {
+    const created = await createVideoTask(payload);
+    const taskId = created.data?.taskId;
+    if (taskId === undefined) {
+      ElMessage.error('创建任务失败：未返回任务 ID');
+      return;
+    }
+    ElMessage.success('任务已创建，正在提交生成…');
+    await loadTasks();
+
+    const executed = await executeVideoTask(taskId);
+    if (executed.code === 200) {
+      ElMessage.success('成片已生成，可在「我的任务」查看');
+    } else {
+      ElMessage.warning(executed.msg ?? '任务未完成，请查看任务详情');
+    }
+    await loadTasks();
+    await loadAssets();
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '任务提交失败');
+    await loadTasks();
+  } finally {
+    submitting.value = false;
+  }
+}
+
+function taskStatusText(status: VideoTaskStatus) {
+  switch (status) {
+    case 'QUEUED':
+      return '排队中';
+    case 'RUNNING':
+      return '生成中';
+    case 'SUCCEEDED':
+      return '已完成';
+    case 'FAILED':
+      return '失败';
+    case 'CANCELED':
+      return '已取消';
+    case 'TIMEOUT':
+      return '超时';
+    default:
+      return status;
+  }
+}
+
+/** 任务卡片样式类：把后端状态映射到已有的 queued/running/done 视觉。 */
+function taskStatusClass(status: VideoTaskStatus) {
+  if (status === 'RUNNING') return 'running';
+  if (status === 'QUEUED') return 'queued';
+  if (status === 'SUCCEEDED') return 'done';
+  return 'failed';
+}
+
+async function previewTask(task: VideoTaskVO) {
+  try {
+    const res = await getVideoTask(task.id);
+    const detail = res.data;
+    if (!detail) {
+      ElMessage.info('暂无任务详情');
+      return;
+    }
+    if (detail.status !== 'SUCCEEDED') {
+      ElMessage.info(detail.errorMessage ?? `任务状态：${taskStatusText(detail.status)}`);
+      return;
+    }
+    const measured = [
+      detail.outputWidth && detail.outputHeight ? `${detail.outputWidth}×${detail.outputHeight}` : null,
+      detail.outputDurationMs ? `${(detail.outputDurationMs / 1000).toFixed(2)} 秒` : null,
+      detail.truncationApplied ? '已截断至 5 秒' : null
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    ElMessage.success(`成片素材 ${detail.outputAssetId ?? '-'}${measured ? ' · ' + measured : ''}`);
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '读取任务详情失败');
+  }
+}
+
+async function cancelTask(task: VideoTaskVO) {
+  try {
+    await cancelVideoTask(task.id);
+    ElMessage.success('已取消排队任务');
+    await loadTasks();
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '取消失败');
+  }
+}
+
+function recreateTask(task: VideoTaskVO) {
+  const module = VIDEO_MODULES.find(item => item.code === task.capabilityCode);
+  if (module) selectModule(module);
+  const model = VIDEO_MODELS.find(item => item.code === task.modelCode);
+  if (model) currentModel.value = model;
+  values.desc = task.taskName ?? values.desc;
+  activeView.value = 'create';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
 function useInspiration(item: Inspiration) {
   const module = VIDEO_MODULES.find(candidate => candidate.code === item.module);
   const model = VIDEO_MODELS.find(candidate => candidate.code === item.model);
@@ -683,48 +922,63 @@ function useInspiration(item: Inspiration) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-function taskStatusText(status: StudioTaskStatus) {
-  return status === 'running' ? '生成中' : status === 'queued' ? '排队中' : '已完成';
+/**
+ * 素材库上传：同样先上传换 ID，成功后重新拉取列表，不使用本地假数据。
+ */
+async function handleAssetFiles(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const files = Array.from(input.files ?? []);
+  input.value = '';
+  if (!files.length) return;
+  uploading.value = true;
+  try {
+    let uploaded = 0;
+    for (const file of files) {
+      const res = await uploadVideoAsset(file);
+      if (res.data?.assetId !== undefined) uploaded += 1;
+    }
+    ElMessage.success(`已上传 ${uploaded} 个素材`);
+    await loadAssets();
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '素材上传失败');
+  } finally {
+    uploading.value = false;
+  }
 }
 
-function previewTask() {
-  ElMessage.info('示例任务暂无真实成片');
-}
-
-function recreateTask(task: StudioTask) {
-  const module = VIDEO_MODULES.find(item => item.name === task.module);
-  if (module) selectModule(module);
-  const model = VIDEO_MODELS.find(item => item.name === task.model);
-  if (model?.code === 'H3') currentModel.value = model;
-  activeView.value = 'create';
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+async function removeAsset(assetId: number | string) {
+  try {
+    await deleteVideoAsset(assetId);
+    ElMessage.success('素材已删除');
+    await loadAssets();
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '删除失败');
+  }
 }
 
 function assetIcon(kind: AssetKind): Component {
   return kind === 'image' ? Picture : kind === 'video' ? VideoCamera : Document;
 }
 
-function handleAssetFiles(event: Event) {
-  const input = event.target as HTMLInputElement;
-  Array.from(input.files ?? []).forEach(file => {
-    const kind: AssetKind = file.type.startsWith('video/')
-      ? 'video'
-      : file.type.startsWith('audio/')
-        ? 'audio'
-        : 'image';
-    assets.value.unshift({
-      id: `asset-${Date.now()}-${file.name}`,
-      name: file.name,
-      detail: `${file.type.split('/')[1]?.toUpperCase() || '文件'} · ${formatFileSize(file.size)}`,
-      kind,
-      createdAt: '刚刚'
-    });
-  });
-  input.value = '';
+function assetKind(asset: VideoAssetVO): AssetKind {
+  if (asset.assetType === 'VIDEO') return 'video';
+  if (asset.assetType === 'AUDIO') return 'audio';
+  return 'image';
 }
 
-function removeAsset(id: string) {
-  assets.value = assets.value.filter(asset => asset.id !== id);
+function assetKindLabel(asset: VideoAssetVO) {
+  const kind = assetKind(asset);
+  return kind === 'image' ? '图片' : kind === 'video' ? '视频' : '音频';
+}
+
+function assetDetail(asset: VideoAssetVO) {
+  const parts: string[] = [];
+  const ext = asset.contentType?.split('/')[1]?.toUpperCase();
+  if (ext) parts.push(ext);
+  if (asset.sizeBytes) parts.push(formatFileSize(asset.sizeBytes));
+  if (asset.width && asset.height) parts.push(`${asset.width}×${asset.height}`);
+  if (asset.taskId) parts.push('任务成片');
+  return parts.join(' · ') || '—';
 }
 
 function formatFileSize(size: number) {
@@ -735,8 +989,8 @@ function moduleName(code: string) {
   return VIDEO_MODULES.find(item => item.code === code)?.name ?? code;
 }
 
-function modelName(code: string) {
-  return VIDEO_MODELS.find(item => item.code === code)?.name ?? code;
+function modelName(code?: string | null) {
+  return VIDEO_MODELS.find(item => item.code === code)?.name ?? code ?? '—';
 }
 </script>
 
@@ -979,6 +1233,16 @@ button {
 .task-status.done {
   color: #bbf7d0;
   background: rgba(52, 211, 153, 0.12);
+}
+.task-status.failed {
+  color: #fecaca;
+  background: rgba(248, 113, 113, 0.14);
+}
+.task-cover.failed {
+  background: linear-gradient(135deg, #450a0a, #b91c1c);
+}
+.task-error {
+  color: #fca5a5 !important;
 }
 .task-actions {
   display: flex;
