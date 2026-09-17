@@ -1,0 +1,1677 @@
+{
+  "meta": {
+    "name": "hotter-ai video workflow contracts",
+    "version": "1",
+    "status": "DRAFT",
+    "updatedAt": "2026-09-16",
+    "rules": [
+      "每个 workflowCode 对应后端受控目录下的一份 ComfyUI API Format JSON 模板",
+      "任务提交时后端深拷贝模板，仅覆写 mapping 白名单内的节点输入键",
+      "Three MiniMax H3 API templates have verified node IDs and checksums; runtime dependencies and task API remain untested (DRAFT)",
+      "同一 workflowCode 的固定后台参数变化必须递增 version，禁止原地修改 PUBLISHED 版本",
+      "前端仅可见 workflowCode/模型编码/字段白名单/计费展示（见 frontend/src/views/video/modules.ts）"
+    ]
+  },
+  "capabilities": [
+    {
+      "capabilityCode": "I2V",
+      "name": "图生视频",
+      "fields": [
+        {
+          "field": "img",
+          "required": true,
+          "type": "file",
+          "accept": [
+            "jpg",
+            "png",
+            "webp"
+          ]
+        },
+        {
+          "field": "desc",
+          "required": true,
+          "type": "string",
+          "maxLength": 200
+        },
+        {
+          "field": "tier",
+          "required": true,
+          "type": "enum",
+          "options": [
+            "高清 · 1080P",
+            "流畅 · 720P",
+            "标清 · 480P"
+          ]
+        },
+        {
+          "field": "dur",
+          "required": true,
+          "type": "enum",
+          "options": [
+            "5 秒",
+            "10 秒",
+            "20 秒"
+          ]
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-i2v-h3",
+          "modelCode": "H3",
+          "version": "v0.1.0-draft",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/api/wf-i2v-h3-v0.1.0.json",
+          "checksum": "fd6ce1f4448c8624caf937573a7ce5eade9398f78c9415083f837067773d2284",
+          "billing": {
+            "type": "credits",
+            "credits": 10
+          },
+          "mapping": [
+            {
+              "field": "img",
+              "nodeId": "5",
+              "inputKey": "timeline_data",
+              "note": "Resolve uploaded image to a ComfyUI input filename and update timeline segment/shot/keyframe; use prepareH3Graph"
+            },
+            {
+              "field": "desc",
+              "nodeId": "5",
+              "inputKey": "global_prompt",
+              "note": "Also update timeline.global/segments/shots prompt"
+            }
+          ],
+          "fixedParams": {
+            "model": "MiniMax H3 8-step BF16",
+            "sampler": "res_multistep",
+            "steps": 8,
+            "cfg": 1,
+            "fps": 24,
+            "resolution": "1920x1088",
+            "seedPolicy": "set by server per task"
+          },
+          "outputRule": {
+            "nodeId": "7",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "multiple": false,
+            "coverRule": "first frame",
+            "maxSizeMB": "TBD",
+            "maxDurationSeconds": 5,
+            "durationCapStatus": "PENDING_RUNTIME_VALIDATION"
+          },
+          "perf": {
+            "avgSeconds": "TBD",
+            "maxSeconds": "TBD",
+            "timeoutSeconds": "TBD",
+            "concurrency": 1
+          },
+          "supportedOutputs": [
+            {
+              "tier": "高清 · 1080P",
+              "duration": "5 秒",
+              "width": 1920,
+              "height": 1080,
+              "fps": 24,
+              "sourceFrames": 124,
+              "sourceDurationSeconds": 5.166666666666667
+            }
+          ],
+          "fixedFieldValidation": {
+            "tier": "高清 · 1080P",
+            "dur": "5 秒"
+          }
+        },
+        {
+          "workflowCode": "wf-i2v-h3p",
+          "modelCode": "H3P",
+          "version": "v0.1.0-draft",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/api/wf-i2v-h3p-v0.1.0.json",
+          "checksum": "TBD",
+          "billing": {
+            "type": "credits",
+            "credits": 15
+          },
+          "mapping": [
+            {
+              "field": "img",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "desc",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "tier",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "dur",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            }
+          ],
+          "fixedParams": {
+            "model": "H3 Pro（闭源，随工作流模板内置）",
+            "sampler": "TBD",
+            "steps": "TBD",
+            "cfg": "TBD",
+            "seedPolicy": "随机",
+            "fps": "TBD",
+            "encoder": "TBD"
+          },
+          "outputRule": {
+            "nodeId": "TBD",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "multiple": false,
+            "coverRule": "首帧截图",
+            "maxSizeMB": "TBD"
+          },
+          "perf": {
+            "avgSeconds": "TBD",
+            "maxSeconds": "TBD",
+            "timeoutSeconds": "TBD",
+            "concurrency": 1
+          }
+        },
+        {
+          "workflowCode": "wf-i2v-wan",
+          "modelCode": "WAN",
+          "version": "v0.1.0-draft",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/api/wf-i2v-wan-v0.1.0.json",
+          "checksum": "TBD",
+          "billing": {
+            "type": "eta",
+            "eta": "约 4 分钟"
+          },
+          "mapping": [
+            {
+              "field": "img",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "desc",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "tier",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "dur",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            }
+          ],
+          "fixedParams": {
+            "model": "WAN 2.1 image-to-video（本地 GPU）",
+            "sampler": "TBD",
+            "steps": "TBD",
+            "cfg": "TBD",
+            "seedPolicy": "随机",
+            "fps": "TBD",
+            "encoder": "TBD"
+          },
+          "outputRule": {
+            "nodeId": "TBD",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "multiple": false,
+            "coverRule": "首帧截图",
+            "maxSizeMB": "TBD"
+          },
+          "perf": {
+            "avgSeconds": 240,
+            "maxSeconds": "TBD",
+            "timeoutSeconds": "TBD",
+            "concurrency": 1
+          }
+        },
+        {
+          "workflowCode": "wf-i2v-hun",
+          "modelCode": "HUN",
+          "version": "v0.1.0-draft",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/api/wf-i2v-hun-v0.1.0.json",
+          "checksum": "TBD",
+          "billing": {
+            "type": "eta",
+            "eta": "约 8 分钟"
+          },
+          "mapping": [
+            {
+              "field": "img",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "desc",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "tier",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "dur",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            }
+          ],
+          "fixedParams": {
+            "model": "HunyuanVideo image-to-video（本地 GPU）",
+            "sampler": "TBD",
+            "steps": "TBD",
+            "cfg": "TBD",
+            "seedPolicy": "随机",
+            "fps": "TBD",
+            "encoder": "TBD"
+          },
+          "outputRule": {
+            "nodeId": "TBD",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "multiple": false,
+            "coverRule": "首帧截图",
+            "maxSizeMB": "TBD"
+          },
+          "perf": {
+            "avgSeconds": 480,
+            "maxSeconds": "TBD",
+            "timeoutSeconds": "TBD",
+            "concurrency": 1
+          }
+        },
+        {
+          "workflowCode": "wf-i2v-ltx",
+          "modelCode": "LTX",
+          "version": "v0.1.0-draft",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/api/wf-i2v-ltx-v0.1.0.json",
+          "checksum": "TBD",
+          "billing": {
+            "type": "eta",
+            "eta": "约 2 分钟"
+          },
+          "mapping": [
+            {
+              "field": "img",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "desc",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "tier",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "dur",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            }
+          ],
+          "fixedParams": {
+            "model": "LTX-Video image-to-video（本地 GPU）",
+            "sampler": "TBD",
+            "steps": "TBD",
+            "cfg": "TBD",
+            "seedPolicy": "随机",
+            "fps": "TBD",
+            "encoder": "TBD"
+          },
+          "outputRule": {
+            "nodeId": "TBD",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "multiple": false,
+            "coverRule": "首帧截图",
+            "maxSizeMB": "TBD"
+          },
+          "perf": {
+            "avgSeconds": 120,
+            "maxSeconds": "TBD",
+            "timeoutSeconds": "TBD",
+            "concurrency": 1
+          }
+        },
+        {
+          "workflowCode": "wf-i2v-cog",
+          "modelCode": "COG",
+          "version": "v0.1.0-draft",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/api/wf-i2v-cog-v0.1.0.json",
+          "checksum": "TBD",
+          "billing": {
+            "type": "eta",
+            "eta": "约 6 分钟"
+          },
+          "mapping": [
+            {
+              "field": "img",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "desc",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "tier",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "dur",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            }
+          ],
+          "fixedParams": {
+            "model": "CogVideoX image-to-video（本地 GPU）",
+            "sampler": "TBD",
+            "steps": "TBD",
+            "cfg": "TBD",
+            "seedPolicy": "随机",
+            "fps": "TBD",
+            "encoder": "TBD"
+          },
+          "outputRule": {
+            "nodeId": "TBD",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "multiple": false,
+            "coverRule": "首帧截图",
+            "maxSizeMB": "TBD"
+          },
+          "perf": {
+            "avgSeconds": 360,
+            "maxSeconds": "TBD",
+            "timeoutSeconds": "TBD",
+            "concurrency": 1
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "FL2V",
+      "name": "首尾帧生视频",
+      "fields": [
+        {
+          "field": "first",
+          "required": true,
+          "type": "file",
+          "accept": [
+            "jpg",
+            "png",
+            "webp"
+          ]
+        },
+        {
+          "field": "last",
+          "required": true,
+          "type": "file",
+          "accept": [
+            "jpg",
+            "png",
+            "webp"
+          ]
+        },
+        {
+          "field": "desc",
+          "required": true,
+          "type": "string",
+          "maxLength": 200
+        },
+        {
+          "field": "tier",
+          "required": true,
+          "type": "enum",
+          "options": [
+            "高清 · 1080P",
+            "流畅 · 720P",
+            "标清 · 480P"
+          ]
+        },
+        {
+          "field": "dur",
+          "required": true,
+          "type": "enum",
+          "options": [
+            "5 秒",
+            "10 秒",
+            "20 秒"
+          ]
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-fl2v-h3",
+          "modelCode": "H3",
+          "version": "v0.1.0-draft",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/api/wf-fl2v-h3-v0.1.0.json",
+          "checksum": "ec9c817d628a02d8e7599c4f5defe809416a867fb444f5c70110dfce85c502fb",
+          "billing": {
+            "type": "credits",
+            "credits": 10
+          },
+          "mapping": [
+            {
+              "field": "first",
+              "nodeId": "5",
+              "inputKey": "timeline_data",
+              "note": "Resolve uploaded image to a ComfyUI input filename and update timeline segment/shot/keyframe; use prepareH3Graph"
+            },
+            {
+              "field": "last",
+              "nodeId": "5",
+              "inputKey": "timeline_data",
+              "note": "Resolve uploaded image to a ComfyUI input filename and update timeline segment/shot/keyframe; use prepareH3Graph"
+            },
+            {
+              "field": "desc",
+              "nodeId": "5",
+              "inputKey": "global_prompt",
+              "note": "Also update timeline.global/segments/shots prompt"
+            }
+          ],
+          "fixedParams": {
+            "model": "MiniMax H3 8-step BF16",
+            "sampler": "res_multistep",
+            "steps": 8,
+            "cfg": 1,
+            "fps": 24,
+            "resolution": "1920x1088",
+            "seedPolicy": "set by server per task"
+          },
+          "outputRule": {
+            "nodeId": "7",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "multiple": false,
+            "coverRule": "first frame",
+            "maxSizeMB": "TBD",
+            "maxDurationSeconds": 5,
+            "durationCapStatus": "PENDING_RUNTIME_VALIDATION"
+          },
+          "perf": {
+            "avgSeconds": "TBD",
+            "maxSeconds": "TBD",
+            "timeoutSeconds": "TBD",
+            "concurrency": 1
+          },
+          "supportedOutputs": [
+            {
+              "tier": "高清 · 1080P",
+              "duration": "5 秒",
+              "width": 1920,
+              "height": 1080,
+              "fps": 24,
+              "sourceFrames": 124,
+              "sourceDurationSeconds": 5.166666666666667
+            }
+          ],
+          "fixedFieldValidation": {
+            "tier": "高清 · 1080P",
+            "dur": "5 秒"
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "T2V",
+      "name": "文生视频",
+      "fields": [
+        {
+          "field": "desc",
+          "required": true,
+          "type": "string",
+          "maxLength": 200
+        },
+        {
+          "field": "tier",
+          "required": true,
+          "type": "enum",
+          "options": [
+            "流畅 · 720P",
+            "高清 · 1080P"
+          ]
+        },
+        {
+          "field": "dur",
+          "required": true,
+          "type": "enum",
+          "options": [
+            "5 秒",
+            "10 秒"
+          ]
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-t2v-h3",
+          "modelCode": "H3",
+          "version": "v0.1.0-draft",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/api/wf-t2v-h3-v0.1.0.json",
+          "checksum": "620e53c9cf24eeed46eb2023c121d0de7650793d41f04e54d065ea82e78ecf11",
+          "billing": {
+            "type": "credits",
+            "credits": 10
+          },
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "5",
+              "inputKey": "global_prompt",
+              "note": "Also update timeline.global/segments/shots prompt"
+            }
+          ],
+          "fixedParams": {
+            "model": "MiniMax H3 8-step BF16",
+            "sampler": "res_multistep",
+            "steps": 8,
+            "cfg": 1,
+            "fps": 24,
+            "resolution": "1920x1088",
+            "seedPolicy": "set by server per task"
+          },
+          "outputRule": {
+            "nodeId": "7",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "multiple": false,
+            "coverRule": "first frame",
+            "maxSizeMB": "TBD",
+            "maxDurationSeconds": 5,
+            "durationCapStatus": "PENDING_RUNTIME_VALIDATION"
+          },
+          "perf": {
+            "avgSeconds": "TBD",
+            "maxSeconds": "TBD",
+            "timeoutSeconds": "TBD",
+            "concurrency": 1
+          },
+          "supportedOutputs": [
+            {
+              "tier": "高清 · 1080P",
+              "duration": "5 秒",
+              "width": 1920,
+              "height": 1080,
+              "fps": 24,
+              "sourceFrames": 124,
+              "sourceDurationSeconds": 5.166666666666667
+            }
+          ],
+          "fixedFieldValidation": {
+            "tier": "高清 · 1080P",
+            "dur": "5 秒"
+          }
+        },
+        {
+          "workflowCode": "wf-t2v-h3p",
+          "modelCode": "H3P",
+          "version": "v0.1.0-draft",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/api/wf-t2v-h3p-v0.1.0.json",
+          "checksum": "TBD",
+          "billing": {
+            "type": "credits",
+            "credits": 15
+          },
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "tier",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "dur",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            }
+          ],
+          "fixedParams": {
+            "model": "H3 Pro（闭源，随工作流模板内置）",
+            "sampler": "TBD",
+            "steps": "TBD",
+            "cfg": "TBD",
+            "seedPolicy": "随机",
+            "fps": "TBD",
+            "encoder": "TBD"
+          },
+          "outputRule": {
+            "nodeId": "TBD",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "multiple": false,
+            "coverRule": "首帧截图",
+            "maxSizeMB": "TBD"
+          },
+          "perf": {
+            "avgSeconds": "TBD",
+            "maxSeconds": "TBD",
+            "timeoutSeconds": "TBD",
+            "concurrency": 1
+          }
+        },
+        {
+          "workflowCode": "wf-t2v-wan",
+          "modelCode": "WAN",
+          "version": "v0.1.0-draft",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/api/wf-t2v-wan-v0.1.0.json",
+          "checksum": "TBD",
+          "billing": {
+            "type": "eta",
+            "eta": "约 4 分钟"
+          },
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "tier",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "dur",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            }
+          ],
+          "fixedParams": {
+            "model": "WAN 2.1 text-to-video（本地 GPU）",
+            "sampler": "TBD",
+            "steps": "TBD",
+            "cfg": "TBD",
+            "seedPolicy": "随机",
+            "fps": "TBD",
+            "encoder": "TBD"
+          },
+          "outputRule": {
+            "nodeId": "TBD",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "multiple": false,
+            "coverRule": "首帧截图",
+            "maxSizeMB": "TBD"
+          },
+          "perf": {
+            "avgSeconds": 240,
+            "maxSeconds": "TBD",
+            "timeoutSeconds": "TBD",
+            "concurrency": 1
+          }
+        },
+        {
+          "workflowCode": "wf-t2v-hun",
+          "modelCode": "HUN",
+          "version": "v0.1.0-draft",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/api/wf-t2v-hun-v0.1.0.json",
+          "checksum": "TBD",
+          "billing": {
+            "type": "eta",
+            "eta": "约 8 分钟"
+          },
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "tier",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "dur",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            }
+          ],
+          "fixedParams": {
+            "model": "HunyuanVideo text-to-video（本地 GPU）",
+            "sampler": "TBD",
+            "steps": "TBD",
+            "cfg": "TBD",
+            "seedPolicy": "随机",
+            "fps": "TBD",
+            "encoder": "TBD"
+          },
+          "outputRule": {
+            "nodeId": "TBD",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "multiple": false,
+            "coverRule": "首帧截图",
+            "maxSizeMB": "TBD"
+          },
+          "perf": {
+            "avgSeconds": 480,
+            "maxSeconds": "TBD",
+            "timeoutSeconds": "TBD",
+            "concurrency": 1
+          }
+        },
+        {
+          "workflowCode": "wf-t2v-ltx",
+          "modelCode": "LTX",
+          "version": "v0.1.0-draft",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/api/wf-t2v-ltx-v0.1.0.json",
+          "checksum": "TBD",
+          "billing": {
+            "type": "eta",
+            "eta": "约 2 分钟"
+          },
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "tier",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "dur",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            }
+          ],
+          "fixedParams": {
+            "model": "LTX-Video text-to-video（本地 GPU）",
+            "sampler": "TBD",
+            "steps": "TBD",
+            "cfg": "TBD",
+            "seedPolicy": "随机",
+            "fps": "TBD",
+            "encoder": "TBD"
+          },
+          "outputRule": {
+            "nodeId": "TBD",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "multiple": false,
+            "coverRule": "首帧截图",
+            "maxSizeMB": "TBD"
+          },
+          "perf": {
+            "avgSeconds": 120,
+            "maxSeconds": "TBD",
+            "timeoutSeconds": "TBD",
+            "concurrency": 1
+          }
+        },
+        {
+          "workflowCode": "wf-t2v-cog",
+          "modelCode": "COG",
+          "version": "v0.1.0-draft",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/api/wf-t2v-cog-v0.1.0.json",
+          "checksum": "TBD",
+          "billing": {
+            "type": "eta",
+            "eta": "约 6 分钟"
+          },
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "tier",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "dur",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            }
+          ],
+          "fixedParams": {
+            "model": "CogVideoX text-to-video（本地 GPU）",
+            "sampler": "TBD",
+            "steps": "TBD",
+            "cfg": "TBD",
+            "seedPolicy": "随机",
+            "fps": "TBD",
+            "encoder": "TBD"
+          },
+          "outputRule": {
+            "nodeId": "TBD",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "multiple": false,
+            "coverRule": "首帧截图",
+            "maxSizeMB": "TBD"
+          },
+          "perf": {
+            "avgSeconds": 360,
+            "maxSeconds": "TBD",
+            "timeoutSeconds": "TBD",
+            "concurrency": 1
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "MFRAME",
+      "name": "智能多帧",
+      "fields": [
+        {
+          "field": "frames",
+          "required": true,
+          "type": "file",
+          "accept": [
+            "jpg",
+            "png",
+            "webp"
+          ],
+          "minCount": 2,
+          "maxCount": 10,
+          "note": "按时间顺序的关键帧"
+        },
+        {
+          "field": "desc",
+          "required": true,
+          "type": "string",
+          "maxLength": 200
+        },
+        {
+          "field": "dur",
+          "required": true,
+          "type": "enum",
+          "options": [
+            "5 秒",
+            "10 秒"
+          ]
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-mframe-wan",
+          "modelCode": "WAN",
+          "version": "v0.1.0-draft",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/api/wf-mframe-wan-v0.1.0.json",
+          "checksum": "TBD",
+          "billing": {
+            "type": "eta",
+            "eta": "约 4 分钟"
+          },
+          "mapping": [
+            {
+              "field": "frames",
+              "nodeId": "TBD",
+              "inputKey": "TBD",
+              "note": "多帧扩展为多个 LoadImage 输入"
+            },
+            {
+              "field": "desc",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "dur",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            }
+          ],
+          "fixedParams": {
+            "model": "WAN 2.1 多帧条件（本地 GPU）",
+            "sampler": "TBD",
+            "steps": "TBD",
+            "cfg": "TBD",
+            "seedPolicy": "随机",
+            "fps": "TBD",
+            "encoder": "TBD"
+          },
+          "outputRule": {
+            "nodeId": "TBD",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "multiple": false,
+            "coverRule": "首帧截图",
+            "maxSizeMB": "TBD"
+          },
+          "perf": {
+            "avgSeconds": 240,
+            "maxSeconds": "TBD",
+            "timeoutSeconds": "TBD",
+            "concurrency": 1
+          }
+        },
+        {
+          "workflowCode": "wf-mframe-hun",
+          "modelCode": "HUN",
+          "version": "v0.1.0-draft",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/api/wf-mframe-hun-v0.1.0.json",
+          "checksum": "TBD",
+          "billing": {
+            "type": "eta",
+            "eta": "约 8 分钟"
+          },
+          "mapping": [
+            {
+              "field": "frames",
+              "nodeId": "TBD",
+              "inputKey": "TBD",
+              "note": "多帧扩展为多个 LoadImage 输入"
+            },
+            {
+              "field": "desc",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "dur",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            }
+          ],
+          "fixedParams": {
+            "model": "HunyuanVideo 帧条件（本地 GPU）",
+            "sampler": "TBD",
+            "steps": "TBD",
+            "cfg": "TBD",
+            "seedPolicy": "随机",
+            "fps": "TBD",
+            "encoder": "TBD"
+          },
+          "outputRule": {
+            "nodeId": "TBD",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "multiple": false,
+            "coverRule": "首帧截图",
+            "maxSizeMB": "TBD"
+          },
+          "perf": {
+            "avgSeconds": 480,
+            "maxSeconds": "TBD",
+            "timeoutSeconds": "TBD",
+            "concurrency": 1
+          }
+        }
+      ],
+      "note": "闭源 H3 是否支持多帧条件待契约交付确认；确认后在此追加 wf-mframe-h3/h3p 条目并在前端矩阵放开"
+    },
+    {
+      "capabilityCode": "CAMMOVE",
+      "name": "运镜视频",
+      "fields": [
+        {
+          "field": "img",
+          "required": true,
+          "type": "file",
+          "accept": [
+            "jpg",
+            "png",
+            "webp"
+          ]
+        },
+        {
+          "field": "move",
+          "required": true,
+          "type": "enum",
+          "options": [
+            "推近",
+            "拉远",
+            "左摇",
+            "右摇",
+            "环绕",
+            "旋转"
+          ]
+        },
+        {
+          "field": "desc",
+          "required": false,
+          "type": "string",
+          "maxLength": 200
+        },
+        {
+          "field": "dur",
+          "required": true,
+          "type": "enum",
+          "options": [
+            "5 秒",
+            "10 秒"
+          ]
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-cammove-wan",
+          "modelCode": "WAN",
+          "version": "v0.1.0-draft",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/api/wf-cammove-wan-v0.1.0.json",
+          "checksum": "TBD",
+          "billing": {
+            "type": "eta",
+            "eta": "约 4 分钟"
+          },
+          "mapping": [
+            {
+              "field": "img",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "move",
+              "nodeId": "TBD",
+              "inputKey": "TBD",
+              "note": "运镜枚举映射到相机参数节点"
+            },
+            {
+              "field": "desc",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "dur",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            }
+          ],
+          "fixedParams": {
+            "model": "WAN 2.1 camera-control（本地 GPU）",
+            "sampler": "TBD",
+            "steps": "TBD",
+            "cfg": "TBD",
+            "seedPolicy": "随机",
+            "fps": "TBD",
+            "encoder": "TBD"
+          },
+          "outputRule": {
+            "nodeId": "TBD",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "multiple": false,
+            "coverRule": "首帧截图",
+            "maxSizeMB": "TBD"
+          },
+          "perf": {
+            "avgSeconds": 240,
+            "maxSeconds": "TBD",
+            "timeoutSeconds": "TBD",
+            "concurrency": 1
+          }
+        },
+        {
+          "workflowCode": "wf-cammove-h3p",
+          "modelCode": "H3P",
+          "version": "v0.1.0-draft",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/api/wf-cammove-h3p-v0.1.0.json",
+          "checksum": "TBD",
+          "billing": {
+            "type": "credits",
+            "credits": 15
+          },
+          "mapping": [
+            {
+              "field": "img",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "move",
+              "nodeId": "TBD",
+              "inputKey": "TBD",
+              "note": "运镜枚举映射到提示词模板或相机参数节点"
+            },
+            {
+              "field": "desc",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "dur",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            }
+          ],
+          "fixedParams": {
+            "model": "H3 Pro（闭源，随工作流模板内置）",
+            "sampler": "TBD",
+            "steps": "TBD",
+            "cfg": "TBD",
+            "seedPolicy": "随机",
+            "fps": "TBD",
+            "encoder": "TBD"
+          },
+          "outputRule": {
+            "nodeId": "TBD",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "multiple": false,
+            "coverRule": "首帧截图",
+            "maxSizeMB": "TBD"
+          },
+          "perf": {
+            "avgSeconds": "TBD",
+            "maxSeconds": "TBD",
+            "timeoutSeconds": "TBD",
+            "concurrency": 1
+          }
+        },
+        {
+          "workflowCode": "wf-cammove-ltx",
+          "modelCode": "LTX",
+          "version": "v0.1.0-draft",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/api/wf-cammove-ltx-v0.1.0.json",
+          "checksum": "TBD",
+          "billing": {
+            "type": "eta",
+            "eta": "约 2 分钟"
+          },
+          "mapping": [
+            {
+              "field": "img",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "move",
+              "nodeId": "TBD",
+              "inputKey": "TBD",
+              "note": "运镜枚举映射到相机参数节点"
+            },
+            {
+              "field": "desc",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "dur",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            }
+          ],
+          "fixedParams": {
+            "model": "LTX-Video camera（本地 GPU）",
+            "sampler": "TBD",
+            "steps": "TBD",
+            "cfg": "TBD",
+            "seedPolicy": "随机",
+            "fps": "TBD",
+            "encoder": "TBD"
+          },
+          "outputRule": {
+            "nodeId": "TBD",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "multiple": false,
+            "coverRule": "首帧截图",
+            "maxSizeMB": "TBD"
+          },
+          "perf": {
+            "avgSeconds": 120,
+            "maxSeconds": "TBD",
+            "timeoutSeconds": "TBD",
+            "concurrency": 1
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "VEXT",
+      "name": "视频续写",
+      "fields": [
+        {
+          "field": "source",
+          "required": true,
+          "type": "ref",
+          "note": "已完成任务成片的后端文件引用"
+        },
+        {
+          "field": "extend",
+          "required": true,
+          "type": "enum",
+          "options": [
+            "5 秒",
+            "10 秒",
+            "20 秒"
+          ]
+        },
+        {
+          "field": "desc",
+          "required": false,
+          "type": "string",
+          "maxLength": 200
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-vext-h3",
+          "modelCode": "H3",
+          "version": "v0.1.0-draft",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/api/wf-vext-h3-v0.1.0.json",
+          "checksum": "TBD",
+          "billing": {
+            "type": "credits",
+            "credits": 10
+          },
+          "mapping": [
+            {
+              "field": "source",
+              "nodeId": "TBD",
+              "inputKey": "TBD",
+              "note": "取成片末帧作为续写条件"
+            },
+            {
+              "field": "extend",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "desc",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            }
+          ],
+          "fixedParams": {
+            "model": "MiniMax H3（闭源，随工作流模板内置）",
+            "sampler": "TBD",
+            "steps": "TBD",
+            "cfg": "TBD",
+            "seedPolicy": "随机",
+            "fps": "TBD",
+            "encoder": "TBD"
+          },
+          "outputRule": {
+            "nodeId": "TBD",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "multiple": false,
+            "coverRule": "首帧截图",
+            "maxSizeMB": "TBD"
+          },
+          "perf": {
+            "avgSeconds": "TBD",
+            "maxSeconds": "TBD",
+            "timeoutSeconds": "TBD",
+            "concurrency": 1
+          }
+        },
+        {
+          "workflowCode": "wf-vext-h3p",
+          "modelCode": "H3P",
+          "version": "v0.1.0-draft",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/api/wf-vext-h3p-v0.1.0.json",
+          "checksum": "TBD",
+          "billing": {
+            "type": "credits",
+            "credits": 15
+          },
+          "mapping": [
+            {
+              "field": "source",
+              "nodeId": "TBD",
+              "inputKey": "TBD",
+              "note": "取成片末帧作为续写条件"
+            },
+            {
+              "field": "extend",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "desc",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            }
+          ],
+          "fixedParams": {
+            "model": "H3 Pro（闭源，随工作流模板内置）",
+            "sampler": "TBD",
+            "steps": "TBD",
+            "cfg": "TBD",
+            "seedPolicy": "随机",
+            "fps": "TBD",
+            "encoder": "TBD"
+          },
+          "outputRule": {
+            "nodeId": "TBD",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "multiple": false,
+            "coverRule": "首帧截图",
+            "maxSizeMB": "TBD"
+          },
+          "perf": {
+            "avgSeconds": "TBD",
+            "maxSeconds": "TBD",
+            "timeoutSeconds": "TBD",
+            "concurrency": 1
+          }
+        },
+        {
+          "workflowCode": "wf-vext-wan",
+          "modelCode": "WAN",
+          "version": "v0.1.0-draft",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/api/wf-vext-wan-v0.1.0.json",
+          "checksum": "TBD",
+          "billing": {
+            "type": "eta",
+            "eta": "约 4 分钟"
+          },
+          "mapping": [
+            {
+              "field": "source",
+              "nodeId": "TBD",
+              "inputKey": "TBD",
+              "note": "取成片末帧作为续写条件"
+            },
+            {
+              "field": "extend",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "desc",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            }
+          ],
+          "fixedParams": {
+            "model": "WAN 2.1 末帧续写（本地 GPU）",
+            "sampler": "TBD",
+            "steps": "TBD",
+            "cfg": "TBD",
+            "seedPolicy": "随机",
+            "fps": "TBD",
+            "encoder": "TBD"
+          },
+          "outputRule": {
+            "nodeId": "TBD",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "multiple": false,
+            "coverRule": "首帧截图",
+            "maxSizeMB": "TBD"
+          },
+          "perf": {
+            "avgSeconds": 240,
+            "maxSeconds": "TBD",
+            "timeoutSeconds": "TBD",
+            "concurrency": 1
+          }
+        },
+        {
+          "workflowCode": "wf-vext-ltx",
+          "modelCode": "LTX",
+          "version": "v0.1.0-draft",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/api/wf-vext-ltx-v0.1.0.json",
+          "checksum": "TBD",
+          "billing": {
+            "type": "eta",
+            "eta": "约 2 分钟"
+          },
+          "mapping": [
+            {
+              "field": "source",
+              "nodeId": "TBD",
+              "inputKey": "TBD",
+              "note": "取成片末帧作为续写条件"
+            },
+            {
+              "field": "extend",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "desc",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            }
+          ],
+          "fixedParams": {
+            "model": "LTX-Video 末帧续写（本地 GPU）",
+            "sampler": "TBD",
+            "steps": "TBD",
+            "cfg": "TBD",
+            "seedPolicy": "随机",
+            "fps": "TBD",
+            "encoder": "TBD"
+          },
+          "outputRule": {
+            "nodeId": "TBD",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "multiple": false,
+            "coverRule": "首帧截图",
+            "maxSizeMB": "TBD"
+          },
+          "perf": {
+            "avgSeconds": 120,
+            "maxSeconds": "TBD",
+            "timeoutSeconds": "TBD",
+            "concurrency": 1
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "VHD",
+      "name": "补帧高清化",
+      "fields": [
+        {
+          "field": "source",
+          "required": true,
+          "type": "ref",
+          "note": "已完成任务成片的后端文件引用"
+        },
+        {
+          "field": "target",
+          "required": true,
+          "type": "enum",
+          "options": [
+            "1080P",
+            "4K"
+          ]
+        },
+        {
+          "field": "fps",
+          "required": true,
+          "type": "enum",
+          "options": [
+            "24 FPS",
+            "30 FPS",
+            "60 FPS"
+          ]
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-vhd-rife-upscale",
+          "modelCode": null,
+          "version": "v0.1.0-draft",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/api/wf-vhd-rife-upscale-v0.1.0.json",
+          "checksum": "TBD",
+          "billing": {
+            "type": "eta",
+            "eta": "约 2 分钟"
+          },
+          "mapping": [
+            {
+              "field": "source",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "target",
+              "nodeId": "TBD",
+              "inputKey": "TBD",
+              "note": "映射到超分模型的分辨率参数"
+            },
+            {
+              "field": "fps",
+              "nodeId": "TBD",
+              "inputKey": "TBD",
+              "note": "映射到 RIFE 补帧倍率换算"
+            }
+          ],
+          "fixedParams": {
+            "model": "RIFE 补帧 + 超分模型（本地 GPU，随工作流模板内置）",
+            "sampler": "-",
+            "steps": "-",
+            "cfg": "-",
+            "seedPolicy": "-",
+            "fps": "由 fps 字段决定",
+            "encoder": "TBD"
+          },
+          "outputRule": {
+            "nodeId": "TBD",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "multiple": false,
+            "coverRule": "首帧截图",
+            "maxSizeMB": "TBD"
+          },
+          "perf": {
+            "avgSeconds": 120,
+            "maxSeconds": "TBD",
+            "timeoutSeconds": "TBD",
+            "concurrency": 1
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "LIP",
+      "name": "对口型",
+      "fields": [
+        {
+          "field": "source",
+          "required": true,
+          "type": "ref",
+          "note": "已完成任务成片的后端文件引用"
+        },
+        {
+          "field": "audio",
+          "required": true,
+          "type": "file",
+          "accept": [
+            "mp3",
+            "wav",
+            "m4a"
+          ]
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-lip-latentsync",
+          "modelCode": null,
+          "version": "v0.1.0-draft",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/api/wf-lip-latentsync-v0.1.0.json",
+          "checksum": "TBD",
+          "billing": {
+            "type": "eta",
+            "eta": "约 3 分钟"
+          },
+          "mapping": [
+            {
+              "field": "source",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            },
+            {
+              "field": "audio",
+              "nodeId": "TBD",
+              "inputKey": "TBD"
+            }
+          ],
+          "fixedParams": {
+            "model": "LatentSync 口型同步（本地 GPU，随工作流模板内置）",
+            "sampler": "-",
+            "steps": "-",
+            "cfg": "-",
+            "seedPolicy": "-",
+            "fps": "25",
+            "encoder": "TBD"
+          },
+          "outputRule": {
+            "nodeId": "TBD",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "multiple": false,
+            "coverRule": "首帧截图",
+            "maxSizeMB": "TBD"
+          },
+          "perf": {
+            "avgSeconds": 180,
+            "maxSeconds": "TBD",
+            "timeoutSeconds": "TBD",
+            "concurrency": 1
+          }
+        }
+      ]
+    }
+  ]
+}

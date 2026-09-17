@@ -1,0 +1,2 @@
+# Allow the isolated GitHub deployment runner to invoke only the audited release entrypoint.
+gh-deploy ALL=(root) NOPASSWD: /usr/local/sbin/hotter-release

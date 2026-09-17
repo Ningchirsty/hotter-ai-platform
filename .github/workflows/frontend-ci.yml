@@ -29,15 +29,17 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: '22'
-
       - name: Install pnpm
         run: |
           corepack enable
           corepack prepare pnpm@10.34.5 --activate
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
 
       - name: Install frontend dependencies
         working-directory: frontend
@@ -47,31 +49,55 @@ jobs:
         working-directory: frontend
         run: pnpm lint
 
-      - name: Build frontend
-        working-directory: frontend
-        run: pnpm build:prod
-
       - name: Build frontend image
         run: |
           docker build --pull \
+            --build-arg "BUILD_SHA=${GITHUB_SHA}" \
             --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
             --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
             --tag "$IMAGE" frontend
 
       - name: Smoke test frontend image
         run: |
-          docker run -d --name frontend-smoke --add-host backend:127.0.0.1 "$IMAGE"
+          docker run -d --name frontend-smoke -e LISTEN_PORT=8080 "$IMAGE"
           trap 'docker rm -f frontend-smoke >/dev/null 2>&1 || true' EXIT
+          ready=false
           for attempt in $(seq 1 12); do
-            if docker exec frontend-smoke wget --spider --quiet http://127.0.0.1:8080/; then exit 0; fi
+            if docker exec frontend-smoke wget --spider --quiet http://127.0.0.1:8080/version.json; then
+              ready=true
+              break
+            fi
             sleep 2
           done
-          docker logs frontend-smoke
-          exit 1
+          if [ "$ready" != true ]; then
+            docker logs frontend-smoke
+            exit 1
+          fi
+          docker exec frontend-smoke wget -qO- http://127.0.0.1:8080/version.json | \
+            grep -F "\"gitSha\":\"${GITHUB_SHA}\""
+
+      - name: Export frontend image with checksum
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          mkdir -p artifacts/image
+          docker save "$IMAGE" | gzip -1 > artifacts/image/frontend-image.tar.gz
+          cd artifacts/image
+          sha256sum frontend-image.tar.gz > SHA256SUMS
+
+      - name: Upload frontend image
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: frontend-image-${{ github.sha }}
+          path: artifacts/image/
+          overwrite: true
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 3
 
   publish-image:
     name: Publish frontend image to GHCR
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     needs: build-test-image
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -84,20 +110,18 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Log in to GHCR
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push frontend image
+      - name: Build and push verified commit
         env:
           IMAGE: ghcr.io/ningchirsty/hotter-ai-platform-frontend:sha-${{ github.sha }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           docker build --pull \
+            --build-arg "BUILD_SHA=${GITHUB_SHA}" \
             --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
             --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
             --tag "$IMAGE" frontend
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          trap 'docker logout ghcr.io' EXIT
           docker push "$IMAGE"
-          docker inspect "$IMAGE" --format '{{index .RepoDigests 0}}'
+          digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE")
+          printf '### Published image\n\n`%s`\n\nDigest: `%s`\n' "$IMAGE" "$digest" >> "$GITHUB_STEP_SUMMARY"

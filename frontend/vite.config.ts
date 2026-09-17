@@ -30,9 +30,15 @@ export default defineConfig(({ mode, command }) => {
       open: true,
       proxy: {
         [env.VITE_APP_BASE_API]: {
-          target: 'http://localhost:8080',
+          // 允许用环境变量覆盖后端地址，便于指向隔离联调实例；
+          // 未设置时保持原有默认值，不改变现有开发习惯。
+          target: env.VITE_APP_PROXY_TARGET || 'http://localhost:8080',
           changeOrigin: true,
           ws: true,
+          // 视频任务执行是长轮询：H3 单次生成实测数分钟，
+          // 默认代理超时会在任务完成前断开连接，必须显式放大。
+          timeout: Number(env.VITE_APP_PROXY_TIMEOUT || 3600000),
+          proxyTimeout: Number(env.VITE_APP_PROXY_TIMEOUT || 3600000),
           rewrite: path => path.replace(new RegExp('^' + env.VITE_APP_BASE_API), '')
         }
       }

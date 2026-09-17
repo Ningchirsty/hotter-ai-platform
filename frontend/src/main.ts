@@ -6,6 +6,7 @@ import VxeTablePlugin from 'vxe-table';
 import 'virtual:uno.css';
 import 'element-plus/theme-chalk/dark/css-vars.css';
 import '@/assets/styles/index.scss';
+import '@/assets/styles/tokens-nebula.scss';
 import 'highlight.js/styles/atom-one-dark.css';
 import 'highlight.js/lib/common';
 import 'virtual:svg-icons-register';

@@ -1,2 +1,5 @@
 /mvnw text eol=lf
 *.cmd text eol=crlf
+script/video/workflows/api/*.json text eol=lf
+/script/deploy/hotter-release text eol=lf
+/script/deploy/gh-deploy-hotter.sudoers text eol=lf

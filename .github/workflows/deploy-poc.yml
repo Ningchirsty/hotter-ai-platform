@@ -1,4 +1,4 @@
-name: Deploy Shenzhen POC
+name: Deploy Shenzhen Production Backend
 
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: shenzhen-poc-deploy
+  group: shenzhen-production
   cancel-in-progress: false
 
 jobs:
@@ -21,6 +21,9 @@ jobs:
     name: Deploy immutable backend image
     runs-on: [shenzhen, deploy]
     timeout-minutes: 20
+    environment:
+      name: shenzhen-production
+      url: https://pm.hottter.cn
     steps:
       - name: Validate image reference
         env:
@@ -31,55 +34,9 @@ jobs:
             exit 1
           fi
 
-      - name: Check deployment prerequisites
-        run: |
-          set -euo pipefail
-          cd /opt/ai-video-poc
-          id
-          test -r .env
-          test -s .env
-          docker version --format '{{.Server.Version}}'
-
-      - name: Sign in to registry
-        run: |
-          set -euo pipefail
-          cd /opt/ai-video-poc
-          set -a
-          . ./.env
-          set +a
-          test -n "${GHCR_USERNAME:-}"
-          test -n "${GHCR_TOKEN:-}"
-          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin
-
-      - name: Pull immutable image
+      - name: Deploy and verify backend through audited entrypoint
         env:
           IMAGE: ${{ inputs.image }}
         run: |
           set -euo pipefail
-          docker pull "$IMAGE"
-
-      - name: Start backend
-        env:
-          IMAGE: ${{ inputs.image }}
-        run: |
-          set -euo pipefail
-          cd /opt/ai-video-poc
-          BACKEND_IMAGE="$IMAGE" docker compose --env-file .env -f compose.yaml up -d --no-deps backend
-
-      - name: Verify backend health
-        env:
-          IMAGE: ${{ inputs.image }}
-        run: |
-          set -euo pipefail
-          cd /opt/ai-video-poc
-          for attempt in $(seq 1 24); do
-            health=$(docker inspect --format '{{.State.Health.Status}}' ai-video-poc-backend-1 2>/dev/null || true)
-            if [ "$health" = healthy ]; then
-              docker image inspect "$IMAGE" --format '{{index .RepoDigests 0}}'
-              exit 0
-            fi
-            sleep 5
-          done
-
-          docker compose --env-file .env -f compose.yaml logs --tail=100 backend
-          exit 1
+          sudo /usr/local/sbin/hotter-release backend "$IMAGE"
