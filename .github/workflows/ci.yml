@@ -72,15 +72,34 @@ jobs:
 
       - name: Build backend image
         run: |
+          # 构建上下文是仓库根（不是 ruoyi-admin）：镜像需要包含
+          # script/video/workflows 下的工作流契约与模板，而 Docker 不允许
+          # COPY 构建上下文之外的文件。Dockerfile 位于仓库根。
           docker build --pull \
+            -f Dockerfile \
             --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
             --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
-            --tag "$IMAGE" ruoyi-admin
+            --tag "$IMAGE" .
 
       - name: Smoke test image runtime and packaged JAR
         run: |
           docker run --rm --entrypoint /bin/bash "$IMAGE" -ec \
             'java -version; test -s /ruoyi/server/app.jar; test -w /ruoyi/server/logs; test -w /ruoyi/server/temp'
+
+      - name: Smoke test packaged contracts and media tools
+        run: |
+          # 契约与模板是后端启动依赖，缺失会导致上下文初始化失败；
+          # ffprobe/ffmpeg 是成片实测与截断的运行时依赖。
+          # 这里显式校验，避免出现「镜像能构建但跑不起来」。
+          docker run --rm --entrypoint /bin/bash "$IMAGE" -ec \
+            'set -e
+             test -s /ruoyi/server/script/video/workflows/video-workflow-contracts.json
+             for wf in wf-t2v-h3 wf-i2v-h3 wf-fl2v-h3; do
+               test -s "/ruoyi/server/script/video/workflows/api/$wf-v0.1.0.json"
+             done
+             command -v ffprobe
+             command -v ffmpeg
+             echo "contracts and media tools packaged OK"'
 
       - name: Export image with checksum
         if: github.event_name == 'workflow_dispatch'

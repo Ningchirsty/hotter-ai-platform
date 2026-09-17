@@ -56,7 +56,7 @@ bash mvnw --batch-mode --no-transfer-progress -Dmaven.test.skip=false '-Dtest.gr
 python3 script/ci/check-test-results.py
 node --test script/video/workflows/import-h3.test.mjs
 git_sha=$(git rev-parse HEAD)
-docker build --pull -t "hotter-ai-platform-backend:${git_sha}" ruoyi-admin
+docker build --pull -f Dockerfile -t "hotter-ai-platform-backend:${git_sha}" .
 docker build --pull --build-arg "BUILD_SHA=${git_sha}" \
   -t "hotter-ai-platform-frontend:${git_sha}" frontend
 ```
@@ -118,6 +118,6 @@ curl --fail --silent --show-error "$COMFY_URL/object_info" >/dev/null
 - `frontend/src/views/video/index.vue`、`frontend/src/views/video/modules.ts`：当前界面和安全视图。
 - `script/video/workflows/README.md`、`video-workflow-contracts.json`、`api/*.json`、`import-h3.mjs`：模板与映射。
 - `script/sql/ry_vue.sql`、`ry_video_menu.sql`、`ry_video_menu_migration.sql`、`ry_video_workflow.sql`：数据库基线与目标结构。
-- `ruoyi-admin/src/main/resources/application-prod.yml`、`ruoyi-admin/Dockerfile`：后端运行配置与镜像。
+- `ruoyi-admin/src/main/resources/application-prod.yml`、仓库根 `Dockerfile` 与 `.dockerignore`：后端运行配置与镜像（根上下文构建，负责安装静态 ffmpeg 并复制 `script/video/workflows` 契约）。
 - `frontend/.env.production`、`frontend/nginx.production.conf.template`、`frontend/Dockerfile`：前端生产构建、版本校验和 API 代理。
 - `.github/workflows/ci.yml`、`frontend-ci.yml`、`deploy-poc.yml`、`deploy-frontend-poc.yml`、`script/deploy/README.md`：CI 与受控生产部署前置条件。

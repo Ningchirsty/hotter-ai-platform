@@ -9,8 +9,8 @@
 1. 使用 Temurin Java 21 和 Maven Wrapper 3.9.12。Wrapper 从 Maven Central 下载并校验 SHA-256。
 2. 对整个 Maven reactor 执行 `verify`，显式打开测试，并运行所有未标记 `exclude` 的测试，包括无标签的测试。现有 `@Disabled` 用例保持跳过。
 3. 汇总 Surefire XML，失败、错误或实际执行测试数为零均阻止镜像构建。当前测试主要是框架示例，不代表业务功能、数据库或外部服务集成测试已覆盖。
-4. 使用 `ruoyi-admin/Dockerfile` 构建 Linux amd64 镜像。仅将 Dockerfile 和后端 JAR 发送到 Docker 构建上下文。
-5. 在镜像内验证 Java 可运行、应用 JAR 存在、日志及临时目录可写。这是镜像结构验证；完整服务启动需要数据库、Redis 等运行配置。
+4. 使用仓库根目录的 `Dockerfile` 构建 Linux amd64 镜像，构建上下文为仓库根目录，由根目录 `.dockerignore` 裁剪。上下文必须覆盖 `ruoyi-admin/target/ruoyi-admin.jar` 与 `script/video/workflows`（ComfyUI 工作流契约）。
+5. 在镜像内验证 Java 可运行、应用 JAR 存在、日志及临时目录可写，并断言 `script/video/workflows` 下契约 JSON 与 3 个 H3 模板均已打包、`ffprobe` 与 `ffmpeg` 可执行。这是镜像结构验证；完整服务启动需要数据库、Redis 等运行配置。
 
 在 Actions 运行页面的 Artifacts 下载：
 
@@ -52,7 +52,7 @@ ghcr.io/ningchirsty/hotter-ai-platform-backend:sha-<完整 Git SHA>
 ```bash
 bash mvnw --batch-mode --no-transfer-progress -Dmaven.test.skip=false '-Dtest.groups=!exclude' verify
 python3 script/ci/check-test-results.py
-docker build --pull -t hotter-ai-platform-backend:local ruoyi-admin
+docker build --pull -f Dockerfile -t hotter-ai-platform-backend:local .
 ```
 
 Windows PowerShell 使用：

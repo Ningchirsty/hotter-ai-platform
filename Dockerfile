@@ -1,3 +1,15 @@
+# 若依后端镜像（构建上下文 = 仓库根）
+#
+# 为什么放在仓库根、而不用 ruoyi-admin/Dockerfile：
+#   视频创作模块的契约与工作流模板在仓库根的 `script/video/workflows/` 下，
+#   运行时由 `WorkflowContractRegistry` 从 `VIDEO_CONTRACT_ROOT`（默认 `script`）读取。
+#   Docker 不允许 COPY 构建上下文之外的文件，而 `ruoyi-admin/.dockerignore` 又把
+#   上下文限制为「仅 Dockerfile + target/ruoyi-admin.jar」，导致 `../script` 既越界又被忽略。
+#   因此必须把上下文改为仓库根，并在根目录放 .dockerignore 控制发送内容。
+#
+# CI 调用方式：
+#   docker build --pull -f Dockerfile --tag "$IMAGE" .        # 注意上下文是 `.`
+
 # 贝尔实验室 Spring 官方推荐镜像 JDK下载地址 https://bell-sw.com/pages/downloads/
 FROM bellsoft/liberica-openjdk-rocky:21.0.12-cds
 # FROM bellsoft/liberica-openjdk-rocky:25.0.4-cds
@@ -16,14 +28,43 @@ LABEL maintainer="Lion Li"
 # 如需离线/内网构建，用 --build-arg 覆盖为内网镜像地址与对应校验值即可。
 ARG FFMPEG_URL=https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
 ARG FFMPEG_SHA256=abda8d77ce8309141f83ab8edf0596834087c52467f6badf376a6a2a4c87cf67
+ARG FFMPEG_EXPECTED_BYTES=41888096
 
 # 基础镜像有 curl 与 tar，但没有 xz 命令：GNU tar 的 -J 会调用外部 xz 程序，
 # 因此先从基础源装上 xz（Rocky 9 基础源可用，实测），再解包。
+#
+# 「下载 + 校验」写成显式重试循环，而不是只靠 curl --retry：
+# curl 的 --retry 只在连接/传输层失败时重试，**校验和不匹配时不会重试**。
+# 实测踩过两次：
+#   1) 某次 CI 里 curl 正常退出（exit 0），但下到的字节校验不通过，构建直接失败；
+#      同一提交重跑即通过——属瞬时传输损坏。
+#   2) 该站点在**同一 IP 反复/并发下载**时会限速：实测一次卡在 25.4/41.9 MB
+#      长达 1306 秒；另一次虽然下完但耗时 441 秒。串行且未触发限速时约 4.6 秒。
+# 因此这里除了重试，还加 --speed-limit/--speed-time：低于 10 KB/s 持续 30 秒即判失败，
+# 避免在被限速的连接上干等，直接换一条连接重试。
+# 若该源不可用，用 --build-arg 换成内网镜像地址与对应校验值。
 RUN set -eux; \
     microdnf install -y xz; \
     microdnf clean all; \
-    curl -fsSL --retry 3 --retry-delay 2 -o /tmp/ffmpeg.tar.xz "$FFMPEG_URL"; \
-    echo "${FFMPEG_SHA256}  /tmp/ffmpeg.tar.xz" | sha256sum -c -; \
+    try=0; \
+    while :; do \
+        try=$((try + 1)); \
+        rm -f /tmp/ffmpeg.tar.xz; \
+        if curl -fsSL --retry 3 --retry-delay 2 \
+                --speed-limit 10240 --speed-time 30 --connect-timeout 20 --max-time 600 \
+                -o /tmp/ffmpeg.tar.xz "$FFMPEG_URL" \
+           && [ "$(stat -c %s /tmp/ffmpeg.tar.xz)" = "$FFMPEG_EXPECTED_BYTES" ] \
+           && echo "${FFMPEG_SHA256}  /tmp/ffmpeg.tar.xz" | sha256sum -c -; then \
+            echo "ffmpeg 归档校验通过（第 ${try} 次尝试）"; \
+            break; \
+        fi; \
+        if [ "$try" -ge 3 ]; then \
+            echo "ffmpeg 归档下载或校验连续失败 ${try} 次，放弃" >&2; \
+            exit 1; \
+        fi; \
+        echo "第 ${try} 次下载/校验失败，重试..." >&2; \
+        sleep 3; \
+    done; \
     mkdir -p /opt/ffmpeg; \
     tar -xJf /tmp/ffmpeg.tar.xz -C /opt/ffmpeg --strip-components=1 \
         --wildcards '*/ffmpeg' '*/ffprobe' '*/GPLv3.txt'; \
@@ -52,7 +93,12 @@ EXPOSE ${SERVER_PORT}
 EXPOSE ${SNAIL_JOB_PORT}
 EXPOSE ${SNAIL_AI_PORT}
 
-ADD ./target/ruoyi-admin.jar ./app.jar
+ADD ./ruoyi-admin/target/ruoyi-admin.jar ./app.jar
+
+# 工作流契约与 API Format 模板必须在镜像内：
+# 后端启动时从 VIDEO_CONTRACT_ROOT（默认 script）读取并校验 SHA-256，
+# 缺失会导致上下文初始化失败。
+COPY ./script/video/workflows /ruoyi/server/script/video/workflows
 
 SHELL ["/bin/bash", "-c"]
 
