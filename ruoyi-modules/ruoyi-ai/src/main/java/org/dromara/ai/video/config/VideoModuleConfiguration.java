@@ -9,6 +9,9 @@ import org.dromara.ai.video.service.AssetStorage;
 import org.dromara.ai.video.service.H3TemplatePreparer;
 import org.dromara.ai.video.service.LocalFileAssetStorage;
 import org.dromara.ai.video.service.MediaProbe;
+import org.dromara.ai.video.service.ThumbnailService;
+import org.dromara.ai.video.service.VideoTaskDispatchService;
+import org.dromara.ai.video.service.VideoTaskExecutionService;
 import org.dromara.ai.video.service.VideoTaskOrchestrator;
 import org.dromara.ai.video.service.VideoTaskRepository;
 import org.dromara.ai.video.service.VideoWorkflowVersionRepository;
@@ -141,14 +144,21 @@ public class VideoModuleConfiguration {
         /**
          * 启动时是否把上一进程遗留的 {@code RUNNING} 任务收敛为失败。
          *
-         * <p>任务执行是「请求线程内轮询」模型：执行线程随进程一起消失。因此进程重启时
-         * 还处于 RUNNING 的任务，其执行者已经不存在了，永远不会有人来推进它——
-         * 结果就是用户看到一条永远「运行中」的任务，既没有成片也没有失败原因。</p>
+         * <p>执行线程随进程一起消失，因此进程重启时还处于 RUNNING 的任务，其执行者
+         * 已经不存在，永远不会有人来推进它——用户会看到一条永远「运行中」的任务。</p>
          *
          * <p>默认开启。部署新版本会打断正在生成的任务，这是无法避免的；
          * 但至少要让状态如实反映「被中断」，而不是留在运行中骗人。</p>
          */
         private boolean failStaleRunningOnStartup = true;
+
+        /**
+         * 后台执行器的排队上限。并发固定为 1（GPU 只有一块）。
+         *
+         * <p>队列满时 {@code POST /tasks/{id}/execute} 会把状态退回 QUEUED 并明确报错，
+         * 不会把任务留在 RUNNING 骗人。</p>
+         */
+        private int executorQueueCapacity = 16;
 
         /**
          * 输出档位（清晰度）→ 分辨率映射。
@@ -264,10 +274,44 @@ public class VideoModuleConfiguration {
     }
 
     /**
+     * 任务后台执行器。
+     *
+     * <p>生成一次要 130 秒到 11.5 分钟，而前端经 Cloudflare（源站是 cloudflared tunnel）
+     * 访问，免费版等待源站响应的上限在 100 秒量级——在请求线程里同步等出片，结果必然
+     * 送不回浏览器。因此改为提交后台、前端轮询。</p>
+     */
+    @Bean(destroyMethod = "shutdown")
+    public VideoTaskExecutionService videoTaskExecutionService(VideoTaskOrchestrator orchestrator,
+                                                               VideoProperties properties) {
+        int capacity = Math.max(1, properties.getExecutorQueueCapacity());
+        log.info("视频任务后台执行器已装配：并发 1，队列上限 {}", capacity);
+        return new VideoTaskExecutionService(orchestrator::execute, capacity);
+    }
+
+    /**
+     * 任务派发：认领（防重复提交）+ 入队（队列满回滚）。
+     */
+    @Bean
+    public VideoTaskDispatchService videoTaskDispatchService(VideoTaskRepository repository,
+                                                             VideoTaskExecutionService executionService) {
+        return new VideoTaskDispatchService(repository, executionService);
+    }
+
+    /**
+     * 素材缩略图（图片素材用，避免为了一张小图去拉几 MB 的原图）。
+     */
+    @Bean
+    @ConditionalOnMissingBean(ThumbnailService.class)
+    public ThumbnailService thumbnailService(AssetStorage assetStorage, VideoProperties properties) {
+        return new ThumbnailService(assetStorage, properties.getFfmpegPath(),
+            properties.getMediaTimeoutSeconds());
+    }
+
+    /**
      * 启动时收敛上一个进程遗留的 RUNNING 任务。
      *
-     * <p>任务执行线程活在请求线程里，进程一重启就没了；留下来的 RUNNING 任务
-     * 再也没有执行者，只能永远显示「运行中」。这里把它们如实置为失败。</p>
+     * <p>执行线程活在进程里，进程一重启就没了；留下来的 RUNNING 任务再也没有执行者，
+     * 只能永远显示「运行中」。这里把它们如实置为失败。</p>
      */
     @Bean
     @ConditionalOnProperty(prefix = "video", name = "fail-stale-running-on-startup",

@@ -253,13 +253,15 @@ public class JdbcVideoTaskRepository implements VideoTaskRepository {
 
     @Override
     public int markSubmitted(long taskId, String comfyPromptId, int attemptCount) {
+        // 任务在控制器「认领」时已经流转为 RUNNING（异步执行后必须先把状态占住，
+        // 否则重复点击会重复执行），所以这里只补写 prompt id 与时间戳，不再依赖 QUEUED。
         return jdbc.update("""
             UPDATE video_task
-            SET comfy_prompt_id = ?, attempt_count = ?, status = ?, submitted_time = NOW(),
+            SET comfy_prompt_id = ?, attempt_count = ?, submitted_time = NOW(),
                 started_time = NOW(), update_time = NOW()
             WHERE id = ? AND status = ?
-            """, comfyPromptId, attemptCount, VideoTaskStatus.RUNNING.name(),
-            taskId, VideoTaskStatus.QUEUED.name());
+            """, comfyPromptId, attemptCount,
+            taskId, VideoTaskStatus.RUNNING.name());
     }
 
     @Override

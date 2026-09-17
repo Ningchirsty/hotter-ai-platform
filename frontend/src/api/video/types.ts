@@ -136,10 +136,20 @@ export interface VideoTaskCreateForm {
 export interface VideoTaskExecutionResult {
   taskId: number | string;
   status: VideoTaskStatus;
-  outputAssetId: number | string;
-  truncated: boolean;
+  /**
+   * 是否被本次请求接受并进入后台执行。
+   *
+   * <p>生成耗时 130 秒到 11 分钟，远超 Cloudflare 对源站响应的等待上限（约 100 秒），
+   * 因此后端不再同步等出片：这个字段只表示「已排进后台队列」，
+   * 最终结果要靠轮询 {@code GET /video/tasks/{taskId}} 拿。</p>
+   */
+  accepted?: boolean;
+  outputAssetId?: number | string;
+  truncated?: boolean;
   width?: number | null;
   height?: number | null;
   fps?: number | null;
   durationMillis?: number | null;
+  errorCode?: string | null;
+  errorMessage?: string | null;
 }

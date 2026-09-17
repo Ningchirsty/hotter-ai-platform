@@ -569,6 +569,7 @@ import {
   deleteVideoAsset,
   executeVideoTask,
   fetchVideoAssetBlobUrl,
+  fetchVideoAssetThumbnailBlobUrl,
   getVideoTask,
   listVideoAssets,
   listVideoTasks,
@@ -968,19 +969,98 @@ async function submitTask() {
     await loadTasks();
 
     const executed = await executeVideoTask(taskId);
-    if (executed.code === 200) {
-      ElMessage.success('成片已生成，可在「我的任务」查看');
+    const exec = executed.data;
+    if (exec?.accepted === false) {
+      // 任务已经在跑（多半是重复点击），不重复执行，接着轮询即可。
+      ElMessage.info(`任务已在${taskStatusText(exec.status)}，将自动刷新结果`);
+      startTaskPolling(taskId);
+    } else if (exec?.status === 'RUNNING') {
+      // 生成要 130 秒到 11 分钟，远超 Cloudflare 对源站响应的等待上限（约 100 秒），
+      // 所以后端改为提交后台执行，这里轮询结果——同步等响应会被 Cloudflare 断开，
+      // 用户只会看到「点了没反应」（实测 nginx 记 499）。
+      ElMessage.success('已提交生成，完成后会自动显示，可以离开这个页面');
+      startTaskPolling(taskId);
+    } else if (exec?.status === 'FAILED') {
+      ElMessage.warning(exec.errorMessage ?? '任务未完成，请查看任务详情');
+      await loadTasks();
+      await loadAssets();
     } else {
-      ElMessage.warning(executed.msg ?? '任务未完成，请查看任务详情');
+      // 兼容同步返回的旧形态（理论上不会再走到）。
+      ElMessage.success('成片已生成，可在「我的任务」查看');
+      await loadTasks();
+      await loadAssets();
     }
-    await loadTasks();
-    await loadAssets();
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '任务提交失败');
     await loadTasks();
   } finally {
     submitting.value = false;
   }
+}
+
+/** 终态：到了这些状态就不会再变，轮询可以停。 */
+const TERMINAL_STATUSES: VideoTaskStatus[] = ['SUCCEEDED', 'FAILED', 'CANCELED', 'TIMEOUT'];
+
+/** 轮询间隔。生成动辄几分钟，3 秒足够又不至于把后端压垮。 */
+const POLL_INTERVAL_MS = 3000;
+
+/** 正在轮询的任务 id。后台执行 + 轮询是生成结果的唯一回传通道。 */
+const pollingTaskIds = new Set<string>();
+let pollTimer: ReturnType<typeof setInterval> | undefined;
+
+/** 开始轮询某个任务，直到它进入终态。 */
+function startTaskPolling(taskId: number | string) {
+  pollingTaskIds.add(String(taskId));
+  if (pollTimer !== undefined) return;
+  pollTimer = setInterval(() => void pollPendingTasks(), POLL_INTERVAL_MS);
+}
+
+function stopTaskPolling() {
+  if (pollTimer !== undefined) {
+    clearInterval(pollTimer);
+    pollTimer = undefined;
+  }
+}
+
+/**
+ * 拉取所有在途任务的状态。
+ *
+ * <p>任务在服务端后台线程里跑，HTTP 连接、页面刷新都不影响它——所以这里只需要
+ * 定期问「好了没」，失败一次也不该打断整个轮询。</p>
+ */
+async function pollPendingTasks() {
+  if (pollingTaskIds.size === 0) {
+    stopTaskPolling();
+    return;
+  }
+  // 先收集、循环结束后再删：避免在遍历 Set 的过程中改它。
+  const finished: Array<{ id: string; status: VideoTaskStatus; message?: string }> = [];
+  for (const id of pollingTaskIds) {
+    try {
+      const detail = await getVideoTask(id);
+      const status = detail.data?.status;
+      if (!status || !TERMINAL_STATUSES.includes(status)) continue;
+      finished.push({ id, status, message: detail.data?.errorMessage });
+    } catch {
+      // 单次查询失败不影响后续轮询（网络抖动、页面切后台都可能发生）。
+    }
+  }
+
+  for (const item of finished) {
+    pollingTaskIds.delete(item.id);
+    if (item.status === 'SUCCEEDED') {
+      ElMessage.success('成片已生成，可在「我的任务」查看');
+    } else {
+      ElMessage.warning(item.message ?? `任务${taskStatusText(item.status)}，请查看任务详情`);
+    }
+  }
+
+  await loadTasks();
+  if (finished.length) {
+    await loadAssets();
+    if (finished.some((item) => item.status === 'SUCCEEDED')) void loadTaskCovers();
+  }
+  if (pollingTaskIds.size === 0) stopTaskPolling();
 }
 
 function taskStatusText(status: VideoTaskStatus) {
@@ -1062,7 +1142,13 @@ function imageFor(asset: VideoAssetVO) {
   return imageUrls.value[String(asset.id)] ?? '';
 }
 
-/** 为图片类素材加载真实缩略图（视频/音频素材仍用图标，避免拉整段视频）。 */
+/**
+ * 为图片类素材加载缩略图。
+ *
+ * <p>优先走后端的缩略图接口（ffmpeg 生成、最长边 480px、带缓存），
+ * 拿不到再退回原图，最后才让卡片显示图标——缩略图只是为了让列表快点出来，
+ * 不该成为「能不能看到」的开关。视频/音频素材仍用图标，避免为一个小格子去拉整段视频。</p>
+ */
 async function loadAssetThumbnails() {
   for (const asset of assets.value) {
     if (asset.assetType !== 'IMAGE') continue;
@@ -1070,7 +1156,12 @@ async function loadAssetThumbnails() {
     if (imageUrls.value[key] || imageLoading.has(key)) continue;
     imageLoading.add(key);
     try {
-      const url = await fetchVideoAssetBlobUrl(asset.id);
+      let url: string;
+      try {
+        url = await fetchVideoAssetThumbnailBlobUrl(asset.id);
+      } catch {
+        url = await fetchVideoAssetBlobUrl(asset.id);
+      }
       imageUrls.value = { ...imageUrls.value, [key]: url };
     } catch {
       // 忽略：缩略图失败不影响素材本身的使用
@@ -1084,6 +1175,8 @@ watch(assets, () => void loadAssetThumbnails());
 
 /** 组件卸载时释放所有 blob URL，避免内存泄漏。 */
 onBeforeUnmount(() => {
+  stopTaskPolling();
+  pollingTaskIds.clear();
   releasePreviewUrl();
   Object.values(coverUrls.value).forEach(URL.revokeObjectURL);
   Object.values(imageUrls.value).forEach(URL.revokeObjectURL);

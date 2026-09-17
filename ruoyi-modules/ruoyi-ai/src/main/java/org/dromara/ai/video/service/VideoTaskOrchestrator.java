@@ -151,10 +151,33 @@ public class VideoTaskOrchestrator {
     /**
      * 执行一次任务。
      *
+     * <p>本方法是「任务失败必须落库」的唯一负责人：无论失败发生在提交前（能力/契约/素材/
+     * ComfyUI 可达性）还是提交后（下载成片、落盘、ffprobe、分辨率断言、写素材行），
+     * 都会把任务置为失败。历史上失败落库只认 {@code QUEUED→FAILED}，任务一旦进入 RUNNING
+     * 就再也落不了库，结果是一批「永远运行中、成片已丢失」的僵尸任务。</p>
+     *
      * @param context 已通过服务端校验的任务上下文
      * @return 执行结果
      */
     public ExecutionResult execute(TaskContext context) {
+        try {
+            return doExecute(context);
+        } catch (VideoTaskException e) {
+            int moved = repository.markFailedIfActive(context.taskId(), e.getErrorCode(), e.getMessage());
+            if (moved > 0) {
+                log.warn("任务 {} 执行失败，已置为 FAILED：[{}] {}", context.taskId(),
+                    e.getErrorCode(), e.getMessage());
+            }
+            throw e;
+        } catch (RuntimeException e) {
+            // 非业务异常同样要落库，否则会留下说不清状态的僵尸任务。
+            repository.markFailedIfActive(context.taskId(), "EXECUTION_FAILED",
+                sanitize(e.getMessage()));
+            throw e;
+        }
+    }
+
+    private ExecutionResult doExecute(TaskContext context) {
         WorkflowVersion version = registry.require(context.workflowCode(), context.requirePublished());
         VideoCapability capability = VideoCapability.parse(context.capabilityCode());
         if (capability == null) {
@@ -166,8 +189,9 @@ public class VideoTaskOrchestrator {
 
         // 提交前先确认 ComfyUI 可达，避免把网络问题误报为工作流失败。
         if (!comfyClient.isReachable()) {
-            repository.transition(context.taskId(), VideoTaskStatus.QUEUED, VideoTaskStatus.FAILED,
-                "COMFY_UNREACHABLE", "ComfyUI 服务当前不可达");
+            // 任务此时已被认领为 RUNNING（见控制器），不能再用 QUEUED 去落库。
+            repository.markFailedIfActive(context.taskId(), "COMFY_UNREACHABLE",
+                "ComfyUI 服务当前不可达");
             throw VideoTaskException.comfyFailure("ComfyUI 服务当前不可达", null);
         }
 
@@ -201,25 +225,9 @@ public class VideoTaskOrchestrator {
         appendEvent(context, "SUBMITTED", "已提交 ComfyUI");
 
         ComfyOutput output = awaitOutput(promptId, context);
-        // 此刻任务已经是 RUNNING（markSubmitted 落库过）。
-        // 这之后的每一步（下载成片、落盘、ffprobe、分辨率断言、写素材行）失败时，
-        // 都必须把任务置为失败：否则任务永远停在「运行中」，用户既拿不到成片，
-        // 也看不到失败原因，只能看到一个永不结束的任务。
-        try {
-            return archiveOutput(context, version, output);
-        } catch (VideoTaskException e) {
-            int moved = repository.markFailedIfActive(context.taskId(), e.getErrorCode(), e.getMessage());
-            if (moved > 0) {
-                log.warn("任务 {} 成片后处理失败，已置为 FAILED：[{}] {}",
-                    context.taskId(), e.getErrorCode(), e.getMessage());
-            }
-            throw e;
-        } catch (RuntimeException e) {
-            // 非业务异常也要落库，否则同样会留下僵尸任务。
-            repository.markFailedIfActive(context.taskId(), "EXECUTION_FAILED",
-                sanitize(e.getMessage()));
-            throw e;
-        }
+        // 此刻任务已经是 RUNNING（认领时落库）。这之后的每一步（下载成片、落盘、
+        // ffprobe、分辨率断言、写素材行）失败，都由外层 execute 统一负责落库。
+        return archiveOutput(context, version, output);
     }
 
     /**
