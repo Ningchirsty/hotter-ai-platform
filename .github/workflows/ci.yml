@@ -147,10 +147,14 @@ jobs:
 
       - name: Build image from verified commit
         run: |
+          # 与 build-test-image 保持一致：构建上下文是仓库根，Dockerfile 在仓库根。
+          # 这里曾漏改仍指向 ruoyi-admin，导致发布 job 报
+          # `failed to read dockerfile: open Dockerfile: no such file or directory`。
           docker build --pull \
+            -f Dockerfile \
             --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
             --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
-            --tag "hotter-ai-platform-backend:${GITHUB_SHA}" ruoyi-admin
+            --tag "hotter-ai-platform-backend:${GITHUB_SHA}" .
 
       - name: Push commit-tagged image
         env:
