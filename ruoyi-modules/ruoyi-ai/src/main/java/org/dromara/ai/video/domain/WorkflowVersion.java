@@ -50,9 +50,21 @@ public record WorkflowVersion(
     /**
      * 契约中声明的固定字段取值。
      *
-     * @param tier 固定输出档位
-     * @param dur  固定时长档位
+     * @param tier           固定输出档位；多档位时取 {@code supportedTiers} 的第一个（仅作展示/兜底）
+     * @param dur            固定时长档位
+     * @param supportedTiers 允许的输出档位集合。契约声明多个时为多档位；
+     *                       为空表示沿用旧的单一 {@code tier} 语义
      */
-    public record FixedFieldValidation(String tier, String dur) {
+    public record FixedFieldValidation(String tier, String dur, java.util.Set<String> supportedTiers) {
+
+        /**
+         * 该版本允许的输出档位。契约未声明 {@code supportedTiers} 时退化为单一 {@code tier}。
+         */
+        public java.util.Set<String> allowedTiers() {
+            if (supportedTiers != null && !supportedTiers.isEmpty()) {
+                return supportedTiers;
+            }
+            return tier == null ? java.util.Set.of() : java.util.Set.of(tier);
+        }
     }
 }

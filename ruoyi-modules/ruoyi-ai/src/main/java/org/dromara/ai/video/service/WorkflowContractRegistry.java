@@ -95,7 +95,8 @@ public class WorkflowContractRegistry {
         JsonNode fixedNode = binding.path("fixedFieldValidation");
         WorkflowVersion.FixedFieldValidation fixed = fixedNode.isObject()
             ? new WorkflowVersion.FixedFieldValidation(
-                fixedNode.path("tier").asText(null), fixedNode.path("dur").asText(null))
+                fixedNode.path("tier").asText(null), fixedNode.path("dur").asText(null),
+                readSupportedTiers(fixedNode))
             : null;
         JsonNode outputRule = binding.path("outputRule");
         Integer maxDuration = outputRule.hasNonNull("maxDurationSeconds")
@@ -113,6 +114,28 @@ public class WorkflowContractRegistry {
             maxDuration,
             outputRule.path("nodeId").asText(null),
             outputRule.path("outputField").asText(null));
+    }
+
+    /**
+     * 读取契约里的 {@code fixedFieldValidation.supportedTiers}。
+     *
+     * <p>多档位（如 1080P/720P/480P）由它以数组形式声明，避免用单一 {@code tier}
+     * 字符串塞多个值再在代码里拆分。缺失或非数组时返回空集合，调用方按旧的
+     * 单一 {@code tier} 语义处理。</p>
+     */
+    private java.util.Set<String> readSupportedTiers(JsonNode fixedNode) {
+        JsonNode node = fixedNode.path("supportedTiers");
+        if (!node.isArray()) {
+            return java.util.Set.of();
+        }
+        java.util.LinkedHashSet<String> tiers = new java.util.LinkedHashSet<>();
+        for (JsonNode item : node) {
+            String text = item.asText("").trim();
+            if (!text.isEmpty()) {
+                tiers.add(text);
+            }
+        }
+        return java.util.Collections.unmodifiableSet(tiers);
     }
 
     private void register(WorkflowVersion version) {

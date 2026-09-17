@@ -80,6 +80,11 @@ public class VideoCreationController extends BaseController {
     private final JdbcTemplate jdbc;
 
     /**
+     * 档位（清晰度）与时长矩阵。用于向前端下发「哪些档位/时长可选」。
+     */
+    private final org.dromara.ai.video.config.VideoTierResolutions tierResolutions;
+
+    /**
      * 模块内异常处理。
      *
      * <p>声明在控制器内，优先级高于全局 {@code @RestControllerAdvice}，因此
@@ -116,6 +121,17 @@ public class VideoCreationController extends BaseController {
             item.put("testable", version.isTestable());
             item.put("supportedTier", version.fixedFieldValidation() == null
                 ? null : version.fixedFieldValidation().tier());
+            // 多档位：按契约声明顺序返回，前端据此渲染可选的清晰度。
+            // 保留 supportedTier 字段以兼容既有前端，含义为「默认档位」。
+            item.put("supportedTiers", version.fixedFieldValidation() == null
+                ? java.util.List.of()
+                : new java.util.ArrayList<>(version.fixedFieldValidation().allowedTiers()));
+            // 各档位允许的时长。时长与档位互相约束（长时长只在低分辨率档位开放，
+            // 因为 H3 的帧数随时长线性增长、显存与耗时显著上升），所以按时长给出矩阵，
+            // 而不是给一个「所有档位通用」的时长列表。
+            item.put("supportedDurationsByTier", tierResolutions == null
+                ? java.util.Map.of()
+                : new java.util.LinkedHashMap<>(tierResolutions.getDurations()));
             item.put("supportedDuration", version.fixedFieldValidation() == null
                 ? null : version.fixedFieldValidation().dur());
             item.put("maxDurationSeconds", version.maxDurationSeconds());

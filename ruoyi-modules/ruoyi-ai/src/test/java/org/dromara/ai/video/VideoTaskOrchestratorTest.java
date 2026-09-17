@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.dromara.ai.video.comfy.ComfyClient;
 import org.dromara.ai.video.comfy.ComfyOutput;
 import org.dromara.ai.video.domain.VideoTaskStatus;
+import org.dromara.ai.video.domain.WorkflowVersion;
 import org.dromara.ai.video.exception.VideoTaskException;
 import org.dromara.ai.video.service.AssetStorage;
 import org.dromara.ai.video.service.H3TemplatePreparer;
@@ -289,6 +290,28 @@ class VideoTaskOrchestratorTest {
         assertDoesNotThrow(
             () -> orchestrator(1000).execute(context("T2V", "wf-t2v-h3", "提示词", null, null, null)));
         assertFalse(comfy.freed, "默认不应调用 freeMemory()");
+    }
+
+    @Test
+    @DisplayName("时长上限：按本次任务时长截断，而不是固定用契约里的一代上限")
+    void durationCapFollowsRequestedDuration() {
+        // 背景（真实缺陷）：截断上限原先一律取契约 maxDurationSeconds。开放 10/20 秒后，
+        // 若仍用契约上限截断，长时长成片会被误截回 5 秒。
+        WorkflowVersion base = registry.peek("wf-t2v-h3");
+        assertEquals(5000L, orchestrator(1000).resolveDurationCapMillis("5 秒", base));
+        assertEquals(10000L, orchestrator(1000).resolveDurationCapMillis("10 秒", base));
+        assertEquals(20000L, orchestrator(1000).resolveDurationCapMillis("20 秒", base));
+        // 契约上限仍是硬上限：请求超过契约允许的最长时长时以契约为准（纵深防御）。
+        WorkflowVersion capped = withMaxDuration(base, 10);
+        assertEquals(10000L, orchestrator(1000).resolveDurationCapMillis("20 秒", capped));
+        // 无法解析时退回契约上限，不抛异常。
+        assertEquals(10000L, orchestrator(1000).resolveDurationCapMillis("", capped));
+    }
+
+    private WorkflowVersion withMaxDuration(WorkflowVersion base, int seconds) {
+        return new WorkflowVersion(base.workflowCode(), base.capabilityCode(), base.modelCode(),
+            base.version(), base.status(), base.apiJsonFile(), base.checksum(), base.mapping(),
+            base.fixedFieldValidation(), seconds, base.outputNodeId(), base.outputField());
     }
 
     private VideoTaskOrchestrator.TaskContext context(String capability, String workflow, String prompt,
