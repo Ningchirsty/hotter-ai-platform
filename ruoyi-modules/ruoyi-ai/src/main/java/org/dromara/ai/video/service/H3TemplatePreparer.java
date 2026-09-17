@@ -47,6 +47,16 @@ public final class H3TemplatePreparer {
     public static final String TIER_1080P = "高清 · 1080P";
 
     /**
+     * 产品档位固定值（720P）。
+     */
+    public static final String TIER_720P = "流畅 · 720P";
+
+    /**
+     * 产品档位固定值（480P）。
+     */
+    public static final String TIER_480P = "标清 · 480P";
+
+    /**
      * 产品时长固定值。
      */
     public static final String DURATION_5S = "5 秒";
@@ -276,6 +286,25 @@ public final class H3TemplatePreparer {
                 scaleInputs.put("height", res.encodeHeight());
             }
         }
+    }
+
+    /**
+     * 该档位成片应有的最终分辨率（编码节点裁剪后的标准档位尺寸）。
+     *
+     * <p>供成片校验使用：断言必须跟随所选档位，不能写死 1080P。</p>
+     *
+     * @param tier 档位名
+     * @return {@code [宽, 高]}；未配置档位表或档位未知时返回 {@code null}
+     */
+    public int[] expectedOutputSize(String tier) {
+        if (tierResolutions == null || tier == null) {
+            return null;
+        }
+        org.dromara.ai.video.config.VideoTierResolutions.Resolution res = tierResolutions.of(tier);
+        if (res == null) {
+            return null;
+        }
+        return new int[] {res.encodeWidth(), res.encodeHeight()};
     }
 
     /**

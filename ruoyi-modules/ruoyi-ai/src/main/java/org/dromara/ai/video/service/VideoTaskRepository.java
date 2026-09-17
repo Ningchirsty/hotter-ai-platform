@@ -73,6 +73,28 @@ public interface VideoTaskRepository {
                    String errorCode, String errorMessage);
 
     /**
+     * 把「还没进终态」的任务置为失败，不要求已知起始状态。
+     *
+     * <p>为什么需要它：{@link #transition} 必须给出期望的起始状态。任务一旦
+     * {@code markSubmitted} 进入 RUNNING，后续任何一步失败（下载成片、落盘、
+     * ffprobe、分辨率断言、写素材行）如果用 {@code QUEUED→FAILED} 去落库，
+     * WHERE 不匹配、影响 0 行，失败被静默吞掉——任务永远停在 RUNNING，
+     * 用户既拿不到成片也看不到原因。</p>
+     *
+     * @return 影响行数，0 表示任务已是终态（不该被覆盖）
+     */
+    int markFailedIfActive(long taskId, String errorCode, String errorMessage);
+
+    /**
+     * 启动时收敛上一个进程遗留的 RUNNING 任务。
+     *
+     * <p>执行线程活在请求线程里，进程退出后不会再有人推进这些任务。</p>
+     *
+     * @return 影响行数
+     */
+    int failAllRunning(String errorCode, String errorMessage);
+
+    /**
      * 记录已提交 ComfyUI。
      */
     int markSubmitted(long taskId, String comfyPromptId, int attemptCount);

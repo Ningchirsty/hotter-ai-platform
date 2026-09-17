@@ -14,6 +14,7 @@ import org.dromara.ai.video.service.VideoTaskRepository;
 import org.dromara.ai.video.service.VideoWorkflowVersionRepository;
 import org.dromara.ai.video.service.WorkflowContractDbSync;
 import org.dromara.ai.video.service.WorkflowContractRegistry;
+import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -138,6 +139,18 @@ public class VideoModuleConfiguration {
         private boolean comfyFreeBeforeSubmit = false;
 
         /**
+         * 启动时是否把上一进程遗留的 {@code RUNNING} 任务收敛为失败。
+         *
+         * <p>任务执行是「请求线程内轮询」模型：执行线程随进程一起消失。因此进程重启时
+         * 还处于 RUNNING 的任务，其执行者已经不存在了，永远不会有人来推进它——
+         * 结果就是用户看到一条永远「运行中」的任务，既没有成片也没有失败原因。</p>
+         *
+         * <p>默认开启。部署新版本会打断正在生成的任务，这是无法避免的；
+         * 但至少要让状态如实反映「被中断」，而不是留在运行中骗人。</p>
+         */
+        private boolean failStaleRunningOnStartup = true;
+
+        /**
          * 输出档位（清晰度）→ 分辨率映射。
          *
          * <p>可用 {@code video.tier-resolutions.tiers.<档位名>.*} 覆盖默认值，
@@ -248,5 +261,24 @@ public class VideoModuleConfiguration {
             () -> org.dromara.common.mybatis.utils.IdGeneratorUtil.nextLongId(),
             mediaProbe,
             properties.isComfyFreeBeforeSubmit());
+    }
+
+    /**
+     * 启动时收敛上一个进程遗留的 RUNNING 任务。
+     *
+     * <p>任务执行线程活在请求线程里，进程一重启就没了；留下来的 RUNNING 任务
+     * 再也没有执行者，只能永远显示「运行中」。这里把它们如实置为失败。</p>
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = "video", name = "fail-stale-running-on-startup",
+        havingValue = "true", matchIfMissing = true)
+    public ApplicationRunner staleRunningTaskReconciler(VideoTaskRepository repository) {
+        return args -> {
+            int moved = repository.failAllRunning("ORPHANED_BY_RESTART",
+                "服务重启导致执行中断，请重新执行该任务");
+            if (moved > 0) {
+                log.warn("启动收敛：{} 个任务因上次进程退出而中断，已置为 FAILED（ORPHANED_BY_RESTART）", moved);
+            }
+        };
     }
 }

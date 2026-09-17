@@ -201,6 +201,34 @@ public class VideoTaskOrchestrator {
         appendEvent(context, "SUBMITTED", "已提交 ComfyUI");
 
         ComfyOutput output = awaitOutput(promptId, context);
+        // 此刻任务已经是 RUNNING（markSubmitted 落库过）。
+        // 这之后的每一步（下载成片、落盘、ffprobe、分辨率断言、写素材行）失败时，
+        // 都必须把任务置为失败：否则任务永远停在「运行中」，用户既拿不到成片，
+        // 也看不到失败原因，只能看到一个永不结束的任务。
+        try {
+            return archiveOutput(context, version, output);
+        } catch (VideoTaskException e) {
+            int moved = repository.markFailedIfActive(context.taskId(), e.getErrorCode(), e.getMessage());
+            if (moved > 0) {
+                log.warn("任务 {} 成片后处理失败，已置为 FAILED：[{}] {}",
+                    context.taskId(), e.getErrorCode(), e.getMessage());
+            }
+            throw e;
+        } catch (RuntimeException e) {
+            // 非业务异常也要落库，否则同样会留下僵尸任务。
+            repository.markFailedIfActive(context.taskId(), "EXECUTION_FAILED",
+                sanitize(e.getMessage()));
+            throw e;
+        }
+    }
+
+    /**
+     * 把 ComfyUI 产物归档成素材并结算任务。
+     *
+     * <p>只在任务已进入 RUNNING 之后调用；失败由 {@link #execute} 负责落库。</p>
+     */
+    private ExecutionResult archiveOutput(TaskContext context, WorkflowVersion version,
+                                          ComfyOutput output) {
         long maxDurationMillis = resolveDurationCapMillis(context.durationLabel(), version);
 
         byte[] content = comfyClient.fetchOutput(output);
@@ -233,7 +261,15 @@ public class VideoTaskOrchestrator {
             }
         }
         if (probe.measured()) {
-            mediaProbe.assertAcceptable(probe);
+            // 分辨率断言必须跟随所选档位：这里曾经写死 1920×1080，开放 720P/480P 后
+            // 把已经生成并落盘的 720P 成片误判为不合规，任务卡在 RUNNING、成片被丢弃。
+            int[] expected = preparer.expectedOutputSize(context.tier());
+            if (expected == null) {
+                log.warn("任务 {} 档位 {} 未配置目标分辨率，跳过分辨率断言",
+                    context.taskId(), context.tier());
+            } else {
+                mediaProbe.assertAcceptable(probe, expected[0], expected[1]);
+            }
         }
 
         // 大小与校验和统一以最终落盘文件为准（截断后文件名与内容都已变化）。

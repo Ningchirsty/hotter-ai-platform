@@ -226,6 +226,32 @@ public class JdbcVideoTaskRepository implements VideoTaskRepository {
     }
 
     @Override
+    public int markFailedIfActive(long taskId, String errorCode, String errorMessage) {
+        // 终态列表来自枚举，避免以后新增状态时这里漏改。
+        String terminal = java.util.Arrays.stream(VideoTaskStatus.values())
+            .filter(VideoTaskStatus::isTerminal)
+            .map(Enum::name)
+            .collect(java.util.stream.Collectors.joining("', '"));
+        return jdbc.update("""
+            UPDATE video_task
+            SET status = ?, error_code = ?, error_message = ?, update_time = NOW(),
+                finished_time = NOW()
+            WHERE id = ? AND status NOT IN ('%s')
+            """.formatted(terminal), VideoTaskStatus.FAILED.name(), errorCode, errorMessage, taskId);
+    }
+
+    @Override
+    public int failAllRunning(String errorCode, String errorMessage) {
+        return jdbc.update("""
+            UPDATE video_task
+            SET status = ?, error_code = ?, error_message = ?, update_time = NOW(),
+                finished_time = NOW()
+            WHERE status = ?
+            """, VideoTaskStatus.FAILED.name(), errorCode, errorMessage,
+            VideoTaskStatus.RUNNING.name());
+    }
+
+    @Override
     public int markSubmitted(long taskId, String comfyPromptId, int attemptCount) {
         return jdbc.update("""
             UPDATE video_task
