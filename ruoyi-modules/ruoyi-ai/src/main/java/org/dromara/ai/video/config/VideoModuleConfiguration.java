@@ -118,6 +118,23 @@ public class VideoModuleConfiguration {
          * 同步永不改变「是否可提交」的判定；失败也只告警、不影响启动。</p>
          */
         private boolean syncContractToDb = true;
+
+        /**
+         * 提交任务前是否先请求 ComfyUI 释放显存与模型缓存（POST /free）。
+         *
+         * <p>默认 <b>false</b>：ComfyUI 的默认行为是把已加载模型留在显存里复用，
+         * 这让连续生成更快。只有在显存确实紧张时才打开。</p>
+         *
+         * <p>为什么会需要：ComfyUI 不主动释放缓存，多轮生成后显存会被历史缓存占满。
+         * 实测过一次 A100 只剩 14% 空闲（{@code torch_vram_free} 近乎 0），任务在
+         * {@code MiniMaxH3Director} 节点被中断、报 COMFY_EXECUTION_FAILED；
+         * 调用 /free 后空闲显存恢复到 99%，同一工作流即可继续。</p>
+         *
+         * <p>代价：每次提交都会卸载模型，下一次生成需要重新加载权重（变慢）。
+         * 因此这里只提供开关，由运维按显存实际情况决定，代码不擅自改变
+         * ComfyUI 的缓存策略（那属于 ComfyUI 侧配置，例如启动参数 --cache-none）。</p>
+         */
+        private boolean comfyFreeBeforeSubmit = false;
     }
 
     /**
@@ -218,6 +235,7 @@ public class VideoModuleConfiguration {
             Duration.ofSeconds(properties.getPollBudgetSeconds()),
             Duration.ofSeconds(properties.getPollIntervalSeconds()),
             () -> org.dromara.common.mybatis.utils.IdGeneratorUtil.nextLongId(),
-            mediaProbe);
+            mediaProbe,
+            properties.isComfyFreeBeforeSubmit());
     }
 }

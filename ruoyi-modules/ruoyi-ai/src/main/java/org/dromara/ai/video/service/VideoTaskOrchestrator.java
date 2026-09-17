@@ -65,6 +65,15 @@ public class VideoTaskOrchestrator {
      */
     private final MediaProbe mediaProbe;
 
+    /**
+     * 提交前是否先请求 ComfyUI 释放显存与模型缓存。
+     *
+     * <p>ComfyUI 不主动释放缓存，多轮生成后显存可能被历史缓存占满，导致任务在采样
+     * 节点拿不到显存而失败。默认关闭（保留 ComfyUI 的复用缓存带来的速度），
+     * 由 {@code video.comfy-free-before-submit} 在显存紧张时打开。</p>
+     */
+    private final boolean freeBeforeSubmit;
+
     public VideoTaskOrchestrator(WorkflowContractRegistry registry,
                                  H3TemplatePreparer preparer,
                                  ComfyClient comfyClient,
@@ -102,6 +111,31 @@ public class VideoTaskOrchestrator {
                                  Duration pollInterval,
                                  java.util.function.Supplier<Long> idGenerator,
                                  MediaProbe mediaProbe) {
+        this(registry, preparer, comfyClient, repository, assetStorage, mapper,
+            pollBudget, pollInterval, idGenerator, mediaProbe, false);
+    }
+
+    /**
+     * 完整构造器。
+     *
+     * @param freeBeforeSubmit 提交前是否先请求 ComfyUI 释放显存与模型缓存。
+     *                         默认 false；ComfyUI 不主动释放缓存，多轮生成后显存
+     *                         可能被历史缓存占满，导致任务在采样节点拿不到显存而失败
+     *                         （实测 A100 只剩 14% 空闲时任务在 MiniMaxH3Director 中断）。
+     *                         打开后每次生成会重新加载权重，换来的是稳定的显存水位。
+     */
+    public VideoTaskOrchestrator(WorkflowContractRegistry registry,
+                                 H3TemplatePreparer preparer,
+                                 ComfyClient comfyClient,
+                                 VideoTaskRepository repository,
+                                 AssetStorage assetStorage,
+                                 ObjectMapper mapper,
+                                 Duration pollBudget,
+                                 Duration pollInterval,
+                                 java.util.function.Supplier<Long> idGenerator,
+                                 MediaProbe mediaProbe,
+                                 boolean freeBeforeSubmit) {
+        this.freeBeforeSubmit = freeBeforeSubmit;
         this.registry = registry;
         this.preparer = preparer;
         this.comfyClient = comfyClient;
@@ -135,6 +169,12 @@ public class VideoTaskOrchestrator {
             repository.transition(context.taskId(), VideoTaskStatus.QUEUED, VideoTaskStatus.FAILED,
                 "COMFY_UNREACHABLE", "ComfyUI 服务当前不可达");
             throw VideoTaskException.comfyFailure("ComfyUI 服务当前不可达", null);
+        }
+
+        // 可选：先让 ComfyUI 归还显存与模型缓存，避免历史缓存把显存占满导致
+        // 本次生成在采样节点拿不到显存而失败。默认关闭，由配置决定。
+        if (freeBeforeSubmit && comfyClient.freeMemory()) {
+            log.info("任务 {} 提交前已请求 ComfyUI 释放显存", context.taskId());
         }
 
         String firstFile = null;

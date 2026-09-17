@@ -162,7 +162,7 @@ public class HttpComfyClient implements ComfyClient {
             JsonNode status = entry.path("status");
             String statusStr = status.path("status_str").asText("");
             if ("error".equalsIgnoreCase(statusStr)) {
-                return PollResult.failed("ComfyUI 执行失败");
+                return PollResult.failed(describeExecutionFailure(status.path("messages")));
             }
             List<ComfyOutput> outputs = extractOutputs(entry.path("outputs"));
             if (!outputs.isEmpty()) {
@@ -175,6 +175,84 @@ public class HttpComfyClient implements ComfyClient {
         } catch (Exception e) {
             log.error("ComfyUI 状态查询失败: {}", describe(e));
             throw VideoTaskException.comfyFailure("ComfyUI 状态查询失败（" + describe(e) + "）", e);
+        }
+    }
+
+    /**
+     * 把 ComfyUI 的失败记录翻译成可诊断的一句话。
+     *
+     * <p>此前无论什么原因都只记「ComfyUI 执行失败」，运维看不出是显存不足、
+     * 节点抛异常还是被中断——实际排查时因此多花了一轮。这里从
+     * {@code status.messages} 里提取：</p>
+     * <ul>
+     *   <li>{@code execution_error}：节点 id/类型 + 异常类型 + 异常信息；</li>
+     *   <li>{@code execution_interrupted}：被中断时的节点 id/类型
+     *       （显存不足时 ComfyUI 也会以此形式上报）。</li>
+     * </ul>
+     * 字段缺失时逐级降级，始终返回非空文案。
+     */
+    String describeExecutionFailure(JsonNode messages) {
+        if (messages != null && messages.isArray()) {
+            for (JsonNode message : messages) {
+                if (!message.isArray() || message.size() < 2) {
+                    continue;
+                }
+                String kind = message.get(0).asText("");
+                JsonNode payload = message.get(1);
+                if ("execution_error".equals(kind)) {
+                    String nodeType = payload.path("node_type").asText("");
+                    String nodeId = payload.path("node_id").asText("");
+                    String exceptionType = payload.path("exception_type").asText("");
+                    String exceptionMessage = payload.path("exception_message").asText("");
+                    StringBuilder sb = new StringBuilder("ComfyUI 节点执行失败");
+                    if (!nodeType.isBlank()) {
+                        sb.append("：").append(nodeType);
+                        if (!nodeId.isBlank()) {
+                            sb.append("(#").append(nodeId).append(")");
+                        }
+                    }
+                    if (!exceptionType.isBlank()) {
+                        sb.append("，").append(exceptionType);
+                    }
+                    if (!exceptionMessage.isBlank()) {
+                        sb.append("：").append(exceptionMessage);
+                    }
+                    return sb.toString();
+                }
+                if ("execution_interrupted".equals(kind)) {
+                    String nodeType = payload.path("node_type").asText("");
+                    String nodeId = payload.path("node_id").asText("");
+                    StringBuilder sb = new StringBuilder("ComfyUI 执行被中断");
+                    if (!nodeType.isBlank()) {
+                        sb.append("：节点 ").append(nodeType);
+                        if (!nodeId.isBlank()) {
+                            sb.append("(#").append(nodeId).append(")");
+                        }
+                        sb.append(" 未完成，常见原因是显存不足或任务被取消");
+                    }
+                    return sb.toString();
+                }
+            }
+        }
+        return "ComfyUI 执行失败";
+    }
+
+    @Override
+    public boolean freeMemory() {
+        try {
+            // /free 是 ComfyUI 官方接口：unload_models 卸载模型，free_memory 归还显存。
+            restClient.post()
+                .uri("/free")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body("{\"unload_models\":true,\"free_memory\":true}")
+                .retrieve()
+                .body(String.class);
+            log.info("已请求 ComfyUI 释放显存与模型缓存");
+            return true;
+        } catch (Exception e) {
+            // 释放失败不应影响主流程，只记录。
+            log.warn("请求 ComfyUI 释放显存失败：{}", describe(e));
+            return false;
         }
     }
 

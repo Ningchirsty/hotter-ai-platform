@@ -529,6 +529,15 @@ const currentModel = ref(VIDEO_MODELS.find(item => item.code === VIDEO_MODULES[0
 const values = reactive<Partial<Record<FieldKey, string>>>({ tier: '高清 · 1080P', dur: '5 秒' });
 /** 已上传素材的 ID，提交任务时传 ID，不传浏览器本地文件名。 */
 const uploadAssetIds = reactive<Partial<Record<FieldKey, Array<number | string>>>>({});
+
+/**
+ * 与后端 VideoCreationController 保持一致的上传约束。
+ *
+ * <p>放在前端是为了给出即时、明确的提示，而不是让用户等一个必然失败的请求。
+ * 后端仍然会独立校验，前端校验不作为安全边界。</p>
+ */
+const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+const ALLOWED_UPLOAD_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 const uploading = ref(false);
 const submitting = ref(false);
 const loadingTasks = ref(false);
@@ -743,6 +752,20 @@ async function handleFiles(field: FieldKey, event: Event) {
   try {
     const ids: Array<number | string> = [];
     for (const file of files) {
+      // 提交前先做本地校验：文件为空或类型不被接受时，明确告知用户，
+      // 而不是发一个注定被后端拒绝的请求。后端同样会校验，这里是第一道闸。
+      if (!file.size) {
+        ElMessage.error(`「${file.name}」是空文件，请重新选择`);
+        return;
+      }
+      if (file.size > MAX_UPLOAD_BYTES) {
+        ElMessage.error(`「${file.name}」超过 ${MAX_UPLOAD_BYTES / 1024 / 1024}MB 上限`);
+        return;
+      }
+      if (file.type && !ALLOWED_UPLOAD_TYPES.includes(file.type.toLowerCase())) {
+        ElMessage.error(`「${file.name}」格式不支持，请上传 PNG/JPEG/WEBP 图片`);
+        return;
+      }
       const res = await uploadVideoAsset(file);
       if (res.data?.assetId !== undefined) ids.push(res.data.assetId);
     }
@@ -750,7 +773,11 @@ async function handleFiles(field: FieldKey, event: Event) {
     ElMessage.success(`已上传 ${ids.length} 个素材`);
     void loadAssets();
   } catch (error) {
-    ElMessage.error((await extractErrorMessage(error)) ?? '素材上传失败');
+    // 失败时必须给出可定位的信息：带上文件名与网络层面的原因，
+    // 避免出现「点了没反应」而无法排查的情况。
+    const detail = (await extractErrorMessage(error)) ?? '素材上传失败';
+    const name = files.map(f => f.name).join('、');
+    ElMessage.error(`${detail}（文件：${name}）`);
   } finally {
     uploading.value = false;
   }
