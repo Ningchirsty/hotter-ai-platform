@@ -272,6 +272,8 @@ public class VideoCreationController extends BaseController {
             .header(HttpHeaders.CONTENT_TYPE, contentType)
             .header(HttpHeaders.ACCEPT_RANGES, "bytes")
             .header(HttpHeaders.CACHE_CONTROL, "private, max-age=300")
+            // 缓存必须按 token 区分：否则同一浏览器换账号后可能命中上一个账号的成片。
+            .header(HttpHeaders.VARY, HttpHeaders.AUTHORIZATION)
             .header("X-Content-Type-Options", "nosniff")
             .contentLength(length);
         if (partial) {
@@ -281,12 +283,14 @@ public class VideoCreationController extends BaseController {
     }
 
     /**
-     * 素材缩略图（仅图片素材）。
+     * 素材缩略图（图片缩放 + 视频抽首帧）。
      *
-     * <p>素材库格子只有一两百像素，此前直接把原图当缩略图，一张 3.2 MB 的图也得整张拉下来。
-     * 经 Cloudflare 的链路实测吞吐 258 KB/s ~ 790 KB/s，一屏几张图就要好几秒。</p>
+     * <p>格子和卡片只有一两百像素，此前直接把原素材当缩略图：3.2 MB 的图整张拉下来，
+     * 成片更是把整段 mp4 拉下来塞进 {@code <img>}（9 个成片合计约 13 MB）。
+     * 经 Cloudflare 实测吞吐 258 KB/s ~ 790 KB/s，这会把带宽占满，让同时发起的预览
+     * 请求排队甚至超时。现在统一给一张约几十 KB 的 JPEG。</p>
      *
-     * <p>取不到时按业务失败返回，前端回退到原图、再退到图标，不会让卡片空白。</p>
+     * <p>取不到时按业务失败返回，前端回退到原素材、再退到图标，不会让卡片空白。</p>
      */
     @GetMapping("/assets/{assetId}/thumbnail")
     @SaCheckPermission("video:creation:view")
@@ -297,12 +301,14 @@ public class VideoCreationController extends BaseController {
 
         byte[] thumb = thumbnailService.thumbnail(asset.storageKey(), asset.contentType());
         if (thumb == null || thumb.length == 0) {
-            // 视频素材本就不做缩略图；其它情况是环境缺 ffmpeg 或原图不可读。
+            // 非图片/视频类型，或环境缺 ffmpeg，或原素材不可读。
             throw VideoTaskException.assetNotFound("该素材暂无缩略图");
         }
         return ResponseEntity.ok()
             .header(HttpHeaders.CONTENT_TYPE, "image/jpeg")
             .header(HttpHeaders.CACHE_CONTROL, "private, max-age=300")
+            // 缓存必须按 token 区分：否则同一浏览器换账号后可能命中上一个账号的图。
+            .header(HttpHeaders.VARY, HttpHeaders.AUTHORIZATION)
             .header("X-Content-Type-Options", "nosniff")
             .contentLength(thumb.length)
             .body(thumb);

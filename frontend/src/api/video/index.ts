@@ -120,6 +120,38 @@ export const cancelVideoTask = (taskId: number | string): AxiosPromise<void> => 
 };
 
 /**
+ * 把带鉴权取回的响应转成 blob URL。
+ *
+ * <p><b>为什么必须判断类型。</b>若依用「HTTP 200 + 业务码」表达失败：token 失效时
+ * 后端返回的是 {@code {"code":401,...}} 的 JSON，HTTP 状态仍是 200。
+ * 而 {@code responseType:'blob'} 会把这段 JSON 原样当成文件返回，
+ * 于是 {@code <video src="blob:...">} 拿到一个几十字节的 JSON，
+ * 播放失败却<b>不报错</b>——用户看到的就是"预览有时候行、有时候不行"。</p>
+ *
+ * <p>这里显式拦掉非媒体类型与空内容，把静默失败变成明确的错误信息。</p>
+ */
+const toMediaBlobUrl = async (data: unknown, what: string): Promise<string> => {
+  const blob = data as Blob | undefined;
+  if (!blob || blob.size === 0) {
+    throw new Error(`${what}内容为空`);
+  }
+  const type = (blob.type || '').toLowerCase();
+  if (type.includes('application/json') || type.includes('text/')) {
+    let message = `${what}读取失败`;
+    try {
+      const parsed = JSON.parse(await blob.text());
+      if (parsed?.msg) {
+        message = String(parsed.msg);
+      }
+    } catch {
+      // 解析失败就沿用默认文案
+    }
+    throw new Error(message);
+  }
+  return URL.createObjectURL(blob);
+};
+
+/**
  * 读取素材/成片内容，返回可直接交给 `<img>` / `<video>` 的 blob URL。
  *
  * <p>为什么不能直接把接口地址写进 `src`：`<img>` / `<video>` 发出的请求
@@ -135,17 +167,18 @@ export const fetchVideoAssetBlobUrl = async (assetId: number | string): Promise<
     responseType: 'blob'
   });
   // request 拦截器对 blob 响应原样透传，因此这里拿到的就是 Blob。
-  return URL.createObjectURL(res.data as unknown as Blob);
+  return toMediaBlobUrl(res.data, '成片');
 };
 
 /**
- * 读取图片素材的缩略图，返回可交给 `<img>` 的 blob URL。
+ * 读取图片/视频素材的缩略图，返回可交给 `<img>` 的 blob URL。
  *
- * <p>为什么不直接用原图：素材库格子只有一两百像素，而原图可能有几 MB。
- * 经 Cloudflare 的链路实测吞吐 258 KB/s ~ 790 KB/s，一屏几张图就要好几秒。
- * 后端用 ffmpeg 生成并缓存缩略图（最长边 480px）。</p>
+ * <p>为什么不直接用原素材：素材库格子只有一两百像素，任务封面更是只要一帧。
+ * 原图可能几 MB，成片更是整段 mp4（9 个成片合计约 13 MB），而经 Cloudflare 实测吞吐
+ * 只有 258 KB/s ~ 790 KB/s —— 把带宽占满后，同一时刻发起的预览请求就会排队甚至超时。
+ * 后端用 ffmpeg 生成并缓存缩略图（最长边 480px）：图片缩放，视频抽 0.5s 处一帧。</p>
  *
- * <p>取不到时抛错，由调用方回退到原图——缩略图只是为了快，不该成为能不能看的开关。</p>
+ * <p>取不到时抛错，由调用方决定是否回退到原素材——缩略图只是为了快，不该成为能不能看的开关。</p>
  */
 export const fetchVideoAssetThumbnailBlobUrl = async (assetId: number | string): Promise<string> => {
   const res = await request({
@@ -153,5 +186,5 @@ export const fetchVideoAssetThumbnailBlobUrl = async (assetId: number | string):
     method: 'get',
     responseType: 'blob'
   });
-  return URL.createObjectURL(res.data as unknown as Blob);
+  return toMediaBlobUrl(res.data, '缩略图');
 };
