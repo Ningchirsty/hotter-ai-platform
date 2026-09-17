@@ -21,8 +21,11 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Cloudflare 早已把连接断开，浏览器什么都没拿到，用户看到的是「点了没反应」。
  * 因此「在请求线程里同步等出片」在生产环境根本不成立：活干完了，结果送不回去。</p>
  *
- * <p><b>为什么并发固定为 1。</b>GPU 只有一块，且历史上已经出现过显存被历史缓存占满后
- * 任务在 {@code MiniMaxH3Director} 节点被中断的情况。串行执行是硬约束，不是保守选择。</p>
+ * <p><b>为什么并发必须等于 GPU 实例数。</b>实测一次 H3 生成在 A100-80GB 上峰值占用
+ * 80,805 MiB，几乎顶满整张卡，所以「同一张卡上同时只能有一个任务」是硬约束。
+ * 双卡时并发取 2——每张卡一个 ComfyUI 实例，任务由 {@link ComfyWorkerPool}
+ * 绑定到具体实例上串行执行；并发数由 {@code video.comfy-workers} 的条目数决定，
+ * 而不是拍一个数字。</p>
  *
  * <p>本类只负责「排队 + 跑」；任务状态的落库（含失败原因）全部由
  * {@link VideoTaskOrchestrator} 负责，因此进程被重启也不会留下说不清状态的任务——
@@ -47,7 +50,12 @@ public class VideoTaskExecutionService {
     private final ExecutorService pool;
 
     /**
-     * 正在执行的任务数（0 或 1）。
+     * 同时在执行的任务数上限（= GPU 实例数）。
+     */
+    private final int concurrency;
+
+    /**
+     * 正在执行的任务数。
      */
     private final AtomicInteger active = new AtomicInteger();
 
@@ -59,17 +67,32 @@ public class VideoTaskExecutionService {
     private final int queueCapacity;
 
     public VideoTaskExecutionService(TaskRunner runner, int queueCapacity) {
+        this(runner, queueCapacity, 1);
+    }
+
+    /**
+     * @param concurrency 同时执行的任务数上限，必须等于可用的 ComfyUI 实例数。
+     */
+    public VideoTaskExecutionService(TaskRunner runner, int queueCapacity, int concurrency) {
         this.runner = runner;
         this.queueCapacity = Math.max(1, queueCapacity);
+        this.concurrency = Math.max(1, concurrency);
         ThreadFactory factory = runnable -> {
             Thread thread = new Thread(runnable, "video-exec-" + THREAD_SEQ.incrementAndGet());
             // 守护线程：进程退出时不该被一个还在等 ComfyUI 的线程拖住。
             thread.setDaemon(true);
             return thread;
         };
-        this.pool = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
+        this.pool = new ThreadPoolExecutor(this.concurrency, this.concurrency, 0L, TimeUnit.MILLISECONDS,
             new ArrayBlockingQueue<>(this.queueCapacity), factory,
             new ThreadPoolExecutor.AbortPolicy());
+    }
+
+    /**
+     * 并发上限（= 参与执行的 ComfyUI 实例数）。
+     */
+    public int concurrency() {
+        return concurrency;
     }
 
     /**

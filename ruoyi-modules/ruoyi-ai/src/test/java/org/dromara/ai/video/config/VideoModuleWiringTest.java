@@ -1,5 +1,6 @@
 package org.dromara.ai.video.config;
 
+import org.dromara.ai.video.service.ComfyWorkerPool;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -10,6 +11,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -95,5 +97,63 @@ class VideoModuleWiringTest {
         // 分辨率必须与原 1080P 行为一致（已上线，不能变）
         assertEquals(new VideoTierResolutions.Resolution(1920, 1088, 1920, 1080, 1920),
             tiers.of("高清 · 1080P"));
+    }
+
+    @Test
+    @DisplayName("装配：video.comfy-workers 有几个条目就装配几个工作节点（并发数由此决定）")
+    void workerPoolIsBuiltFromConfiguredWorkers() {
+        VideoModuleConfiguration configuration = new VideoModuleConfiguration();
+        VideoModuleConfiguration.VideoProperties properties = new VideoModuleConfiguration.VideoProperties();
+        properties.setComfyWorkers(List.of(
+            "gpu0=http://192.168.2.223:8189",
+            "gpu1=http://192.168.2.223:8188"));
+
+        ComfyWorkerPool pool = configuration.comfyWorkerPool(properties,
+            new com.fasterxml.jackson.databind.ObjectMapper());
+
+        assertEquals(2, pool.size(), "两个条目就是两个节点，也决定了后台并发为 2");
+        assertTrue(pool.names().contains("gpu0@http://192.168.2.223:8189"), "节点名与地址要能对上：" + pool.names());
+        assertTrue(pool.names().contains("gpu1@http://192.168.2.223:8188"), "节点名与地址要能对上：" + pool.names());
+    }
+
+    @Test
+    @DisplayName("装配：没配多节点时退化为 comfy-base-url 单实例（行为与改造前一致）")
+    void fallsBackToSingleWorkerWhenNoWorkerListConfigured() {
+        VideoModuleConfiguration configuration = new VideoModuleConfiguration();
+        VideoModuleConfiguration.VideoProperties properties = new VideoModuleConfiguration.VideoProperties();
+        properties.setComfyBaseUrl("http://192.168.2.223:8188");
+
+        ComfyWorkerPool pool = configuration.comfyWorkerPool(properties,
+            new com.fasterxml.jackson.databind.ObjectMapper());
+
+        assertEquals(1, pool.size(), "单实例部署并发必须仍是 1");
+        assertTrue(pool.names().startsWith("default@"), "单实例节点名固定为 default：" + pool.names());
+    }
+
+    @Test
+    @DisplayName("装配：既没有多节点也没有单地址时必须启动失败，而不是静默跑不起来")
+    void rejectsConfigurationWithoutAnyComfyEndpoint() {
+        VideoModuleConfiguration configuration = new VideoModuleConfiguration();
+        VideoModuleConfiguration.VideoProperties properties = new VideoModuleConfiguration.VideoProperties();
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+            () -> configuration.comfyWorkerPool(properties,
+                new com.fasterxml.jackson.databind.ObjectMapper()));
+        assertTrue(error.getMessage().contains("comfy-workers"),
+            "启动失败必须指路到具体配置项：" + error.getMessage());
+    }
+
+    @Test
+    @DisplayName("装配：格式非法的节点条目被忽略，非法地址不会变成半截 URL")
+    void malformedWorkerSpecIsIgnored() {
+        VideoModuleConfiguration configuration = new VideoModuleConfiguration();
+        VideoModuleConfiguration.VideoProperties properties = new VideoModuleConfiguration.VideoProperties();
+        properties.setComfyWorkers(Arrays.asList("gpu0", "gpu1=http://192.168.2.223:8188", ""));
+
+        ComfyWorkerPool pool = configuration.comfyWorkerPool(properties,
+            new com.fasterxml.jackson.databind.ObjectMapper());
+
+        assertEquals(1, pool.size(), "只有合法条目应被装配");
+        assertTrue(pool.names().startsWith("gpu1@"), pool.names());
     }
 }

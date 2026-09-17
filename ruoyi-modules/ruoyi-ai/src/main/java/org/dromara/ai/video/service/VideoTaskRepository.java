@@ -100,6 +100,19 @@ public interface VideoTaskRepository {
     int markSubmitted(long taskId, String comfyPromptId, int attemptCount);
 
     /**
+     * 记录已提交 ComfyUI，并记下承担本次生成的工作节点（GPU）。
+     *
+     * <p>多 GPU 后必须能回答「这条任务跑在哪张卡上」：同一个 prompt_id 只在提交它的
+     * 那台 ComfyUI 进程里可查，排障时要知道去问哪一台。</p>
+     *
+     * @param comfyWorker 工作节点名；单实例部署或未知时传 {@code null}
+     * @return 影响行数
+     */
+    default int markSubmitted(long taskId, String comfyPromptId, int attemptCount, String comfyWorker) {
+        return markSubmitted(taskId, comfyPromptId, attemptCount);
+    }
+
+    /**
      * 记录成片归档与实测指标。
      */
     int markSucceeded(long taskId, long outputAssetId, long coverAssetId,
