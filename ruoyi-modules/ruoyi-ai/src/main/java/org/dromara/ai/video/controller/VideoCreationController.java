@@ -445,12 +445,14 @@ public class VideoCreationController extends BaseController {
                 () -> System.nanoTime(),
                 new AtomicInteger(0)));
         } catch (VideoTaskException e) {
-            // 前置失败（契约/素材/可达性）也要落库，否则任务会一直停在 QUEUED，
-            // 「我的任务」里看不到失败原因。编排器内部失败路径已自行落库。
-            int moved = repository.transition(taskId, VideoTaskStatus.QUEUED, VideoTaskStatus.FAILED,
-                e.getErrorCode(), e.getMessage());
+            // 失败必须落库，否则任务会一直停在 QUEUED/RUNNING，用户在「我的任务」里
+            // 既看不到失败原因，也等不到结果。
+            // 注意：这里不能用 transition(QUEUED -> FAILED)——任务提交后已经是 RUNNING，
+            // 那样 WHERE 不匹配、影响 0 行，失败会被静默吞掉（曾导致 720P 任务永久卡住）。
+            // 编排器内部失败路径已自行落库，这里是兜底。
+            int moved = repository.markFailedIfActive(taskId, e.getErrorCode(), e.getMessage());
             if (moved > 0) {
-                log.warn("任务 {} 执行前失败，已置为 FAILED：[{}] {}", taskId, e.getErrorCode(), e.getMessage());
+                log.warn("任务 {} 执行失败，已置为 FAILED：[{}] {}", taskId, e.getErrorCode(), e.getMessage());
             }
             // 状态已落库，因此返回成功码并带上真实状态与原因；
             // 若返回非 200，前端 axios 拦截器会抛出通用错误，反而看不到具体原因。
