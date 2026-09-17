@@ -94,4 +94,52 @@ class ComfyOutputParsingTest {
     void emptyOutputsStayEmpty() throws Exception {
         assertTrue(parse("{\"prompt-id-1\": {\"outputs\": {}}}").isEmpty());
     }
+
+    private String describeFailure(String messagesJson) throws Exception {
+        HttpComfyClient client = new HttpComfyClient("http://192.168.2.223:8188", MAPPER, false);
+        return client.describeExecutionFailure(MAPPER.readTree(messagesJson));
+    }
+
+    @Test
+    @DisplayName("回归：节点执行异常必须报出节点与异常信息，而不是笼统的「执行失败」")
+    void executionErrorCarriesNodeAndException() throws Exception {
+        // 形状取自 ComfyUI 0.35 的 status.messages 实际结构。
+        String message = describeFailure("""
+            [["execution_start", {"prompt_id": "p1"}],
+             ["execution_error", {"prompt_id": "p1", "node_id": "5",
+                "node_type": "MiniMaxH3Director",
+                "exception_type": "torch.OutOfMemoryError",
+                "exception_message": "CUDA out of memory. Tried to allocate 2.00 GiB"}]]
+            """);
+        assertTrue(message.contains("MiniMaxH3Director"), "应含节点类型，实际：" + message);
+        assertTrue(message.contains("#5"), "应含节点 id，实际：" + message);
+        assertTrue(message.contains("OutOfMemoryError"), "应含异常类型，实际：" + message);
+        assertTrue(message.contains("out of memory"), "应含异常信息，实际：" + message);
+    }
+
+    @Test
+    @DisplayName("实测场景：被中断（显存不足常见形态）要提示节点与可能原因")
+    void interruptedExecutionPointsAtNode() throws Exception {
+        // 这是 2026-09-17 生产上真实发生的形态：A100 空闲显存仅 14% 时，
+        // H3 在 MiniMaxH3Director 节点被中断，此前只记「ComfyUI 执行失败」，
+        // 无法判断是显存问题。
+        String message = describeFailure("""
+            [["execution_start", {"prompt_id": "8fe3732a"}],
+             ["execution_cached", {"nodes": ["1", "2"]}],
+             ["execution_interrupted", {"prompt_id": "8fe3732a", "node_id": "5",
+                "node_type": "MiniMaxH3Director", "executed": []}]]
+            """);
+        assertTrue(message.contains("MiniMaxH3Director"), "应含节点类型，实际：" + message);
+        assertTrue(message.contains("#5"), "应含节点 id，实际：" + message);
+        assertTrue(message.contains("显存"), "应提示显存等可能原因，实际：" + message);
+    }
+
+    @Test
+    @DisplayName("messages 缺失或形状异常时降级为通用文案，不抛异常也不返回空")
+    void failureDescriptionDegradesGracefully() throws Exception {
+        assertEquals("ComfyUI 执行失败", describeFailure("[]"));
+        assertEquals("ComfyUI 执行失败", describeFailure("[[\"execution_start\", {}]]"));
+        HttpComfyClient client = new HttpComfyClient("http://192.168.2.223:8188", MAPPER, false);
+        assertEquals("ComfyUI 执行失败", client.describeExecutionFailure(null));
+    }
 }

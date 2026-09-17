@@ -49,6 +49,26 @@ public interface ComfyClient {
     boolean isReachable();
 
     /**
+     * 请求 ComfyUI 释放显存与已加载的模型缓存。
+     *
+     * <p>为什么需要它：ComfyUI 默认会把已加载的模型留在显存里不释放。多轮生成后
+     * 显存被历史缓存占满，后续任务会在采样节点拿不到显存而失败。实测过一次：
+     * A100 上只剩 14% 空闲、{@code torch_vram_free} 近乎 0，任务在
+     * {@code MiniMaxH3Director} 节点被中断；调用 <b>POST /free</b> 后空闲显存
+     * 恢复到 99%。</p>
+     *
+     * <p>默认实现返回 false（不做任何事），因此不会破坏测试替身；
+     * 是否在提交前调用由 {@code video.comfy-free-before-submit} 控制，
+     * 默认关闭——释放模型会让下一次生成重新加载权重（变慢），
+     * 只应在显存确实紧张时打开。</p>
+     *
+     * @return 是否成功完成释放；实现不可用或调用失败时返回 false，不抛异常
+     */
+    default boolean freeMemory() {
+        return false;
+    }
+
+    /**
      * 轮询结果。
      *
      * @param state   RUNNING / SUCCEEDED / FAILED

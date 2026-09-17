@@ -266,6 +266,31 @@ class VideoTaskOrchestratorTest {
             () -> orchestrator(1000).execute(context("T2V", "wf-does-not-exist", "提示词", null, null, null)));
     }
 
+    @Test
+    @DisplayName("配置开启时，提交前必须先请求 ComfyUI 释放显存")
+    void freesComfyVramBeforeSubmitWhenEnabled() {
+        // 真实事故：A100 空闲显存仅剩 14%（torch_vram_free 近乎 0）时，
+        // H3 任务在 MiniMaxH3Director 节点被中断并报 COMFY_EXECUTION_FAILED。
+        // 打开该开关后，每次提交前先归还显存与模型缓存。
+        comfy.pollState = ComfyClient.PollResult.State.SUCCEEDED;
+        VideoTaskOrchestrator freeOrchestrator = new VideoTaskOrchestrator(
+            registry, preparer, comfy, repository, storage, MAPPER,
+            Duration.ofMillis(1000), Duration.ofMillis(1), () -> 9300L, probe, true);
+        assertDoesNotThrow(
+            () -> freeOrchestrator.execute(context("T2V", "wf-t2v-h3", "提示词", null, null, null)));
+        assertTrue(comfy.freed, "开启开关后必须调用过 freeMemory()");
+        assertTrue(comfy.submitted, "释放显存后仍应正常提交");
+    }
+
+    @Test
+    @DisplayName("默认关闭时不请求释放显存（保留 ComfyUI 的模型复用速度）")
+    void doesNotFreeComfyVramByDefault() {
+        comfy.pollState = ComfyClient.PollResult.State.SUCCEEDED;
+        assertDoesNotThrow(
+            () -> orchestrator(1000).execute(context("T2V", "wf-t2v-h3", "提示词", null, null, null)));
+        assertFalse(comfy.freed, "默认不应调用 freeMemory()");
+    }
+
     private VideoTaskOrchestrator.TaskContext context(String capability, String workflow, String prompt,
                                                       Long image, Long first, Long last) {
         return new VideoTaskOrchestrator.TaskContext(1L, "000000", 100L, 10L,
@@ -281,9 +306,16 @@ class VideoTaskOrchestratorTest {
         boolean reachable = true;
         boolean submitted = false;
         boolean uploaded = false;
+        boolean freed = false;
         PollResult.State pollState = PollResult.State.SUCCEEDED;
         List<ComfyOutput> outputs = List.of(new ComfyOutput("out.mp4", "", "output",
             1920, 1080, 24.0, 5000L, 512L));
+
+        @Override
+        public boolean freeMemory() {
+            freed = true;
+            return true;
+        }
 
         @Override
         public String uploadImage(String fileName, byte[] content, String mimeType) {
