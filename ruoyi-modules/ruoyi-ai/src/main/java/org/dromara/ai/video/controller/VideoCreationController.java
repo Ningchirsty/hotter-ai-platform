@@ -30,6 +30,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.dromara.ai.video.service.ThumbnailService;
 import org.dromara.ai.video.service.VideoTaskDispatchService;
 import org.dromara.ai.video.service.VideoTaskExecutionService;
+import org.dromara.ai.video.support.CamelCase;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -203,7 +204,7 @@ public class VideoCreationController extends BaseController {
         long total = repository.countOwnedAssets(tenantId, userId);
         List<Map<String, Object>> rows = repository.listOwnedAssets(tenantId, userId,
             offset(pageQuery), size(pageQuery));
-        return R.ok(new PageResult<>(rows, total));
+        return R.ok(new PageResult<>(CamelCase.rows(rows), total));
     }
 
     /**
@@ -530,7 +531,7 @@ public class VideoCreationController extends BaseController {
         long total = repository.countOwnedTasks(tenantId, userId, status);
         List<Map<String, Object>> rows = repository.listOwnedTasks(tenantId, userId, status,
             offset(pageQuery), size(pageQuery));
-        return R.ok(new PageResult<>(rows, total));
+        return R.ok(new PageResult<>(CamelCase.rows(rows), total));
     }
 
     /**
@@ -541,8 +542,8 @@ public class VideoCreationController extends BaseController {
     public R<Map<String, Object>> taskDetail(@PathVariable Long taskId) {
         String tenantId = requireTenantId();
         long userId = LoginHelper.getUserId();
-        Map<String, Object> task = new HashMap<>(repository.requireOwnedTask(taskId, tenantId, userId));
-        task.put("events", repository.listEvents(taskId, tenantId));
+        Map<String, Object> task = CamelCase.row(repository.requireOwnedTask(taskId, tenantId, userId));
+        task.put("events", CamelCase.value(repository.listEvents(taskId, tenantId)));
         return R.ok(task);
     }
 
@@ -581,8 +582,7 @@ public class VideoCreationController extends BaseController {
         return List.of("desc", "tier", "dur", "img", "first", "last");
     }
 
-    private static int offset(PageQuery pageQuery) {
-        int pageNum = pageQuery.getPageNum() == null ? 1 : Math.max(1, pageQuery.getPageNum());
+    private static int offset(PageQuery pageQuery) {        int pageNum = pageQuery.getPageNum() == null ? 1 : Math.max(1, pageQuery.getPageNum());
         return (pageNum - 1) * size(pageQuery);
     }
 
