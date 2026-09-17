@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -52,11 +53,9 @@ class VideoTaskOrchestratorTest {
         Path repoRoot = Path.of("").toAbsolutePath().getParent().getParent();
         registry = new WorkflowContractRegistry(repoRoot.resolve("script"), MAPPER);
         registry.load();
-        // 交接文档 §5 要求在隔离联调环境把已完成单侧验收的工作流设为 TESTING；
-        // 仓库契约本身必须保持 DRAFT，所以这里只改内存中的注册状态。
-        assertTrue(registry.markTesting("wf-t2v-h3"), "T2V 应可标记为 TESTING");
-        assertTrue(registry.markTesting("wf-i2v-h3"), "I2V 应可标记为 TESTING");
-        assertTrue(registry.markTesting("wf-fl2v-h3"), "FL2V 应可标记为 TESTING");
+        // 三个 H3 已在契约中提升为 PUBLISHED（见 video-workflow-contracts.json），
+        // 因此这里直接使用契约原状态。此前用 markTesting 把 DRAFT 改成 TESTING 的做法
+        // 已不再需要，而且 markTesting 不检查当前状态，会把 PUBLISHED 降级，故已移除。
         preparer = new H3TemplatePreparer(MAPPER);
         comfy = new StubComfyClient();
         repository = new FakeRepository();
@@ -226,7 +225,9 @@ class VideoTaskOrchestratorTest {
     @Test
     @DisplayName("DRAFT 工作流不得执行（未实机验收前不可提交）")
     void rejectsDraftWorkflow() {
-        // 独立的注册表保持契约原始状态（DRAFT）
+        // H3 三能力已提升为 PUBLISHED，因此这里改用仍是 DRAFT 的 wf-t2v-wan
+        // （T2V 下尚未交付的条目，模板文件不存在）来承载本用例的语义：
+        // 拒绝原因必须是「未发布/未通过验收」，先于模板缺失判定。
         WorkflowContractRegistry draftRegistry = new WorkflowContractRegistry(
             Path.of("").toAbsolutePath().getParent().getParent().resolve("script"), MAPPER);
         draftRegistry.load();
@@ -235,10 +236,27 @@ class VideoTaskOrchestratorTest {
             draftRegistry, preparer, comfy, repository, storage, MAPPER,
             Duration.ofMillis(1000), Duration.ofMillis(1), () -> 9100L, probe);
         VideoTaskException error = assertThrows(VideoTaskException.class,
-            () -> draftOrchestrator.execute(context("T2V", "wf-t2v-h3", "提示词", null, null, null)));
+            () -> draftOrchestrator.execute(context("T2V", "wf-t2v-wan", "提示词", null, null, null)));
         assertEquals("INVALID_CONTRACT", error.getErrorCode(),
             "DRAFT 工作流必须在提交前被拒绝");
+        assertTrue(error.getMessage().contains("尚未通过实机验收"),
+            "拒绝原因应为未通过验收/未发布，实际：" + error.getMessage());
         assertFalse(comfy.submitted, "DRAFT 工作流不得提交到 ComfyUI");
+    }
+
+    @Test
+    @DisplayName("已发布的 H3 工作流在正式环境（requirePublished=true）可以进入执行路径")
+    void acceptsPublishedWorkflow() {
+        // 与上个用例配对：证明契约状态是唯一开关。
+        // requirePublished=true 正是生产环境的取值（VIDEO_REQUIRE_PUBLISHED=true）。
+        VideoTaskOrchestrator.TaskContext ctx = new VideoTaskOrchestrator.TaskContext(
+            1L, "000000", 100L, 10L, "T2V", "wf-t2v-h3", "提示词",
+            H3TemplatePreparer.TIER_1080P, H3TemplatePreparer.DURATION_5S,
+            null, null, null, true, System::nanoTime, new AtomicInteger(0));
+        comfy.pollState = ComfyClient.PollResult.State.SUCCEEDED;
+        assertDoesNotThrow(() -> orchestrator(1000).execute(ctx),
+            "已发布工作流在正式环境不应被契约层拦截");
+        assertTrue(comfy.submitted, "已发布工作流应真实提交到 ComfyUI");
     }
 
     @Test

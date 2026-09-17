@@ -59,7 +59,7 @@
           "workflowCode": "wf-i2v-h3",
           "modelCode": "H3",
           "version": "v0.1.0-draft",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/api/wf-i2v-h3-v0.1.0.json",
           "checksum": "fd6ce1f4448c8624caf937573a7ce5eade9398f78c9415083f837067773d2284",
           "billing": {
@@ -470,7 +470,7 @@
           "workflowCode": "wf-fl2v-h3",
           "modelCode": "H3",
           "version": "v0.1.0-draft",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/api/wf-fl2v-h3-v0.1.0.json",
           "checksum": "ec9c817d628a02d8e7599c4f5defe809416a867fb444f5c70110dfce85c502fb",
           "billing": {
@@ -575,7 +575,7 @@
           "workflowCode": "wf-t2v-h3",
           "modelCode": "H3",
           "version": "v0.1.0-draft",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/api/wf-t2v-h3-v0.1.0.json",
           "checksum": "620e53c9cf24eeed46eb2023c121d0de7650793d41f04e54d065ea82e78ecf11",
           "billing": {

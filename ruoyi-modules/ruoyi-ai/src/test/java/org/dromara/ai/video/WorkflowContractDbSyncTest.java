@@ -16,6 +16,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -67,15 +68,26 @@ class WorkflowContractDbSyncTest {
     }
 
     @Test
-    @DisplayName("同步：状态取契约原值（DRAFT），且不影响注册表的可提交判定")
+    @DisplayName("同步：状态取契约原值，且不改变可提交判定（PUBLISHED 仍是 PUBLISHED，DRAFT 仍不可提交）")
     void syncDoesNotChangeSubmittability() {
+        // 同步前先取契约原值，避免把「同步的结果」当成「契约的原值」来自证。
+        String publishedBefore = registry.peek("wf-t2v-h3").status();
+        String draftBefore = registry.peek("wf-t2v-wan").status();
+
         sync.sync();
-        assertEquals("DRAFT", repo.rows.get("wf-t2v-h3").status(), "契约是 DRAFT，表里也应是 DRAFT");
-        // 关键：同步后运行时判定的可提交集合不变 —— DRAFT 仍不可提交
+
+        assertEquals(publishedBefore, repo.rows.get("wf-t2v-h3").status(),
+            "表里的状态应等于契约原值，不得被同步改写");
+        assertEquals(draftBefore, repo.rows.get("wf-t2v-wan").status(),
+            "DRAFT 条目在表里也应是 DRAFT");
+
+        // 关键：同步不改运行时的可提交判定 —— 已发布的仍可提交，DRAFT 的仍不可提交。
+        assertDoesNotThrow(() -> registry.require("wf-t2v-h3", true),
+            "已 PUBLISHED 的工作流在同步后仍应可提交");
         assertThrows(org.dromara.ai.video.exception.VideoTaskException.class,
-            () -> registry.require("wf-t2v-h3", false),
+            () -> registry.require("wf-t2v-wan", false),
             "同步不得让 DRAFT 变成可提交");
-        assertFalse(registry.hasPublished(VideoCapability.T2V));
+        assertTrue(registry.hasPublished(VideoCapability.T2V), "T2V 的已发布版本应仍是 wf-t2v-h3");
     }
 
     @Test

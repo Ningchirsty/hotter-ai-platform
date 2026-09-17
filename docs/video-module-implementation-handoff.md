@@ -678,6 +678,32 @@ A 落地后该上下文已不存在；已改为 `docker build -f "$REPO/Dockerfi
 并**移除 `script` 目录挂载**（契约现已内置在镜像中，挂载会让验证失真）。
 原脚本备份为 `~/.mig/start-isolated.sh.bak-*`。
 
+**发布 job 漏改（已修）**：`ci.yml` 里有**两处** `docker build`。第一次只改了校验 job，
+`publish-image` job 的 `Build image from verified commit` 仍写着 `... ruoyi-admin`，
+于是出现「PR 检查全绿、合并后 main 发布镜像失败」：
+
+```
+failed to build: failed to solve: failed to read dockerfile:
+open Dockerfile: no such file or directory
+```
+
+教训：**校验 job 绿不代表发布 job 绿**，两处构建上下文必须一起改；
+本次已在 `ci.yml` 加注释标注该报错原文。
+
+**生产环境连通性（已实测）**：
+
+| 检查 | 结果 |
+|---|---|
+| 生产 `ai-video-poc-backend-1` 容器访问 `http://192.168.2.223:8188/system_stats` | **HTTP 200** |
+| 隔离实例 `video-isolated` 同样访问 | **HTTP 200** |
+| 生产 compose 中 `VIDEO_*` 变量个数 | **0**（尚未启用，需运维补） |
+| `/opt/ai-video-poc/compose.yaml` | `root:gh-deploy 640`，父目录 750 → **aiadmin 无法读，必须 root/运维改** |
+
+compose 里 backend 已挂 `backend-temp` 卷（对应 `VIDEO_STORAGE_ROOT` 建议值
+`/ruoyi/server/temp/video-assets`，可持久化），且同时接在 `backend` 与 `edge` 网络上，
+因此到 ComfyUI 的直连是通的——`VIDEO_COMFY_BASE_URL` 直接用
+`http://192.168.2.223:8188` 即可，无需改网络。
+
 ## 7. 环境操作上的坑（避免重复踩）
 
 1. **`/tmp` 在 `aiadmin` 下异常**：`sudo -S ... < /dev/null` 曾报 `/dev/null: Permission denied`、

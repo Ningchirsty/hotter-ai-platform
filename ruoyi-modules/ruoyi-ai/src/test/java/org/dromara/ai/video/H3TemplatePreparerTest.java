@@ -17,6 +17,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -66,14 +67,37 @@ class H3TemplatePreparerTest {
     }
 
     @Test
-    @DisplayName("契约加载：三个 H3 模板校验和全部通过并进入可提交集合")
+    @DisplayName("契约加载：三个 H3 模板校验和全部通过，且均已发布为可提交")
     void loadsThreeH3Templates() {
         assertEquals(3, registry.loadedCount(), "应恰好加载 3 个 H3 模板");
-        // DRAFT 状态仍不可提交（未通过实机验收）
-        assertThrows(VideoTaskException.class,
-            () -> registry.require("wf-t2v-h3", false),
-            "DRAFT 工作流不得作为可提交任务提供");
-        assertFalse(registry.hasPublished(VideoCapability.T2V), "任何 H3 版本在实机验收前都不得标记已发布");
+        // 三个 H3 已获业务批准并提升为 PUBLISHED，因此在正式环境（requirePublished=true）可提交。
+        assertDoesNotThrow(() -> registry.require("wf-t2v-h3", true),
+            "已 PUBLISHED 的工作流在正式环境应可提交");
+        assertTrue(registry.hasPublished(VideoCapability.T2V), "T2V 应存在已发布版本");
+        assertTrue(registry.hasPublished(VideoCapability.I2V), "I2V 应存在已发布版本");
+        assertTrue(registry.hasPublished(VideoCapability.FL2V), "FL2V 应存在已发布版本");
+        // 注册表登记了 24 个条目（含未交付占位），但已发布的必须恰好只有这 3 个。
+        // 注意 VideoCapability 枚举只有 T2V/I2V/FL2V，MFRAME 等只存在于契约里，
+        // 不能用枚举逐个断言。
+        long publishedCount = registry.registeredVersions().stream()
+            .filter(WorkflowVersion::isPublished)
+            .count();
+        assertEquals(3, publishedCount, "已发布版本应恰好 3 个（三个 H3）");
+    }
+
+    @Test
+    @DisplayName("未发布的 DRAFT 工作流在正式环境不得提交")
+    void rejectsDraftWorkflowInFormalEnvironment() {
+        // wf-t2v-wan 是 T2V 下尚未交付的 DRAFT 条目，且模板文件不存在。
+        // 这里断言的是「未发布」这一拒绝原因，先于模板缺失判定。
+        VideoTaskException error = assertThrows(VideoTaskException.class,
+            () -> registry.require("wf-t2v-wan", true),
+            "DRAFT 工作流不得在正式环境作为可提交任务提供");
+        assertEquals("INVALID_CONTRACT", error.getErrorCode());
+        assertTrue(error.getMessage().contains("尚未通过实机验收"),
+            "拒绝原因应为未通过验收/未发布，实际：" + error.getMessage());
+        assertTrue(registry.hasPublished(VideoCapability.T2V),
+            "T2V 已发布的是 wf-t2v-h3，与 DRAFT 的 wf-t2v-wan 互不影响");
     }
 
     @Test
