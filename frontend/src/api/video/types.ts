@@ -29,6 +29,19 @@ export interface VideoWorkflowVO {
   /** 隔离联调环境可提交（PUBLISHED 或 TESTING） */
   testable: boolean;
   supportedTier?: string | null;
+  /**
+   * 允许的输出档位（清晰度）。由契约 `fixedFieldValidation.supportedTiers` 声明。
+   *
+   * 空数组时退化为只用 `supportedTier` 单一档位，保证旧后端兼容。
+   */
+  supportedTiers?: string[] | null;
+  /**
+   * 各档位允许的时长，形如 `{ '标清 · 480P': ['5 秒','10 秒','20 秒'] }`。
+   *
+   * 时长与档位互相约束：H3 的帧数随时长线性增长，显存与耗时显著上升，
+   * 因此长时长只在低分辨率档位开放。取不到时前端退回内置兜底值。
+   */
+  supportedDurationsByTier?: Record<string, string[]> | null;
   supportedDuration?: string | null;
   maxDurationSeconds?: number | null;
 }
@@ -123,10 +136,20 @@ export interface VideoTaskCreateForm {
 export interface VideoTaskExecutionResult {
   taskId: number | string;
   status: VideoTaskStatus;
-  outputAssetId: number | string;
-  truncated: boolean;
+  /**
+   * 是否被本次请求接受并进入后台执行。
+   *
+   * <p>生成耗时 130 秒到 11 分钟，远超 Cloudflare 对源站响应的等待上限（约 100 秒），
+   * 因此后端不再同步等出片：这个字段只表示「已排进后台队列」，
+   * 最终结果要靠轮询 {@code GET /video/tasks/{taskId}} 拿。</p>
+   */
+  accepted?: boolean;
+  outputAssetId?: number | string;
+  truncated?: boolean;
   width?: number | null;
   height?: number | null;
   fps?: number | null;
   durationMillis?: number | null;
+  errorCode?: string | null;
+  errorMessage?: string | null;
 }

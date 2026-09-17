@@ -59,3 +59,7 @@ application-ga.yml
 .env.*
 !.env.example
 /artifacts/
+
+# ffmpeg 静态归档由 script/ci/fetch-ffmpeg.sh 预取，不入库（41.9MB）
+/build-cache/*
+!/build-cache/.gitkeep

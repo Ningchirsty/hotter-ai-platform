@@ -187,7 +187,7 @@
                 :key="item"
                 type="button"
                 :class="{ active: values[field] === item }"
-                :disabled="field === 'tier' && item !== '高清 · 1080P'"
+                :disabled="field === 'tier' && !supportedTiers.includes(item)"
                 @click="selectChoice(field, item)"
               >
                 {{ item }}
@@ -207,7 +207,7 @@
         </template>
 
         <p class="workflow-note">
-          MiniMax H3 三种工作流模板已导入；当前只展示高清 1080P、最多 5 秒的目标档位。
+          MiniMax H3 三种工作流模板已导入；清晰度档位由服务端契约声明，时长最多 5 秒。
           <template v-if="currentWorkflow">
             服务端状态：<b>{{ currentWorkflow.status }}</b>。
           </template>
@@ -375,8 +375,21 @@
       <div v-else-if="filteredTasks.length" class="task-list">
         <article v-for="task in filteredTasks" :key="task.id" class="task-card">
           <div :class="['task-cover', taskStatusClass(task.status)]">
-            <el-icon><VideoCamera /></el-icon>
-            <span>{{ task.tier.replace(' · ', ' ') }}</span>
+            <!--
+              成片封面：成功任务的输出素材首帧。
+              图片与视频都用 <img> 显示（mp4 的首帧大多数浏览器可直接渲染），
+              取不到时回退成原来的图标，避免空白。
+            -->
+            <img
+              v-if="coverFor(task)"
+              class="task-cover-img"
+              :src="coverFor(task)"
+              :alt="task.taskName || task.taskNo"
+            />
+            <template v-else>
+              <el-icon><VideoCamera /></el-icon>
+              <span>{{ task.tier.replace(' · ', ' ') }}</span>
+            </template>
           </div>
           <div class="task-main">
             <div class="task-title-row">
@@ -391,8 +404,13 @@
             <small v-if="task.errorMessage" class="task-error">{{ task.errorMessage }}</small>
           </div>
           <div class="task-actions">
-            <button type="button" title="查看任务" aria-label="查看任务" @click="previewTask(task)">
-              <el-icon><View /></el-icon>
+            <button
+              type="button"
+              :title="task.status === 'SUCCEEDED' ? '预览成片' : '查看任务'"
+              :aria-label="task.status === 'SUCCEEDED' ? '预览成片' : '查看任务'"
+              @click="previewTask(task)"
+            >
+              <el-icon><component :is="task.status === 'SUCCEEDED' ? VideoPlay : View" /></el-icon>
             </button>
             <button
               v-if="task.status === 'QUEUED'"
@@ -438,8 +456,17 @@
       <div v-else-if="assets.length" class="asset-grid">
         <article v-for="asset in assets" :key="asset.id" class="asset-card">
           <div :class="['asset-preview', assetKind(asset)]">
-            <el-icon><component :is="assetIcon(assetKind(asset))" /></el-icon>
-            <span>{{ assetKindLabel(asset) }}</span>
+            <!-- 真实缩略图；取不到时回退成图标，不让卡片出现空白 -->
+            <img
+              v-if="imageFor(asset)"
+              class="asset-thumb"
+              :src="imageFor(asset)"
+              :alt="asset.originalName || ''"
+            />
+            <template v-else>
+              <el-icon><component :is="assetIcon(assetKind(asset))" /></el-icon>
+              <span>{{ assetKindLabel(asset) }}</span>
+            </template>
           </div>
           <div class="asset-info">
             <b>{{ asset.originalName || '素材 ' + asset.id }}</b>
@@ -456,6 +483,58 @@
         <span>添加图片后，即可在创建任务时使用。</span>
       </div>
     </section>
+
+    <!--
+      成片预览弹窗。
+      能真正播放的依据是后端 /video/assets/{id}/content：它按属主校验后才返回内容。
+      这里用带鉴权取回的 blob URL 交给 <video>，因为 <video src> 不会携带 Authorization 头。
+    -->
+    <el-dialog
+      v-model="previewVisible"
+      :title="previewTarget?.taskName || previewTarget?.taskNo || '成片预览'"
+      width="min(920px, 92vw)"
+      top="6vh"
+      destroy-on-close
+      @closed="closePreview"
+    >
+      <div class="preview-body">
+        <div v-if="previewLoading" class="empty-state">
+          <el-icon><VideoPlay /></el-icon>
+          <b>正在加载成片…</b>
+        </div>
+        <div v-else-if="previewError" class="empty-state">
+          <el-icon><Close /></el-icon>
+          <b>{{ previewError }}</b>
+        </div>
+        <video
+          v-else-if="previewUrl"
+          class="preview-video"
+          :src="previewUrl"
+          controls
+          autoplay
+          playsinline
+          preload="metadata"
+        ></video>
+        <div v-else class="empty-state">
+          <el-icon><VideoPlay /></el-icon>
+          <b>该任务暂无成片</b>
+        </div>
+
+        <dl v-if="previewMeta.length" class="preview-meta">
+          <div v-for="row in previewMeta" :key="row.label">
+            <dt>{{ row.label }}</dt>
+            <dd>{{ row.value }}</dd>
+          </div>
+        </dl>
+      </div>
+      <template #footer>
+        <el-button :disabled="!previewUrl" @click="downloadPreview">
+          <el-icon><Download /></el-icon>
+          下载成片
+        </el-button>
+        <el-button type="primary" @click="previewVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -483,11 +562,14 @@ import {
   View
 } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import {
   cancelVideoTask,
   createVideoTask,
   deleteVideoAsset,
   executeVideoTask,
+  fetchVideoAssetBlobUrl,
+  fetchVideoAssetThumbnailBlobUrl,
   getVideoTask,
   listVideoAssets,
   listVideoTasks,
@@ -538,6 +620,18 @@ const uploadAssetIds = reactive<Partial<Record<FieldKey, Array<number | string>>
  */
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 const ALLOWED_UPLOAD_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+
+/**
+ * 时长兜底矩阵：仅在后端未下发 `supportedDurationsByTier` 时使用。
+ *
+ * 取值与后端 `VideoTierResolutions.defaultDurations()` 保持一致；
+ * 正常情况下以服务端为准，避免前端与后端各写一份而漂移。
+ */
+const FALLBACK_DURATIONS: Record<string, string[]> = {
+  '高清 · 1080P': ['5 秒'],
+  '流畅 · 720P': ['5 秒', '10 秒'],
+  '标清 · 480P': ['5 秒', '10 秒', '20 秒']
+};
 const uploading = ref(false);
 const submitting = ref(false);
 const loadingTasks = ref(false);
@@ -624,6 +718,31 @@ const currentWorkflow = computed(
  */
 const canSubmit = computed(() => currentWorkflow.value?.submittable === true);
 
+/**
+ * 当前工作流允许的输出档位（清晰度）。
+ *
+ * 由服务端契约 `fixedFieldValidation.supportedTiers` 决定——契约是唯一权威，
+ * 前端不再硬编码「只允许 1080P」。服务端未返回时退化为 `supportedTier` 单档位；
+ * 都拿不到（例如工作流尚未注册）时退回 1080P，避免把全部档位误判为可选。
+ */
+const supportedTiers = computed<string[]>(() => {
+  const workflow = currentWorkflow.value;
+  const list = workflow?.supportedTiers;
+  if (Array.isArray(list) && list.length) return list;
+  if (workflow?.supportedTier) return [workflow.supportedTier];
+  return ['高清 · 1080P'];
+});
+
+/** 档位表变化时把当前选择拉回第一个受支持的档位，避免提交一个必然被拒的档位。 */
+watch(supportedTiers, tiers => {
+  if (tiers.length && !tiers.includes(values.tier ?? '')) {
+    values.tier = tiers[0];
+    if (!optionsFor('dur').includes(values.dur ?? '')) {
+      values.dur = optionsFor('dur')[0];
+    }
+  }
+});
+
 const submitBlockReason = computed(() => {
   if (!workflows.value.length) return '正在读取工作流状态…';
   const workflow = currentWorkflow.value;
@@ -705,7 +824,8 @@ function selectModule(item: StudioModule) {
     VIDEO_MODELS[0]!;
   Object.keys(values).forEach(key => delete values[key as FieldKey]);
   Object.keys(uploadAssetIds).forEach(key => delete uploadAssetIds[key as FieldKey]);
-  values.tier = '高清 · 1080P';
+  // 默认取服务端允许的第一个档位，而不是写死 1080P。
+  values.tier = supportedTiers.value[0] ?? '高清 · 1080P';
   values.dur = '5 秒';
 }
 
@@ -721,14 +841,11 @@ function isRequired(field: FieldKey) {
 
 function optionsFor(field: FieldKey) {
   if (field !== 'dur') return fieldOptions[field] ?? [];
-  switch (values.tier) {
-    case '标清 · 480P':
-      return ['5 秒', '10 秒', '20 秒'];
-    case '流畅 · 720P':
-      return ['5 秒', '10 秒'];
-    default:
-      return ['5 秒'];
-  }
+  // 时长选项以服务端为准：长时长只在低分辨率档位开放（H3 帧数随时长线性增长、
+  // 显存与耗时显著上升）。服务端未下发时退回内置兜底值，保证旧后端仍可用。
+  const fromServer = currentWorkflow.value?.supportedDurationsByTier?.[values.tier ?? ''];
+  if (Array.isArray(fromServer) && fromServer.length) return fromServer;
+  return FALLBACK_DURATIONS[values.tier ?? ''] ?? ['5 秒'];
 }
 
 function selectChoice(field: FieldKey, value: string) {
@@ -852,19 +969,98 @@ async function submitTask() {
     await loadTasks();
 
     const executed = await executeVideoTask(taskId);
-    if (executed.code === 200) {
-      ElMessage.success('成片已生成，可在「我的任务」查看');
+    const exec = executed.data;
+    if (exec?.accepted === false) {
+      // 任务已经在跑（多半是重复点击），不重复执行，接着轮询即可。
+      ElMessage.info(`任务已在${taskStatusText(exec.status)}，将自动刷新结果`);
+      startTaskPolling(taskId);
+    } else if (exec?.status === 'RUNNING') {
+      // 生成要 130 秒到 11 分钟，远超 Cloudflare 对源站响应的等待上限（约 100 秒），
+      // 所以后端改为提交后台执行，这里轮询结果——同步等响应会被 Cloudflare 断开，
+      // 用户只会看到「点了没反应」（实测 nginx 记 499）。
+      ElMessage.success('已提交生成，完成后会自动显示，可以离开这个页面');
+      startTaskPolling(taskId);
+    } else if (exec?.status === 'FAILED') {
+      ElMessage.warning(exec.errorMessage ?? '任务未完成，请查看任务详情');
+      await loadTasks();
+      await loadAssets();
     } else {
-      ElMessage.warning(executed.msg ?? '任务未完成，请查看任务详情');
+      // 兼容同步返回的旧形态（理论上不会再走到）。
+      ElMessage.success('成片已生成，可在「我的任务」查看');
+      await loadTasks();
+      await loadAssets();
     }
-    await loadTasks();
-    await loadAssets();
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '任务提交失败');
     await loadTasks();
   } finally {
     submitting.value = false;
   }
+}
+
+/** 终态：到了这些状态就不会再变，轮询可以停。 */
+const TERMINAL_STATUSES: VideoTaskStatus[] = ['SUCCEEDED', 'FAILED', 'CANCELED', 'TIMEOUT'];
+
+/** 轮询间隔。生成动辄几分钟，3 秒足够又不至于把后端压垮。 */
+const POLL_INTERVAL_MS = 3000;
+
+/** 正在轮询的任务 id。后台执行 + 轮询是生成结果的唯一回传通道。 */
+const pollingTaskIds = new Set<string>();
+let pollTimer: ReturnType<typeof setInterval> | undefined;
+
+/** 开始轮询某个任务，直到它进入终态。 */
+function startTaskPolling(taskId: number | string) {
+  pollingTaskIds.add(String(taskId));
+  if (pollTimer !== undefined) return;
+  pollTimer = setInterval(() => void pollPendingTasks(), POLL_INTERVAL_MS);
+}
+
+function stopTaskPolling() {
+  if (pollTimer !== undefined) {
+    clearInterval(pollTimer);
+    pollTimer = undefined;
+  }
+}
+
+/**
+ * 拉取所有在途任务的状态。
+ *
+ * <p>任务在服务端后台线程里跑，HTTP 连接、页面刷新都不影响它——所以这里只需要
+ * 定期问「好了没」，失败一次也不该打断整个轮询。</p>
+ */
+async function pollPendingTasks() {
+  if (pollingTaskIds.size === 0) {
+    stopTaskPolling();
+    return;
+  }
+  // 先收集、循环结束后再删：避免在遍历 Set 的过程中改它。
+  const finished: Array<{ id: string; status: VideoTaskStatus; message?: string }> = [];
+  for (const id of pollingTaskIds) {
+    try {
+      const detail = await getVideoTask(id);
+      const status = detail.data?.status;
+      if (!status || !TERMINAL_STATUSES.includes(status)) continue;
+      finished.push({ id, status, message: detail.data?.errorMessage });
+    } catch {
+      // 单次查询失败不影响后续轮询（网络抖动、页面切后台都可能发生）。
+    }
+  }
+
+  for (const item of finished) {
+    pollingTaskIds.delete(item.id);
+    if (item.status === 'SUCCEEDED') {
+      ElMessage.success('成片已生成，可在「我的任务」查看');
+    } else {
+      ElMessage.warning(item.message ?? `任务${taskStatusText(item.status)}，请查看任务详情`);
+    }
+  }
+
+  await loadTasks();
+  if (finished.length) {
+    await loadAssets();
+    if (finished.some((item) => item.status === 'SUCCEEDED')) void loadTaskCovers();
+  }
+  if (pollingTaskIds.size === 0) stopTaskPolling();
 }
 
 function taskStatusText(status: VideoTaskStatus) {
@@ -894,6 +1090,118 @@ function taskStatusClass(status: VideoTaskStatus) {
   return 'failed';
 }
 
+/** 预览弹窗状态。 */
+const previewVisible = ref(false);
+const previewTarget = ref<VideoTaskVO | null>(null);
+const previewUrl = ref('');
+const previewLoading = ref(false);
+const previewError = ref('');
+const previewMeta = ref<Array<{ label: string; value: string }>>([]);
+
+/** 成片封面缓存：assetId -> blob URL，避免同一素材反复请求。 */
+const coverUrls = ref<Record<string, string>>({});
+const coverLoading = new Set<string>();
+
+function coverFor(task: VideoTaskVO) {
+  const id = task.outputAssetId;
+  return id === null || id === undefined ? '' : coverUrls.value[String(id)] ?? '';
+}
+
+/**
+ * 为成功任务加载成片封面。
+ *
+ * <p>按需加载且去重：同一素材只请求一次；失败静默（封面只是锦上添花，
+ * 不该因为取图失败而打扰用户，模板会回退成图标）。</p>
+ */
+async function loadTaskCovers() {
+  for (const task of filteredTasks.value) {
+    if (task.status !== 'SUCCEEDED' || task.outputAssetId === null || task.outputAssetId === undefined) {
+      continue;
+    }
+    const key = String(task.outputAssetId);
+    if (coverUrls.value[key] || coverLoading.has(key)) continue;
+    coverLoading.add(key);
+    try {
+      const url = await fetchVideoAssetBlobUrl(task.outputAssetId);
+      coverUrls.value = { ...coverUrls.value, [key]: url };
+    } catch {
+      // 忽略：封面失败不影响功能
+    } finally {
+      coverLoading.delete(key);
+    }
+  }
+}
+
+watch(filteredTasks, () => void loadTaskCovers());
+
+/** 素材缩略图缓存：assetId -> blob URL。 */
+const imageUrls = ref<Record<string, string>>({});
+const imageLoading = new Set<string>();
+
+function imageFor(asset: VideoAssetVO) {
+  return imageUrls.value[String(asset.id)] ?? '';
+}
+
+/**
+ * 为图片类素材加载缩略图。
+ *
+ * <p>优先走后端的缩略图接口（ffmpeg 生成、最长边 480px、带缓存），
+ * 拿不到再退回原图，最后才让卡片显示图标——缩略图只是为了让列表快点出来，
+ * 不该成为「能不能看到」的开关。视频/音频素材仍用图标，避免为一个小格子去拉整段视频。</p>
+ */
+async function loadAssetThumbnails() {
+  for (const asset of assets.value) {
+    if (asset.assetType !== 'IMAGE') continue;
+    const key = String(asset.id);
+    if (imageUrls.value[key] || imageLoading.has(key)) continue;
+    imageLoading.add(key);
+    try {
+      let url: string;
+      try {
+        url = await fetchVideoAssetThumbnailBlobUrl(asset.id);
+      } catch {
+        url = await fetchVideoAssetBlobUrl(asset.id);
+      }
+      imageUrls.value = { ...imageUrls.value, [key]: url };
+    } catch {
+      // 忽略：缩略图失败不影响素材本身的使用
+    } finally {
+      imageLoading.delete(key);
+    }
+  }
+}
+
+watch(assets, () => void loadAssetThumbnails());
+
+/** 组件卸载时释放所有 blob URL，避免内存泄漏。 */
+onBeforeUnmount(() => {
+  stopTaskPolling();
+  pollingTaskIds.clear();
+  releasePreviewUrl();
+  Object.values(coverUrls.value).forEach(URL.revokeObjectURL);
+  Object.values(imageUrls.value).forEach(URL.revokeObjectURL);
+});
+
+function releasePreviewUrl() {
+  if (previewUrl.value) {
+    URL.revokeObjectURL(previewUrl.value);
+    previewUrl.value = '';
+  }
+}
+
+function closePreview() {
+  releasePreviewUrl();
+  previewTarget.value = null;
+  previewError.value = '';
+  previewMeta.value = [];
+}
+
+/**
+ * 打开成片预览。
+ *
+ * <p>只有 SUCCEEDED 且拿到 outputAssetId 才取内容；其余状态沿用原来的提示，
+ * 不制造「有预览」的假象。</p>
+ */
 async function previewTask(task: VideoTaskVO) {
   try {
     const res = await getVideoTask(task.id);
@@ -906,17 +1214,51 @@ async function previewTask(task: VideoTaskVO) {
       ElMessage.info(detail.errorMessage ?? `任务状态：${taskStatusText(detail.status)}`);
       return;
     }
-    const measured = [
-      detail.outputWidth && detail.outputHeight ? `${detail.outputWidth}×${detail.outputHeight}` : null,
-      detail.outputDurationMs ? `${(detail.outputDurationMs / 1000).toFixed(2)} 秒` : null,
-      detail.truncationApplied ? '已截断至 5 秒' : null
-    ]
-      .filter(Boolean)
-      .join(' · ');
-    ElMessage.success(`成片素材 ${detail.outputAssetId ?? '-'}${measured ? ' · ' + measured : ''}`);
+
+    previewTarget.value = task;
+    previewMeta.value = [
+      detail.outputWidth && detail.outputHeight
+        ? { label: '分辨率', value: `${detail.outputWidth}×${detail.outputHeight}` }
+        : null,
+      detail.outputDurationMs
+        ? { label: '时长', value: `${(detail.outputDurationMs / 1000).toFixed(3)} 秒` }
+        : null,
+      detail.outputFps ? { label: '帧率', value: `${detail.outputFps} fps` } : null,
+      detail.truncationApplied ? { label: '截断', value: '已按目标时长精确截断' } : null
+    ].filter(Boolean) as Array<{ label: string; value: string }>;
+
+    previewVisible.value = true;
+    previewError.value = '';
+    releasePreviewUrl();
+
+    if (detail.outputAssetId === null || detail.outputAssetId === undefined) {
+      // 成功但没有成片素材：如实说明，而不是显示一个空播放器。
+      previewError.value = '该任务没有可预览的成片素材';
+      return;
+    }
+    previewLoading.value = true;
+    try {
+      previewUrl.value = await fetchVideoAssetBlobUrl(detail.outputAssetId);
+    } catch (error) {
+      previewError.value = (await extractErrorMessage(error)) ?? '成片加载失败';
+    } finally {
+      previewLoading.value = false;
+    }
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '读取任务详情失败');
   }
+}
+
+/** 下载当前预览的成片。 */
+function downloadPreview() {
+  if (!previewUrl.value) return;
+  const name = previewTarget.value?.taskNo ? `${previewTarget.value.taskNo}.mp4` : '成片.mp4';
+  const a = document.createElement('a');
+  a.href = previewUrl.value;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 
 async function cancelTask(task: VideoTaskVO) {
@@ -1341,6 +1683,50 @@ button {
 }
 .asset-preview span {
   font-size: 9px;
+}
+/* 素材真实缩略图：填满预览位并保持比例，不拉伸变形 */
+.asset-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 6px;
+}
+/* 任务卡成片封面 */
+.task-cover-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+/* 成片预览弹窗 */
+.preview-body {
+  display: grid;
+  gap: 14px;
+}
+.preview-video {
+  width: 100%;
+  max-height: 62vh;
+  background: #000;
+  border-radius: 8px;
+}
+.preview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin: 0;
+}
+.preview-meta > div {
+  display: grid;
+  gap: 2px;
+}
+.preview-meta dt {
+  color: var(--t2);
+  font-size: 11px;
+}
+.preview-meta dd {
+  margin: 0;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 .asset-info {
   min-width: 0;

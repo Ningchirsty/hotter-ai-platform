@@ -27,9 +27,18 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.dromara.ai.video.service.ThumbnailService;
+import org.dromara.ai.video.service.VideoTaskDispatchService;
+import org.dromara.ai.video.service.VideoTaskExecutionService;
+import org.dromara.ai.video.support.CamelCase;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -74,10 +83,22 @@ public class VideoCreationController extends BaseController {
     private final WorkflowContractRegistry registry;
     private final H3TemplatePreparer preparer;
     private final VideoTaskRepository repository;
-    private final VideoTaskOrchestrator orchestrator;
+
+    /**
+     * 后台执行器：任务提交后立即返回，真正的生成在守护线程里跑，前端轮询拿结果。
+     * 见 {@link VideoTaskExecutionService} 里记录的 Cloudflare 超时证据。
+     */
+    private final VideoTaskExecutionService executionService;
+    private final VideoTaskDispatchService dispatchService;
     private final AssetStorage assetStorage;
+    private final ThumbnailService thumbnailService;
     private final ObjectMapper mapper;
     private final JdbcTemplate jdbc;
+
+    /**
+     * 档位（清晰度）与时长矩阵。用于向前端下发「哪些档位/时长可选」。
+     */
+    private final org.dromara.ai.video.config.VideoTierResolutions tierResolutions;
 
     /**
      * 模块内异常处理。
@@ -116,6 +137,17 @@ public class VideoCreationController extends BaseController {
             item.put("testable", version.isTestable());
             item.put("supportedTier", version.fixedFieldValidation() == null
                 ? null : version.fixedFieldValidation().tier());
+            // 多档位：按契约声明顺序返回，前端据此渲染可选的清晰度。
+            // 保留 supportedTier 字段以兼容既有前端，含义为「默认档位」。
+            item.put("supportedTiers", version.fixedFieldValidation() == null
+                ? java.util.List.of()
+                : new java.util.ArrayList<>(version.fixedFieldValidation().allowedTiers()));
+            // 各档位允许的时长。时长与档位互相约束（长时长只在低分辨率档位开放，
+            // 因为 H3 的帧数随时长线性增长、显存与耗时显著上升），所以按时长给出矩阵，
+            // 而不是给一个「所有档位通用」的时长列表。
+            item.put("supportedDurationsByTier", tierResolutions == null
+                ? java.util.Map.of()
+                : new java.util.LinkedHashMap<>(tierResolutions.getDurations()));
             item.put("supportedDuration", version.fixedFieldValidation() == null
                 ? null : version.fixedFieldValidation().dur());
             item.put("maxDurationSeconds", version.maxDurationSeconds());
@@ -172,7 +204,145 @@ public class VideoCreationController extends BaseController {
         long total = repository.countOwnedAssets(tenantId, userId);
         List<Map<String, Object>> rows = repository.listOwnedAssets(tenantId, userId,
             offset(pageQuery), size(pageQuery));
-        return R.ok(new PageResult<>(rows, total));
+        return R.ok(new PageResult<>(CamelCase.rows(rows), total));
+    }
+
+    /**
+     * 读取本人素材/成片的内容，用于预览与下载。
+     *
+     * <p>为什么需要它：此前前端只能拿到素材的元数据（文件名/大小），没有任何取文件内容的接口，
+     * 因此素材库只有图标、任务成片无法预览也无法下载。</p>
+     *
+     * <p>安全边界：</p>
+     * <ul>
+     *   <li>必须先通过 {@code requireOwnedAsset}——它同时校验租户与属主，
+     *       不是自己的素材一律 404（不泄露"该 ID 是否存在"）；</li>
+     *   <li>内容类型取自数据库记录，<b>不</b>采信客户端；</li>
+     *   <li>响应头带 {@code X-Content-Type-Options: nosniff}，避免浏览器把
+     *       伪装成图片的文件按其它类型解释；</li>
+     *   <li>一律 {@code inline}，不提供强制下载的文件名，避免被当作下载分发点。</li>
+     * </ul>
+     *
+     * <p>支持 HTTP Range：视频拖动进度条依赖 206 分片响应，否则浏览器只能从头播、无法 seek。</p>
+     */
+    @GetMapping("/assets/{assetId}/content")
+    @SaCheckPermission("video:creation:view")
+    public ResponseEntity<StreamingResponseBody>
+        assetContent(@PathVariable Long assetId, HttpServletRequest request) {
+        String tenantId = requireTenantId();
+        long userId = LoginHelper.getUserId();
+        VideoTaskRepository.AssetRow asset = repository.requireOwnedAsset(assetId, tenantId, userId);
+
+        byte[] content = assetStorage.read(asset.storageKey());
+        if (content == null || content.length == 0) {
+            throw VideoTaskException.assetNotFound("素材内容为空");
+        }
+        long total = content.length;
+        String contentType = asset.contentType() == null || asset.contentType().isBlank()
+            ? "application/octet-stream" : asset.contentType();
+
+        long start = 0;
+        long end = total - 1;
+        boolean partial = false;
+        String range = request.getHeader(HttpHeaders.RANGE);
+        if (range != null && range.startsWith("bytes=")) {
+            long[] parsed = parseRange(range, total);
+            if (parsed == null) {
+                // 区间不可满足：按 RFC 7233 返回 416 并告知总长度。
+                return ResponseEntity.status(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+                    .header(HttpHeaders.CONTENT_RANGE, "bytes */" + total)
+                    .build();
+            }
+            start = parsed[0];
+            end = parsed[1];
+            partial = true;
+        }
+
+        final long from = start;
+        final long to = end;
+        final long length = to - from + 1;
+
+        StreamingResponseBody body = out -> {
+            out.write(content, (int) from, (int) length);
+            out.flush();
+        };
+
+        ResponseEntity.BodyBuilder builder = ResponseEntity.status(
+                partial ? HttpStatus.PARTIAL_CONTENT : HttpStatus.OK)
+            .header(HttpHeaders.CONTENT_TYPE, contentType)
+            .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+            .header(HttpHeaders.CACHE_CONTROL, "private, max-age=300")
+            .header("X-Content-Type-Options", "nosniff")
+            .contentLength(length);
+        if (partial) {
+            builder.header(HttpHeaders.CONTENT_RANGE, "bytes " + from + "-" + to + "/" + total);
+        }
+        return builder.body(body);
+    }
+
+    /**
+     * 素材缩略图（仅图片素材）。
+     *
+     * <p>素材库格子只有一两百像素，此前直接把原图当缩略图，一张 3.2 MB 的图也得整张拉下来。
+     * 经 Cloudflare 的链路实测吞吐 258 KB/s ~ 790 KB/s，一屏几张图就要好几秒。</p>
+     *
+     * <p>取不到时按业务失败返回，前端回退到原图、再退到图标，不会让卡片空白。</p>
+     */
+    @GetMapping("/assets/{assetId}/thumbnail")
+    @SaCheckPermission("video:creation:view")
+    public ResponseEntity<byte[]> assetThumbnail(@PathVariable Long assetId) {
+        String tenantId = requireTenantId();
+        long userId = LoginHelper.getUserId();
+        VideoTaskRepository.AssetRow asset = repository.requireOwnedAsset(assetId, tenantId, userId);
+
+        byte[] thumb = thumbnailService.thumbnail(asset.storageKey(), asset.contentType());
+        if (thumb == null || thumb.length == 0) {
+            // 视频素材本就不做缩略图；其它情况是环境缺 ffmpeg 或原图不可读。
+            throw VideoTaskException.assetNotFound("该素材暂无缩略图");
+        }
+        return ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_TYPE, "image/jpeg")
+            .header(HttpHeaders.CACHE_CONTROL, "private, max-age=300")
+            .header("X-Content-Type-Options", "nosniff")
+            .contentLength(thumb.length)
+            .body(thumb);
+    }
+
+    /**
+     * 解析单区间 Range 头（只支持 {@code bytes=a-b} 形态，足够浏览器视频播放使用）。
+     *
+     * @return {@code [start, end]}；区间不可满足时返回 null
+     */
+    private static long[] parseRange(String header, long total) {
+        java.util.regex.Matcher m =
+            java.util.regex.Pattern.compile("bytes=(\\d*)-(\\d*)").matcher(header.trim());
+        if (!m.find()) {
+            return null;
+        }
+        String rawStart = m.group(1);
+        String rawEnd = m.group(2);
+        long start;
+        long end;
+        try {
+            if (rawStart == null || rawStart.isEmpty()) {
+                // bytes=-N 表示最后 N 字节
+                long suffix = rawEnd == null || rawEnd.isEmpty() ? 0 : Long.parseLong(rawEnd);
+                if (suffix <= 0) {
+                    return null;
+                }
+                start = Math.max(0, total - suffix);
+                end = total - 1;
+            } else {
+                start = Long.parseLong(rawStart);
+                end = rawEnd == null || rawEnd.isEmpty() ? total - 1 : Long.parseLong(rawEnd);
+            }
+        } catch (NumberFormatException e) {
+            return null;
+        }
+        if (start > end || start >= total) {
+            return null;
+        }
+        return new long[] {start, Math.min(end, total - 1)};
     }
 
     /**
@@ -283,7 +453,16 @@ public class VideoCreationController extends BaseController {
     }
 
     /**
-     * 执行任务（同步等待成片）。浏览器不能直连 ComfyUI，必须经由本接口。
+     * 提交任务到后台执行，立即返回。
+     *
+     * <p><b>为什么不再同步等出片。</b>一次生成要 130 秒（480P/5 秒）到 11.5 分钟（1080P/5 秒），
+     * 而前端经 Cloudflare（源站是 cloudflared tunnel）访问，Cloudflare 免费版等待源站响应的
+     * 上限在 100 秒量级。实测：任务 2100551562622185473 后端跑满 130,294 毫秒正常结束并写入
+     * SUCCEEDED，前端 nginx 却记 499——连接早已被断开，浏览器什么都没拿到。
+     * 现在改为：认领任务后排进后台执行器，前端轮询 {@code GET /video/tasks/{taskId}} 拿结果。</p>
+     *
+     * <p>认领与入队的细节（防重复提交、队列满回滚）在
+     * {@link VideoTaskDispatchService}，那里有三个明确的不变量和对应单测。</p>
      */
     @PostMapping("/tasks/{taskId}/execute")
     @SaCheckPermission("video:creation:submit")
@@ -292,54 +471,52 @@ public class VideoCreationController extends BaseController {
         long userId = LoginHelper.getUserId();
         Map<String, Object> task = repository.requireOwnedTask(taskId, tenantId, userId);
         String status = String.valueOf(task.get("status"));
-        if (!VideoTaskStatus.QUEUED.name().equals(status)) {
+        if (!VideoTaskStatus.QUEUED.name().equals(status)
+            && !VideoTaskStatus.RUNNING.name().equals(status)) {
             throw VideoTaskException.invalidContract("任务当前状态不可执行：" + status);
         }
-        VideoCapability capability = VideoCapability.parse(String.valueOf(task.get("capability_code")));
-        String inputJson = String.valueOf(task.get("input_json"));
 
-        VideoTaskOrchestrator.ExecutionResult result;
-        try {
-            result = orchestrator.execute(new VideoTaskOrchestrator.TaskContext(
-                taskId, tenantId, userId, LoginHelper.getDeptId(),
-                capability == null ? null : capability.name(),
-                String.valueOf(task.get("workflow_code")),
-                task.get("prompt") == null ? null : String.valueOf(task.get("prompt")),
-                String.valueOf(task.get("tier")),
-                durationLabelOf(task.get("duration_seconds")),
-                assetIdFrom(inputJson, "img"),
-                assetIdFrom(inputJson, "first"),
-                assetIdFrom(inputJson, "last"),
-                false,
-                () -> System.nanoTime(),
-                new AtomicInteger(0)));
-        } catch (VideoTaskException e) {
-            // 前置失败（契约/素材/可达性）也要落库，否则任务会一直停在 QUEUED，
-            // 「我的任务」里看不到失败原因。编排器内部失败路径已自行落库。
-            int moved = repository.transition(taskId, VideoTaskStatus.QUEUED, VideoTaskStatus.FAILED,
-                e.getErrorCode(), e.getMessage());
-            if (moved > 0) {
-                log.warn("任务 {} 执行前失败，已置为 FAILED：[{}] {}", taskId, e.getErrorCode(), e.getMessage());
-            }
-            // 状态已落库，因此返回成功码并带上真实状态与原因；
-            // 若返回非 200，前端 axios 拦截器会抛出通用错误，反而看不到具体原因。
-            Map<String, Object> failed = new HashMap<>();
-            failed.put("taskId", taskId);
-            failed.put("status", VideoTaskStatus.FAILED.name());
-            failed.put("errorCode", e.getErrorCode());
-            failed.put("errorMessage", e.getMessage());
-            return R.ok(failed);
+        VideoTaskDispatchService.Outcome outcome = dispatchService.dispatch(taskId,
+            () -> buildContext(task, tenantId, userId));
+        if (outcome == VideoTaskDispatchService.Outcome.QUEUE_FULL) {
+            throw VideoTaskException.invalidContract("执行队列已满，请稍后重试");
         }
+
         Map<String, Object> body = new HashMap<>();
         body.put("taskId", taskId);
-        body.put("status", VideoTaskStatus.SUCCEEDED.name());
-        body.put("outputAssetId", result.outputAssetId());
-        body.put("truncated", result.truncated());
-        body.put("width", result.output().width());
-        body.put("height", result.output().height());
-        body.put("fps", result.output().fps());
-        body.put("durationMillis", result.output().durationMillis());
+        if (outcome == VideoTaskDispatchService.Outcome.ACCEPTED) {
+            body.put("status", VideoTaskStatus.RUNNING.name());
+            body.put("accepted", true);
+        } else {
+            // 已经在跑（多半是重复点击）：如实返回当前状态，让前端接着轮询。
+            Map<String, Object> current = repository.requireOwnedTask(taskId, tenantId, userId);
+            body.put("status", String.valueOf(current.get("status")));
+            body.put("accepted", false);
+        }
         return R.ok(body);
+    }
+
+    /**
+     * 由任务行构造执行上下文。延迟到真正入队时才调用，队列满时不必白构造。
+     */
+    private VideoTaskOrchestrator.TaskContext buildContext(Map<String, Object> task,
+                                                           String tenantId, long userId) {
+        VideoCapability capability =
+            VideoCapability.parse(String.valueOf(task.get("capability_code")));
+        String inputJson = String.valueOf(task.get("input_json"));
+        return new VideoTaskOrchestrator.TaskContext(
+            ((Number) task.get("id")).longValue(), tenantId, userId, LoginHelper.getDeptId(),
+            capability == null ? null : capability.name(),
+            String.valueOf(task.get("workflow_code")),
+            task.get("prompt") == null ? null : String.valueOf(task.get("prompt")),
+            String.valueOf(task.get("tier")),
+            durationLabelOf(task.get("duration_seconds")),
+            assetIdFrom(inputJson, "img"),
+            assetIdFrom(inputJson, "first"),
+            assetIdFrom(inputJson, "last"),
+            false,
+            () -> System.nanoTime(),
+            new AtomicInteger(0));
     }
 
     /**
@@ -354,7 +531,7 @@ public class VideoCreationController extends BaseController {
         long total = repository.countOwnedTasks(tenantId, userId, status);
         List<Map<String, Object>> rows = repository.listOwnedTasks(tenantId, userId, status,
             offset(pageQuery), size(pageQuery));
-        return R.ok(new PageResult<>(rows, total));
+        return R.ok(new PageResult<>(CamelCase.rows(rows), total));
     }
 
     /**
@@ -365,8 +542,8 @@ public class VideoCreationController extends BaseController {
     public R<Map<String, Object>> taskDetail(@PathVariable Long taskId) {
         String tenantId = requireTenantId();
         long userId = LoginHelper.getUserId();
-        Map<String, Object> task = new HashMap<>(repository.requireOwnedTask(taskId, tenantId, userId));
-        task.put("events", repository.listEvents(taskId, tenantId));
+        Map<String, Object> task = CamelCase.row(repository.requireOwnedTask(taskId, tenantId, userId));
+        task.put("events", CamelCase.value(repository.listEvents(taskId, tenantId)));
         return R.ok(task);
     }
 
@@ -405,8 +582,7 @@ public class VideoCreationController extends BaseController {
         return List.of("desc", "tier", "dur", "img", "first", "last");
     }
 
-    private static int offset(PageQuery pageQuery) {
-        int pageNum = pageQuery.getPageNum() == null ? 1 : Math.max(1, pageQuery.getPageNum());
+    private static int offset(PageQuery pageQuery) {        int pageNum = pageQuery.getPageNum() == null ? 1 : Math.max(1, pageQuery.getPageNum());
         return (pageNum - 1) * size(pageQuery);
     }
 

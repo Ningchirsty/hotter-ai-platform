@@ -9,11 +9,15 @@ import org.dromara.ai.video.service.AssetStorage;
 import org.dromara.ai.video.service.H3TemplatePreparer;
 import org.dromara.ai.video.service.LocalFileAssetStorage;
 import org.dromara.ai.video.service.MediaProbe;
+import org.dromara.ai.video.service.ThumbnailService;
+import org.dromara.ai.video.service.VideoTaskDispatchService;
+import org.dromara.ai.video.service.VideoTaskExecutionService;
 import org.dromara.ai.video.service.VideoTaskOrchestrator;
 import org.dromara.ai.video.service.VideoTaskRepository;
 import org.dromara.ai.video.service.VideoWorkflowVersionRepository;
 import org.dromara.ai.video.service.WorkflowContractDbSync;
 import org.dromara.ai.video.service.WorkflowContractRegistry;
+import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -32,7 +36,8 @@ import java.time.Duration;
  */
 @Slf4j
 @Configuration
-@EnableConfigurationProperties(VideoModuleConfiguration.VideoProperties.class)
+@EnableConfigurationProperties({VideoModuleConfiguration.VideoProperties.class,
+    VideoTierResolutions.class})
 @ConditionalOnProperty(prefix = "video", name = "enabled", havingValue = "true")
 public class VideoModuleConfiguration {
 
@@ -135,6 +140,33 @@ public class VideoModuleConfiguration {
          * ComfyUI 的缓存策略（那属于 ComfyUI 侧配置，例如启动参数 --cache-none）。</p>
          */
         private boolean comfyFreeBeforeSubmit = false;
+
+        /**
+         * 启动时是否把上一进程遗留的 {@code RUNNING} 任务收敛为失败。
+         *
+         * <p>执行线程随进程一起消失，因此进程重启时还处于 RUNNING 的任务，其执行者
+         * 已经不存在，永远不会有人来推进它——用户会看到一条永远「运行中」的任务。</p>
+         *
+         * <p>默认开启。部署新版本会打断正在生成的任务，这是无法避免的；
+         * 但至少要让状态如实反映「被中断」，而不是留在运行中骗人。</p>
+         */
+        private boolean failStaleRunningOnStartup = true;
+
+        /**
+         * 后台执行器的排队上限。并发固定为 1（GPU 只有一块）。
+         *
+         * <p>队列满时 {@code POST /tasks/{id}/execute} 会把状态退回 QUEUED 并明确报错，
+         * 不会把任务留在 RUNNING 骗人。</p>
+         */
+        private int executorQueueCapacity = 16;
+
+        /**
+         * 输出档位（清晰度）→ 分辨率映射。
+         *
+         * <p>可用 {@code video.tier-resolutions.tiers.<档位名>.*} 覆盖默认值，
+         * 例如临时把 720P 改成 960×544 做画质/速度取舍实验，无需改代码。</p>
+         */
+        private VideoTierResolutions tierResolutions = new VideoTierResolutions();
     }
 
     /**
@@ -181,8 +213,10 @@ public class VideoModuleConfiguration {
     }
 
     @Bean
-    public H3TemplatePreparer h3TemplatePreparer(ObjectMapper mapper) {
-        return new H3TemplatePreparer(mapper);
+    public H3TemplatePreparer h3TemplatePreparer(ObjectMapper mapper, VideoProperties properties) {
+        log.info("输出档位分辨率：{}，时长矩阵：{}", properties.getTierResolutions().tierNames(),
+            properties.getTierResolutions().getDurations());
+        return new H3TemplatePreparer(mapper, properties.getTierResolutions());
     }
 
     @Bean
@@ -237,5 +271,58 @@ public class VideoModuleConfiguration {
             () -> org.dromara.common.mybatis.utils.IdGeneratorUtil.nextLongId(),
             mediaProbe,
             properties.isComfyFreeBeforeSubmit());
+    }
+
+    /**
+     * 任务后台执行器。
+     *
+     * <p>生成一次要 130 秒到 11.5 分钟，而前端经 Cloudflare（源站是 cloudflared tunnel）
+     * 访问，免费版等待源站响应的上限在 100 秒量级——在请求线程里同步等出片，结果必然
+     * 送不回浏览器。因此改为提交后台、前端轮询。</p>
+     */
+    @Bean(destroyMethod = "shutdown")
+    public VideoTaskExecutionService videoTaskExecutionService(VideoTaskOrchestrator orchestrator,
+                                                               VideoProperties properties) {
+        int capacity = Math.max(1, properties.getExecutorQueueCapacity());
+        log.info("视频任务后台执行器已装配：并发 1，队列上限 {}", capacity);
+        return new VideoTaskExecutionService(orchestrator::execute, capacity);
+    }
+
+    /**
+     * 任务派发：认领（防重复提交）+ 入队（队列满回滚）。
+     */
+    @Bean
+    public VideoTaskDispatchService videoTaskDispatchService(VideoTaskRepository repository,
+                                                             VideoTaskExecutionService executionService) {
+        return new VideoTaskDispatchService(repository, executionService);
+    }
+
+    /**
+     * 素材缩略图（图片素材用，避免为了一张小图去拉几 MB 的原图）。
+     */
+    @Bean
+    @ConditionalOnMissingBean(ThumbnailService.class)
+    public ThumbnailService thumbnailService(AssetStorage assetStorage, VideoProperties properties) {
+        return new ThumbnailService(assetStorage, properties.getFfmpegPath(),
+            properties.getMediaTimeoutSeconds());
+    }
+
+    /**
+     * 启动时收敛上一个进程遗留的 RUNNING 任务。
+     *
+     * <p>执行线程活在进程里，进程一重启就没了；留下来的 RUNNING 任务再也没有执行者，
+     * 只能永远显示「运行中」。这里把它们如实置为失败。</p>
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = "video", name = "fail-stale-running-on-startup",
+        havingValue = "true", matchIfMissing = true)
+    public ApplicationRunner staleRunningTaskReconciler(VideoTaskRepository repository) {
+        return args -> {
+            int moved = repository.failAllRunning("ORPHANED_BY_RESTART",
+                "服务重启导致执行中断，请重新执行该任务");
+            if (moved > 0) {
+                log.warn("启动收敛：{} 个任务因上次进程退出而中断，已置为 FAILED（ORPHANED_BY_RESTART）", moved);
+            }
+        };
     }
 }

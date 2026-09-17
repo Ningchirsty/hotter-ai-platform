@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.dromara.ai.video.comfy.ComfyClient;
 import org.dromara.ai.video.comfy.ComfyOutput;
 import org.dromara.ai.video.domain.VideoTaskStatus;
+import org.dromara.ai.video.domain.WorkflowVersion;
 import org.dromara.ai.video.exception.VideoTaskException;
 import org.dromara.ai.video.service.AssetStorage;
 import org.dromara.ai.video.service.H3TemplatePreparer;
@@ -56,7 +57,8 @@ class VideoTaskOrchestratorTest {
         // 三个 H3 已在契约中提升为 PUBLISHED（见 video-workflow-contracts.json），
         // 因此这里直接使用契约原状态。此前用 markTesting 把 DRAFT 改成 TESTING 的做法
         // 已不再需要，而且 markTesting 不检查当前状态，会把 PUBLISHED 降级，故已移除。
-        preparer = new H3TemplatePreparer(MAPPER);
+        preparer = new H3TemplatePreparer(MAPPER,
+            new org.dromara.ai.video.config.VideoTierResolutions());
         comfy = new StubComfyClient();
         repository = new FakeRepository();
         storage = new FakeAssetStorage();
@@ -101,12 +103,6 @@ class VideoTaskOrchestratorTest {
             // 模拟帧精确截断后的重新实测：时长变为上限值。
             this.durationMillis = maxMillis;
             return java.nio.file.Path.of("/tmp/capped.mp4");
-        }
-
-        @Override
-        public void assertAcceptable(Probe p) {
-            // 委托真实实现，保持 1080P 校验语义一致。
-            super.assertAcceptable(p);
         }
     }
 
@@ -186,16 +182,65 @@ class VideoTaskOrchestratorTest {
     }
 
     @Test
-    @DisplayName("回归：实测分辨率不是 1080P 时必须判定输出不合规")
-    void rejectsNonPlain1080pOutput() {
+    @DisplayName("回归：720P 任务的 720P 成片必须通过验收（曾因断言写死 1080P 被误判）")
+    void accepts720pOutputFor720pTask() {
+        // 事故背景：开放 720P/480P 后，assertAcceptable 仍写死 1920×1080，
+        // 于是已经生成、已经落盘的 720P 成片被判为 OUTPUT_INVALID；
+        // 而当时的失败落库只认 QUEUED→FAILED，任务永远是 RUNNING。
         comfy.pollState = ComfyClient.PollResult.State.SUCCEEDED;
         probe.measured = true;
+        probe.width = 1280;
+        probe.height = 720;
+        probe.durationMillis = 5000L;
+        VideoTaskOrchestrator.ExecutionResult result = orchestrator(2000)
+            .execute(context("T2V", "wf-t2v-h3", "提示词", H3TemplatePreparer.TIER_720P, null, null, null));
+        assertEquals(1280, result.output().width(), "720P 成片必须被接受");
+        assertEquals(720, result.output().height());
+        assertTrue(repository.transitions.stream().anyMatch(t -> t.startsWith("SUCCEEDED:")),
+            "720P 任务必须能成功落库");
+    }
+
+    @Test
+    @DisplayName("回归：480P 任务的 480P 成片必须通过验收")
+    void accepts480pOutputFor480pTask() {
+        comfy.pollState = ComfyClient.PollResult.State.SUCCEEDED;
+        probe.measured = true;
+        probe.width = 864;
+        probe.height = 480;
+        probe.durationMillis = 5000L;
+        VideoTaskOrchestrator.ExecutionResult result = orchestrator(2000)
+            .execute(context("T2V", "wf-t2v-h3", "提示词", H3TemplatePreparer.TIER_480P, null, null, null));
+        assertEquals(864, result.output().width());
+        assertEquals(480, result.output().height());
+    }
+
+    @Test
+    @DisplayName("回归：成片分辨率与所选档位不符时必须判定输出不合规")
+    void rejectsOutputThatDoesNotMatchTier() {
+        comfy.pollState = ComfyClient.PollResult.State.SUCCEEDED;
+        probe.measured = true;
+        // 选了 1080P，却拿到 720P 成片 —— 这才是真正该拒绝的情况。
         probe.width = 1280;
         probe.height = 720;
         probe.durationMillis = 4000L;
         VideoTaskException error = assertThrows(VideoTaskException.class,
             () -> orchestrator(2000).execute(context("T2V", "wf-t2v-h3", "提示词", null, null, null)));
-        assertEquals("OUTPUT_INVALID", error.getErrorCode(), "720P 成片不得通过验收");
+        assertEquals("OUTPUT_INVALID", error.getErrorCode(), "档位不符必须拒绝");
+    }
+
+    @Test
+    @DisplayName("回归：进入 RUNNING 之后的失败必须落库，不能留下永远运行的任务")
+    void persistsFailureAfterTaskLeftQueued() {
+        // 事故背景：任务在 markSubmitted 之后已是 RUNNING，而失败落库曾用
+        // QUEUED→FAILED，WHERE 不匹配、影响 0 行，失败被静默吞掉。
+        comfy.pollState = ComfyClient.PollResult.State.SUCCEEDED;
+        probe.measured = true;
+        probe.width = 640;   // 与所选档位不符 -> OUTPUT_INVALID
+        probe.height = 360;
+        assertThrows(VideoTaskException.class,
+            () -> orchestrator(2000).execute(context("T2V", "wf-t2v-h3", "提示词", null, null, null)));
+        assertTrue(repository.transitions.contains("FAILED_IF_ACTIVE:OUTPUT_INVALID"),
+            "生成后处理失败必须以「不限定起始状态」的方式落库，实际流转：" + repository.transitions);
     }
 
     @Test
@@ -291,10 +336,37 @@ class VideoTaskOrchestratorTest {
         assertFalse(comfy.freed, "默认不应调用 freeMemory()");
     }
 
+    @Test
+    @DisplayName("时长上限：按本次任务时长截断，而不是固定用契约里的一代上限")
+    void durationCapFollowsRequestedDuration() {
+        // 背景（真实缺陷）：截断上限原先一律取契约 maxDurationSeconds。开放 10/20 秒后，
+        // 若仍用契约上限截断，长时长成片会被误截回 5 秒。
+        WorkflowVersion base = registry.peek("wf-t2v-h3");
+        assertEquals(5000L, orchestrator(1000).resolveDurationCapMillis("5 秒", base));
+        assertEquals(10000L, orchestrator(1000).resolveDurationCapMillis("10 秒", base));
+        assertEquals(20000L, orchestrator(1000).resolveDurationCapMillis("20 秒", base));
+        // 契约上限仍是硬上限：请求超过契约允许的最长时长时以契约为准（纵深防御）。
+        WorkflowVersion capped = withMaxDuration(base, 10);
+        assertEquals(10000L, orchestrator(1000).resolveDurationCapMillis("20 秒", capped));
+        // 无法解析时退回契约上限，不抛异常。
+        assertEquals(10000L, orchestrator(1000).resolveDurationCapMillis("", capped));
+    }
+
+    private WorkflowVersion withMaxDuration(WorkflowVersion base, int seconds) {
+        return new WorkflowVersion(base.workflowCode(), base.capabilityCode(), base.modelCode(),
+            base.version(), base.status(), base.apiJsonFile(), base.checksum(), base.mapping(),
+            base.fixedFieldValidation(), seconds, base.outputNodeId(), base.outputField());
+    }
+
     private VideoTaskOrchestrator.TaskContext context(String capability, String workflow, String prompt,
                                                       Long image, Long first, Long last) {
+        return context(capability, workflow, prompt, H3TemplatePreparer.TIER_1080P, image, first, last);
+    }
+
+    private VideoTaskOrchestrator.TaskContext context(String capability, String workflow, String prompt,
+                                                      String tier, Long image, Long first, Long last) {
         return new VideoTaskOrchestrator.TaskContext(1L, "000000", 100L, 10L,
-            capability, workflow, prompt, H3TemplatePreparer.TIER_1080P,
+            capability, workflow, prompt, tier,
             H3TemplatePreparer.DURATION_5S, image, first, last, false,
             System::nanoTime, new AtomicInteger(0));
     }
@@ -358,6 +430,12 @@ class VideoTaskOrchestratorTest {
         final List<String> transitions = new ArrayList<>();
         final Map<Long, AssetRow> ownedAssets = new HashMap<>();
 
+        /**
+         * 已经进入终态（失败）的任务。真实 SQL 用「不在终态」做守卫，
+         * 因此第二次落库必须是 0 行——替身也要照这个语义来，否则测试会掩盖真实行为。
+         */
+        private final java.util.Set<Long> terminalTasks = new java.util.HashSet<>();
+
         @Override
         public long insertAsset(AssetRow asset) {
             ownedAssets.put(asset.id() == null ? 1L : asset.id(), asset);
@@ -383,6 +461,22 @@ class VideoTaskOrchestratorTest {
                               String errorCode, String errorMessage) {
             transitions.add(from + "->" + to);
             return 1;
+        }
+
+        @Override
+        public int markFailedIfActive(long taskId, String errorCode, String errorMessage) {
+            // 与真实 SQL 一致：已经是终态就不再覆盖，返回 0 行。
+            if (!terminalTasks.add(taskId)) {
+                return 0;
+            }
+            transitions.add("FAILED_IF_ACTIVE:" + errorCode);
+            return 1;
+        }
+
+        @Override
+        public int failAllRunning(String errorCode, String errorMessage) {
+            transitions.add("FAIL_ALL_RUNNING:" + errorCode);
+            return 0;
         }
 
         @Override

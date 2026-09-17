@@ -248,18 +248,30 @@ public class MediaProbe {
     }
 
     /**
-     * 校验成片是否满足产品约束（1080P）。
+     * 校验成片分辨率是否与所选档位一致。
      *
-     * @throws VideoTaskException 分辨率不符合要求时抛出
+     * <p>这里曾经写死 {@code 1920×1080}。开放 720P/480P 之后，写死的断言把
+     * 「已经生成成功、已经下载落盘」的 720P 成片判为不合规，任务在
+     * {@code RUNNING} 状态下抛异常，而当时的失败落库只认 {@code QUEUED}，
+     * 于是任务永远停在运行中、成片被丢弃。断言必须跟随档位，不能写死。</p>
+     *
+     * @param probe           实测结果
+     * @param expectedWidth   该档位的目标宽度
+     * @param expectedHeight  该档位的目标高度
+     * @throws VideoTaskException 分辨率不符合该档位要求时抛出
      */
-    public void assertAcceptable(Probe probe) {
+    public void assertAcceptable(Probe probe, int expectedWidth, int expectedHeight) {
         if (!probe.measured()) {
             return;
         }
-        if (probe.width() != null && probe.height() != null
-            && !(probe.width() == 1920 && probe.height() == 1080)) {
+        if (probe.width() == null || probe.height() == null) {
+            return;
+        }
+        if (probe.width() != expectedWidth || probe.height() != expectedHeight) {
             throw VideoTaskException.outputInvalid(
-                "成片分辨率 " + probe.width() + "×" + probe.height() + " 不符合 1080P 要求");
+                "成片分辨率 " + probe.width() + "×" + probe.height()
+                    + " 与所选档位要求的 " + expectedWidth + "×" + expectedHeight + " 不一致");
         }
     }
 }
+

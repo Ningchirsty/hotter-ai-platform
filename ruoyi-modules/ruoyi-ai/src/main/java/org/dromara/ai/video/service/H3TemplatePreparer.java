@@ -22,7 +22,8 @@ import java.util.Map;
  * <ul>
  *   <li>深拷贝模板；只覆写 mapping 白名单内的输入键，其余输入一律不动；</li>
  *   <li>节点 ID、模型路径、API Format JSON 不下发前端；</li>
- *   <li>固定档位只接受契约声明的单一取值；</li>
+ *   <li>固定档位只接受契约声明的取值（可多档位，见 {@code supportedTiers}）；</li>
+ *   <li>输出分辨率由档位决定，本类负责把模板里散落的分辨率路径统一改写；</li>
  *   <li>发布前必须实测输出，超出时长上限由服务端截断并由调用方记录。</li>
  * </ul>
  *
@@ -36,9 +37,24 @@ public final class H3TemplatePreparer {
     public static final String DIRECTOR_NODE_ID = "5";
 
     /**
-     * 产品档位固定值。
+     * 编码节点 ID。模板为 {@code ImageScale}，决定最终 mp4 尺寸。
+     */
+    public static final String ENCODE_NODE_ID = "14";
+
+    /**
+     * 产品档位固定值（1080P）。
      */
     public static final String TIER_1080P = "高清 · 1080P";
+
+    /**
+     * 产品档位固定值（720P）。
+     */
+    public static final String TIER_720P = "流畅 · 720P";
+
+    /**
+     * 产品档位固定值（480P）。
+     */
+    public static final String TIER_480P = "标清 · 480P";
 
     /**
      * 产品时长固定值。
@@ -47,8 +63,22 @@ public final class H3TemplatePreparer {
 
     private final ObjectMapper mapper;
 
+    /**
+     * 档位 → 分辨率映射。为 null 时只做校验、不改写分辨率（保持旧行为）。
+     */
+    private final org.dromara.ai.video.config.VideoTierResolutions tierResolutions;
+
+    /**
+     * 兼容构造器：不注入档位表，等价于「只支持契约声明的档位、不改写分辨率」。
+     */
     public H3TemplatePreparer(ObjectMapper mapper) {
+        this(mapper, null);
+    }
+
+    public H3TemplatePreparer(ObjectMapper mapper,
+                              org.dromara.ai.video.config.VideoTierResolutions tierResolutions) {
         this.mapper = mapper;
+        this.tierResolutions = tierResolutions;
     }
 
     /**
@@ -182,6 +212,17 @@ public final class H3TemplatePreparer {
         if (mapping.stream().noneMatch(m -> "desc".equals(m.field()))) {
             inputs.put("global_prompt", prompt);
         }
+        // 分辨率不在 mapping 白名单里，但它同样是「按档位决定的输出参数」，
+        // 因此按档位统一改写模板中散落的各处分辨率。
+        //
+        // 必须放在把 timeline 序列化进节点之前：timeline 是 Jackson 对象，
+        // 修改它不会自动更新已经写进 inputs.timeline_data 的那份字符串。
+        // 早期版本把这一步放在序列化之后，结果节点上的 width/height 生效了、
+        // 而 timeline 里的 width/height/output 仍是模板原值——两者不一致会让
+        // i2v/fl2v（读 timeline.output）与 t2v（读节点 5）走出不同的分辨率。
+        applyResolution(graph, inputs, timeline, fields.tier());
+        applyDuration(inputs, timeline, fields.durationLabel());
+
         // 确保时间轴落回节点，避免仅改 global_prompt 而分镜提示词为空。
         if (!inputs.has("timeline_data")) {
             inputs.set("timeline_data", mapper.getNodeFactory().textNode(timeline.toString()));
@@ -192,6 +233,192 @@ public final class H3TemplatePreparer {
     }
 
     /**
+     * 按输出档位改写模板中的分辨率。
+     *
+     * <p>H3 模板的分辨率不是单一参数，而是散落在四处，必须一起改，否则会出现
+     * 「导演阶段生成 1920×1088、编码阶段却按 1280×720 裁剪」这类畸形输出：</p>
+     *
+     * <ol>
+     *   <li>节点 5 {@code width}/{@code height}：导演阶段的生成分辨率；</li>
+     *   <li>节点 5 {@code ref_max_size}：参考图/参考视频的最大边；</li>
+     *   <li>timeline 的 {@code width}/{@code height}/{@code refMaxSize} 与
+     *       {@code output.width}/{@code output.height}/{@code output.longEdge}；
+     *       t2v 走 fixed 分支只读节点 5，i2v/fl2v 走 timeline 的 output 分支；</li>
+     *   <li>节点 {@value #ENCODE_NODE_ID} {@code ImageScale} 的 {@code width}/{@code height}：
+     *       最终写入 mp4 的尺寸。</li>
+     * </ol>
+     *
+     * <p>导演阶段与编码阶段刻意错开一个台阶（如 1088 → 1080），与原模板策略一致：
+     * 编码节点用 {@code crop=center} 裁掉多余的像素，使成片落在标准档位上。</p>
+     *
+     * <p>未配置档位表、或档位不在表内时不做任何改写；档位合法性由
+     * {@link #validateFields} 负责拦截。</p>
+     */
+    void applyResolution(ObjectNode graph, ObjectNode inputs, ObjectNode timeline, String tier) {
+        if (tierResolutions == null || tier == null) {
+            return;
+        }
+        org.dromara.ai.video.config.VideoTierResolutions.Resolution res = tierResolutions.of(tier);
+        if (res == null) {
+            return;
+        }
+        inputs.put("width", res.width());
+        inputs.put("height", res.height());
+        inputs.put("ref_max_size", res.refMaxSize());
+
+        timeline.put("width", res.width());
+        timeline.put("height", res.height());
+        timeline.put("refMaxSize", res.refMaxSize());
+        JsonNode outputNode = timeline.get("output");
+        if (outputNode != null && outputNode.isObject()) {
+            ObjectNode output = (ObjectNode) outputNode;
+            output.put("width", res.width());
+            output.put("height", res.height());
+            output.put("longEdge", res.refMaxSize());
+        }
+
+        JsonNode encodeNode = graph.get(ENCODE_NODE_ID);
+        if (encodeNode != null && encodeNode.isObject()) {
+            JsonNode encodeInputs = encodeNode.get("inputs");
+            if (encodeInputs != null && encodeInputs.isObject()) {
+                ObjectNode scaleInputs = (ObjectNode) encodeInputs;
+                scaleInputs.put("width", res.encodeWidth());
+                scaleInputs.put("height", res.encodeHeight());
+            }
+        }
+    }
+
+    /**
+     * 该档位成片应有的最终分辨率（编码节点裁剪后的标准档位尺寸）。
+     *
+     * <p>供成片校验使用：断言必须跟随所选档位，不能写死 1080P。</p>
+     *
+     * @param tier 档位名
+     * @return {@code [宽, 高]}；未配置档位表或档位未知时返回 {@code null}
+     */
+    public int[] expectedOutputSize(String tier) {
+        if (tierResolutions == null || tier == null) {
+            return null;
+        }
+        org.dromara.ai.video.config.VideoTierResolutions.Resolution res = tierResolutions.of(tier);
+        if (res == null) {
+            return null;
+        }
+        return new int[] {res.encodeWidth(), res.encodeHeight()};
+    }
+
+    /**
+     * 把「5 秒 / 10 秒 / 20 秒」解析成秒数。
+     *
+     * @return 无法解析时返回 0
+     */
+    public static int parseDurationSeconds(String label) {
+        if (label == null) {
+            return 0;
+        }
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\d+)").matcher(label);
+        return m.find() ? Integer.parseInt(m.group(1)) : 0;
+    }
+
+    /**
+     * 按 MiniMax H3 的 {@code 17k+5} 网格计算帧数。
+     *
+     * <p>节点源码 {@code minimax_align_frame_count} 会把帧数向上取整到满足
+     * {@code n % 17 == 5}（最小 5）。实测对应：5 秒→124、10 秒→243、20 秒→481 帧。
+     * 网格只会略增帧数，成片最终仍由 ffmpeg 精确截断到目标秒数。</p>
+     */
+    public static int framesOfSeconds(int seconds) {
+        int n = Math.max(5, seconds * 24);
+        while (n % 17 != 5) {
+            n++;
+        }
+        return n;
+    }
+
+    /**
+     * 按时长档位改写模板中的帧数。
+     *
+     * <p>时长不是「一个参数」：帧数散落在节点与 timeline 的多处，必须一起改，
+     * 否则会出现「节点让生成 243 帧、时间线只导出 124 帧」这类不一致。
+     * 需要同步的字段：</p>
+     *
+     * <ol>
+     *   <li>节点 5 {@code total_frames}；</li>
+     *   <li>timeline {@code totalFrames} / {@code durationSec}；</li>
+     *   <li>timeline {@code gen.defaultFrameCount}；</li>
+     *   <li>timeline {@code video.sourceFrameCount}（i2v 模板没有该字段，故先判断存在性）；</li>
+     *   <li>{@code segments[].length/frameCount/durationSec}（单段覆盖整片）；</li>
+     *   <li>{@code keyframes[].length}——fl2v 的首/尾关键帧各占一半，
+     *       因此取帧数的一半；不这样处理会让尾帧落在错误的时间点；</li>
+     *   <li>{@code shots[].durationSec}。</li>
+     * </ol>
+     *
+     * <p>帧数按 {@code 17k+5} 网格取整，成片仍由 ffmpeg 按帧精确截断到目标秒数
+     * （实测 5 秒→124 帧 5.167s 截断为 5.000s）。</p>
+     */
+    void applyDuration(ObjectNode inputs, ObjectNode timeline, String durationLabel) {
+        int seconds = parseDurationSeconds(durationLabel);
+        if (seconds <= 0) {
+            return;
+        }
+        int frames = framesOfSeconds(seconds);
+        inputs.put("total_frames", frames);
+        timeline.put("totalFrames", frames);
+        timeline.put("durationSec", seconds);
+
+        JsonNode genNode = timeline.get("gen");
+        if (genNode != null && genNode.isObject()) {
+            ((ObjectNode) genNode).put("defaultFrameCount", frames);
+        }
+        JsonNode videoNode = timeline.get("video");
+        if (videoNode != null && videoNode.isObject() && videoNode.has("sourceFrameCount")) {
+            ((ObjectNode) videoNode).put("sourceFrameCount", frames);
+        }
+        setListFrames(timeline.get("segments"), frames, seconds, false);
+        // 首/尾关键帧各占一半时长，否则尾帧会落在错误的时间点。
+        setListFrames(timeline.get("keyframes"), frames, seconds, true);
+        setShotsDuration(timeline.get("shots"), seconds);
+    }
+
+    private void setListFrames(JsonNode listNode, int frames, int seconds, boolean half) {
+        if (listNode == null || !listNode.isArray()) {
+            return;
+        }
+        int count = listNode.size();
+        if (count == 0) {
+            return;
+        }
+        // 关键帧按段均分（fl2v 为 2 个，各占一半）；其余列表按整片时长处理。
+        int per = half ? Math.max(1, frames / count) : frames;
+        for (JsonNode item : listNode) {
+            if (!item.isObject()) {
+                continue;
+            }
+            ObjectNode node = (ObjectNode) item;
+            if (node.has("length")) {
+                node.put("length", per);
+            }
+            if (node.has("frameCount")) {
+                node.put("frameCount", per);
+            }
+            if (node.has("durationSec")) {
+                node.put("durationSec", seconds);
+            }
+        }
+    }
+
+    private void setShotsDuration(JsonNode shotsNode, int seconds) {
+        if (shotsNode == null || !shotsNode.isArray()) {
+            return;
+        }
+        for (JsonNode item : shotsNode) {
+            if (item.isObject()) {
+                ((ObjectNode) item).put("durationSec", seconds);
+            }
+        }
+    }
+
+    /**
      * 校验字段与固定档位、必需素材与提示词。
      *
      * <p>必须在任务入库<b>之前</b>调用；否则会产生不可执行的任务记录。</p>
@@ -199,11 +426,20 @@ public final class H3TemplatePreparer {
     public void validateFields(VideoCapability capability, WorkflowVersion version, H3Fields fields) {
         WorkflowVersion.FixedFieldValidation fixed = version.fixedFieldValidation();
         if (fixed != null) {
-            if (fixed.tier() != null && !fixed.tier().equals(fields.tier())) {
+            java.util.Set<String> allowedTiers = fixed.allowedTiers();
+            if (!allowedTiers.isEmpty() && !allowedTiers.contains(fields.tier())) {
                 throw VideoTaskException.invalidContract(
-                    "输出档位只支持 " + fixed.tier());
+                    "输出档位只支持 " + String.join(" / ", allowedTiers));
             }
-            if (fixed.dur() != null && !fixed.dur().equals(fields.durationLabel())) {
+            // 时长与档位互相约束（长时长只在低分辨率档位开放），因此按「档位 + 时长」组合校验。
+            // 配置了档位表时以它为准；未配置时退回契约的单一 dur，保持向后兼容。
+            if (tierResolutions != null) {
+                java.util.List<String> allowedDurations = tierResolutions.durationsOf(fields.tier());
+                if (!allowedDurations.isEmpty() && !allowedDurations.contains(fields.durationLabel())) {
+                    throw VideoTaskException.invalidContract(
+                        fields.tier() + " 只支持时长 " + String.join(" / ", allowedDurations));
+                }
+            } else if (fixed.dur() != null && !fixed.dur().equals(fields.durationLabel())) {
                 throw VideoTaskException.invalidContract(
                     "视频时长只支持 " + fixed.dur());
             }

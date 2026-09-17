@@ -97,7 +97,7 @@
             "multiple": false,
             "coverRule": "first frame",
             "maxSizeMB": "TBD",
-            "maxDurationSeconds": 5,
+            "maxDurationSeconds": 20,
             "durationCapStatus": "PENDING_RUNTIME_VALIDATION"
           },
           "perf": {
@@ -119,7 +119,12 @@
           ],
           "fixedFieldValidation": {
             "tier": "高清 · 1080P",
-            "dur": "5 秒"
+            "dur": "5 秒",
+            "supportedTiers": [
+              "高清 · 1080P",
+              "流畅 · 720P",
+              "标清 · 480P"
+            ]
           }
         },
         {
@@ -514,7 +519,7 @@
             "multiple": false,
             "coverRule": "first frame",
             "maxSizeMB": "TBD",
-            "maxDurationSeconds": 5,
+            "maxDurationSeconds": 20,
             "durationCapStatus": "PENDING_RUNTIME_VALIDATION"
           },
           "perf": {
@@ -536,7 +541,12 @@
           ],
           "fixedFieldValidation": {
             "tier": "高清 · 1080P",
-            "dur": "5 秒"
+            "dur": "5 秒",
+            "supportedTiers": [
+              "高清 · 1080P",
+              "流畅 · 720P",
+              "标清 · 480P"
+            ]
           }
         }
       ]
@@ -607,7 +617,7 @@
             "multiple": false,
             "coverRule": "first frame",
             "maxSizeMB": "TBD",
-            "maxDurationSeconds": 5,
+            "maxDurationSeconds": 20,
             "durationCapStatus": "PENDING_RUNTIME_VALIDATION"
           },
           "perf": {
@@ -629,7 +639,12 @@
           ],
           "fixedFieldValidation": {
             "tier": "高清 · 1080P",
-            "dur": "5 秒"
+            "dur": "5 秒",
+            "supportedTiers": [
+              "高清 · 1080P",
+              "流畅 · 720P",
+              "标清 · 480P"
+            ]
           }
         },
         {

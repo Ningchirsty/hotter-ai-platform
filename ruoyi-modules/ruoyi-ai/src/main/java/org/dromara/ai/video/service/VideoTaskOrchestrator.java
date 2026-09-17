@@ -151,10 +151,33 @@ public class VideoTaskOrchestrator {
     /**
      * 执行一次任务。
      *
+     * <p>本方法是「任务失败必须落库」的唯一负责人：无论失败发生在提交前（能力/契约/素材/
+     * ComfyUI 可达性）还是提交后（下载成片、落盘、ffprobe、分辨率断言、写素材行），
+     * 都会把任务置为失败。历史上失败落库只认 {@code QUEUED→FAILED}，任务一旦进入 RUNNING
+     * 就再也落不了库，结果是一批「永远运行中、成片已丢失」的僵尸任务。</p>
+     *
      * @param context 已通过服务端校验的任务上下文
      * @return 执行结果
      */
     public ExecutionResult execute(TaskContext context) {
+        try {
+            return doExecute(context);
+        } catch (VideoTaskException e) {
+            int moved = repository.markFailedIfActive(context.taskId(), e.getErrorCode(), e.getMessage());
+            if (moved > 0) {
+                log.warn("任务 {} 执行失败，已置为 FAILED：[{}] {}", context.taskId(),
+                    e.getErrorCode(), e.getMessage());
+            }
+            throw e;
+        } catch (RuntimeException e) {
+            // 非业务异常同样要落库，否则会留下说不清状态的僵尸任务。
+            repository.markFailedIfActive(context.taskId(), "EXECUTION_FAILED",
+                sanitize(e.getMessage()));
+            throw e;
+        }
+    }
+
+    private ExecutionResult doExecute(TaskContext context) {
         WorkflowVersion version = registry.require(context.workflowCode(), context.requirePublished());
         VideoCapability capability = VideoCapability.parse(context.capabilityCode());
         if (capability == null) {
@@ -166,8 +189,9 @@ public class VideoTaskOrchestrator {
 
         // 提交前先确认 ComfyUI 可达，避免把网络问题误报为工作流失败。
         if (!comfyClient.isReachable()) {
-            repository.transition(context.taskId(), VideoTaskStatus.QUEUED, VideoTaskStatus.FAILED,
-                "COMFY_UNREACHABLE", "ComfyUI 服务当前不可达");
+            // 任务此时已被认领为 RUNNING（见控制器），不能再用 QUEUED 去落库。
+            repository.markFailedIfActive(context.taskId(), "COMFY_UNREACHABLE",
+                "ComfyUI 服务当前不可达");
             throw VideoTaskException.comfyFailure("ComfyUI 服务当前不可达", null);
         }
 
@@ -201,7 +225,19 @@ public class VideoTaskOrchestrator {
         appendEvent(context, "SUBMITTED", "已提交 ComfyUI");
 
         ComfyOutput output = awaitOutput(promptId, context);
-        long maxDurationMillis = (version.maxDurationSeconds() == null ? 5 : version.maxDurationSeconds()) * 1000L;
+        // 此刻任务已经是 RUNNING（认领时落库）。这之后的每一步（下载成片、落盘、
+        // ffprobe、分辨率断言、写素材行）失败，都由外层 execute 统一负责落库。
+        return archiveOutput(context, version, output);
+    }
+
+    /**
+     * 把 ComfyUI 产物归档成素材并结算任务。
+     *
+     * <p>只在任务已进入 RUNNING 之后调用；失败由 {@link #execute} 负责落库。</p>
+     */
+    private ExecutionResult archiveOutput(TaskContext context, WorkflowVersion version,
+                                          ComfyOutput output) {
+        long maxDurationMillis = resolveDurationCapMillis(context.durationLabel(), version);
 
         byte[] content = comfyClient.fetchOutput(output);
         String storageKey = assetStorage.storeOutput(context.tenantId(), context.userId(),
@@ -233,7 +269,15 @@ public class VideoTaskOrchestrator {
             }
         }
         if (probe.measured()) {
-            mediaProbe.assertAcceptable(probe);
+            // 分辨率断言必须跟随所选档位：这里曾经写死 1920×1080，开放 720P/480P 后
+            // 把已经生成并落盘的 720P 成片误判为不合规，任务卡在 RUNNING、成片被丢弃。
+            int[] expected = preparer.expectedOutputSize(context.tier());
+            if (expected == null) {
+                log.warn("任务 {} 档位 {} 未配置目标分辨率，跳过分辨率断言",
+                    context.taskId(), context.tier());
+            } else {
+                mediaProbe.assertAcceptable(probe, expected[0], expected[1]);
+            }
         }
 
         // 大小与校验和统一以最终落盘文件为准（截断后文件名与内容都已变化）。
@@ -284,6 +328,26 @@ public class VideoTaskOrchestrator {
             + guessExtension(asset.contentType(), asset.originalName());
         return comfyClient.uploadImage(targetName, content,
             asset.contentType() == null ? "image/png" : asset.contentType());
+    }
+
+    /**
+     * 计算成片时长上限（毫秒）。
+     *
+     * <p>契约的 {@code maxDurationSeconds} 是「这一代工作流允许的最长时长」，
+     * 而不是「本次任务的目标时长」——模板固定产出 124 帧@24fps = 5.167 秒，
+     * 所以原先一律截断到 5 秒是对的；但开放 10/20 秒档位后，若仍用契约上限截断，
+     * 长时长成片会被误截回 5 秒。</p>
+     *
+     * <p>因此取「任务请求时长」与「契约上限」的较小值：请求 20 秒而契约只允许 5 秒时
+     * 仍以 5 秒为准（校验层本应拦住这种提交，这里是纵深防御）。</p>
+     */
+    public long resolveDurationCapMillis(String durationLabel, WorkflowVersion version) {
+        long contractCap = (version.maxDurationSeconds() == null ? 5 : version.maxDurationSeconds()) * 1000L;
+        int requested = H3TemplatePreparer.parseDurationSeconds(durationLabel);
+        if (requested <= 0) {
+            return contractCap;
+        }
+        return Math.min(contractCap, requested * 1000L);
     }
 
     private ComfyOutput awaitOutput(String promptId, TaskContext context) {

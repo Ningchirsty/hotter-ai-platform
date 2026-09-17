@@ -61,4 +61,19 @@ public interface AssetStorage {
     default String keyOf(java.nio.file.Path file) {
         return null;
     }
+
+    /**
+     * 缩略图在本机文件系统上的目标路径。
+     *
+     * <p>缩略图必须与素材本体分开存放：本体的目录会被运维清理脚本按「数据库里没有引用」
+     * 判定为无主文件，缩略图本来就不入库，混在里面会被误删。</p>
+     *
+     * <p>返回 null 表示该实现不支持缩略图（纯对象存储），调用方应退回使用原图。</p>
+     *
+     * @param storageKey 素材的存储键
+     * @return 缩略图路径（不保证已存在），或 null
+     */
+    default java.nio.file.Path thumbnailPath(String storageKey) {
+        return null;
+    }
 }

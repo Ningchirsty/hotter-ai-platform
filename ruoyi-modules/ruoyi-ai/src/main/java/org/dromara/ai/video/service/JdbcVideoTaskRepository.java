@@ -226,14 +226,42 @@ public class JdbcVideoTaskRepository implements VideoTaskRepository {
     }
 
     @Override
-    public int markSubmitted(long taskId, String comfyPromptId, int attemptCount) {
+    public int markFailedIfActive(long taskId, String errorCode, String errorMessage) {
+        // 终态列表来自枚举，避免以后新增状态时这里漏改。
+        String terminal = java.util.Arrays.stream(VideoTaskStatus.values())
+            .filter(VideoTaskStatus::isTerminal)
+            .map(Enum::name)
+            .collect(java.util.stream.Collectors.joining("', '"));
         return jdbc.update("""
             UPDATE video_task
-            SET comfy_prompt_id = ?, attempt_count = ?, status = ?, submitted_time = NOW(),
+            SET status = ?, error_code = ?, error_message = ?, update_time = NOW(),
+                finished_time = NOW()
+            WHERE id = ? AND status NOT IN ('%s')
+            """.formatted(terminal), VideoTaskStatus.FAILED.name(), errorCode, errorMessage, taskId);
+    }
+
+    @Override
+    public int failAllRunning(String errorCode, String errorMessage) {
+        return jdbc.update("""
+            UPDATE video_task
+            SET status = ?, error_code = ?, error_message = ?, update_time = NOW(),
+                finished_time = NOW()
+            WHERE status = ?
+            """, VideoTaskStatus.FAILED.name(), errorCode, errorMessage,
+            VideoTaskStatus.RUNNING.name());
+    }
+
+    @Override
+    public int markSubmitted(long taskId, String comfyPromptId, int attemptCount) {
+        // 任务在控制器「认领」时已经流转为 RUNNING（异步执行后必须先把状态占住，
+        // 否则重复点击会重复执行），所以这里只补写 prompt id 与时间戳，不再依赖 QUEUED。
+        return jdbc.update("""
+            UPDATE video_task
+            SET comfy_prompt_id = ?, attempt_count = ?, submitted_time = NOW(),
                 started_time = NOW(), update_time = NOW()
             WHERE id = ? AND status = ?
-            """, comfyPromptId, attemptCount, VideoTaskStatus.RUNNING.name(),
-            taskId, VideoTaskStatus.QUEUED.name());
+            """, comfyPromptId, attemptCount,
+            taskId, VideoTaskStatus.RUNNING.name());
     }
 
     @Override
