@@ -1110,6 +1110,11 @@ function coverFor(task: VideoTaskVO) {
 /**
  * 为成功任务加载成片封面。
  *
+ * <p><b>为什么要走缩略图接口。</b>这里曾经直接拉成片本体当封面：9 个成片合计约 13 MB，
+ * 而经 Cloudflare 实测吞吐只有 258 KB/s ~ 790 KB/s，等于把带宽占满，
+ * 同一时刻发起的预览请求就会排队甚至超时——表现就是"预览时好时坏"。
+ * 现在后端用 ffmpeg 抽一帧（约几十 KB），封面的代价从 13 MB 降到约 0.3 MB。</p>
+ *
  * <p>按需加载且去重：同一素材只请求一次；失败静默（封面只是锦上添花，
  * 不该因为取图失败而打扰用户，模板会回退成图标）。</p>
  */
@@ -1122,8 +1127,7 @@ async function loadTaskCovers() {
     if (coverUrls.value[key] || coverLoading.has(key)) continue;
     coverLoading.add(key);
     try {
-      const url = await fetchVideoAssetBlobUrl(task.outputAssetId);
-      coverUrls.value = { ...coverUrls.value, [key]: url };
+      coverUrls.value = { ...coverUrls.value, [key]: await fetchVideoAssetThumbnailBlobUrl(task.outputAssetId) };
     } catch {
       // 忽略：封面失败不影响功能
     } finally {
@@ -1240,7 +1244,14 @@ async function previewTask(task: VideoTaskVO) {
     try {
       previewUrl.value = await fetchVideoAssetBlobUrl(detail.outputAssetId);
     } catch (error) {
-      previewError.value = (await extractErrorMessage(error)) ?? '成片加载失败';
+      // 网络抖动重试一次：经 Cloudflare 的链路偶发失败是真实存在的，
+      // 但重试前必须确认上一次没有留下半个 blob（releasePreviewUrl 已经处理）。
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        previewUrl.value = await fetchVideoAssetBlobUrl(detail.outputAssetId);
+      } catch {
+        previewError.value = (await extractErrorMessage(error)) ?? '成片加载失败';
+      }
     } finally {
       previewLoading.value = false;
     }
