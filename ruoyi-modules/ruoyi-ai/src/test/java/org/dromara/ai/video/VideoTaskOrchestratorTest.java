@@ -339,8 +339,7 @@ class VideoTaskOrchestratorTest {
 
     @Test
     @DisplayName("多 GPU：显存不足的节点直接跳过，任务在另一张卡上完成并记下卡名")
-    void failsOverToAnotherWorkerWhenVramIsInsufficient() {
-        // 真实背景：单任务峰值 80,805 MiB / 81,920 MiB。GPU0 上压着别的进程（曾计划给 vLLM）
+    void failsOverToAnotherWorkerWhenVramIsInsufficient() {        // 真实背景：单任务峰值 80,805 MiB / 81,920 MiB。GPU0 上压着别的进程（曾计划给 vLLM）
         // 时，提交上去必然在采样节点 OOM，白等十几分钟。闸门要求先看空闲显存，
         // 不够就换一张卡——而不是撞上去 OOM。
         comfy.freeVram = 4_096L;
@@ -353,7 +352,7 @@ class VideoTaskOrchestratorTest {
 
         VideoTaskOrchestrator pooled = new VideoTaskOrchestrator(registry, preparer, comfy, repository,
             storage, MAPPER, Duration.ofMillis(2000), Duration.ofMillis(1), () -> 9400L, probe, false,
-            pool, 65_536L, Duration.ofSeconds(5));
+            pool, 65_536L, Duration.ofSeconds(5), 5, 0L);
 
         assertDoesNotThrow(
             () -> pooled.execute(context("T2V", "wf-t2v-h3", "提示词", null, null, null)),
@@ -369,6 +368,32 @@ class VideoTaskOrchestratorTest {
     }
 
     @Test
+    @DisplayName("多 GPU：缓存占着显存时先 /free 再复查，不把健康的卡判死（释放是异步的）")
+    void rechecksAfterFreeBeforeRejectingAWorker() {
+        // 实测证据：对 8188 调 /free 之后立刻读 /system_stats 只有 12,189 MiB 空闲，
+        // 几分钟后再读是 80,566 MiB。只读一次就会把一张完全健康的卡判成「被别的进程占用」，
+        // 双卡直接退化成单卡——这正是设计里最容易被忽略的坑。
+        comfy.freeVram = 9_868L;
+        comfy.freeVramAfterFree = 80_566L;
+        StubComfyClient other = new StubComfyClient();
+        ComfyWorkerPool pool = new ComfyWorkerPool(List.of(
+            new ComfyWorkerPool.Worker("gpu1", "http://gpu1:8188", comfy),
+            new ComfyWorkerPool.Worker("gpu0", "http://gpu0:8189", other)),
+            Duration.ofSeconds(60));
+        VideoTaskOrchestrator pooled = new VideoTaskOrchestrator(registry, preparer, comfy, repository,
+            storage, MAPPER, Duration.ofMillis(2000), Duration.ofMillis(1), () -> 9402L, probe, false,
+            pool, 65_536L, Duration.ofSeconds(5), 5, 0L);
+
+        assertDoesNotThrow(
+            () -> pooled.execute(context("T2V", "wf-t2v-h3", "提示词", null, null, null)));
+        assertTrue(comfy.freed, "低显存读数出现时应主动请求释放缓存");
+        assertTrue(comfy.submitted, "释放后显存充足，任务应就地执行");
+        assertFalse(other.submitted, "不该无谓地换到另一张卡");
+        assertTrue(pool.snapshots().stream().noneMatch(ComfyWorkerPool.Snapshot::unavailable),
+            "健康的节点不该进冷却");
+    }
+
+    @Test
     @DisplayName("多 GPU：所有节点显存都不足时快速失败，错误信息说明原因")
     void failsFastWhenNoWorkerHasEnoughVram() {
         comfy.freeVram = 1_024L;
@@ -376,7 +401,7 @@ class VideoTaskOrchestratorTest {
             new ComfyWorkerPool.Worker("gpu0", "http://gpu0:8189", comfy)), Duration.ofSeconds(60));
         VideoTaskOrchestrator pooled = new VideoTaskOrchestrator(registry, preparer, comfy, repository,
             storage, MAPPER, Duration.ofMillis(2000), Duration.ofMillis(1), () -> 9401L, probe, false,
-            pool, 65_536L, Duration.ofSeconds(5));
+            pool, 65_536L, Duration.ofSeconds(5), 5, 0L);
 
         VideoTaskException error = assertThrows(VideoTaskException.class,
             () -> pooled.execute(context("T2V", "wf-t2v-h3", "提示词", null, null, null)));
@@ -433,6 +458,10 @@ class VideoTaskOrchestratorTest {
          * 空闲显存（MiB）。默认充足；用例可调低以验证显存闸门。
          */
         long freeVram = 80_000L;
+        /**
+         * 调用 {@code /free} 之后空闲显存变成的值（模拟「缓存被释放」）；null 表示不变。
+         */
+        Long freeVramAfterFree = null;
         PollResult.State pollState = PollResult.State.SUCCEEDED;
         List<ComfyOutput> outputs = List.of(new ComfyOutput("out.mp4", "", "output",
             1920, 1080, 24.0, 5000L, 512L));
@@ -440,6 +469,9 @@ class VideoTaskOrchestratorTest {
         @Override
         public boolean freeMemory() {
             freed = true;
+            if (freeVramAfterFree != null) {
+                freeVram = freeVramAfterFree;
+            }
             return true;
         }
 

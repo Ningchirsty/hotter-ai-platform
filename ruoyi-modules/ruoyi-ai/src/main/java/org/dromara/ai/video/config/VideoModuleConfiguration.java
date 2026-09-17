@@ -45,6 +45,11 @@ import java.util.List;
 public class VideoModuleConfiguration {
 
     /**
+     * 显存闸门在等待窗口内的复查次数（把窗口切成几段来轮询）。
+     */
+    private static final int VRAM_GATE_ATTEMPTS = 5;
+
+    /**
      * 视频创作模块配置。
      */
     @Data
@@ -163,6 +168,16 @@ public class VideoModuleConfiguration {
          * 让用户白等十几分钟才拿到一个失败；不如立刻换一台卡，或者直接明确报错。</p>
          */
         private long comfyMinFreeVramMb = 65536;
+
+        /**
+         * 显存闸门的等待窗口（秒）。
+         *
+         * <p>为什么需要窗口：{@code /free} 的释放是<b>异步</b>的。实测对 8188 调 /free 后
+         * 立刻读只有 12,189 MiB 空闲，几分钟后再读是 80,566 MiB。只读一次会把一张健康的卡
+         * 判成「被别的进程占用」，双卡直接退化成单卡。窗口内反复读：是 ComfyUI 自己的缓存
+         * 就会涨回去；是外部进程占着（例如 vLLM）就一直上不去，那时才换卡。</p>
+         */
+        private long comfyVramGateWaitSeconds = 15;
 
         /**
          * 工作节点被判定不可用（显存不足等）后的冷却时长（秒）。
@@ -341,7 +356,9 @@ public class VideoModuleConfiguration {
             properties.isComfyFreeBeforeSubmit(),
             workerPool,
             properties.getComfyMinFreeVramMb(),
-            Duration.ofSeconds(properties.getComfyWorkerAcquireTimeoutSeconds()));
+            Duration.ofSeconds(properties.getComfyWorkerAcquireTimeoutSeconds()),
+            VRAM_GATE_ATTEMPTS,
+            Math.max(0L, properties.getComfyVramGateWaitSeconds() * 1000L / VRAM_GATE_ATTEMPTS));
     }
 
     /**
