@@ -130,9 +130,13 @@ public class VideoTaskExecutionService {
 
     /**
      * 还在排队的任务数（不含正在执行的）。
+     *
+     * <p>注意：{@code queued} 在任务<b>开始执行</b>时就减掉了，所以它本身已经等于
+     * 「在排队」的数量。曾经这里写成 {@code queued - active}，于是「1 个在跑 + 1 个排队」
+     * 会被算成 0——前端那一行「排队 N」在有任务真的等着的时候显示 0，正是这个减错造成的。</p>
      */
     public int queuedCount() {
-        return Math.max(0, queued.get() - active.get());
+        return Math.max(0, queued.get());
     }
 
     /**
