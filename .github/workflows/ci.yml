@@ -70,11 +70,27 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      # ffmpeg 归档只下载一次并缓存，之后所有构建走缓存。
+      #
+      # 为什么不留给 Dockerfile 下载：该源站会对单个连接限速（实测每次请求 20 秒只能
+      # 收到 0.8–7 MB，而归档共 41.9 MB），且 curl 的 --retry 不会对「传输太慢」重试。
+      # 已因此让本流水线失败过两次。放在这里可以：只下一次、失败可重试整步、
+      # 并通过缓存让后续构建完全不再访问该源。
+      - name: Cache ffmpeg static archive
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: build-cache
+          key: ffmpeg-static-abda8d77ce830914-41888096
+
+      - name: Fetch ffmpeg static archive
+        run: bash script/ci/fetch-ffmpeg.sh build-cache
+
       - name: Build backend image
         run: |
           # 构建上下文是仓库根（不是 ruoyi-admin）：镜像需要包含
           # script/video/workflows 下的工作流契约与模板，而 Docker 不允许
           # COPY 构建上下文之外的文件。Dockerfile 位于仓库根。
+          # build-cache/ 内的 ffmpeg 归档由上一步预取，Dockerfile 直接 COPY。
           docker build --pull \
             -f Dockerfile \
             --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
@@ -145,11 +161,22 @@ jobs:
       - name: Package verified commit
         run: bash mvnw --batch-mode --no-transfer-progress -Dmaven.test.skip=true package
 
+      # 与 build-test-image 一致：ffmpeg 归档走缓存，不留给 Dockerfile 现场下载。
+      - name: Cache ffmpeg static archive
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: build-cache
+          key: ffmpeg-static-abda8d77ce830914-41888096
+
+      - name: Fetch ffmpeg static archive
+        run: bash script/ci/fetch-ffmpeg.sh build-cache
+
       - name: Build image from verified commit
         run: |
           # 与 build-test-image 保持一致：构建上下文是仓库根，Dockerfile 在仓库根。
           # 这里曾漏改仍指向 ruoyi-admin，导致发布 job 报
           # `failed to read dockerfile: open Dockerfile: no such file or directory`。
+          # 两处构建上下文必须始终一致。
           docker build --pull \
             -f Dockerfile \
             --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \

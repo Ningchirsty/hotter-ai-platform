@@ -25,46 +25,57 @@ LABEL maintainer="Lion Li"
 # Rocky 默认源也没有 ffmpeg（实测 `microdnf install ffmpeg[-free]` 报 No package matches）。
 # 因此改用**静态构建**，它不依赖发行版与 glibc 版本（实测可在本镜像内直接运行）。
 #
-# 如需离线/内网构建，用 --build-arg 覆盖为内网镜像地址与对应校验值即可。
+# ffmpeg 归档：优先使用构建上下文中预先下载好的 `build-cache/`。
+#
+# 为什么不再在镜像构建里下载：该源站会对单个连接限速（实测同一台机器上每次请求
+# 20 秒只能收到 0.8–7 MB，而归档共 41.9 MB），而 curl 的 --retry 不会对
+# 「传输太慢」重试。把 41.9 MB 的下载放在镜像构建里，等于让镜像成败依赖一个
+# 不稳定的第三方源——已因此让 CI 失败过两次（一次下到的字节校验不符、一次被限速拖死）。
+#
+# 因此改为：CI 用 `script/ci/fetch-ffmpeg.sh` 下载一次并缓存，Dockerfile 只做 COPY；
+# 本地开发若没有 build-cache/，则回退到就地下载（保留重试与校验）。
 ARG FFMPEG_URL=https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
 ARG FFMPEG_SHA256=abda8d77ce8309141f83ab8edf0596834087c52467f6badf376a6a2a4c87cf67
 ARG FFMPEG_EXPECTED_BYTES=41888096
 
+# 预取的 ffmpeg 归档（由 CI 的 fetch-ffmpeg.sh 下载并缓存）。
+# CI 会先执行该脚本；本地开发若未预取，则 build-cache/ 内无此文件，
+# 下面的 RUN 会回退到就地下载。
+COPY ./build-cache/ /tmp/build-cache/
+
 # 基础镜像有 curl 与 tar，但没有 xz 命令：GNU tar 的 -J 会调用外部 xz 程序，
 # 因此先从基础源装上 xz（Rocky 9 基础源可用，实测），再解包。
-#
-# 「下载 + 校验」写成显式重试循环，而不是只靠 curl --retry：
-# curl 的 --retry 只在连接/传输层失败时重试，**校验和不匹配时不会重试**。
-# 实测踩过两次：
-#   1) 某次 CI 里 curl 正常退出（exit 0），但下到的字节校验不通过，构建直接失败；
-#      同一提交重跑即通过——属瞬时传输损坏。
-#   2) 该站点在**同一 IP 反复/并发下载**时会限速：实测一次卡在 25.4/41.9 MB
-#      长达 1306 秒；另一次虽然下完但耗时 441 秒。串行且未触发限速时约 4.6 秒。
-# 因此这里除了重试，还加 --speed-limit/--speed-time：低于 10 KB/s 持续 30 秒即判失败，
-# 避免在被限速的连接上干等，直接换一条连接重试。
-# 若该源不可用，用 --build-arg 换成内网镜像地址与对应校验值。
 RUN set -eux; \
     microdnf install -y xz; \
     microdnf clean all; \
-    try=0; \
-    while :; do \
-        try=$((try + 1)); \
-        rm -f /tmp/ffmpeg.tar.xz; \
-        if curl -fsSL --retry 3 --retry-delay 2 \
-                --speed-limit 10240 --speed-time 30 --connect-timeout 20 --max-time 600 \
-                -o /tmp/ffmpeg.tar.xz "$FFMPEG_URL" \
-           && [ "$(stat -c %s /tmp/ffmpeg.tar.xz)" = "$FFMPEG_EXPECTED_BYTES" ] \
-           && echo "${FFMPEG_SHA256}  /tmp/ffmpeg.tar.xz" | sha256sum -c -; then \
-            echo "ffmpeg 归档校验通过（第 ${try} 次尝试）"; \
-            break; \
-        fi; \
-        if [ "$try" -ge 3 ]; then \
-            echo "ffmpeg 归档下载或校验连续失败 ${try} 次，放弃" >&2; \
-            exit 1; \
-        fi; \
-        echo "第 ${try} 次下载/校验失败，重试..." >&2; \
-        sleep 3; \
-    done; \
+    if [ -f /tmp/build-cache/ffmpeg-release-amd64-static.tar.xz ]; then \
+        echo "使用构建上下文内预取的 ffmpeg 归档"; \
+        cp /tmp/build-cache/ffmpeg-release-amd64-static.tar.xz /tmp/ffmpeg.tar.xz; \
+        [ "$(stat -c %s /tmp/ffmpeg.tar.xz)" = "$FFMPEG_EXPECTED_BYTES" ] \
+            || { echo "预取归档长度不符：$(stat -c %s /tmp/ffmpeg.tar.xz)" >&2; exit 1; }; \
+        echo "${FFMPEG_SHA256}  /tmp/ffmpeg.tar.xz" | sha256sum -c -; \
+    else \
+        echo "构建上下文无预取归档，回退到就地下载"; \
+        try=0; \
+        while :; do \
+            try=$((try + 1)); \
+            rm -f /tmp/ffmpeg.tar.xz; \
+            if curl -fsSL --retry 3 --retry-delay 5 \
+                    --speed-limit 51200 --speed-time 60 --connect-timeout 30 --max-time 900 \
+                    -o /tmp/ffmpeg.tar.xz "$FFMPEG_URL" \
+               && [ "$(stat -c %s /tmp/ffmpeg.tar.xz)" = "$FFMPEG_EXPECTED_BYTES" ] \
+               && echo "${FFMPEG_SHA256}  /tmp/ffmpeg.tar.xz" | sha256sum -c -; then \
+                echo "ffmpeg 归档校验通过（第 ${try} 次尝试）"; \
+                break; \
+            fi; \
+            if [ "$try" -ge 5 ]; then \
+                echo "ffmpeg 归档下载或校验连续失败 ${try} 次，放弃" >&2; \
+                exit 1; \
+            fi; \
+            echo "第 ${try} 次下载/校验失败，重试..." >&2; \
+            sleep 15; \
+        done; \
+    fi; \
     mkdir -p /opt/ffmpeg; \
     tar -xJf /tmp/ffmpeg.tar.xz -C /opt/ffmpeg --strip-components=1 \
         --wildcards '*/ffmpeg' '*/ffprobe' '*/GPLv3.txt'; \
