@@ -92,6 +92,16 @@ public class VideoTaskOrchestrator {
     private final long minFreeVramMb;
 
     /**
+     * 显存闸门的轮询次数与间隔。
+     *
+     * <p>{@code /free} 的释放是异步的：立刻读只涨 2 GB，过一会儿才涨到 80 GB。
+     * 所以低于闸门时要等一会儿再读，不能读一次就判定节点不可用。</p>
+     */
+    private final int vramGateAttempts;
+
+    private final long vramGateWaitMillis;
+
+    /**
      * 从池中借一台工作节点的最长等待时间。
      */
     private final Duration workerAcquireTimeout;
@@ -183,6 +193,30 @@ public class VideoTaskOrchestrator {
                                  ComfyWorkerPool workerPool,
                                  long minFreeVramMb,
                                  Duration workerAcquireTimeout) {
+        this(registry, preparer, comfyClient, repository, assetStorage, mapper, pollBudget, pollInterval,
+            idGenerator, mediaProbe, freeBeforeSubmit, workerPool, minFreeVramMb, workerAcquireTimeout,
+            5, 3_000L);
+    }
+
+    /**
+     * 完整构造器（含显存闸门轮询参数，测试里把等待设为 0 以免拖慢用例）。
+     */
+    public VideoTaskOrchestrator(WorkflowContractRegistry registry,
+                                 H3TemplatePreparer preparer,
+                                 ComfyClient comfyClient,
+                                 VideoTaskRepository repository,
+                                 AssetStorage assetStorage,
+                                 ObjectMapper mapper,
+                                 Duration pollBudget,
+                                 Duration pollInterval,
+                                 java.util.function.Supplier<Long> idGenerator,
+                                 MediaProbe mediaProbe,
+                                 boolean freeBeforeSubmit,
+                                 ComfyWorkerPool workerPool,
+                                 long minFreeVramMb,
+                                 Duration workerAcquireTimeout,
+                                 int vramGateAttempts,
+                                 long vramGateWaitMillis) {
         this.freeBeforeSubmit = freeBeforeSubmit;
         this.registry = registry;
         this.preparer = preparer;
@@ -198,6 +232,8 @@ public class VideoTaskOrchestrator {
         this.minFreeVramMb = minFreeVramMb;
         this.workerAcquireTimeout = workerAcquireTimeout == null
             ? Duration.ofMinutes(30) : workerAcquireTimeout;
+        this.vramGateAttempts = Math.max(1, vramGateAttempts);
+        this.vramGateWaitMillis = Math.max(0L, vramGateWaitMillis);
     }
 
     /**
@@ -329,6 +365,16 @@ public class VideoTaskOrchestrator {
     /**
      * 显存闸门：借到节点后、提交前确认真有空闲显存。
      *
+     * <p><b>为什么要轮询，而不是读一次。</b>实测证据：对 8188 调 {@code /free} 之后立刻读
+     * {@code /system_stats}，空闲显存只从 9,868 MiB 涨到 12,189 MiB；几分钟后再读是
+     * 80,566 MiB——释放是异步的（cudaMallocAsync 的内存池要过一会儿才还给驱动）。
+     * 只读一次就会把一张完全健康的卡（自带缓存 70 GB，可随时释放）误判成「被别的进程占用」，
+     * 结果是双卡退化成单卡甚至任务直接失败。</p>
+     *
+     * <p>因此：读数不足时先请它 {@code /free} 释放缓存，然后在等待窗口内反复读——
+     * 是 ComfyUI 自己的缓存就会涨回去；是外部进程占着（例如 vLLM）就一直上不去，
+     * 那时才把节点打入冷却并换卡。</p>
+     *
      * @throws WorkerRefusedException 该节点显存不足（调用方应换一台重试）。
      */
     private void assertVramAvailable(ComfyClient client, ComfyWorkerPool.Lease lease) {
@@ -344,11 +390,37 @@ public class VideoTaskOrchestrator {
             log.info("任务开工前显存检查通过：空闲 {} MiB ≥ 闸门 {} MiB", freeMb, minFreeVramMb);
             return;
         }
-        String detail = "GPU 空闲显存仅 " + freeMb + " MiB，低于本次生成所需的 " + minFreeVramMb + " MiB";
+
+        // 低于闸门：先请节点释放模型缓存，再在窗口内轮询。
+        long before = freeMb;
+        client.freeMemory();
+        for (int attempt = 1; attempt <= vramGateAttempts && freeMb < minFreeVramMb; attempt++) {
+            sleepQuietly(vramGateWaitMillis);
+            freeMb = client.freeVramMb();
+        }
+        if (freeMb >= minFreeVramMb) {
+            log.info("释放缓存后显存检查通过：{} MiB → {} MiB（闸门 {} MiB）", before, freeMb, minFreeVramMb);
+            return;
+        }
+
+        String detail = "GPU 空闲显存仅 " + freeMb + " MiB（已请求释放缓存，"
+            + vramGateAttempts * vramGateWaitMillis / 1000 + " 秒内未回升），低于本次生成所需的 "
+            + minFreeVramMb + " MiB";
         if (lease != null) {
             workerPool.markUnavailable(lease.name(), detail);
         }
         throw new WorkerRefusedException(lease == null ? "default" : lease.name(), detail);
+    }
+
+    private void sleepQuietly(long millis) {
+        if (millis <= 0) {
+            return;
+        }
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     /**
