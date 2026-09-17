@@ -201,7 +201,7 @@ public class VideoTaskOrchestrator {
         appendEvent(context, "SUBMITTED", "已提交 ComfyUI");
 
         ComfyOutput output = awaitOutput(promptId, context);
-        long maxDurationMillis = (version.maxDurationSeconds() == null ? 5 : version.maxDurationSeconds()) * 1000L;
+        long maxDurationMillis = resolveDurationCapMillis(context.durationLabel(), version);
 
         byte[] content = comfyClient.fetchOutput(output);
         String storageKey = assetStorage.storeOutput(context.tenantId(), context.userId(),
@@ -284,6 +284,26 @@ public class VideoTaskOrchestrator {
             + guessExtension(asset.contentType(), asset.originalName());
         return comfyClient.uploadImage(targetName, content,
             asset.contentType() == null ? "image/png" : asset.contentType());
+    }
+
+    /**
+     * 计算成片时长上限（毫秒）。
+     *
+     * <p>契约的 {@code maxDurationSeconds} 是「这一代工作流允许的最长时长」，
+     * 而不是「本次任务的目标时长」——模板固定产出 124 帧@24fps = 5.167 秒，
+     * 所以原先一律截断到 5 秒是对的；但开放 10/20 秒档位后，若仍用契约上限截断，
+     * 长时长成片会被误截回 5 秒。</p>
+     *
+     * <p>因此取「任务请求时长」与「契约上限」的较小值：请求 20 秒而契约只允许 5 秒时
+     * 仍以 5 秒为准（校验层本应拦住这种提交，这里是纵深防御）。</p>
+     */
+    public long resolveDurationCapMillis(String durationLabel, WorkflowVersion version) {
+        long contractCap = (version.maxDurationSeconds() == null ? 5 : version.maxDurationSeconds()) * 1000L;
+        int requested = H3TemplatePreparer.parseDurationSeconds(durationLabel);
+        if (requested <= 0) {
+            return contractCap;
+        }
+        return Math.min(contractCap, requested * 1000L);
     }
 
     private ComfyOutput awaitOutput(String promptId, TaskContext context) {

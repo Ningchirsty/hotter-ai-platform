@@ -539,6 +539,18 @@ const uploadAssetIds = reactive<Partial<Record<FieldKey, Array<number | string>>
  */
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 const ALLOWED_UPLOAD_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+
+/**
+ * 时长兜底矩阵：仅在后端未下发 `supportedDurationsByTier` 时使用。
+ *
+ * 取值与后端 `VideoTierResolutions.defaultDurations()` 保持一致；
+ * 正常情况下以服务端为准，避免前端与后端各写一份而漂移。
+ */
+const FALLBACK_DURATIONS: Record<string, string[]> = {
+  '高清 · 1080P': ['5 秒'],
+  '流畅 · 720P': ['5 秒', '10 秒'],
+  '标清 · 480P': ['5 秒', '10 秒', '20 秒']
+};
 const uploading = ref(false);
 const submitting = ref(false);
 const loadingTasks = ref(false);
@@ -748,14 +760,11 @@ function isRequired(field: FieldKey) {
 
 function optionsFor(field: FieldKey) {
   if (field !== 'dur') return fieldOptions[field] ?? [];
-  switch (values.tier) {
-    case '标清 · 480P':
-      return ['5 秒', '10 秒', '20 秒'];
-    case '流畅 · 720P':
-      return ['5 秒', '10 秒'];
-    default:
-      return ['5 秒'];
-  }
+  // 时长选项以服务端为准：长时长只在低分辨率档位开放（H3 帧数随时长线性增长、
+  // 显存与耗时显著上升）。服务端未下发时退回内置兜底值，保证旧后端仍可用。
+  const fromServer = currentWorkflow.value?.supportedDurationsByTier?.[values.tier ?? ''];
+  if (Array.isArray(fromServer) && fromServer.length) return fromServer;
+  return FALLBACK_DURATIONS[values.tier ?? ''] ?? ['5 秒'];
 }
 
 function selectChoice(field: FieldKey, value: string) {

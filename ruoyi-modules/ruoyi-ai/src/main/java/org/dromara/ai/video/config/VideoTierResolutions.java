@@ -62,6 +62,16 @@ public class VideoTierResolutions {
     private Map<String, Resolution> tiers = defaultTiers();
 
     /**
+     * 各档位允许的时长档位。
+     *
+     * <p>为什么按时长做约束、而不是给所有档位开放全部时长：H3 的帧数必须落在
+     * {@code 17k+5} 网格上，时长翻倍意味着帧数翻倍，显存与耗时显著上升。
+     * 实测 1080P 5 秒（124 帧）需约 11.5 分钟，20 秒是 481 帧（约 4 倍帧数）。
+     * 因此按档位分别声明，只开放实测可行的组合。</p>
+     */
+    private Map<String, java.util.List<String>> durations = defaultDurations();
+
+    /**
      * 默认档位表。
      *
      * <p>1080P 与原模板完全一致（1920×1088 → 1920×1080），保证已上线行为不变。</p>
@@ -72,6 +82,37 @@ public class VideoTierResolutions {
         map.put(TIER_720P, new Resolution(1280, 736, 1280, 720, 1280));
         map.put(TIER_480P, new Resolution(864, 480, 864, 480, 864));
         return map;
+    }
+
+    /**
+     * 默认时长矩阵，与前端 {@code optionsFor()} 的档位联动保持一致。
+     *
+     * <p>1080P 只给 5 秒：该档位帧数最多、耗时最长，放开长时长会让单次任务长时间占用 GPU。</p>
+     */
+    public static Map<String, java.util.List<String>> defaultDurations() {
+        Map<String, java.util.List<String>> map = new LinkedHashMap<>();
+        map.put(TIER_1080P, java.util.List.of("5 秒"));
+        map.put(TIER_720P, java.util.List.of("5 秒", "10 秒"));
+        map.put(TIER_480P, java.util.List.of("5 秒", "10 秒", "20 秒"));
+        return map;
+    }
+
+    /**
+     * 取某档位允许的时长档位；未知档位返回空列表。
+     */
+    public java.util.List<String> durationsOf(String tier) {
+        if (tier == null || durations == null) {
+            return java.util.List.of();
+        }
+        java.util.List<String> list = durations.get(tier);
+        return list == null ? java.util.List.of() : java.util.Collections.unmodifiableList(list);
+    }
+
+    /**
+     * 某「档位 + 时长」组合是否被允许。
+     */
+    public boolean supports(String tier, String duration) {
+        return duration != null && durationsOf(tier).contains(duration);
     }
 
     /**

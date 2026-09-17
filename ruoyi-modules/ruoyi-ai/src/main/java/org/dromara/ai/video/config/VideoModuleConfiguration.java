@@ -190,7 +190,8 @@ public class VideoModuleConfiguration {
 
     @Bean
     public H3TemplatePreparer h3TemplatePreparer(ObjectMapper mapper, VideoProperties properties) {
-        log.info("输出档位分辨率：{}", properties.getTierResolutions().tierNames());
+        log.info("输出档位分辨率：{}，时长矩阵：{}", properties.getTierResolutions().tierNames(),
+            properties.getTierResolutions().getDurations());
         return new H3TemplatePreparer(mapper, properties.getTierResolutions());
     }
 

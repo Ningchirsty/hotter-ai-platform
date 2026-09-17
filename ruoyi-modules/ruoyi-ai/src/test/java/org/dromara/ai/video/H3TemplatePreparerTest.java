@@ -472,6 +472,112 @@ class H3TemplatePreparerTest {
         }
     }
 
+    @Test
+    @DisplayName("时长：17k+5 网格换算（5→124 / 10→243 / 20→481）")
+    void frameGridFollowsMiniMaxRule() {
+        assertEquals(124, H3TemplatePreparer.framesOfSeconds(5));
+        assertEquals(243, H3TemplatePreparer.framesOfSeconds(10));
+        assertEquals(481, H3TemplatePreparer.framesOfSeconds(20));
+        for (int sec : new int[] {5, 10, 20}) {
+            int f = H3TemplatePreparer.framesOfSeconds(sec);
+            assertEquals(5, f % 17, sec + " 秒的帧数应满足 n % 17 == 5");
+            assertTrue(f >= sec * 24, sec + " 秒的帧数不应少于 24fps × 秒数");
+        }
+    }
+
+    @Test
+    @DisplayName("时长：解析「N 秒」文案")
+    void parsesDurationLabel() {
+        assertEquals(5, H3TemplatePreparer.parseDurationSeconds("5 秒"));
+        assertEquals(10, H3TemplatePreparer.parseDurationSeconds("10 秒"));
+        assertEquals(20, H3TemplatePreparer.parseDurationSeconds("20 秒"));
+        assertEquals(0, H3TemplatePreparer.parseDurationSeconds(""));
+        assertEquals(0, H3TemplatePreparer.parseDurationSeconds(null));
+    }
+
+    @Test
+    @DisplayName("时长：10/20 秒必须同步改写节点与 timeline 的全部帧数路径")
+    void prepareAppliesDurationToAllFramePaths() throws Exception {
+        // 需同时改 7 处；漏一处就会出现「节点让生成 N 帧、时间线只导出 M 帧」。
+        for (int sec : new int[] {10, 20}) {
+            int frames = H3TemplatePreparer.framesOfSeconds(sec);
+            String label = sec + " 秒";
+            for (String code : List.of("wf-t2v-h3", "wf-i2v-h3", "wf-fl2v-h3")) {
+                ObjectNode graph = prepareWithDuration(code, "标清 · 480P", label);
+                ObjectNode inputs = (ObjectNode) graph.get(H3TemplatePreparer.DIRECTOR_NODE_ID).get("inputs");
+                ObjectNode tl = (ObjectNode) MAPPER.readTree(inputs.path("timeline_data").asText(""));
+                String where = code + " " + label;
+
+                assertEquals(frames, inputs.path("total_frames").asInt(), where + " 节点 total_frames");
+                assertEquals(frames, tl.path("totalFrames").asInt(), where + " timeline.totalFrames");
+                assertEquals(sec, tl.path("durationSec").asInt(), where + " timeline.durationSec");
+                assertEquals(frames, tl.path("gen").path("defaultFrameCount").asInt(),
+                    where + " gen.defaultFrameCount");
+                JsonNode seg = tl.path("segments").path(0);
+                assertEquals(frames, seg.path("length").asInt(), where + " segment.length");
+                assertEquals(frames, seg.path("frameCount").asInt(), where + " segment.frameCount");
+                assertEquals(sec, seg.path("durationSec").asInt(), where + " segment.durationSec");
+                assertEquals(sec, tl.path("shots").path(0).path("durationSec").asInt(),
+                    where + " shot.durationSec");
+                // 关键帧按段均分：fl2v 有首尾两帧，各占一半。
+                JsonNode keyframes = tl.path("keyframes");
+                if (keyframes.size() > 0) {
+                    int per = Math.max(1, frames / keyframes.size());
+                    for (JsonNode kf : keyframes) {
+                        assertEquals(per, kf.path("length").asInt(), where + " keyframe.length");
+                        assertEquals(per, kf.path("frameCount").asInt(), where + " keyframe.frameCount");
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("时长：1080P 只允许 5 秒；720P 到 10 秒；480P 到 20 秒")
+    void durationMatrixPerTier() {
+        var tiers = new org.dromara.ai.video.config.VideoTierResolutions();
+        assertEquals(List.of("5 秒"), tiers.durationsOf("高清 · 1080P"));
+        assertEquals(List.of("5 秒", "10 秒"), tiers.durationsOf("流畅 · 720P"));
+        assertEquals(List.of("5 秒", "10 秒", "20 秒"), tiers.durationsOf("标清 · 480P"));
+        assertTrue(tiers.supports("标清 · 480P", "20 秒"));
+        assertFalse(tiers.supports("高清 · 1080P", "10 秒"), "1080P 不应开放 10 秒");
+        assertFalse(tiers.supports("流畅 · 720P", "20 秒"), "720P 不应开放 20 秒");
+        assertFalse(tiers.supports("标清 · 480P", "30 秒"), "未声明的时长必须被拒绝");
+    }
+
+    @Test
+    @DisplayName("时长：超出档位允许范围必须在入库前被拒绝")
+    void rejectsDurationNotAllowedForTier() {
+        WorkflowVersion version = versionOf("wf-t2v-h3");
+        for (String[] bad : List.of(new String[] {"高清 · 1080P", "10 秒"},
+            new String[] {"流畅 · 720P", "20 秒"}, new String[] {"标清 · 480P", "30 秒"})) {
+            H3TemplatePreparer.H3Fields f = new H3TemplatePreparer.H3Fields(
+                "提示词", null, null, null, bad[0], bad[1]);
+            VideoTaskException e = assertThrows(VideoTaskException.class,
+                () -> preparer.validateFields(VideoCapability.T2V, version, f),
+                bad[0] + " + " + bad[1] + " 必须被拒绝");
+            assertTrue(e.getMessage().contains("只支持时长"), "报错应说明允许的时长：" + e.getMessage());
+        }
+        for (String[] ok : List.of(new String[] {"高清 · 1080P", "5 秒"},
+            new String[] {"流畅 · 720P", "10 秒"}, new String[] {"标清 · 480P", "20 秒"})) {
+            preparer.validateFields(VideoCapability.T2V, version,
+                new H3TemplatePreparer.H3Fields("提示词", null, null, null, ok[0], ok[1]));
+        }
+    }
+
+    /**
+     * 按「档位 + 时长」准备节点图（I2V/FL2V 补占位素材以通过校验）。
+     */
+    private ObjectNode prepareWithDuration(String code, String tier, String duration) throws Exception {
+        WorkflowVersion version = versionOf(code);
+        VideoCapability capability = VideoCapability.parse(version.capabilityCode());
+        String image = capability == VideoCapability.I2V ? "first.png" : null;
+        String first = capability == VideoCapability.FL2V ? "first.png" : null;
+        String last = capability == VideoCapability.FL2V ? "last.png" : null;
+        return preparer.prepare(registry.templateOf(code), capability, version,
+            new H3TemplatePreparer.H3Fields("测试提示词", image, first, last, tier, duration));
+    }
+
     private static WorkflowVersion readVersionFromContract(String code) {
         try {
             JsonNode root = MAPPER.readTree(Files.readString(

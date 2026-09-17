@@ -211,6 +211,7 @@ public final class H3TemplatePreparer {
         // 而 timeline 里的 width/height/output 仍是模板原值——两者不一致会让
         // i2v/fl2v（读 timeline.output）与 t2v（读节点 5）走出不同的分辨率。
         applyResolution(graph, inputs, timeline, fields.tier());
+        applyDuration(inputs, timeline, fields.durationLabel());
 
         // 确保时间轴落回节点，避免仅改 global_prompt 而分镜提示词为空。
         if (!inputs.has("timeline_data")) {
@@ -278,6 +279,117 @@ public final class H3TemplatePreparer {
     }
 
     /**
+     * 把「5 秒 / 10 秒 / 20 秒」解析成秒数。
+     *
+     * @return 无法解析时返回 0
+     */
+    public static int parseDurationSeconds(String label) {
+        if (label == null) {
+            return 0;
+        }
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\d+)").matcher(label);
+        return m.find() ? Integer.parseInt(m.group(1)) : 0;
+    }
+
+    /**
+     * 按 MiniMax H3 的 {@code 17k+5} 网格计算帧数。
+     *
+     * <p>节点源码 {@code minimax_align_frame_count} 会把帧数向上取整到满足
+     * {@code n % 17 == 5}（最小 5）。实测对应：5 秒→124、10 秒→243、20 秒→481 帧。
+     * 网格只会略增帧数，成片最终仍由 ffmpeg 精确截断到目标秒数。</p>
+     */
+    public static int framesOfSeconds(int seconds) {
+        int n = Math.max(5, seconds * 24);
+        while (n % 17 != 5) {
+            n++;
+        }
+        return n;
+    }
+
+    /**
+     * 按时长档位改写模板中的帧数。
+     *
+     * <p>时长不是「一个参数」：帧数散落在节点与 timeline 的多处，必须一起改，
+     * 否则会出现「节点让生成 243 帧、时间线只导出 124 帧」这类不一致。
+     * 需要同步的字段：</p>
+     *
+     * <ol>
+     *   <li>节点 5 {@code total_frames}；</li>
+     *   <li>timeline {@code totalFrames} / {@code durationSec}；</li>
+     *   <li>timeline {@code gen.defaultFrameCount}；</li>
+     *   <li>timeline {@code video.sourceFrameCount}（i2v 模板没有该字段，故先判断存在性）；</li>
+     *   <li>{@code segments[].length/frameCount/durationSec}（单段覆盖整片）；</li>
+     *   <li>{@code keyframes[].length}——fl2v 的首/尾关键帧各占一半，
+     *       因此取帧数的一半；不这样处理会让尾帧落在错误的时间点；</li>
+     *   <li>{@code shots[].durationSec}。</li>
+     * </ol>
+     *
+     * <p>帧数按 {@code 17k+5} 网格取整，成片仍由 ffmpeg 按帧精确截断到目标秒数
+     * （实测 5 秒→124 帧 5.167s 截断为 5.000s）。</p>
+     */
+    void applyDuration(ObjectNode inputs, ObjectNode timeline, String durationLabel) {
+        int seconds = parseDurationSeconds(durationLabel);
+        if (seconds <= 0) {
+            return;
+        }
+        int frames = framesOfSeconds(seconds);
+        inputs.put("total_frames", frames);
+        timeline.put("totalFrames", frames);
+        timeline.put("durationSec", seconds);
+
+        JsonNode genNode = timeline.get("gen");
+        if (genNode != null && genNode.isObject()) {
+            ((ObjectNode) genNode).put("defaultFrameCount", frames);
+        }
+        JsonNode videoNode = timeline.get("video");
+        if (videoNode != null && videoNode.isObject() && videoNode.has("sourceFrameCount")) {
+            ((ObjectNode) videoNode).put("sourceFrameCount", frames);
+        }
+        setListFrames(timeline.get("segments"), frames, seconds, false);
+        // 首/尾关键帧各占一半时长，否则尾帧会落在错误的时间点。
+        setListFrames(timeline.get("keyframes"), frames, seconds, true);
+        setShotsDuration(timeline.get("shots"), seconds);
+    }
+
+    private void setListFrames(JsonNode listNode, int frames, int seconds, boolean half) {
+        if (listNode == null || !listNode.isArray()) {
+            return;
+        }
+        int count = listNode.size();
+        if (count == 0) {
+            return;
+        }
+        // 关键帧按段均分（fl2v 为 2 个，各占一半）；其余列表按整片时长处理。
+        int per = half ? Math.max(1, frames / count) : frames;
+        for (JsonNode item : listNode) {
+            if (!item.isObject()) {
+                continue;
+            }
+            ObjectNode node = (ObjectNode) item;
+            if (node.has("length")) {
+                node.put("length", per);
+            }
+            if (node.has("frameCount")) {
+                node.put("frameCount", per);
+            }
+            if (node.has("durationSec")) {
+                node.put("durationSec", seconds);
+            }
+        }
+    }
+
+    private void setShotsDuration(JsonNode shotsNode, int seconds) {
+        if (shotsNode == null || !shotsNode.isArray()) {
+            return;
+        }
+        for (JsonNode item : shotsNode) {
+            if (item.isObject()) {
+                ((ObjectNode) item).put("durationSec", seconds);
+            }
+        }
+    }
+
+    /**
      * 校验字段与固定档位、必需素材与提示词。
      *
      * <p>必须在任务入库<b>之前</b>调用；否则会产生不可执行的任务记录。</p>
@@ -290,7 +402,15 @@ public final class H3TemplatePreparer {
                 throw VideoTaskException.invalidContract(
                     "输出档位只支持 " + String.join(" / ", allowedTiers));
             }
-            if (fixed.dur() != null && !fixed.dur().equals(fields.durationLabel())) {
+            // 时长与档位互相约束（长时长只在低分辨率档位开放），因此按「档位 + 时长」组合校验。
+            // 配置了档位表时以它为准；未配置时退回契约的单一 dur，保持向后兼容。
+            if (tierResolutions != null) {
+                java.util.List<String> allowedDurations = tierResolutions.durationsOf(fields.tier());
+                if (!allowedDurations.isEmpty() && !allowedDurations.contains(fields.durationLabel())) {
+                    throw VideoTaskException.invalidContract(
+                        fields.tier() + " 只支持时长 " + String.join(" / ", allowedDurations));
+                }
+            } else if (fixed.dur() != null && !fixed.dur().equals(fields.durationLabel())) {
                 throw VideoTaskException.invalidContract(
                     "视频时长只支持 " + fixed.dur());
             }

@@ -97,7 +97,7 @@
             "multiple": false,
             "coverRule": "first frame",
             "maxSizeMB": "TBD",
-            "maxDurationSeconds": 5,
+            "maxDurationSeconds": 20,
             "durationCapStatus": "PENDING_RUNTIME_VALIDATION"
           },
           "perf": {
@@ -519,7 +519,7 @@
             "multiple": false,
             "coverRule": "first frame",
             "maxSizeMB": "TBD",
-            "maxDurationSeconds": 5,
+            "maxDurationSeconds": 20,
             "durationCapStatus": "PENDING_RUNTIME_VALIDATION"
           },
           "perf": {
@@ -617,7 +617,7 @@
             "multiple": false,
             "coverRule": "first frame",
             "maxSizeMB": "TBD",
-            "maxDurationSeconds": 5,
+            "maxDurationSeconds": 20,
             "durationCapStatus": "PENDING_RUNTIME_VALIDATION"
           },
           "perf": {

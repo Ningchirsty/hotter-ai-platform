@@ -35,6 +35,13 @@ export interface VideoWorkflowVO {
    * 空数组时退化为只用 `supportedTier` 单一档位，保证旧后端兼容。
    */
   supportedTiers?: string[] | null;
+  /**
+   * 各档位允许的时长，形如 `{ '标清 · 480P': ['5 秒','10 秒','20 秒'] }`。
+   *
+   * 时长与档位互相约束：H3 的帧数随时长线性增长，显存与耗时显著上升，
+   * 因此长时长只在低分辨率档位开放。取不到时前端退回内置兜底值。
+   */
+  supportedDurationsByTier?: Record<string, string[]> | null;
   supportedDuration?: string | null;
   maxDurationSeconds?: number | null;
 }
