@@ -438,6 +438,13 @@
                 <version>${revision}</version>
             </dependency>
 
+            <!-- 集团人才库模块 -->
+            <dependency>
+                <groupId>org.dromara</groupId>
+                <artifactId>ruoyi-talent</artifactId>
+                <version>${revision}</version>
+            </dependency>
+
             <!-- demo模块 -->
             <dependency>
                 <groupId>org.dromara</groupId>

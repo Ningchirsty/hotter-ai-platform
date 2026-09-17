@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.dromara.talent.mapper.TlTalentAccessGrantMapper">
+
+    <!-- 授权记录查询列 -->
+    <sql id="grantColumns">
+        g.grant_id,
+        g.talent_id,
+        g.grantee_type,
+        g.grantee_id,
+        g.permission,
+        g.start_time,
+        g.end_time,
+        g.grant_by,
+        g.grant_time,
+        g.reason,
+        g.status,
+        g.del_flag,
+        g.create_dept,
+        g.create_by,
+        g.create_time,
+        g.update_by,
+        g.update_time
+    </sql>
+
+    <!--
+      查询当前生效的单条授权。
+      grantee_type='USER' 时 grantee_id 为 sys_user.user_id；
+      grantee_type='ROLE' 时 grantee_id 为 sys_role.role_id，需 join sys_role 按 role_key 匹配登录用户角色。
+    -->
+    <select id="selectActiveGrants" resultType="org.dromara.talent.domain.TlTalentAccessGrant">
+        select
+        <include refid="grantColumns"/>
+        from tl_talent_access_grant g
+        where g.del_flag = '0'
+        and g.talent_id = #{talentId}
+        and g.status = '0'
+        and (g.start_time is null or g.start_time &lt;= now())
+        and (g.end_time is null or g.end_time &gt;= now())
+        <choose>
+            <when test="(userId != null) or (roleKeys != null and roleKeys.size() > 0)">
+                and (
+                <trim prefixOverrides="or ">
+                    <if test="userId != null">
+                        (g.grantee_type = 'USER' and g.grantee_id = #{userId})
+                    </if>
+                    <if test="roleKeys != null and roleKeys.size() > 0">
+                        or (g.grantee_type = 'ROLE' and exists (
+                        select 1
+                        from sys_role r
+                        where r.role_id = g.grantee_id
+                        and r.del_flag = '0'
+                        and r.status = '0'
+                        and r.role_key in
+                        <foreach collection="roleKeys" item="roleKey" open="(" separator="," close=")">
+                            #{roleKey}
+                        </foreach>
+                        ))
+                    </if>
+                </trim>
+                )
+            </when>
+            <otherwise>
+                and 1 = 0
+            </otherwise>
+        </choose>
+    </select>
+
+</mapper>

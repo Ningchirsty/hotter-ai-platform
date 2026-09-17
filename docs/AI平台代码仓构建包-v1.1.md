@@ -31,7 +31,7 @@
 深圳品牌、销售、深圳 HR、汕头 HR、后续集团用户
                          │
                          ▼
-          videoai.hotter.cn / talent.hotter.cn / ai.hotter.cn
+          pm.hottter.cn（现有 RuoYi 平台）/ videoai.hottter.cn / ai.hottter.cn
                          │
                          ▼
                   Cloudflare Tunnel
@@ -75,7 +75,8 @@ RuoYi-Vue-Plus v6.0.0
 - ComfyUI、GPU、MySQL、Redis、MinIO 不开放公网。
 - 业务用户不直接访问 ComfyUI，也不能提交原始工作流 JSON。
 - GPU 视频引擎只接受 Ubuntu 平台主机的视频任务服务调用。
-- 人才库与视频业务必须使用独立数据库、独立 MinIO Bucket 和独立权限策略。
+- 人才库与视频业务必须使用独立 MinIO Bucket 前缀和独立权限策略；
+  人才库业务表建在平台库内（复用账号、组织、角色、菜单、数据权限），不新建独立数据库。
 
 ---
 
@@ -83,9 +84,14 @@ RuoYi-Vue-Plus v6.0.0
 
 | 域名 | 前端 | 授权对象 | 后端模块 |
 |---|---|---|---|
-| `videoai.hotter.cn` | AI 视频生产中心 | 深圳品牌、销售、审核员 | `ruoyi-video` |
-| `talent.hotter.cn` | 集团人才库 | 深圳 HR、汕头 HR | `ruoyi-talent` |
-| `ai.hotter.cn` | 知识库、Agent、Skill 中心 | 后续按应用授权 | `ruoyi-knowledge`、`ruoyi-agent`、`ruoyi-skill` |
+| `videoai.hottter.cn` | AI 视频生产中心 | 深圳品牌、销售、审核员 | `ruoyi-video` |
+| `pm.hottter.cn` | 现有 RuoYi 管理后台，人才库是其中的一级业务目录「集团人才库」 | 集团人才库管理员、集团 HR、深圳 HR、汕头 HR、查阅者、审计员 | `ruoyi-talent` |
+| `ai.hottter.cn` | 知识库、Agent、Skill 中心 | 后续按应用授权 | `ruoyi-knowledge`、`ruoyi-agent`、`ruoyi-skill` |
+
+> **集团人才库不设独立子域名、不部署独立前端**：它作为 RuoYi 平台的一级菜单目录挂在现有
+> `pm.hottter.cn` 之下，页面路径形如 `https://pm.hottter.cn/talent/profile`，路由与按钮权限
+> 全部由 RuoYi 菜单管理动态下发（见 `docs/talent/`）。此条为 2026-09 评审确认口径，
+> 取代本文档此前 `talent.hotter.cn` + 独立入口的写法。
 
 登录流程：
 
@@ -262,9 +268,15 @@ GPU 执行器拒绝：未签名请求、过期请求、重复请求、非白名�
 
 ```text
 ruoyi_platform  用户、组织、角色、菜单、日志、通用配置
+                + 集团人才库业务表（tl_talent / tl_talent_attachment / tl_talent_contact /
+                  tl_talent_duplicate / tl_talent_access_grant / tl_parse_task /
+                  tl_parse_field / tl_export_task / tl_sensitive_audit）
 ruoyi_video     视频模板、任务、审核、执行日志
-ruoyi_talent    人才档案、岗位、技能、培训、盘点
 ```
+
+> 人才库**不新建独立数据库**：它与平台共用 `ruoyi_platform`，以 `tl_` 前缀区分业务表，
+> 从而直接复用账号、组织、角色、菜单与数据权限。详见 `script/sql/ry_talent.sql`
+> 与 `docs/talent/`。
 
 ### MinIO
 
@@ -278,7 +290,9 @@ talent-export
 platform-backup
 ```
 
-人才库使用独立数据库账号、独立 Bucket、独立访问策略和导出审计。视频模块、品牌用户、销售用户及通用 Agent 默认无权访问人才数据。
+人才库使用独立 Bucket（或 `talent-private/` 对象键前缀）、独立访问策略和导出审计，
+所有人才附件均以私有对象存储，下载只经人才库受控接口，不下发预签名 URL。
+视频模块、品牌用户、销售用户及通用 Agent 默认无权访问人才数据。
 
 建议留存策略：
 
