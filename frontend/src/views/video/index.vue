@@ -375,8 +375,21 @@
       <div v-else-if="filteredTasks.length" class="task-list">
         <article v-for="task in filteredTasks" :key="task.id" class="task-card">
           <div :class="['task-cover', taskStatusClass(task.status)]">
-            <el-icon><VideoCamera /></el-icon>
-            <span>{{ task.tier.replace(' · ', ' ') }}</span>
+            <!--
+              成片封面：成功任务的输出素材首帧。
+              图片与视频都用 <img> 显示（mp4 的首帧大多数浏览器可直接渲染），
+              取不到时回退成原来的图标，避免空白。
+            -->
+            <img
+              v-if="coverFor(task)"
+              class="task-cover-img"
+              :src="coverFor(task)"
+              :alt="task.taskName || task.taskNo"
+            />
+            <template v-else>
+              <el-icon><VideoCamera /></el-icon>
+              <span>{{ task.tier.replace(' · ', ' ') }}</span>
+            </template>
           </div>
           <div class="task-main">
             <div class="task-title-row">
@@ -391,8 +404,13 @@
             <small v-if="task.errorMessage" class="task-error">{{ task.errorMessage }}</small>
           </div>
           <div class="task-actions">
-            <button type="button" title="查看任务" aria-label="查看任务" @click="previewTask(task)">
-              <el-icon><View /></el-icon>
+            <button
+              type="button"
+              :title="task.status === 'SUCCEEDED' ? '预览成片' : '查看任务'"
+              :aria-label="task.status === 'SUCCEEDED' ? '预览成片' : '查看任务'"
+              @click="previewTask(task)"
+            >
+              <el-icon><component :is="task.status === 'SUCCEEDED' ? VideoPlay : View" /></el-icon>
             </button>
             <button
               v-if="task.status === 'QUEUED'"
@@ -438,8 +456,17 @@
       <div v-else-if="assets.length" class="asset-grid">
         <article v-for="asset in assets" :key="asset.id" class="asset-card">
           <div :class="['asset-preview', assetKind(asset)]">
-            <el-icon><component :is="assetIcon(assetKind(asset))" /></el-icon>
-            <span>{{ assetKindLabel(asset) }}</span>
+            <!-- 真实缩略图；取不到时回退成图标，不让卡片出现空白 -->
+            <img
+              v-if="imageFor(asset)"
+              class="asset-thumb"
+              :src="imageFor(asset)"
+              :alt="asset.originalName || ''"
+            />
+            <template v-else>
+              <el-icon><component :is="assetIcon(assetKind(asset))" /></el-icon>
+              <span>{{ assetKindLabel(asset) }}</span>
+            </template>
           </div>
           <div class="asset-info">
             <b>{{ asset.originalName || '素材 ' + asset.id }}</b>
@@ -456,6 +483,58 @@
         <span>添加图片后，即可在创建任务时使用。</span>
       </div>
     </section>
+
+    <!--
+      成片预览弹窗。
+      能真正播放的依据是后端 /video/assets/{id}/content：它按属主校验后才返回内容。
+      这里用带鉴权取回的 blob URL 交给 <video>，因为 <video src> 不会携带 Authorization 头。
+    -->
+    <el-dialog
+      v-model="previewVisible"
+      :title="previewTarget?.taskName || previewTarget?.taskNo || '成片预览'"
+      width="min(920px, 92vw)"
+      top="6vh"
+      destroy-on-close
+      @closed="closePreview"
+    >
+      <div class="preview-body">
+        <div v-if="previewLoading" class="empty-state">
+          <el-icon><VideoPlay /></el-icon>
+          <b>正在加载成片…</b>
+        </div>
+        <div v-else-if="previewError" class="empty-state">
+          <el-icon><Close /></el-icon>
+          <b>{{ previewError }}</b>
+        </div>
+        <video
+          v-else-if="previewUrl"
+          class="preview-video"
+          :src="previewUrl"
+          controls
+          autoplay
+          playsinline
+          preload="metadata"
+        ></video>
+        <div v-else class="empty-state">
+          <el-icon><VideoPlay /></el-icon>
+          <b>该任务暂无成片</b>
+        </div>
+
+        <dl v-if="previewMeta.length" class="preview-meta">
+          <div v-for="row in previewMeta" :key="row.label">
+            <dt>{{ row.label }}</dt>
+            <dd>{{ row.value }}</dd>
+          </div>
+        </dl>
+      </div>
+      <template #footer>
+        <el-button :disabled="!previewUrl" @click="downloadPreview">
+          <el-icon><Download /></el-icon>
+          下载成片
+        </el-button>
+        <el-button type="primary" @click="previewVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -483,12 +562,13 @@ import {
   View
 } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import {
   cancelVideoTask,
   createVideoTask,
   deleteVideoAsset,
   executeVideoTask,
+  fetchVideoAssetBlobUrl,
   getVideoTask,
   listVideoAssets,
   listVideoTasks,
@@ -930,6 +1010,105 @@ function taskStatusClass(status: VideoTaskStatus) {
   return 'failed';
 }
 
+/** 预览弹窗状态。 */
+const previewVisible = ref(false);
+const previewTarget = ref<VideoTaskVO | null>(null);
+const previewUrl = ref('');
+const previewLoading = ref(false);
+const previewError = ref('');
+const previewMeta = ref<Array<{ label: string; value: string }>>([]);
+
+/** 成片封面缓存：assetId -> blob URL，避免同一素材反复请求。 */
+const coverUrls = ref<Record<string, string>>({});
+const coverLoading = new Set<string>();
+
+function coverFor(task: VideoTaskVO) {
+  const id = task.outputAssetId;
+  return id === null || id === undefined ? '' : coverUrls.value[String(id)] ?? '';
+}
+
+/**
+ * 为成功任务加载成片封面。
+ *
+ * <p>按需加载且去重：同一素材只请求一次；失败静默（封面只是锦上添花，
+ * 不该因为取图失败而打扰用户，模板会回退成图标）。</p>
+ */
+async function loadTaskCovers() {
+  for (const task of filteredTasks.value) {
+    if (task.status !== 'SUCCEEDED' || task.outputAssetId === null || task.outputAssetId === undefined) {
+      continue;
+    }
+    const key = String(task.outputAssetId);
+    if (coverUrls.value[key] || coverLoading.has(key)) continue;
+    coverLoading.add(key);
+    try {
+      const url = await fetchVideoAssetBlobUrl(task.outputAssetId);
+      coverUrls.value = { ...coverUrls.value, [key]: url };
+    } catch {
+      // 忽略：封面失败不影响功能
+    } finally {
+      coverLoading.delete(key);
+    }
+  }
+}
+
+watch(filteredTasks, () => void loadTaskCovers());
+
+/** 素材缩略图缓存：assetId -> blob URL。 */
+const imageUrls = ref<Record<string, string>>({});
+const imageLoading = new Set<string>();
+
+function imageFor(asset: VideoAssetVO) {
+  return imageUrls.value[String(asset.id)] ?? '';
+}
+
+/** 为图片类素材加载真实缩略图（视频/音频素材仍用图标，避免拉整段视频）。 */
+async function loadAssetThumbnails() {
+  for (const asset of assets.value) {
+    if (asset.assetType !== 'IMAGE') continue;
+    const key = String(asset.id);
+    if (imageUrls.value[key] || imageLoading.has(key)) continue;
+    imageLoading.add(key);
+    try {
+      const url = await fetchVideoAssetBlobUrl(asset.id);
+      imageUrls.value = { ...imageUrls.value, [key]: url };
+    } catch {
+      // 忽略：缩略图失败不影响素材本身的使用
+    } finally {
+      imageLoading.delete(key);
+    }
+  }
+}
+
+watch(assets, () => void loadAssetThumbnails());
+
+/** 组件卸载时释放所有 blob URL，避免内存泄漏。 */
+onBeforeUnmount(() => {
+  releasePreviewUrl();
+  Object.values(coverUrls.value).forEach(URL.revokeObjectURL);
+  Object.values(imageUrls.value).forEach(URL.revokeObjectURL);
+});
+
+function releasePreviewUrl() {
+  if (previewUrl.value) {
+    URL.revokeObjectURL(previewUrl.value);
+    previewUrl.value = '';
+  }
+}
+
+function closePreview() {
+  releasePreviewUrl();
+  previewTarget.value = null;
+  previewError.value = '';
+  previewMeta.value = [];
+}
+
+/**
+ * 打开成片预览。
+ *
+ * <p>只有 SUCCEEDED 且拿到 outputAssetId 才取内容；其余状态沿用原来的提示，
+ * 不制造「有预览」的假象。</p>
+ */
 async function previewTask(task: VideoTaskVO) {
   try {
     const res = await getVideoTask(task.id);
@@ -942,17 +1121,51 @@ async function previewTask(task: VideoTaskVO) {
       ElMessage.info(detail.errorMessage ?? `任务状态：${taskStatusText(detail.status)}`);
       return;
     }
-    const measured = [
-      detail.outputWidth && detail.outputHeight ? `${detail.outputWidth}×${detail.outputHeight}` : null,
-      detail.outputDurationMs ? `${(detail.outputDurationMs / 1000).toFixed(2)} 秒` : null,
-      detail.truncationApplied ? '已截断至 5 秒' : null
-    ]
-      .filter(Boolean)
-      .join(' · ');
-    ElMessage.success(`成片素材 ${detail.outputAssetId ?? '-'}${measured ? ' · ' + measured : ''}`);
+
+    previewTarget.value = task;
+    previewMeta.value = [
+      detail.outputWidth && detail.outputHeight
+        ? { label: '分辨率', value: `${detail.outputWidth}×${detail.outputHeight}` }
+        : null,
+      detail.outputDurationMs
+        ? { label: '时长', value: `${(detail.outputDurationMs / 1000).toFixed(3)} 秒` }
+        : null,
+      detail.outputFps ? { label: '帧率', value: `${detail.outputFps} fps` } : null,
+      detail.truncationApplied ? { label: '截断', value: '已按目标时长精确截断' } : null
+    ].filter(Boolean) as Array<{ label: string; value: string }>;
+
+    previewVisible.value = true;
+    previewError.value = '';
+    releasePreviewUrl();
+
+    if (detail.outputAssetId === null || detail.outputAssetId === undefined) {
+      // 成功但没有成片素材：如实说明，而不是显示一个空播放器。
+      previewError.value = '该任务没有可预览的成片素材';
+      return;
+    }
+    previewLoading.value = true;
+    try {
+      previewUrl.value = await fetchVideoAssetBlobUrl(detail.outputAssetId);
+    } catch (error) {
+      previewError.value = (await extractErrorMessage(error)) ?? '成片加载失败';
+    } finally {
+      previewLoading.value = false;
+    }
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '读取任务详情失败');
   }
+}
+
+/** 下载当前预览的成片。 */
+function downloadPreview() {
+  if (!previewUrl.value) return;
+  const name = previewTarget.value?.taskNo ? `${previewTarget.value.taskNo}.mp4` : '成片.mp4';
+  const a = document.createElement('a');
+  a.href = previewUrl.value;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 
 async function cancelTask(task: VideoTaskVO) {
@@ -1377,6 +1590,50 @@ button {
 }
 .asset-preview span {
   font-size: 9px;
+}
+/* 素材真实缩略图：填满预览位并保持比例，不拉伸变形 */
+.asset-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 6px;
+}
+/* 任务卡成片封面 */
+.task-cover-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+/* 成片预览弹窗 */
+.preview-body {
+  display: grid;
+  gap: 14px;
+}
+.preview-video {
+  width: 100%;
+  max-height: 62vh;
+  background: #000;
+  border-radius: 8px;
+}
+.preview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin: 0;
+}
+.preview-meta > div {
+  display: grid;
+  gap: 2px;
+}
+.preview-meta dt {
+  color: var(--t2);
+  font-size: 11px;
+}
+.preview-meta dd {
+  margin: 0;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 .asset-info {
   min-width: 0;

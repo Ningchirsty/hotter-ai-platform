@@ -118,3 +118,22 @@ export const cancelVideoTask = (taskId: number | string): AxiosPromise<void> => 
     method: 'post'
   });
 };
+
+/**
+ * 读取素材/成片内容，返回可直接交给 `<img>` / `<video>` 的 blob URL。
+ *
+ * <p>为什么不能直接把接口地址写进 `src`：`<img>` / `<video>` 发出的请求
+ * <b>不会</b>携带 Authorization 头，会被后端鉴权拒绝；而且后端要求按属主校验，
+ * 也不适合用公开直链。因此改为带鉴权取回二进制，再转成 blob URL 交给标签使用。</p>
+ *
+ * <p>调用方必须负责在不再使用时 `URL.revokeObjectURL` 释放，否则会持续占用内存。</p>
+ */
+export const fetchVideoAssetBlobUrl = async (assetId: number | string): Promise<string> => {
+  const res = await request({
+    url: '/video/assets/' + assetId + '/content',
+    method: 'get',
+    responseType: 'blob'
+  });
+  // request 拦截器对 blob 响应原样透传，因此这里拿到的就是 Blob。
+  return URL.createObjectURL(res.data as unknown as Blob);
+};

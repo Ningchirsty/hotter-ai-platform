@@ -178,6 +178,11 @@ service.interceptors.request.use(
 // 响应拦截器
 service.interceptors.response.use(
   (res: any) => {
+    // 二进制响应（图片/视频预览与下载）直接透传。
+    // 否则下面的 `res.data.code` 会读到 undefined，把正常的二进制当成业务失败。
+    if (res.config?.responseType === 'blob' || res.config?.responseType === 'arraybuffer') {
+      return res;
+    }
     if (import.meta.env.VITE_APP_ENCRYPT === 'true') {
       // 加密后的 AES 秘钥
       const keyStr = res.headers[encryptHeader];

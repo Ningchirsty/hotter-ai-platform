@@ -49,6 +49,12 @@ jobs:
         working-directory: frontend
         run: pnpm lint
 
+      # 重复声明守卫。放在 lint 之前：它不依赖 node_modules，几毫秒即可给出
+      # 「同一作用域内声明了两次」这种致命错误（CI 曾报过
+      # `Identifier 'previewTask' has already been declared`：同名的 ref 与函数）。
+      - name: Guard against duplicate top-level declarations
+        run: node script/ci/check-script-setup.mjs $(git ls-files '*.vue')
+
       - name: Build frontend image
         run: |
           docker build --pull \
