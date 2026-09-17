@@ -413,7 +413,11 @@
               {{ moduleName(task.capabilityCode) }} · {{ modelName(task.modelCode) }} ·
               {{ task.durationSeconds }} 秒
             </p>
-            <small>{{ task.taskNo }} · {{ task.createTime || '—' }}</small>
+            <small>
+              {{ task.taskNo }} · {{ task.createTime || '—' }}
+              <!-- 多卡后同一个 prompt 只在提交它的那台 ComfyUI 上可查，排障时要知道去问哪台实例。 -->
+              <span v-if="task.comfyWorker" class="task-worker">GPU {{ task.comfyWorker }}</span>
+            </small>
             <small v-if="task.errorMessage" class="task-error">{{ task.errorMessage }}</small>
           </div>
           <div class="task-actions">
@@ -812,6 +816,14 @@ async function loadTasks() {
   try {
     const res = await listVideoTasks({ pageNum: 1, pageSize: 50 });
     tasks.value = res.data?.rows ?? [];
+    // 页面刷新/重新进来时，之前提交的任务仍在后台跑（执行在服务端，和这个页面无关）。
+    // 必须把它们纳入轮询，否则任务状态和 GPU 队列行会一直停在打开页面那一刻的值——
+    // 用户刷新一次就会看到「明明在生成却显示 0/2、任务一直排队中」。
+    for (const task of tasks.value) {
+      if (!TERMINAL_STATUSES.includes(task.status)) {
+        startTaskPolling(task.id);
+      }
+    }
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '读取任务列表失败');
   } finally {
@@ -1571,6 +1583,14 @@ button {
 }
 .gpu-status-warn {
   color: #e6a23c;
+}
+.task-worker {
+  padding: 1px 5px;
+  margin-left: 6px;
+  color: var(--t2);
+  font-size: 10px;
+  border: 1px solid var(--line2);
+  border-radius: 4px;
 }
 .task-filters button {
   min-height: 32px;
