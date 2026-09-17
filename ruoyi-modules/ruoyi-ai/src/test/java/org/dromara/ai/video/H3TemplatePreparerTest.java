@@ -2,6 +2,7 @@ package org.dromara.ai.video;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dromara.ai.video.domain.VideoCapability;
 import org.dromara.ai.video.domain.WorkflowVersion;
 import org.dromara.ai.video.exception.VideoTaskException;
@@ -17,6 +18,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -48,7 +50,9 @@ class H3TemplatePreparerTest {
             "契约目录必须存在：" + contractRoot);
         registry = new WorkflowContractRegistry(contractRoot, MAPPER);
         registry.load();
-        preparer = new H3TemplatePreparer(MAPPER);
+        // 注入档位表，使 prepare() 会按档位改写模板分辨率（生产同样注入）。
+        preparer = new H3TemplatePreparer(MAPPER,
+            new org.dromara.ai.video.config.VideoTierResolutions());
     }
 
     @Test
@@ -208,17 +212,18 @@ class H3TemplatePreparerTest {
     }
 
     @Test
-    @DisplayName("固定档位校验：720P / 10 秒不得提交")
+    @DisplayName("固定档位校验：未交付的时长必须被拒绝；已开放的 720P 应通过")
     void rejectsUnsupportedTiers() {
         WorkflowVersion version = versionOf("wf-t2v-h3");
         assertThrows(VideoTaskException.class, () -> preparer.prepare(
             registry.templateOf("wf-t2v-h3"), VideoCapability.T2V, version,
-            new H3TemplatePreparer.H3Fields("提示词", null, null, null, "流畅 · 720P", "5 秒")),
-            "720P 未交付，必须拒绝");
-        assertThrows(VideoTaskException.class, () -> preparer.prepare(
-            registry.templateOf("wf-t2v-h3"), VideoCapability.T2V, version,
             new H3TemplatePreparer.H3Fields("提示词", null, null, null, H3TemplatePreparer.TIER_1080P, "10 秒")),
             "10 秒未交付，必须拒绝");
+        // 720P 已按契约开放，prepare 必须放行（分辨率改写由 applyResolution 负责）。
+        assertDoesNotThrow(() -> preparer.prepare(
+            registry.templateOf("wf-t2v-h3"), VideoCapability.T2V, version,
+            new H3TemplatePreparer.H3Fields("提示词", null, null, null, "流畅 · 720P", "5 秒")),
+            "720P 已开放，不应被拒绝");
     }
 
     @Test
@@ -255,10 +260,9 @@ class H3TemplatePreparerTest {
             VideoCapability.FL2V, fl2v, fields("正常提示词", null, "f.png", null)),
             "FL2V 缺尾帧必须在入库前被拒绝");
         WorkflowVersion t2v = versionOf("wf-t2v-h3");
-        assertThrows(VideoTaskException.class, () -> preparer.validateFields(
-            VideoCapability.T2V, t2v,
-            new H3TemplatePreparer.H3Fields("正常提示词", null, null, null, "流畅 · 720P", "5 秒")),
-            "720P 必须在入库前被拒绝");
+        // 720P 已按契约开放，入库前校验必须放行（未声明档位的拒绝见 rejectsTierNotDeclaredInContract）。
+        preparer.validateFields(VideoCapability.T2V, t2v,
+            new H3TemplatePreparer.H3Fields("正常提示词", null, null, null, "流畅 · 720P", "5 秒"));
         assertThrows(VideoTaskException.class, () -> preparer.validateFields(
             VideoCapability.T2V, t2v,
             new H3TemplatePreparer.H3Fields("正常提示词", null, null, null,
@@ -337,6 +341,127 @@ class H3TemplatePreparerTest {
             H3TemplatePreparer.TIER_1080P, H3TemplatePreparer.DURATION_5S);
     }
 
+    /**
+     * 按指定档位准备节点图，并返回解析后的图。
+     *
+     * <p>I2V/FL2V 需要首帧（FL2V 还需尾帧）才能通过校验，这里给占位文件名——
+     * 本用例只关心分辨率改写，不涉及素材读取。</p>
+     */
+    private ObjectNode prepareWithTier(String code, String tier) throws Exception {
+        WorkflowVersion version = versionOf(code);
+        String template = registry.templateOf(code);
+        VideoCapability capability = VideoCapability.parse(version.capabilityCode());
+        String image = capability == VideoCapability.I2V ? "first.png" : null;
+        String first = capability == VideoCapability.FL2V ? "first.png" : null;
+        String last = capability == VideoCapability.FL2V ? "last.png" : null;
+        H3TemplatePreparer.H3Fields f = new H3TemplatePreparer.H3Fields(
+            "测试提示词", image, first, last, tier, H3TemplatePreparer.DURATION_5S);
+        return preparer.prepare(template, capability, version, f);
+    }
+
+    /**
+     * 从节点图里读出「导演阶段」与「编码阶段」的实际分辨率。
+     */
+    private static int[] resolutionsOf(ObjectNode graph) throws Exception {
+        ObjectNode director = (ObjectNode) graph.get(H3TemplatePreparer.DIRECTOR_NODE_ID);
+        JsonNode inputs = director.get("inputs");
+        ObjectNode timeline = (ObjectNode) MAPPER.readTree(inputs.path("timeline_data").asText(""));
+        ObjectNode encode = (ObjectNode) graph.get(H3TemplatePreparer.ENCODE_NODE_ID).get("inputs");
+        return new int[] {
+            inputs.path("width").asInt(), inputs.path("height").asInt(),
+            timeline.path("width").asInt(), timeline.path("height").asInt(),
+            timeline.path("output").path("width").asInt(), timeline.path("output").path("height").asInt(),
+            encode.path("width").asInt(), encode.path("height").asInt()
+        };
+    }
+
+    @Test
+    @DisplayName("多档位：契约声明 1080P/720P/480P，且三档都能通过校验")
+    void contractDeclaresThreeTiers() {
+        for (String code : List.of("wf-t2v-h3", "wf-i2v-h3", "wf-fl2v-h3")) {
+            java.util.Set<String> tiers = versionOf(code).fixedFieldValidation().allowedTiers();
+            assertEquals(3, tiers.size(), code + " 应声明 3 个档位，实际：" + tiers);
+            assertTrue(tiers.contains("高清 · 1080P"), code + " 应含 1080P");
+            assertTrue(tiers.contains("流畅 · 720P"), code + " 应含 720P");
+            assertTrue(tiers.contains("标清 · 480P"), code + " 应含 480P");
+        }
+    }
+
+    @Test
+    @DisplayName("多档位：三个档位都能通过校验并产出各自的分辨率")
+    void prepareAppliesResolutionPerTier() throws Exception {
+        // 每档的期望值：导演阶段宽高、timeline 宽高、timeline output 宽高、编码阶段宽高。
+        // 导演阶段与编码阶段刻意错开一个 16 的台阶（编码阶段用 crop=center 裁掉多余像素），
+        // 使成片落在标准 1080/720/480 高度上；480P 两者相同。
+        int[] expected1080 = {1920, 1088, 1920, 1088, 1920, 1088, 1920, 1080};
+        int[] expected720 = {1280, 736, 1280, 736, 1280, 736, 1280, 720};
+        int[] expected480 = {864, 480, 864, 480, 864, 480, 864, 480};
+
+        for (String code : List.of("wf-t2v-h3", "wf-i2v-h3", "wf-fl2v-h3")) {
+            assertArrayEquals(expected1080, resolutionsOf(prepareWithTier(code, "高清 · 1080P")),
+                code + " 1080P 分辨率不对");
+            assertArrayEquals(expected720, resolutionsOf(prepareWithTier(code, "流畅 · 720P")),
+                code + " 720P 分辨率不对");
+            assertArrayEquals(expected480, resolutionsOf(prepareWithTier(code, "标清 · 480P")),
+                code + " 480P 分辨率不对");
+        }
+    }
+
+    @Test
+    @DisplayName("多档位：导演阶段分辨率必须是 16 的倍数（ComfyUI 硬约束）")
+    void allResolutionsAreMultiplesOf16() throws Exception {
+        // 自定义节点的 resolve_output_dimensions 会把导演阶段宽高对齐到 16，且要求 ≥16。
+        // 若给的值不是 16 的倍数，实际生成分辨率会与标称档位不一致（例如标 720 却出 736）。
+        //
+        // 注意：编码节点（ImageScale）的尺寸不在此约束内——1080P 模板刻意用 1920×1080，
+        // 因为 H.264 只要求偶数，而 1080 = 16×67.5。这里只校验导演阶段与参考尺寸。
+        for (java.util.Map.Entry<String, org.dromara.ai.video.config.VideoTierResolutions.Resolution> e
+            : new org.dromara.ai.video.config.VideoTierResolutions().getTiers().entrySet()) {
+            var r = e.getValue();
+            for (int v : new int[] {r.width(), r.height(), r.refMaxSize()}) {
+                assertEquals(0, v % 16, e.getKey() + " 的导演阶段尺寸 " + v + " 不是 16 的倍数");
+                assertTrue(v >= 16, e.getKey() + " 的尺寸 " + v + " 小于 16");
+            }
+            // 编码尺寸只要求偶数（H.264），且必须不超过导演阶段，否则会被拉伸放大。
+            for (int v : new int[] {r.encodeWidth(), r.encodeHeight()}) {
+                assertEquals(0, v % 2, e.getKey() + " 的编码尺寸 " + v + " 不是偶数");
+            }
+            assertTrue(r.encodeWidth() <= r.width() && r.encodeHeight() <= r.height(),
+                e.getKey() + " 的编码尺寸不应超过导演阶段尺寸");
+        }
+    }
+
+    @Test
+    @DisplayName("多档位：未声明的档位仍必须被拒绝（不能因为放开档位就失去校验）")
+    void rejectsTierNotDeclaredInContract() {
+        for (String bad : List.of("超清 · 4K", "高清 · 2K", "")) {
+            H3TemplatePreparer.H3Fields f = new H3TemplatePreparer.H3Fields(
+                "提示词", null, null, null, bad, H3TemplatePreparer.DURATION_5S);
+            assertThrows(VideoTaskException.class,
+                () -> preparer.validateFields(VideoCapability.T2V, versionOf("wf-t2v-h3"), f),
+                "未声明的档位必须被拒绝：" + bad);
+        }
+    }
+
+    @Test
+    @DisplayName("多档位：参考图最大边随档位下降，避免 720P/480P 仍按 1080P 规格缩放")
+    void refMaxSizeFollowsTier() throws Exception {
+        assertEquals(1920, resolutionsRefMax("高清 · 1080P"));
+        assertEquals(1280, resolutionsRefMax("流畅 · 720P"));
+        assertEquals(864, resolutionsRefMax("标清 · 480P"));
+    }
+
+    private int resolutionsRefMax(String tier) throws Exception {
+        ObjectNode graph = prepareWithTier("wf-i2v-h3", tier);
+        ObjectNode inputs = (ObjectNode) graph.get(H3TemplatePreparer.DIRECTOR_NODE_ID).get("inputs");
+        ObjectNode timeline = (ObjectNode) MAPPER.readTree(inputs.path("timeline_data").asText(""));
+        assertEquals(timeline.path("refMaxSize").asInt(), inputs.path("ref_max_size").asInt(),
+            "timeline.refMaxSize 与节点 ref_max_size 必须一致");
+        assertEquals(timeline.path("output").path("longEdge").asInt(), inputs.path("ref_max_size").asInt(),
+            "output.longEdge 与节点 ref_max_size 必须一致");
+        return inputs.path("ref_max_size").asInt();
+    }
+
     private static WorkflowVersion versionOf(String code) {
         try {
             // 通过反射无关的最小路径取得已加载版本：DRAFT 也在注册表中。
@@ -375,7 +500,8 @@ class H3TemplatePreparerTest {
                             binding.path("checksum").asText(""),
                             mappings,
                             new WorkflowVersion.FixedFieldValidation(
-                                fixed.path("tier").asText(null), fixed.path("dur").asText(null)),
+                                fixed.path("tier").asText(null), fixed.path("dur").asText(null),
+                                readTiers(fixed)),
                             5,
                             binding.path("outputRule").path("nodeId").asText("7"),
                             binding.path("outputRule").path("outputField").asText("videos"));
@@ -386,5 +512,23 @@ class H3TemplatePreparerTest {
             throw new IllegalStateException(e);
         }
         throw new IllegalStateException("契约中找不到工作流：" + code);
+    }
+
+    /**
+     * 读取契约里的 supportedTiers（与 WorkflowContractRegistry 的解析保持一致）。
+     */
+    private static java.util.Set<String> readTiers(JsonNode fixedNode) {
+        JsonNode node = fixedNode.path("supportedTiers");
+        if (!node.isArray()) {
+            return java.util.Set.of();
+        }
+        java.util.LinkedHashSet<String> tiers = new java.util.LinkedHashSet<>();
+        for (JsonNode item : node) {
+            String text = item.asText("").trim();
+            if (!text.isEmpty()) {
+                tiers.add(text);
+            }
+        }
+        return java.util.Collections.unmodifiableSet(tiers);
     }
 }

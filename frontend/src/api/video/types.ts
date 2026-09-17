@@ -29,6 +29,12 @@ export interface VideoWorkflowVO {
   /** 隔离联调环境可提交（PUBLISHED 或 TESTING） */
   testable: boolean;
   supportedTier?: string | null;
+  /**
+   * 允许的输出档位（清晰度）。由契约 `fixedFieldValidation.supportedTiers` 声明。
+   *
+   * 空数组时退化为只用 `supportedTier` 单一档位，保证旧后端兼容。
+   */
+  supportedTiers?: string[] | null;
   supportedDuration?: string | null;
   maxDurationSeconds?: number | null;
 }

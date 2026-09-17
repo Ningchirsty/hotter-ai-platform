@@ -135,6 +135,14 @@ public class VideoModuleConfiguration {
          * ComfyUI 的缓存策略（那属于 ComfyUI 侧配置，例如启动参数 --cache-none）。</p>
          */
         private boolean comfyFreeBeforeSubmit = false;
+
+        /**
+         * 输出档位（清晰度）→ 分辨率映射。
+         *
+         * <p>可用 {@code video.tier-resolutions.tiers.<档位名>.*} 覆盖默认值，
+         * 例如临时把 720P 改成 960×544 做画质/速度取舍实验，无需改代码。</p>
+         */
+        private VideoTierResolutions tierResolutions = new VideoTierResolutions();
     }
 
     /**
@@ -181,8 +189,9 @@ public class VideoModuleConfiguration {
     }
 
     @Bean
-    public H3TemplatePreparer h3TemplatePreparer(ObjectMapper mapper) {
-        return new H3TemplatePreparer(mapper);
+    public H3TemplatePreparer h3TemplatePreparer(ObjectMapper mapper, VideoProperties properties) {
+        log.info("输出档位分辨率：{}", properties.getTierResolutions().tierNames());
+        return new H3TemplatePreparer(mapper, properties.getTierResolutions());
     }
 
     @Bean

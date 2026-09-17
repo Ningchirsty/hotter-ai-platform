@@ -116,6 +116,11 @@ public class VideoCreationController extends BaseController {
             item.put("testable", version.isTestable());
             item.put("supportedTier", version.fixedFieldValidation() == null
                 ? null : version.fixedFieldValidation().tier());
+            // 多档位：按契约声明顺序返回，前端据此渲染可选的清晰度。
+            // 保留 supportedTier 字段以兼容既有前端，含义为「默认档位」。
+            item.put("supportedTiers", version.fixedFieldValidation() == null
+                ? java.util.List.of()
+                : new java.util.ArrayList<>(version.fixedFieldValidation().allowedTiers()));
             item.put("supportedDuration", version.fixedFieldValidation() == null
                 ? null : version.fixedFieldValidation().dur());
             item.put("maxDurationSeconds", version.maxDurationSeconds());

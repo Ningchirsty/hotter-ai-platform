@@ -22,7 +22,8 @@ import java.util.Map;
  * <ul>
  *   <li>深拷贝模板；只覆写 mapping 白名单内的输入键，其余输入一律不动；</li>
  *   <li>节点 ID、模型路径、API Format JSON 不下发前端；</li>
- *   <li>固定档位只接受契约声明的单一取值；</li>
+ *   <li>固定档位只接受契约声明的取值（可多档位，见 {@code supportedTiers}）；</li>
+ *   <li>输出分辨率由档位决定，本类负责把模板里散落的分辨率路径统一改写；</li>
  *   <li>发布前必须实测输出，超出时长上限由服务端截断并由调用方记录。</li>
  * </ul>
  *
@@ -36,7 +37,12 @@ public final class H3TemplatePreparer {
     public static final String DIRECTOR_NODE_ID = "5";
 
     /**
-     * 产品档位固定值。
+     * 编码节点 ID。模板为 {@code ImageScale}，决定最终 mp4 尺寸。
+     */
+    public static final String ENCODE_NODE_ID = "14";
+
+    /**
+     * 产品档位固定值（1080P）。
      */
     public static final String TIER_1080P = "高清 · 1080P";
 
@@ -47,8 +53,22 @@ public final class H3TemplatePreparer {
 
     private final ObjectMapper mapper;
 
+    /**
+     * 档位 → 分辨率映射。为 null 时只做校验、不改写分辨率（保持旧行为）。
+     */
+    private final org.dromara.ai.video.config.VideoTierResolutions tierResolutions;
+
+    /**
+     * 兼容构造器：不注入档位表，等价于「只支持契约声明的档位、不改写分辨率」。
+     */
     public H3TemplatePreparer(ObjectMapper mapper) {
+        this(mapper, null);
+    }
+
+    public H3TemplatePreparer(ObjectMapper mapper,
+                              org.dromara.ai.video.config.VideoTierResolutions tierResolutions) {
         this.mapper = mapper;
+        this.tierResolutions = tierResolutions;
     }
 
     /**
@@ -182,6 +202,16 @@ public final class H3TemplatePreparer {
         if (mapping.stream().noneMatch(m -> "desc".equals(m.field()))) {
             inputs.put("global_prompt", prompt);
         }
+        // 分辨率不在 mapping 白名单里，但它同样是「按档位决定的输出参数」，
+        // 因此按档位统一改写模板中散落的各处分辨率。
+        //
+        // 必须放在把 timeline 序列化进节点之前：timeline 是 Jackson 对象，
+        // 修改它不会自动更新已经写进 inputs.timeline_data 的那份字符串。
+        // 早期版本把这一步放在序列化之后，结果节点上的 width/height 生效了、
+        // 而 timeline 里的 width/height/output 仍是模板原值——两者不一致会让
+        // i2v/fl2v（读 timeline.output）与 t2v（读节点 5）走出不同的分辨率。
+        applyResolution(graph, inputs, timeline, fields.tier());
+
         // 确保时间轴落回节点，避免仅改 global_prompt 而分镜提示词为空。
         if (!inputs.has("timeline_data")) {
             inputs.set("timeline_data", mapper.getNodeFactory().textNode(timeline.toString()));
@@ -192,6 +222,62 @@ public final class H3TemplatePreparer {
     }
 
     /**
+     * 按输出档位改写模板中的分辨率。
+     *
+     * <p>H3 模板的分辨率不是单一参数，而是散落在四处，必须一起改，否则会出现
+     * 「导演阶段生成 1920×1088、编码阶段却按 1280×720 裁剪」这类畸形输出：</p>
+     *
+     * <ol>
+     *   <li>节点 5 {@code width}/{@code height}：导演阶段的生成分辨率；</li>
+     *   <li>节点 5 {@code ref_max_size}：参考图/参考视频的最大边；</li>
+     *   <li>timeline 的 {@code width}/{@code height}/{@code refMaxSize} 与
+     *       {@code output.width}/{@code output.height}/{@code output.longEdge}；
+     *       t2v 走 fixed 分支只读节点 5，i2v/fl2v 走 timeline 的 output 分支；</li>
+     *   <li>节点 {@value #ENCODE_NODE_ID} {@code ImageScale} 的 {@code width}/{@code height}：
+     *       最终写入 mp4 的尺寸。</li>
+     * </ol>
+     *
+     * <p>导演阶段与编码阶段刻意错开一个台阶（如 1088 → 1080），与原模板策略一致：
+     * 编码节点用 {@code crop=center} 裁掉多余的像素，使成片落在标准档位上。</p>
+     *
+     * <p>未配置档位表、或档位不在表内时不做任何改写；档位合法性由
+     * {@link #validateFields} 负责拦截。</p>
+     */
+    void applyResolution(ObjectNode graph, ObjectNode inputs, ObjectNode timeline, String tier) {
+        if (tierResolutions == null || tier == null) {
+            return;
+        }
+        org.dromara.ai.video.config.VideoTierResolutions.Resolution res = tierResolutions.of(tier);
+        if (res == null) {
+            return;
+        }
+        inputs.put("width", res.width());
+        inputs.put("height", res.height());
+        inputs.put("ref_max_size", res.refMaxSize());
+
+        timeline.put("width", res.width());
+        timeline.put("height", res.height());
+        timeline.put("refMaxSize", res.refMaxSize());
+        JsonNode outputNode = timeline.get("output");
+        if (outputNode != null && outputNode.isObject()) {
+            ObjectNode output = (ObjectNode) outputNode;
+            output.put("width", res.width());
+            output.put("height", res.height());
+            output.put("longEdge", res.refMaxSize());
+        }
+
+        JsonNode encodeNode = graph.get(ENCODE_NODE_ID);
+        if (encodeNode != null && encodeNode.isObject()) {
+            JsonNode encodeInputs = encodeNode.get("inputs");
+            if (encodeInputs != null && encodeInputs.isObject()) {
+                ObjectNode scaleInputs = (ObjectNode) encodeInputs;
+                scaleInputs.put("width", res.encodeWidth());
+                scaleInputs.put("height", res.encodeHeight());
+            }
+        }
+    }
+
+    /**
      * 校验字段与固定档位、必需素材与提示词。
      *
      * <p>必须在任务入库<b>之前</b>调用；否则会产生不可执行的任务记录。</p>
@@ -199,9 +285,10 @@ public final class H3TemplatePreparer {
     public void validateFields(VideoCapability capability, WorkflowVersion version, H3Fields fields) {
         WorkflowVersion.FixedFieldValidation fixed = version.fixedFieldValidation();
         if (fixed != null) {
-            if (fixed.tier() != null && !fixed.tier().equals(fields.tier())) {
+            java.util.Set<String> allowedTiers = fixed.allowedTiers();
+            if (!allowedTiers.isEmpty() && !allowedTiers.contains(fields.tier())) {
                 throw VideoTaskException.invalidContract(
-                    "输出档位只支持 " + fixed.tier());
+                    "输出档位只支持 " + String.join(" / ", allowedTiers));
             }
             if (fixed.dur() != null && !fixed.dur().equals(fields.durationLabel())) {
                 throw VideoTaskException.invalidContract(
