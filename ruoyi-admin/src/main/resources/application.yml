@@ -44,6 +44,9 @@ user:
 
 # Spring配置
 spring:
+  config:
+    # 引入集团人才库模块默认配置
+    import: classpath:talent.yml
   application:
     name: RuoYi-Vue-Plus
   threads:
