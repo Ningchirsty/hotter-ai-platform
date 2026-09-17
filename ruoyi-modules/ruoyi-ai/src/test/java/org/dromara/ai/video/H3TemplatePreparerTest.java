@@ -17,6 +17,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -75,11 +76,13 @@ class H3TemplatePreparerTest {
         assertTrue(registry.hasPublished(VideoCapability.T2V), "T2V 应存在已发布版本");
         assertTrue(registry.hasPublished(VideoCapability.I2V), "I2V 应存在已发布版本");
         assertTrue(registry.hasPublished(VideoCapability.FL2V), "FL2V 应存在已发布版本");
-        // 其余能力仍未交付，不得被误判为已发布。
-        for (VideoCapability other : List.of(VideoCapability.MFRAME, VideoCapability.CAMMOVE,
-            VideoCapability.VEXT, VideoCapability.VHD, VideoCapability.LIP)) {
-            assertFalse(registry.hasPublished(other), other + " 尚未交付，不得标记为已发布");
-        }
+        // 注册表登记了 24 个条目（含未交付占位），但已发布的必须恰好只有这 3 个。
+        // 注意 VideoCapability 枚举只有 T2V/I2V/FL2V，MFRAME 等只存在于契约里，
+        // 不能用枚举逐个断言。
+        long publishedCount = registry.registeredVersions().stream()
+            .filter(WorkflowVersion::isPublished)
+            .count();
+        assertEquals(3, publishedCount, "已发布版本应恰好 3 个（三个 H3）");
     }
 
     @Test
