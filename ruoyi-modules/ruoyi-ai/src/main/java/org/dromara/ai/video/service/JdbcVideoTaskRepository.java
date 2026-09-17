@@ -136,7 +136,7 @@ public class JdbcVideoTaskRepository implements VideoTaskRepository {
         List<Map<String, Object>> rows = jdbc.queryForList("""
             SELECT id, tenant_id, user_id, task_no, task_name, capability_code, workflow_code,
                    workflow_version, model_code, status, tier, duration_seconds, prompt,
-                   input_json, comfy_prompt_id, output_asset_id, cover_asset_id, progress,
+                   input_json, comfy_prompt_id, comfy_worker, output_asset_id, cover_asset_id, progress,
                    error_code, error_message, attempt_count, output_width, output_height,
                    output_fps, output_duration_ms, truncation_applied, create_time, finished_time
             FROM video_task
@@ -155,7 +155,7 @@ public class JdbcVideoTaskRepository implements VideoTaskRepository {
             return jdbc.queryForList("""
                 SELECT id, task_no, task_name, capability_code, workflow_code, model_code, status,
                        tier, duration_seconds, progress, output_asset_id, error_message,
-                       create_time, finished_time
+                       comfy_worker, create_time, finished_time
                 FROM video_task
                 WHERE tenant_id = ? AND user_id = ? AND del_flag = '0'
                 ORDER BY id DESC LIMIT ? OFFSET ?
@@ -164,7 +164,7 @@ public class JdbcVideoTaskRepository implements VideoTaskRepository {
         return jdbc.queryForList("""
             SELECT id, task_no, task_name, capability_code, workflow_code, model_code, status,
                    tier, duration_seconds, progress, output_asset_id, error_message,
-                   create_time, finished_time
+                   comfy_worker, create_time, finished_time
             FROM video_task
             WHERE tenant_id = ? AND user_id = ? AND status = ? AND del_flag = '0'
             ORDER BY id DESC LIMIT ? OFFSET ?
@@ -253,14 +253,19 @@ public class JdbcVideoTaskRepository implements VideoTaskRepository {
 
     @Override
     public int markSubmitted(long taskId, String comfyPromptId, int attemptCount) {
+        return markSubmitted(taskId, comfyPromptId, attemptCount, null);
+    }
+
+    @Override
+    public int markSubmitted(long taskId, String comfyPromptId, int attemptCount, String comfyWorker) {
         // 任务在控制器「认领」时已经流转为 RUNNING（异步执行后必须先把状态占住，
         // 否则重复点击会重复执行），所以这里只补写 prompt id 与时间戳，不再依赖 QUEUED。
         return jdbc.update("""
             UPDATE video_task
-            SET comfy_prompt_id = ?, attempt_count = ?, submitted_time = NOW(),
+            SET comfy_prompt_id = ?, comfy_worker = ?, attempt_count = ?, submitted_time = NOW(),
                 started_time = NOW(), update_time = NOW()
             WHERE id = ? AND status = ?
-            """, comfyPromptId, attemptCount,
+            """, comfyPromptId, comfyWorker, attemptCount,
             taskId, VideoTaskStatus.RUNNING.name());
     }
 

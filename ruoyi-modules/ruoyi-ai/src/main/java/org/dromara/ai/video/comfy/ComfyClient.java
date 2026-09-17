@@ -69,6 +69,22 @@ public interface ComfyClient {
     }
 
     /**
+     * 该 ComfyUI 实例所在 GPU 当前的空闲显存（MiB）。
+     *
+     * <p>用途：多卡并发时，提交前确认这张卡真的空着。实测一次 H3 生成峰值要吃
+     * <b>80,805 MiB</b>（A100-80GB 几乎顶满），而同一台机器上 GPU0 曾经被另一个
+     * vLLM 服务占了 38 GB。若不检查就提交，结果是任务撞上 OOM 崩掉；检查之后
+     * 可以判定该 worker 不可用、换一张卡或快速失败并说明原因。</p>
+     *
+     * <p>默认返回 -1 表示「未知」，调用方应据此跳过闸门（测试替身无需实现）。</p>
+     *
+     * @return 空闲显存 MiB；取不到时返回 -1
+     */
+    default long freeVramMb() {
+        return -1L;
+    }
+
+    /**
      * 轮询结果。
      *
      * @param state   RUNNING / SUCCEEDED / FAILED

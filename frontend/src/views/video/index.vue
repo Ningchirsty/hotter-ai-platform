@@ -368,6 +368,19 @@
         </div>
       </div>
 
+      <!--
+        GPU 队列状态：生成一次要 2~12 分钟，双卡也只有两个并发位。
+        如实显示「几张卡在跑、前面还排着几个」，用户才分得清「在排队」和「卡住了」。
+      -->
+      <div v-if="workers" class="gpu-status">
+        <span class="gpu-status-dot" :class="{ busy: busyWorkerCount > 0 }"></span>
+        <span>GPU 运行中 {{ busyWorkerCount }}/{{ workers.concurrency }}</span>
+        <span v-if="workers.queued > 0">· 排队 {{ workers.queued }} 个</span>
+        <span v-if="unavailableWorkers.length" class="gpu-status-warn">
+          · {{ unavailableWorkers.length }} 张卡暂不可用（{{ unavailableWorkers[0]!.reason || '显存被占用' }}）
+        </span>
+      </div>
+
       <div v-if="loadingTasks" class="empty-state">
         <el-icon><Document /></el-icon>
         <b>正在加载任务…</b>
@@ -571,6 +584,7 @@ import {
   fetchVideoAssetBlobUrl,
   fetchVideoAssetThumbnailBlobUrl,
   getVideoTask,
+  getVideoWorkers,
   listVideoAssets,
   listVideoTasks,
   listVideoWorkflows,
@@ -581,10 +595,12 @@ import type {
   VideoCapabilityCode,
   VideoTaskVO,
   VideoTaskStatus,
+  VideoWorkersVO,
   VideoWorkflowVO
 } from '@/api/video/types';
 import { extractErrorMessage } from '@/utils/request';
 import {
+  COMPLETED_VIDEOS,
   INSPIRATIONS,
   PROMPT_CHIPS,
   VIDEO_MODELS,
@@ -800,8 +816,11 @@ async function loadTasks() {
     ElMessage.error((await extractErrorMessage(error)) ?? '读取任务列表失败');
   } finally {
     loadingTasks.value = false;
+    // 顺带刷新 GPU 队列状态：任务列表是用户唯一能看到"还要等多久"的地方。
+    void loadWorkerStatus();
   }
 }
+
 
 async function loadAssets() {
   loadingAssets.value = true;
@@ -1004,6 +1023,21 @@ const TERMINAL_STATUSES: VideoTaskStatus[] = ['SUCCEEDED', 'FAILED', 'CANCELED',
 /** 轮询间隔。生成动辄几分钟，3 秒足够又不至于把后端压垮。 */
 const POLL_INTERVAL_MS = 3000;
 
+/** GPU 工作节点与队列状态。取不到就不显示，绝不因为运维信息缺失而影响主流程。 */
+const workers = ref<VideoWorkersVO | null>(null);
+
+const busyWorkerCount = computed(() => workers.value?.workers.filter(item => item.busy).length ?? 0);
+const unavailableWorkers = computed(() => workers.value?.workers.filter(item => item.unavailable) ?? []);
+
+async function loadWorkerStatus() {
+  try {
+    const res = await getVideoWorkers();
+    workers.value = res.data ?? null;
+  } catch {
+    workers.value = null;
+  }
+}
+
 /** 正在轮询的任务 id。后台执行 + 轮询是生成结果的唯一回传通道。 */
 const pollingTaskIds = new Set<string>();
 let pollTimer: ReturnType<typeof setInterval> | undefined;
@@ -1033,6 +1067,8 @@ async function pollPendingTasks() {
     stopTaskPolling();
     return;
   }
+  // 顺手刷新 GPU 队列状态：这两件事的节奏完全一致（都在等同一批任务）。
+  void loadWorkerStatus();
   // 先收集、循环结束后再删：避免在遍历 Set 的过程中改它。
   const finished: Array<{ id: string; status: VideoTaskStatus; message?: string }> = [];
   for (const id of pollingTaskIds) {
@@ -1513,6 +1549,28 @@ button {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+.gpu-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 10px 0 0;
+  color: var(--t2);
+  font-size: 11px;
+}
+.gpu-status-dot {
+  width: 7px;
+  height: 7px;
+  background: var(--t3, #8a8f98);
+  border-radius: 50%;
+}
+.gpu-status-dot.busy {
+  background: #3ddc97;
+  box-shadow: 0 0 0 3px rgb(61 220 151 / 18%);
+}
+.gpu-status-warn {
+  color: #e6a23c;
 }
 .task-filters button {
   min-height: 32px;

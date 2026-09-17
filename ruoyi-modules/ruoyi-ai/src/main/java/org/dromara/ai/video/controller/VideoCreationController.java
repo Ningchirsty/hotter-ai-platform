@@ -27,6 +27,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.dromara.ai.video.service.ComfyWorkerPool;
 import org.dromara.ai.video.service.ThumbnailService;
 import org.dromara.ai.video.service.VideoTaskDispatchService;
 import org.dromara.ai.video.service.VideoTaskExecutionService;
@@ -47,6 +48,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -90,6 +92,11 @@ public class VideoCreationController extends BaseController {
      */
     private final VideoTaskExecutionService executionService;
     private final VideoTaskDispatchService dispatchService;
+
+    /**
+     * ComfyUI 工作节点池（一卡一实例）。用于运维查询「每张卡现在的状态」。
+     */
+    private final ComfyWorkerPool workerPool;
     private final AssetStorage assetStorage;
     private final ThumbnailService thumbnailService;
     private final ObjectMapper mapper;
@@ -112,6 +119,35 @@ public class VideoCreationController extends BaseController {
     public R<Void> handleVideoTaskException(VideoTaskException e) {
         log.warn("视频任务校验拒绝 [{}]：{}", e.getErrorCode(), e.getMessage());
         return R.fail(400, e.getMessage());
+    }
+
+    /**
+     * GPU 工作节点与执行队列的实时状态。
+     *
+     * <p>双卡之后，「为什么这个任务等了很久」「为什么提示 GPU 不可用」都必须能一眼看到：
+     * 每张卡是否被占用、是否在冷却、冷却原因与剩余时间，以及队列里还压着几个任务。</p>
+     */
+    @GetMapping("/workers")
+    @SaCheckPermission("video:creation:view")
+    public R<Map<String, Object>> workers() {
+        Map<String, Object> body = new LinkedHashMap<>();
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (ComfyWorkerPool.Snapshot s : workerPool.snapshots()) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("name", s.name());
+            item.put("baseUrl", s.baseUrl());
+            item.put("busy", s.busy());
+            item.put("unavailable", s.unavailable());
+            item.put("reason", s.reason());
+            item.put("cooldownSecondsLeft", s.cooldownSecondsLeft());
+            items.add(item);
+        }
+        body.put("workers", items);
+        body.put("concurrency", executionService.concurrency());
+        body.put("running", executionService.isBusy());
+        body.put("queued", executionService.queuedCount());
+        body.put("queueCapacity", executionService.queueCapacity());
+        return R.ok(body);
     }
 
     /**

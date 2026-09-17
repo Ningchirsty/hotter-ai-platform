@@ -82,8 +82,32 @@ export interface VideoTaskVO {
   progress?: number | null;
   outputAssetId?: number | string | null;
   errorMessage?: string | null;
+  /**
+   * 承担本次生成的工作节点（GPU 实例名）。多卡部署时用于排障：
+   * 同一个 prompt_id 只在提交它的那台 ComfyUI 进程里可查。
+   */
+  comfyWorker?: string | null;
   createTime?: string | null;
   finishedTime?: string | null;
+}
+
+/** 一个 ComfyUI 工作节点（一张卡）的实时状态 */
+export interface VideoWorkerVO {
+  name: string;
+  baseUrl: string;
+  busy: boolean;
+  unavailable: boolean;
+  reason?: string | null;
+  cooldownSecondsLeft: number;
+}
+
+/** GPU 工作节点与执行队列的实时状态 */
+export interface VideoWorkersVO {
+  workers: VideoWorkerVO[];
+  concurrency: number;
+  running: boolean;
+  queued: number;
+  queueCapacity: number;
 }
 
 /** 任务事件（状态流转审计） */

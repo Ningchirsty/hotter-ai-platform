@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS video_task (
   prompt            VARCHAR(1000) NULL                COMMENT '视频描述',
   input_json        JSON         NULL                 COMMENT '字段→素材ID 白名单，已服务端校验',
   comfy_prompt_id   VARCHAR(64)  NULL                 COMMENT 'ComfyUI prompt_id',
+  comfy_worker      VARCHAR(64)  NULL                 COMMENT '承担本次生成的 ComfyUI 工作节点名（多 GPU 区分）',
   output_asset_id   BIGINT       NULL                 COMMENT '成片素材 ID',
   cover_asset_id    BIGINT       NULL                 COMMENT '封面素材 ID',
   progress          INT          NOT NULL DEFAULT 0   COMMENT '进度 0-100',

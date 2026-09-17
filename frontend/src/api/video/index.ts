@@ -8,6 +8,7 @@ import type {
   VideoTaskExecutionResult,
   VideoTaskVO,
   VideoUploadResult,
+  VideoWorkersVO,
   VideoWorkflowVO
 } from './types';
 
@@ -81,6 +82,20 @@ export const executeVideoTask = (taskId: number | string): AxiosPromise<VideoTas
   return request({
     url: '/video/tasks/' + taskId + '/execute',
     method: 'post'
+  });
+};
+
+/**
+ * 查询 GPU 工作节点与执行队列的实时状态。
+ *
+ * <p>为什么前端要知道这个：生成一次要 2 到 12 分钟，双卡也只有两个并发位。
+ * 用户点了"生成"之后如果什么都不显示，就分不清"在排队"还是"卡住了"。
+ * 把"几张卡在跑、前面还排着几个"如实显示出来，等待才是可解释的。</p>
+ */
+export const getVideoWorkers = (): AxiosPromise<VideoWorkersVO> => {
+  return request({
+    url: '/video/workers',
+    method: 'get'
   });
 };
 
