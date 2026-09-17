@@ -1,0 +1,22 @@
+# 构建上下文 = 仓库根（见根目录 Dockerfile 的说明）。
+# 只发送构建真正需要的内容，避免把前端依赖、文档、git 历史等打进上下文。
+.git
+.github
+.idea
+docs
+frontend
+script/leave
+ruoyi-common
+ruoyi-api
+ruoyi-extend
+ruoyi-modules
+ruoyi-admin/src
+ruoyi-admin/target/classes
+ruoyi-admin/target/maven-status
+ruoyi-admin/target/maven-archiver
+ruoyi-admin/target/generated-sources
+ruoyi-admin/target/generated-test-sources
+ruoyi-admin/target/test-classes
+ruoyi-admin/target/surefire-reports
+**/*.md
+**/*.log

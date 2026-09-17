@@ -1,3 +1,15 @@
+# 若依后端镜像（构建上下文 = 仓库根）
+#
+# 为什么放在仓库根、而不用 ruoyi-admin/Dockerfile：
+#   视频创作模块的契约与工作流模板在仓库根的 `script/video/workflows/` 下，
+#   运行时由 `WorkflowContractRegistry` 从 `VIDEO_CONTRACT_ROOT`（默认 `script`）读取。
+#   Docker 不允许 COPY 构建上下文之外的文件，而 `ruoyi-admin/.dockerignore` 又把
+#   上下文限制为「仅 Dockerfile + target/ruoyi-admin.jar」，导致 `../script` 既越界又被忽略。
+#   因此必须把上下文改为仓库根，并在根目录放 .dockerignore 控制发送内容。
+#
+# CI 调用方式：
+#   docker build --pull -f Dockerfile --tag "$IMAGE" .        # 注意上下文是 `.`
+
 # 贝尔实验室 Spring 官方推荐镜像 JDK下载地址 https://bell-sw.com/pages/downloads/
 FROM bellsoft/liberica-openjdk-rocky:21.0.12-cds
 # FROM bellsoft/liberica-openjdk-rocky:25.0.4-cds
@@ -52,7 +64,12 @@ EXPOSE ${SERVER_PORT}
 EXPOSE ${SNAIL_JOB_PORT}
 EXPOSE ${SNAIL_AI_PORT}
 
-ADD ./target/ruoyi-admin.jar ./app.jar
+ADD ./ruoyi-admin/target/ruoyi-admin.jar ./app.jar
+
+# 工作流契约与 API Format 模板必须在镜像内：
+# 后端启动时从 VIDEO_CONTRACT_ROOT（默认 script）读取并校验 SHA-256，
+# 缺失会导致上下文初始化失败。
+COPY ./script/video/workflows /ruoyi/server/script/video/workflows
 
 SHELL ["/bin/bash", "-c"]
 

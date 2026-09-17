@@ -361,7 +361,7 @@ API 也返回了真实实测值：`width=1920, height=1080, fps=24, durationMill
 - Rocky 默认源**也没有 ffmpeg 包**（实测 `microdnf install ffmpeg-free|ffmpeg` 报 `No package matches`）；
 - 基础镜像**没有 `xz` 命令**，而 GNU tar 的 `-J` 会调用外部 xz。
 
-**已在 `ruoyi-admin/Dockerfile` 中解决**：先 `microdnf install -y xz`，再下载
+**已在仓库根目录的 `Dockerfile` 中解决**：先 `microdnf install -y xz`，再下载
 **静态构建**（不依赖发行版与 glibc）并校验 SHA-256，安装到 `/usr/local/bin`：
 
 | 构建参数 | 默认值 |
@@ -374,6 +374,11 @@ API 也返回了真实实测值：`width=1920, height=1080, fps=24, durationMill
 同一处还**显式声明了 `PATH` 与 `JAVA_HOME`**：不依赖基础镜像是否自带这些变量。
 这一条是被真实故障逼出来的——若基础镜像 `Env` 为空（例如用 `docker export` 快照
 本地兜底构建时），缺少 JDK 目录会让容器以 **127（command not found）** 启动失败。
+
+根 Dockerfile 还负责把 `script/video/workflows` 复制进镜像（`/ruoyi/server/script/video/workflows`）。
+这一条同样是硬需求：工作流契约以文件为权威（见 §6.8），镜像内缺契约文件时后端会把全部
+工作流判为不可用，线上旧镜像实测 `/ruoyi/server/` 下只有 `app.jar`、`logs`、`temp`。
+CI 的镜像冒烟步骤会断言契约 JSON、3 个 H3 模板、`ffprobe` 与 `ffmpeg` 均已就位。
 
 **验证结果**：
 
