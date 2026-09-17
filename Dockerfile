@@ -28,6 +28,7 @@ LABEL maintainer="Lion Li"
 # 如需离线/内网构建，用 --build-arg 覆盖为内网镜像地址与对应校验值即可。
 ARG FFMPEG_URL=https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
 ARG FFMPEG_SHA256=abda8d77ce8309141f83ab8edf0596834087c52467f6badf376a6a2a4c87cf67
+ARG FFMPEG_EXPECTED_BYTES=41888096
 
 # 基础镜像有 curl 与 tar，但没有 xz 命令：GNU tar 的 -J 会调用外部 xz 程序，
 # 因此先从基础源装上 xz（Rocky 9 基础源可用，实测），再解包。
@@ -35,6 +36,9 @@ RUN set -eux; \
     microdnf install -y xz; \
     microdnf clean all; \
     curl -fsSL --retry 3 --retry-delay 2 -o /tmp/ffmpeg.tar.xz "$FFMPEG_URL"; \
+    echo "DIAG size=$(stat -c %s /tmp/ffmpeg.tar.xz) expected=$FFMPEG_EXPECTED_BYTES" >&2; \
+    echo "DIAG sha256=$(sha256sum /tmp/ffmpeg.tar.xz | cut -d' ' -f1)" >&2; \
+    echo "DIAG head=$(head -c 120 /tmp/ffmpeg.tar.xz | od -c | head -4 | tr '\n' '|')" >&2; \
     echo "${FFMPEG_SHA256}  /tmp/ffmpeg.tar.xz" | sha256sum -c -; \
     mkdir -p /opt/ffmpeg; \
     tar -xJf /tmp/ffmpeg.tar.xz -C /opt/ffmpeg --strip-components=1 \
