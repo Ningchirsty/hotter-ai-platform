@@ -578,6 +578,41 @@ class H3TemplatePreparerTest {
             new H3TemplatePreparer.H3Fields("测试提示词", image, first, last, tier, duration));
     }
 
+    /**
+     * 真实验证用：把「能力 + 档位 + 时长」渲染成节点图并写到 {@code /tmp/graph.json}。
+     *
+     * <p>借测试运行器执行，因此 classpath 与生产一致；不参与断言。
+     * 用法：{@code -Dtest=H3TemplatePreparerTest#exportGraph -Dcap=I2V -Dtier=... -Ddur=...}</p>
+     */
+    @Test
+    @DisplayName("工具：导出节点图供 ComfyUI 实测（不参与断言）")
+    void exportGraph() throws Exception {
+        String cap = System.getProperty("cap", "I2V");
+        String tier = System.getProperty("tier", "标清 · 480P");
+        String dur = System.getProperty("dur", "5 秒");
+        String image = System.getProperty("img", "hotter_2100272341336666113_8f8699d9.png");
+        String prompt = System.getProperty("prompt", "镜头缓慢推进，主体清晰，光影自然");
+
+        VideoCapability capability = VideoCapability.parse(cap);
+        String code = "wf-" + cap.toLowerCase() + "-h3";
+        WorkflowVersion version = registry.peek(code);
+        String first = capability == VideoCapability.FL2V ? image : null;
+        String imageFile = capability == VideoCapability.I2V ? image : null;
+        ObjectNode graph = preparer.prepare(registry.templateOf(code), capability, version,
+            new H3TemplatePreparer.H3Fields(prompt, imageFile, first, null, tier, dur));
+
+        ObjectNode inputs = (ObjectNode) graph.get(H3TemplatePreparer.DIRECTOR_NODE_ID).get("inputs");
+        ObjectNode timeline = (ObjectNode) MAPPER.readTree(inputs.path("timeline_data").asText(""));
+        ObjectNode encode = (ObjectNode) graph.get(H3TemplatePreparer.ENCODE_NODE_ID).get("inputs");
+        System.out.printf("[export] %s tier=%s dur=%s director=%dx%d frames=%d encode=%dx%d timeline=%dx%d%n",
+            code, tier, dur, inputs.path("width").asInt(), inputs.path("height").asInt(),
+            inputs.path("total_frames").asInt(), encode.path("width").asInt(), encode.path("height").asInt(),
+            timeline.path("width").asInt(), timeline.path("height").asInt());
+        java.nio.file.Files.writeString(Path.of("/tmp/graph.json"),
+            MAPPER.writeValueAsString(graph), StandardCharsets.UTF_8);
+        System.out.println("[export] 已写出 /tmp/graph.json");
+    }
+
     private static WorkflowVersion readVersionFromContract(String code) {
         try {
             JsonNode root = MAPPER.readTree(Files.readString(

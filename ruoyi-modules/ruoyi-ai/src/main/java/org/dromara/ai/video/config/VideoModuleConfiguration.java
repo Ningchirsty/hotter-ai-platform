@@ -32,7 +32,8 @@ import java.time.Duration;
  */
 @Slf4j
 @Configuration
-@EnableConfigurationProperties(VideoModuleConfiguration.VideoProperties.class)
+@EnableConfigurationProperties({VideoModuleConfiguration.VideoProperties.class,
+    VideoTierResolutions.class})
 @ConditionalOnProperty(prefix = "video", name = "enabled", havingValue = "true")
 public class VideoModuleConfiguration {
 

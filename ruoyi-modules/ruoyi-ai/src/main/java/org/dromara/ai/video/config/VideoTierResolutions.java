@@ -1,6 +1,7 @@
 package org.dromara.ai.video.config;
 
 import lombok.Data;
+import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -30,6 +31,7 @@ import java.util.Map;
  * 16 的倍数。</p>
  */
 @Data
+@ConfigurationProperties(prefix = "video.tier-resolutions")
 public class VideoTierResolutions {
 
     /**
