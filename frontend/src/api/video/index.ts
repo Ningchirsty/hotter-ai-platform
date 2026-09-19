@@ -34,8 +34,15 @@ export const listVideoWorkflows = (): AxiosPromise<VideoWorkflowVO[]> => {
  * 258 KB/s ~ 790 KB/s：一张 5MB 的手机原图就要 7~20 秒，15MB 的截图在慢链路下会
  * 超过 50 秒。用户看到的是「系统接口请求超时」，但文件其实完全合法——
  * 这是把网络慢误报成失败。给上传单独留 3 分钟。</p>
+ *
+ * <p><b>为什么要有 onProgress。</b>源站是 cloudflared tunnel，Cloudflare 免费版对
+ * 源站响应有 100 秒上限（超时返回 524）。上传本身就要几十秒，期间界面若毫无动静，
+ * 用户只会觉得「点了没反应」。把进度回传出来，等待才是可解释的。</p>
  */
-export const uploadVideoAsset = (file: File): AxiosPromise<VideoUploadResult> => {
+export const uploadVideoAsset = (
+  file: File,
+  onProgress?: (percent: number) => void
+): AxiosPromise<VideoUploadResult> => {
   const data = new FormData();
   data.append('file', file);
   return request({
@@ -43,6 +50,10 @@ export const uploadVideoAsset = (file: File): AxiosPromise<VideoUploadResult> =>
     method: 'post',
     headers: { 'Content-Type': 'multipart/form-data' },
     timeout: 180000,
+    onUploadProgress: (event: { loaded: number; total?: number }) => {
+      if (!onProgress || !event.total) return;
+      onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)));
+    },
     data
   });
 };

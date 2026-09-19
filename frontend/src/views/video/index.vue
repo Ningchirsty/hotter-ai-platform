@@ -147,11 +147,13 @@
               </template>
               <small>
                 {{
-                  field === 'frames'
-                    ? '支持 2-10 张关键帧'
-                    : field === 'audio'
-                      ? '支持 MP3、WAV、M4A'
-                      : '支持 JPG、PNG、WEBP，单张不超过 20MB'
+                  uploading && uploadPercent > 0
+                    ? `上传中 ${uploadPercent}%…`
+                    : field === 'frames'
+                      ? '支持 2-10 张关键帧'
+                      : field === 'audio'
+                        ? '支持 MP3、WAV、M4A'
+                        : '支持 JPG、PNG、WEBP，单张不超过 20MB（大图会自动压缩）'
                 }}
               </small>
             </label>
@@ -687,6 +689,54 @@ const FALLBACK_DURATIONS: Record<string, string[]> = {
   '标清 · 480P': ['5 秒', '10 秒', '20 秒']
 };
 const uploading = ref(false);
+
+/** 上传进度（0-100）。慢链路下一次上传要几十秒，没有它用户只会觉得卡住了。 */
+const uploadPercent = ref(0);
+
+/**
+ * 上传前把过大的图片压到合理尺寸。
+ *
+ * <p><b>为什么必须这么做。</b>源站是 cloudflared tunnel，Cloudflare 免费版对源站响应
+ * 有 100 秒上限：慢链路（手机 4G、弱 Wi-Fi）上传一张 12MB 的相机原图，光上传就要
+ * 一两分钟，结果就是 <b>HTTP 524</b>，用户看到「系统未知异常」——文件完全合法却传不上去。
+ * 而 H3 只需要一张条件图，工作流内部还会缩到 1280~1920，2048px 早已足够。</p>
+ *
+ * <p>只对大图动手：小图（≤3MB）原样上传，不做任何有损处理；
+ * 带透明通道的用 WebP（JPEG 会把透明变成黑块），其余用 JPEG。
+ * 任何一步失败都退回原文件——压缩只是优化，不能成为新的失败点。</p>
+ */
+const SHRINK_THRESHOLD_BYTES = 3 * 1024 * 1024;
+const SHRINK_MAX_EDGE = 2048;
+
+async function shrinkForUpload(file: File): Promise<File> {
+  if (!file.type.startsWith('image/') || file.size <= SHRINK_THRESHOLD_BYTES) return file;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const longEdge = Math.max(bitmap.width, bitmap.height);
+    const scale = Math.min(1, SHRINK_MAX_EDGE / longEdge);
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return file;
+    const alpha = file.type === 'image/png' || file.type === 'image/webp';
+    if (!alpha) {
+      // JPEG 无透明通道：先铺白底，避免透明区域变黑
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, width, height);
+    }
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    const outType = alpha ? 'image/webp' : 'image/jpeg';
+    const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, outType, 0.92));
+    if (!blob || blob.size >= file.size) return file;
+    const name = file.name.replace(/\.[^.]+$/, '') + (alpha ? '.webp' : '.jpg');
+    return new File([blob], name, { type: outType });
+  } catch {
+    return file;
+  }
+}
 const submitting = ref(false);
 const loadingTasks = ref(false);
 const loadingAssets = ref(false);
@@ -965,7 +1015,17 @@ async function handleFiles(field: FieldKey, event: Event) {
         previews.push(URL.createObjectURL(file));
         uploadPreviews[field] = [...previews];
       }
-      const res = await uploadVideoAsset(file);
+      // 大图先压缩：经 Cloudflare 慢链路上传 10MB+ 会撞上 100 秒源站超时（524）。
+      const prepared = await shrinkForUpload(file);
+      if (prepared !== file) {
+        ElMessage.info(
+          `「${file.name}」${(file.size / 1048576).toFixed(1)}MB 已压缩为 ${(prepared.size / 1048576).toFixed(1)}MB 上传`
+        );
+      }
+      uploadPercent.value = 0;
+      const res = await uploadVideoAsset(prepared, percent => {
+        uploadPercent.value = percent;
+      });
       if (res.data?.assetId !== undefined) ids.push(res.data.assetId);
     }
     uploadAssetIds[field] = ids;
@@ -981,6 +1041,7 @@ async function handleFiles(field: FieldKey, event: Event) {
     releaseUploadPreviews(field);
   } finally {
     uploading.value = false;
+    uploadPercent.value = 0;
   }
 }
 
