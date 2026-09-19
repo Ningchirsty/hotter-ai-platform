@@ -136,6 +136,45 @@ export interface TalentContactForm {
   content?: string;
 }
 
+/**
+ * 简历导入单字段候选（ResumeFieldCandidateVo）：field/label/value/confidence/source/hint
+ * source 取值 FILENAME（文件名）/ TEXT（正文）/ DEFAULT（默认值）
+ */
+export interface ResumeFieldCandidateVO {
+  field?: string;
+  label?: string;
+  /** 文本形态的候选值，前端需写回表单再提交 */
+  value?: string;
+  /** 置信度 0-1，低于 0.8 前端需提示人工核对 */
+  confidence?: number;
+  source?: string;
+  hint?: string;
+}
+
+/** 简历导入预览结果（ResumeImportPreviewVo） */
+export interface ResumeImportPreviewVO {
+  /** 服务端临时文件令牌，确认时原样回传；不落库 */
+  importToken?: string;
+  originalName?: string;
+  ext?: string;
+  size?: number;
+  /** 是否成功提取出正文文本；图片型简历为 false */
+  textExtracted?: boolean;
+  textLength?: number;
+  candidates?: ResumeFieldCandidateVO[];
+  warnings?: string[];
+}
+
+/**
+ * 简历导入确认表单（ResumeImportConfirmBo）
+ * 服务端不会回填未提交的抽取值，因此前端必须先把预览值写入 talent 再提交。
+ */
+export interface ResumeImportConfirmForm {
+  importToken: string;
+  /** 复用新增主档入参；email/experienceText 非主档字段，需拼入 remark 提交 */
+  talent: TalentForm;
+}
+
 /** 授权新增（TlAccessGrantBo） */
 export interface TalentGrantForm {
   grantId?: string | number;

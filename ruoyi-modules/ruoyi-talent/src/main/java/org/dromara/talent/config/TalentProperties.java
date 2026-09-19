@@ -39,4 +39,29 @@ public class TalentProperties {
      */
     private int exportMaxRows = 10000;
 
+    /**
+     * 是否启用「导入简历直接建档」（全本地 PDFBox / POI / 正则，不调用任何外部服务）。
+     * <p>
+     * 与 {@link #parseEnabled} 互相独立：本开关不受「解析服务需个人信息处理审批」的限制。
+     */
+    private boolean resumeImportEnabled = true;
+
+    /**
+     * 导入预览临时文件目录，默认 {@code ${java.io.tmpdir}/talent-import}。
+     * <p>
+     * 说明：Spring 不会对 Java 字段默认值做占位符解析，故此处直接解析运行时临时目录，
+     * 语义与 {@code ${java.io.tmpdir}/talent-import} 完全一致；仍可通过配置项覆盖。
+     */
+    private String importTempDir = System.getProperty("java.io.tmpdir") + "/talent-import";
+
+    /**
+     * 导入预览临时文件有效期（分钟），超期文件在下次 preview 时顺带清理
+     */
+    private int importTempTtlMinutes = 30;
+
+    /**
+     * 单次导入允许抽取的简历文本最大字符数（超出部分截断，防止正则回溯型拒绝服务）
+     */
+    private int importMaxTextLength = 200000;
+
 }

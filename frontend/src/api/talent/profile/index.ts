@@ -3,6 +3,8 @@ import type { AxiosPromise } from '@/utils/api-types';
 import request from '@/utils/request';
 import type { TalentDuplicateVO } from '../duplicate/types';
 import type {
+  ResumeImportConfirmForm,
+  ResumeImportPreviewVO,
   TalentArchiveForm,
   TalentContactForm,
   TalentContactVO,
@@ -114,5 +116,25 @@ export function revokeGrant(grantId: string | number) {
   return request({
     url: '/talent/profile/grant/' + grantId,
     method: 'delete'
+  });
+}
+
+// 简历导入-上传并预览解析：multipart/form-data，字段名固定为 file
+export function previewResumeImport(file: File): AxiosPromise<ResumeImportPreviewVO> {
+  const formData = new FormData();
+  formData.append('file', file);
+  return request({
+    url: '/talent/profile/import/preview',
+    method: 'post',
+    data: formData
+  });
+}
+
+// 简历导入-确认建档：以用户确认后的表单值为准，返回 [talentId, attachmentId]
+export function confirmResumeImport(data: ResumeImportConfirmForm): AxiosPromise<Array<string | number>> {
+  return request({
+    url: '/talent/profile/import/confirm',
+    method: 'post',
+    data: data
   });
 }
