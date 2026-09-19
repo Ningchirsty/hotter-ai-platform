@@ -697,42 +697,62 @@ const uploadPercent = ref(0);
  * 上传前把过大的图片压到合理尺寸。
  *
  * <p><b>为什么必须这么做。</b>源站是 cloudflared tunnel，Cloudflare 免费版对源站响应
- * 有 100 秒上限：慢链路（手机 4G、弱 Wi-Fi）上传一张 12MB 的相机原图，光上传就要
- * 一两分钟，结果就是 <b>HTTP 524</b>，用户看到「系统未知异常」——文件完全合法却传不上去。
- * 而 H3 只需要一张条件图，工作流内部还会缩到 1280~1920，2048px 早已足够。</p>
+ * 有 100 秒上限：慢链路（手机 4G、弱 Wi-Fi、国际链路）上传一张 12MB 的相机原图，
+ * 光上传就要一两分钟，结果就是 <b>HTTP 524</b>，用户看到「系统未知异常」——
+ * 文件完全合法却传不上去。而 H3 只需要一张条件图，工作流内部还会缩到 1280~1920，
+ * 2048px 早已足够。</p>
  *
- * <p>只对大图动手：小图（≤3MB）原样上传，不做任何有损处理；
- * 带透明通道的用 WebP（JPEG 会把透明变成黑块），其余用 JPEG。
- * 任何一步失败都退回原文件——压缩只是优化，不能成为新的失败点。</p>
+ * <p><b>为什么是按目标体积逐级压，而不是固定一档。</b>照片压到 2048px/JPG 0.92 通常
+ * 只有几百 KB；但截图、噪点图、扫描件这类难压的图可能仍有 3~4MB，在慢上行下依旧
+ * 会撞 100 秒。所以给一个目标体积，压不到就依次降尺寸与质量，最多四级；</p>
+ *
+ * <p>只对大图动手：小图（≤3MB）原样上传，不做任何有损处理；带透明通道的用 WebP
+ * （JPEG 会把透明压成黑块），其余用 JPEG。任何一步失败都退回原文件——
+ * 压缩只是优化，不能成为新的失败点。</p>
  */
 const SHRINK_THRESHOLD_BYTES = 3 * 1024 * 1024;
-const SHRINK_MAX_EDGE = 2048;
+/** 压缩目标：一次上传应在一分钟内完成（慢上行 ~35KB/s 也能压进 100 秒的 CF 上限）。 */
+const SHRINK_TARGET_BYTES = 1.5 * 1024 * 1024;
+/** [最长边, JPEG/WebP 质量] 逐级降档。 */
+const SHRINK_LADDER: Array<[number, number]> = [
+  [2048, 0.92],
+  [1920, 0.85],
+  [1600, 0.8],
+  [1280, 0.72]
+];
 
 async function shrinkForUpload(file: File): Promise<File> {
   if (!file.type.startsWith('image/') || file.size <= SHRINK_THRESHOLD_BYTES) return file;
   try {
     const bitmap = await createImageBitmap(file);
-    const longEdge = Math.max(bitmap.width, bitmap.height);
-    const scale = Math.min(1, SHRINK_MAX_EDGE / longEdge);
-    const width = Math.max(1, Math.round(bitmap.width * scale));
-    const height = Math.max(1, Math.round(bitmap.height * scale));
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return file;
     const alpha = file.type === 'image/png' || file.type === 'image/webp';
-    if (!alpha) {
-      // JPEG 无透明通道：先铺白底，避免透明区域变黑
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, width, height);
-    }
-    ctx.drawImage(bitmap, 0, 0, width, height);
     const outType = alpha ? 'image/webp' : 'image/jpeg';
-    const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, outType, 0.92));
-    if (!blob || blob.size >= file.size) return file;
+    let best: Blob | null = null;
+    for (const [maxEdge, quality] of SHRINK_LADDER) {
+      const longEdge = Math.max(bitmap.width, bitmap.height);
+      const scale = Math.min(1, maxEdge / longEdge);
+      const width = Math.max(1, Math.round(bitmap.width * scale));
+      const height = Math.max(1, Math.round(bitmap.height * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return file;
+      if (!alpha) {
+        // JPEG 无透明通道：先铺白底，避免透明区域变黑
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+      }
+      ctx.drawImage(bitmap, 0, 0, width, height);
+      const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, outType, quality));
+      if (!blob) return file;
+      // 这一档已经够小，或者已经压到最低一档，就收手
+      if (!best || blob.size < best.size) best = blob;
+      if (blob.size <= SHRINK_TARGET_BYTES) break;
+    }
+    if (!best || best.size >= file.size) return file;
     const name = file.name.replace(/\.[^.]+$/, '') + (alpha ? '.webp' : '.jpg');
-    return new File([blob], name, { type: outType });
+    return new File([best], name, { type: outType });
   } catch {
     return file;
   }
