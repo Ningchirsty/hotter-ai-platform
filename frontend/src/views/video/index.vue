@@ -935,11 +935,12 @@ async function handleFiles(field: FieldKey, event: Event) {
   try {
     const ids: Array<number | string> = [];
     const previews: string[] = [];
-    // 选图后立刻出预览：用本地文件生成对象 URL，不等网络。
-    releaseUploadPreviews(field);
+
+    // 先把这一批文件全部校验完，再动界面。
+    // 反例（曾经的写法）：边校验边清空预览 —— 用户误选了一个 24MB 的文件时，
+    // 原来选好的那张图会被擦掉（素材 ID 还在），界面与真实状态对不上，
+    // 而且撤销 blob URL 还会在控制台留下 ERR_FILE_NOT_FOUND。
     for (const file of files) {
-      // 提交前先做本地校验：文件为空或类型不被接受时，明确告知用户，
-      // 而不是发一个注定被后端拒绝的请求。后端同样会校验，这里是第一道闸。
       if (!file.size) {
         ElMessage.error(`「${file.name}」是空文件，请重新选择`);
         return;
@@ -954,10 +955,14 @@ async function handleFiles(field: FieldKey, event: Event) {
         ElMessage.error(`「${file.name}」格式不支持，请上传 PNG/JPEG/WEBP 图片`);
         return;
       }
+    }
+
+    releaseUploadPreviews(field);
+    for (const file of files) {
       if (file.type.startsWith('image/')) {
+        // 创建对象 URL 后立刻挂上去：预览不能等网络——慢链路下一张 12MB 的图
+        // 要十几秒，用户得在这之前就确认自己选对了图。
         previews.push(URL.createObjectURL(file));
-        // 立刻挂上去：预览不能等网络——慢链路下一张 12MB 的图要十几秒，
-        // 用户要在这之前就确认自己选对了图。
         uploadPreviews[field] = [...previews];
       }
       const res = await uploadVideoAsset(file);
