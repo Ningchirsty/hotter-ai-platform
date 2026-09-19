@@ -123,18 +123,35 @@
                 :multiple="field === 'frames'"
                 @change="handleFiles(field, $event)"
               />
-              <el-icon>
-                <Check v-if="uploadAssetIds[field]?.length" />
-                <UploadFilled v-else />
-              </el-icon>
-              <b>{{ uploadSummary(field) }}</b>
+              <!--
+                已选图片的预览。没有它，用户只能看到一行「素材 1234567890」，
+                传错图要等生成完才发现。
+              -->
+              <div v-if="uploadPreviews[field]?.length" class="upload-previews">
+                <img
+                  v-for="(src, index) in uploadPreviews[field]"
+                  :key="index"
+                  :src="src"
+                  :alt="`已选素材 ${index + 1}`"
+                />
+                <span v-if="uploadAssetIds[field]?.length" class="upload-previews-badge">
+                  已上传 {{ uploadAssetIds[field]!.length }} 张
+                </span>
+              </div>
+              <template v-else>
+                <el-icon>
+                  <Check v-if="uploadAssetIds[field]?.length" />
+                  <UploadFilled v-else />
+                </el-icon>
+                <b>{{ uploadSummary(field) }}</b>
+              </template>
               <small>
                 {{
                   field === 'frames'
                     ? '支持 2-10 张关键帧'
                     : field === 'audio'
                       ? '支持 MP3、WAV、M4A'
-                      : '支持 JPG、PNG、WEBP'
+                      : '支持 JPG、PNG、WEBP，单张不超过 20MB'
                 }}
               </small>
             </label>
@@ -633,6 +650,23 @@ const values = reactive<Partial<Record<FieldKey, string>>>({ tier: '高清 · 10
 const uploadAssetIds = reactive<Partial<Record<FieldKey, Array<number | string>>>>({});
 
 /**
+ * 每个上传字段的本地预览图（blob URL）。
+ *
+ * <p>为什么要有：用户选完图之后，界面上原来只有一行「已上传 · 素材 1234567890」，
+ * 根本无法确认选的是哪张图——传错图只能等生成完才发现。这里在选图后立刻用本地
+ * 文件生成预览，不用等后端返回，也不产生额外请求。</p>
+ */
+const uploadPreviews = reactive<Partial<Record<FieldKey, string[]>>>({});
+
+/** 释放某个字段的本地预览，避免一直占着内存。 */
+function releaseUploadPreviews(field: FieldKey) {
+  for (const url of uploadPreviews[field] ?? []) {
+    URL.revokeObjectURL(url);
+  }
+  uploadPreviews[field] = [];
+}
+
+/**
  * 与后端 VideoCreationController 保持一致的上传约束。
  *
  * <p>放在前端是为了给出即时、明确的提示，而不是让用户等一个必然失败的请求。
@@ -855,6 +889,7 @@ function selectModule(item: StudioModule) {
     VIDEO_MODELS[0]!;
   Object.keys(values).forEach(key => delete values[key as FieldKey]);
   Object.keys(uploadAssetIds).forEach(key => delete uploadAssetIds[key as FieldKey]);
+  uploadFields.forEach(field => releaseUploadPreviews(field));
   // 默认取服务端允许的第一个档位，而不是写死 1080P。
   values.tier = supportedTiers.value[0] ?? '高清 · 1080P';
   values.dur = '5 秒';
@@ -899,6 +934,9 @@ async function handleFiles(field: FieldKey, event: Event) {
   uploading.value = true;
   try {
     const ids: Array<number | string> = [];
+    const previews: string[] = [];
+    // 选图后立刻出预览：用本地文件生成对象 URL，不等网络。
+    releaseUploadPreviews(field);
     for (const file of files) {
       // 提交前先做本地校验：文件为空或类型不被接受时，明确告知用户，
       // 而不是发一个注定被后端拒绝的请求。后端同样会校验，这里是第一道闸。
@@ -907,17 +945,23 @@ async function handleFiles(field: FieldKey, event: Event) {
         return;
       }
       if (file.size > MAX_UPLOAD_BYTES) {
-        ElMessage.error(`「${file.name}」超过 ${MAX_UPLOAD_BYTES / 1024 / 1024}MB 上限`);
+        ElMessage.error(
+          `「${file.name}」${(file.size / 1024 / 1024).toFixed(1)}MB，超过 ${MAX_UPLOAD_BYTES / 1024 / 1024}MB 上限，请压缩后再传`
+        );
         return;
       }
       if (file.type && !ALLOWED_UPLOAD_TYPES.includes(file.type.toLowerCase())) {
         ElMessage.error(`「${file.name}」格式不支持，请上传 PNG/JPEG/WEBP 图片`);
         return;
       }
+      if (file.type.startsWith('image/')) {
+        previews.push(URL.createObjectURL(file));
+      }
       const res = await uploadVideoAsset(file);
       if (res.data?.assetId !== undefined) ids.push(res.data.assetId);
     }
     uploadAssetIds[field] = ids;
+    uploadPreviews[field] = previews;
     ElMessage.success(`已上传 ${ids.length} 个素材`);
     void loadAssets();
   } catch (error) {
@@ -926,6 +970,7 @@ async function handleFiles(field: FieldKey, event: Event) {
     const detail = (await extractErrorMessage(error)) ?? '素材上传失败';
     const name = files.map(f => f.name).join('、');
     ElMessage.error(`${detail}（文件：${name}）`);
+    releaseUploadPreviews(field);
   } finally {
     uploading.value = false;
   }
@@ -1232,6 +1277,7 @@ onBeforeUnmount(() => {
   releasePreviewUrl();
   Object.values(coverUrls.value).forEach(URL.revokeObjectURL);
   Object.values(imageUrls.value).forEach(URL.revokeObjectURL);
+  Object.values(uploadPreviews).forEach(urls => urls?.forEach(URL.revokeObjectURL));
 });
 
 function releasePreviewUrl() {
@@ -1583,6 +1629,25 @@ button {
 }
 .gpu-status-warn {
   color: #e6a23c;
+}
+.upload-previews {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+.upload-previews img {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border: 1px solid var(--line2);
+  border-radius: 6px;
+}
+.upload-previews-badge {
+  color: var(--t2);
+  font-size: 11px;
 }
 .task-worker {
   padding: 1px 5px;

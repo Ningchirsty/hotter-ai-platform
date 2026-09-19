@@ -35,6 +35,7 @@ import org.dromara.ai.video.support.CamelCase;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -119,6 +120,20 @@ public class VideoCreationController extends BaseController {
     public R<Void> handleVideoTaskException(VideoTaskException e) {
         log.warn("视频任务校验拒绝 [{}]：{}", e.getErrorCode(), e.getMessage());
         return R.fail(400, e.getMessage());
+    }
+
+    /**
+     * 上传超过容器级 multipart 上限。
+     *
+     * <p>不处理的话会落到全局兜底，用户看到的是「发生未知异常，请联系管理员」；
+     * 更糟的情况是文件大到容器直接掐断连接，前端只能报「接口连接异常」——
+     * 用户完全不知道问题出在文件太大。这里把它翻译成一句可行动的话。</p>
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public R<Void> handleMaxUploadSize(MaxUploadSizeExceededException e) {
+        log.warn("上传被容器级大小限制拒绝：{}", e.getMessage());
+        return R.fail(400, "素材太大，请压缩到 " + (MAX_UPLOAD_BYTES / 1024 / 1024)
+            + "MB 以内再上传（手机截图/相机原图常见 5~15MB，必要时先转 JPG）");
     }
 
     /**
