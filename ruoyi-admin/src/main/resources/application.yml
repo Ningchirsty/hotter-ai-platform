@@ -69,10 +69,18 @@ spring:
   # 文件上传
   servlet:
     multipart:
-      # 单个文件大小
-      max-file-size: 10MB
-      # 设置总上传的文件大小
-      max-request-size: 20MB
+      # 单个文件大小。
+      #
+      # 为什么远高于业务上限（20MB）：视频创作模块自己的上限是 20MB（控制器里的
+      # MAX_UPLOAD_BYTES，前端也是 20MB）。原来这里是 10MB，比业务上限还低，于是
+      # 10~20MB 的图片会先被容器拦下：报的是 MaxUploadSizeExceededException → 500
+      # 「发生未知异常」；更大的文件更糟——Jetty 不会再读完剩余请求体，连接被直接掐断，
+      # 浏览器只看到「接口连接异常」，用户根本不知道是文件太大。
+      #
+      # 把容器级闸门放到业务闸门之上，超限就由控制器返回一句能看懂的话。
+      max-file-size: 64MB
+      # 设置总上传的文件大小（关键帧最多 10 张，留足余量）
+      max-request-size: 128MB
   mvc:
     # 设置静态资源路径 防止所有请求都去查静态资源
     static-path-pattern: /static/**

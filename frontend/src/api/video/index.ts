@@ -29,6 +29,11 @@ export const listVideoWorkflows = (): AxiosPromise<VideoWorkflowVO[]> => {
  * 上传素材，返回后端素材 ID。
  *
  * 注意：提交任务时使用返回的 `assetId`，不能使用浏览器本地文件名。
+ *
+ * <p><b>为什么单独放大超时。</b>全局超时是 50 秒，而经 Cloudflare 实测吞吐只有
+ * 258 KB/s ~ 790 KB/s：一张 5MB 的手机原图就要 7~20 秒，15MB 的截图在慢链路下会
+ * 超过 50 秒。用户看到的是「系统接口请求超时」，但文件其实完全合法——
+ * 这是把网络慢误报成失败。给上传单独留 3 分钟。</p>
  */
 export const uploadVideoAsset = (file: File): AxiosPromise<VideoUploadResult> => {
   const data = new FormData();
@@ -37,6 +42,7 @@ export const uploadVideoAsset = (file: File): AxiosPromise<VideoUploadResult> =>
     url: '/video/assets',
     method: 'post',
     headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 180000,
     data
   });
 };
