@@ -956,6 +956,9 @@ async function handleFiles(field: FieldKey, event: Event) {
       }
       if (file.type.startsWith('image/')) {
         previews.push(URL.createObjectURL(file));
+        // 立刻挂上去：预览不能等网络——慢链路下一张 12MB 的图要十几秒，
+        // 用户要在这之前就确认自己选对了图。
+        uploadPreviews[field] = [...previews];
       }
       const res = await uploadVideoAsset(file);
       if (res.data?.assetId !== undefined) ids.push(res.data.assetId);
