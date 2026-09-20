@@ -109,13 +109,14 @@ insert into sys_role_menu values (1763100000000000001, 1763000000000001303);
 insert into sys_role_menu values (1763100000000000001, 1763000000000001304);
 insert into sys_role_menu values (1763100000000000001, 1763000000000000104);
 
--- 信息安全授权人：模型注册（含密钥引用）+ 调用审计 + 只读能力/策略
+-- 信息安全授权人：模型注册（含新增模型与密钥引用）+ 调用审计 + 只读能力/策略
 insert into sys_role_menu values (1763100000000000002, 1763000000000000001);
 insert into sys_role_menu values (1763100000000000002, 1763000000000000101);
 insert into sys_role_menu values (1763100000000000002, 1763000000000001101);
 insert into sys_role_menu values (1763100000000000002, 1763000000000000102);
 insert into sys_role_menu values (1763100000000000002, 1763000000000001201);
 insert into sys_role_menu values (1763100000000000002, 1763000000000001203);
+insert into sys_role_menu values (1763100000000000002, 1763000000000001204);
 insert into sys_role_menu values (1763100000000000002, 1763000000000000103);
 insert into sys_role_menu values (1763100000000000002, 1763000000000001301);
 insert into sys_role_menu values (1763100000000000002, 1763000000000000104);
