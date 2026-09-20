@@ -1,61 +1,89 @@
 <template>
-  <div class="login">
-    <el-form ref="loginRef" :model="loginForm" :rules="loginRules" class="login-form">
-      <div class="title-box">
-        <h3 class="title">{{ title }}</h3>
-        <lang-select />
+  <FloralLogin>
+    <!-- 原项目的语言选择器，继续使用工程 i18n（组件默认按钮只切换组件自身文案） -->
+    <template #language>
+      <lang-select />
+    </template>
+
+    <!--
+      原登录表单原样放进 #form 插槽：
+      ref / model / rules / 全部字段 / 条件渲染 / 事件 / 提交按钮全部保留，
+      只去掉与组件重复的外层标题与卡片（组件已包含标题与卡片）。
+    -->
+    <template #form>
+      <el-form ref="loginRef" :model="loginForm" :rules="loginRules" label-position="top">
+        <el-form-item :label="proxy.$t('login.username')" prop="username">
+          <el-input
+            v-model="loginForm.username"
+            type="text"
+            size="large"
+            auto-complete="off"
+            :placeholder="proxy.$t('login.username')"
+            @keyup.enter="handleLogin"
+          >
+            <template #prefix><svg-icon icon-class="user" class="el-input__icon input-icon" /></template>
+          </el-input>
+        </el-form-item>
+
+        <el-form-item :label="proxy.$t('login.password')" prop="password">
+          <el-input
+            v-model="loginForm.password"
+            type="password"
+            size="large"
+            auto-complete="off"
+            :placeholder="proxy.$t('login.password')"
+            @keyup.enter="handleLogin"
+          >
+            <template #prefix><svg-icon icon-class="password" class="el-input__icon input-icon" /></template>
+          </el-input>
+        </el-form-item>
+
+        <el-form-item v-if="captchaEnabled" :label="proxy.$t('login.code')" prop="code">
+          <!-- .fl-code-row / .fl-code 由组件样式提供，栅格与确认稿一致（输入框 + 93px 验证码位） -->
+          <div class="fl-code-row">
+            <el-input
+              v-model="loginForm.code"
+              size="large"
+              auto-complete="off"
+              :placeholder="proxy.$t('login.code')"
+              @keyup.enter="handleLogin"
+            >
+              <template #prefix><svg-icon icon-class="validCode" class="el-input__icon input-icon" /></template>
+            </el-input>
+            <button type="button" class="fl-code" aria-label="刷新验证码" @click="getCode">
+              <img v-if="codeUrl" :src="codeUrl" alt="验证码" />
+            </button>
+          </div>
+        </el-form-item>
+
+        <el-checkbox v-model="loginForm.rememberMe" class="login-remember">
+          {{ proxy.$t('login.rememberPassword') }}
+        </el-checkbox>
+
+        <el-form-item class="login-submit">
+          <el-button :loading="loading" size="large" type="primary" style="width: 100%" @click.prevent="handleLogin">
+            <span v-if="!loading">{{ proxy.$t('login.login') }}</span>
+            <span v-else>{{ proxy.$t('login.logging') }}</span>
+          </el-button>
+          <div v-if="register" style="float: right">
+            <router-link class="link-type" :to="'/register'">{{ proxy.$t('login.switchRegisterPage') }}</router-link>
+          </div>
+        </el-form-item>
+      </el-form>
+    </template>
+
+    <!-- 确认稿的页脚文案 + 原工程版权行（保留原有信息，可随时删除下面这一行） -->
+    <template #footer>
+      <div class="fl-poetry">
+        每一个灵感，都值得盛放。<small>IMAGINATION IN BLOOM / 2026</small>
+        <span class="login-copyright">Copyright © 2018-2026 疯狂的狮子Li All Rights Reserved.</span>
       </div>
-      <el-form-item prop="username">
-        <el-input v-model="loginForm.username" type="text" size="large" auto-complete="off" :placeholder="proxy.$t('login.username')">
-          <template #prefix><svg-icon icon-class="user" class="el-input__icon input-icon" /></template>
-        </el-input>
-      </el-form-item>
-      <el-form-item prop="password">
-        <el-input
-          v-model="loginForm.password"
-          type="password"
-          size="large"
-          auto-complete="off"
-          :placeholder="proxy.$t('login.password')"
-          @keyup.enter="handleLogin"
-        >
-          <template #prefix><svg-icon icon-class="password" class="el-input__icon input-icon" /></template>
-        </el-input>
-      </el-form-item>
-      <el-form-item v-if="captchaEnabled" prop="code">
-        <el-input
-          v-model="loginForm.code"
-          size="large"
-          auto-complete="off"
-          :placeholder="proxy.$t('login.code')"
-          style="width: 63%"
-          @keyup.enter="handleLogin"
-        >
-          <template #prefix><svg-icon icon-class="validCode" class="el-input__icon input-icon" /></template>
-        </el-input>
-        <div class="login-code">
-          <img :src="codeUrl" class="login-code-img" @click="getCode" />
-        </div>
-      </el-form-item>
-      <el-checkbox v-model="loginForm.rememberMe" style="margin: 0 0 25px 0">{{ proxy.$t('login.rememberPassword') }}</el-checkbox>
-      <el-form-item style="width: 100%">
-        <el-button :loading="loading" size="large" type="primary" style="width: 100%" @click.prevent="handleLogin">
-          <span v-if="!loading">{{ proxy.$t('login.login') }}</span>
-          <span v-else>{{ proxy.$t('login.logging') }}</span>
-        </el-button>
-        <div v-if="register" style="float: right">
-          <router-link class="link-type" :to="'/register'">{{ proxy.$t('login.switchRegisterPage') }}</router-link>
-        </div>
-      </el-form-item>
-    </el-form>
-    <!--  底部  -->
-    <div class="el-login-footer">
-      <span>Copyright © 2018-2026 疯狂的狮子Li All Rights Reserved.</span>
-    </div>
-  </div>
+    </template>
+  </FloralLogin>
 </template>
 
 <script setup lang="ts">
+import FloralLogin from '@/components/FloralLogin/FloralLogin.vue';
 import { getCodeImg } from '@/api/login';
 import { useUserStore } from '@/store/modules/user';
 import { LoginData } from '@/api/types';
@@ -64,7 +92,6 @@ import { useI18n } from 'vue-i18n';
 
 const { proxy } = getCurrentInstance() as ComponentInternalInstance;
 
-const title = import.meta.env.VITE_APP_TITLE;
 const userStore = useUserStore();
 const router = useRouter();
 const { t } = useI18n();
@@ -168,129 +195,50 @@ onMounted(() => {
 </script>
 
 <style lang="scss" scoped>
-.login {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 100%;
-  background-image: url('../assets/images/login-background.jpg');
-  background-size: cover;
-  background-position: center;
+/*
+  为什么选择器写成 `.zx-floral-login :deep(...)` 而不是带上 .fl-panel：
+  Vue 的作用域属性只会加到本组件模板渲染出的元素上（子组件仅根元素带父作用域）。
+  .fl-panel 是 FloralLogin 内部元素，不带本页的 data-v，写 `.fl-panel[data-v] ...`
+  会导致规则根本不匹配 —— 这就是先前输入行被撑到 150px 却没被这几条规则压住的原因。
+  `.zx-floral-login` 是子组件根元素，会带上本页作用域属性，挂在这里才生效。
+
+  规则说明：
+  1) 标签字重：全局 base 有 `label{font-weight:600}`，vendors 里还有
+     `.el-form .el-form-item__label{font-weight:1000}`，都比确认稿粗，压回 400。
+  2) 输入行高度：Element Plus 的 `.el-input__prefix{height:100%}` 与
+     `.el-input .el-input__icon{height:inherit}` 会让 <svg> 高度变成"未定"，
+     替换元素没有内在尺寸时浏览器按默认 150px 处理 → 整行被撑到 150px、卡片溢出屏幕。
+     这里既收回图标高度（1em，治根），也按确认稿把输入行定在 44px。
+  3) 页脚版权行与"记住我"间距。
+*/
+.zx-floral-login :deep(.el-form-item__label) {
+  font-weight: 400;
 }
 
-.title-box {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-
-  .title {
-    margin: 0px auto 26px auto;
-    text-align: center;
-    color: var(--el-text-color-primary);
-    font-weight: 600;
-    letter-spacing: 0.5px;
-  }
-
-  :deep(.lang-select--style) {
-    line-height: 0;
-    color: var(--el-text-color-secondary);
-  }
+.zx-floral-login :deep(.el-input__icon) {
+  height: 1em;
 }
 
-.login-form {
-  border-radius: var(--app-radius-lg);
-  background: rgba(255, 255, 255, 0.94);
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  width: min(420px, 90vw);
-  padding: 32px 30px 12px 30px;
-  z-index: 1;
-  box-shadow: var(--app-shadow-lg);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  .el-input {
-    height: 40px;
-    input {
-      height: 40px;
-    }
-  }
-
-  .input-icon {
-    height: 39px;
-    width: 14px;
-    margin-left: 0px;
-  }
+.zx-floral-login :deep(.el-input),
+.zx-floral-login :deep(.el-select) {
+  height: 44px;
 }
 
-.login-tip {
-  font-size: 13px;
-  text-align: center;
-  color: #bfbfbf;
+.login-remember {
+  display: block;
+  margin: 0 0 20px;
 }
 
-.login-form :deep(.el-input__wrapper) {
-  background-color: rgba(255, 255, 255, 0.9);
+.login-submit {
+  margin-bottom: 0;
 }
 
-.login-form :deep(.el-input__wrapper.is-focus) {
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
-}
-
-.login-form :deep(.el-button--primary) {
-  border-radius: var(--app-radius-md);
-  box-shadow: 0 8px 20px rgba(59, 130, 246, 0.25);
-}
-
-.login-code {
-  width: calc(37% - 10px);
-  height: 40px;
-  float: right;
-  margin-left: 10px;
-  box-sizing: border-box;
-  border-radius: var(--app-radius-sm);
-  overflow: hidden;
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid var(--el-border-color-light);
-
-  img {
-    cursor: pointer;
-    vertical-align: middle;
-    display: block;
-    width: 100%;
-    height: 40px;
-    object-fit: cover;
-  }
-}
-
-.el-login-footer {
-  height: 40px;
-  line-height: 40px;
-  position: fixed;
-  bottom: 0;
-  width: 100%;
-  text-align: center;
-  color: rgba(255, 255, 255, 0.75);
-  font-family: Arial, serif;
-  font-size: 12px;
-  letter-spacing: 1px;
-}
-
-.login-code-img {
-  height: 40px;
-  padding-left: 0;
-}
-
-:global(html.dark) {
-  .login-form {
-    background: rgba(17, 24, 39, 0.9);
-    border-color: rgba(148, 163, 184, 0.2);
-  }
-
-  .login-form :deep(.el-input__wrapper) {
-    background-color: rgba(17, 24, 39, 0.7);
-  }
-
-  .el-login-footer {
-    color: rgba(226, 232, 240, 0.65);
-  }
+.login-copyright {
+  display: block;
+  margin-top: 4px;
+  font-size: 9px;
+  line-height: 1.5;
+  letter-spacing: 0.5px;
+  color: #8a95a4;
 }
 </style>

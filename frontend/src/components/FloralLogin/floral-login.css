@@ -1,0 +1,53 @@
+.zx-floral-login{position:relative;isolation:isolate;overflow:hidden;min-height:690px;width:100%;color:#263345;background:radial-gradient(ellipse at 9% 85%,#c4d4e4 0,transparent 48%),radial-gradient(ellipse at 94% 12%,#dbd8e8 0,transparent 42%),linear-gradient(125deg,#f4f1ed,#ecf0f5 56%,#dce6f0);font-family:"Microsoft YaHei","PingFang SC",Arial,sans-serif;color-scheme:light;--floral-ink:#27364b}
+    .zx-floral-login *{box-sizing:border-box}
+    .zx-floral-login .fl-canvas{position:absolute;inset:0;width:100%;height:100%;z-index:-1;pointer-events:none}
+    .zx-floral-login .fl-header{position:relative;display:flex;align-items:center;justify-content:space-between;padding:29px 36px;z-index:2}
+    .zx-floral-login .fl-brand{font:500 12px/1.5 Arial,sans-serif;letter-spacing:3px;color:#40526a}
+    .zx-floral-login .fl-brand span{display:inline-block;width:7px;height:7px;margin:0 10px 1px 0;background:#7b90a8;transform:rotate(45deg)}
+    .zx-floral-login .fl-language{border:0;background:transparent;font:12px/1.5 inherit;color:#4c5d71;padding:8px;cursor:pointer}
+    .zx-floral-login .fl-stage{position:relative;display:flex;justify-content:center;align-items:center;min-height:520px;padding:14px 24px 32px}
+    .zx-floral-login .fl-panel{position:relative;width:356px;padding:35px 32px 27px;background:rgba(249,250,252,.93);border:1px solid rgba(255,255,255,.94);border-radius:18px;box-shadow:0 30px 70px -30px rgba(63,80,112,.28),inset 0 0 30px rgba(255,255,255,.6)}
+    .zx-floral-login h2{margin:0;text-align:center;font-size:23px;line-height:1.5;font-weight:500;letter-spacing:.8px;color:#27364b}
+    .zx-floral-login .fl-subtitle{margin:9px 0 29px;text-align:center;color:#758093;font-size:12px;line-height:1.6;letter-spacing:2px}
+    .zx-floral-login .fl-field{display:block;margin:0 0 17px}
+    .zx-floral-login .fl-label{display:block;margin-bottom:8px;font-size:11px;line-height:1.4;color:#5b687b}
+    .zx-floral-login .fl-input{font:13px/1.5 "Microsoft YaHei",sans-serif;width:100%;height:44px;border:1px solid #dce1e8;background:#fff;border-radius:7px;padding:0 13px;color:#354356;transition:border-color .2s,box-shadow .2s}
+    .zx-floral-login .fl-input::placeholder{color:#8993a2}
+    .zx-floral-login .fl-input:focus{border-color:#7d94b0;box-shadow:0 0 0 3px #7d94b018;outline:2px solid transparent}
+    .zx-floral-login .fl-code-row{display:grid;grid-template-columns:minmax(0,1fr) 93px;gap:10px}
+    .zx-floral-login .fl-code{position:relative;border:1px solid #e0e4ec;border-radius:7px;overflow:hidden;background:repeating-linear-gradient(155deg,transparent 0 13px,#adb7d12b 14px 15px,transparent 16px 23px),#eef0f7;color:#65718a;font:italic 24px/1 Georgia,serif;letter-spacing:5px;cursor:pointer}
+    .zx-floral-login .fl-remember{display:flex;align-items:center;gap:7px;margin:0 0 21px;font-size:11px;line-height:1.4;color:#6c7788;width:fit-content}
+    .zx-floral-login .fl-remember input{margin:0;accent-color:var(--floral-ink);width:13px;height:13px}
+    .zx-floral-login .fl-submit{width:100%;height:45px;border:0;border-radius:7px;background:var(--floral-ink);color:#fff;cursor:pointer;font:13px/1.5 "Microsoft YaHei",sans-serif;letter-spacing:8px;padding-left:8px;box-shadow:0 8px 18px #27364b15;transition:background .2s,transform .2s}
+    .zx-floral-login .fl-submit:hover{background:#405771;transform:translateY(-1px)}
+    .zx-floral-login .fl-note{margin:13px 0 0;text-align:center;font-size:10px;line-height:1.5;color:#7b8594;letter-spacing:1px;min-height:15px}
+    .zx-floral-login .fl-footer{position:relative;display:flex;justify-content:space-between;align-items:end;padding:13px 36px 29px;gap:20px;color:#5c7085}
+    .zx-floral-login .fl-poetry{font-size:12px;line-height:1.6;letter-spacing:3px}
+    .zx-floral-login .fl-poetry small{display:block;margin-top:5px;font:9px/1.5 Georgia,serif;letter-spacing:2px;color:#718296}
+    .zx-floral-login .fl-motion{display:flex;align-items:center;gap:8px;border:0;background:transparent;color:#4f637b;font-size:11px;padding:10px 0;cursor:pointer;white-space:nowrap}
+    .zx-floral-login .fl-motion i{height:5px;width:5px;border-radius:50%;background:#8399b1;box-shadow:0 0 0 3px #8399b117}
+    @media(max-width:600px){.zx-floral-login{min-height:670px}.zx-floral-login .fl-header{padding:21px 22px}.zx-floral-login .fl-brand{font-size:10px;letter-spacing:2px}.zx-floral-login .fl-stage{padding:22px 20px;min-height:524px}.zx-floral-login .fl-panel{padding:29px 25px 24px;max-width:356px}.zx-floral-login .fl-footer{padding:8px 22px 23px}.zx-floral-login .fl-poetry{font-size:10px;letter-spacing:1px}.zx-floral-login .fl-poetry small{font-size:8px;letter-spacing:1px}}
+  
+/* Full-page integration; the approved colours, flower geometry and panel styling remain unchanged. */
+.zx-floral-login { display:flex;flex-direction:column;min-height:100vh;min-height:100svh; }
+.zx-floral-login .fl-stage { flex:1; }
+.zx-floral-login .fl-panel { max-width:100%; }
+.zx-floral-login .fl-fallback { position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:-1;pointer-events:none; }
+.zx-floral-login .fl-canvas { display:block; }
+.zx-floral-login .fl-code img { display:block;width:100%;height:100%;object-fit:contain; }
+.zx-floral-login .fl-code { height:44px;padding:0;letter-spacing:0;font:12px/1.5 inherit; }
+.zx-floral-login .fl-submit:disabled { cursor:wait;opacity:.6;transform:none; }
+.zx-floral-login .fl-error { margin:0 0 12px;font-size:12px;line-height:1.5;color:#ac3641;overflow-wrap:anywhere; }
+/* These rules also style the original RuoYi Element Plus form passed into the form slot. */
+.zx-floral-login .fl-panel .el-form { width:100%;padding:0;background:transparent;border:0;border-radius:0;box-shadow:none; }
+.zx-floral-login .fl-panel .el-form-item { margin-bottom:20px; }
+.zx-floral-login .fl-panel .el-form-item__label { color:#5b687b;font-size:11px;line-height:1.4;margin-bottom:8px;padding:0; }
+.zx-floral-login .fl-panel .el-input__wrapper,
+.zx-floral-login .fl-panel .el-select__wrapper { min-height:44px;border-radius:7px;background:#fff;box-shadow:0 0 0 1px #dce1e8 inset;padding:0 13px; }
+.zx-floral-login .fl-panel .el-input__inner { height:44px;color:#354356;font-size:13px; }
+.zx-floral-login .fl-panel .el-input__wrapper.is-focus { box-shadow:0 0 0 1px #7d94b0 inset; }
+.zx-floral-login .fl-panel .el-button--primary { --el-button-bg-color:#27364b;--el-button-border-color:#27364b;--el-button-hover-bg-color:#405771;--el-button-hover-border-color:#405771;height:45px;border-radius:7px; }
+.zx-floral-login .fl-panel .el-checkbox { --el-checkbox-checked-bg-color:#27364b;--el-checkbox-checked-input-border-color:#27364b;color:#6c7788; }
+.zx-floral-login .fl-panel .fl-code-row { width:100%; }
+.zx-floral-login .fl-panel .fl-code-row > .el-input { width:100%;min-width:0; }
+@media(max-width:600px) { .zx-floral-login{min-height:100vh;min-height:100svh;} }

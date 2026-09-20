@@ -15,6 +15,11 @@
         </el-menu>
       </transition>
     </el-scrollbar>
+    <!-- 设计规范：侧栏底部一行安静的品牌短句；收起侧栏时隐藏，避免挤压菜单 -->
+    <div v-if="!isCollapse" class="sidebar-footer">
+      <p>每一份灵感，都值得绽放。</p>
+      <span>IMAGINATION IN BLOOM</span>
+    </div>
   </div>
 </template>
 
@@ -47,7 +52,8 @@ const activeMenu = computed(() => {
 });
 
 const bgColor = computed(() => (sideTheme.value === 'theme-dark' ? '#111827' : '#ffffff'));
-const textColor = computed(() => (sideTheme.value === 'theme-dark' ? '#e5edf8' : '#1f2937'));
+// 浅色侧栏文字沿用 design-tokens 的 $zx-text（#475c70），与 _shell.scss 的 --side-menu-text 保持一致
+const textColor = computed(() => (sideTheme.value === 'theme-dark' ? '#e5edf8' : '#475c70'));
 const menuStyle = computed(() => ({
   backgroundColor: bgColor.value,
   '--el-menu-bg-color': bgColor.value,
@@ -84,5 +90,25 @@ const menuStyle = computed(() => ({
 :deep(.el-scrollbar__wrap) {
   height: 100%;
   overflow-x: hidden;
+}
+
+.sidebar-footer {
+  flex-shrink: 0;
+  padding: 10px 10px 2px;
+  border-top: 1px solid var(--app-sidebar-border);
+  line-height: 1.5;
+}
+
+.sidebar-footer p {
+  margin: 0;
+  font-size: 11px;
+  color: var(--app-text-muted);
+}
+
+.sidebar-footer span {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--app-text-muted);
+  opacity: 0.75;
 }
 </style>

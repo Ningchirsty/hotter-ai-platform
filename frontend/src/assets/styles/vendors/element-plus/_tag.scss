@@ -1,0 +1,66 @@
+/* 状态胶囊与表格质感：对齐《纵享工作空间设计规范》
+ * 规范里的标签是浅色胶囊（默认 #edf2f6/#6d8398、成功 #edf4ef/#6d8c78、暖色 #f5f0e9/#967954）。
+ *
+ * 注意 Element Plus 2.14 的写法：无 type 的 <el-tag> 背景取自 --el-fill-color，
+ * 带 type 的变体再按 .el-tag--xxx 覆盖；只声明 --el-tag-* 变量并不够。
+ * 因此这里用「复合选择器 + 显式属性」提高优先级，保证浅色胶囊稳定生效。
+ * 表头浅底、行 hover 浅雾蓝也在这里统一。 */
+
+.el-tag,
+.el-tag.el-tag--default,
+.el-tag.el-tag--info,
+.el-tag.el-tag--primary {
+  --el-tag-border-radius: 6px;
+  --el-tag-bg-color: #edf2f6;
+  --el-tag-border-color: #dbe3ea;
+  --el-tag-text-color: #6d8398;
+  padding: 0 8px;
+  font-size: 11px;
+  line-height: 20px;
+  height: 22px;
+  border-width: 1px;
+  /* EP 2.14 的 tag 圆角取 --el-border-radius-base（工程映射到 10px），这里显式压到设计规范的 6px */
+  border-radius: 6px;
+  color: #6d8398;
+  background-color: #edf2f6;
+  border-color: #dbe3ea;
+}
+
+.el-tag.el-tag--success {
+  color: #6d8c78;
+  background-color: #edf4ef;
+  border-color: #d5e5da;
+}
+
+.el-tag.el-tag--warning {
+  color: #967954;
+  background-color: #f5f0e9;
+  border-color: #e6dccb;
+}
+
+.el-tag.el-tag--danger {
+  color: #a57070;
+  background-color: #f7ecec;
+  border-color: #e8d3d3;
+}
+
+/* 表格：表头浅底、行 hover 浅雾蓝、单元格留白略收紧 */
+.el-table {
+  --el-table-row-hover-bg-color: #f5f8fb;
+  --el-table-header-bg-color: var(--tableHeaderBg);
+  --el-table-border-color: var(--app-surface-border);
+  font-size: 13px;
+}
+
+.el-table th.el-table__cell {
+  font-weight: 500;
+}
+
+.el-table .el-table__cell {
+  padding: 9px 0;
+}
+
+/* 浅色表格里表头分隔线用极浅描边 */
+.el-table__header-wrapper th.el-table__cell {
+  border-bottom: 1px solid var(--app-surface-border) !important;
+}
