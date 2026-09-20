@@ -19,6 +19,8 @@
   line-height: 20px;
   height: 22px;
   border-width: 1px;
+  /* EP 2.14 的 tag 圆角取 --el-border-radius-base（工程映射到 10px），这里显式压到设计规范的 6px */
+  border-radius: 6px;
   color: #6d8398;
   background-color: #edf2f6;
   border-color: #dbe3ea;
