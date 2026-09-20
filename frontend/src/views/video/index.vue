@@ -1566,7 +1566,7 @@ function modelName(code?: string | null) {
   overflow: hidden;
   color: var(--t1);
   background: var(--bg);
-  background-image: radial-gradient(900px 460px at 84% -10%, rgba(139, 92, 246, 0.16), transparent 68%);
+  background-image: radial-gradient(900px 460px at 84% -10%, rgba(148, 163, 184, 0.16), transparent 68%);
   border: 1px solid var(--line);
   border-radius: 8px;
 }
@@ -1583,8 +1583,8 @@ button {
   margin-bottom: 22px;
   color: #ddd6fe;
   font-size: 13px;
-  background: rgba(139, 92, 246, 0.1);
-  border: 1px solid rgba(167, 139, 250, 0.24);
+  background: rgba(148, 163, 184, 0.1);
+  border: 1px solid rgba(186, 197, 209, 0.24);
   border-radius: 6px;
 }
 .guide-bar > span {
@@ -1880,7 +1880,7 @@ button {
   color: #ede9fe;
   font-size: 11px;
   background: var(--tint);
-  border-color: rgba(167, 139, 250, 0.28);
+  border-color: rgba(186, 197, 209, 0.28);
 }
 .asset-upload input {
   position: absolute;
@@ -2100,7 +2100,7 @@ button {
   padding: 6px 9px;
   color: #ddd6fe !important;
   background: var(--tint);
-  border: 1px solid rgba(167, 139, 250, 0.2);
+  border: 1px solid rgba(186, 197, 209, 0.2);
   border-radius: 999px;
 }
 
@@ -2124,13 +2124,13 @@ button {
     transform 0.18s;
 }
 .capability:hover {
-  border-color: rgba(167, 139, 250, 0.42);
+  border-color: rgba(186, 197, 209, 0.42);
   transform: translateY(-1px);
 }
 .capability.active {
   background: var(--tint);
   border-color: var(--p);
-  box-shadow: inset 0 0 0 1px rgba(139, 92, 246, 0.2);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.2);
 }
 .capability .el-icon {
   display: block;
@@ -2379,7 +2379,7 @@ button {
 .prompt-tools .optimize {
   flex: 0 0 auto;
   color: #ede9fe;
-  border: 1px solid rgba(167, 139, 250, 0.24);
+  border: 1px solid rgba(186, 197, 209, 0.24);
   border-radius: 6px;
 }
 
@@ -2670,7 +2670,7 @@ button {
 
 @keyframes pulse {
   50% {
-    box-shadow: 0 0 0 4px rgba(167, 139, 250, 0.12);
+    box-shadow: 0 0 0 4px rgba(186, 197, 209, 0.12);
   }
 }
 @media (max-width: 1360px) {

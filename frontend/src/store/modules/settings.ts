@@ -21,7 +21,10 @@ export const useSettingsStore = defineStore('setting', () => {
     fullHeightTable: defaultSettings.fullHeightTable
   });
   const title = ref<string>(defaultSettings.title);
-  const theme = ref<string>(storageSetting.value.theme);
+  // 纵享工作空间设计规范：主色固定墨蓝（$zx-ink #293c51）。历史浏览器可能存着旧品牌紫，
+  // 这里一并归一化并回写；App.vue 用 settingsStore.theme 派生 --el-color-primary 系列。
+  storageSetting.value.theme = defaultSettings.theme;
+  const theme = ref<string>(defaultSettings.theme);
   // 纵享工作空间设计规范：左侧导航固定浅色（当前项雾蓝底 + 墨蓝文字）。
   // 历史浏览器里可能存着 theme-dark，这里强制归一化并回写，避免同一版本出现两种外观。
   // 深色侧栏的 CSS token 仍保留在 assets/styles/layout/sidebar 中，回退时把这一行改回

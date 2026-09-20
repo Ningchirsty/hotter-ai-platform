@@ -69,9 +69,11 @@ export const constantRoutes: RouteRecordRaw[] = [
     children: [
       {
         path: '/index',
-        component: () => import('@/views/index.vue'),
+        // 设计规范：首个导航项就是「工作台」（hero + 岗位工具卡 + 待办/最近使用）。
+        // 旧 RuoYi 控制台页保留在 views/index.vue 未再引用，需要回退时改回这一行即可。
+        component: () => import('@/views/workspace/index.vue'),
         name: 'Index',
-        meta: { title: '首页', icon: 'dashboard', affix: true }
+        meta: { title: '工作台', icon: 'dashboard', affix: true }
       }
     ]
   },

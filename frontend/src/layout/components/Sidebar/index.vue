@@ -15,6 +15,11 @@
         </el-menu>
       </transition>
     </el-scrollbar>
+    <!-- 设计规范：侧栏底部一行安静的品牌短句；收起侧栏时隐藏，避免挤压菜单 -->
+    <div v-if="!isCollapse" class="sidebar-footer">
+      <p>每一份灵感，都值得绽放。</p>
+      <span>IMAGINATION IN BLOOM</span>
+    </div>
   </div>
 </template>
 
@@ -85,5 +90,25 @@ const menuStyle = computed(() => ({
 :deep(.el-scrollbar__wrap) {
   height: 100%;
   overflow-x: hidden;
+}
+
+.sidebar-footer {
+  flex-shrink: 0;
+  padding: 10px 10px 2px;
+  border-top: 1px solid var(--app-sidebar-border);
+  line-height: 1.5;
+}
+
+.sidebar-footer p {
+  margin: 0;
+  font-size: 11px;
+  color: var(--app-text-muted);
+}
+
+.sidebar-footer span {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--app-text-muted);
+  opacity: 0.75;
 }
 </style>

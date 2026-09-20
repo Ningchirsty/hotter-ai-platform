@@ -1,39 +1,43 @@
 /**
- * HOTTER AI 星云品牌色板（Nebula）
- * 覆盖 Element Plus 主色系列；在 index.scss 之后引入确保优先级。
- * 规格来源：hotter-adaptation-pack/SPEC.md §3
+ * HOTTER AI 品牌色板
+ *
+ * 已按《纵享工作空间设计规范》从星云紫切换为墨蓝/雾蓝中性色：
+ *   主操作色 墨蓝 $zx-ink #293c51，hover #405971，选中底 雾蓝 #e2eaf1。
+ * 运行时会由 App.vue 调用 utils/theme.ts 的 handleThemeStyle(settingsStore.theme)
+ * 重新派生 --el-color-primary 的 light-N / dark-N 系列，这里的静态值只是首屏兜底
+ * （避免旧紫色闪一下），两者必须保持同一色相。回退旧品牌紫时同时改 settings.ts 的 theme 与该文件。
  */
 :root {
   /* 品牌 token */
-  --p: #8b5cf6;
-  --p-h: #a78bfa;
-  --acc: #d946ef;
-  --grad: linear-gradient(135deg, #8b5cf6, #d946ef);
-  --tint: rgba(139, 92, 246, 0.12);
-  --glow: rgba(139, 92, 246, 0.35);
+  --p: #293c51;
+  --p-h: #405971;
+  --acc: #708da7;
+  --grad: linear-gradient(135deg, #293c51, #405971);
+  --tint: rgba(41, 60, 81, 0.06);
+  --glow: rgba(41, 60, 81, 0.18);
   --ok: #34d399;
   --warn: #fbbf24;
   --danger: #f87171;
   --info: #60a5fa;
 
-  /* Element Plus 主色及派生（与 utils/theme.ts 的计算结果保持一致） */
-  --el-color-primary: #8b5cf6;
-  --el-color-primary-light-1: #966cf6;
-  --el-color-primary-light-2: #a27cf7;
-  --el-color-primary-light-3: #ad8cf8;
-  --el-color-primary-light-4: #b99df9;
-  --el-color-primary-light-5: #c5adfa;
-  --el-color-primary-light-6: #d0bdfb;
-  --el-color-primary-light-7: #dccefc;
-  --el-color-primary-light-8: #e8defd;
-  --el-color-primary-light-9: #f3eefe;
-  --el-color-primary-dark-1: #7d52dd;
-  --el-color-primary-dark-2: #6f49c4;
-  --el-color-primary-dark-3: #6140ac;
-  --el-color-primary-dark-4: #533793;
-  --el-color-primary-dark-5: #452e7b;
-  --el-color-primary-dark-6: #372462;
-  --el-color-primary-dark-7: #291b49;
-  --el-color-primary-dark-8: #1b1231;
-  --el-color-primary-dark-9: #0d0918;
+  /* Element Plus 主色及派生（与 utils/theme.ts 用 #293C51 计算的结果一致） */
+  --el-color-primary: #293c51;
+  --el-color-primary-light-1: #3e4f62;
+  --el-color-primary-light-2: #536373;
+  --el-color-primary-light-3: #697685;
+  --el-color-primary-light-4: #7e8a96;
+  --el-color-primary-light-5: #949da8;
+  --el-color-primary-light-6: #a9b1b9;
+  --el-color-primary-light-7: #bec4ca;
+  --el-color-primary-light-8: #d4d8dc;
+  --el-color-primary-light-9: #e9ebed;
+  --el-color-primary-dark-1: #243648;
+  --el-color-primary-dark-2: #203040;
+  --el-color-primary-dark-3: #1c2a38;
+  --el-color-primary-dark-4: #182430;
+  --el-color-primary-dark-5: #141e28;
+  --el-color-primary-dark-6: #101820;
+  --el-color-primary-dark-7: #0c1218;
+  --el-color-primary-dark-8: #080c10;
+  --el-color-primary-dark-9: #040608;
 }
