@@ -411,7 +411,8 @@ onBeforeUnmount(() => {
   z-index: 0;
 }
 
-/* 左侧珍珠白蒙版：保证文案可读，同时不遮挡花卉。
+/* 文案区蒙版：左侧偏实保证可读，同时向下渐隐——左下那朵花因此仍能露出来，
+ * 两朵花分列左下与右上，分布在整个 hero 动态区。
  * 用 rgba 而不是 color-mix，避免低版本浏览器不支持导致蒙版失效。 */
 .ws-hero-scrim {
   position: absolute;
@@ -421,19 +422,21 @@ onBeforeUnmount(() => {
   background: linear-gradient(
     100deg,
     rgba(255, 255, 255, 1) 0%,
-    rgba(255, 255, 255, 0.88) 34%,
-    rgba(255, 255, 255, 0.4) 52%,
-    rgba(255, 255, 255, 0) 68%
+    rgba(255, 255, 255, 0.88) 30%,
+    rgba(255, 255, 255, 0.42) 50%,
+    rgba(255, 255, 255, 0) 66%
   );
+  mask-image: linear-gradient(180deg, #000 0%, #000 52%, rgba(0, 0, 0, 0) 92%);
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 52%, rgba(0, 0, 0, 0) 92%);
 }
 
 html.dark .ws-hero-scrim {
   background: linear-gradient(
     100deg,
     rgba(17, 24, 39, 1) 0%,
-    rgba(17, 24, 39, 0.88) 34%,
-    rgba(17, 24, 39, 0.4) 52%,
-    rgba(17, 24, 39, 0) 68%
+    rgba(17, 24, 39, 0.88) 30%,
+    rgba(17, 24, 39, 0.42) 50%,
+    rgba(17, 24, 39, 0) 66%
   );
 }
 
