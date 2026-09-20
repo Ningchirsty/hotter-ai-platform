@@ -119,6 +119,40 @@ class VideoTaskExecutionServiceTest {
     }
 
     @Test
+    @DisplayName("排队计数：1 个在跑 + 1 个排队时必须报 1（前端那一行「排队 N」由它驱动）")
+    void reportsQueuedCountExcludingRunningTasks() throws Exception {
+        CountDownLatch firstStarted = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        // 并发 1：第二个任务必然在排队。
+        VideoTaskExecutionService service = new VideoTaskExecutionService(c -> {
+            firstStarted.countDown();
+            try {
+                release.await(5, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            return ok(c.taskId());
+        }, 8, 1);
+
+        assertTrue(service.submit(ctx(1L)));
+        assertTrue(firstStarted.await(5, TimeUnit.SECONDS), "第一个应开始执行");
+        assertEquals(0, service.queuedCount(), "只有 1 个任务时不缺排队");
+
+        assertTrue(service.submit(ctx(2L)), "第二个应进入队列");
+        // 曾经的缺陷：queued(1) - active(1) = 0，界面在真的有任务等着时显示「排队 0」。
+        assertEquals(1, service.queuedCount(), "有 1 个任务在排队就必须报 1");
+        assertTrue(service.isBusy());
+
+        release.countDown();
+        long deadline = System.currentTimeMillis() + 5000;
+        while (service.isBusy() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(20);
+        }
+        assertEquals(0, service.queuedCount(), "跑完后排队数归零");
+        service.shutdown();
+    }
+
+    @Test
     @DisplayName("忙闲判断：空闲时不忙，有任务在跑或排队时忙（部署前用它判断会不会打断生成）")
     void reportsBusyState() throws Exception {
         CountDownLatch started = new CountDownLatch(1);

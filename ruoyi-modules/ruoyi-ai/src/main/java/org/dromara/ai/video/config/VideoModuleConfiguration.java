@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.dromara.ai.video.comfy.ComfyClient;
 import org.dromara.ai.video.comfy.HttpComfyClient;
 import org.dromara.ai.video.service.AssetStorage;
+import org.dromara.ai.video.service.ComfyWorkerPool;
 import org.dromara.ai.video.service.H3TemplatePreparer;
 import org.dromara.ai.video.service.LocalFileAssetStorage;
 import org.dromara.ai.video.service.MediaProbe;
@@ -27,6 +28,8 @@ import org.springframework.context.annotation.Configuration;
 
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 视频创作模块装配。
@@ -40,6 +43,11 @@ import java.time.Duration;
     VideoTierResolutions.class})
 @ConditionalOnProperty(prefix = "video", name = "enabled", havingValue = "true")
 public class VideoModuleConfiguration {
+
+    /**
+     * 显存闸门在等待窗口内的复查次数（把窗口切成几段来轮询）。
+     */
+    private static final int VRAM_GATE_ATTEMPTS = 5;
 
     /**
      * 视频创作模块配置。
@@ -140,6 +148,52 @@ public class VideoModuleConfiguration {
          * ComfyUI 的缓存策略（那属于 ComfyUI 侧配置，例如启动参数 --cache-none）。</p>
          */
         private boolean comfyFreeBeforeSubmit = false;
+
+        /**
+         * 多 GPU：ComfyUI 工作节点列表，每项格式 {@code 名称=基础地址}。
+         *
+         * <p>例：{@code gpu0=http://192.168.2.223:8189,gpu1=http://192.168.2.223:8188}。
+         * 每个条目必须是一台<b>独占一张卡</b>的 ComfyUI 实例；条目数即后台执行并发数。
+         * 留空时退化为 {@code comfy-base-url} 单实例（并发 1）。</p>
+         *
+         * <p>为什么必须一卡一实例：实测单任务峰值 80,805 MiB / 81,920 MiB，
+         * 同卡并发必然互相挤爆显存。</p>
+         */
+        private List<String> comfyWorkers = new ArrayList<>();
+
+        /**
+         * 提交前要求工作节点至少空闲的显存（MiB）。{@code <= 0} 关闭闸门。
+         *
+         * <p>默认 65536（64 GiB）：低于这个水位提交，H3 大概率在采样节点 OOM，
+         * 让用户白等十几分钟才拿到一个失败；不如立刻换一台卡，或者直接明确报错。</p>
+         */
+        private long comfyMinFreeVramMb = 65536;
+
+        /**
+         * 显存闸门的等待窗口（秒）。
+         *
+         * <p>为什么需要窗口：{@code /free} 的释放是<b>异步</b>的。实测对 8188 调 /free 后
+         * 立刻读只有 12,189 MiB 空闲，几分钟后再读是 80,566 MiB。只读一次会把一张健康的卡
+         * 判成「被别的进程占用」，双卡直接退化成单卡。窗口内反复读：是 ComfyUI 自己的缓存
+         * 就会涨回去；是外部进程占着（例如 vLLM）就一直上不去，那时才换卡。</p>
+         *
+         * <p>默认 30 秒的依据（实测）：某张卡压着模型缓存、只剩 2,796 MiB 空闲时调 /free，
+         * t+8s 只回到 17,247 MiB，<b>t+10s 才到 80,594 MiB</b>。原来的 15 秒只留 5 秒余量，
+         * 磁盘慢一点或缓存更大就会误判并换卡（两张卡都刚跑完时可能双双被误判 → 任务失败）。
+         * 闸门在读数达到阈值时立刻放行，所以窗口调大在正常情况下零成本。</p>
+         */
+        private long comfyVramGateWaitSeconds = 30;
+
+        /**
+         * 工作节点被判定不可用（显存不足等）后的冷却时长（秒）。
+         */
+        private long comfyWorkerCooldownSeconds = 300;
+
+        /**
+         * 借工作节点的最长等待时间（秒）。全部节点都在忙时会排队等待，
+         * 超时才失败，避免用户看到无意义的「节点不可用」。
+         */
+        private long comfyWorkerAcquireTimeoutSeconds = 1800;
 
         /**
          * 启动时是否把上一进程遗留的 {@code RUNNING} 任务收敛为失败。
@@ -257,6 +311,39 @@ public class VideoModuleConfiguration {
     }
 
     @Bean
+    @ConditionalOnMissingBean(ComfyWorkerPool.class)
+    public ComfyWorkerPool comfyWorkerPool(VideoProperties properties, ObjectMapper mapper) {
+        List<ComfyWorkerPool.Worker> workers = new ArrayList<>();
+        for (String spec : properties.getComfyWorkers()) {
+            if (spec == null || spec.isBlank()) {
+                continue;
+            }
+            int eq = spec.indexOf('=');
+            if (eq <= 0 || eq == spec.length() - 1) {
+                log.error("video.comfy-workers 条目格式非法（应为 名称=基础地址），已忽略：{}", spec);
+                continue;
+            }
+            String name = spec.substring(0, eq).trim();
+            String url = spec.substring(eq + 1).trim();
+            workers.add(new ComfyWorkerPool.Worker(name, url,
+                new HttpComfyClient(url, mapper, properties.isComfyAllowLoopback())));
+            log.info("ComfyUI 工作节点：{} -> {}", name, url);
+        }
+        if (workers.isEmpty()) {
+            // 没配多节点 → 退化成单实例，行为与改造前完全一致。
+            String url = properties.getComfyBaseUrl();
+            if (url == null || url.isBlank()) {
+                throw new IllegalStateException(
+                    "视频模块已启用，但 video.comfy-workers 与 video.comfy-base-url 都为空");
+            }
+            workers.add(new ComfyWorkerPool.Worker("default", url,
+                new HttpComfyClient(url, mapper, properties.isComfyAllowLoopback())));
+            log.info("未配置 video.comfy-workers，按单实例运行（并发 1）：{}", url);
+        }
+        return new ComfyWorkerPool(workers, Duration.ofSeconds(properties.getComfyWorkerCooldownSeconds()));
+    }
+
+    @Bean
     public VideoTaskOrchestrator videoTaskOrchestrator(WorkflowContractRegistry registry,
                                                        H3TemplatePreparer preparer,
                                                        ComfyClient comfyClient,
@@ -264,13 +351,19 @@ public class VideoModuleConfiguration {
                                                        AssetStorage assetStorage,
                                                        ObjectMapper mapper,
                                                        MediaProbe mediaProbe,
+                                                       ComfyWorkerPool workerPool,
                                                        VideoProperties properties) {
         return new VideoTaskOrchestrator(registry, preparer, comfyClient, repository, assetStorage, mapper,
             Duration.ofSeconds(properties.getPollBudgetSeconds()),
             Duration.ofSeconds(properties.getPollIntervalSeconds()),
             () -> org.dromara.common.mybatis.utils.IdGeneratorUtil.nextLongId(),
             mediaProbe,
-            properties.isComfyFreeBeforeSubmit());
+            properties.isComfyFreeBeforeSubmit(),
+            workerPool,
+            properties.getComfyMinFreeVramMb(),
+            Duration.ofSeconds(properties.getComfyWorkerAcquireTimeoutSeconds()),
+            VRAM_GATE_ATTEMPTS,
+            Math.max(0L, properties.getComfyVramGateWaitSeconds() * 1000L / VRAM_GATE_ATTEMPTS));
     }
 
     /**
@@ -279,13 +372,18 @@ public class VideoModuleConfiguration {
      * <p>生成一次要 130 秒到 11.5 分钟，而前端经 Cloudflare（源站是 cloudflared tunnel）
      * 访问，免费版等待源站响应的上限在 100 秒量级——在请求线程里同步等出片，结果必然
      * 送不回浏览器。因此改为提交后台、前端轮询。</p>
+     *
+     * <p>并发数 = ComfyUI 实例数：每张卡一个实例，一卡同时只跑一个任务。</p>
      */
     @Bean(destroyMethod = "shutdown")
     public VideoTaskExecutionService videoTaskExecutionService(VideoTaskOrchestrator orchestrator,
+                                                               ComfyWorkerPool workerPool,
                                                                VideoProperties properties) {
         int capacity = Math.max(1, properties.getExecutorQueueCapacity());
-        log.info("视频任务后台执行器已装配：并发 1，队列上限 {}", capacity);
-        return new VideoTaskExecutionService(orchestrator::execute, capacity);
+        int concurrency = Math.max(1, workerPool.size());
+        log.info("视频任务后台执行器已装配：并发 {}（对应 {} 个 ComfyUI 实例），队列上限 {}",
+            concurrency, workerPool.names(), capacity);
+        return new VideoTaskExecutionService(orchestrator::execute, capacity, concurrency);
     }
 
     /**

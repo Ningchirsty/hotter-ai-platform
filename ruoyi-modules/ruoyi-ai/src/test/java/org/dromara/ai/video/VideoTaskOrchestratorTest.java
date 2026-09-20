@@ -8,6 +8,7 @@ import org.dromara.ai.video.domain.VideoTaskStatus;
 import org.dromara.ai.video.domain.WorkflowVersion;
 import org.dromara.ai.video.exception.VideoTaskException;
 import org.dromara.ai.video.service.AssetStorage;
+import org.dromara.ai.video.service.ComfyWorkerPool;
 import org.dromara.ai.video.service.H3TemplatePreparer;
 import org.dromara.ai.video.service.MediaProbe;
 import org.dromara.ai.video.service.VideoTaskOrchestrator;
@@ -337,6 +338,80 @@ class VideoTaskOrchestratorTest {
     }
 
     @Test
+    @DisplayName("多 GPU：显存不足的节点直接跳过，任务在另一张卡上完成并记下卡名")
+    void failsOverToAnotherWorkerWhenVramIsInsufficient() {        // 真实背景：单任务峰值 80,805 MiB / 81,920 MiB。GPU0 上压着别的进程（曾计划给 vLLM）
+        // 时，提交上去必然在采样节点 OOM，白等十几分钟。闸门要求先看空闲显存，
+        // 不够就换一张卡——而不是撞上去 OOM。
+        comfy.freeVram = 4_096L;
+        StubComfyClient healthy = new StubComfyClient();
+        healthy.freeVram = 80_000L;
+        ComfyWorkerPool pool = new ComfyWorkerPool(List.of(
+            new ComfyWorkerPool.Worker("gpu0", "http://gpu0:8189", comfy),
+            new ComfyWorkerPool.Worker("gpu1", "http://gpu1:8188", healthy)),
+            Duration.ofSeconds(60));
+
+        VideoTaskOrchestrator pooled = new VideoTaskOrchestrator(registry, preparer, comfy, repository,
+            storage, MAPPER, Duration.ofMillis(2000), Duration.ofMillis(1), () -> 9400L, probe, false,
+            pool, 65_536L, Duration.ofSeconds(5), 5, 0L);
+
+        assertDoesNotThrow(
+            () -> pooled.execute(context("T2V", "wf-t2v-h3", "提示词", null, null, null)),
+            "一张卡显存不足时，任务应换到另一张卡完成，而不是直接失败");
+
+        assertFalse(comfy.submitted, "显存不足的节点上不应提交任务");
+        assertTrue(healthy.submitted, "任务必须落到显存充足的节点上");
+        assertTrue(repository.transitions.contains("SUBMITTED:prompt-stub-1@gpu1"),
+            "落库必须记下承担本次生成的工作节点，排障时才知道去问哪一台；实际为 "
+                + repository.transitions);
+        assertTrue(pool.snapshots().stream().anyMatch(s -> s.name().equals("gpu0") && s.unavailable()),
+            "显存不足的节点必须进入冷却，避免下一个任务又撞上去");
+    }
+
+    @Test
+    @DisplayName("多 GPU：缓存占着显存时先 /free 再复查，不把健康的卡判死（释放是异步的）")
+    void rechecksAfterFreeBeforeRejectingAWorker() {
+        // 实测证据：对 8188 调 /free 之后立刻读 /system_stats 只有 12,189 MiB 空闲，
+        // 几分钟后再读是 80,566 MiB。只读一次就会把一张完全健康的卡判成「被别的进程占用」，
+        // 双卡直接退化成单卡——这正是设计里最容易被忽略的坑。
+        comfy.freeVram = 9_868L;
+        comfy.freeVramAfterFree = 80_566L;
+        StubComfyClient other = new StubComfyClient();
+        ComfyWorkerPool pool = new ComfyWorkerPool(List.of(
+            new ComfyWorkerPool.Worker("gpu1", "http://gpu1:8188", comfy),
+            new ComfyWorkerPool.Worker("gpu0", "http://gpu0:8189", other)),
+            Duration.ofSeconds(60));
+        VideoTaskOrchestrator pooled = new VideoTaskOrchestrator(registry, preparer, comfy, repository,
+            storage, MAPPER, Duration.ofMillis(2000), Duration.ofMillis(1), () -> 9402L, probe, false,
+            pool, 65_536L, Duration.ofSeconds(5), 5, 0L);
+
+        assertDoesNotThrow(
+            () -> pooled.execute(context("T2V", "wf-t2v-h3", "提示词", null, null, null)));
+        assertTrue(comfy.freed, "低显存读数出现时应主动请求释放缓存");
+        assertTrue(comfy.submitted, "释放后显存充足，任务应就地执行");
+        assertFalse(other.submitted, "不该无谓地换到另一张卡");
+        assertTrue(pool.snapshots().stream().noneMatch(ComfyWorkerPool.Snapshot::unavailable),
+            "健康的节点不该进冷却");
+    }
+
+    @Test
+    @DisplayName("多 GPU：所有节点显存都不足时快速失败，错误信息说明原因")
+    void failsFastWhenNoWorkerHasEnoughVram() {
+        comfy.freeVram = 1_024L;
+        ComfyWorkerPool pool = new ComfyWorkerPool(List.of(
+            new ComfyWorkerPool.Worker("gpu0", "http://gpu0:8189", comfy)), Duration.ofSeconds(60));
+        VideoTaskOrchestrator pooled = new VideoTaskOrchestrator(registry, preparer, comfy, repository,
+            storage, MAPPER, Duration.ofMillis(2000), Duration.ofMillis(1), () -> 9401L, probe, false,
+            pool, 65_536L, Duration.ofSeconds(5), 5, 0L);
+
+        VideoTaskException error = assertThrows(VideoTaskException.class,
+            () -> pooled.execute(context("T2V", "wf-t2v-h3", "提示词", null, null, null)));
+        assertEquals("GPU_NOT_READY", error.getErrorCode());
+        assertTrue(error.getMessage().contains("1024"),
+            "错误信息必须带上实测空闲显存，便于运维定位是哪个进程占了卡：" + error.getMessage());
+        assertFalse(comfy.submitted, "显存不足时不得提交");
+    }
+
+    @Test
     @DisplayName("时长上限：按本次任务时长截断，而不是固定用契约里的一代上限")
     void durationCapFollowsRequestedDuration() {
         // 背景（真实缺陷）：截断上限原先一律取契约 maxDurationSeconds。开放 10/20 秒后，
@@ -379,6 +454,14 @@ class VideoTaskOrchestratorTest {
         boolean submitted = false;
         boolean uploaded = false;
         boolean freed = false;
+        /**
+         * 空闲显存（MiB）。默认充足；用例可调低以验证显存闸门。
+         */
+        long freeVram = 80_000L;
+        /**
+         * 调用 {@code /free} 之后空闲显存变成的值（模拟「缓存被释放」）；null 表示不变。
+         */
+        Long freeVramAfterFree = null;
         PollResult.State pollState = PollResult.State.SUCCEEDED;
         List<ComfyOutput> outputs = List.of(new ComfyOutput("out.mp4", "", "output",
             1920, 1080, 24.0, 5000L, 512L));
@@ -386,6 +469,9 @@ class VideoTaskOrchestratorTest {
         @Override
         public boolean freeMemory() {
             freed = true;
+            if (freeVramAfterFree != null) {
+                freeVram = freeVramAfterFree;
+            }
             return true;
         }
 
@@ -420,6 +506,11 @@ class VideoTaskOrchestratorTest {
         @Override
         public boolean isReachable() {
             return reachable;
+        }
+
+        @Override
+        public long freeVramMb() {
+            return freeVram;
         }
     }
 
@@ -482,6 +573,12 @@ class VideoTaskOrchestratorTest {
         @Override
         public int markSubmitted(long taskId, String comfyPromptId, int attemptCount) {
             transitions.add("SUBMITTED:" + comfyPromptId);
+            return 1;
+        }
+
+        @Override
+        public int markSubmitted(long taskId, String comfyPromptId, int attemptCount, String comfyWorker) {
+            transitions.add("SUBMITTED:" + comfyPromptId + "@" + comfyWorker);
             return 1;
         }
 

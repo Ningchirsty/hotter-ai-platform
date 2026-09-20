@@ -123,18 +123,37 @@
                 :multiple="field === 'frames'"
                 @change="handleFiles(field, $event)"
               />
-              <el-icon>
-                <Check v-if="uploadAssetIds[field]?.length" />
-                <UploadFilled v-else />
-              </el-icon>
-              <b>{{ uploadSummary(field) }}</b>
+              <!--
+                已选图片的预览。没有它，用户只能看到一行「素材 1234567890」，
+                传错图要等生成完才发现。
+              -->
+              <div v-if="uploadPreviews[field]?.length" class="upload-previews">
+                <img
+                  v-for="(src, index) in uploadPreviews[field]"
+                  :key="index"
+                  :src="src"
+                  :alt="`已选素材 ${index + 1}`"
+                />
+                <span v-if="uploadAssetIds[field]?.length" class="upload-previews-badge">
+                  已上传 {{ uploadAssetIds[field]!.length }} 张
+                </span>
+              </div>
+              <template v-else>
+                <el-icon>
+                  <Check v-if="uploadAssetIds[field]?.length" />
+                  <UploadFilled v-else />
+                </el-icon>
+                <b>{{ uploadSummary(field) }}</b>
+              </template>
               <small>
                 {{
-                  field === 'frames'
-                    ? '支持 2-10 张关键帧'
-                    : field === 'audio'
-                      ? '支持 MP3、WAV、M4A'
-                      : '支持 JPG、PNG、WEBP'
+                  uploading && uploadPercent > 0
+                    ? `上传中 ${uploadPercent}%…`
+                    : field === 'frames'
+                      ? '支持 2-10 张关键帧'
+                      : field === 'audio'
+                        ? '支持 MP3、WAV、M4A'
+                        : '支持 JPG、PNG、WEBP，单张不超过 20MB（大图会自动压缩）'
                 }}
               </small>
             </label>
@@ -368,6 +387,19 @@
         </div>
       </div>
 
+      <!--
+        GPU 队列状态：生成一次要 2~12 分钟，双卡也只有两个并发位。
+        如实显示「几张卡在跑、前面还排着几个」，用户才分得清「在排队」和「卡住了」。
+      -->
+      <div v-if="workers" class="gpu-status">
+        <span class="gpu-status-dot" :class="{ busy: busyWorkerCount > 0 }"></span>
+        <span>GPU 运行中 {{ busyWorkerCount }}/{{ workers.concurrency }}</span>
+        <span v-if="workers.queued > 0">· 排队 {{ workers.queued }} 个</span>
+        <span v-if="unavailableWorkers.length" class="gpu-status-warn">
+          · {{ unavailableWorkers.length }} 张卡暂不可用（{{ unavailableWorkers[0]!.reason || '显存被占用' }}）
+        </span>
+      </div>
+
       <div v-if="loadingTasks" class="empty-state">
         <el-icon><Document /></el-icon>
         <b>正在加载任务…</b>
@@ -400,7 +432,11 @@
               {{ moduleName(task.capabilityCode) }} · {{ modelName(task.modelCode) }} ·
               {{ task.durationSeconds }} 秒
             </p>
-            <small>{{ task.taskNo }} · {{ task.createTime || '—' }}</small>
+            <small>
+              {{ task.taskNo }} · {{ task.createTime || '—' }}
+              <!-- 多卡后同一个 prompt 只在提交它的那台 ComfyUI 上可查，排障时要知道去问哪台实例。 -->
+              <span v-if="task.comfyWorker" class="task-worker">GPU {{ task.comfyWorker }}</span>
+            </small>
             <small v-if="task.errorMessage" class="task-error">{{ task.errorMessage }}</small>
           </div>
           <div class="task-actions">
@@ -571,6 +607,7 @@ import {
   fetchVideoAssetBlobUrl,
   fetchVideoAssetThumbnailBlobUrl,
   getVideoTask,
+  getVideoWorkers,
   listVideoAssets,
   listVideoTasks,
   listVideoWorkflows,
@@ -581,10 +618,12 @@ import type {
   VideoCapabilityCode,
   VideoTaskVO,
   VideoTaskStatus,
+  VideoWorkersVO,
   VideoWorkflowVO
 } from '@/api/video/types';
 import { extractErrorMessage } from '@/utils/request';
 import {
+  COMPLETED_VIDEOS,
   INSPIRATIONS,
   PROMPT_CHIPS,
   VIDEO_MODELS,
@@ -613,6 +652,23 @@ const values = reactive<Partial<Record<FieldKey, string>>>({ tier: '高清 · 10
 const uploadAssetIds = reactive<Partial<Record<FieldKey, Array<number | string>>>>({});
 
 /**
+ * 每个上传字段的本地预览图（blob URL）。
+ *
+ * <p>为什么要有：用户选完图之后，界面上原来只有一行「已上传 · 素材 1234567890」，
+ * 根本无法确认选的是哪张图——传错图只能等生成完才发现。这里在选图后立刻用本地
+ * 文件生成预览，不用等后端返回，也不产生额外请求。</p>
+ */
+const uploadPreviews = reactive<Partial<Record<FieldKey, string[]>>>({});
+
+/** 释放某个字段的本地预览，避免一直占着内存。 */
+function releaseUploadPreviews(field: FieldKey) {
+  for (const url of uploadPreviews[field] ?? []) {
+    URL.revokeObjectURL(url);
+  }
+  uploadPreviews[field] = [];
+}
+
+/**
  * 与后端 VideoCreationController 保持一致的上传约束。
  *
  * <p>放在前端是为了给出即时、明确的提示，而不是让用户等一个必然失败的请求。
@@ -633,6 +689,74 @@ const FALLBACK_DURATIONS: Record<string, string[]> = {
   '标清 · 480P': ['5 秒', '10 秒', '20 秒']
 };
 const uploading = ref(false);
+
+/** 上传进度（0-100）。慢链路下一次上传要几十秒，没有它用户只会觉得卡住了。 */
+const uploadPercent = ref(0);
+
+/**
+ * 上传前把过大的图片压到合理尺寸。
+ *
+ * <p><b>为什么必须这么做。</b>源站是 cloudflared tunnel，Cloudflare 免费版对源站响应
+ * 有 100 秒上限：慢链路（手机 4G、弱 Wi-Fi、国际链路）上传一张 12MB 的相机原图，
+ * 光上传就要一两分钟，结果就是 <b>HTTP 524</b>，用户看到「系统未知异常」——
+ * 文件完全合法却传不上去。而 H3 只需要一张条件图，工作流内部还会缩到 1280~1920，
+ * 2048px 早已足够。</p>
+ *
+ * <p><b>为什么是按目标体积逐级压，而不是固定一档。</b>照片压到 2048px/JPG 0.92 通常
+ * 只有几百 KB；但截图、噪点图、扫描件这类难压的图可能仍有 3~4MB，在慢上行下依旧
+ * 会撞 100 秒。所以给一个目标体积，压不到就依次降尺寸与质量，最多四级；</p>
+ *
+ * <p>只对大图动手：小图（≤3MB）原样上传，不做任何有损处理；带透明通道的用 WebP
+ * （JPEG 会把透明压成黑块），其余用 JPEG。任何一步失败都退回原文件——
+ * 压缩只是优化，不能成为新的失败点。</p>
+ */
+const SHRINK_THRESHOLD_BYTES = 3 * 1024 * 1024;
+/** 压缩目标：一次上传应在一分钟内完成（慢上行 ~35KB/s 也能压进 100 秒的 CF 上限）。 */
+const SHRINK_TARGET_BYTES = 1.5 * 1024 * 1024;
+/** [最长边, JPEG/WebP 质量] 逐级降档。 */
+const SHRINK_LADDER: Array<[number, number]> = [
+  [2048, 0.92],
+  [1920, 0.85],
+  [1600, 0.8],
+  [1280, 0.72]
+];
+
+async function shrinkForUpload(file: File): Promise<File> {
+  if (!file.type.startsWith('image/') || file.size <= SHRINK_THRESHOLD_BYTES) return file;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const alpha = file.type === 'image/png' || file.type === 'image/webp';
+    const outType = alpha ? 'image/webp' : 'image/jpeg';
+    let best: Blob | null = null;
+    for (const [maxEdge, quality] of SHRINK_LADDER) {
+      const longEdge = Math.max(bitmap.width, bitmap.height);
+      const scale = Math.min(1, maxEdge / longEdge);
+      const width = Math.max(1, Math.round(bitmap.width * scale));
+      const height = Math.max(1, Math.round(bitmap.height * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return file;
+      if (!alpha) {
+        // JPEG 无透明通道：先铺白底，避免透明区域变黑
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+      }
+      ctx.drawImage(bitmap, 0, 0, width, height);
+      const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, outType, quality));
+      if (!blob) return file;
+      // 这一档已经够小，或者已经压到最低一档，就收手
+      if (!best || blob.size < best.size) best = blob;
+      if (blob.size <= SHRINK_TARGET_BYTES) break;
+    }
+    if (!best || best.size >= file.size) return file;
+    const name = file.name.replace(/\.[^.]+$/, '') + (alpha ? '.webp' : '.jpg');
+    return new File([best], name, { type: outType });
+  } catch {
+    return file;
+  }
+}
 const submitting = ref(false);
 const loadingTasks = ref(false);
 const loadingAssets = ref(false);
@@ -796,12 +920,23 @@ async function loadTasks() {
   try {
     const res = await listVideoTasks({ pageNum: 1, pageSize: 50 });
     tasks.value = res.data?.rows ?? [];
+    // 页面刷新/重新进来时，之前提交的任务仍在后台跑（执行在服务端，和这个页面无关）。
+    // 必须把它们纳入轮询，否则任务状态和 GPU 队列行会一直停在打开页面那一刻的值——
+    // 用户刷新一次就会看到「明明在生成却显示 0/2、任务一直排队中」。
+    for (const task of tasks.value) {
+      if (!TERMINAL_STATUSES.includes(task.status)) {
+        startTaskPolling(task.id);
+      }
+    }
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '读取任务列表失败');
   } finally {
     loadingTasks.value = false;
+    // 顺带刷新 GPU 队列状态：任务列表是用户唯一能看到"还要等多久"的地方。
+    void loadWorkerStatus();
   }
 }
+
 
 async function loadAssets() {
   loadingAssets.value = true;
@@ -824,6 +959,7 @@ function selectModule(item: StudioModule) {
     VIDEO_MODELS[0]!;
   Object.keys(values).forEach(key => delete values[key as FieldKey]);
   Object.keys(uploadAssetIds).forEach(key => delete uploadAssetIds[key as FieldKey]);
+  uploadFields.forEach(field => releaseUploadPreviews(field));
   // 默认取服务端允许的第一个档位，而不是写死 1080P。
   values.tier = supportedTiers.value[0] ?? '高清 · 1080P';
   values.dur = '5 秒';
@@ -868,25 +1004,52 @@ async function handleFiles(field: FieldKey, event: Event) {
   uploading.value = true;
   try {
     const ids: Array<number | string> = [];
+    const previews: string[] = [];
+
+    // 先把这一批文件全部校验完，再动界面。
+    // 反例（曾经的写法）：边校验边清空预览 —— 用户误选了一个 24MB 的文件时，
+    // 原来选好的那张图会被擦掉（素材 ID 还在），界面与真实状态对不上，
+    // 而且撤销 blob URL 还会在控制台留下 ERR_FILE_NOT_FOUND。
     for (const file of files) {
-      // 提交前先做本地校验：文件为空或类型不被接受时，明确告知用户，
-      // 而不是发一个注定被后端拒绝的请求。后端同样会校验，这里是第一道闸。
       if (!file.size) {
         ElMessage.error(`「${file.name}」是空文件，请重新选择`);
         return;
       }
       if (file.size > MAX_UPLOAD_BYTES) {
-        ElMessage.error(`「${file.name}」超过 ${MAX_UPLOAD_BYTES / 1024 / 1024}MB 上限`);
+        ElMessage.error(
+          `「${file.name}」${(file.size / 1024 / 1024).toFixed(1)}MB，超过 ${MAX_UPLOAD_BYTES / 1024 / 1024}MB 上限，请压缩后再传`
+        );
         return;
       }
       if (file.type && !ALLOWED_UPLOAD_TYPES.includes(file.type.toLowerCase())) {
         ElMessage.error(`「${file.name}」格式不支持，请上传 PNG/JPEG/WEBP 图片`);
         return;
       }
-      const res = await uploadVideoAsset(file);
+    }
+
+    releaseUploadPreviews(field);
+    for (const file of files) {
+      if (file.type.startsWith('image/')) {
+        // 创建对象 URL 后立刻挂上去：预览不能等网络——慢链路下一张 12MB 的图
+        // 要十几秒，用户得在这之前就确认自己选对了图。
+        previews.push(URL.createObjectURL(file));
+        uploadPreviews[field] = [...previews];
+      }
+      // 大图先压缩：经 Cloudflare 慢链路上传 10MB+ 会撞上 100 秒源站超时（524）。
+      const prepared = await shrinkForUpload(file);
+      if (prepared !== file) {
+        ElMessage.info(
+          `「${file.name}」${(file.size / 1048576).toFixed(1)}MB 已压缩为 ${(prepared.size / 1048576).toFixed(1)}MB 上传`
+        );
+      }
+      uploadPercent.value = 0;
+      const res = await uploadVideoAsset(prepared, percent => {
+        uploadPercent.value = percent;
+      });
       if (res.data?.assetId !== undefined) ids.push(res.data.assetId);
     }
     uploadAssetIds[field] = ids;
+    uploadPreviews[field] = previews;
     ElMessage.success(`已上传 ${ids.length} 个素材`);
     void loadAssets();
   } catch (error) {
@@ -895,8 +1058,10 @@ async function handleFiles(field: FieldKey, event: Event) {
     const detail = (await extractErrorMessage(error)) ?? '素材上传失败';
     const name = files.map(f => f.name).join('、');
     ElMessage.error(`${detail}（文件：${name}）`);
+    releaseUploadPreviews(field);
   } finally {
     uploading.value = false;
+    uploadPercent.value = 0;
   }
 }
 
@@ -1004,6 +1169,21 @@ const TERMINAL_STATUSES: VideoTaskStatus[] = ['SUCCEEDED', 'FAILED', 'CANCELED',
 /** 轮询间隔。生成动辄几分钟，3 秒足够又不至于把后端压垮。 */
 const POLL_INTERVAL_MS = 3000;
 
+/** GPU 工作节点与队列状态。取不到就不显示，绝不因为运维信息缺失而影响主流程。 */
+const workers = ref<VideoWorkersVO | null>(null);
+
+const busyWorkerCount = computed(() => workers.value?.workers.filter(item => item.busy).length ?? 0);
+const unavailableWorkers = computed(() => workers.value?.workers.filter(item => item.unavailable) ?? []);
+
+async function loadWorkerStatus() {
+  try {
+    const res = await getVideoWorkers();
+    workers.value = res.data ?? null;
+  } catch {
+    workers.value = null;
+  }
+}
+
 /** 正在轮询的任务 id。后台执行 + 轮询是生成结果的唯一回传通道。 */
 const pollingTaskIds = new Set<string>();
 let pollTimer: ReturnType<typeof setInterval> | undefined;
@@ -1033,6 +1213,8 @@ async function pollPendingTasks() {
     stopTaskPolling();
     return;
   }
+  // 顺手刷新 GPU 队列状态：这两件事的节奏完全一致（都在等同一批任务）。
+  void loadWorkerStatus();
   // 先收集、循环结束后再删：避免在遍历 Set 的过程中改它。
   const finished: Array<{ id: string; status: VideoTaskStatus; message?: string }> = [];
   for (const id of pollingTaskIds) {
@@ -1110,6 +1292,11 @@ function coverFor(task: VideoTaskVO) {
 /**
  * 为成功任务加载成片封面。
  *
+ * <p><b>为什么要走缩略图接口。</b>这里曾经直接拉成片本体当封面：9 个成片合计约 13 MB，
+ * 而经 Cloudflare 实测吞吐只有 258 KB/s ~ 790 KB/s，等于把带宽占满，
+ * 同一时刻发起的预览请求就会排队甚至超时——表现就是"预览时好时坏"。
+ * 现在后端用 ffmpeg 抽一帧（约几十 KB），封面的代价从 13 MB 降到约 0.3 MB。</p>
+ *
  * <p>按需加载且去重：同一素材只请求一次；失败静默（封面只是锦上添花，
  * 不该因为取图失败而打扰用户，模板会回退成图标）。</p>
  */
@@ -1122,8 +1309,7 @@ async function loadTaskCovers() {
     if (coverUrls.value[key] || coverLoading.has(key)) continue;
     coverLoading.add(key);
     try {
-      const url = await fetchVideoAssetBlobUrl(task.outputAssetId);
-      coverUrls.value = { ...coverUrls.value, [key]: url };
+      coverUrls.value = { ...coverUrls.value, [key]: await fetchVideoAssetThumbnailBlobUrl(task.outputAssetId) };
     } catch {
       // 忽略：封面失败不影响功能
     } finally {
@@ -1180,6 +1366,7 @@ onBeforeUnmount(() => {
   releasePreviewUrl();
   Object.values(coverUrls.value).forEach(URL.revokeObjectURL);
   Object.values(imageUrls.value).forEach(URL.revokeObjectURL);
+  Object.values(uploadPreviews).forEach(urls => urls?.forEach(URL.revokeObjectURL));
 });
 
 function releasePreviewUrl() {
@@ -1240,7 +1427,14 @@ async function previewTask(task: VideoTaskVO) {
     try {
       previewUrl.value = await fetchVideoAssetBlobUrl(detail.outputAssetId);
     } catch (error) {
-      previewError.value = (await extractErrorMessage(error)) ?? '成片加载失败';
+      // 网络抖动重试一次：经 Cloudflare 的链路偶发失败是真实存在的，
+      // 但重试前必须确认上一次没有留下半个 blob（releasePreviewUrl 已经处理）。
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        previewUrl.value = await fetchVideoAssetBlobUrl(detail.outputAssetId);
+      } catch {
+        previewError.value = (await extractErrorMessage(error)) ?? '成片加载失败';
+      }
     } finally {
       previewLoading.value = false;
     }
@@ -1502,6 +1696,55 @@ button {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+.gpu-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 10px 0 0;
+  color: var(--t2);
+  font-size: 11px;
+}
+.gpu-status-dot {
+  width: 7px;
+  height: 7px;
+  background: var(--t3, #8a8f98);
+  border-radius: 50%;
+}
+.gpu-status-dot.busy {
+  background: #3ddc97;
+  box-shadow: 0 0 0 3px rgb(61 220 151 / 18%);
+}
+.gpu-status-warn {
+  color: #e6a23c;
+}
+.upload-previews {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+.upload-previews img {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border: 1px solid var(--line2);
+  border-radius: 6px;
+}
+.upload-previews-badge {
+  color: var(--t2);
+  font-size: 11px;
+}
+.task-worker {
+  padding: 1px 5px;
+  margin-left: 6px;
+  color: var(--t2);
+  font-size: 10px;
+  border: 1px solid var(--line2);
+  border-radius: 4px;
 }
 .task-filters button {
   min-height: 32px;

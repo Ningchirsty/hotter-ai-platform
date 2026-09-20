@@ -74,6 +74,38 @@ public class VideoTaskOrchestrator {
      */
     private final boolean freeBeforeSubmit;
 
+    /**
+     * 多 GPU 工作节点池。为 null 时退化为「只用 {@link #comfyClient} 这一个实例」的单机模式。
+     *
+     * <p>一台 ComfyUI 的 history / 输出目录都在进程内，所以一个任务从提交到取回成片
+     * 必须始终打在同一台实例上，否则轮询永远查不到 prompt。池化就是保证这件事。</p>
+     */
+    private final ComfyWorkerPool workerPool;
+
+    /**
+     * 提交前要求工作节点至少空闲的显存（MiB）。{@code <= 0} 表示不做闸门检查。
+     *
+     * <p>H3 单任务峰值实测 80,805 MiB / 81,920 MiB，只要 GPU 上还压着别的进程
+     * （vLLM、残留的 python），提交后必然在采样节点 OOM 并白等十几分钟。
+     * 与其 OOM，不如提前换一台或者直接快速失败。</p>
+     */
+    private final long minFreeVramMb;
+
+    /**
+     * 显存闸门的轮询次数与间隔。
+     *
+     * <p>{@code /free} 的释放是异步的：立刻读只涨 2 GB，过一会儿才涨到 80 GB。
+     * 所以低于闸门时要等一会儿再读，不能读一次就判定节点不可用。</p>
+     */
+    private final int vramGateAttempts;
+
+    private final long vramGateWaitMillis;
+
+    /**
+     * 从池中借一台工作节点的最长等待时间。
+     */
+    private final Duration workerAcquireTimeout;
+
     public VideoTaskOrchestrator(WorkflowContractRegistry registry,
                                  H3TemplatePreparer preparer,
                                  ComfyClient comfyClient,
@@ -135,6 +167,56 @@ public class VideoTaskOrchestrator {
                                  java.util.function.Supplier<Long> idGenerator,
                                  MediaProbe mediaProbe,
                                  boolean freeBeforeSubmit) {
+        this(registry, preparer, comfyClient, repository, assetStorage, mapper,
+            pollBudget, pollInterval, idGenerator, mediaProbe, freeBeforeSubmit, null, 0L,
+            Duration.ofMinutes(30));
+    }
+
+    /**
+     * 完整构造器（含多 GPU 工作节点池）。
+     *
+     * @param workerPool          工作节点池；null 表示单实例模式，直接用 {@code comfyClient}。
+     * @param minFreeVramMb       提交前要求的最少空闲显存（MiB）；{@code <= 0} 关闭闸门。
+     * @param workerAcquireTimeout 借节点的最长等待时间。
+     */
+    public VideoTaskOrchestrator(WorkflowContractRegistry registry,
+                                 H3TemplatePreparer preparer,
+                                 ComfyClient comfyClient,
+                                 VideoTaskRepository repository,
+                                 AssetStorage assetStorage,
+                                 ObjectMapper mapper,
+                                 Duration pollBudget,
+                                 Duration pollInterval,
+                                 java.util.function.Supplier<Long> idGenerator,
+                                 MediaProbe mediaProbe,
+                                 boolean freeBeforeSubmit,
+                                 ComfyWorkerPool workerPool,
+                                 long minFreeVramMb,
+                                 Duration workerAcquireTimeout) {
+        this(registry, preparer, comfyClient, repository, assetStorage, mapper, pollBudget, pollInterval,
+            idGenerator, mediaProbe, freeBeforeSubmit, workerPool, minFreeVramMb, workerAcquireTimeout,
+            5, 3_000L);
+    }
+
+    /**
+     * 完整构造器（含显存闸门轮询参数，测试里把等待设为 0 以免拖慢用例）。
+     */
+    public VideoTaskOrchestrator(WorkflowContractRegistry registry,
+                                 H3TemplatePreparer preparer,
+                                 ComfyClient comfyClient,
+                                 VideoTaskRepository repository,
+                                 AssetStorage assetStorage,
+                                 ObjectMapper mapper,
+                                 Duration pollBudget,
+                                 Duration pollInterval,
+                                 java.util.function.Supplier<Long> idGenerator,
+                                 MediaProbe mediaProbe,
+                                 boolean freeBeforeSubmit,
+                                 ComfyWorkerPool workerPool,
+                                 long minFreeVramMb,
+                                 Duration workerAcquireTimeout,
+                                 int vramGateAttempts,
+                                 long vramGateWaitMillis) {
         this.freeBeforeSubmit = freeBeforeSubmit;
         this.registry = registry;
         this.preparer = preparer;
@@ -146,6 +228,12 @@ public class VideoTaskOrchestrator {
         this.pollInterval = pollInterval;
         this.idGenerator = idGenerator;
         this.mediaProbe = mediaProbe;
+        this.workerPool = workerPool;
+        this.minFreeVramMb = minFreeVramMb;
+        this.workerAcquireTimeout = workerAcquireTimeout == null
+            ? Duration.ofMinutes(30) : workerAcquireTimeout;
+        this.vramGateAttempts = Math.max(1, vramGateAttempts);
+        this.vramGateWaitMillis = Math.max(0L, vramGateWaitMillis);
     }
 
     /**
@@ -178,6 +266,43 @@ public class VideoTaskOrchestrator {
     }
 
     private ExecutionResult doExecute(TaskContext context) {
+        if (workerPool == null || workerPool.size() == 0) {
+            return doExecuteOn(context, null);
+        }
+        // 一个任务从「上传素材 → 提交 → 轮询 → 取回成片」必须始终打在同一台 ComfyUI 上：
+        // history 与输出目录都是进程内的，中途换节点就永远轮询不到结果。所以借到节点后
+        // 整条链路独占它，直到成片落盘才归还。
+        VideoTaskException lastRefusal = null;
+        int attempts = Math.max(1, workerPool.size());
+        for (int attempt = 0; attempt < attempts; attempt++) {
+            ComfyWorkerPool.Lease lease = workerPool.acquire(workerAcquireTimeout);
+            if (lease == null) {
+                break;
+            }
+            try {
+                return doExecuteOn(context, lease);
+            } catch (WorkerRefusedException e) {
+                // 这台节点的显存被别的进程占了：已标记冷却，换下一台重试。
+                lastRefusal = e;
+                log.warn("任务 {} 放弃 GPU 节点 {}：{}", context.taskId(), e.workerName, e.getMessage());
+            } finally {
+                lease.close();
+            }
+        }
+        if (lastRefusal != null) {
+            throw lastRefusal;
+        }
+        throw VideoTaskException.comfyFailure("GPU 工作节点全部繁忙，等待 "
+            + workerAcquireTimeout.toSeconds() + " 秒仍未排到，请稍后重试", null);
+    }
+
+    /**
+     * 在指定工作节点上执行任务。
+     *
+     * @param lease 工作节点租约；{@code null} 表示单实例模式，直接使用 {@code comfyClient}。
+     */
+    private ExecutionResult doExecuteOn(TaskContext context, ComfyWorkerPool.Lease lease) {
+        ComfyClient client = lease == null ? comfyClient : lease.client();
         WorkflowVersion version = registry.require(context.workflowCode(), context.requirePublished());
         VideoCapability capability = VideoCapability.parse(context.capabilityCode());
         if (capability == null) {
@@ -188,7 +313,7 @@ public class VideoTaskOrchestrator {
         }
 
         // 提交前先确认 ComfyUI 可达，避免把网络问题误报为工作流失败。
-        if (!comfyClient.isReachable()) {
+        if (!client.isReachable()) {
             // 任务此时已被认领为 RUNNING（见控制器），不能再用 QUEUED 去落库。
             repository.markFailedIfActive(context.taskId(), "COMFY_UNREACHABLE",
                 "ComfyUI 服务当前不可达");
@@ -197,18 +322,23 @@ public class VideoTaskOrchestrator {
 
         // 可选：先让 ComfyUI 归还显存与模型缓存，避免历史缓存把显存占满导致
         // 本次生成在采样节点拿不到显存而失败。默认关闭，由配置决定。
-        if (freeBeforeSubmit && comfyClient.freeMemory()) {
+        if (freeBeforeSubmit && client.freeMemory()) {
             log.info("任务 {} 提交前已请求 ComfyUI 释放显存", context.taskId());
         }
+
+        // 显存闸门：H3 单任务峰值实测 80,805 MiB / 81,920 MiB，GPU 上只要还压着别的
+        // 进程（vLLM、残留 python），提交后必然在采样节点 OOM，白等十几分钟才失败。
+        // 与其 OOM，不如立刻换一台节点；都在忙就快速失败，把原因明确写给用户。
+        assertVramAvailable(client, lease);
 
         String firstFile = null;
         String lastFile = null;
         if (capability != VideoCapability.T2V) {
             long assetId = capability == VideoCapability.I2V ? context.imageAssetId() : context.firstAssetId();
-            firstFile = uploadOwnedAsset(assetId, context);
+            firstFile = uploadOwnedAsset(assetId, context, client);
         }
         if (capability == VideoCapability.FL2V) {
-            lastFile = uploadOwnedAsset(context.lastAssetId(), context);
+            lastFile = uploadOwnedAsset(context.lastAssetId(), context, client);
         }
 
         JsonNode graph = preparer.prepare(registry.templateOf(context.workflowCode()), capability, version,
@@ -220,14 +350,93 @@ public class VideoTaskOrchestrator {
                 context.tier(),
                 context.durationLabel()));
 
-        String promptId = comfyClient.submitPrompt(graph);
-        repository.markSubmitted(context.taskId(), promptId, 1);
-        appendEvent(context, "SUBMITTED", "已提交 ComfyUI");
+        String promptId = client.submitPrompt(graph);
+        String workerName = lease == null ? null : lease.name();
+        repository.markSubmitted(context.taskId(), promptId, 1, workerName);
+        appendEvent(context, "SUBMITTED",
+            workerName == null ? "已提交 ComfyUI" : "已提交 ComfyUI · GPU " + workerName);
 
-        ComfyOutput output = awaitOutput(promptId, context);
+        ComfyOutput output = awaitOutput(promptId, context, client);
         // 此刻任务已经是 RUNNING（认领时落库）。这之后的每一步（下载成片、落盘、
         // ffprobe、分辨率断言、写素材行）失败，都由外层 execute 统一负责落库。
-        return archiveOutput(context, version, output);
+        return archiveOutput(context, version, output, client);
+    }
+
+    /**
+     * 显存闸门：借到节点后、提交前确认真有空闲显存。
+     *
+     * <p><b>为什么要轮询，而不是读一次。</b>实测证据：对 8188 调 {@code /free} 之后立刻读
+     * {@code /system_stats}，空闲显存只从 9,868 MiB 涨到 12,189 MiB；几分钟后再读是
+     * 80,566 MiB——释放是异步的（cudaMallocAsync 的内存池要过一会儿才还给驱动）。
+     * 只读一次就会把一张完全健康的卡（自带缓存 70 GB，可随时释放）误判成「被别的进程占用」，
+     * 结果是双卡退化成单卡甚至任务直接失败。</p>
+     *
+     * <p>因此：读数不足时先请它 {@code /free} 释放缓存，然后在等待窗口内反复读——
+     * 是 ComfyUI 自己的缓存就会涨回去；是外部进程占着（例如 vLLM）就一直上不去，
+     * 那时才把节点打入冷却并换卡。</p>
+     *
+     * @throws WorkerRefusedException 该节点显存不足（调用方应换一台重试）。
+     */
+    private void assertVramAvailable(ComfyClient client, ComfyWorkerPool.Lease lease) {
+        if (minFreeVramMb <= 0) {
+            return;
+        }
+        long freeMb = client.freeVramMb();
+        if (freeMb < 0) {
+            // 读不到显存信息（老版本 ComfyUI / 接口变更）时不做拦截，避免误杀。
+            return;
+        }
+        if (freeMb >= minFreeVramMb) {
+            log.info("任务开工前显存检查通过：空闲 {} MiB ≥ 闸门 {} MiB", freeMb, minFreeVramMb);
+            return;
+        }
+
+        // 低于闸门：先请节点释放模型缓存，再在窗口内轮询。
+        long before = freeMb;
+        client.freeMemory();
+        for (int attempt = 1; attempt <= vramGateAttempts && freeMb < minFreeVramMb; attempt++) {
+            sleepQuietly(vramGateWaitMillis);
+            freeMb = client.freeVramMb();
+        }
+        if (freeMb >= minFreeVramMb) {
+            log.info("释放缓存后显存检查通过：{} MiB → {} MiB（闸门 {} MiB）", before, freeMb, minFreeVramMb);
+            return;
+        }
+
+        String detail = "GPU 空闲显存仅 " + freeMb + " MiB（已请求释放缓存，"
+            + vramGateAttempts * vramGateWaitMillis / 1000 + " 秒内未回升），低于本次生成所需的 "
+            + minFreeVramMb + " MiB";
+        if (lease != null) {
+            workerPool.markUnavailable(lease.name(), detail);
+        }
+        throw new WorkerRefusedException(lease == null ? "default" : lease.name(), detail);
+    }
+
+    private void sleepQuietly(long millis) {
+        if (millis <= 0) {
+            return;
+        }
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /**
+     * 节点被占用/显存不足：可换一台重试，因此与普通任务失败区分开。
+     */
+    private static final class WorkerRefusedException extends VideoTaskException {
+
+        private static final long serialVersionUID = 1L;
+
+        private final String workerName;
+
+        WorkerRefusedException(String workerName, String detail) {
+            super("GPU_NOT_READY", workerName + " 暂时不可用：" + detail,
+                null);
+            this.workerName = workerName;
+        }
     }
 
     /**
@@ -236,10 +445,10 @@ public class VideoTaskOrchestrator {
      * <p>只在任务已进入 RUNNING 之后调用；失败由 {@link #execute} 负责落库。</p>
      */
     private ExecutionResult archiveOutput(TaskContext context, WorkflowVersion version,
-                                          ComfyOutput output) {
+                                          ComfyOutput output, ComfyClient client) {
         long maxDurationMillis = resolveDurationCapMillis(context.durationLabel(), version);
 
-        byte[] content = comfyClient.fetchOutput(output);
+        byte[] content = client.fetchOutput(output);
         String storageKey = assetStorage.storeOutput(context.tenantId(), context.userId(),
             context.taskId(), output.fileName(), content, "video/mp4");
 
@@ -316,7 +525,7 @@ public class VideoTaskOrchestrator {
         return new ExecutionResult(context.taskId(), outputAssetId, measuredOutput, truncated);
     }
 
-    private String uploadOwnedAsset(Long assetId, TaskContext context) {
+    private String uploadOwnedAsset(Long assetId, TaskContext context, ComfyClient client) {
         if (assetId == null) {
             throw VideoTaskException.invalidContract("缺少必需的输入素材");
         }
@@ -326,7 +535,7 @@ public class VideoTaskOrchestrator {
         byte[] content = assetStorage.read(asset.storageKey());
         String targetName = "hotter_" + context.taskId() + "_" + UUID.randomUUID().toString().substring(0, 8)
             + guessExtension(asset.contentType(), asset.originalName());
-        return comfyClient.uploadImage(targetName, content,
+        return client.uploadImage(targetName, content,
             asset.contentType() == null ? "image/png" : asset.contentType());
     }
 
@@ -350,10 +559,10 @@ public class VideoTaskOrchestrator {
         return Math.min(contractCap, requested * 1000L);
     }
 
-    private ComfyOutput awaitOutput(String promptId, TaskContext context) {
+    private ComfyOutput awaitOutput(String promptId, TaskContext context, ComfyClient client) {
         Instant deadline = Instant.now().plus(pollBudget);
         while (Instant.now().isBefore(deadline)) {
-            ComfyClient.PollResult result = comfyClient.poll(promptId);
+            ComfyClient.PollResult result = client.poll(promptId);
             switch (result.state()) {
                 case SUCCEEDED -> {
                     if (result.outputs().isEmpty()) {

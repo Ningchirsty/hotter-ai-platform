@@ -257,6 +257,28 @@ public class HttpComfyClient implements ComfyClient {
     }
 
     /**
+     * 读取本实例所在 GPU 的空闲显存。
+     *
+     * <p>ComfyUI 用 {@code --cuda-device} 固定在一张卡上，因此 {@code devices[0]}
+     * 就是它实际在用的那张（实测：8189 实例报的是 GPU0，8188 实例报的是 GPU1）。</p>
+     */
+    @Override
+    public long freeVramMb() {
+        try {
+            String text = restClient.get().uri("/system_stats").retrieve().body(String.class);
+            JsonNode devices = mapper.readTree(text).path("devices");
+            if (devices.isArray() && !devices.isEmpty()) {
+                long free = devices.get(0).path("vram_free").asLong(-1L);
+                return free < 0 ? -1L : free / (1024L * 1024L);
+            }
+        } catch (Exception e) {
+            // 取不到就返回 -1（未知），由调用方决定是否跳过闸门，不影响主流程。
+            log.debug("读取 ComfyUI 显存失败：{}", describe(e));
+        }
+        return -1L;
+    }
+
+    /**
      * 从 ComfyUI 的 outputs 中提取成片。
      *
      * <p>实测发现：ComfyUI 的 {@code SaveVideo} 节点把视频放在 <b>images</b> 数组里，
