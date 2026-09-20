@@ -122,13 +122,19 @@ public class ContentTaskController {
     /**
      * 上传资料附件。
      *
+     * <p><b>刻意不加 {@code @RepeatSubmit}</b>：该注解的防重 key 取自
+     * {@code RepeatSubmitAspect} 对方法入参的字符串化，而 {@code MultipartFile} 的
+     * {@code toString()} 只给出实现类与对象标识，<b>既不含文件名也不含内容</b>。
+     * 结果是「同一任务连续上传两个不同文件」会算出相同的 key，第二个必被拒——
+     * 而一次上传多个文件是常态（前端也是循环上传），属误伤而非保护。
+     * 防重复提交应加在表单类接口上，不适用于文件上传。</p>
+     *
      * @param taskId    任务ID
      * @param dataLevel 该文件的数据等级（可空）
      * @param file      文件
      * @return 附件ID
      */
     @SaCheckPermission(ContentConstants.PERM_TASK_EDIT)
-    @RepeatSubmit
     @Log(title = "内容资料", businessType = BusinessType.INSERT)
     @PostMapping("/{taskId}/file")
     public R<Long> uploadFile(@NotNull(message = "任务ID不能为空") @PathVariable("taskId") Long taskId,

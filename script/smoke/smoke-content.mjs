@@ -238,6 +238,51 @@ async function main() {
   if (external.length === 0) ok('全部调用 external_call=N（数据未出网）');
   else bad(`存在外发调用 ${external.length} 条`);
 
+  // ---------- 11. Word / PDF 解析覆盖 ----------
+  // 目标要求覆盖 Excel/Word/PDF 三种本地解析，前面的主线只用了 Excel，这里单独补齐。
+  const here = dirname(fileURLToPath(import.meta.url));
+  const t2 = await api(auth, 'POST', '/content/task', {
+    taskName: '积木花-向日葵 详情图（多格式解析）', deliverableType: 'ECOM_DETAIL',
+    dataLevel: 'INTERNAL', ownerId: 1, ownerName: 'admin', remark: '冒烟用例：Word/PDF'
+  });
+  if (t2.code !== 200 || !t2.data) {
+    bad(`建多格式解析任务失败：${t2.msg}`);
+  } else {
+    const taskId2 = t2.data;
+    for (const name of ['content-resume.docx', 'content-brief.pdf']) {
+      const buf = readFileSync(join(here, 'fixtures', name));
+      const fd2 = new FormData();
+      fd2.append('file', new Blob([buf]), name);
+      const up2 = await J(await fetch(`${BASE}/content/task/${taskId2}/file`, {
+        method: 'POST', headers: { Authorization: auth.Authorization, clientid: CID }, body: fd2
+      }));
+      if (up2.code === 200) ok(`上传 ${name} 成功`);
+      else bad(`上传 ${name} 失败：${up2.msg}`);
+    }
+    await sleep(1200);
+    await api(auth, 'POST', `/content/task/${taskId2}/parse`);
+    const d2 = await waitTask(auth, taskId2, (d) => d.task?.parseDoneAt, '多格式解析完成');
+    for (const f of d2?.files ?? []) {
+      info(`  ${f.fileName}: ${f.parseStatus}${f.parseMessage ? ' — ' + f.parseMessage : ''}`);
+    }
+    const doneCount = (d2?.files ?? []).filter((f) => f.parseStatus === 'DONE').length;
+    if (doneCount === 2) ok('Word(docx) 与 PDF 均解析完成（本地 POI/PDFBox，未出网）');
+    else bad(`期望 2 个文件解析完成，实际 ${doneCount}`);
+
+    const codes = new Set((d2?.facts ?? []).map((x) => x.fieldCode));
+    if (codes.has('product_name') && codes.has('sku_code') && codes.has('color')) {
+      ok('Word 表格中的中文标签被正确识别（产品名称/SKU/颜色）');
+    } else {
+      bad(`Word 解析字段不足：${[...codes].join(',') || '空'}`);
+    }
+    if (codes.has('brand_claim')) ok('PDF 文本层被正确抽取（识别到 slogan 别名）');
+    else bad(`PDF 解析字段不足：${[...codes].join(',') || '空'}`);
+    // 同样适用红线：多格式解析出的候选也必须全部待确认
+    const pending2 = (d2?.facts ?? []).filter((f) => f.confirmStatus === 'PENDING');
+    if (pending2.length === (d2?.facts ?? []).length) ok('Word/PDF 解析结果同样全部为「待确认」');
+    else bad('Word/PDF 解析结果中存在非待确认项');
+  }
+
   console.log(`\n[用例对象] productId=${productId} taskId=${taskId} packageId=${packageId} 任务号=${finalDetail?.data?.task?.taskNo}`);
   console.log(fail === 0 ? '内容生产协同冒烟: 全部通过' : `内容生产协同冒烟: ${fail} 项失败`);
   process.exit(fail === 0 ? 0 : 1);
