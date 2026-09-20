@@ -68,6 +68,11 @@ public class CpGateRule extends BaseEntity implements Serializable {
     private Integer sortNo;
 
     /**
+     * 备注
+     */
+    private String remark;
+
+    /**
      * 删除标志（0存在 1删除）
      */
     @TableLogic

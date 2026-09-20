@@ -23,8 +23,7 @@
 -- 一、能力定义
 -- ---------------------------------------------------------------------------
 -- 1) 资料解析：从 Excel/Word/PDF 抽取候选字段
-insert ignore into aig_capability values(
-  1763000000000001002, 'document_parse', '资料解析',
+insert ignore into aig_capability values(  1763000000000001002, 'document_parse', '资料解析',
   '从任务附件（Excel/Word/PDF）中抽取产品事实候选字段，供人工确认；不判断对错、不写入既定事实',
   'TEXT',
   '{"fields":[{"name":"fileRef","type":"string","dataLevel":"INTERNAL"},{"name":"fileKind","type":"string","dataLevel":"INTERNAL"},{"name":"fileName","type":"string","dataLevel":"INTERNAL"}],"forbidden":["apiKey","credential"]}',
@@ -47,6 +46,16 @@ insert ignore into aig_capability values(
   '不做臆测补全；无证据即报缺失，不猜值',
   'SUMMARY', '0', '0', 1761000000000000103, 1761100000000000001, sysdate(), null, null,
   '内容生产阶段1A：规则比对，不出网');
+
+-- 3) 声明同步（幂等 UPDATE）
+--    上面用 insert ignore 保证可重复执行，但 ignore 也意味着「已存在的行不会被更新」。
+--    当能力定义（如 output_schema）后续修订时，存量环境不会自动跟上，故用一条幂等 UPDATE
+--    显式收敛。extracted 字段用于区分「解析成功但未识别到字段」与「类型不支持被跳过」，
+--    调用方据此把附件落为 DONE 还是 SKIPPED，不能缺。
+update aig_capability
+   set output_schema = '{"fields":[{"name":"candidates","type":"array"},{"name":"fieldCount","type":"number"},{"name":"extracted","type":"boolean"},{"name":"pendingConfirm","type":"array"}]}'
+ where capability_code = 'document_parse'
+   and output_schema <> '{"fields":[{"name":"candidates","type":"array"},{"name":"fieldCount","type":"number"},{"name":"extracted","type":"boolean"},{"name":"pendingConfirm","type":"array"}]}';
 
 -- ---------------------------------------------------------------------------
 -- 二、路由策略：两个能力 × 三个数据等级，一律仅本地、不外部、可转人工
