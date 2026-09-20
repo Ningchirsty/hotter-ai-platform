@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.dromara.aigov.mapper.AigModelConfigMapper">
+
+    <!--
+      模型主数据写入语句。
+      ⚠️ 安全约束：
+        1. 列清单全部显式白名单，绝不出现 api_key——治理层从不读写该列，
+           密钥只登记引用（aig_model_governance.secret_ref）；
+        2. 本文件只有 INSERT 与只读校验，没有 UPDATE / DELETE，
+           模型主数据的修改与下架不经过治理层。
+    -->
+    <insert id="insertModel" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        insert into sai_model_config
+            (provider_id, model_name, model_key, model_type, adapter_key,
+             description, api_endpoint, scope, is_default, is_enabled,
+             created_dt, updated_dt)
+        values
+            (#{providerId}, #{modelName}, #{modelKey}, #{modelType}, #{adapterKey},
+             #{description}, #{apiEndpoint}, #{scope}, #{isDefault}, #{isEnabled},
+             now(), now())
+    </insert>
+
+    <select id="countByModelKey" resultType="int">
+        select count(1) from sai_model_config where model_key = #{modelKey}
+    </select>
+
+    <select id="countProvider" resultType="int">
+        select count(1) from sai_model_provider where id = #{providerId}
+    </select>
+
+    <!-- 供应商下拉选项：只回名称与标识，不含任何凭据 -->
+    <select id="selectProviderOptions" resultType="org.dromara.aigov.domain.vo.AigModelProviderVo">
+        select id           as provider_id,
+               provider_name as provider_name,
+               provider_key as provider_key
+        from sai_model_provider
+        where is_enabled = 1
+        order by id asc
+    </select>
+
+</mapper>

@@ -75,6 +75,7 @@ insert into sys_menu values(1763000000000000102, '模型注册中心', 176300000
 insert into sys_menu values(1763000000000001201, '模型查询',     1763000000000000102, 1, '', '', '', 'N', 'Y', 'F', '0', '0', 'aig:model:query',  '#', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '');
 insert into sys_menu values(1763000000000001202, '治理属性编辑', 1763000000000000102, 2, '', '', '', 'N', 'Y', 'F', '0', '0', 'aig:model:edit',   '#', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '数据等级/生命周期/限额/责任人');
 insert into sys_menu values(1763000000000001203, '查看密钥引用', 1763000000000000102, 3, '', '', '', 'N', 'Y', 'F', '0', '0', 'aig:model:secret', '#', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '仅信息安全授权人可见');
+insert into sys_menu values(1763000000000001204, '模型新增',     1763000000000000102, 4, '', '', '', 'N', 'Y', 'F', '0', '0', 'aig:model:add',    '#', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '登记 sai_model_config 主数据 + 首份治理属性');
 
 -- 路由策略
 insert into sys_menu values(1763000000000000103, '路由策略', 1763000000000000001, 3, 'route', 'aigov/route/index', '', 'N', 'Y', 'C', '0', '0', 'aig:route:list', 'guide', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '按能力与数据等级决定本地/外部与降级');
@@ -100,6 +101,7 @@ insert into sys_role_menu values (1763100000000000001, 1763000000000000102);
 insert into sys_role_menu values (1763100000000000001, 1763000000000001201);
 insert into sys_role_menu values (1763100000000000001, 1763000000000001202);
 insert into sys_role_menu values (1763100000000000001, 1763000000000001203);
+insert into sys_role_menu values (1763100000000000001, 1763000000000001204);
 insert into sys_role_menu values (1763100000000000001, 1763000000000000103);
 insert into sys_role_menu values (1763100000000000001, 1763000000000001301);
 insert into sys_role_menu values (1763100000000000001, 1763000000000001302);

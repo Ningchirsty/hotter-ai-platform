@@ -87,3 +87,43 @@ export interface AigModelQuery extends PageQuery {
   isEnabled?: number | string;
   params?: Record<string, any>;
 }
+
+/**
+ * 供应商下拉选项（GET /aigov/model/providers）
+ * 只含名称与标识，不含任何连接凭据。
+ */
+export interface AigModelProviderOption {
+  providerId?: string | number;
+  providerName?: string;
+  providerKey?: string;
+}
+
+/**
+ * 新增模型表单（POST /aigov/model）
+ * 一次提交两件事：模型主数据 + 首份治理属性。
+ * 治理三项（deploymentType/dataLevelMax/lifecycleStatus）必填——缺治理属性的模型
+ * 会被路由引擎静默排除，形成「存在但永远选不中」的孤儿模型。
+ */
+export interface AigModelCreateForm {
+  providerId?: string | number;
+  modelName?: string;
+  modelKey?: string;
+  modelType?: string;
+  adapterKey?: string;
+  apiEndpoint?: string;
+  description?: string;
+  scope?: string;
+  isDefault?: boolean;
+  isEnabled?: boolean;
+  deploymentType?: string;
+  dataLevelMax?: string;
+  lifecycleStatus?: string;
+  secretRef?: string;
+  costLimit?: string;
+  ownerTech?: string;
+  ownerBiz?: string;
+  ownerSecurity?: string;
+  validFrom?: string;
+  validTo?: string;
+  remark?: string;
+}

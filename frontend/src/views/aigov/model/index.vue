@@ -68,11 +68,19 @@
             <span class="panel-kicker">Model Registry</span>
             <h3>模型注册中心</h3>
             <p>
-              共 {{ total }} 条记录；模型主数据来自 snail-ai（sai_model_config），本页只登记治理属性。
+              共 {{ total }} 条记录；模型主数据存放于 sai_model_config，可在此新增模型并同时登记首份治理属性。
               密钥只存引用，本页不展示任何明文密钥。
             </p>
           </div>
           <div class="toolbar-actions">
+            <el-button
+              v-hasPermi="['aig:model:add']"
+              type="primary"
+              icon="Plus"
+              @click="handleCreateModel"
+            >
+              新增模型
+            </el-button>
             <el-button
               v-hasPermi="['aig:model:edit']"
               type="success"
@@ -304,12 +312,178 @@
         </div>
       </template>
     </el-dialog>
+
+    <!-- 新增模型对话框：模型主数据 + 首份治理属性一次提交 -->
+    <el-dialog v-model="createVisible" title="新增模型" width="860px" append-to-body>
+      <el-alert
+        class="dialog-alert"
+        type="warning"
+        :closable="false"
+        show-icon
+        title="此处会把模型写入 sai_model_config。部署类型、数据等级上限、可用状态必须同时登记——缺治理属性的模型会被路由引擎排除，永远不会被任何策略选中。密钥只填引用，禁止明文。"
+      />
+      <el-form ref="createFormRef" :model="createForm" :rules="createRules" label-width="130px">
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="供应商" prop="providerId">
+              <el-select v-model="createForm.providerId" placeholder="请选择供应商" style="width: 100%">
+                <el-option
+                  v-for="item in providerOptions"
+                  :key="item.providerId"
+                  :label="item.providerName"
+                  :value="item.providerId!"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="模型类型" prop="modelType">
+              <el-select
+                v-model="createForm.modelType"
+                placeholder="如 CHAT / EMBEDDING"
+                filterable
+                allow-create
+                default-first-option
+                style="width: 100%"
+              >
+                <el-option v-for="t in modelTypeOptions" :key="t" :label="t" :value="t" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="模型标识" prop="modelKey">
+              <el-input v-model="createForm.modelKey" placeholder="全局唯一，如 qwen-plus" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="模型名称" prop="modelName">
+              <el-input v-model="createForm.modelName" placeholder="展示用名称" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="适配器标识" prop="adapterKey">
+              <el-input v-model="createForm.adapterKey" placeholder="如 openai-compatible、local-rule" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="作用域" prop="scope">
+              <el-select v-model="createForm.scope" style="width: 100%">
+                <el-option label="全局 GLOBAL" value="GLOBAL" />
+                <el-option label="本地 LOCAL" value="LOCAL" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-form-item label="接口地址" prop="apiEndpoint">
+          <el-input v-model="createForm.apiEndpoint" placeholder="本地部署可留空；非本地部署建议填写" />
+        </el-form-item>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="部署类型" prop="deploymentType">
+              <el-select v-model="createForm.deploymentType" placeholder="请选择部署类型" style="width: 100%">
+                <el-option
+                  v-for="dict in aig_deployment_type"
+                  :key="dict.value"
+                  :label="dict.label"
+                  :value="dict.value"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="数据等级上限" prop="dataLevelMax">
+              <el-select v-model="createForm.dataLevelMax" placeholder="请选择数据等级上限" style="width: 100%">
+                <el-option v-for="dict in aig_data_level" :key="dict.value" :label="dict.label" :value="dict.value" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="可用状态" prop="lifecycleStatus">
+              <el-select v-model="createForm.lifecycleStatus" placeholder="请选择可用状态" style="width: 100%">
+                <el-option
+                  v-for="dict in aig_lifecycle_status"
+                  :key="dict.value"
+                  :label="dict.label"
+                  :value="dict.value"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="是否默认">
+              <el-switch v-model="createForm.isDefault" />
+              <span class="form-tip">同一模型类型建议只设一个默认</span>
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <!-- 密钥引用：仅 aig:model:secret 授权可见；无权限时字段不渲染且不参与提交 -->
+        <el-form-item v-hasPermi="['aig:model:secret']" label="密钥引用" prop="secretRef">
+          <el-input v-model="createForm.secretRef" placeholder="如 kms://ai/qwen，只填引用不填明文" />
+          <div class="form-tip">仅登记引用地址，后端不会读取 sai_model_config.api_key。</div>
+        </el-form-item>
+        <el-form-item label="成本限额" prop="costLimit">
+          <el-input v-model="createForm.costLimit" placeholder="单次/单项目/单日预算与限流规则" />
+        </el-form-item>
+        <el-row :gutter="16">
+          <el-col :span="8">
+            <el-form-item label="技术负责人" prop="ownerTech">
+              <el-input v-model="createForm.ownerTech" placeholder="技术负责人" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="业务负责人" prop="ownerBiz">
+              <el-input v-model="createForm.ownerBiz" placeholder="业务负责人" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="安全审批人" prop="ownerSecurity">
+              <el-input v-model="createForm.ownerSecurity" placeholder="安全审批人" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-form-item label="有效期" prop="validRange">
+          <el-date-picker
+            v-model="validRange"
+            type="daterange"
+            value-format="YYYY-MM-DD"
+            range-separator="至"
+            start-placeholder="生效日期"
+            end-placeholder="失效日期"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="说明" prop="description">
+          <el-input v-model="createForm.description" type="textarea" :rows="2" placeholder="模型用途与来源说明" />
+        </el-form-item>
+        <el-form-item label="备注" prop="remark">
+          <el-input v-model="createForm.remark" type="textarea" :rows="2" placeholder="请输入内容" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button type="primary" :loading="createSubmitting" @click="submitCreate">确 定</el-button>
+          <el-button @click="createVisible = false">取 消</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import type { AigModelGovernanceForm, AigModelGovernanceVO, AigModelQuery } from '@/api/aigov/model/types';
-import { getModel, listModel, updateModelGovernance } from '@/api/aigov/model';
+import type {
+  AigModelCreateForm,
+  AigModelGovernanceForm,
+  AigModelGovernanceVO,
+  AigModelProviderOption,
+  AigModelQuery
+} from '@/api/aigov/model/types';
+import { createModel, getModel, listModel, listModelProviders, updateModelGovernance } from '@/api/aigov/model';
 import { useLoading } from '@/hooks/async/useLoading';
 import { useFormDialog } from '@/hooks/dialog/useFormDialog';
 import { useSearchReset } from '@/hooks/form/useSearchReset';
@@ -454,10 +628,102 @@ const submitForm = () => {
   });
 };
 
+// ---------------------------------------------------------------- 新增模型
+
+/** 新增模型弹窗可见性 */
+const createVisible = ref(false);
+const createFormRef = ref<ElFormInstance>();
+const createSubmitting = ref(false);
+/** 供应商下拉选项（仅启用项，不含凭据） */
+const providerOptions = ref<AigModelProviderOption[]>([]);
+/** 模型类型建议值；允许自由输入，故不写死为字典 */
+const modelTypeOptions = ['CHAT', 'EMBEDDING', 'RERANK', 'VISION'];
+/** 有效期区间，提交时拆成 validFrom / validTo */
+const validRange = ref<string[]>([]);
+
+const initCreateForm = (): AigModelCreateForm => ({
+  providerId: undefined,
+  modelName: '',
+  modelKey: '',
+  modelType: 'CHAT',
+  adapterKey: '',
+  apiEndpoint: '',
+  description: '',
+  scope: 'GLOBAL',
+  isDefault: false,
+  isEnabled: true,
+  deploymentType: 'EXTERNAL_API',
+  dataLevelMax: 'PUBLIC',
+  lifecycleStatus: 'CANDIDATE',
+  secretRef: '',
+  costLimit: '',
+  ownerTech: '',
+  ownerBiz: '',
+  ownerSecurity: '',
+  remark: ''
+});
+
+const createForm = ref<AigModelCreateForm>(initCreateForm());
+
+const createRules = {
+  providerId: [{ required: true, message: '请选择供应商', trigger: 'change' }],
+  modelKey: [
+    { required: true, message: '模型标识不能为空', trigger: 'blur' },
+    {
+      pattern: /^[A-Za-z0-9][A-Za-z0-9._-]*$/,
+      message: '只能由字母、数字、点、下划线、中划线组成，且以字母或数字开头',
+      trigger: 'blur'
+    }
+  ],
+  modelName: [{ required: true, message: '模型名称不能为空', trigger: 'blur' }],
+  modelType: [{ required: true, message: '模型类型不能为空', trigger: 'change' }],
+  deploymentType: [{ required: true, message: '部署类型不能为空', trigger: 'change' }],
+  dataLevelMax: [{ required: true, message: '数据等级上限不能为空', trigger: 'change' }],
+  lifecycleStatus: [{ required: true, message: '可用状态不能为空', trigger: 'change' }]
+};
+
+/** 打开新增模型弹窗：重置表单并加载供应商选项 */
+const handleCreateModel = async () => {
+  createForm.value = initCreateForm();
+  validRange.value = [];
+  createVisible.value = true;
+  try {
+    const res = await listModelProviders();
+    providerOptions.value = res.data || [];
+  } catch {
+    // 拦截器已提示错误；这里降级为空选项，避免弹窗整体不可用
+    providerOptions.value = [];
+  }
+};
+
+/** 提交新增模型 */
+const submitCreate = () => {
+  createFormRef.value?.validate(async (valid: boolean) => {
+    if (!valid) {
+      return;
+    }
+    const payload: AigModelCreateForm = { ...createForm.value };
+    payload.validFrom = validRange.value?.[0];
+    payload.validTo = validRange.value?.[1];
+    // 无 aig:model:secret 权限时不下发密钥引用（后端亦会拒绝，双保险）
+    if (!checkPermi(['aig:model:secret'])) {
+      delete payload.secretRef;
+    }
+    createSubmitting.value = true;
+    try {
+      await createModel(payload);
+      modal.msgSuccess('新增成功');
+      createVisible.value = false;
+      await getList();
+    } finally {
+      createSubmitting.value = false;
+    }
+  });
+};
+
 onMounted(() => {
   getList();
-});
-</script>
+});</script>
 
 <style lang="scss" scoped>
 @use '@/assets/styles/components/page-shell' as pageShell;
