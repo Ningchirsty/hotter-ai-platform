@@ -116,6 +116,12 @@
             <artifactId>ruoyi-ai-gov</artifactId>
         </dependency>
 
+        <!-- 内容生产协同模块 -->
+        <dependency>
+            <groupId>org.dromara</groupId>
+            <artifactId>ruoyi-content</artifactId>
+        </dependency>
+
         <!-- Spring Boot Admin 客户端 -->
         <dependency>
             <groupId>de.codecentric</groupId>
