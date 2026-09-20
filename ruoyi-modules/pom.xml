@@ -24,6 +24,7 @@
         <module>ruoyi-ai</module>
         <module>ruoyi-talent</module>
         <module>ruoyi-ai-gov</module>
+        <module>ruoyi-content</module>
     </modules>
 
 </project>

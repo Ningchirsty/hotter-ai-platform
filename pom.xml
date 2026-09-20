@@ -452,6 +452,13 @@
                 <version>${revision}</version>
             </dependency>
 
+            <!-- 内容生产协同模块 -->
+            <dependency>
+                <groupId>org.dromara</groupId>
+                <artifactId>ruoyi-content</artifactId>
+                <version>${revision}</version>
+            </dependency>
+
             <!-- demo模块 -->
             <dependency>
                 <groupId>org.dromara</groupId>

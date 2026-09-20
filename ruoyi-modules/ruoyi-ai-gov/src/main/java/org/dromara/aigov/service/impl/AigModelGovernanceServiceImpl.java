@@ -8,9 +8,15 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.aigov.domain.AigModelGovernance;
+import org.dromara.aigov.domain.bo.AigModelCreateBo;
 import org.dromara.aigov.domain.bo.AigModelGovernanceBo;
+import org.dromara.aigov.domain.vo.AigModelProviderVo;
 import org.dromara.aigov.domain.vo.AigModelVo;
+import org.dromara.aigov.enums.AigDataLevelEnum;
+import org.dromara.aigov.enums.AigDeploymentTypeEnum;
+import org.dromara.aigov.enums.AigLifecycleStatusEnum;
 import org.dromara.aigov.helper.AigPermissionHelper;
+import org.dromara.aigov.mapper.AigModelConfigMapper;
 import org.dromara.aigov.mapper.AigModelGovernanceMapper;
 import org.dromara.aigov.mapper.AigModelViewMapper;
 import org.dromara.aigov.service.IAigModelGovernanceService;
@@ -19,6 +25,7 @@ import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.mybatis.core.page.PageQuery;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -51,9 +58,19 @@ public class AigModelGovernanceServiceImpl implements IAigModelGovernanceService
     private static final int SECRET_SUSPECT_LENGTH = 32;
 
     /**
+     * 作用域缺省值：与 {@code sai_model_config.scope} 的库默认值保持一致。
+     */
+    private static final String DEFAULT_SCOPE = "GLOBAL";
+
+    /**
      * 模型主数据只读视图 Mapper。
      */
     private final AigModelViewMapper modelViewMapper;
+
+    /**
+     * 模型主数据写入 Mapper（仅新增模型时使用）。
+     */
+    private final AigModelConfigMapper modelConfigMapper;
 
     /**
      * 模型治理属性 Mapper。
@@ -117,6 +134,80 @@ public class AigModelGovernanceServiceImpl implements IAigModelGovernanceService
         // ⚠️ 若后续把全局 updateStrategy 改为 IGNORED/ALWAYS，这里必须改为显式忽略 null，否则会静默清空。
         modelGovernanceMapper.updateById(entity);
         return existing.getGovernanceId();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Long createModel(AigModelCreateBo bo) {
+        if (bo == null) {
+            throw new ServiceException("新增模型参数不能为空");
+        }
+        // 1. 枚举合法性。
+        //    这一步不是形式主义：路由引擎用 find() 解析这些值，写错的取值不会报错，
+        //    只会让模型在「步骤4 候选可用性」被静默排除，排查成本极高，故在建的时候就拦住。
+        AigDeploymentTypeEnum deployment = AigDeploymentTypeEnum.find(bo.getDeploymentType());
+        if (deployment == null) {
+            throw new ServiceException("部署类型非法：" + bo.getDeploymentType());
+        }
+        AigDataLevelEnum dataLevel = AigDataLevelEnum.find(bo.getDataLevelMax());
+        if (dataLevel == null) {
+            throw new ServiceException("最高数据等级非法：" + bo.getDataLevelMax());
+        }
+        AigLifecycleStatusEnum lifecycle = AigLifecycleStatusEnum.find(bo.getLifecycleStatus());
+        if (lifecycle == null) {
+            throw new ServiceException("生命周期状态非法：" + bo.getLifecycleStatus());
+        }
+        // 2. 模型标识唯一（路由与审计按 model_key 引用模型，重名会让审计无法区分）
+        if (modelConfigMapper.countByModelKey(bo.getModelKey()) > 0) {
+            throw new ServiceException("模型标识已存在：" + bo.getModelKey());
+        }
+        // 3. 供应商必须存在（否则列表页会出现无供应商归属的孤儿记录）
+        if (modelConfigMapper.countProvider(bo.getProviderId()) == 0) {
+            throw new ServiceException("供应商不存在：" + bo.getProviderId());
+        }
+        // 4. 密钥引用与 saveGovernance 同一口径：有值需 aig:model:secret，且禁止明文
+        if (StringUtils.isNotBlank(bo.getSecretRef())) {
+            if (!permissionHelper.canViewModelSecret()) {
+                throw new ServiceException("无权登记密钥引用（aig:model:secret）");
+            }
+            checkSecretRef(bo.getSecretRef());
+        }
+        // 5. 归一默认值。这几个列可空，显式传 null 会覆盖掉库里的默认值，故在此补全。
+        bo.setScope(StringUtils.isBlank(bo.getScope()) ? DEFAULT_SCOPE : bo.getScope());
+        bo.setIsDefault(Boolean.TRUE.equals(bo.getIsDefault()));
+        bo.setIsEnabled(bo.getIsEnabled() == null || Boolean.TRUE.equals(bo.getIsEnabled()));
+
+        // 6. 主数据入库（自增主键回填到 bo.id）
+        modelConfigMapper.insertModel(bo);
+        if (bo.getId() == null) {
+            throw new ServiceException("模型新增失败：未取回主键");
+        }
+
+        // 7. 同一事务内写入首份治理属性，避免出现「有模型、无治理属性」的孤儿模型
+        AigModelGovernance entity = new AigModelGovernance();
+        entity.setModelId(bo.getId());
+        entity.setDeploymentType(deployment.getCode());
+        entity.setDataLevelMax(dataLevel.getCode());
+        entity.setLifecycleStatus(lifecycle.getCode());
+        entity.setSecretRef(bo.getSecretRef());
+        entity.setCostLimit(bo.getCostLimit());
+        entity.setOwnerTech(bo.getOwnerTech());
+        entity.setOwnerBiz(bo.getOwnerBiz());
+        entity.setOwnerSecurity(bo.getOwnerSecurity());
+        entity.setValidFrom(bo.getValidFrom());
+        entity.setValidTo(bo.getValidTo());
+        entity.setRemark(bo.getRemark());
+        entity.setStatus("0");
+        modelGovernanceMapper.insert(entity);
+
+        log.info("新增模型完成, modelId={}, modelKey={}, deploymentType={}, dataLevelMax={}, lifecycleStatus={}",
+            bo.getId(), bo.getModelKey(), deployment.getCode(), dataLevel.getCode(), lifecycle.getCode());
+        return bo.getId();
+    }
+
+    @Override
+    public List<AigModelProviderVo> listProviders() {
+        return modelConfigMapper.selectProviderOptions();
     }
 
     /**

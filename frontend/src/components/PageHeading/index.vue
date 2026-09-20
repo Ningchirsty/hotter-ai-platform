@@ -44,7 +44,7 @@ const props = withDefaults(
     admin?: boolean;
     adminLabel?: string;
     /** 所属模块，决定标题行下方展示哪组模块内标签页 */
-    module?: '' | 'talent' | 'aigov';
+    module?: '' | 'talent' | 'aigov' | 'content';
   }>(),
   {
     subtitle: '',
@@ -71,6 +71,14 @@ const MODULE_TABS: Record<string, { label: string; path: string }[]> = {
     { label: '模型注册中心', path: '/admin-center/ai-gov/model' },
     { label: '路由策略', path: '/admin-center/ai-gov/route' },
     { label: '调用审计', path: '/admin-center/ai-gov/audit' }
+  ],
+  // 内容生产协同挂在「业务应用」下，故路由前缀为 /business/content
+  content: [
+    { label: '内容任务', path: '/business/content/task' },
+    { label: '互动确认卡', path: '/business/content/card' },
+    { label: '设计开工包', path: '/business/content/workPackage' },
+    { label: '产品与SKU', path: '/business/content/product' },
+    { label: '闸门规则', path: '/business/content/gateRule' }
   ]
 };
 

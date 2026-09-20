@@ -1,0 +1,179 @@
+package org.dromara.aigov.domain.bo;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
+import lombok.Data;
+import org.dromara.common.core.validate.AddGroup;
+
+import java.io.Serial;
+import java.io.Serializable;
+import java.time.LocalDate;
+
+/**
+ * 新增模型业务对象。
+ *
+ * <p>一个对象同时承载两件事：</p>
+ * <ol>
+ *     <li><b>模型主数据</b>——登记进 snail-ai 的 {@code sai_model_config}；</li>
+ *     <li><b>首份治理属性</b>——登记进 {@code aig_model_governance}。</li>
+ * </ol>
+ *
+ * <p><b>为什么治理属性在新增时就必填</b>：路由引擎在「步骤 3/4」会排除「未登记治理属性」
+ * 的候选模型。若允许先建模型、治理属性留空，会立刻产生一个看起来存在、却永远不会被
+ * 任何策略选中的「孤儿模型」，排查成本很高。故部署类型、数据等级上限、生命周期三项
+ * 在新增时即必填。</p>
+ *
+ * <p><b>密钥</b>：只接受「引用」（{@code secretRef}，如 {@code kms://ai/qwen}），
+ * 禁止明文；本对象<b>不含</b> {@code api_key} 字段，治理层从不读写该列。</p>
+ *
+ * @author ai-gov
+ */
+@Data
+public class AigModelCreateBo implements Serializable {
+
+    @Serial
+    private static final long serialVersionUID = 1L;
+
+    /**
+     * 新增后回填的自增主键（{@code sai_model_config.id}），仅供服务端内部使用
+     */
+    private Long id;
+
+    /**
+     * 供应商ID（{@code sai_model_provider.id}）
+     */
+    @NotNull(message = "供应商不能为空", groups = {AddGroup.class})
+    private Long providerId;
+
+    /**
+     * 模型名称（展示用）
+     */
+    @NotBlank(message = "模型名称不能为空", groups = {AddGroup.class})
+    @Size(max = 255, message = "模型名称长度不能超过 255", groups = {AddGroup.class})
+    private String modelName;
+
+    /**
+     * 模型标识（业务唯一键，路由与审计按它引用模型）
+     */
+    @NotBlank(message = "模型标识不能为空", groups = {AddGroup.class})
+    @Size(max = 100, message = "模型标识长度不能超过 100", groups = {AddGroup.class})
+    @Pattern(regexp = "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+        message = "模型标识只能由字母、数字、点、下划线、中划线组成，且以字母或数字开头",
+        groups = {AddGroup.class})
+    private String modelKey;
+
+    /**
+     * 模型类型（CHAT / EMBEDDING 等）
+     */
+    @NotBlank(message = "模型类型不能为空", groups = {AddGroup.class})
+    @Size(max = 50, message = "模型类型长度不能超过 50", groups = {AddGroup.class})
+    private String modelType;
+
+    /**
+     * 适配器标识（如 openai-compatible、local-rule）
+     */
+    @Size(max = 100, message = "适配器标识长度不能超过 100", groups = {AddGroup.class})
+    private String adapterKey;
+
+    /**
+     * 接口地址；本地部署可留空
+     */
+    @Size(max = 500, message = "接口地址长度不能超过 500", groups = {AddGroup.class})
+    private String apiEndpoint;
+
+    /**
+     * 说明
+     */
+    @Size(max = 1000, message = "说明长度不能超过 1000", groups = {AddGroup.class})
+    private String description;
+
+    /**
+     * 作用域（GLOBAL / LOCAL），留空按 GLOBAL
+     */
+    @Size(max = 20, message = "作用域长度不能超过 20", groups = {AddGroup.class})
+    private String scope;
+
+    /**
+     * 是否默认模型
+     */
+    private Boolean isDefault;
+
+    /**
+     * 是否启用
+     */
+    private Boolean isEnabled;
+
+    // ------------------------------------------------------------------
+    // 首份治理属性（新增时必填的三项 + 可选补充项）
+    // ------------------------------------------------------------------
+
+    /**
+     * 部署类型（LOCAL / GROUP / EXTERNAL_ENTERPRISE / EXTERNAL_API）
+     */
+    @NotBlank(message = "部署类型不能为空", groups = {AddGroup.class})
+    @Size(max = 24, message = "部署类型长度不能超过 24", groups = {AddGroup.class})
+    private String deploymentType;
+
+    /**
+     * 允许处理的最高数据等级
+     */
+    @NotBlank(message = "最高数据等级不能为空", groups = {AddGroup.class})
+    @Size(max = 16, message = "最高数据等级长度不能超过 16", groups = {AddGroup.class})
+    private String dataLevelMax;
+
+    /**
+     * 生命周期状态（CANDIDATE/TRIAL/GRAY/PRODUCTION/SUSPENDED/RETIRED）
+     */
+    @NotBlank(message = "生命周期状态不能为空", groups = {AddGroup.class})
+    @Size(max = 16, message = "生命周期状态长度不能超过 16", groups = {AddGroup.class})
+    private String lifecycleStatus;
+
+    /**
+     * 密钥引用（禁止明文，如 kms://ai/qwen）；写此项需要 aig:model:secret 权限
+     */
+    @Size(max = 255, message = "密钥引用长度不能超过 255", groups = {AddGroup.class})
+    private String secretRef;
+
+    /**
+     * 成本限制说明
+     */
+    @Size(max = 255, message = "成本限制长度不能超过 255", groups = {AddGroup.class})
+    private String costLimit;
+
+    /**
+     * 技术负责人
+     */
+    @Size(max = 64, message = "技术负责人长度不能超过 64", groups = {AddGroup.class})
+    private String ownerTech;
+
+    /**
+     * 业务负责人
+     */
+    @Size(max = 64, message = "业务负责人长度不能超过 64", groups = {AddGroup.class})
+    private String ownerBiz;
+
+    /**
+     * 安全审批人
+     */
+    @Size(max = 64, message = "安全审批人长度不能超过 64", groups = {AddGroup.class})
+    private String ownerSecurity;
+
+    /**
+     * 有效期起
+     */
+    private LocalDate validFrom;
+
+    /**
+     * 有效期止
+     */
+    private LocalDate validTo;
+
+    /**
+     * 备注
+     */
+    @Size(max = 500, message = "备注长度不能超过 500", groups = {AddGroup.class})
+    private String remark;
+
+}

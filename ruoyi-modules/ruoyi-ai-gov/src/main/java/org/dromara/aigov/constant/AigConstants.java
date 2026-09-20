@@ -38,6 +38,10 @@ public interface AigConstants {
      */
     String PERM_MODEL_QUERY = "aig:model:query";
     /**
+     * 模型治理-新增模型（登记 sai_model_config 主数据 + 首份治理属性）
+     */
+    String PERM_MODEL_ADD = "aig:model:add";
+    /**
      * 模型治理-修改
      */
     String PERM_MODEL_EDIT = "aig:model:edit";
