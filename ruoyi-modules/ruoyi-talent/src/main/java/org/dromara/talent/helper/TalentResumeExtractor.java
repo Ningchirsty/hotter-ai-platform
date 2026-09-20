@@ -7,7 +7,12 @@ import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.apache.poi.xwpf.extractor.XWPFWordExtractor;
+import org.apache.poi.xwpf.usermodel.IBodyElement;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
+import org.apache.poi.xwpf.usermodel.XWPFParagraph;
+import org.apache.poi.xwpf.usermodel.XWPFTable;
+import org.apache.poi.xwpf.usermodel.XWPFTableCell;
+import org.apache.poi.xwpf.usermodel.XWPFTableRow;
 import org.dromara.common.core.utils.StringUtils;
 import org.dromara.talent.config.TalentProperties;
 import org.dromara.talent.domain.vo.ResumeFieldCandidateVo;
@@ -100,6 +105,11 @@ public class TalentResumeExtractor {
      * 正文姓名：兼容「姓 名： X」式排版，且不吞掉紧随其后的「性别」首字。
      */
     private static final Pattern TEXT_NAME = Pattern.compile("姓\\s*名\\s*[:：]\\s*([^\\s性]+)");
+
+    /**
+     * 连续空白（含换行、制表符）：用于把单元格/段落内容归一为单行。
+     */
+    private static final Pattern WHITESPACE = Pattern.compile("\\s+");
 
     /**
      * 正文性别。
@@ -348,15 +358,109 @@ public class TalentResumeExtractor {
     /**
      * 提取 DOCX 文本（OOXML）。
      *
+     * <p><b>为什么不用 {@code XWPFWordExtractor.getText()} 一次性取全文</b>：
+     * 它把表格单元格用制表符拼成一行，而简历普遍是「标签 | 值」分列的两列表格，
+     * 拼出来是 {@code "姓名\t张伟\t性别\t男"}，而各字段正则要求的是
+     * {@code "姓名：张伟"} 这种「标签+冒号+值」形式，于是姓名、学历、出生年月
+     * 等成片漏抽。故这里按文档结构遍历：段落原样取，表格则把「裸标签 + 相邻裸值」
+     * 合成为一行 {@code "标签：值"}，并让每对独占一行（换行属于 \s，可兜住
+     * {@code \S+} 这类贪婪匹配，避免吞掉后续字段）。</p>
+     *
      * @param bytes DOCX 字节
      * @return 文本
      * @throws Exception 底层解析异常（由调用方统一吞掉）
      */
     private String extractDocx(byte[] bytes) throws Exception {
-        try (XWPFDocument document = new XWPFDocument(new ByteArrayInputStream(bytes));
-             XWPFWordExtractor extractor = new XWPFWordExtractor(document)) {
+        try (XWPFDocument document = new XWPFDocument(new ByteArrayInputStream(bytes))) {
+            StringBuilder sb = new StringBuilder();
+            for (IBodyElement element : document.getBodyElements()) {
+                if (element instanceof XWPFParagraph paragraph) {
+                    appendLine(sb, paragraph.getText());
+                } else if (element instanceof XWPFTable table) {
+                    appendTable(sb, table);
+                }
+            }
+            if (sb.length() > 0) {
+                return sb.toString();
+            }
+            // 结构化遍历一无所获（例如正文全在文本框/图形等非常规容器里）：
+            // 回退到 POI 的整篇提取，避免比修复前更差。
+            // 注意：不在此处 close 该提取器——它的 close() 会连带关闭 document，
+            // 而 document 已由外层 try-with-resources 负责释放。
+            XWPFWordExtractor extractor = new XWPFWordExtractor(document);
             return StringUtils.defaultString(extractor.getText());
         }
+    }
+
+    /**
+     * 追加一行文本（空行不入）。
+     *
+     * @param sb  目标缓冲
+     * @param text 行文本
+     */
+    private void appendLine(StringBuilder sb, String text) {
+        String value = normalizeInline(text);
+        if (StringUtils.isNotBlank(value)) {
+            sb.append(value).append('\n');
+        }
+    }
+
+    /**
+     * 按行的形式追加表格内容。
+     * <p>同行内「不带冒号的标签 + 相邻不带冒号的值」合成为 {@code "标签：值"} 独占一行；
+     * 其余单元格各自成行。这样既能让裸标签表格被正则识别，也不会破坏
+     * 「单元格本身就写成『姓名：张伟』」的表格。</p>
+     *
+     * @param sb    目标缓冲
+     * @param table 表格
+     */
+    private void appendTable(StringBuilder sb, XWPFTable table) {
+        for (XWPFTableRow row : table.getRows()) {
+            List<String> cells = new ArrayList<>();
+            for (XWPFTableCell cell : row.getTableCells()) {
+                String text = normalizeInline(cell.getText());
+                if (StringUtils.isNotBlank(text)) {
+                    cells.add(text);
+                }
+            }
+            int i = 0;
+            while (i < cells.size()) {
+                String current = cells.get(i);
+                boolean pair = i + 1 < cells.size()
+                    && !containsColon(current)
+                    && !containsColon(cells.get(i + 1));
+                if (pair) {
+                    appendLine(sb, current + "：" + cells.get(i + 1));
+                    i += 2;
+                } else {
+                    appendLine(sb, current);
+                    i += 1;
+                }
+            }
+        }
+    }
+
+    /**
+     * 单元格/段落内的换行与制表符归一为单个空格，便于标签与值同行匹配。
+     *
+     * @param text 原始文本
+     * @return 归一后的单行文本
+     */
+    private String normalizeInline(String text) {
+        if (text == null) {
+            return "";
+        }
+        return WHITESPACE.matcher(text).replaceAll(" ").trim();
+    }
+
+    /**
+     * 文本是否已含中英文冒号（用于判断该单元格是完整「标签：值」还是裸标签）。
+     *
+     * @param text 文本
+     * @return 含冒号返回 true
+     */
+    private boolean containsColon(String text) {
+        return text.indexOf('：') >= 0 || text.indexOf(':') >= 0;
     }
 
     /**
