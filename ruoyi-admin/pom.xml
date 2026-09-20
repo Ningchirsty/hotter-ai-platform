@@ -110,6 +110,12 @@
             <artifactId>ruoyi-talent</artifactId>
         </dependency>
 
+        <!-- AI治理模块 -->
+        <dependency>
+            <groupId>org.dromara</groupId>
+            <artifactId>ruoyi-ai-gov</artifactId>
+        </dependency>
+
         <!-- Spring Boot Admin 客户端 -->
         <dependency>
             <groupId>de.codecentric</groupId>
