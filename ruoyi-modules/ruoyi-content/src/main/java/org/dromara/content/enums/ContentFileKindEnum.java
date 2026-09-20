@@ -5,7 +5,7 @@ import lombok.Getter;
 
 /**
  * 资料文件类型枚举。
- * <p>{@link #parseable()} 决定该类型能否进入本地解析：阶段1A 只支持
+ * <p>{@link #isParseable()} 决定该类型能否进入本地解析：阶段1A 只支持
  * Excel（XSSF/HSSF）、Word（docx，XWPF）、PDF（PDFBox）。
  * 图片需 OCR、旧版 .doc 需 poi-scratchpad，本阶段一律跳过并给出可读原因——
  * 「明确告知跳过」比「悄悄返回空」更符合设计文档 §1 的交互原则。</p>

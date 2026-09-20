@@ -201,7 +201,7 @@ public class AigRouteServiceImpl implements IAigRouteService {
                 + "，priority=" + binding.getPriority()
                 + "，deploymentType=" + deployment.getCode()
                 + "，dataLevelMax=" + governance.getDataLevelMax());
-            ModelInvoker invoker = resolveInvoker(deployment);
+            ModelInvoker invoker = resolveInvoker(deployment, capabilityCode);
             if (invoker == null) {
                 decision.addHit("未找到支持 " + deployment.getCode() + " 且可用的调用器（invoker）");
             } else {
@@ -394,15 +394,29 @@ public class AigRouteServiceImpl implements IAigRouteService {
     }
 
     /**
-     * 按部署类型挑选可用调用器。
+     * 挑选可用调用器：**先按能力精配，再按部署类型兜底**。
      *
-     * @param deployment 部署类型
+     * <p>为什么必须两段式：同一种部署类型（如 {@code LOCAL}）下存在多个调用器，
+     * 分别实现不同业务能力（人才匹配、资料解析、资料预检…）。若只看部署类型，
+     * 只能取「列表里第一个可用的」，结果取决于 Spring Bean 装配顺序——不确定，
+     * 会出现「资料解析被派给了人才匹配的调用器」这类错配。</p>
+     *
+     * @param deployment     部署类型
+     * @param capabilityCode 业务能力编码
      * @return 可用调用器，找不到返回 null
      */
-    private ModelInvoker resolveInvoker(AigDeploymentTypeEnum deployment) {
+    private ModelInvoker resolveInvoker(AigDeploymentTypeEnum deployment, String capabilityCode) {
         if (invokers == null) {
             return null;
         }
+        // 第一段：声明处理该能力的调用器优先
+        for (ModelInvoker invoker : invokers) {
+            if (invoker.supports(deployment) && invoker.available()
+                && invoker.supportsCapability(capabilityCode)) {
+                return invoker;
+            }
+        }
+        // 第二段：兜底——只按部署类型匹配（保持既有行为，snail-ai 等通用调用器走这里）
         for (ModelInvoker invoker : invokers) {
             if (invoker.supports(deployment) && invoker.available()) {
                 return invoker;

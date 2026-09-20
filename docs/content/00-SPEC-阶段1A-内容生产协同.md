@@ -243,7 +243,25 @@ ContentParseService
       → 审计留痕
 ```
 
-> **对 aigov 的改动**：现有 `LocalRuleModelInvoker` 只支持 `talent_match`，需改为**按 capabilityCode 分发**到不同本地实现（新增 `document_parse` / `brief_precheck` 分支）。这是阶段1A 唯一需要动 aigov 的地方，且是扩展而非改写。
+> **对 aigov 的改动（实施后据实修订）**：原计划把 `LocalRuleModelInvoker` 改成
+> 「按 capabilityCode 分发的总调度」。实施时发现那样会把它变成一个上帝类，
+> 且治理层将被迫了解各类业务细节。**实际做法更小也更干净**：
+>
+> 1. `ModelInvoker` SPI 新增 `supportsCapability(String)`（带默认实现 false，向后兼容）；
+> 2. 路由的调用器挑选改为**两段式**：先找「声明处理该能力」的调用器，
+>    找不到再退回「只按部署类型匹配」——第二段保证既有行为不变；
+> 3. `LocalRuleModelInvoker` 仅声明 `talent_match`；内容模块提供
+>    `ContentLocalInvoker` 声明 `document_parse` / `brief_precheck`。
+>
+> **为什么必须看能力编码**：同一部署类型（LOCAL）下会有多个本地调用器。
+> 若只看部署类型，路由只能取「列表里第一个可用的」，结果取决于 Spring Bean 的
+> 装配顺序——会出现「资料解析被派给人才匹配调用器」这类不确定错配。
+>
+> 这仍是阶段1A 唯一需要动 aigov 的地方，且是扩展而非改写。
+>
+> **payload 传参口径**：`document_parse` 的 `fileBytes` 以 `byte[]` 放在 payload 中
+> 进程内传递，不落库、不出网。审计侧 `AigInputSanitizer.safeValue` 只写**值的类型名**
+> （`byte[]`），不做序列化，因此不会把文件内容带进审计，也不会有体积问题。
 
 同时按 §B2 在 aigov 登记两个能力与路由策略（本地优先、`allow_external='N'`）。
 

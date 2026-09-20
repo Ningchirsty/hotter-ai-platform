@@ -8,9 +8,13 @@ import org.dromara.aigov.service.IAigTalentMatchService;
 import org.springframework.stereotype.Component;
 
 /**
- * 本地规则调用器（本地私有部署）。
- * <p>不访问任何网络，阶段1 实现 {@code talent_match} 的本地规则匹配，
- * 用于本地端到端验证；snail-ai 未启用时治理层仍可完整跑通。</p>
+ * 本地规则调用器：**仅负责 {@code talent_match}**（人才能力匹配）的本地实现。
+ * <p>不访问任何网络；snail-ai 未启用时治理层仍可完整跑通。</p>
+ *
+ * <p>其它业务能力的本地实现（如内容生产的 {@code document_parse} / {@code brief_precheck}）
+ * 由各自模块提供独立的 {@link ModelInvoker}，并通过
+ * {@link ModelInvoker#supportsCapability(String)} 声明归属，由路由按能力精确分派——
+ * 这样本地调用器之间不会互相抢能力，也不必在本类里堆叠 if-else 变成上帝类。</p>
  *
  * @author ai-gov
  */
@@ -30,6 +34,11 @@ public class LocalRuleModelInvoker implements ModelInvoker {
     }
 
     @Override
+    public boolean supportsCapability(String capabilityCode) {
+        return AigConstants.CAP_TALENT_MATCH.equals(capabilityCode);
+    }
+
+    @Override
     public boolean available() {
         // 纯本地计算，无外部依赖，恒可用
         return true;
@@ -42,8 +51,8 @@ public class LocalRuleModelInvoker implements ModelInvoker {
         }
         long start = System.currentTimeMillis();
         try {
-            if (!AigConstants.CAP_TALENT_MATCH.equals(request.getCapabilityCode())) {
-                return ModelInvokeResult.failure("本地规则调用器阶段1仅支持 " + AigConstants.CAP_TALENT_MATCH,
+            if (!supportsCapability(request.getCapabilityCode())) {
+                return ModelInvokeResult.failure("本地规则调用器只处理 " + AigConstants.CAP_TALENT_MATCH,
                     System.currentTimeMillis() - start);
             }
             String output = talentMatchService.match(request.getPayload());
