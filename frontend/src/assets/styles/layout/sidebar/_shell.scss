@@ -54,14 +54,16 @@
       height: 100%;
     }
 
+    /* 浅色侧栏 token 映射自 reference/design-tokens.scss：
+     * 静默的墨蓝文字 + 雾蓝选中底；hover 仅用极淡墨色，避免抢视线。 */
     .el-scrollbar.theme-light {
-      --side-menu-text: #1f2937;
-      --side-menu-hover-bg: rgba(64, 158, 255, 0.08);
-      --side-menu-hover-text: #111827;
-      --side-menu-active-bg: rgba(64, 158, 255, 0.12);
-      --side-menu-active-text: #409eff;
-      --side-menu-active-border: rgba(64, 158, 255, 0.16);
-      --side-menu-active-line: #409eff;
+      --side-menu-text: #475c70; /* $zx-text */
+      --side-menu-hover-bg: rgba(41, 60, 81, 0.05);
+      --side-menu-hover-text: #293c51; /* $zx-ink */
+      --side-menu-active-bg: #e2eaf1; /* $zx-selected 雾蓝 */
+      --side-menu-active-text: #293c51; /* $zx-ink 墨蓝 */
+      --side-menu-active-border: #d5e0e9;
+      --side-menu-active-line: #405971; /* $zx-ink-hover */
     }
 
     .el-scrollbar.theme-dark {

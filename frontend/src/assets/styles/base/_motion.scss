@@ -1,0 +1,15 @@
+/* 动效降级：尊重系统「减少动态效果」设置。
+ * 设计规范要求动态花元素只出现在登录页与工作台欢迎区，且必须响应 prefers-reduced-motion；
+ * 这里统一兜住 Element Plus 的过渡与业务页里的入场动画，避免逐个面板重复定义。 */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -11,10 +11,11 @@
   gap: 12px;
 }
 
+/* 面板标题按设计规范控制在 14px，不使用营销式大标题 */
 .panel-heading h3,
 .table-heading h3 {
   margin: 0;
-  font-size: 15px;
+  font-size: 14px;
   letter-spacing: 0;
   color: var(--app-text-title);
 }

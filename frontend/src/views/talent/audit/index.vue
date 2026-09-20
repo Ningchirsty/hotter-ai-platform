@@ -1,5 +1,6 @@
 <template>
   <div class="p-2 app-container talent-audit-page">
+    <PageHeading title="人才管理" subtitle="档案、附件与业务记录，在同一个工作空间有序连接" />
     <div class="search-wrap">
       <el-card shadow="hover" class="search-panel" :class="{ 'is-collapsed': !showSearch }">
         <template #header>
