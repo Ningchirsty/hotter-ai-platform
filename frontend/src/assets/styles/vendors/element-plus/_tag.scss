@@ -1,0 +1,61 @@
+/* 状态胶囊与表格质感：对齐《纵享工作空间设计规范》
+ * 规范里的标签是浅色胶囊（默认 #edf2f6/#6d8398、成功 #edf4ef/#6d8c78、暖色 #f5f0e9/#967954），
+ * 表格表头浅底、行 hover 浅雾蓝。这里只覆盖 Element Plus 的变量与外观，不改语义色含义。 */
+
+.el-tag {
+  --el-tag-border-radius: 6px;
+  --el-tag-bg-color: #edf2f6;
+  --el-tag-border-color: #dbe3ea;
+  --el-tag-text-color: #6d8398;
+  padding: 0 8px;
+  font-size: 11px;
+  line-height: 20px;
+  height: 22px;
+  border-width: 1px;
+}
+
+.el-tag--primary,
+.el-tag--info {
+  --el-tag-bg-color: #edf2f6;
+  --el-tag-border-color: #dbe3ea;
+  --el-tag-text-color: #6d8398;
+}
+
+.el-tag--success {
+  --el-tag-bg-color: #edf4ef;
+  --el-tag-border-color: #d5e5da;
+  --el-tag-text-color: #6d8c78;
+}
+
+.el-tag--warning {
+  --el-tag-bg-color: #f5f0e9;
+  --el-tag-border-color: #e6dccb;
+  --el-tag-text-color: #967954;
+}
+
+.el-tag--danger {
+  --el-tag-bg-color: #f7ecec;
+  --el-tag-border-color: #e8d3d3;
+  --el-tag-text-color: #a57070;
+}
+
+/* 表格：表头浅底、行 hover 浅雾蓝、单元格留白略收紧 */
+.el-table {
+  --el-table-row-hover-bg-color: #f5f8fb;
+  --el-table-header-bg-color: var(--tableHeaderBg);
+  --el-table-border-color: var(--app-surface-border);
+  font-size: 13px;
+
+  th.el-table__cell {
+    font-weight: 500;
+  }
+
+  .el-table__cell {
+    padding: 9px 0;
+  }
+}
+
+/* 浅色表格里去掉表头底部那条过重的分隔线，改用极浅描边 */
+.el-table__header-wrapper th.el-table__cell {
+  border-bottom: 1px solid var(--app-surface-border) !important;
+}

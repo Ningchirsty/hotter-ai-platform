@@ -7,7 +7,11 @@ const setting: DefaultSettings = {
    */
   title: import.meta.env.VITE_APP_TITLE,
 
-  theme: '#8B5CF6',
+  /**
+   * 主题色：纵享工作空间设计规范用墨蓝（$zx-ink #293c51）作为主操作色，
+   * light/dark 系列由 App.vue 里的 handleThemeStyle 在运行时派生。
+   */
+  theme: '#293C51',
 
   /**
    * 侧边栏主题 深色主题theme-dark，浅色主题theme-light
