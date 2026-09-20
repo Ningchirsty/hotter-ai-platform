@@ -26,14 +26,14 @@
   font-weight: 500;
 }
 
-// --- primary 品牌色（亮色；暗色见 tokens/_theme-dark） ---
+// --- primary 品牌色（设计规范：墨蓝填充 #293c51，hover 加深到 #405971；暗色见 tokens/_theme-dark） ---
 .el-button--primary {
-  --el-button-bg-color: var(--app-accent-strong);
-  --el-button-border-color: var(--app-accent-strong);
-  --el-button-hover-bg-color: #4a7cff;
-  --el-button-hover-border-color: #4a7cff;
-  --el-button-active-bg-color: #2e5ce0;
-  --el-button-active-border-color: #2e5ce0;
+  --el-button-bg-color: var(--el-color-primary);
+  --el-button-border-color: var(--el-color-primary);
+  --el-button-hover-bg-color: var(--app-accent-strong);
+  --el-button-hover-border-color: var(--app-accent-strong);
+  --el-button-active-bg-color: var(--el-color-primary-dark-1);
+  --el-button-active-border-color: var(--el-color-primary-dark-1);
 }
 
 // --- 表格 CSS 变量接业务 token ---
