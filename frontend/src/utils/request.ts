@@ -118,6 +118,27 @@ service.interceptors.request.use(
     // 是否需要加密
     const isEncrypt = config.headers?.isEncrypt === 'true';
 
+    // 文件上传（FormData）必须清掉全局的 application/json 默认头。
+    //
+    // 原因：上面把 Content-Type 全局设成了 application/json，而 axios 的
+    // transformRequest 对 FormData 的处理是
+    //   isFormData ? (hasJSONContentType ? JSON.stringify(formDataToJSON(data)) : data) : ...
+    // （axios/lib/defaults/index.js）。只要 Content-Type 含 application/json，
+    // FormData 就会被转成 JSON 字符串（实测结果为 {"file":{}}），文件内容随之丢失。
+    // 后端收不到 multipart 分片，抛
+    //   MultipartException: Current request is not a multipart request
+    // 经全局异常处理器包装成 500「发生未知异常」，前端表现即「导入简历解析失败」。
+    //
+    // 清掉之后 axios 会原样发送 FormData，浏览器再自动补上带 boundary 的
+    // multipart/form-data（video 上传此前正是靠逐个接口显式声明绕开，此处统一收口）。
+    if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+      if (typeof config.headers?.delete === 'function') {
+        config.headers.delete('Content-Type');
+      } else {
+        delete config.headers['Content-Type'];
+      }
+    }
+
     if (getToken() && !isToken) {
       config.headers['Authorization'] = 'Bearer ' + getToken(); // 让每个请求携带自定义token 请根据实际情况自行修改
     }
