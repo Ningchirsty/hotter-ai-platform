@@ -163,6 +163,14 @@ public class TlTalentVo implements Serializable {
     private String phoneMasked;
 
     /**
+     * 创建人ID（{@code @Translation} 的取值来源）。
+     * <p><b>不可省略</b>：翻译处理器会按 {@code mapper} 名反射调用 getter，缺少本字段时
+     * 列表接口会在响应序列化阶段抛 {@code No such method: [getCreateBy]} 并整体 500。
+     * 值由 {@code selectVoPage} 按列名 {@code create_by} 自动映射。</p>
+     */
+    private Long createBy;
+
+    /**
      * 创建人账号
      */
     @Translation(type = TransConstant.USER_ID_TO_NAME, mapper = "createBy")
