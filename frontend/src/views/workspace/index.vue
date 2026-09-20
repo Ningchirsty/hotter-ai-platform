@@ -19,19 +19,6 @@
 
       <div class="ws-hero-foot">
         <span class="ws-hero-foot-text">左侧是你每天会用到的入口，右侧是今天继续的线索。</span>
-        <button
-          v-if="!sceneFallback"
-          class="ws-motion"
-          type="button"
-          :aria-pressed="flowerPlaying"
-          @click="toggleMotion"
-        >
-          <el-icon>
-            <VideoPause v-if="flowerPlaying" />
-            <VideoPlay v-else />
-          </el-icon>
-          {{ flowerPlaying ? '暂停花卉动态' : '播放花卉动态' }}
-        </button>
       </div>
     </section>
 
@@ -149,7 +136,7 @@
 <script setup lang="ts" name="Index">
 import type { Component } from 'vue';
 import type { RouteLocationNormalized, RouteRecordRaw } from 'vue-router';
-import { ArrowDown, ArrowRight, DataAnalysis, Files, TopRight, VideoPause, VideoPlay, View, WarningFilled } from '@element-plus/icons-vue';
+import { ArrowDown, ArrowRight, DataAnalysis, Files, TopRight, View, WarningFilled } from '@element-plus/icons-vue';
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from 'vue';
 import { pageByTaskWait } from '@/api/workflow/task';
 import { createFloralScene } from '@/components/FloralLogin/floral-scene.js';
@@ -303,46 +290,57 @@ const recentViews = computed(() => {
   return recent;
 });
 
-/* ---------------- hero 花卉场景：复用登录页的 canvas 场景 ---------------- */
+/* ---------------- hero 花卉场景：复用登录页的 canvas 场景 ----------------
+ * 按需求：进入工作台即无限播放，不提供暂停按钮，也不受系统「减少动态效果」影响
+ * （场景自身的帧循环是循环调度的，只要保持 playing=true 就持续动）。
+ * WebGL 上下文丢失会退化成静态图，这里自动重建实例（最多 3 次），避免动画永久停住。 */
 const flowerRoot = ref<HTMLElement | null>(null);
 const flowerCanvas = ref<HTMLCanvasElement | null>(null);
-const flowerPlaying = ref(true);
 const sceneFallback = ref(false);
 
+const MAX_SCENE_RECOVERY = 3;
 let scene: ReturnType<typeof createFloralScene> | null = null;
-let motionMedia: MediaQueryList | null = null;
+let recoveryAttempts = 0;
+let recoveryTimer = 0;
 
-const toggleMotion = () => {
-  flowerPlaying.value = !flowerPlaying.value;
-  scene?.setPlaying(flowerPlaying.value);
-};
-
-const motionPreferenceChanged = (event: MediaQueryListEvent) => {
-  flowerPlaying.value = !event.matches;
-  scene?.setPlaying(flowerPlaying.value);
+const mountScene = () => {
+  if (!flowerRoot.value || !flowerCanvas.value) return;
+  // 上下文丢失时场景会把 canvas 隐藏，重建前先恢复显示
+  flowerCanvas.value.style.visibility = '';
+  sceneFallback.value = false;
+  scene = createFloralScene(flowerRoot.value, flowerCanvas.value, {
+    playing: true,
+    onFallback: () => {
+      sceneFallback.value = true;
+      scene?.destroy();
+      scene = null;
+      if (recoveryAttempts < MAX_SCENE_RECOVERY) {
+        recoveryAttempts += 1;
+        window.clearTimeout(recoveryTimer);
+        recoveryTimer = window.setTimeout(mountScene, 1500);
+      }
+    }
+  });
 };
 
 onMounted(async () => {
   await nextTick();
   loadPending();
-  motionMedia = window.matchMedia('(prefers-reduced-motion: reduce)');
-  flowerPlaying.value = !motionMedia.matches;
-  motionMedia.addEventListener?.('change', motionPreferenceChanged);
-  if (!flowerRoot.value || !flowerCanvas.value) return;
-  scene = createFloralScene(flowerRoot.value, flowerCanvas.value, {
-    playing: flowerPlaying.value,
-    onFallback: () => {
-      sceneFallback.value = true;
-    }
-  });
+  mountScene();
 });
 
-// 页面被 keep-alive 缓存时停掉动画，避免后台持续占用 GPU。
+// 页面被 keep-alive 缓存到后台时停帧（用户看不到），回到前台立刻继续无限播放。
 onDeactivated(() => scene?.setPlaying(false));
-onActivated(() => scene?.setPlaying(flowerPlaying.value));
+onActivated(() => {
+  if (scene) {
+    scene.setPlaying(true);
+  } else {
+    mountScene();
+  }
+});
 
 onBeforeUnmount(() => {
-  motionMedia?.removeEventListener?.('change', motionPreferenceChanged);
+  window.clearTimeout(recoveryTimer);
   scene?.destroy();
   scene = null;
 });
@@ -471,29 +469,6 @@ html.dark .ws-hero-scrim {
   font-size: 11px;
   line-height: 1.6;
   color: var(--app-text-muted);
-}
-
-.ws-motion {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
-  padding: 3px 10px;
-  border: 1px solid var(--app-surface-border);
-  border-radius: 999px;
-  background: var(--app-accent-soft);
-  color: var(--app-text-muted);
-  font-size: 11px;
-  line-height: 1.6;
-  cursor: pointer;
-  transition:
-    color 0.18s ease,
-    border-color 0.18s ease;
-
-  &:hover {
-    color: var(--app-accent-strong);
-    border-color: var(--app-accent-strong);
-  }
 }
 
 /* ---------------- 区块标题 ---------------- */
@@ -862,11 +837,11 @@ html.dark .ws-hero-scrim {
   }
 }
 
-/* 尊重系统的“减弱动态效果”设置：静态呈现，不做位移与循环动画 */
+/* 系统「减少动态效果」下收敛卡片位移与加载转圈；
+ * hero 花卉按需求始终无限播放，这里不再干预 canvas 动画。 */
 @media (prefers-reduced-motion: reduce) {
   .ws-tool,
-  .ws-row,
-  .ws-motion {
+  .ws-row {
     transition: none;
   }
 
