@@ -1,6 +1,7 @@
 package org.dromara.content.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
@@ -70,12 +71,15 @@ public class ContentTaskGateServiceImpl implements IContentTaskGateService {
         }
         ContentGateEngine.GateResult result = evaluate(taskId);
 
-        // 落库
-        CpTask update = new CpTask();
-        update.setTaskId(taskId);
-        update.setStatus(result.getStatus());
-        update.setBlockReason(result.getBlockReason());
-        taskMapper.updateById(update);
+        // 落库。
+        // ⚠️ 必须用 set() 显式赋值，不能 updateById(实体)：
+        // MyBatis-Plus 默认 updateStrategy=NOT_NULL，实体里为 null 的字段不会进入 UPDATE 语句，
+        // 于是状态转好后 blockReason 清不掉，前端会看到「已可开工」却仍显示上一轮的阻断原因。
+        // set() 会生成 SET block_reason = NULL，语义正确。
+        taskMapper.update(null, new LambdaUpdateWrapper<CpTask>()
+            .eq(CpTask::getTaskId, taskId)
+            .set(CpTask::getStatus, result.getStatus())
+            .set(CpTask::getBlockReason, result.getBlockReason()));
 
         log.info("闸门重算完成, taskId={}, deliverableType={}, status={}, blockCount={}, conditionCount={}",
             taskId, task.getDeliverableType(), result.getStatus(),

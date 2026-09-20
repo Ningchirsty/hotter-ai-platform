@@ -3,6 +3,7 @@ package org.dromara.content.service.impl;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.collection.CollUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.aigov.domain.bo.AigInvokeBo;
@@ -738,32 +739,34 @@ public class ContentTaskServiceImpl implements IContentTaskService {
 
     /**
      * 更新附件解析状态。
+     * <p>用 {@code set()} 显式赋值：MyBatis-Plus 默认 NOT_NULL 策略下，
+     * 实体里为 null 的 parseMessage 不会进 UPDATE，会导致「重试成功后仍显示上次的失败原因」。</p>
      *
      * @param fileId  附件ID
      * @param status  状态
      * @param message 可读原因（成功传 null）
      */
     private void markFileStatus(Long fileId, ContentParseStatusEnum status, String message) {
-        CpTaskFile update = new CpTaskFile();
-        update.setFileId(fileId);
-        update.setParseStatus(status.getCode());
-        update.setParseMessage(message);
-        taskFileMapper.updateById(update);
+        taskFileMapper.update(null, new LambdaUpdateWrapper<CpTaskFile>()
+            .eq(CpTaskFile::getFileId, fileId)
+            .set(CpTaskFile::getParseStatus, status.getCode())
+            .set(CpTaskFile::getParseMessage, message));
     }
 
     /**
      * 更新任务状态。
+     * <p>同样用 {@code set()}：进入解析时若传 null 的阻断原因而不显式清空，
+     * 会残留上一轮的阻断文本。</p>
      *
      * @param taskId      任务ID
      * @param status      状态
      * @param blockReason 阻断原因
      */
     private void markTaskStatus(Long taskId, String status, String blockReason) {
-        CpTask update = new CpTask();
-        update.setTaskId(taskId);
-        update.setStatus(status);
-        update.setBlockReason(blockReason);
-        taskMapper.updateById(update);
+        taskMapper.update(null, new LambdaUpdateWrapper<CpTask>()
+            .eq(CpTask::getTaskId, taskId)
+            .set(CpTask::getStatus, status)
+            .set(CpTask::getBlockReason, blockReason));
     }
 
     /**
