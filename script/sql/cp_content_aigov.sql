@@ -28,7 +28,7 @@ insert ignore into aig_capability values(
   '从任务附件（Excel/Word/PDF）中抽取产品事实候选字段，供人工确认；不判断对错、不写入既定事实',
   'TEXT',
   '{"fields":[{"name":"fileRef","type":"string","dataLevel":"INTERNAL"},{"name":"fileKind","type":"string","dataLevel":"INTERNAL"},{"name":"fileName","type":"string","dataLevel":"INTERNAL"}],"forbidden":["apiKey","credential"]}',
-  '{"fields":[{"name":"candidates","type":"array"},{"name":"fieldCount","type":"number"},{"name":"pendingConfirm","type":"array"}]}',
+  '{"fields":[{"name":"candidates","type":"array"},{"name":"fieldCount","type":"number"},{"name":"extracted","type":"boolean"},{"name":"pendingConfirm","type":"array"}]}',
   'LOCAL_ONLY',
   '抽取结果一律以「待确认」呈现，不得自动成为产品事实；低可信内容必须人工确认',
   '输出结构不符时有限重试，不写入快照；无法本地抽取的类型标记为跳过并给出可读原因',

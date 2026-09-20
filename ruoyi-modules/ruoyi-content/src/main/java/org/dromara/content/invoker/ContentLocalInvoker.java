@@ -115,12 +115,16 @@ public class ContentLocalInvoker implements ModelInvoker {
             // 不支持或失败：返回空候选 + 明确原因，由调用方落为「已跳过」并展示给用户
             out.put("candidates", new ArrayList<>());
             out.put("fieldCount", 0);
+            out.put("extracted", false);
+            out.put("skipReason", StringUtils.blankToDefault(doc.getSkipReason(), "未能解析该文件"));
             out.put("pendingConfirm", List.of(StringUtils.blankToDefault(doc.getSkipReason(), "未能解析该文件")));
             return ModelInvokeResult.success(JsonUtils.toJsonString(out), System.currentTimeMillis() - start);
         }
         List<ContentFieldExtractor.Candidate> candidates = fieldExtractor.extract(doc);
         out.put("candidates", candidates);
         out.put("fieldCount", candidates.size());
+        out.put("extracted", true);
+        out.put("skipReason", null);
         List<String> pending = new ArrayList<>();
         if (candidates.isEmpty()) {
             pending.add("未从该文件识别到已知事实字段，请人工核对或补充录入");
