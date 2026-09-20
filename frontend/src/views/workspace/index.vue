@@ -2,52 +2,61 @@
   <div class="p-2 app-container workspace-page">
     <PageHeading title="我的工作台" subtitle="连接岗位能力，开启今天的工作" />
 
-    <!-- 花卉只出现在 hero；其余面板保持克制、不做动画。 -->
+    <!-- 花卉铺满整个 hero 面板；文案与页脚浮在其上，靠左侧珍珠白蒙版保证可读性。 -->
     <section class="ws-hero" aria-label="工作台引导">
-      <div class="ws-hero-copy">
-        <p class="ws-eyebrow">A SPACE FOR POSSIBILITY</p>
-        <!-- 标题按设计稿在“让灵感绽放，”后换行；用 v-html 避免模板换行被折叠成空格。 -->
-        <h2 class="ws-hero-title" v-html="HERO_TITLE"></h2>
-        <p class="ws-hero-desc">属于你的工具、协作与业务，在这里连接。</p>
-        <el-button type="primary" @click="openTool(VIDEO_CREATION)">进入 AI工具</el-button>
-      </div>
-
       <div ref="flowerRoot" class="ws-hero-stage" aria-hidden="true">
         <img v-if="sceneFallback" class="ws-hero-fallback" :src="fallbackImage" alt="" />
         <canvas ref="flowerCanvas" class="ws-hero-canvas"></canvas>
       </div>
+      <div class="ws-hero-scrim" aria-hidden="true"></div>
+
+      <div class="ws-hero-copy">
+        <p class="ws-eyebrow">A SPACE FOR POSSIBILITY</p>
+        <h2 class="ws-hero-title">{{ HERO_TITLE }}</h2>
+        <p class="ws-hero-desc">属于你的工具、协作与业务，在这里连接。</p>
+        <el-button type="primary" @click="openTool(VIDEO_CREATION)">进入 AI工具</el-button>
+      </div>
 
       <div class="ws-hero-foot">
         <span class="ws-hero-foot-text">左侧是你每天会用到的入口，右侧是今天继续的线索。</span>
-        <button
-          v-if="!sceneFallback"
-          class="ws-motion"
-          type="button"
-          :aria-pressed="flowerPlaying"
-          @click="toggleMotion"
-        >
-          <el-icon>
-            <VideoPause v-if="flowerPlaying" />
-            <VideoPlay v-else />
-          </el-icon>
-          {{ flowerPlaying ? '暂停花卉动态' : '播放花卉动态' }}
-        </button>
       </div>
     </section>
 
+    <!-- 按权限呈现「二级菜单」能力；含下级的二级菜单点击后向下展开三级菜单 -->
     <section class="ws-section">
       <div class="ws-section-head">
         <h2>为你的岗位准备</h2>
       </div>
       <div class="ws-tools">
-        <button v-for="tool in toolCards" :key="tool.path" type="button" class="ws-tool" @click="openTool(tool.path)">
-          <span class="ws-tool-icon">
-            <el-icon><component :is="tool.icon" /></el-icon>
-          </span>
-          <el-icon class="ws-tool-arrow"><TopRight /></el-icon>
-          <h3>{{ tool.name }}</h3>
-          <p>{{ tool.desc }}</p>
-        </button>
+        <div v-for="group in capabilityGroups" :key="group.key" class="ws-tool-wrap">
+          <button
+            type="button"
+            class="ws-tool"
+            :class="{ 'is-open': openKey === group.key }"
+            :aria-expanded="group.children.length ? openKey === group.key : undefined"
+            @click="activateGroup(group)"
+          >
+            <span class="ws-tool-icon">
+              <svg-icon :icon-class="group.icon" />
+            </span>
+            <el-icon class="ws-tool-arrow">
+              <ArrowDown v-if="group.children.length" />
+              <TopRight v-else />
+            </el-icon>
+            <h3>{{ group.title }}</h3>
+            <p>
+              {{ group.kicker }}
+              <template v-if="group.children.length"> · {{ group.children.length }} 个功能</template>
+            </p>
+          </button>
+
+          <div v-if="group.children.length && openKey === group.key" class="ws-sub">
+            <button v-for="kid in group.children" :key="kid.path" type="button" class="ws-sub-item" @click="openTool(kid.path)">
+              <svg-icon :icon-class="kid.icon" />
+              <span>{{ kid.title }}</span>
+            </button>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -104,7 +113,7 @@
         <ul v-if="recentViews.length" class="ws-list">
           <li v-for="view in recentViews" :key="view.key" class="ws-row">
             <span class="ws-row-icon">
-              <el-icon><component :is="view.icon" /></el-icon>
+              <svg-icon :icon-class="view.icon" />
             </span>
             <div class="ws-row-copy">
               <h3>{{ view.title }}</h3>
@@ -126,33 +135,28 @@
 
 <script setup lang="ts" name="Index">
 import type { Component } from 'vue';
-import type { RouteLocationNormalized } from 'vue-router';
-import {
-  ArrowRight,
-  Connection,
-  DataAnalysis,
-  Download,
-  Files,
-  Film,
-  Grid,
-  MagicStick,
-  User,
-  VideoPause,
-  VideoPlay,
-  View,
-  WarningFilled
-} from '@element-plus/icons-vue';
+import type { RouteLocationNormalized, RouteRecordRaw } from 'vue-router';
+import { ArrowDown, ArrowRight, DataAnalysis, Files, TopRight, View, WarningFilled } from '@element-plus/icons-vue';
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from 'vue';
 import { pageByTaskWait } from '@/api/workflow/task';
 import { createFloralScene } from '@/components/FloralLogin/floral-scene.js';
 import fallbackImage from '@/components/FloralLogin/flower-fallback.png';
+import { usePermissionStore } from '@/store/modules/permission';
 import { useTagsViewStore } from '@/store/modules/tagsView';
 
-type ToolCard = {
-  name: string;
-  desc: string;
+type CapabilityItem = {
+  title: string;
   path: string;
-  icon: Component;
+  icon: string;
+};
+
+type CapabilityGroup = {
+  key: string;
+  title: string;
+  kicker: string;
+  path: string;
+  icon: string;
+  children: CapabilityItem[];
 };
 
 type PendingTask = {
@@ -163,27 +167,69 @@ type PendingTask = {
 
 const VIDEO_CREATION = '/ai-tools/video-creation';
 const TASK_WAITING = '/approval/task/taskWaiting';
-// hero 标题固定文案（设计稿要求在此处换行），非业务数据。
-const HERO_TITLE = '让灵感绽放，<br>让工作从容发生。';
-
-// 生产真实路径；权限由路由守卫处理，本页不做写死的权限判断。
-const toolCards: ToolCard[] = [
-  { name: '视频创作', desc: '让创意成为动态画面', path: VIDEO_CREATION, icon: Film },
-  { name: 'AI助手', desc: '构思、写作与日常协助', path: '/ai-tools/aichat', icon: MagicStick },
-  { name: '工作流', desc: '把重复步骤编排成流程', path: '/ai-tools/workflow', icon: Connection },
-  { name: '人才档案', desc: '检索、筛选与档案维护', path: '/business/talent/profile', icon: User },
-  { name: '简历与附件', desc: '查看人才关联文件', path: '/business/talent/attachment', icon: Files },
-  { name: '重复人才预警', desc: '发现重复记录', path: '/business/talent/duplicate', icon: DataAnalysis },
-  { name: 'Excel导出中心', desc: '管理人才导出任务', path: '/business/talent/export', icon: Download },
-  { name: '敏感操作审计', desc: '追溯授权范围内的操作', path: '/business/talent/audit', icon: View },
-  { name: 'AI能力目录', desc: '查看平台已登记的能力', path: '/admin-center/ai-gov/capability', icon: Grid }
-];
+// hero 标题固定文案（设计稿要求一行呈现，不换行），非业务数据。
+const HERO_TITLE = '让灵感绽放，让工作从容发生。';
 
 const router = useRouter();
 const tagsViewStore = useTagsViewStore();
+const permissionStore = usePermissionStore();
 
 const openTool = (path: string) => {
   router.push(path);
+};
+
+/* ---------------- 为你的岗位准备：直接来自该用户真实菜单路由的「二级菜单」 ----------------
+ * 二级菜单 = 一级分类（AI工具/业务应用/审批协同/管理中心）的直接子项；
+ * 若二级菜单本身还是目录，则它下面的是三级菜单，点击二级卡片向下展开，不预先铺在首页。
+ * 全部取自 permissionStore 的路由树，所以天然按权限过滤，无需在本页写死清单。 */
+const normalizeIcon = (icon?: unknown) => {
+  const name = typeof icon === 'string' ? icon : '';
+  return !name || name === '#' ? 'list' : name;
+};
+
+const joinPath = (base: string, path: string) => {
+  if (!path) return base;
+  if (path.startsWith('/')) return path;
+  return `${base.replace(/\/+$/, '')}/${path}`;
+};
+
+const isVisibleRoute = (route: RouteRecordRaw) => !route.hidden && !!route.meta?.title && !route.meta?.link;
+
+const capabilityGroups = computed<CapabilityGroup[]>(() => {
+  const groups: CapabilityGroup[] = [];
+  for (const top of permissionStore.getSidebarRoutes() as RouteRecordRaw[]) {
+    // 跳过静态 Layout 包装（path 为空的空壳路由）
+    if (!top.path || top.hidden) continue;
+    for (const child of (top.children || []) as RouteRecordRaw[]) {
+      if (!isVisibleRoute(child)) continue;
+      const childPath = joinPath(top.path, child.path);
+      if (childPath === '/index' || childPath === '/') continue;
+      const grandChildren = ((child.children || []) as RouteRecordRaw[]).filter(isVisibleRoute);
+      groups.push({
+        key: childPath,
+        title: String(child.meta?.title),
+        kicker: String(top.meta?.title || ''),
+        path: childPath,
+        icon: normalizeIcon(child.meta?.icon),
+        children: grandChildren.map(kid => ({
+          title: String(kid.meta?.title),
+          path: joinPath(childPath, kid.path),
+          icon: normalizeIcon(kid.meta?.icon)
+        }))
+      });
+    }
+  }
+  return groups;
+});
+
+// 展开状态：只有一个二级菜单保持展开，避免首页被铺满
+const openKey = ref('');
+const activateGroup = (group: CapabilityGroup) => {
+  if (!group.children.length) {
+    openTool(group.path);
+    return;
+  }
+  openKey.value = openKey.value === group.key ? '' : group.key;
 };
 
 /* ---------------- 待我处理：复用现有审批待办接口 /workflow/task/pageByTaskWait ---------------- */
@@ -222,19 +268,6 @@ const loadPending = async () => {
 
 /* ---------------- 最近使用：读取多标签页的真实访问记录 ---------------- */
 const RECENT_LIMIT = 5;
-const RECENT_ICONS: Record<string, Component> = {
-  '/ai-tools/video-creation': Film,
-  '/ai-tools/aichat': MagicStick,
-  '/ai-tools/workflow': Connection,
-  '/business/talent/profile': User,
-  '/business/talent/attachment': Files,
-  '/business/talent/export': Download,
-  '/admin-center/ai-gov/capability': Grid,
-  '/approval/task/taskWaiting': DataAnalysis,
-  '/approval/task/processInstance': DataAnalysis,
-  '/approval/task/taskFinish': DataAnalysis,
-  '/approval/task/taskCopyList': DataAnalysis
-};
 
 const recentViews = computed(() => {
   // visitedViews 按“打开顺序”追加，尾部即最近访问；这里取出窗口后按索引倒序读取，
@@ -243,59 +276,71 @@ const recentViews = computed(() => {
     view => view.path && view.path !== '/index' && !view.meta?.affix
   );
   const start = Math.max(0, views.length - RECENT_LIMIT);
-  const recent: { key: string; path: string; title: string; icon: Component }[] = [];
+  const recent: { key: string; path: string; title: string; icon: string }[] = [];
   for (let index = views.length - 1; index >= start; index--) {
     const view = views[index];
     recent.push({
       key: view.fullPath || view.path,
       path: view.fullPath || view.path,
       title: (view.meta?.title as string) || (view.name as string) || view.path,
-      icon: RECENT_ICONS[view.path] ?? View
+      // 图标沿用该页面菜单里的图标，和左侧导航保持一致
+      icon: normalizeIcon(view.meta?.icon)
     });
   }
   return recent;
 });
 
-/* ---------------- hero 花卉场景：复用登录页的 canvas 场景 ---------------- */
+/* ---------------- hero 花卉场景：复用登录页的 canvas 场景 ----------------
+ * 按需求：进入工作台即无限播放，不提供暂停按钮，也不受系统「减少动态效果」影响
+ * （场景自身的帧循环是循环调度的，只要保持 playing=true 就持续动）。
+ * WebGL 上下文丢失会退化成静态图，这里自动重建实例（最多 3 次），避免动画永久停住。 */
 const flowerRoot = ref<HTMLElement | null>(null);
 const flowerCanvas = ref<HTMLCanvasElement | null>(null);
-const flowerPlaying = ref(true);
 const sceneFallback = ref(false);
 
+const MAX_SCENE_RECOVERY = 3;
 let scene: ReturnType<typeof createFloralScene> | null = null;
-let motionMedia: MediaQueryList | null = null;
+let recoveryAttempts = 0;
+let recoveryTimer = 0;
 
-const toggleMotion = () => {
-  flowerPlaying.value = !flowerPlaying.value;
-  scene?.setPlaying(flowerPlaying.value);
-};
-
-const motionPreferenceChanged = (event: MediaQueryListEvent) => {
-  flowerPlaying.value = !event.matches;
-  scene?.setPlaying(flowerPlaying.value);
+const mountScene = () => {
+  if (!flowerRoot.value || !flowerCanvas.value) return;
+  // 上下文丢失时场景会把 canvas 隐藏，重建前先恢复显示
+  flowerCanvas.value.style.visibility = '';
+  sceneFallback.value = false;
+  scene = createFloralScene(flowerRoot.value, flowerCanvas.value, {
+    playing: true,
+    onFallback: () => {
+      sceneFallback.value = true;
+      scene?.destroy();
+      scene = null;
+      if (recoveryAttempts < MAX_SCENE_RECOVERY) {
+        recoveryAttempts += 1;
+        window.clearTimeout(recoveryTimer);
+        recoveryTimer = window.setTimeout(mountScene, 1500);
+      }
+    }
+  });
 };
 
 onMounted(async () => {
   await nextTick();
   loadPending();
-  motionMedia = window.matchMedia('(prefers-reduced-motion: reduce)');
-  flowerPlaying.value = !motionMedia.matches;
-  motionMedia.addEventListener?.('change', motionPreferenceChanged);
-  if (!flowerRoot.value || !flowerCanvas.value) return;
-  scene = createFloralScene(flowerRoot.value, flowerCanvas.value, {
-    playing: flowerPlaying.value,
-    onFallback: () => {
-      sceneFallback.value = true;
-    }
-  });
+  mountScene();
 });
 
-// 页面被 keep-alive 缓存时停掉动画，避免后台持续占用 GPU。
+// 页面被 keep-alive 缓存到后台时停帧（用户看不到），回到前台立刻继续无限播放。
 onDeactivated(() => scene?.setPlaying(false));
-onActivated(() => scene?.setPlaying(flowerPlaying.value));
+onActivated(() => {
+  if (scene) {
+    scene.setPlaying(true);
+  } else {
+    mountScene();
+  }
+});
 
 onBeforeUnmount(() => {
-  motionMedia?.removeEventListener?.('change', motionPreferenceChanged);
+  window.clearTimeout(recoveryTimer);
   scene?.destroy();
   scene = null;
 });
@@ -326,8 +371,8 @@ onBeforeUnmount(() => {
 
 .ws-hero-copy {
   position: relative;
-  z-index: 1;
-  width: 68%;
+  z-index: 2;
+  width: 62%;
   min-width: 0;
 }
 
@@ -340,10 +385,12 @@ onBeforeUnmount(() => {
 
 .ws-hero-title {
   margin: 0 0 8px;
-  font-size: 25px;
+  /* 设计稿要求整句一行呈现；窄屏用 clamp 缩字号，避免换行或横向溢出 */
+  font-size: clamp(15px, 2.05vw, 25px);
   font-weight: 500;
   line-height: 1.55;
   letter-spacing: 0.7px;
+  white-space: nowrap;
   color: var(--app-text-title);
 }
 
@@ -354,13 +401,41 @@ onBeforeUnmount(() => {
   color: var(--app-text-muted);
 }
 
+/* 花卉画布铺满整个 hero 面板；两朵花分别落在左下与右上，横向分布在整个动态区 */
 .ws-hero-stage {
   position: absolute;
-  inset: 0 0 0 auto;
-  width: 280px;
+  inset: 0;
+  width: 100%;
   z-index: 0;
-  mask-image: linear-gradient(90deg, transparent, #000 12%);
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%);
+}
+
+/* 文案区蒙版：左侧偏实保证可读，同时向下渐隐——左下那朵花因此仍能露出来，
+ * 两朵花分列左下与右上，分布在整个 hero 动态区。
+ * 用 rgba 而不是 color-mix，避免低版本浏览器不支持导致蒙版失效。 */
+.ws-hero-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 1) 0%,
+    rgba(255, 255, 255, 0.88) 30%,
+    rgba(255, 255, 255, 0.42) 50%,
+    rgba(255, 255, 255, 0) 66%
+  );
+  mask-image: linear-gradient(180deg, #000 0%, #000 52%, rgba(0, 0, 0, 0) 92%);
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 52%, rgba(0, 0, 0, 0) 92%);
+}
+
+html.dark .ws-hero-scrim {
+  background: linear-gradient(
+    100deg,
+    rgba(17, 24, 39, 1) 0%,
+    rgba(17, 24, 39, 0.88) 30%,
+    rgba(17, 24, 39, 0.42) 50%,
+    rgba(17, 24, 39, 0) 66%
+  );
 }
 
 .ws-hero-canvas,
@@ -396,29 +471,6 @@ onBeforeUnmount(() => {
   color: var(--app-text-muted);
 }
 
-.ws-motion {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
-  padding: 3px 10px;
-  border: 1px solid var(--app-surface-border);
-  border-radius: 999px;
-  background: var(--app-accent-soft);
-  color: var(--app-text-muted);
-  font-size: 11px;
-  line-height: 1.6;
-  cursor: pointer;
-  transition:
-    color 0.18s ease,
-    border-color 0.18s ease;
-
-  &:hover {
-    color: var(--app-accent-strong);
-    border-color: var(--app-accent-strong);
-  }
-}
-
 /* ---------------- 区块标题 ---------------- */
 .ws-section-head,
 .ws-panel-head {
@@ -441,7 +493,7 @@ onBeforeUnmount(() => {
   color: var(--app-text-muted);
 }
 
-/* ---------------- 岗位工具卡 ---------------- */
+/* ---------------- 岗位能力卡（二级菜单 + 下拉三级） ---------------- */
 .ws-tools {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
@@ -449,9 +501,16 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
+.ws-tool-wrap {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
 .ws-tool {
   position: relative;
   display: block;
+  width: 100%;
   min-width: 0;
   padding: 17px 15px 16px;
   border: 1px solid var(--app-surface-border);
@@ -471,6 +530,12 @@ onBeforeUnmount(() => {
     box-shadow: var(--app-shadow-md);
   }
 
+  &.is-open {
+    border-color: var(--app-accent-strong);
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+
   h3 {
     margin: 0 0 4px;
     font-size: 13px;
@@ -483,6 +548,41 @@ onBeforeUnmount(() => {
     font-size: 11px;
     line-height: 1.7;
     color: var(--app-text-muted);
+  }
+}
+
+/* 三级菜单：点开二级卡片后向下展开 */
+.ws-sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--app-accent-strong);
+  border-top: 0;
+  border-radius: 0 0 var(--app-radius-base) var(--app-radius-base);
+  background: var(--app-surface-bg);
+  box-shadow: var(--app-shadow-sm);
+}
+
+.ws-sub-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border: 1px solid var(--app-surface-border);
+  border-radius: 6px;
+  background: var(--app-accent-soft);
+  color: var(--app-text-title);
+  font-size: 11px;
+  line-height: 1.6;
+  cursor: pointer;
+  transition:
+    color 0.16s ease,
+    border-color 0.16s ease;
+
+  &:hover {
+    color: var(--app-accent-strong);
+    border-color: var(--app-accent-strong);
   }
 }
 
@@ -669,13 +769,8 @@ onBeforeUnmount(() => {
     width: 78%;
   }
 
-  .ws-hero-title {
-    font-size: 23px;
-  }
-
   .ws-hero-stage {
-    width: 210px;
-    opacity: 0.78;
+    opacity: 0.82;
   }
 
   .ws-hero-foot {
@@ -697,18 +792,13 @@ onBeforeUnmount(() => {
     width: 88%;
   }
 
-  .ws-hero-title {
-    font-size: 22px;
-  }
-
   .ws-hero-desc {
     max-width: 190px;
     font-size: 12px;
   }
 
   .ws-hero-stage {
-    width: 150px;
-    opacity: 0.45;
+    opacity: 0.5;
   }
 
   .ws-hero-foot {
@@ -722,7 +812,7 @@ onBeforeUnmount(() => {
     padding: 17px 15px;
   }
 
-  /* 工具卡在窄屏变一列 */
+  /* 能力卡在窄屏变一列 */
   .ws-tools {
     grid-template-columns: minmax(0, 1fr);
     gap: 10px;
@@ -734,13 +824,8 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 375px) {
-  .ws-hero-title {
-    font-size: 20px;
-    line-height: 1.5;
-  }
-
   .ws-hero-stage {
-    opacity: 0.35;
+    opacity: 0.38;
   }
 
   .ws-hero-foot-text {
@@ -752,11 +837,11 @@ onBeforeUnmount(() => {
   }
 }
 
-/* 尊重系统的“减弱动态效果”设置：静态呈现，不做位移与循环动画 */
+/* 系统「减少动态效果」下收敛卡片位移与加载转圈；
+ * hero 花卉按需求始终无限播放，这里不再干预 canvas 动画。 */
 @media (prefers-reduced-motion: reduce) {
   .ws-tool,
-  .ws-row,
-  .ws-motion {
+  .ws-row {
     transition: none;
   }
 
