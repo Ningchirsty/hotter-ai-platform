@@ -307,16 +307,31 @@ ContentParseService
 | 6.7 | POST | `/content/task/{taskId}/parse` | `content:task:edit` | 触发解析（异步） |
 | 6.8 | POST | `/content/task/{taskId}/precheck` | `content:task:edit` | 触发冲突检测（异步） |
 | 6.9 | POST | `/content/task/{taskId}/recheck` | `content:task:edit` | 重算闸门并刷新任务状态 |
-| 6.10 | GET | `/content/card/list` | `content:card:list` | 互动卡分页（含「待我确认」过滤） |
-| 6.11 | POST | `/content/card/{cardId}/resolve` | `content:card:handle` | 处理卡片（确认值/选项） |
-| 6.12 | GET | `/content/fact/list` | `content:task:query` | 事实快照列表（按任务） |
-| 6.13 | POST | `/content/workPackage/generate` | `content:package:generate` | 生成开工包 |
-| 6.14 | POST | `/content/workPackage/{packageId}/issue` | `content:package:issue` | 签发开工包 |
-| 6.15 | GET | `/content/workPackage/byTask/{taskId}` | `content:package:list` | 查询开工包 |
-| 6.16 | GET | `/content/product/list` | `content:product:list` | 产品分页 |
-| 6.17 | POST/PUT/DELETE | `/content/product` | `content:product:add/edit/remove` | 产品维护 |
-| 6.18 | GET | `/content/gateRule/list` | `content:gateRule:list` | 闸门规则 |
-| 6.19 | POST/PUT/DELETE | `/content/gateRule` | `content:gateRule:add/edit/remove` | 规则维护 |
+| 6.10 | GET | `/content/card/list` | `content:card:list` | 互动卡分页（支持 mineOnly「待我确认」/ blockingOnly「仅看阻断项」） |
+| 6.11 | POST | `/content/card/resolve` | `content:card:handle` | 处理卡片（**cardId 在 body**，path 不带 ID） |
+| 6.12 | GET | `/content/fact/list` | `content:task:query` | 事实快照列表（按任务，含来源文件名） |
+| 6.13 | POST | `/content/fact/{snapshotId}/confirm` | `content:task:edit` | 确认单条候选值为事实 |
+| 6.14 | POST | `/content/fact/{snapshotId}/reject` | `content:task:edit` | 否决单条候选值 |
+| 6.15 | POST | `/content/fact/confirmUnambiguous` | `content:task:edit` | 一键确认无争议项（冲突字段跳过） |
+| 6.16 | POST | `/content/fact/manual` | `content:task:edit` | 手工录入事实 |
+| 6.17 | POST | `/content/workPackage/generate` | `content:package:generate` | 生成开工包（taskId 为 query 参数） |
+| 6.18 | POST | `/content/workPackage/{packageId}/issue` | `content:package:issue` | 签发开工包 |
+| 6.19 | GET | `/content/workPackage/byTask/{taskId}` | `content:package:list` | 查询任务最新开工包 |
+| 6.20 | GET | `/content/product/list` | `content:product:list` | 产品分页 |
+| 6.21 | GET | `/content/product/options` | `content:product:list` | 产品下拉选项 |
+| 6.22 | GET | `/content/product/{productId}` | `content:product:query` | 产品详情 |
+| 6.23 | POST/PUT/DELETE | `/content/product` | `content:product:add/edit/remove` | 产品维护 |
+| 6.24 | GET | `/content/gateRule/list` | `content:gateRule:list` | 闸门规则分页 |
+| 6.25 | GET | `/content/gateRule/{ruleId}` | `content:gateRule:query` | 规则详情 |
+| 6.26 | POST/PUT/DELETE | `/content/gateRule` | `content:gateRule:add/edit/remove` | 规则维护 |
+
+> **实施后补充说明（据实修订）**：原 §6 未包含事实确认接口。实施中发现一个功能缺口——
+> 闸门只认 `CONFIRMED` 事实，而预检只为「冲突」与「缺失」生成卡片（§3.1 的设计意图），
+> 于是**只有一个候选值的字段既没有卡、也无法被确认**，任务永远停在「待确认」。
+> 故补 6.13–6.16 四个接口，其中「一键确认无争议项」符合 §3.1「人只处理例外和确认」：
+> 同字段只有一个待确认候选才确认，存在多个取值的（冲突）一律跳过，仍由互动卡逐条裁定。
+> 确认事实的权限复用 `content:task:edit`（属推进任务的编辑动作），未另建权限点。
+
 
 ---
 
