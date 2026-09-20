@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.dromara.aigov.mapper.AigModelViewMapper">
+
+    <!--
+      模型清单联表列：以 sai_model_config 为主表，左连 sai_model_provider（展示）与
+      aig_model_governance（治理属性）。
+      ⚠️ 安全约束：
+        1. 本文件只读，绝不修改任何 sai_* 表；
+        2. 任何语句都不得 select c.api_key（密钥永不进入治理层响应）。
+    -->
+    <sql id="modelViewColumns">
+        c.id                as model_id,
+        c.provider_id       as provider_id,
+        p.provider_name     as provider_name,
+        c.model_name        as model_name,
+        c.model_key         as model_key,
+        c.model_type        as model_type,
+        c.adapter_key       as adapter_key,
+        c.description       as description,
+        c.api_endpoint      as api_endpoint,
+        c.scope             as scope,
+        c.is_default        as is_default,
+        c.is_enabled        as is_enabled,
+        g.governance_id     as governance_id,
+        g.deployment_type   as deployment_type,
+        g.data_level_max    as data_level_max,
+        g.lifecycle_status  as lifecycle_status,
+        g.secret_ref        as secret_ref,
+        g.input_limits      as input_limits,
+        g.output_limits     as output_limits,
+        g.cost_limit        as cost_limit,
+        g.owner_tech        as owner_tech,
+        g.owner_biz         as owner_biz,
+        g.owner_security    as owner_security,
+        g.valid_from        as valid_from,
+        g.valid_to          as valid_to,
+        g.health_status     as health_status,
+        g.health_time       as health_time,
+        g.status            as gov_status,
+        g.remark            as gov_remark,
+        g.update_time       as governance_update_time
+    </sql>
+
+    <!-- 治理表关联条件：逻辑删除的记录视为「未登记治理属性」 -->
+    <sql id="governanceJoin">
+        left join aig_model_governance g on g.model_id = c.id and g.del_flag = '0'
+    </sql>
+
+    <!-- 模型清单分页（sai_model_config 主表 LEFT JOIN aig_model_governance） -->
+    <select id="selectModelPage" resultType="org.dromara.aigov.domain.vo.AigModelVo">
+        select
+        <include refid="modelViewColumns"/>
+        from sai_model_config c
+        left join sai_model_provider p on p.id = c.provider_id
+        <include refid="governanceJoin"/>
+        <where>
+            <if test="bo.keyword != null and bo.keyword != ''">
+                and (
+                c.model_key like concat('%', #{bo.keyword}, '%')
+                or c.model_name like concat('%', #{bo.keyword}, '%')
+                or c.description like concat('%', #{bo.keyword}, '%')
+                )
+            </if>
+            <if test="bo.modelKey != null and bo.modelKey != ''">
+                and c.model_key like concat('%', #{bo.modelKey}, '%')
+            </if>
+            <if test="bo.modelName != null and bo.modelName != ''">
+                and c.model_name like concat('%', #{bo.modelName}, '%')
+            </if>
+            <if test="bo.modelType != null and bo.modelType != ''">
+                and c.model_type = #{bo.modelType}
+            </if>
+            <if test="bo.isEnabled != null">
+                and c.is_enabled = #{bo.isEnabled}
+            </if>
+            <if test="bo.dataLevelMax != null and bo.dataLevelMax != ''">
+                and g.data_level_max = #{bo.dataLevelMax}
+            </if>
+            <if test="bo.deploymentType != null and bo.deploymentType != ''">
+                and g.deployment_type = #{bo.deploymentType}
+            </if>
+            <if test="bo.lifecycleStatus != null and bo.lifecycleStatus != ''">
+                and g.lifecycle_status = #{bo.lifecycleStatus}
+            </if>
+            <if test="bo.status != null and bo.status != ''">
+                and g.status = #{bo.status}
+            </if>
+        </where>
+        order by c.is_default desc, c.model_type asc, c.id asc
+    </select>
+
+    <!-- 按模型ID集合批量查询（绑定列表回填 + 路由引擎候选模型） -->
+    <select id="selectModelListByIds" resultType="org.dromara.aigov.domain.vo.AigModelVo">
+        select
+        <include refid="modelViewColumns"/>
+        from sai_model_config c
+        left join sai_model_provider p on p.id = c.provider_id
+        <include refid="governanceJoin"/>
+        where c.id in
+        <foreach collection="modelIds" item="modelId" open="(" separator="," close=")">
+            #{modelId}
+        </foreach>
+    </select>
+
+    <!-- 按模型ID查询单个 -->
+    <select id="selectModelById" resultType="org.dromara.aigov.domain.vo.AigModelVo">
+        select
+        <include refid="modelViewColumns"/>
+        from sai_model_config c
+        left join sai_model_provider p on p.id = c.provider_id
+        <include refid="governanceJoin"/>
+        where c.id = #{modelId}
+    </select>
+
+</mapper>

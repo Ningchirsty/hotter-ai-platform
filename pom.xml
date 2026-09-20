@@ -445,6 +445,13 @@
                 <version>${revision}</version>
             </dependency>
 
+            <!-- AI治理模块 -->
+            <dependency>
+                <groupId>org.dromara</groupId>
+                <artifactId>ruoyi-ai-gov</artifactId>
+                <version>${revision}</version>
+            </dependency>
+
             <!-- demo模块 -->
             <dependency>
                 <groupId>org.dromara</groupId>

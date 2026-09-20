@@ -349,6 +349,7 @@ insert ignore into sys_menu values(1762000000000001103, '人才编辑',     1762
 insert ignore into sys_menu values(1762000000000001104, '人才归档',     1762000000000000101, 4, '', '', '', 'N', 'Y', 'F', '0', '0', 'talent:profile:archive', '#', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '');
 insert ignore into sys_menu values(1762000000000001105, '查看完整手机', 1762000000000000101, 5, '', '', '', 'N', 'Y', 'F', '0', '0', 'talent:profile:phone',   '#', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '查看完整手机号会写入敏感审计');
 insert ignore into sys_menu values(1762000000000001106, '授权配置',     1762000000000000101, 6, '', '', '', 'N', 'Y', 'F', '0', '0', 'talent:profile:grant',   '#', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '单条人才访问授权管理');
+insert ignore into sys_menu values(1762000000000001107, '导入简历',     1762000000000000101, 7, '', '', '', 'N', 'Y', 'F', '0', '0', 'talent:profile:import',  '#', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '本地抽取简历字段并确认建档，不调用外部解析服务');
 
 -- 简历与附件
 insert ignore into sys_menu values(1762000000000000102, '简历与附件', 1762000000000000001, 2, 'attachment', 'talent/attachment/index', '', 'N', 'Y', 'C', '0', '0', 'talent:attachment:manage', 'upload', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '附件版本与受控下载');
@@ -384,6 +385,7 @@ insert ignore into sys_role_menu values (1762100000000000001, 176200000000000110
 insert ignore into sys_role_menu values (1762100000000000001, 1762000000000001104);
 insert ignore into sys_role_menu values (1762100000000000001, 1762000000000001105);
 insert ignore into sys_role_menu values (1762100000000000001, 1762000000000001106);
+insert ignore into sys_role_menu values (1762100000000000001, 1762000000000001107);
 insert ignore into sys_role_menu values (1762100000000000001, 1762000000000000102);
 insert ignore into sys_role_menu values (1762100000000000001, 1762000000000001201);
 insert ignore into sys_role_menu values (1762100000000000001, 1762000000000001202);
@@ -404,6 +406,7 @@ insert ignore into sys_role_menu values (1762100000000000002, 176200000000000110
 insert ignore into sys_role_menu values (1762100000000000002, 1762000000000001103);
 insert ignore into sys_role_menu values (1762100000000000002, 1762000000000001104);
 insert ignore into sys_role_menu values (1762100000000000002, 1762000000000001105);
+insert ignore into sys_role_menu values (1762100000000000002, 1762000000000001107);
 insert ignore into sys_role_menu values (1762100000000000002, 1762000000000000102);
 insert ignore into sys_role_menu values (1762100000000000002, 1762000000000001201);
 insert ignore into sys_role_menu values (1762100000000000002, 1762000000000001202);
@@ -422,6 +425,7 @@ insert ignore into sys_role_menu values (1762100000000000003, 176200000000000110
 insert ignore into sys_role_menu values (1762100000000000003, 1762000000000001103);
 insert ignore into sys_role_menu values (1762100000000000003, 1762000000000001104);
 insert ignore into sys_role_menu values (1762100000000000003, 1762000000000001105);
+insert ignore into sys_role_menu values (1762100000000000003, 1762000000000001107);
 insert ignore into sys_role_menu values (1762100000000000003, 1762000000000000102);
 insert ignore into sys_role_menu values (1762100000000000003, 1762000000000001201);
 insert ignore into sys_role_menu values (1762100000000000003, 1762000000000001202);
@@ -440,6 +444,7 @@ insert ignore into sys_role_menu values (1762100000000000004, 176200000000000110
 insert ignore into sys_role_menu values (1762100000000000004, 1762000000000001103);
 insert ignore into sys_role_menu values (1762100000000000004, 1762000000000001104);
 insert ignore into sys_role_menu values (1762100000000000004, 1762000000000001105);
+insert ignore into sys_role_menu values (1762100000000000004, 1762000000000001107);
 insert ignore into sys_role_menu values (1762100000000000004, 1762000000000000102);
 insert ignore into sys_role_menu values (1762100000000000004, 1762000000000001201);
 insert ignore into sys_role_menu values (1762100000000000004, 1762000000000001202);

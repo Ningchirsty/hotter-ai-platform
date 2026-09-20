@@ -23,6 +23,7 @@
         <module>ruoyi-workflow</module>
         <module>ruoyi-ai</module>
         <module>ruoyi-talent</module>
+        <module>ruoyi-ai-gov</module>
     </modules>
 
 </project>

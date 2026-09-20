@@ -81,6 +81,15 @@
             <el-button v-hasPermi="['talent:profile:add']" type="primary" plain icon="Plus" @click="handleAdd">
               新增
             </el-button>
+            <el-button
+              v-hasPermi="['talent:profile:import']"
+              type="success"
+              plain
+              icon="UploadFilled"
+              @click="handleImport"
+            >
+              导入简历
+            </el-button>
             <right-toolbar v-model:show-search="showSearch" :search="false" @query-table="getList"></right-toolbar>
           </div>
         </div>
@@ -592,25 +601,255 @@
       </template>
     </el-dialog>
 
+    <!-- 导入简历：第 1 步上传解析 / 第 2 步逐字段预览确认（来源与置信度均展示，不展示任何存储地址） -->
+    <el-dialog
+      v-model="importDialog.visible"
+      title="导入简历"
+      width="960px"
+      append-to-body
+      :close-on-click-modal="false"
+      @closed="handleImportClosed"
+    >
+      <el-steps :active="importStep" align-center finish-status="success" class="import-steps">
+        <el-step title="上传与解析" description="选择简历文件并本地提取" />
+        <el-step title="预览确认" description="逐字段核对后建档" />
+      </el-steps>
+
+      <!-- 第 1 步：上传与解析；关闭自动上传，点按钮才触发 preview -->
+      <div v-if="importStep === 1" v-loading="importParsing" element-loading-text="正在本地解析简历，请稍候">
+        <el-upload
+          ref="importUploadRef"
+          drag
+          :limit="1"
+          :auto-upload="false"
+          :accept="importAcceptExt"
+          :file-list="importFileList"
+          :on-change="handleImportFileChange"
+          :on-exceed="handleImportExceed"
+          :on-remove="handleImportFileRemove"
+        >
+          <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+          <div class="el-upload__text">将简历拖到此处，或<em>点击选择</em></div>
+          <template #tip>
+            <div class="el-upload__tip">
+              支持 pdf / doc / docx，单文件不超过 25MB；jpg / jpeg / png 可上传，但无法提取文字，需人工补全。
+            </div>
+          </template>
+        </el-upload>
+        <el-alert
+          type="info"
+          :closable="false"
+          show-icon
+          class="mt-2"
+          title="解析全部在服务端进程内完成，不调用任何外部 AI/OCR 服务，简历数据不会离开服务器。"
+        />
+      </div>
+
+      <!-- 第 2 步：预览确认 -->
+      <div v-else v-loading="importSubmitting" element-loading-text="正在建档，请稍候">
+        <el-alert
+          v-if="importPreview && importPreview.textExtracted === false"
+          type="warning"
+          :closable="false"
+          show-icon
+          title="未能提取到简历正文文字，仅按文件名解析，请手工补全各字段。"
+          class="mb-2"
+        >
+          <div v-for="(item, index) in importPreview.warnings || []" :key="index" class="import-warning-line">
+            {{ item }}
+          </div>
+        </el-alert>
+        <el-alert
+          v-else-if="(importPreview?.warnings || []).length > 0"
+          type="warning"
+          :closable="false"
+          show-icon
+          class="mb-2"
+        >
+          <div v-for="(item, index) in importPreview?.warnings || []" :key="index" class="import-warning-line">
+            {{ item }}
+          </div>
+        </el-alert>
+
+        <el-table
+          :data="importReviewRows"
+          :row-class-name="importRowClassName"
+          border
+          size="small"
+          class="data-table import-review-table"
+        >
+          <el-table-column label="字段" width="110">
+            <template #default="scope">
+              <span>{{ scope.row.label }}</span>
+              <el-tag v-if="scope.row.warning" type="warning" size="small" effect="dark" class="ml-1">请核对</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="识别值" min-width="220">
+            <template #default="scope">
+              <el-select
+                v-if="scope.row.edit === 'gender' || scope.row.edit === 'region' || scope.row.edit === 'education'"
+                v-model="importForm[scope.row.edit]"
+                :placeholder="scope.row.edit === 'region' ? '请选择归属区域' : '请选择'"
+                clearable
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="dict in importDictOptions(scope.row.edit)"
+                  :key="dict.value"
+                  :label="dict.label"
+                  :value="dict.value"
+                />
+              </el-select>
+              <el-date-picker
+                v-else-if="scope.row.edit === 'birthDate'"
+                v-model="importForm.birthDate"
+                type="date"
+                value-format="YYYY-MM-DD"
+                placeholder="请选择出生日期"
+                style="width: 100%"
+              />
+              <el-input-number
+                v-else-if="scope.row.edit === 'expectSalaryMin'"
+                v-model="importForm.expectSalaryMin"
+                :min="0"
+                controls-position="right"
+                placeholder="期望薪资下限"
+                style="width: 100%"
+              />
+              <el-input-number
+                v-else-if="scope.row.edit === 'expectSalaryMax'"
+                v-model="importForm.expectSalaryMax"
+                :min="0"
+                controls-position="right"
+                placeholder="期望薪资上限"
+                style="width: 100%"
+              />
+              <el-input-number
+                v-else-if="scope.row.edit === 'ageOnly'"
+                v-model="importForm.ageOnly"
+                :min="0"
+                :max="120"
+                controls-position="right"
+                placeholder="仅识别到年龄时填写"
+                style="width: 100%"
+              />
+              <el-input
+                v-else-if="scope.row.edit"
+                v-model="importForm[scope.row.edit]"
+                :placeholder="scope.row.label + '未识别，请手工补全'"
+                clearable
+              />
+              <span v-else class="text-placeholder">-</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="来源" width="100" align="center">
+            <template #default="scope">{{ candidateSourceLabel(scope.row.source) }}</template>
+          </el-table-column>
+          <el-table-column label="置信度" width="160" align="center">
+            <template #default="scope">
+              <el-tag v-if="scope.row.confidence == null" type="info" size="small">未识别</el-tag>
+              <el-tag v-else-if="isLowConfidence(scope.row.confidence)" type="warning" size="small" effect="dark">
+                {{ formatConfidence(scope.row.confidence) }} · 置信度偏低，请人工核对
+              </el-tag>
+              <el-tag v-else type="success" size="small">{{ formatConfidence(scope.row.confidence) }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="提示" min-width="180" show-overflow-tooltip>
+            <template #default="scope">{{ scope.row.hint || '-' }}</template>
+          </el-table-column>
+        </el-table>
+
+        <el-divider content-position="left">备注与补充（邮箱 / 经验会按「邮箱：xxx；经验：xxx」拼入备注）</el-divider>
+        <el-form ref="importFormRef" :model="importForm" :rules="importRules" label-width="90px">
+          <el-row :gutter="16">
+            <el-col :span="24">
+              <el-form-item label="备注" prop="remark">
+                <el-input v-model="importForm.remark" type="textarea" :rows="2" placeholder="可补充说明，不会覆盖已识别内容" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </el-form>
+      </div>
+
+      <template #footer>
+        <div class="dialog-footer">
+          <template v-if="importStep === 1">
+            <el-button type="primary" icon="MagicStick" :loading="importParsing" @click="submitImportPreview">
+              解析并预览
+            </el-button>
+            <el-button @click="importDialog.visible = false">取 消</el-button>
+          </template>
+          <template v-else>
+            <el-button type="primary" :loading="importSubmitting" @click="submitImportConfirm">确认建档</el-button>
+            <el-button @click="backToImportUpload">上一步</el-button>
+            <el-button @click="importDialog.visible = false">取 消</el-button>
+          </template>
+        </div>
+      </template>
+    </el-dialog>
+
+    <!-- 导入建档前的重复预检结果：命中后可选择仍然入库 -->
+    <el-dialog v-model="importDuplicateDialog.visible" title="疑似重复人才" width="820px" append-to-body>
+      <el-alert
+        type="warning"
+        :closable="false"
+        show-icon
+        title="按姓名 / 手机号 / 区域命中疑似重复档案，系统不会自动合并，请确认后决定是否继续导入建档。"
+      />
+      <el-table :data="importDuplicateList" border class="data-table mt-2">
+        <el-table-column label="命中规则" align="center" prop="matchRule" width="160" />
+        <el-table-column label="匹配分数" align="center" prop="matchScore" width="100" />
+        <el-table-column label="库中人才编号" align="center" prop="matchedTalentNo" width="150" />
+        <el-table-column label="库中姓名" align="center" prop="matchedName" width="110" />
+        <el-table-column label="归属区域" align="center" width="110">
+          <template #default="scope">
+            <dict-tag :options="tl_region" :value="scope.row.matchedRegionCode" />
+          </template>
+        </el-table-column>
+        <el-table-column label="当前结论" align="center" width="110">
+          <template #default="scope">
+            <dict-tag :options="tl_duplicate_conclusion" :value="scope.row.conclusion || 'PENDING'" />
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button type="primary" :loading="importSubmitting" @click="confirmImportDuplicate">仍然导入建档</el-button>
+          <el-button @click="importDuplicateDialog.visible = false">返回核对</el-button>
+        </div>
+      </template>
+    </el-dialog>
+
     <user-select ref="userSelectRef" :multiple="false" @confirm-call-back="handleUserSelected" />
     <role-select ref="roleSelectRef" :multiple="false" @confirm-call-back="handleRoleSelected" />
   </div>
 </template>
 
 <script setup lang="ts">
-import type { TalentGrantVO, TalentContactVO, TalentDetailVO, TalentForm, TalentQuery, TalentVO } from '@/api/talent/profile/types';
+import type {
+  ResumeFieldCandidateVO,
+  ResumeImportPreviewVO,
+  TalentGrantVO,
+  TalentContactVO,
+  TalentDetailVO,
+  TalentForm,
+  TalentQuery,
+  TalentVO
+} from '@/api/talent/profile/types';
 import type { TalentDuplicateVO } from '@/api/talent/duplicate/types';
 import {
   addContact,
   addGrant,
   addTalent,
   archiveTalent,
+  confirmResumeImport,
   getFullPhone,
   getTalent,
   listContact,
   listGrant,
   listTalent,
   preCheckTalent,
+  previewResumeImport,
   revokeGrant,
   updateTalent
 } from '@/api/talent/profile';
@@ -778,6 +1017,359 @@ const grantRules = {
 /** 归档 */
 const archiveDialog = reactive<DialogOption>({ visible: false, title: '归档人才档案' });
 const archiveForm = ref<{ talentId: string | number | undefined; remark: string }>({ talentId: undefined, remark: '' });
+
+/** ==================== 导入简历（两步向导） ==================== */
+
+/** 允许的扩展名，与后端 TalentConstants.ALLOWED_EXT 严格一致；图片类型可传但无正文可提取 */
+const importAllowedExt = ['pdf', 'docx', 'doc', 'jpg', 'jpeg', 'png'];
+const importAcceptExt = importAllowedExt.map(ext => '.' + ext).join(',');
+const importMaxFileSize = 25 * 1024 * 1024;
+/** 低于该置信度视为低置信度，必须提示人工核对 */
+const importLowConfidence = 0.8;
+
+/** 预览表格行：固定顺序，未识别字段也占一行，保证人工可见可补 */
+interface ImportReviewRow {
+  /** 与 candidates[].field 一致：name/gender/education/birthDate/phone/position/regionCode/expectSalaryMin/expectSalaryMax/ageOnly/email/experienceText */
+  field: string;
+  label: string;
+  edit?: ImportEditableKey;
+  source?: string;
+  confidence?: number;
+  hint?: string;
+  warning?: boolean;
+}
+
+/** 弹窗内可直接编辑的主档字段（其余候选仅展示） */
+type ImportEditableKey =
+  | 'name'
+  | 'gender'
+  | 'phone'
+  | 'birthDate'
+  | 'education'
+  | 'position'
+  | 'regionCode'
+  | 'expectSalaryMin'
+  | 'expectSalaryMax'
+  | 'ageOnly'
+  | 'remark';
+
+/** 表单字段 -> 后端候选 field 的映射 */
+const importFieldToCandidate: Record<ImportEditableKey, string> = {
+  name: 'name',
+  gender: 'gender',
+  phone: 'phone',
+  birthDate: 'birthDate',
+  education: 'education',
+  position: 'position',
+  regionCode: 'regionCode',
+  expectSalaryMin: 'expectSalaryMin',
+  expectSalaryMax: 'expectSalaryMax',
+  ageOnly: 'ageOnly',
+  remark: 'remark'
+};
+
+/** 预览表格行定义（顺序固定，便于人工逐条核对） */
+const importRowDefs: ImportReviewRow[] = [
+  { field: 'name', label: '姓名', edit: 'name' },
+  { field: 'gender', label: '性别', edit: 'gender' },
+  { field: 'education', label: '学历', edit: 'education' },
+  { field: 'birthDate', label: '出生日期', edit: 'birthDate' },
+  { field: 'ageOnly', label: '仅识别年龄', edit: 'ageOnly' },
+  { field: 'phone', label: '手机号', edit: 'phone' },
+  { field: 'position', label: '意向岗位', edit: 'position' },
+  { field: 'regionCode', label: '归属区域', edit: 'regionCode' },
+  { field: 'expectSalaryMin', label: '期望薪资下限', edit: 'expectSalaryMin' },
+  { field: 'expectSalaryMax', label: '期望薪资上限', edit: 'expectSalaryMax' },
+  { field: 'email', label: '邮箱（并入备注）' },
+  { field: 'experienceText', label: '经验（并入备注）' },
+  { field: 'contactDate', label: '联系日期（服务端）' }
+];
+
+/** 导入弹窗表单：出生日期由 date-picker 承载，解析值先落 importForm 再提交 */
+const initImportForm = (): TalentForm => ({
+  name: '',
+  gender: '0',
+  phone: '',
+  birthDate: undefined,
+  ageOnly: undefined,
+  education: undefined,
+  position: '',
+  regionCode: undefined,
+  expectSalaryMin: undefined,
+  expectSalaryMax: undefined,
+  status: 'NEW',
+  shareScope: 'REGION',
+  remark: ''
+});
+
+const importDialog = reactive<DialogOption>({ visible: false, title: '导入简历' });
+const importStep = ref(1);
+const importPreview = ref<ResumeImportPreviewVO | null>(null);
+const importParsing = ref(false);
+const importSubmitting = ref(false);
+const importFormRef = ref<ElFormInstance>();
+const importUploadRef = ref<ElUploadInstance>();
+const importFileList = ref<any[]>([]);
+const importForm = ref<TalentForm>(initImportForm());
+/** 导入确认阶段的重复预检结果：命中时先让用户确认再继续建档 */
+const importDuplicateDialog = reactive<DialogOption>({ visible: false, title: '疑似重复人才' });
+const importDuplicateList = ref<TalentDuplicateVO[]>([]);
+const importRules = {
+  name: [{ required: true, message: '姓名不能为空', trigger: 'blur' }],
+  gender: [{ required: true, message: '性别不能为空', trigger: 'change' }],
+  regionCode: [{ required: true, message: '归属区域不能为空', trigger: 'change' }]
+};
+
+/** 候选字段索引：同名取第一条（后端已按优先级排序） */
+const importCandidateMap = computed(() => {
+  const map: Record<string, any> = {};
+  (importPreview.value?.candidates || []).forEach(item => {
+    if (item?.field && !map[item.field]) {
+      map[item.field] = item;
+    }
+  });
+  return map;
+});
+
+/** 候选字段 -> 弹窗表单字段反查，用于判断表单值是否回填失败 */
+const importCandidateToControl = computed(() => {
+  const map: Record<string, ImportEditableKey> = {};
+  (Object.keys(importFieldToCandidate) as ImportEditableKey[]).forEach(key => {
+    map[importFieldToCandidate[key]] = key;
+  });
+  return map;
+});
+
+/** 逐字段预览行：展示来源、置信度与低置信度提示 */
+const importReviewRows = computed<ImportReviewRow[]>(() => {
+  const map = importCandidateMap.value;
+  return importRowDefs.map(def => {
+    const candidate = map[def.field];
+    let warning = candidate?.confidence != null && candidate.confidence < importLowConfidence;
+    // 解析值未能回填到表单（例如日期格式异常）时同样提示人工核对
+    if (def.edit && candidate?.value) {
+      const control = importCandidateToControl.value[def.field];
+      if (control && !importForm.value[control]) {
+        warning = true;
+      }
+    }
+    return {
+      ...def,
+      source: candidate?.source,
+      confidence: candidate?.confidence,
+      hint: candidate?.hint,
+      warning
+    };
+  });
+});
+
+const candidateSourceLabel = (source?: string) => {
+  if (source === 'FILENAME') return '文件名';
+  if (source === 'TEXT') return '正文';
+  if (source === 'DEFAULT') return '默认';
+  return '-';
+};
+
+const isLowConfidence = (confidence?: number) => confidence != null && confidence < importLowConfidence;
+
+/** 低置信度行整行高亮，便于人工快速定位 */
+const importRowClassName = ({ row }: { row: ImportReviewRow }) => (row.warning ? 'is-low-confidence' : '');
+
+const formatConfidence = (confidence?: number) => (confidence == null ? '-' : `${Math.round(confidence * 100)}%`);
+
+/** 弹窗内下拉使用的字典（区域/性别/学历） */
+const importDictOptions = (key: string): any[] => {
+  if (key === 'region') return tl_region.value || [];
+  if (key === 'gender') return tl_gender.value || [];
+  if (key === 'education') return tl_education.value || [];
+  return [];
+};
+
+/** 把候选值写入表单，作为提交时的真实值来源 */
+const fillImportForm = (candidates: ResumeFieldCandidateVO[]) => {
+  const map: Record<string, string> = {};
+  candidates.forEach(item => {
+    if (item?.field && map[item.field] === undefined) {
+      map[item.field] = item.value ?? '';
+    }
+  });
+  const ageOnly = Number(map.ageOnly);
+  Object.assign(importForm.value, {
+    ...initImportForm(),
+    name: map.name || '',
+    gender: map.gender || '0',
+    phone: map.phone || '',
+    birthDate: map.birthDate || undefined,
+    ageOnly: Number.isFinite(ageOnly) && map.ageOnly ? ageOnly : undefined,
+    education: map.education || undefined,
+    position: map.position || '',
+    regionCode: map.regionCode || undefined,
+    expectSalaryMin: map.expectSalaryMin ? Number(map.expectSalaryMin) : undefined,
+    expectSalaryMax: map.expectSalaryMax ? Number(map.expectSalaryMax) : undefined
+  });
+};
+
+/** 重置导入弹窗 */
+const resetImportDialog = () => {
+  importStep.value = 1;
+  importPreview.value = null;
+  importForm.value = initImportForm();
+  importFileList.value = [];
+  importDuplicateList.value = [];
+  importDuplicateDialog.visible = false;
+  importUploadRef.value?.clearFiles();
+  importFormRef.value?.clearValidate?.();
+};
+
+const handleImport = () => {
+  resetImportDialog();
+  importDialog.visible = true;
+};
+
+const handleImportClosed = () => {
+  importParsing.value = false;
+  importSubmitting.value = false;
+  resetImportDialog();
+};
+
+const handleImportFileChange = (file: UploadFile) => {
+  const raw = (file as any).raw as File | undefined;
+  const name = raw?.name || file.name || '';
+  const ext = name.split('.').pop()?.toLowerCase() || '';
+  if (!importAllowedExt.includes(ext)) {
+    modal.msgError(`文件格式不正确，仅允许 ${importAllowedExt.join('/')}！`);
+    importFileList.value = [];
+    importUploadRef.value?.clearFiles();
+    return;
+  }
+  if ((raw?.size || 0) > importMaxFileSize) {
+    modal.msgError('文件大小不能超过 25MB！');
+    importFileList.value = [];
+    importUploadRef.value?.clearFiles();
+    return;
+  }
+  // 手动上传：只保留最后选择的文件
+  importFileList.value = [file];
+};
+
+const handleImportFileRemove = () => {
+  importFileList.value = [];
+};
+
+const handleImportExceed = () => {
+  importFileList.value = [];
+  importUploadRef.value?.clearFiles();
+  modal.msgError('一次只能上传一个文件，请重新选择');
+};
+
+/** 第 1 步：上传并解析 */
+const submitImportPreview = async () => {
+  const file = importFileList.value[0]?.raw as File | undefined;
+  if (!file) {
+    modal.msgError('请先选择要导入的简历文件');
+    return;
+  }
+  importParsing.value = true;
+  try {
+    const res = await previewResumeImport(file);
+    const preview = res.data || {};
+    importPreview.value = preview;
+    fillImportForm(preview.candidates || []);
+    importStep.value = 2;
+  } catch (error: any) {
+    // 请求拦截器已提示 HTTP 错误；业务错误兜底提示，避免静默失败
+    if (!error?.isHandled && error?.message) {
+      modal.msgError(error.message);
+    }
+  } finally {
+    importParsing.value = false;
+  }
+};
+
+const backToImportUpload = () => {
+  importStep.value = 1;
+};
+
+/**
+ * 提交前把邮箱 / 经验拼入备注（非主档字段）。
+ * 备注中已有用户输入时用中文分号追加，不覆盖用户内容。
+ */
+const buildImportTalent = (): TalentForm => {
+  const map = importCandidateMap.value;
+  const extras: string[] = [];
+  if (map.email?.value) extras.push(`邮箱：${map.email.value}`);
+  if (map.experienceText?.value) extras.push(`经验：${map.experienceText.value}`);
+  const userRemark = (importForm.value.remark || '').trim();
+  let remark = userRemark;
+  if (extras.length > 0) {
+    remark = remark ? `${remark}；${extras.join('；')}` : extras.join('；');
+  }
+  const form = importForm.value;
+  return {
+    name: form.name,
+    gender: form.gender,
+    phone: form.phone,
+    birthDate: form.birthDate,
+    ageOnly: form.ageOnly,
+    education: form.education,
+    position: form.position,
+    regionCode: form.regionCode,
+    expectSalaryMin: form.expectSalaryMin,
+    expectSalaryMax: form.expectSalaryMax,
+    status: form.status,
+    shareScope: form.shareScope,
+    remark,
+    duplicateConfirmed: true
+  };
+};
+
+/** 第 2 步：以用户确认后的表单值确认建档 */
+const submitImportConfirm = () => {
+  importFormRef.value?.validate(async (valid: boolean) => {
+    if (!valid) return;
+    const token = importPreview.value?.importToken;
+    if (!token) {
+      modal.msgError('导入凭证已失效，请重新上传简历');
+      return;
+    }
+    // 与新增一致：先做重复预检，命中则让用户显式确认，避免后端建档被拦截后还要重新上传
+    const preCheckRes = await preCheckTalent(buildImportTalent());
+    const hits = preCheckRes.data || [];
+    if (hits.length > 0) {
+      importDuplicateList.value = hits;
+      importDuplicateDialog.visible = true;
+      return;
+    }
+    await doImportConfirm(false);
+  });
+};
+
+/** 命中重复后由用户确认继续入库 */
+const confirmImportDuplicate = async () => {
+  importDuplicateDialog.visible = false;
+  await doImportConfirm(true);
+};
+
+const doImportConfirm = async (duplicateConfirmed: boolean) => {
+  const token = importPreview.value?.importToken;
+  if (!token) {
+    modal.msgError('导入凭证已失效，请重新上传简历');
+    return;
+  }
+  importSubmitting.value = true;
+  try {
+    const res = await confirmResumeImport({
+      importToken: token,
+      talent: { ...buildImportTalent(), duplicateConfirmed }
+    });
+    const [talentId] = res.data || [];
+    importDialog.visible = false;
+    modal.msgSuccess(talentId ? `建档成功（人才ID：${talentId}）` : '建档成功');
+    await getList();
+  } finally {
+    importSubmitting.value = false;
+  }
+};
 
 /** 查询人才档案列表 */
 const getList = async () => {
@@ -1051,7 +1643,36 @@ onMounted(() => {
   margin-top: 8px;
 }
 
+.mb-2 {
+  margin-bottom: 8px;
+}
+
 .mr-2 {
   margin-right: 8px;
+}
+
+.ml-1 {
+  margin-left: 4px;
+}
+
+.import-steps {
+  margin-bottom: 16px;
+}
+
+.import-warning-line {
+  line-height: 1.6;
+}
+
+.import-review-table {
+  margin-bottom: 8px;
+
+  /* 低置信度行整行浅橙底，配合「请核对」标签提示人工复核 */
+  :deep(.el-table__row.is-low-confidence) {
+    background-color: var(--el-color-warning-light-9);
+  }
+}
+
+.text-placeholder {
+  color: var(--el-text-color-placeholder);
 }
 </style>

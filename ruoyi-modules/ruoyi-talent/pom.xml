@@ -101,6 +101,16 @@
             <artifactId>ruoyi-common-json</artifactId>
         </dependency>
 
+        <!-- PDF 文本提取（简历导入本地抽取；父 pom 未管理版本，必须显式声明） -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>3.0.7</version>
+        </dependency>
+
+        <!-- 说明：DOC/DOCX 文本提取使用 org.apache.poi:poi-ooxml，
+             已由 fesod-sheet 传递提供，故不在此重复声明。 -->
+
     </dependencies>
 
 </project>

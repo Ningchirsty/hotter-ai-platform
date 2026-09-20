@@ -16,6 +16,7 @@ public interface TalentConstants {
     String PERM_PROFILE_ARCHIVE = "talent:profile:archive";
     String PERM_PROFILE_PHONE = "talent:profile:phone";
     String PERM_PROFILE_GRANT = "talent:profile:grant";
+    String PERM_PROFILE_IMPORT = "talent:profile:import";
     String PERM_ATTACH_MANAGE = "talent:attachment:manage";
     String PERM_ATTACH_UPLOAD = "talent:attachment:upload";
     String PERM_ATTACH_DOWNLOAD = "talent:attachment:download";
@@ -50,5 +51,10 @@ public interface TalentConstants {
      * 人才编号前缀
      */
     String TALENT_NO_PREFIX = "TL";
+
+    /**
+     * 本地规则抽取器版本号（导入简历直接建档的留痕标识）
+     */
+    String PARSER_VERSION_LOCAL = "local-rule-v1";
 
 }
