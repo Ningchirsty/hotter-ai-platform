@@ -2,6 +2,7 @@ import { useStorage } from '@vueuse/core';
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { NavTypeEnum } from '@/enums/NavTypeEnum';
+import { SideThemeEnum } from '@/enums/SideThemeEnum';
 import defaultSettings from '@/settings';
 import { useDynamicTitle } from '@/utils/dynamicTitle';
 
@@ -21,7 +22,12 @@ export const useSettingsStore = defineStore('setting', () => {
   });
   const title = ref<string>(defaultSettings.title);
   const theme = ref<string>(storageSetting.value.theme);
-  const sideTheme = ref<string>(storageSetting.value.sideTheme);
+  // 纵享工作空间设计规范：左侧导航固定浅色（当前项雾蓝底 + 墨蓝文字）。
+  // 历史浏览器里可能存着 theme-dark，这里强制归一化并回写，避免同一版本出现两种外观。
+  // 深色侧栏的 CSS token 仍保留在 assets/styles/layout/sidebar 中，回退时把这一行改回
+  // storageSetting.value.sideTheme 即可。
+  storageSetting.value.sideTheme = SideThemeEnum.LIGHT;
+  const sideTheme = ref<string>(SideThemeEnum.LIGHT);
   const showSettings = ref<boolean>(defaultSettings.showSettings);
   const tagsView = ref<boolean>(storageSetting.value.tagsView);
   const tagsViewPersist = ref<boolean>(storageSetting.value.tagsViewPersist);

@@ -1,5 +1,6 @@
 <template>
   <div class="p-2 app-container talent-attachment-page">
+    <PageHeading title="人才管理" subtitle="档案、附件与业务记录，在同一个工作空间有序连接" />
     <el-card shadow="hover" class="search-panel">
       <template #header>
         <div class="toolbar-shell">

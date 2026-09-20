@@ -1,5 +1,6 @@
 <template>
   <div class="p-2 app-container aigov-capability-page">
+    <PageHeading title="AI平台治理" subtitle="管理AI能力、模型接入与调用策略" admin />
     <div class="search-wrap">
       <el-card shadow="hover" class="search-panel" :class="{ 'is-collapsed': !showSearch }">
         <template #header>

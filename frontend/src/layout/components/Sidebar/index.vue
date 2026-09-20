@@ -47,7 +47,8 @@ const activeMenu = computed(() => {
 });
 
 const bgColor = computed(() => (sideTheme.value === 'theme-dark' ? '#111827' : '#ffffff'));
-const textColor = computed(() => (sideTheme.value === 'theme-dark' ? '#e5edf8' : '#1f2937'));
+// 浅色侧栏文字沿用 design-tokens 的 $zx-text（#475c70），与 _shell.scss 的 --side-menu-text 保持一致
+const textColor = computed(() => (sideTheme.value === 'theme-dark' ? '#e5edf8' : '#475c70'));
 const menuStyle = computed(() => ({
   backgroundColor: bgColor.value,
   '--el-menu-bg-color': bgColor.value,

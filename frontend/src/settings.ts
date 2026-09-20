@@ -11,8 +11,9 @@ const setting: DefaultSettings = {
 
   /**
    * 侧边栏主题 深色主题theme-dark，浅色主题theme-light
+   * 纵享工作空间设计规范要求左侧导航保持浅色（当前项雾蓝底 + 墨蓝文字），默认固定浅色。
    */
-  sideTheme: 'theme-dark',
+  sideTheme: 'theme-light',
   /**
    * 是否系统布局配置
    */
