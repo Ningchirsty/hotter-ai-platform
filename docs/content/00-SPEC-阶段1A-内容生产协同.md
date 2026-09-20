@@ -368,15 +368,24 @@ ContentParseService
 
 1. **编译**：`ruoyi-admin -am` 全链路 BUILD SUCCESS
 2. **启动**：本地实例起得来，新模块菜单可见
-3. **端到端冒烟脚本**（`smoke-content.mjs`）：
-   - 建产品/SKU → 建任务（积木花、电商详情图）
-   - 上传一份「参数表 Excel + 文案 Word」，其中**故意含同一字段的两个不同值**（构造冲突）
-   - 触发解析 → 断言候选字段落库且 `confirm_status=PENDING`
-   - 触发预检 → 断言生成 CONFLICT 卡且带**两处来源与摘录**
-   - 确认一个值 → 重算闸门 → 断言任务仍为 `PENDING_CONFIRM`（因还有 BLOCK 字段缺失）
-   - 补齐其余 BLOCK 字段 → 重算 → 断言任务变 `READY`
+3. **端到端冒烟脚本**（`script/smoke/smoke-content.mjs`，夹具 `script/smoke/fixtures/content-conflict.xlsx`）：
+   ```bash
+   node script/smoke/smoke-content.mjs          # 默认使用同目录夹具
+   ```
+   用例主线（与已实现的脚本一致）：
+   - 建产品 → 建任务（积木花、电商详情图，初始 `DRAFT`）
+   - 上传夹具 Excel：含主体版本 V1/V2 两个值（构造冲突），且**不含**包装版本（构造缺料）
+   - 触发解析 → 断言候选字段落库且 `confirm_status=PENDING`（**红线：无 AI 直接写入事实**）
+   - 触发预检 → 断言生成 CONFLICT 卡（带**两处来源与摘录**、标记阻断）与 MISSING 卡
+   - 断言任务被闸门拦在 `PENDING_CONFIRM`
+   - 裁定冲突卡（确认 V1）→ 仍为 `PENDING_CONFIRM`（其它强制项未确认）
+   - 裁定缺失卡（手工录入包装版本）+ 一键确认无争议项 → 断言 `CONDITIONAL_READY`
+     （本例未提供参考图，而参考图是 `CONDITION` 级、§8.2 明确其默认非强制项）
+   - **回归断言**：状态可开工后 `blockReason` 必须被清空
+     （MyBatis-Plus `NOT_NULL` 策略下实体传 null 不会进 UPDATE，曾导致此处残留旧阻断文本）
    - 生成并签发开工包 → 断言 `immutableItems` 含产品主体/Logo/包装文字
-   - **反向断言**：未经人工确认的解析值不得出现在开工包的 `confirmedFacts` 中
+   - **反向断言**：未经人工确认的解析值不得出现在开工包的 `confirmedFacts` 中，
+     且冻结的是人工裁定后的值（V1）
 4. **治理侧断言**：`document_parse` / `brief_precheck` 的每次调用在 `aig_invocation_audit` 留痕，且 `external_call='N'`
 5. 回归：aigov 与 talent 两套既有冒烟仍全绿
 
