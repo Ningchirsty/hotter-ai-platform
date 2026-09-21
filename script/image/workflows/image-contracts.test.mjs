@@ -8,7 +8,7 @@
  *  - 模板文件必须存在、必须是规范格式、SHA-256 必须与契约 checksum 一致（后端启动即按此拒绝加载）；
  *  - mapping 白名单必须与能力声明的字段、与模板里的节点/输入键三方对齐；
  *  - 模板里不允许残留样例提示词或样例文件名（由服务端按任务填充）；
- *  - 状态必须自洽：契约条目与 meta.status 同时为 DRAFT（避免出现「条目 PUBLISHED 但测试断言 DRAFT」的红测试）。
+ *  - 状态必须自洽：契约条目与 meta.status 必须一致（避免出现「条目 PUBLISHED 但 meta DRAFT」的红测试）。
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -49,7 +49,7 @@ const MODEL_TRIO = {
 
 test('契约文件存在且能力/工作流数量符合预期', () => {
   assert.equal(contract.meta.name, 'hotter-ai image workflow contracts');
-  assert.equal(contract.meta.status, 'DRAFT', 'meta.status 必须与各条目状态一致（当前为 DRAFT）');
+  assert.equal(contract.meta.status, 'PUBLISHED', 'meta.status 必须与各条目状态一致（生产端到端验收通过后为 PUBLISHED）');
   assert.deepEqual(
     contract.capabilities.map((c) => c.capabilityCode),
     ['T2I', 'I2I', 'EDIT', 'BGREMOVE'],
@@ -70,9 +70,9 @@ test('每个模板都存在、格式规范、SHA-256 与契约一致', () => {
   }
 });
 
-test('工作流状态一律为 DRAFT（未通过生产联调前不得发布）', () => {
+test('工作流状态与 meta 一致且已发布（2026-09-21 生产端到端验收通过后提升）', () => {
   for (const { workflow } of bindings(contract)) {
-    assert.equal(workflow.status, 'DRAFT', `${workflow.workflowCode} 未经业务批准不得提升状态`);
+    assert.equal(workflow.status, contract.meta.status, `${workflow.workflowCode} 状态必须与 meta.status 一致`);
     assert.equal(workflow.version, 'v0.1.0-draft');
   }
 });

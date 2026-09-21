@@ -2,12 +2,12 @@
   "meta": {
     "name": "hotter-ai image workflow contracts",
     "version": "1",
-    "status": "DRAFT",
+    "status": "PUBLISHED",
     "updatedAt": "2026-09-21",
     "rules": [
       "每个 workflowCode 对应后端受控目录下的一份 ComfyUI API Format JSON 模板",
       "任务提交时后端深拷贝模板，仅覆写 mapping 白名单内的节点输入键",
-      "四个 Qwen-Image-2.1 模板已在 ComfyUI 0.37.0（192.168.2.223:8188）真机验证出图，实测记录见 api/_validation-live.json；但任务 API、鉴权与生产环境尚未联调，故一律保持 DRAFT",
+      "四个 Qwen-Image-2.1 模板已在 ComfyUI 0.37.0（192.168.2.223:8188）真机验证出图（api/_validation-live.json），并于 2026-09-21 在生产环境完成端到端验收（上传→建任务→执行→轮询→产出校验，4/4 通过，记录见 docs/image-module-implementation-handoff.md 与生产运维记录），故状态提升为 PUBLISHED",
       "同一 workflowCode 的固定后台参数变化必须递增 version，禁止原地修改 PUBLISHED 版本",
       "前端仅可见 workflowCode/模型编码/字段白名单/计费展示（见 frontend/src/views/image/modules.ts）"
     ]
@@ -48,7 +48,7 @@
           "workflowCode": "wf-t2i-qwen21",
           "modelCode": "QWEN21",
           "version": "v0.1.0-draft",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "image/workflows/api/wf-t2i-qwen21-v0.1.0.json",
           "checksum": "d8a773d86c93240a6efe348db9c1ad2d96d4fcd92c75253d8aafc7109cdc7b15",
           "billing": {
@@ -187,7 +187,7 @@
           "workflowCode": "wf-i2i-qwen21",
           "modelCode": "QWEN21",
           "version": "v0.1.0-draft",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "image/workflows/api/wf-i2i-qwen21-v0.1.0.json",
           "checksum": "bb4e6b12ee79852d39ce6190017fabcf424a08af7654441b848e9ef111ae610e",
           "billing": {
@@ -322,7 +322,7 @@
           "workflowCode": "wf-edit-qwen21",
           "modelCode": "QWEN21",
           "version": "v0.1.0-draft",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "image/workflows/api/wf-edit-qwen21-v0.1.0.json",
           "checksum": "0cb740bd6897ad257b8b11d8dcfe74911e9a6d41ae6f169bf4b5ad895131c077",
           "billing": {
@@ -425,7 +425,7 @@
           "workflowCode": "wf-bgremove-qwen21",
           "modelCode": "QWEN21",
           "version": "v0.1.0-draft",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "image/workflows/api/wf-bgremove-qwen21-v0.1.0.json",
           "checksum": "671616e457c9f8ea9b211911f18997252a3e28670171eb0a0228c8e135447abc",
           "billing": {

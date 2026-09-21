@@ -9,7 +9,8 @@
 - 每个能力对应一个 `workflowCode`，即一份后端受控目录下的 API Format JSON 模板。
 - 任务提交时后端**深拷贝**模板，仅覆写 `mapping` 白名单内声明的节点输入键，其余输入一律不动。
 - 未标记 `PUBLISHED` 的工作流不得作为可提交的任务提供；**导入模板不等于已联通服务**。
-- 四个模板当前均为 `DRAFT`：真机已实测出图，但任务 API / 鉴权 / 生产环境尚未联调。
+- 四个模板已于 2026-09-21 在生产环境完成端到端验收（上传 → 建任务 → 执行 → 轮询 → 产出校验，4/4 通过），
+  状态提升为 `PUBLISHED`（`require-published: true` 下可提交）。
 
 ## 四个模板
 
@@ -69,6 +70,9 @@ node --test script/image/workflows/image-contracts.test.mjs
 2. 填实 `mapping` 的 `nodeId`/`inputKey`、`outputRule`、`perf`，`apiJsonFile` 指向后端受控目录中的模板；
 3. `checksum` 用上面的 `--write` 生成；
 4. 状态 `DRAFT` → `TESTING` → `PUBLISHED`；固定后台参数变化必须新增版本，不改旧版本。
+   状态写在**契约文件**里（运行时由 `ImageWorkflowContractRegistry` 从 `contract-root` 读取并缓存，
+   DB 的 `image_workflow_version.status` 只是镜像、启动时同步且不覆盖既有审核结果），
+   因此提升状态必须改契约文件并部署（或按 `IMAGE_TESTING_WORKFLOWS` 走隔离联调口，该口不影响 UI 的 `submittable`）。
 
 ## 表结构
 
