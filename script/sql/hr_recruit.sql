@@ -23,6 +23,17 @@
 --   4. 只做逻辑关联，不建数据库外键；完整性由事务、校验与巡检保证。
 --   5. hr_recruit_sensitive_audit 为追加型审计表，不做物理删除（del_flag 保留以对齐通用字段）。
 --   6. 敏感字段（电话、背调明细、渠道联系方式）一律保存密文；附件只保存 OSS 对象 ID，不存长期公网 URL。
+--   7. 部分表在 §9.2「核心字段」之外，按 §8.x 功能设计补充了字段（§9.2 列名为「核心字段」，非全集）：
+--      hr_recruit_job 增加 urgency / headhunter_flag / assistant_ids /
+--      first_interviewer_id / second_interviewer_id / expect_arrival_date（依据 §8.3）；
+--      hr_recruit_plan_item 增加 control_reason / last_refresh_time / urgency / standard_days /
+--      import_batch_id / source_table / source_seq（依据 §8.2.1、§12.1、§7.1.2、§13.1、§19.4）；
+--      hr_recruit_application 增加 contact_date / plan_arrival_date / offer_date / offer_result /
+--      no_arrival_reason（§8.4、§8.7、§7.2、§14）；hr_recruit_stage_log 增加 next_follow_time（§8.5）；
+--      hr_recruit_interviewer 增加 feedback（§8.6、§7.3）；hr_recruit_background 增加
+--      check_items / waive_reason（§8.7、§7.4）；hr_recruit_import_error 增加 severity（§8.11）。
+--      人才主数据表按 §8.12~§8.16 补充 16 列；完整台账见 docs/hr-talent/P2-决策与缺口台账.md。
+--      招聘需求的暂停/关闭原因通过 hr_recruit_demand_change.reason 记录，需求表本身不另设原因列。
 -- ----------------------------------------------------------------------------
 
 -- ----------------------------
@@ -141,6 +152,9 @@ create table hr_recruit_plan_item (
     plan_id                 bigint(20)    not null                   comment '所属月度计划表头ID',
     demand_id               bigint(20)    default null               comment '来源招聘需求ID',
     job_id                  bigint(20)    default null               comment '关联岗位执行项ID',
+    import_batch_id         bigint(20)    default null               comment '来源导入批次ID（导入生成时记录，§13.1/§19.4 可追溯）',
+    source_table            varchar(100)  default null               comment '来源表名（历史迁移来源，§13.1）',
+    source_seq              varchar(64)   default null               comment '来源序号（原表行号，用于区分同公司/同部门/同岗位的重复行，§13.1/§13.3）',
     company_dept_id         bigint(20)    not null                   comment '公司（平台部门）ID',
     company_name            varchar(100)  default null               comment '公司名称快照',
     use_dept_id             bigint(20)    default null               comment '用工部门ID',
@@ -152,14 +166,18 @@ create table hr_recruit_plan_item (
     credited_arrival_qty    int(11)       not null default 0         comment '已计入到岗人数（非负整数，一个到岗结果只计入一条有效任务）',
     remaining_qty           int(11)       not null default 0         comment '剩余人数（非负整数）',
     control_status          varchar(32)   not null default 'normal'  comment '人工控制状态（normal/paused/cancelled，字典 recruit_plan_control_status）',
+    control_reason          varchar(500)  default null               comment '人工暂停/取消原因（§12.1 要求与人工状态同时展示）',
     execution_status        varchar(32)   not null default 'pending' comment '自动执行阶段（pending/recruiting/interviewing/offer/pending_arrival，字典 recruit_plan_execution_status）',
     completion_status       varchar(32)   not null default 'unfinished' comment '完成与结转状态（unfinished/partial_completed/completed/rolled_over，字典 recruit_plan_completion_status）',
+    last_refresh_time       datetime(3)   default null               comment '最后状态刷新时间（§8.2.1、§12.1；供状态校准比对）',
     carryover_enabled       char(1)       not null default '1'       comment '是否允许自动结转（0否 1是）',
     previous_plan_item_id   bigint(20)    default null               comment '前置（来源）计划任务ID，构成跨月结转链',
     root_plan_item_id       bigint(20)    default null               comment '根计划任务ID（结转链起点）',
     carryover_batch_id      bigint(20)    default null               comment '结转批次ID（关联 hr_recruit_plan_rollover.batch_id）',
     carryover_time          datetime(3)   default null               comment '结转生成时间',
     owner_id                bigint(20)    default null               comment '任务负责人用户ID',
+    urgency                 varchar(32)   not null default 'normal'  comment '紧急程度（结转时自原任务复制，字典 recruit_urgency，§7.1.2）',
+    standard_days           int(11)       default null               comment '招聘期限标准天数（结转时自原任务复制，§7.1.2）',
     del_flag                char(1)       default '0'                comment '删除标志（0代表存在 1代表删除）',
     create_dept             bigint(20)    default null               comment '创建部门',
     create_by               bigint(20)    default null               comment '创建者',
@@ -264,7 +282,13 @@ create table hr_recruit_job (
     salary_max            decimal(12,2)   default null               comment '薪资高值',
     salary_period         varchar(32)     default null               comment '薪资周期（month/year/day等稳定编码）',
     recruit_mode          varchar(32)     default null               comment '招聘形式（internal/social/campus/headhunter/referral/other，字典 recruit_mode）',
+    urgency               varchar(32)     not null default 'normal'  comment '紧急程度（normal/urgent/very_urgent，字典 recruit_urgency）',
+    headhunter_flag       char(1)         not null default '0'       comment '是否需要猎头（0否 1是）',
+    assistant_ids         varchar(255)    default null               comment '协助人用户ID，多个以英文逗号分隔',
+    first_interviewer_id  bigint(20)      default null               comment '一面面试官用户ID（岗位计划默认值，实际参与以 hr_recruit_interviewer 为准）',
+    second_interviewer_id bigint(20)      default null               comment '二面面试官用户ID（岗位计划默认值，实际参与以 hr_recruit_interviewer 为准）',
     standard_days         int(11)         default null               comment '招聘期限标准天数（来自招聘期限标准）',
+    expect_arrival_date   date            default null               comment '预计到岗日期',
     recruit_count         int(11)         not null default 0         comment '岗位招聘人数（非负整数）',
     owner_id              bigint(20)      default null               comment '岗位负责（招聘负责人）用户ID',
     publish_date          date            default null               comment '发布日期',
@@ -303,8 +327,13 @@ create table hr_recruit_application (
     expected_salary_min   decimal(12,2)   default null               comment '期望薪资低值（金额）',
     expected_salary_max   decimal(12,2)   default null               comment '期望薪资高值（金额）',
     recruiter_id          bigint(20)      default null               comment '招聘负责人用户ID',
+    contact_date          date            default null               comment '联系日期（§14 跟进联系留痕）',
     next_follow_time      datetime(3)     default null               comment '下次跟进时间',
+    plan_arrival_date     date            default null               comment '计划报到日期（录用后约定报到日期，§8.4/附录A）',
+    offer_date            date            default null               comment '录用邀约日期（§8.7 录用邀约环节）',
+    offer_result          varchar(32)     default null               comment '邀约结果（accepted/rejected等稳定编码，§7.2）',
     arrival_date          date            default null               comment '实际到岗日期',
+    no_arrival_reason     varchar(500)    default null               comment '未报到原因（§8.4）',
     apply_time            datetime(3)     default null               comment '应聘（投递）时间',
     stage_enter_time      datetime(3)     default null               comment '进入当前阶段时间',
     reject_reason         varchar(500)    default null               comment '淘汰/撤回原因',
@@ -339,6 +368,7 @@ create table hr_recruit_stage_log (
     result                varchar(32)     default null               comment '阶段结果（字典 recruit_application_result）',
     reason_code           varchar(64)     default null               comment '原因编码（字典编码，不存中文）',
     `comment`             varchar(1000)   default null               comment '阶段说明',
+    next_follow_time      datetime(3)     default null               comment '本次跟进的下一步日期（逐次留痕，§8.5）',
     operator_id           bigint(20)      default null               comment '操作人用户ID',
     operate_time          datetime(3)     default null               comment '操作时间',
     del_flag              char(1)         default '0'                comment '删除标志（0代表存在 1代表删除）',
@@ -395,6 +425,7 @@ create table hr_recruit_interviewer (
     feedback_status       varchar(32)     not null default 'pending' comment '反馈状态（pending/submitted/waived等稳定编码）',
     feedback_time         datetime(3)     default null               comment '反馈时间',
     score                 decimal(5,2)    default null               comment '面试官评分',
+    feedback              text                                       comment '面试官个人意见/结论（§8.6/§7.3/§6）',
     del_flag              char(1)         default '0'                comment '删除标志（0代表存在 1代表删除）',
     create_dept           bigint(20)      default null               comment '创建部门',
     create_by             bigint(20)      default null               comment '创建者',
@@ -423,7 +454,9 @@ create table hr_recruit_background (
     check_end_date        date            default null               comment '背调结束日期',
     result                varchar(32)     default null               comment '背调结果（pending/pass/fail/waived，字典 recruit_background_result）',
     failure_reason_code   varchar(64)     default null               comment '不通过原因编码（字典编码，不存中文）',
+    check_items           varchar(500)    default null               comment '背调核查项清单（§8.7/§7.4）',
     detail_cipher         text                                       comment '背调明细密文（禁止截断，禁止日志输出）',
+    waive_reason          varchar(500)    default null               comment '免背调授权原因（result=waived 时填写，§7.2）',
     status                varchar(32)     not null default 'draft'   comment '背调状态（draft/checking/finished/cancelled等稳定编码）',
     del_flag              char(1)         default '0'                comment '删除标志（0代表存在 1代表删除）',
     create_dept           bigint(20)      default null               comment '创建部门',
@@ -614,6 +647,7 @@ create table hr_recruit_import_error (
     field_name            varchar(64)     default null               comment '出错字段名',
     raw_value             varchar(500)    default null               comment '原始值（仅存必要片段，避免整行敏感数据）',
     error_code            varchar(64)     default null               comment '错误编码（稳定编码，不存中文）',
+    severity              varchar(32)     default null               comment '严重级别（error阻断/warning提示，§8.11）',
     error_message         varchar(500)    default null               comment '错误说明',
     del_flag              char(1)         default '0'                comment '删除标志（0代表存在 1代表删除）',
     create_dept           bigint(20)      default null               comment '创建部门',
