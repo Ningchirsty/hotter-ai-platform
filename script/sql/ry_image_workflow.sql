@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS image_workflow_version (
   perf_json        JSON         NULL,
   checksum         VARCHAR(128) NULL COMMENT '模板 SHA-256；模板未加载时为 NULL（不伪装成已校验）',
   status           VARCHAR(16)  NOT NULL DEFAULT 'DRAFT' COMMENT 'DRAFT/TESTING/PUBLISHED/RETIRED',
+  supported_outputs_json JSON   NULL COMMENT '输出尺寸/档位矩阵（视频模块此参数被静默丢弃，图像侧真的落库）',
   test_report_json JSON         NULL,
   published_by     BIGINT       NULL,
   published_time   DATETIME     NULL,
