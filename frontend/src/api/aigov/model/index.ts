@@ -8,6 +8,7 @@ import type {
   AigModelProviderForm,
   AigModelProviderOption,
   AigModelQuery,
+  AigModelSecretForm,
   AigModelTestResult
 } from './types';
 
@@ -85,6 +86,17 @@ export function createModel(data: AigModelCreateForm) {
   return request({
     url: '/aigov/model',
     method: 'post',
+    data: data
+  });
+}
+
+// 写入/清除模型密钥（PUT /aigov/model/secret）
+// 明文只在请求体里出现一次，后端加密后落库；任何查询接口都不会回显密钥。
+// clearKey=true 表示清除已有密钥（显式语义，避免「留空=不修改」的歧义）。
+export function updateModelSecret(data: AigModelSecretForm) {
+  return request({
+    url: '/aigov/model/secret',
+    method: 'put',
     data: data
   });
 }

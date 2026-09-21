@@ -3,6 +3,7 @@ package org.dromara.aigov.service;
 import org.dromara.aigov.domain.bo.AigModelCreateBo;
 import org.dromara.aigov.domain.bo.AigModelGovernanceBo;
 import org.dromara.aigov.domain.bo.AigModelProviderBo;
+import org.dromara.aigov.domain.bo.AigModelSecretBo;
 import org.dromara.aigov.domain.vo.AigModelProviderVo;
 import org.dromara.aigov.domain.vo.AigModelTestVo;
 import org.dromara.aigov.domain.vo.AigModelVo;
@@ -16,13 +17,19 @@ import java.util.List;
  *
  * <p><b>关于 {@code sai_*} 的读写边界（阶段1 有意调整，务请知悉）</b>：</p>
  * <ul>
- *     <li>查询：跨表只读 {@code sai_model_config} / {@code sai_model_provider}，任何响应都不含 {@code api_key}；</li>
+ *     <li>查询：跨表只读 {@code sai_model_config} / {@code sai_model_provider}，任何响应都不含 {@code api_key} 原值；</li>
  *     <li>治理属性：读写 {@code aig_model_governance}（{@link #saveGovernance}）；</li>
- *     <li>新增模型：<b>唯一一处写 {@code sai_model_config} 的地方</b>
+ *     <li>新增模型：跨模块写 {@code sai_model_config} 的入口之一
  *         （{@link #createModel}）。原设计约定「治理层只读 sai_*」，但实际部署中
  *         snail-ai 服务端未必就绪，届时没有任何途径登记模型，治理页只能看着空清单。
- *         故补上该入口，并把它限制在「只 INSERT、列白名单、不含 api_key」的范围内；
+ *         故补上该入口，并把它限制在「只 INSERT、列白名单」的范围内；
  *         模型主数据的修改与下架仍不经过治理层。</li>
+ *     <li><b>模型密钥</b>：{@code sai_model_config.api_key} 是 SM4 密文列，也是 snail-ai
+ *         运行时的唯一凭据来源。治理层此前只登记「引用」（{@code secret_ref}），
+ *         但引用没有任何组件会去解析，等于「配了也不生效」，运维被迫在治理台与
+ *         snail-ai 管理端之间来回切换。故新增 {@link #updateModelSecret}：
+ *         在治理台直接录入明文密钥，由治理层按 snail-ai 的 SM4 口径加密后写入该列。
+ *         密钥<b>只进不出</b>——列表/详情只回 {@code keyConfigured} 布尔位。</li>
  *     <li>供应商：内置 7 家是 snail-ai 种子数据，接入自建服务/新厂商时需要新增供应商
  *         （{@link #createProvider}），同样只写名称/标识/说明/图标/启停，不含任何密钥。
  *         供应商表没有密钥列，这是刻意的。</li>
@@ -66,6 +73,18 @@ public interface IAigModelGovernanceService {
      * @return 新模型ID
      */
     Long createModel(AigModelCreateBo bo);
+
+    /**
+     * 写入/清除模型密钥（{@code sai_model_config.api_key}，只更新该列）。
+     *
+     * <p>明文由 {@code AigModelSecretCipher} 按 snail-ai 的 SM4 口径加密后落库，
+     * 因此本方法产出的密文能否被 snail-ai 解开，取决于两侧 crypto 配置是否一致。
+     * 写前请确认 {@code aigov.model-crypto.enabled=true}。</p>
+     *
+     * @param bo 密钥参数（{@code clearKey=true} 时忽略 {@code apiKey} 并置空）
+     * @return 影响行数
+     */
+    int updateModelSecret(AigModelSecretBo bo);
 
     /**
      * 供应商下拉选项（仅启用项，不含任何凭据）。

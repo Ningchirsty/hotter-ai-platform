@@ -11,6 +11,7 @@ import org.dromara.aigov.domain.AigModelGovernance;
 import org.dromara.aigov.domain.bo.AigModelCreateBo;
 import org.dromara.aigov.domain.bo.AigModelGovernanceBo;
 import org.dromara.aigov.domain.bo.AigModelProviderBo;
+import org.dromara.aigov.domain.bo.AigModelSecretBo;
 import org.dromara.aigov.domain.vo.AigModelProviderVo;
 import org.dromara.aigov.domain.vo.AigModelTestTargetVo;
 import org.dromara.aigov.domain.vo.AigModelTestVo;
@@ -18,6 +19,7 @@ import org.dromara.aigov.domain.vo.AigModelVo;
 import org.dromara.aigov.enums.AigDataLevelEnum;
 import org.dromara.aigov.enums.AigDeploymentTypeEnum;
 import org.dromara.aigov.enums.AigLifecycleStatusEnum;
+import org.dromara.aigov.helper.AigModelSecretCipher;
 import org.dromara.aigov.helper.AigPermissionHelper;
 import org.dromara.aigov.mapper.AigModelConfigMapper;
 import org.dromara.aigov.mapper.AigModelGovernanceMapper;
@@ -33,17 +35,19 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * AI 模型治理服务实现。
  *
  * <p><b>跨表读取</b>：{@link #list} 以 {@code sai_model_config} 为主表 LEFT JOIN
- * {@code aig_model_governance}（XML 写在 {@code mapper/aigov/AigModelViewMapper.xml}），
- * <b>只读</b>，不修改任何 {@code sai_*} 表。</p>
+ * {@code aig_model_governance}（XML 写在 {@code mapper/aigov/AigModelViewMapper.xml}）。</p>
  *
- * <p><b>密钥口径</b>：{@code api_key} 任何语句都不查询、任何响应都不返回；
- * {@code api_endpoint} 与 {@code secretRef} 仅在当前用户具备 {@code aig:model:secret}
- * 权限时下发，其余情况统一置空。</p>
+ * <p><b>密钥口径</b>：{@code api_key} 的<b>写</b>只发生在 {@link #createModel} 与
+ * {@link #updateModelSecret}，且写入前一律经 {@link AigModelSecretCipher} 加密成
+ * snail-ai 可解的 SM4 密文；<b>读</b>只暴露布尔位 {@code keyConfigured}，
+ * 任何响应都不返回密钥原值。{@code api_endpoint} 与 {@code secretRef} 仅在当前用户
+ * 具备 {@code aig:model:secret} 权限时下发，其余情况统一置空。</p>
  *
  * @author ai-gov
  */
@@ -53,14 +57,32 @@ import java.util.List;
 public class AigModelGovernanceServiceImpl implements IAigModelGovernanceService {
 
     /**
-     * secretRef 明文特征：常见密钥前缀。
+     * secretRef 明文特征：常见密钥前缀（命中时给出更贴切的提示）。
      */
     private static final String[] SECRET_PREFIXES = {"sk-", "Bearer ", "AKID", "ghp_"};
 
     /**
-     * secretRef 最小可疑长度：过长且无 scheme 视为明文密钥。
+     * secretRef 允许的引用 scheme 白名单。
+     *
+     * <p>此处由「反向启发式」改为「正向白名单」：原实现是「长度 ≥32 且不含 {@code ://} 才判为明文」，
+     * 挡不住 {@code mysecret123} 这类短明文。现在认不出来的一律拒绝。</p>
+     *
+     * <p><b>大小写不敏感</b>：RFC 3986 规定 scheme 大小写不敏感，且既有数据里存在
+     * {@code REF://fixture/local-rule-v1}（本地夹具）。若这里做成大小写敏感，用户编辑该行
+     * 治理属性时前端原样回传就会被拒——那是个自造的回归。</p>
+     *
+     * <p>{@code ref} 一并放行，用于兼容已经登记的 {@code REF://} 值。</p>
      */
-    private static final int SECRET_SUSPECT_LENGTH = 32;
+    private static final Pattern SECRET_REF_PATTERN =
+        Pattern.compile("(?i)^(kms|vault|env|sm|secret|ref)://\\S+$");
+
+    /**
+     * 密钥引用非法时的统一提示。
+     * <p>冒烟脚本断言文案中必须含「密钥引用」字样，改动时请同步。</p>
+     */
+    private static final String SECRET_REF_INVALID =
+        "secretRef 必须是密钥引用（受支持的 scheme：kms:// vault:// env:// sm:// secret:// ref://，"
+            + "如 kms://ai/qwen），禁止填明文密钥";
 
     /**
      * 作用域缺省值：与 {@code sai_model_config.scope} 的库默认值保持一致。
@@ -91,6 +113,11 @@ public class AigModelGovernanceServiceImpl implements IAigModelGovernanceService
      * 模型连通性探测器（本地执行者 / snail-ai / OpenAI 兼容端点）。
      */
     private final ModelConnectionTester connectionTester;
+
+    /**
+     * 模型密钥加解密工具（SM4/CBC/PKCS5，与 snail-ai 口径一致）。
+     */
+    private final AigModelSecretCipher secretCipher;
 
     @Override
     public PageResult<AigModelVo> list(AigModelGovernanceBo bo, PageQuery pageQuery) {
@@ -182,6 +209,18 @@ public class AigModelGovernanceServiceImpl implements IAigModelGovernanceService
             }
             checkSecretRef(bo.getSecretRef());
         }
+        // 4b. 明文密钥：与密钥引用同为凭据，写它同样需要 aig:model:secret。
+        //     就地加密——明文只在本方法栈内存活，后续入库/Mapper/日志拿到的都是密文。
+        //     encrypt() 在「未启用」或「未配置密钥」时会抛错，不会静默跳过。
+        String encryptedApiKey = null;
+        if (StringUtils.isNotBlank(bo.getApiKey())) {
+            if (!permissionHelper.canViewModelSecret()) {
+                throw new ServiceException("无权登记模型密钥（aig:model:secret）");
+            }
+            encryptedApiKey = secretCipher.encrypt(bo.getApiKey());
+        }
+        // 覆盖为密文（或 null）：避免明文随 bo 继续流转到拷贝/序列化/异常堆栈里
+        bo.setApiKey(encryptedApiKey);
         // 5. 归一默认值。这几个列可空，显式传 null 会覆盖掉库里的默认值，故在此补全。
         bo.setScope(StringUtils.isBlank(bo.getScope()) ? DEFAULT_SCOPE : bo.getScope());
         bo.setIsDefault(Boolean.TRUE.equals(bo.getIsDefault()));
@@ -210,9 +249,41 @@ public class AigModelGovernanceServiceImpl implements IAigModelGovernanceService
         entity.setStatus("0");
         modelGovernanceMapper.insert(entity);
 
-        log.info("新增模型完成, modelId={}, modelKey={}, deploymentType={}, dataLevelMax={}, lifecycleStatus={}",
-            bo.getId(), bo.getModelKey(), deployment.getCode(), dataLevel.getCode(), lifecycle.getCode());
+        log.info("新增模型完成, modelId={}, modelKey={}, deploymentType={}, dataLevelMax={}, lifecycleStatus={}, keyConfigured={}",
+            bo.getId(), bo.getModelKey(), deployment.getCode(), dataLevel.getCode(), lifecycle.getCode(),
+            encryptedApiKey != null);
         return bo.getId();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int updateModelSecret(AigModelSecretBo bo) {
+        if (bo == null || bo.getModelId() == null) {
+            throw new ServiceException("模型ID不能为空");
+        }
+        if (modelViewMapper.selectModelById(bo.getModelId()) == null) {
+            throw new ServiceException("模型不存在：" + bo.getModelId());
+        }
+        // 服务层再校验一次：控制器上的 @SaCheckPermission 只覆盖 HTTP 入口，
+        // 而本方法是接口公开能力，内部调用同样不得绕过。
+        if (!permissionHelper.canViewModelSecret()) {
+            throw new ServiceException("无权修改模型密钥（aig:model:secret）");
+        }
+        if (Boolean.TRUE.equals(bo.getClearKey())) {
+            int rows = modelConfigMapper.updateModelApiKey(bo.getModelId(), null);
+            log.info("清除模型密钥, modelId={}, rows={}", bo.getModelId(), rows);
+            return rows;
+        }
+        if (StringUtils.isBlank(bo.getApiKey())) {
+            throw new ServiceException("密钥不能为空；如需清除已有密钥，请显式选择「清除密钥」");
+        }
+        // 明文只在此处存活一个局部变量的生存期；加密后立刻丢弃。
+        String cipherText = secretCipher.encrypt(bo.getApiKey());
+        int rows = modelConfigMapper.updateModelApiKey(bo.getModelId(), cipherText);
+        // 日志只记长度，绝不记密钥本身（连掩码形式都不要）
+        log.info("写入模型密钥, modelId={}, plainLen={}, cipherLen={}, rows={}",
+            bo.getModelId(), bo.getApiKey().length(), cipherText == null ? 0 : cipherText.length(), rows);
+        return rows;
     }
 
     @Override
@@ -328,6 +399,10 @@ public class AigModelGovernanceServiceImpl implements IAigModelGovernanceService
     /**
      * 密钥引用必须为「引用」，禁止明文密钥。
      *
+     * <p>两道校验：先按常见明文前缀给出明确提示，再用 scheme 白名单收口。
+     * 只做前缀黑名单是不够的——{@code mysecret123} 这类短明文既无前缀、长度也不足，
+     * 会被原实现放过。</p>
+     *
      * @param secretRef 密钥引用
      */
     private void checkSecretRef(String secretRef) {
@@ -337,11 +412,11 @@ public class AigModelGovernanceServiceImpl implements IAigModelGovernanceService
         String value = secretRef.trim();
         for (String prefix : SECRET_PREFIXES) {
             if (value.startsWith(prefix)) {
-                throw new ServiceException("secretRef 必须是密钥引用（如 kms://ai/qwen），禁止明文密钥");
+                throw new ServiceException(SECRET_REF_INVALID);
             }
         }
-        if (value.length() >= SECRET_SUSPECT_LENGTH && !value.contains("://")) {
-            throw new ServiceException("secretRef 必须是密钥引用（如 kms://ai/qwen），禁止明文密钥");
+        if (!SECRET_REF_PATTERN.matcher(value).matches()) {
+            throw new ServiceException(SECRET_REF_INVALID);
         }
     }
 

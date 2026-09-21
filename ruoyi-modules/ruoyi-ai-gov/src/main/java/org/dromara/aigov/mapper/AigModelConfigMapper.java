@@ -18,14 +18,22 @@ import java.util.List;
  *
  * <p><b>安全约束（必须遵守）</b>：</p>
  * <ol>
- *     <li>语句中的列<b>全部显式为白名单</b>：写入路径绝不出现 {@code api_key}——治理层从不
- *         写该列，密钥一律只登记引用（{@code aig_model_governance.secret_ref}）；</li>
- *     <li>本接口只做 INSERT、以及供应商的有限 UPDATE（名称/说明/图标/启停），
- *         模型主数据<b>不提供 UPDATE / DELETE</b>：修改与下架走 snail-ai 或治理属性；</li>
- *     <li>唯一例外是 {@link #selectTestTarget(Long)}：连通性测试必须拿到平台侧密钥才能发请求，
- *         该语句会读取 {@code api_key}，但结果只进 {@code AigModelTestTargetVo}（服务端内部类型），
- *         绝不出现在任何对外响应或日志里。</li>
+ *     <li>除 {@code api_key} 外，语句中的列<b>全部显式为白名单</b>；</li>
+ *     <li>{@code api_key} 是<b>唯一</b>允许写的敏感列，且只允许
+ *         {@link #updateModelApiKey} 单列更新，绝不与其它列混在一次 UPDATE 里。
+ *         写入值必须是<b>密文</b>——由 {@code AigModelSecretCipher} 按 snail-ai 的
+ *         SM4 口径产出。明文一旦落库，snail-ai 运行时解密失败，模型会静默不可用；</li>
+ *     <li>本接口只做 INSERT、供应商的有限 UPDATE（名称/说明/图标/启停），
+ *         以及 {@code api_key} 的单列 UPDATE；模型主数据的其它列<b>不提供 UPDATE / DELETE</b>，
+ *         修改与下架走 snail-ai 或治理属性；</li>
+ *     <li>读 {@code api_key} 的只有 {@link #selectTestTarget(Long)}：连通性测试必须拿到
+ *         平台侧密钥才能发请求，结果只进 {@code AigModelTestTargetVo}（服务端内部类型），
+ *         绝不出现在任何对外响应或日志里。至于「是否已配置密钥」，由
+ *         {@code AigModelViewMapper} 在 SQL 内算成布尔位，不把原值带进 Java。</li>
  * </ol>
+ *
+ * <p>⛔ 不要在本接口新增读取 {@code api_key} 原值的语句，也不要把 {@code api_key}
+ * 加进别的 UPDATE。</p>
  *
  * @author ai-gov
  */
@@ -37,10 +45,19 @@ public interface AigModelConfigMapper {
      * <p>自增主键回填到 {@code bo.id}。此处刻意不加 {@code @Param}：
      * 单个对象参数下 MyBatis 可直接用 {@code keyProperty="id"} 回填，写法最不易出错。</p>
      *
-     * @param bo 新增模型参数
+     * @param bo 新增模型参数（{@code apiKey} 须为密文或 null，由 Service 负责加密）
      * @return 影响行数
      */
     int insertModel(AigModelCreateBo bo);
+
+    /**
+     * 写入/清除模型密钥（<b>只更新 {@code api_key} 一列</b>）。
+     *
+     * @param modelId 模型ID
+     * @param apiKey  密文密钥；传 {@code null} 表示清除
+     * @return 影响行数
+     */
+    int updateModelApiKey(@Param("modelId") Long modelId, @Param("apiKey") String apiKey);
 
     /**
      * 按模型标识统计（唯一性校验）。

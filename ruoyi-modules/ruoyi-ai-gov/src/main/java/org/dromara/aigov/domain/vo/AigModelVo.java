@@ -15,6 +15,8 @@ import java.time.LocalDateTime;
  * 补治理属性；<b>只读</b>，任何情况下都不返回 {@code sai_model_config.api_key}。</p>
  * <p>{@code secretRef} 与 {@code apiEndpoint} 仅在调用方具备 {@code aig:model:secret}
  * 权限时下发，其余情况由服务层置空。</p>
+ * <p>{@code keyConfigured} 只暴露「是否已配置密钥」这一个布尔位，密钥原值不进本对象；
+ * 任何有列表权限的人都可见——它的用途是暴露「治理属性登记完整、但密钥为空」这种静默失败。</p>
  *
  * @author ai-gov
  */
@@ -72,6 +74,13 @@ public class AigModelVo implements Serializable {
      * API 端点 URL（仅在有 aig:model:secret 权限时下发）
      */
     private String apiEndpoint;
+
+    /**
+     * 是否已在 {@code sai_model_config.api_key} 配置密钥。
+     * <p>由 SQL 直接算成布尔位（{@code api_key is not null and api_key != ''}），
+     * 密钥原值不会进入本对象。</p>
+     */
+    private Boolean keyConfigured;
 
     /**
      * 作用域（GLOBAL/PERSONAL）

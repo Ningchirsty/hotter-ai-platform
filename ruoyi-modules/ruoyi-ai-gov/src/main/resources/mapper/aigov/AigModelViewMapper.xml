@@ -9,7 +9,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
       aig_model_governance（治理属性）。
       ⚠️ 安全约束：
         1. 本文件只读，绝不修改任何 sai_* 表；
-        2. 任何语句都不得 select c.api_key（密钥永不进入治理层响应）。
+        2. 绝不 select c.api_key 原值——密钥永不进入治理层响应。
+           列表只需要「有没有配密钥」，故用布尔表达式在 SQL 内算好，
+           原值不进入任何 Java 对象。
     -->
     <sql id="modelViewColumns">
         c.id                as model_id,
@@ -24,6 +26,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         c.scope             as scope,
         c.is_default        as is_default,
         c.is_enabled        as is_enabled,
+        (c.api_key is not null and c.api_key != '') as key_configured,
         g.governance_id     as governance_id,
         g.deployment_type   as deployment_type,
         g.data_level_max    as data_level_max,

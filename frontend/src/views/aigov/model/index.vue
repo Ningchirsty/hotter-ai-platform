@@ -69,7 +69,7 @@
             <h3>模型注册中心</h3>
             <p>
               共 {{ total }} 条记录；模型主数据存放于 sai_model_config，可在此新增模型并同时登记首份治理属性。
-              密钥只存引用，本页不展示任何明文密钥。
+              模型密钥可在此直接录入（提交后加密落库），列表只显示「已配置／未配置」，永不回显密钥内容。
             </p>
           </div>
           <div class="toolbar-actions">
@@ -155,6 +155,18 @@
             </div>
           </template>
         </el-table-column>
+        <!--
+          模型密钥状态：后端只回布尔位（在 SQL 内算好），密钥原值永不进入前端。
+          不挂 v-hasPermi —— 它是「治理属性齐全但密钥为空」这类静默失败的告警，
+          有列表权限的人本就该看见；能否「配置」密钥另由 aig:model:secret 控制。
+        -->
+        <el-table-column label="模型密钥" align="center" width="110">
+          <template #default="scope">
+            <el-tag v-if="scope.row.keyConfigured === true" type="success">已配置</el-tag>
+            <el-tag v-else-if="scope.row.keyConfigured === false" type="warning">未配置</el-tag>
+            <el-tag v-else type="info">未知</el-tag>
+          </template>
+        </el-table-column>
         <!-- 端点与密钥引用：仅 aig:model:secret 授权可见，无权限时该列不渲染 -->
         <el-table-column
           v-hasPermi="['aig:model:secret']"
@@ -184,7 +196,7 @@
             <span>{{ scope.row.validFrom || '-' }} ~ {{ scope.row.validTo || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="150" align="center" class-name="small-padding fixed-width">
+        <el-table-column label="操作" width="190" align="center" class-name="small-padding fixed-width">
           <template #default="scope">
             <el-tooltip content="测试连接" placement="top">
               <el-button
@@ -203,6 +215,15 @@
                 type="primary"
                 icon="Edit"
                 @click="handleGovernance(scope.row)"
+              ></el-button>
+            </el-tooltip>
+            <el-tooltip content="配置模型密钥" placement="top">
+              <el-button
+                v-hasPermi="['aig:model:secret']"
+                link
+                type="primary"
+                icon="Key"
+                @click="handleSecret(scope.row)"
               ></el-button>
             </el-tooltip>
           </template>
@@ -225,7 +246,7 @@
         type="info"
         :closable="false"
         show-icon
-        title="模型主数据由 snail-ai 维护，此处只补齐治理属性；密钥一律只登记引用，禁止粘贴明文密钥。"
+        title="模型主数据由 snail-ai 维护，此处只补齐治理属性；密钥引用只登记引用地址，明文密钥请在「配置模型密钥」中录入。"
       />
       <el-form ref="modelFormRef" :model="form" :rules="rules" label-width="130px">
         <el-form-item label="模型键">
@@ -278,7 +299,7 @@
         <!-- 密钥引用：仅 aig:model:secret 授权可见；无权限时字段不渲染且不参与提交 -->
         <el-form-item v-hasPermi="['aig:model:secret']" label="密钥引用" prop="secretRef">
           <el-input v-model="form.secretRef" placeholder="如 kms://ai/qwen，只填引用不填明文" />
-          <div class="form-tip">仅登记引用地址，后端不会读取 sai_model_config.api_key。</div>
+          <div class="form-tip">仅登记引用地址（受支持 scheme：kms:// vault:// env:// sm:// secret://）；真正的密钥请用「配置模型密钥」录入。</div>
         </el-form-item>
         <el-form-item label="输入限制" prop="inputLimits">
           <el-input v-model="form.inputLimits" placeholder="文本长度/文件类型/图片视频大小/并发" />
@@ -349,7 +370,7 @@
         type="warning"
         :closable="false"
         show-icon
-        title="此处会把模型写入 sai_model_config。部署类型、数据等级上限、可用状态必须同时登记——缺治理属性的模型会被路由引擎排除，永远不会被任何策略选中。密钥只填引用，禁止明文。"
+        title="此处会把模型写入 sai_model_config。部署类型、数据等级上限、可用状态必须同时登记——缺治理属性的模型会被路由引擎排除，永远不会被任何策略选中。密钥引用只填引用地址；明文密钥填「API 密钥」，后端加密后落库。"
       />
       <el-form ref="createFormRef" :model="createForm" :rules="createRules" label-width="130px">
         <el-row :gutter="16">
@@ -421,6 +442,20 @@
         <el-form-item label="接口地址" prop="apiEndpoint">
           <el-input v-model="createForm.apiEndpoint" placeholder="本地部署可留空；非本地部署建议填写" />
         </el-form-item>
+        <!-- 模型密钥：仅 aig:model:secret 授权可见；明文只提交一次，后端加密落库 -->
+        <el-form-item v-hasPermi="['aig:model:secret']" label="API 密钥" prop="apiKey">
+          <el-input
+            v-model="createForm.apiKey"
+            type="password"
+            show-password
+            autocomplete="new-password"
+            placeholder="选填；供应商签发的 API Key"
+          />
+          <div class="form-tip">
+            明文只提交一次，界面永不回显；留空可稍后在列表用「配置模型密钥」单独补录。
+            后端按 snail-ai 的 SM4 口径加密后写入 sai_model_config.api_key。
+          </div>
+        </el-form-item>
         <el-row :gutter="16">
           <el-col :span="12">
             <el-form-item label="部署类型" prop="deploymentType">
@@ -465,7 +500,7 @@
         <!-- 密钥引用：仅 aig:model:secret 授权可见；无权限时字段不渲染且不参与提交 -->
         <el-form-item v-hasPermi="['aig:model:secret']" label="密钥引用" prop="secretRef">
           <el-input v-model="createForm.secretRef" placeholder="如 kms://ai/qwen，只填引用不填明文" />
-          <div class="form-tip">仅登记引用地址，后端不会读取 sai_model_config.api_key。</div>
+          <div class="form-tip">仅登记引用地址（受支持 scheme：kms:// vault:// env:// sm:// secret://）；真正的密钥请用「配置模型密钥」录入。</div>
         </el-form-item>
         <el-form-item label="成本限额" prop="costLimit">
           <el-input v-model="createForm.costLimit" placeholder="单次/单项目/单日预算与限流规则" />
@@ -509,6 +544,56 @@
         <div class="dialog-footer">
           <el-button type="primary" :loading="createSubmitting" @click="submitCreate">确 定</el-button>
           <el-button @click="createVisible = false">取 消</el-button>
+        </div>
+      </template>
+    </el-dialog>
+
+    <!-- 模型密钥：明文只提交一次，后端加密落库；任何界面都不回显密钥 -->
+    <el-dialog v-model="secretDialog.visible" title="配置模型密钥" width="640px" append-to-body>
+      <el-alert
+        class="dialog-alert"
+        type="warning"
+        :closable="false"
+        show-icon
+        title="密钥提交后由后端加密写入，界面永远不会回显；如需更换请直接填新值，如需作废请用「清除密钥」。"
+      />
+      <el-form ref="secretFormRef" :model="secretForm" :rules="secretRules" label-width="110px">
+        <el-form-item label="模型键">
+          <el-input :model-value="currentSecretModel.modelKey" disabled placeholder="来自模型清单" />
+        </el-form-item>
+        <el-form-item label="当前状态">
+          <el-tag v-if="currentSecretModel.keyConfigured === true" type="success">已配置</el-tag>
+          <el-tag v-else-if="currentSecretModel.keyConfigured === false" type="warning">未配置</el-tag>
+          <el-tag v-else type="info">未知</el-tag>
+          <span class="form-tip">（只显示有无，不回显密钥内容）</span>
+        </el-form-item>
+        <el-form-item label="API 密钥" prop="apiKey">
+          <el-input
+            v-model="secretForm.apiKey"
+            type="password"
+            show-password
+            autocomplete="new-password"
+            :placeholder="currentSecretModel.keyConfigured ? '留空则保持不变；填入新值即覆盖' : '请输入供应商签发的 API Key'"
+          />
+          <div class="form-tip">
+            明文仅提交一次，后端按 snail-ai 的 SM4 口径加密后写入 sai_model_config.api_key。
+            未开启 aigov.model-crypto.enabled 时会被拒绝。
+          </div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button type="primary" :loading="secretSubmitting" @click="submitSecret">确 定</el-button>
+          <el-button
+            v-if="currentSecretModel.keyConfigured"
+            type="danger"
+            plain
+            :loading="secretSubmitting"
+            @click="submitClearSecret"
+          >
+            清除密钥
+          </el-button>
+          <el-button @click="secretDialog.visible = false">取 消</el-button>
         </div>
       </template>
     </el-dialog>
@@ -632,6 +717,7 @@ import type {
   AigModelProviderForm,
   AigModelProviderOption,
   AigModelQuery,
+  AigModelSecretForm,
   AigModelTestResult
 } from '@/api/aigov/model/types';
 import {
@@ -643,7 +729,8 @@ import {
   listModelProviders,
   testModelConnection,
   updateModelGovernance,
-  updateModelProvider
+  updateModelProvider,
+  updateModelSecret
 } from '@/api/aigov/model';
 import { useLoading } from '@/hooks/async/useLoading';
 import { useFormDialog } from '@/hooks/dialog/useFormDialog';
@@ -810,6 +897,8 @@ const initCreateForm = (): AigModelCreateForm => ({
   modelType: 'CHAT',
   adapterKey: '',
   apiEndpoint: '',
+  // 明文密钥：只出现在表单里，提交后由后端加密落库，界面永不回显
+  apiKey: '',
   description: '',
   scope: 'GLOBAL',
   isDefault: false,
@@ -867,9 +956,10 @@ const submitCreate = () => {
     const payload: AigModelCreateForm = { ...createForm.value };
     payload.validFrom = validRange.value?.[0];
     payload.validTo = validRange.value?.[1];
-    // 无 aig:model:secret 权限时不下发密钥引用（后端亦会拒绝，双保险）
+    // 无 aig:model:secret 权限时不下发密钥引用与明文密钥（后端亦会拒绝，双保险）
     if (!checkPermi(['aig:model:secret'])) {
       delete payload.secretRef;
+      delete payload.apiKey;
     }
     createSubmitting.value = true;
     try {
@@ -881,6 +971,73 @@ const submitCreate = () => {
       createSubmitting.value = false;
     }
   });
+};
+
+// ---------------------------------------------------------------- 模型密钥
+
+/** 密钥弹窗可见性 */
+const secretDialog = ref({ visible: false });
+const secretFormRef = ref<ElFormInstance>();
+const secretSubmitting = ref(false);
+/** 当前正在配置密钥的模型（只读回显，含 keyConfigured 布尔位） */
+const currentSecretModel = ref<AigModelGovernanceVO>({});
+
+const secretForm = ref<AigModelSecretForm>({ modelId: '', apiKey: '' });
+
+const secretRules = {
+  apiKey: [
+    { max: 500, message: 'API 密钥长度不能超过 500', trigger: 'blur' }
+  ]
+};
+
+/** 打开密钥配置弹窗：明文输入框始终清空，绝不回显已有密钥 */
+const handleSecret = (row: AigModelGovernanceVO) => {
+  currentSecretModel.value = row;
+  secretForm.value = { modelId: row.modelId!, apiKey: '' };
+  secretDialog.value.visible = true;
+};
+
+/** 提交密钥：明文只在这一次请求体里出现，之后后端加密落库 */
+const submitSecret = () => {
+  secretFormRef.value?.validate(async (valid: boolean) => {
+    if (!valid) {
+      return;
+    }
+    if (!secretForm.value.apiKey) {
+      modal.msgWarning('请输入 API 密钥；如需作废已有密钥请用「清除密钥」');
+      return;
+    }
+    secretSubmitting.value = true;
+    try {
+      await updateModelSecret({ modelId: secretForm.value.modelId, apiKey: secretForm.value.apiKey });
+      modal.msgSuccess('密钥已保存（加密落库，界面不再回显）');
+      // 用后即焚：避免明文停留在内存表单里
+      secretForm.value.apiKey = '';
+      secretDialog.value.visible = false;
+      await getList();
+    } finally {
+      secretSubmitting.value = false;
+    }
+  });
+};
+
+/** 清除密钥：显式二次确认，避免误清导致模型立刻不可用 */
+const submitClearSecret = async () => {
+  try {
+    await modal.confirm('清除后该模型将无法再向供应商发起调用，直到重新配置密钥。确定清除？');
+  } catch {
+    return;
+  }
+  secretSubmitting.value = true;
+  try {
+    await updateModelSecret({ modelId: secretForm.value.modelId, clearKey: true });
+    modal.msgSuccess('密钥已清除');
+    secretForm.value.apiKey = '';
+    secretDialog.value.visible = false;
+    await getList();
+  } finally {
+    secretSubmitting.value = false;
+  }
 };
 
 // ---------------------------------------------------------------- 供应商管理

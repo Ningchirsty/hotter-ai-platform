@@ -7,22 +7,36 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     <!--
       模型/供应商主数据写入口径。
       ⚠️ 安全约束：
-        1. 写入路径列全部显式白名单，绝不出现 api_key——治理层从不写该列，
-           密钥只登记引用（aig_model_governance.secret_ref）；
-        2. 模型主数据只有 INSERT 与只读校验，没有 UPDATE / DELETE；
-        3. 唯一读 api_key 的是 selectTestTarget（连通性测试需要它发请求），
+        1. 除 api_key 外，写入路径的列全部显式白名单；
+        2. api_key 是唯一允许写的敏感列，且只允许 updateModelApiKey 单列更新，
+           绝不与其它列混在一次 UPDATE 里。写入值必须是**密文**——由
+           AigModelSecretCipher 按 snail-ai 的 SM4 口径产出；明文落库会让
+           snail-ai 运行时解密失败，模型静默不可用；
+        3. 模型主数据的其它列只有 INSERT 与只读校验，没有 UPDATE / DELETE；
+        4. 读 api_key 的只有 selectTestTarget（连通性测试需要它发请求），
            结果只进服务端内部 VO，禁止出现在任何对外响应或日志中。
     -->
     <insert id="insertModel" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
         insert into sai_model_config
             (provider_id, model_name, model_key, model_type, adapter_key,
              description, api_endpoint, scope, is_default, is_enabled,
-             created_dt, updated_dt)
+             api_key, created_dt, updated_dt)
         values
             (#{providerId}, #{modelName}, #{modelKey}, #{modelType}, #{adapterKey},
              #{description}, #{apiEndpoint}, #{scope}, #{isDefault}, #{isEnabled},
-             now(), now())
+             #{apiKey,jdbcType=VARCHAR}, now(), now())
     </insert>
+
+    <!--
+      写入/清除模型密钥：**只更新 api_key 一列**。
+      apiKey 传 null 表示清除（CryptoHelper 对空密文返回空串，snail-ai 侧视为未配置）。
+    -->
+    <update id="updateModelApiKey">
+        update sai_model_config
+        set api_key    = #{apiKey,jdbcType=VARCHAR},
+            updated_dt = now()
+        where id = #{modelId}
+    </update>
 
     <select id="countByModelKey" resultType="int">
         select count(1) from sai_model_config where model_key = #{modelKey}

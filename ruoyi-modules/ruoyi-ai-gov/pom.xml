@@ -23,6 +23,13 @@
             <artifactId>ruoyi-common-core</artifactId>
         </dependency>
 
+        <!-- SM4 加解密：治理层写入模型密钥时必须产出与 snail-ai 一致的密文。
+             显式声明而非依赖传递，避免上游依赖调整后编译期才暴露（版本由 hutool-bom 管理）。 -->
+        <dependency>
+            <groupId>cn.hutool</groupId>
+            <artifactId>hutool-crypto</artifactId>
+        </dependency>
+
         <!-- api模块 -->
         <dependency>
             <groupId>org.dromara</groupId>
