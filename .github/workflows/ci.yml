@@ -42,14 +42,15 @@ jobs:
       - name: Verify tests actually ran
         run: python3 script/ci/check-test-results.py
 
-      # 图像创作模块的契约/模板一致性测试（Node 内置 runner，无第三方依赖）。
+      # 工作流契约/模板一致性测试（Node 内置 runner，无第三方依赖）。
       # 校验：模板存在、字节是规范格式、SHA-256 与契约一致、mapping 与模板节点三方对齐、
-      # 模板里不残留样例提示词。此前视频模块的同类测试**没有接进 CI**（只在 README 里要求人工跑），
-      # 结果契约状态与测试断言长期不一致；这里不再重复那个错误。
-      # 注：node --test script/video/workflows/import-h3.test.mjs 目前是红的（契约已标 PUBLISHED
-      # 而断言仍写 DRAFT），属于视频模块的历史不一致，非本次改动，故未纳入本步骤。
-      - name: Verify image workflow contracts
-        run: node --test script/image/workflows/image-contracts.test.mjs
+      # 模板里不残留样例提示词。
+      # 此前这些测试**没有接进 CI**（只在 README 里要求人工跑），结果视频契约的状态与断言
+      # 长期不一致却无人发现；本次把两个模块都纳入，避免同类问题再次静默。
+      - name: Verify workflow contracts
+        run: |
+          node --test script/video/workflows/import-h3.test.mjs
+          node --test script/image/workflows/image-contracts.test.mjs
 
       - name: Upload test reports
         if: ${{ always() && github.event_name == 'workflow_dispatch' }}

@@ -167,6 +167,7 @@ JDK 自带 ImageIO 足够，因此镜像里不必再加任何二进制。输出�
 | `script/sql/ry_image_workflow.sql` | `image_workflow_version`（契约镜像表） |
 | `script/sql/ry_image_menu.sql` | 菜单 `920002 图像创作`（C，`image/index`，`image:creation:view`）+ `920003 提交图像任务`（F，`image:creation:submit`） |
 | `script/sql/postgres/postgres_ry_image_menu.sql`、`oracle/oracle_...`、`sqlserver/sqlserver_...` | 菜单的三种方言变体 |
+| `script/sql/ry_image_menu_precheck.sql` | **执行前预检（只读）**：菜单 ID 是否占用、授权推导数据源、权限标识冲突、AI工具分类是否存在、审计字段是否存在、`sys_menu` 列清单、图像业务表是否已存在、菜单总数基线 |
 
 两处与视频模块的差异：
 1. 列清单改为 `size_label` / `strength_label` / `output_width` / `output_height` / `output_has_alpha`
@@ -205,7 +206,8 @@ JDK 自带 ImageIO 足够，因此镜像里不必再加任何二进制。输出�
   ```
   （上下文本就是仓库根；`script/` 未被 `.dockerignore` 排除，但其中的 `*.md` 会被忽略，属既有现象。）
 - `.github/workflows/ci.yml`：
-  - 新增步骤 `Verify image workflow contracts`（`node --test ...`）；
+  - 新增步骤 `Verify workflow contracts`：**同时**跑视频与图像两个契约测试。过去这些测试没接进 CI，
+    于是视频侧三处断言与契约长期漂移却无人发现（见 §8.4）；
   - 镜像冒烟新增断言：图像契约 JSON + 4 个模板文件存在。
 - `.gitattributes` 新增两条（**这条不改就会被校验和反咬**）：
   ```
@@ -227,7 +229,9 @@ JDK 自带 ImageIO 足够，因此镜像里不必再加任何二进制。输出�
 |---|---|---|
 | 后端编译 | `mvnw -pl ruoyi-modules/ruoyi-ai -am -Dmaven.test.skip=true compile` | BUILD SUCCESS |
 | 图像模块单测 | `mvnw ... "-Dtest=org.dromara.ai.image.*Test" test` | **28/28 通过**（preparer 11 / orchestrator 9 / probe 5 / dispatch 3） |
-| 契约测试 | `node --test script/image/workflows/image-contracts.test.mjs` | **12/12 通过** |
+| `ruoyi-ai` 全模块单测 | `mvnw -pl ruoyi-modules/ruoyi-ai -am "-Dmaven.test.skip=false" "-Dtest.groups=!exclude" test` | **142/142 通过**（含视频模块；修掉 exportGraph 的 Windows 路径问题前是 141/142） |
+| 契约测试（视频） | `node --test script/video/workflows/import-h3.test.mjs` | **3/3 通过**（修复前 3/3 失败，见 §8.4） |
+| 契约测试（图像） | `node --test script/image/workflows/image-contracts.test.mjs` | **12/12 通过** |
 | 契约 CLI | `node script/image/workflows/image-contracts.mjs` | 4 条全部 OK |
 | 前端 lint | `pnpm lint`（oxlint src） | 0 问题（exit 0） |
 | 前端构建 | `pnpm build:prod` | 成功；产出 `image-*.js` / `image-*.css` 分块 |
@@ -244,18 +248,43 @@ JDK 自带 ImageIO 足够，因此镜像里不必再加任何二进制。输出�
 3. **工作流仍为 DRAFT**：即使部署完成，页面提交按钮也会**禁用并显示原因**——这是有意设计
    （模板导入 ≠ 服务已联通）。要真正可提交，需要业务批准后把契约里的 `status` 提升为 `TESTING`/`PUBLISHED`，
    并同步 `meta.status` 与 node 测试断言（视频模块正是在这里留下了不一致，见下条）。
-4. **视频模块的 node 测试是红的（历史问题，本次未修）**：
-   `node --test script/video/workflows/import-h3.test.mjs` → 3/3 失败，断言写 `status === 'DRAFT'`
-   而契约里三个 H3 已是 `PUBLISHED`。契约/文档/测试三者不一致，属于既有状态（工作树干净）。
-   我**没有**擅自改动视频模块；CI 里也只接入图像模块的 node 测试，避免把一个历史红灯变成阻断。
-5. **`H3TemplatePreparerTest.exportGraph` 在 Windows 上必然失败**：它写 `/tmp/graph.json`，
-   在 Windows 上路径变成 `\tmp\graph.json` 导致 `NoSuchFileException`。这是**环境差异，非缺陷**，
-   Linux CI 正常。因此本机全量 `mvnw verify` 不会全绿（该用例是唯一失败项）。
-6. **ComfyUI 侧的 cuDNN 补丁未固化**：`custom_nodes/disable_cudnn_sdpa.py`（解决 A100 + cuDNN 9.19 上
-   `NoSuchFileException`… 准确说是 `cuDNN Frontend error: No valid execution plans built`）是**环境侧**
-   改动，不在本仓库，也没有写进任何镜像。换 ComfyUI 主机需要另行处理。
-7. **并发/多卡**：图像模块的执行器默认并发 1、无 worker pool、无 VRAM 闸门（视频模块有）。
+4. **视频模块 node 测试与 Windows 路径问题**：已在本轮一并修掉，见 §8.4（不再是未验证项）。
+5. **ComfyUI 侧的 cuDNN 补丁未固化**：`custom_nodes/disable_cudnn_sdpa.py`（解决 A100 + cuDNN 9.19 上
+   `cuDNN Frontend error: No valid execution plans built`）是**环境侧**改动，不在本仓库、也没写进任何镜像。
+   换 ComfyUI 主机需要另行处理。
+6. **并发/多卡**：图像模块的执行器默认并发 1、无 worker pool、无 VRAM 闸门（视频模块有）。
    多卡调度与并发行为**未验证**。
+
+---
+
+## 8.3 遗留项（与视频模块相关，未改动）
+
+**契约状态是业务决定，我没有替业务做**：视频契约里三个 H3 条目当前是 `PUBLISHED`，而
+`meta.status` 是 `DRAFT`、`docs/video-module-implementation-handoff.md` §8.2 第 4 条把「提升为
+PUBLISHED」列为**待业务批准**、§8.3 又说明生产端到端尚未验证。
+也就是说这份契约内部就自相矛盾（`meta.status=DRAFT` vs 条目 `PUBLISHED`）。
+
+因此我**没有**改动任何一方的状态，只把那条脆弱的硬编码断言换成了生命周期不变量
+（合法取值 + 「宣称可用就必须带真实校验值与运行期字段」）。要落定这件事，需业务二选一：
+
+- **维持 DRAFT**（更保守，符合文档现状）：把契约三个 H3 的 `status` 与 `meta.status` 一起改回 `DRAFT`，
+  并同步 `frontend/src/views/video/modules.ts` 的说明——三处必须一致，否则提交按钮的可用性会与文档说法打架；
+- **确认可以 PUBLISHED**：把 `meta.status` 改成 `PUBLISHED`，并补上业务批准依据（生产提交按钮将因此放开）。
+
+---
+
+## 8.4 本轮顺手修复的历史问题（视频模块，均为断言/环境问题，运行行为零改动）
+
+| # | 问题 | 现象 | 修法 | 证据 |
+|---|---|---|---|---|
+| 1 | `import-h3.test.mjs` 状态断言漂移 | `assert.equal(binding.status, 'DRAFT')`，而契约已是 `PUBLISHED` → 3/3 红 | 改为断言生命周期不变量（合法取值 + 宣称可用必须有真实 checksum / maxDurationSeconds / perf） | 3/3 通过 |
+| 2 | 同一文件 `fixedFieldValidation` 全等断言 | 契约后来补了 `supportedTiers`，`deepEqual` 失败 | 改为分别断言 `tier`/`dur`，并对 `supportedTiers` 断言「存在则必须包含 tier」 | 同上 |
+| 3 | 同一文件截断关系断言 | `sourceDurationSeconds > maxDurationSeconds`，而后者已从 5 调成 20（API 上限）→ 恒假 | 改为断言真实截断语义：原生时长 > **交付档位时长**，且 `maxDurationSeconds ≥ 档位时长` | 同上 |
+| 4 | `H3TemplatePreparerTest.exportGraph` 在 Windows 必失败 | 硬编码 `/tmp/graph.json`，Windows 解析成 `\tmp\graph.json` → `NoSuchFileException` | 改用 `System.getProperty("java.io.tmpdir")`（Linux 仍是 `/tmp`，行为不变） | `ruoyi-ai` 模块测试 **142/142 通过**（原 141/142） |
+
+> 第 1~3 条是同一类问题：**契约演进了，测试没跟着走，而测试又没进 CI，于是没人发现**。
+> 这也是为什么本次把两个模块的契约测试一起接进 CI。
+
 
 ---
 
