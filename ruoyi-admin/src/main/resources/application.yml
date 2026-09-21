@@ -142,15 +142,18 @@ mybatis-plus:
       idType: ASSIGN_ID
 
 # 数据加密
+# 招聘与人才管理模块的「电话/邮箱密文」与「背调明细密文」依赖本开关（设计文档 §9.4、§15.1、§15.3）；
+# 关闭时 @EncryptField 为空操作，敏感字段会明文落库。
 mybatis-encryptor:
   # 是否开启加密
-  enable: false
-  # 默认加密算法
-  algorithm: BASE64
+  enable: true
+  # 默认加密算法：注意 BASE64 只是编码、不是加密，密文场景必须使用对称加密算法
+  algorithm: AES
   # 编码方式 BASE64/HEX。默认BASE64
   encode: BASE64
-  # 安全秘钥 对称算法的秘钥 如：AES，SM4
-  password:
+  # 安全秘钥 对称算法的秘钥（AES 要求 16/24/32 字节）
+  # 由部署环境通过 HR_ENCRYPT_KEY 注入，禁止写入仓库；缺失时会在首次加解密时报错（fail-closed，不会静默存明文）
+  password: ${HR_ENCRYPT_KEY:}
   # 公私钥 非对称算法的公私钥 如：SM2，RSA
   publicKey:
   privateKey:
