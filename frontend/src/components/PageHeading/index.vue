@@ -44,7 +44,7 @@ const props = withDefaults(
     admin?: boolean;
     adminLabel?: string;
     /** 所属模块，决定标题行下方展示哪组模块内标签页 */
-    module?: '' | 'talent' | 'aigov' | 'content';
+    module?: '' | 'hrtalent' | 'aigov' | 'content';
   }>(),
   {
     subtitle: '',
@@ -59,12 +59,18 @@ const router = useRouter();
 
 /** 模块内页面顺序与真实路由（与数据库菜单 path 保持一致；隐藏页不列入） */
 const MODULE_TABS: Record<string, { label: string; path: string }[]> = {
-  talent: [
-    { label: '人才档案', path: '/business/talent/profile' },
-    { label: '简历与附件', path: '/business/talent/attachment' },
-    { label: '重复人才预警', path: '/business/talent/duplicate' },
-    { label: 'Excel导出中心', path: '/business/talent/export' },
-    { label: '敏感操作审计', path: '/business/talent/audit' }
+  // 招聘与人才管理一体化系统：一级目录 招聘管理 path=recruit，
+  // 人才管理为二级目录 path=talent（无 component，后端下发 ParentView），
+  // 故人才相关页面路由为 /recruit/talent/*。路径与 sys_menu.path 逐字一致。
+  hrtalent: [
+    { label: '管理驾驶舱', path: '/recruit/dashboard' },
+    { label: '招聘需求', path: '/recruit/demand' },
+    { label: '公司月度计划', path: '/recruit/plan' },
+    { label: '候选人跟进', path: '/recruit/application' },
+    { label: '面试管理', path: '/recruit/interview' },
+    { label: '人才档案', path: '/recruit/talent/profile' },
+    { label: '人才池与分组', path: '/recruit/talent/pool' },
+    { label: '重复人才治理', path: '/recruit/talent/duplicate' }
   ],
   aigov: [
     { label: 'AI能力目录', path: '/admin-center/ai-gov/capability' },
