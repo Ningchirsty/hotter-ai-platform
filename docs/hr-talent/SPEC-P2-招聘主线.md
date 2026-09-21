@@ -3,7 +3,7 @@
 > 设计依据：`C:\Users\hehuo\.dsh\attachments\v1\files\5d\5d15789ebaea7cb46a181473a252355e27766faa851281a1a2415c66f569853a\招聘与人才管理一体化系统详细设计方案_RuoYi-Vue-Plus-v6.0.0.md`
 > （下称「设计文档」；**该文件在 git 仓库之外，只读参考**）
 >
-> 前置：`docs/hr-talent/SPEC-P1-地基.md`（模块坐标、36 张表、菜单角色权限、通用约定全部沿用，不得重复定义）
+> 前置：`docs/hr-talent/SPEC-P1-地基.md`（模块坐标、业务表、菜单角色权限、通用约定全部沿用，不得重复定义）
 >
 > 仓库 `D:\DeepseekHarness\hotter-ai-platform`，分支 `feature/hr-talent`
 

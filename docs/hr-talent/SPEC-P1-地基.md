@@ -63,6 +63,7 @@ SQL 文件命名（放入 `script/sql/`）：
 `hr_recruit_channel_survey`、`hr_recruit_peer_company`
 
 > 另需 `hr_recruit_import_batch`、`hr_recruit_import_error`、`hr_recruit_sensitive_audit` —— 共 **20 张**。
+> **P3 追加**：`hr_recruit_plan_item_status_log`（状态变更日志，用户裁定补入）—— 共 **21 张**。
 
 **人才主数据表（`hr_talent_`，共 15 张）**
 
@@ -71,7 +72,8 @@ SQL 文件命名（放入 `script/sql/`）：
 `hr_talent_profile_tag`、`hr_talent_follow_up`、`hr_talent_scope_grant`、`hr_talent_duplicate_case`、
 `hr_talent_merge_log`、`hr_talent_parse_task`、`hr_talent_parse_result`
 
-> 共 **16 张**。合计 **36 张**。以设计文档 §9.2 表格的字段为准，字段缺失或多出都算偏离。
+> 共 **16 张**。合计 **37 张**（P1 为 36 张，P3 追加 `hr_recruit_plan_item_status_log`）。
+> 以设计文档 §9.2 表格的字段为准，字段缺失或多出都算偏离。
 
 **每个字段的核心字段名必须与 §9.2 表格逐字一致**（例如 `hr_recruit_plan_item` 必须有
 `source_type`/`plan_qty`/`credited_arrival_qty`/`remaining_qty`/`control_status`/`execution_status`/
