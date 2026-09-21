@@ -8,6 +8,10 @@
 --   设计文档 §5.2 权限标识建议（权限字符串权威来源）
 --   设计文档 §6   角色与数据权限（9 个角色及默认数据范围）
 --   设计文档 §10  数据字典设计（23 组字典的类型与编码值）
+--   本次补齐 8 组状态/结果/原因字典（recruit_job_status / recruit_rollover_result /
+--   recruit_background_status / recruit_background_failure_reason /
+--   recruit_interview_status / recruit_interview_method / recruit_offer_result /
+--   recruit_stage_reason_code），字典组 23 → 31
 --   设计文档 §21.4 前端目录建议（component 路径 hrtalent/... 的来源）
 --
 -- 文件性质：
@@ -27,7 +31,7 @@
 --     1766000000000000200 ~ …0299      人才管理二级目录及其中菜单
 --     1766000000000001000 ~ …3999      按钮
 --     1766100000000000001 ~ …009       角色
---     1766200000000000001 ~ …023       字典类型
+--     1766200000000000001 ~ …031       字典类型
 --     1766300000000000001 ~ …           字典数据
 --   已核对既有占用：ry_vue.sql=1761x/1762x、ry_workflow.sql=1762x、
 --   aig_ai_gov*=1763x、cp_content*=1764x/1765x、zongxiang*=1764x → 1766… 无冲突。
@@ -39,7 +43,7 @@
 -- ----------------------------------------------------------------------------
 
 -- ----------------------------
--- 一、字典类型（23 组，设计文档 §10）
+-- 一、字典类型（31 组 = 设计文档 §10 的 23 组 + 本次补齐的 8 组）
 -- column: dict_id, dict_name, dict_type, create_dept, create_by, create_time,
 --         update_by, update_time, remark
 -- ----------------------------
@@ -67,8 +71,33 @@ insert into sys_dict_type values(1766200000000000021, '简历解析状态',     
 insert into sys_dict_type values(1766200000000000022, '疑似重复处理状态', 'talent_duplicate_status',         1761000000000000103, 1761100000000000001, sysdate(), null, null, 'pending/merged/not_same/ignored');
 insert into sys_dict_type values(1766200000000000023, '人才联系结果',     'talent_contact_result',           1761000000000000103, 1761100000000000001, sysdate(), null, null, 'connected/no_answer/refused/interested/follow_up_later/invalid');
 
+-- 本次补齐的 6 组字典（原 23 组 → 29 组，ID 顺延 …024~…029）：
+--   24. 岗位执行项状态 recruit_job_status（来源 enums/JobStatusEnum.java）
+--   25. 月度结转执行结果 recruit_rollover_result（来源 PlanRolloverDomainService.RESULT_* 常量）
+--   26. 背调状态 recruit_background_status（来源 enums/BackgroundStatusEnum.java）
+--   27. 背调未通过原因分类 recruit_background_failure_reason
+--       （设计文档 §10 无此组，按 §8.7「未通过原因分类」新增）
+insert into sys_dict_type values(1766200000000000024, '岗位执行项状态',     'recruit_job_status',               1761000000000000103, 1761100000000000001, sysdate(), null, null, 'draft/open/paused/closed');
+insert into sys_dict_type values(1766200000000000025, '月度结转执行结果',   'recruit_rollover_result',          1761000000000000103, 1761100000000000001, sysdate(), null, null, 'processing/success/failed/skipped');
+insert into sys_dict_type values(1766200000000000026, '背调状态',           'recruit_background_status',        1761000000000000103, 1761100000000000001, sysdate(), null, null, 'draft/checking/finished/cancelled');
+insert into sys_dict_type values(1766200000000000027, '背调未通过原因分类', 'recruit_background_failure_reason', 1761000000000000103, 1761100000000000001, sysdate(), null, null, 'info_mismatch/work_experience/education/position_duty/performance/legal_record/other');
+--   28. 面试状态 recruit_interview_status（来源 hr_recruit_interview.status 建表注释 +
+--       RecruitInterviewServiceImpl.STATUS_* 私有常量）
+--   29. 面试方式 recruit_interview_method（来源 hr_recruit_interview.method 建表注释）
+insert into sys_dict_type values(1766200000000000028, '面试状态',           'recruit_interview_status',         1761000000000000103, 1761100000000000001, sysdate(), null, null, 'pending/scheduled/finished/cancelled/rescheduled');
+insert into sys_dict_type values(1766200000000000029, '面试方式',           'recruit_interview_method',         1761000000000000103, 1761100000000000001, sysdate(), null, null, 'onsite/video/phone');
+
+-- 本次补齐的另外 2 组字典（原 29 组 → 31 组，ID 顺延 …030~…031）：
+--   30. 邀约结果 recruit_offer_result（来源 hr_recruit_application.offer_result 建表注释
+--       「accepted/rejected等稳定编码，设计文档 §7.2」+ §14 邀约接受率统计口径）
+--   31. 阶段变更原因分类 recruit_stage_reason_code（来源 hr_recruit_stage_log.reason_code
+--       建表注释「原因编码（字典编码，不存中文）」+ §8.5「原因分类」）。
+--       *** 设计文档未枚举具体编码，下列 8 个编码为本次新定义。***
+insert into sys_dict_type values(1766200000000000030, '邀约结果',            'recruit_offer_result',                1761000000000000103, 1761100000000000001, sysdate(), null, null, 'pending/accepted/rejected');
+insert into sys_dict_type values(1766200000000000031, '阶段变更原因分类',    'recruit_stage_reason_code',           1761000000000000103, 1761100000000000001, sysdate(), null, null, 'skill_mismatch/experience_mismatch/salary_mismatch/education_mismatch/communication/candidate_declined/position_closed/other');
+
 -- ----------------------------
--- 二、字典数据（设计文档 §10 全部编码值）
+-- 二、字典数据（设计文档 §10 全部编码值 + 本次补齐的 8 组）
 -- column: dict_code, dict_sort, dict_label, dict_value, dict_type, css_class, list_class,
 --         is_default, create_dept, create_by, create_time, update_by, update_time, remark
 -- ----------------------------
@@ -233,6 +262,65 @@ insert into sys_dict_data values(1766300000000000224, 4, '有意向',     'inter
 insert into sys_dict_data values(1766300000000000225, 5, '稍后跟进',   'follow_up_later', 'talent_contact_result', '', 'info',    'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '约定后续时间再联系');
 insert into sys_dict_data values(1766300000000000226, 6, '联系方式无效', 'invalid',       'talent_contact_result', '', 'danger',  'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '号码或邮箱已失效');
 
+-- 24. 岗位执行项状态 recruit_job_status
+insert into sys_dict_data values(1766300000000000227, 1, '草稿',   'draft',  'recruit_job_status', '', 'info',    'Y', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '岗位草稿，尚未对外发布');
+insert into sys_dict_data values(1766300000000000228, 2, '招聘中', 'open',   'recruit_job_status', '', 'success', 'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '岗位已发布，可接收应聘记录');
+insert into sys_dict_data values(1766300000000000229, 3, '已暂停', 'paused', 'recruit_job_status', '', 'warning', 'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '暂停招聘，可恢复为招聘中');
+insert into sys_dict_data values(1766300000000000230, 4, '已关闭', 'closed', 'recruit_job_status', '', 'danger',  'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '结束招聘，仅可通过重新开放回到招聘中');
+
+-- 25. 月度结转执行结果 recruit_rollover_result
+insert into sys_dict_data values(1766300000000000231, 1, '处理中', 'processing', 'recruit_rollover_result', '', 'primary', 'Y', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '结转执行中的占位记录');
+insert into sys_dict_data values(1766300000000000232, 2, '成功',   'success',    'recruit_rollover_result', '', 'success', 'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '结转任务已正常完成');
+insert into sys_dict_data values(1766300000000000233, 3, '失败',   'failed',     'recruit_rollover_result', '', 'danger',  'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '执行失败并记录原因，可安全重试');
+insert into sys_dict_data values(1766300000000000234, 4, '跳过',   'skipped',    'recruit_rollover_result', '', 'info',    'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '不落库，仅出现在执行明细中');
+
+-- 26. 背调状态 recruit_background_status
+insert into sys_dict_data values(1766300000000000235, 1, '草稿',   'draft',     'recruit_background_status', '', 'info',    'Y', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '已登记但尚未开始核查');
+insert into sys_dict_data values(1766300000000000236, 2, '核查中', 'checking',  'recruit_background_status', '', 'warning', 'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '背调核查进行中');
+insert into sys_dict_data values(1766300000000000237, 3, '已完成', 'finished',  'recruit_background_status', '', 'success', 'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '已回执背调结论');
+insert into sys_dict_data values(1766300000000000238, 4, '已取消', 'cancelled', 'recruit_background_status', '', 'danger',  'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '人工取消，或因被新背调替代而失效');
+
+-- 27. 背调未通过原因分类 recruit_background_failure_reason
+--     设计文档 §10 无此组，按 §8.7「未通过原因分类」新增
+insert into sys_dict_data values(1766300000000000239, 1, '信息不符',         'info_mismatch',   'recruit_background_failure_reason', '', 'warning', 'Y', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '候选人提供的基础信息与核查结果不一致');
+insert into sys_dict_data values(1766300000000000240, 2, '工作经历不一致',   'work_experience', 'recruit_background_failure_reason', '', 'warning', 'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '任职时间、单位或岗位与事实不符');
+insert into sys_dict_data values(1766300000000000241, 3, '学历或证书不一致', 'education',       'recruit_background_failure_reason', '', 'warning', 'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '学历学位或资质证书无法核实');
+insert into sys_dict_data values(1766300000000000242, 4, '职位职责不一致',   'position_duty',   'recruit_background_failure_reason', '', 'warning', 'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '职位名称或职责范围与事实不符');
+insert into sys_dict_data values(1766300000000000243, 5, '业绩表现不一致',   'performance',     'recruit_background_failure_reason', '', 'warning', 'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '业绩或绩效记录与事实不符');
+insert into sys_dict_data values(1766300000000000244, 6, '法律或信用记录',   'legal_record',    'recruit_background_failure_reason', '', 'danger',  'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '存在法律纠纷、失信或不良信用记录');
+insert into sys_dict_data values(1766300000000000245, 7, '其他',             'other',           'recruit_background_failure_reason', '', 'info',    'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '不属于上述分类的其他未通过原因');
+
+-- 28. 面试状态 recruit_interview_status
+insert into sys_dict_data values(1766300000000000246, 1, '待安排', 'pending',     'recruit_interview_status', '', 'info',    'Y', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '面试已创建但时间未定');
+insert into sys_dict_data values(1766300000000000247, 2, '已安排', 'scheduled',   'recruit_interview_status', '', 'primary', 'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '面试时间与方式已确定');
+insert into sys_dict_data values(1766300000000000248, 3, '已完成', 'finished',    'recruit_interview_status', '', 'success', 'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '面试已结束并回执');
+insert into sys_dict_data values(1766300000000000249, 4, '已取消', 'cancelled',   'recruit_interview_status', '', 'danger',  'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '面试被取消，保留历史记录');
+insert into sys_dict_data values(1766300000000000250, 5, '已改期', 'rescheduled', 'recruit_interview_status', '', 'warning', 'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '原安排被改期，作为历史记录保留');
+
+-- 29. 面试方式 recruit_interview_method
+insert into sys_dict_data values(1766300000000000251, 1, '现场', 'onsite', 'recruit_interview_method', '', 'primary', 'Y', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '线下面试，地点填写在 location');
+insert into sys_dict_data values(1766300000000000252, 2, '视频', 'video',  'recruit_interview_method', '', 'success', 'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '线上视频面试，会议链接填写在 location');
+insert into sys_dict_data values(1766300000000000253, 3, '电话', 'phone',  'recruit_interview_method', '', 'info',    'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '电话面试，location 可为空');
+
+-- 30. 邀约结果 recruit_offer_result
+--     hr_recruit_application.offer_result 建表注释「accepted/rejected等稳定编码，设计文档 §7.2」；
+--     §14「邀约接受率＝接受邀约人数÷有效邀约人数」按 accepted 统计。
+insert into sys_dict_data values(1766300000000000254, 1, '待反馈',        'pending',   'recruit_offer_result', '',     'info',    'Y', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '已发出邀约，候选人尚未答复');
+insert into sys_dict_data values(1766300000000000255, 2, '已接受',        'accepted',  'recruit_offer_result', '',     'success', 'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '候选人接受邀约，计入邀约接受率分子');
+insert into sys_dict_data values(1766300000000000256, 3, '已拒绝',        'rejected',  'recruit_offer_result', '',     'danger',  'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '候选人拒绝邀约');
+
+-- 31. 阶段变更原因分类 recruit_stage_reason_code
+--     hr_recruit_stage_log.reason_code 建表注释「原因编码（字典编码，不存中文）」+ §8.5「原因分类」；
+--     *** 设计文档未枚举具体编码，下列 8 个编码为本次新定义。***
+insert into sys_dict_data values(1766300000000000257, 1, '技能不匹配',          'skill_mismatch',        'recruit_stage_reason_code', '', 'warning', 'Y', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '候选人所具备技能与岗位要求不匹配');
+insert into sys_dict_data values(1766300000000000258, 2, '经验年限不符',        'experience_mismatch',   'recruit_stage_reason_code', '', 'info',    'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '相关工作年限低于岗位要求');
+insert into sys_dict_data values(1766300000000000259, 3, '薪资不符',            'salary_mismatch',       'recruit_stage_reason_code', '', 'info',    'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '期望薪资与岗位预算区间不一致');
+insert into sys_dict_data values(1766300000000000260, 4, '学历不符',            'education_mismatch',    'recruit_stage_reason_code', '', 'info',    'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '学历或专业不满足岗位要求');
+insert into sys_dict_data values(1766300000000000261, 5, '沟通表现不符',        'communication',         'recruit_stage_reason_code', '', 'info',    'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '沟通表达或职业素养不符合要求');
+insert into sys_dict_data values(1766300000000000262, 6, '候选人主动放弃',      'candidate_declined',    'recruit_stage_reason_code', '', 'info',    'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '候选人主动退出流程（区别于企业淘汰）');
+insert into sys_dict_data values(1766300000000000263, 7, '岗位已关闭',          'position_closed',       'recruit_stage_reason_code', '', 'info',    'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '岗位暂停或关闭导致流程终止');
+insert into sys_dict_data values(1766300000000000264, 8, '其他',                'other',                 'recruit_stage_reason_code', '', 'info',    'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '不属于上述分类的其他原因');
+
 -- ----------------------------
 -- 三、角色（9 个，设计文档 §6）
 -- column: role_id, role_name, role_key, role_sort, data_scope, menu_check_strictly,
@@ -356,6 +444,13 @@ insert into sys_menu values(1766000000000001505, '候选人转移', 176600000000
 insert into sys_menu values(1766000000000001506, '阶段流转',   1766000000000000106, 6, '', '', '', 'N', 'Y', 'F', '0', '0', 'recruit:candidate:stage',      '#', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '');
 insert into sys_menu values(1766000000000001507, '电话明文查看', 1766000000000000106, 7, '', '', '', 'N', 'Y', 'F', '0', '0', 'recruit:candidate:phone-view', '#', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '资源级鉴权：查看电话明文并写审计');
 insert into sys_menu values(1766000000000001508, '候选人导出', 1766000000000000106, 8, '', '', '', 'N', 'Y', 'F', '0', '0', 'recruit:candidate:export',     '#', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '');
+
+-- ---- 按钮：候选人附件 recruit:attachment:upload/preview/download/delete ----
+-- 挂载在「候选人跟进」下：设计文档 §12 候选人详情包含附件，§5.2 明确附件四权限
+insert into sys_menu values(1766000000000001509, '附件上传', 1766000000000000106, 9, '', '', '', 'N', 'Y', 'F', '0', '0', 'recruit:attachment:upload',   '#', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '');
+insert into sys_menu values(1766000000000001510, '附件预览', 1766000000000000106, 10, '', '', '', 'N', 'Y', 'F', '0', '0', 'recruit:attachment:preview',  '#', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '资源级鉴权：受控预览并写敏感操作审计');
+insert into sys_menu values(1766000000000001511, '附件下载', 1766000000000000106, 11, '', '', '', 'N', 'Y', 'F', '0', '0', 'recruit:attachment:download', '#', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '资源级鉴权：受控下载并写敏感操作审计');
+insert into sys_menu values(1766000000000001512, '附件删除', 1766000000000000106, 12, '', '', '', 'N', 'Y', 'F', '0', '0', 'recruit:attachment:delete',   '#', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '逻辑删除：集团招聘管理员亦不得物理删除');
 
 -- ---- 按钮：面试管理 recruit:interview:list/schedule/feedback/cancel ----
 insert into sys_menu values(1766000000000001601, '面试查询', 1766000000000000107, 1, '', '', '', 'N', 'Y', 'F', '0', '0', 'recruit:interview:list',     '#', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '');
@@ -497,6 +592,11 @@ insert into sys_role_menu values (1766100000000000002, 1766000000000001505);
 insert into sys_role_menu values (1766100000000000002, 1766000000000001506);
 insert into sys_role_menu values (1766100000000000002, 1766000000000001507);
 insert into sys_role_menu values (1766100000000000002, 1766000000000001508);
+-- 候选人附件四权限：与候选人的 list/query/add/edit 授权角色保持一致（集团招聘管理员/公司招聘负责人/招聘专员）
+insert into sys_role_menu values (1766100000000000002, 1766000000000001509);
+insert into sys_role_menu values (1766100000000000002, 1766000000000001510);
+insert into sys_role_menu values (1766100000000000002, 1766000000000001511);
+insert into sys_role_menu values (1766100000000000002, 1766000000000001512);
 insert into sys_role_menu values (1766100000000000002, 1766000000000000107);
 insert into sys_role_menu values (1766100000000000002, 1766000000000001601);
 insert into sys_role_menu values (1766100000000000002, 1766000000000001602);
@@ -609,6 +709,11 @@ insert into sys_role_menu values (1766100000000000004, 1766000000000001504);
 insert into sys_role_menu values (1766100000000000004, 1766000000000001505);
 insert into sys_role_menu values (1766100000000000004, 1766000000000001506);
 insert into sys_role_menu values (1766100000000000004, 1766000000000001508);
+-- 候选人附件四权限：与候选人的 list/query/add/edit 授权角色保持一致
+insert into sys_role_menu values (1766100000000000004, 1766000000000001509);
+insert into sys_role_menu values (1766100000000000004, 1766000000000001510);
+insert into sys_role_menu values (1766100000000000004, 1766000000000001511);
+insert into sys_role_menu values (1766100000000000004, 1766000000000001512);
 insert into sys_role_menu values (1766100000000000004, 1766000000000000107);
 insert into sys_role_menu values (1766100000000000004, 1766000000000001601);
 insert into sys_role_menu values (1766100000000000004, 1766000000000001602);
@@ -639,6 +744,11 @@ insert into sys_role_menu values (1766100000000000005, 1766000000000001502);
 insert into sys_role_menu values (1766100000000000005, 1766000000000001503);
 insert into sys_role_menu values (1766100000000000005, 1766000000000001504);
 insert into sys_role_menu values (1766100000000000005, 1766000000000001506);
+-- 候选人附件四权限：与候选人的 list/query/add/edit 授权角色保持一致
+insert into sys_role_menu values (1766100000000000005, 1766000000000001509);
+insert into sys_role_menu values (1766100000000000005, 1766000000000001510);
+insert into sys_role_menu values (1766100000000000005, 1766000000000001511);
+insert into sys_role_menu values (1766100000000000005, 1766000000000001512);
 insert into sys_role_menu values (1766100000000000005, 1766000000000000107);
 insert into sys_role_menu values (1766100000000000005, 1766000000000001601);
 insert into sys_role_menu values (1766100000000000005, 1766000000000001602);

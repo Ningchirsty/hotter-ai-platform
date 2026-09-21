@@ -8,7 +8,7 @@
 -- 契约文件：docs/hr-talent/SPEC-P1-地基.md
 --
 -- 文件性质：
---   本文件为**初始化脚本**，包含 drop table if exists，会先清空再重建 20 张招聘过程表；
+--   本文件为**初始化脚本**，包含 drop table if exists，会先清空再重建 21 张招聘过程表；
 --   生产环境迁移请使用 hr_talent_migration.sql（由 hr_recruit.sql + hr_talent.sql + hr_talent_menu.sql
 --   合成，去掉 drop table if exists 并改为 create table if not exists，重跑不清空数据）。
 --
@@ -34,6 +34,8 @@
 --      check_items / waive_reason（§8.7、§7.4）；hr_recruit_import_error 增加 severity（§8.11）。
 --      人才主数据表按 §8.12~§8.16 补充 16 列；完整台账见 docs/hr-talent/P2-决策与缺口台账.md。
 --      招聘需求的暂停/关闭原因通过 hr_recruit_demand_change.reason 记录，需求表本身不另设原因列。
+--   8. 按 §7.1.5 / §21.15 新增 hr_recruit_plan_item_status_log（计划任务状态变更日志，追加型只插入），
+--      用于记录状态刷新的触发事件、原状态、新状态与刷新时间（缺口台账 §4 第 1 项，经用户批准补表）。
 -- ----------------------------------------------------------------------------
 
 -- ----------------------------
@@ -690,3 +692,35 @@ create table hr_recruit_sensitive_audit (
     key idx_hr_recruit_sensitive_audit_operator (operator_id, event_time),
     key idx_hr_recruit_sensitive_audit_event (event_time)
 ) engine=innodb comment = '招聘敏感操作审计表';
+
+-- ----------------------------
+-- 21、计划任务状态变更日志（设计 §7.1.5「记录触发事件、原状态、新状态和刷新时间」、
+--     §21.15 伪代码「append status change log」）
+--     追加型日志表：只插入，不更新、不删除（del_flag 保留以对齐通用字段）；
+--     仅在 execution_status 或 completion_status 实际发生变化时追加一条，
+--     状态未变化的刷新不写日志，避免无意义刷表。
+--     设计 §9.2 的表清单未包含本表，属缺口台账 §4 第 1 项，经用户批准补表（36 → 37）。
+-- ----------------------------
+drop table if exists hr_recruit_plan_item_status_log;
+create table hr_recruit_plan_item_status_log (
+    log_id                    bigint(20)    not null                   comment '日志ID（主键）',
+    item_id                   bigint(20)    not null                   comment '计划任务ID（hr_recruit_plan_item.item_id）',
+    plan_id                   bigint(20)    default null               comment '所属计划表头ID（hr_recruit_plan.plan_id，便于按计划查询）',
+    trigger_event             varchar(64)   default null               comment '触发事件稳定编码（application_stage_changed/interview_result_changed/candidate_arrived/background_result_changed/manual_refresh）',
+    from_execution_status     varchar(32)   default null               comment '原自动执行阶段（字典 recruit_plan_execution_status）',
+    to_execution_status       varchar(32)   default null               comment '新自动执行阶段（字典 recruit_plan_execution_status）',
+    from_completion_status    varchar(32)   default null               comment '原完成状态（字典 recruit_plan_completion_status）',
+    to_completion_status      varchar(32)   default null               comment '新完成状态（字典 recruit_plan_completion_status）',
+    refresh_time              datetime(3)   default null               comment '刷新时间（与 hr_recruit_plan_item.last_refresh_time 同源）',
+    operator_id               bigint(20)    default null               comment '操作人用户ID（自动刷新时可为空）',
+    del_flag                  char(1)       default '0'                comment '删除标志（0代表存在 1代表删除；日志表不物理删除）',
+    create_dept               bigint(20)    default null               comment '创建部门',
+    create_by                 bigint(20)    default null               comment '创建者',
+    create_time               datetime                                 comment '创建时间',
+    update_by                 bigint(20)    default null               comment '更新者',
+    update_time               datetime                                 comment '更新时间',
+    remark                    varchar(500)  default null               comment '备注',
+    primary key (log_id),
+    key idx_hr_recruit_plan_item_status_log_item (item_id, refresh_time),
+    key idx_hr_recruit_plan_item_status_log_plan (plan_id, refresh_time)
+) engine=innodb comment = '月度计划任务状态变更日志表（设计 §7.1.5 / §21.15；追加型日志，只插入）';
