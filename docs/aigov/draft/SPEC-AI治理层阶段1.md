@@ -247,6 +247,10 @@ snail-ai 管理端配一半」的割裂。要点：
 - 写入需要 `aig:model:secret`：控制器 `@SaCheckPermission` + 服务层二次校验。
 - 审计：控制器 `@Log(..., excludeParamNames = {"apiKey"})`，
   否则明文会经 `sys_oper_log.oper_param` 泄漏。
+- **读侧**：`api_key` 只在连通性测试（`POST /aigov/model/{modelId}/test`）被读取，
+  且命中的是**密文原值**，必须先用同一套 crypto 参数解密后再发探测请求。
+  直接把库里的密文当 Bearer 发出去，会让「密钥完全正确」也报鉴权失败，比没有该功能更误导；
+  解密不可用（`aigov.model-crypto.enabled=false`）或解不开时**如实报告**，不做猜测。
 - **已知边界**：`secret_ref` 与 `api_key` 是两套东西。`secret_ref` 只是引用登记，
   没有任何组件解析它；真正生效的是 `api_key`。
 

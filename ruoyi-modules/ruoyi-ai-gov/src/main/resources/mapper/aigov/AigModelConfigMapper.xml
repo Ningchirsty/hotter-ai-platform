@@ -105,6 +105,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
     <!--
       连通性测试目标：唯一读取 api_key 的语句。
+      这里取到的是**密文原值**，调用方（ModelConnectionTester）必须先解密再发请求，
+      否则上游必然判鉴权失败——那会变成「密钥正确却报鉴权失败」的误导性结论。
       api_key 只用于服务端发起探测请求，绝不回传（见 AigModelTestTargetVo 的说明）。
     -->
     <select id="selectTestTarget" resultType="org.dromara.aigov.domain.vo.AigModelTestTargetVo">

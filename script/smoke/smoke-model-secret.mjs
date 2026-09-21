@@ -13,16 +13,13 @@
 // 这条用例守的是三件事：
 //   A. 密钥能录进去，且列表/详情只回布尔位，任何响应都不出现密钥原值；
 //   B. 密钥值确实进入了外发请求（写入前鉴权头缺失、写入后有值），
-//      并且连通性测试的回显里不会出现密钥明文；
+//      连通性测试的这一路解密没有失败，且回显里不会出现密钥明文；
 //   C. 既有的 REF:// 引用不会被新增的 scheme 白名单误伤（回归护栏）。
 //
-// ⚠️ 本脚本**不能**证明「密文能被 snail-ai 解开」：
-//      RuoYi 的 HTTP 探测（AigModelGovernanceServiceImpl.testConnection →
-//      ModelConnectionTester.probeHttp）是把 sai_model_config.api_key 的**原值**
-//      直接当 Bearer 发出去的，并不解密。因此无论库里存的是密文还是明文，
-//      上游都会回同一个「Incorrect API key」。
-//      跨系统加解密兼容性必须用 snail-ai 侧的 /ai-model/config/{id}/test 单独验证，
-//      见 docs/aigov 与提交说明中的实测记录。
+// ⚠️ 本脚本**仍不能**证明「密文与 snail-ai 口径一致」：
+//      RuoYi 用同一对 key/iv 加密、也在同一对 key/iv 上解密，自己跟自己永远自洽。
+//      跨系统兼容性必须用 snail-ai 侧的 /ai-model/config/{id}/test 单独验证
+//      （提交说明里有实测记录：正确密文得到干净的上游 401，明文则报 System exception）。
 //
 // 说明：本脚本会自行清理——结束前一定把写入的密钥清除，不留残留。
 //      唯一会留下的痕迹是「既有引用不被误伤」那条断言：它把某个已登记治理属性模型的
@@ -197,15 +194,16 @@ async function main() {
   if (detailAfter?.data?.keyConfigured === true) ok('写入后详情 keyConfigured=true');
   else bad(`写入后详情 keyConfigured=${JSON.stringify(detailAfter?.data?.keyConfigured)}，期望 true`);
 
-  // ---------- B3. 密钥值确实进入了外发请求 ----------
-  // 注意：这里只能证明「写进去的值被带进了请求」，不能证明密文可解（见文件头说明）。
+  // ---------- B3. 密钥值确实进入了外发请求（且解密这一路没坏） ----------
   const probeAfter = await (
     await fetch(`${BASE}/aigov/model/${modelId}/test`, { method: 'POST', headers: auth })
   ).json();
   const detailAfterProbe = String(probeAfter?.data?.detail ?? '');
   const msgAfter = String(probeAfter?.data?.message ?? '');
   info(`写入后探测：ok=${probeAfter?.data?.ok} msg=${msgAfter}`);
-  if (detailAfterProbe.includes(FAKE_KEY)) {
+  if (msgAfter.includes('解密失败') || msgAfter.includes('密钥加解密')) {
+    bad(`连通性测试没能解出密钥：${msgAfter}`);
+  } else if (detailAfterProbe.includes(FAKE_KEY)) {
     bad('连通性测试的 detail 回显了密钥明文 —— 上游回显未被掩码');
   } else if (msgAfter.includes('连接异常')) {
     skipped(`上游不可达（${msgAfter}），无法验证密钥是否进入请求`);
