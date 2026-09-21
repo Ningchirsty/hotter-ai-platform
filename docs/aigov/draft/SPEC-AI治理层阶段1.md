@@ -18,7 +18,7 @@
 | 6 | `snail-ai-agent-chat-starter` 暴露的是 `/api/snail/chat` **聊天 UI 嵌入**（发 embed token），**不是**程序化调用接口 | `SnailAiChatGatewayController` javap |
 | 7 | `snail-ai.enabled=false` 时整个 `SnailAiConfig` 不加载，`OpenApiChatClient` 等 Bean **不存在** | `SnailAiConfig.java:11-15` |
 | 8 | `ruoyi-common-ai` 只有一个类 `SnailAiConfig`，依赖三个 starter | 模块实查 |
-| 9 | `sai_model_config.api_key` 是**明文列**（设计 §10.1 冲突点） | 表结构 + 设计文档 |
+| 9 | `sai_model_config.api_key` 是 **SM4 密文列**（`Mode.CBC` + `PKCS5Padding`，key/iv 取自 snail-ai 的 `snail-ai.crypto.secret-key` / `snail-ai.crypto.iv`，二者均为 hex 字符串）；治理层若写入，必须产出**同口径**密文 | 反编译 `CryptoHelper` + 落库实测 |
 | 10 | `sai_model_usage_stat` 按 模型×用户 聚合，字段 `total_calls/success_calls/failed_calls/total_tokens_used/total_cost/avg_response_time` | 表结构 |
 | 11 | 菜单 ID `1763*`、角色 `1763*`、字典 `17632*` 空闲；`1761*` 核心、`1762*` 人才库、`9200*` 视频 | 数据库实测 |
 
@@ -29,7 +29,11 @@
    - `SnailAiChatInvoker` — 注入 `OpenApiChatClient`（`@ConditionalOnBean(OpenApiChatClient.class)`，snail-ai 关闭时不加载）
    - `LocalRuleModelInvoker` — 本地规则实现，用于 `talent_match`（设计 §6.3 明确「本地匹配模型 + 白名单字段」）
    这样 snail-ai 未启用时治理层仍可编译、可启动、可验证。
-3. **密钥只存引用**。`aig_model_governance.secret_ref`，禁止明文；不读不写 `sai_model_config.api_key`。
+3. **密钥：读只为探测，写必须密文**。
+   - **读**：只有连通性测试（`POST /aigov/model/{modelId}/test`）会取 `api_key`，因为要拿真实凭据发一次探测请求；结果只进服务端内部 VO。
+   - **写**：只有 `POST /aigov/model`（可选 `apiKey`）与 `PUT /aigov/model/secret`；写前一律由 `AigModelSecretCipher` 加密成 snail-ai 可解的 SM4 密文。
+   - **不出**：任何查询响应都不返回密钥原值，列表只回 `keyConfigured` 布尔位（在 SQL 内算好）。
+   - `aig_model_governance.secret_ref` 仍只做「引用登记」，**不参与运行时取密钥**——没有任何组件解析它，别把它当成生效开关。
 
 ---
 
@@ -223,9 +227,32 @@ IAigTalentMatchService   // talent_match 具体能力：入参/出参加工（�
 
 **`IAigModelGovernanceService.list()`** 要**跨表读取**：以 `sai_model_config` 为主表
 （`model_key`、`model_type`、`is_default`、`is_enabled`、`api_endpoint`），左连 `aig_model_governance` 补治理属性。
-用 MyBatis XML 写联表查询，**只读**，不修改 `sai_*`。
+用 MyBatis XML 写联表查询。
 - 返回给前端时 **`api_endpoint` 仅在有 `aig:model:secret` 权限时下发**；`secretRef` 同理
-- **绝对不返回 `sai_model_config.api_key`**
+- **绝不返回 `sai_model_config.api_key` 原值**；只回 `keyConfigured`（SQL 内算成布尔位），
+  用于暴露「治理属性登记完整、但密钥为空」这类静默失败
+
+**`updateModelSecret(bo)` — 模型密钥录入（阶段1 追加）**
+
+治理台直接录入明文密钥，服务端加密后写入 `sai_model_config.api_key`，免去「治理台配一半、
+snail-ai 管理端配一半」的割裂。要点：
+
+- 加密口径必须与 snail-ai 的 `CryptoHelper` **逐字节一致**：`SM4/CBC/PKCS5Padding`，
+  key/iv 为 hex 解码后的 16 字节。任何偏差都会让 snail-ai 运行时解密失败（**静默**故障）。
+- 配置前缀 `aigov.model-crypto`：`enabled`（默认 **false**）、`secretKey`、`iv`。
+  两侧配置不一致时，靠启动日志打印的 `fingerprint`（key+iv 的 SHA-256 前 12 位）人工对账。
+- `enabled=true` 时启动做一次「加密→解密」自检，失败即**启动失败**——宁可起不来，
+  也不要让不可解密的密文进库。
+- `clearKey=true` 走显式清除语义（不采用 snail-ai 管理端「留空=不修改」的隐式约定）。
+- 写入需要 `aig:model:secret`：控制器 `@SaCheckPermission` + 服务层二次校验。
+- 审计：控制器 `@Log(..., excludeParamNames = {"apiKey"})`，
+  否则明文会经 `sys_oper_log.oper_param` 泄漏。
+- **读侧**：`api_key` 只在连通性测试（`POST /aigov/model/{modelId}/test`）被读取，
+  且命中的是**密文原值**，必须先用同一套 crypto 参数解密后再发探测请求。
+  直接把库里的密文当 Bearer 发出去，会让「密钥完全正确」也报鉴权失败，比没有该功能更误导；
+  解密不可用（`aigov.model-crypto.enabled=false`）或解不开时**如实报告**，不做猜测。
+- **已知边界**：`secret_ref` 与 `api_key` 是两套东西。`secret_ref` 只是引用登记，
+  没有任何组件解析它；真正生效的是 `api_key`。
 
 ---
 
@@ -234,7 +261,7 @@ IAigTalentMatchService   // talent_match 具体能力：入参/出参加工（�
 | 类 | 路径 | 主要接口 | 权限 |
 |---|---|---|---|
 | `AigCapabilityController` | `/aigov/capability` | `GET /list`、`GET /{id}`、`POST`、`PUT`、`DELETE /{id}` | 对应 `aig:capability:*` |
-| `AigModelController` | `/aigov/model` | `GET /list`、`GET /{modelId}`、`PUT /governance` | `aig:model:list/query/edit` |
+| `AigModelController` | `/aigov/model` | `GET /list`、`GET /{modelId}`、`POST`（新增模型，可选明文 `apiKey`）、`PUT /governance`、**`PUT /secret`**（写入/清除模型密钥）、`POST /{modelId}/test`（连通性测试）、`GET /providers`、`GET /providers/all`、`POST /provider`、`PUT /provider` | `aig:model:list/query/edit`；新增与供应商走 `aig:model:add`；**密钥走 `aig:model:secret`** |
 | `AigRoutePolicyController` | `/aigov/route` | `GET /list`、`POST`、`PUT`、`DELETE /{id}` | `aig:route:*` |
 | `AigModelBindingController` | `/aigov/binding` | `GET /list`、`POST`、`DELETE /{id}` | `aig:route:*`（绑定属于路由配置） |
 | `AigInvokeController` | `/aigov/invoke` | `POST /{capabilityCode}`、`POST /dryRun` | `aig:capability:query` |

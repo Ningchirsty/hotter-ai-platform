@@ -34,7 +34,13 @@ public class AigModelTestTargetVo implements Serializable {
     private String apiEndpoint;
 
     /**
-     * 平台侧密钥（仅探测用，禁止外传/打日志）
+     * 平台侧密钥的<b>库中原值</b>——即 {@code sai_model_config.api_key} 里的 SM4 密文。
+     *
+     * <p>⚠️ <b>它不能直接当 Bearer 用</b>：必须先经
+     * {@code AigModelSecretCipher#decrypt} 解出明文。这里保持「原值」语义是刻意的——
+     * 解密只在真正要发请求的地方发生，避免明文在对象之间流转。</p>
+     *
+     * <p>仅探测用，禁止外传/打日志。</p>
      */
     private String apiKey;
 

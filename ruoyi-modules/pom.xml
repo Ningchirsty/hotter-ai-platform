@@ -22,7 +22,7 @@
         <module>ruoyi-system</module>
         <module>ruoyi-workflow</module>
         <module>ruoyi-ai</module>
-        <module>ruoyi-talent</module>
+        <module>ruoyi-hr-talent</module>
         <module>ruoyi-ai-gov</module>
         <module>ruoyi-content</module>
     </modules>

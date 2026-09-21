@@ -1,9 +1,13 @@
 /**
  * AI 模型治理类型定义（对齐后端 AigModelGovernanceVo / AigModelGovernanceBo）
  *
- * 模型主数据来自 snail-ai 的 sai_model_config（只读），本层只补治理属性；
+ * 模型主数据来自 snail-ai 的 sai_model_config；
  * apiEndpoint / secretRef 仅在具备 aig:model:secret 权限时由后端下发，
  * 且 secretRef 只是「引用文本」，绝不含明文密钥。
+ *
+ * 模型密钥（sai_model_config.api_key）**只写不读**：
+ * 表单可提交明文 apiKey，由后端加密落库；列表/详情只回 keyConfigured 布尔位，
+ * 任何响应都不含密钥原值。
  */
 
 /** 模型治理列表行（sai_model_config 左连 aig_model_governance） */
@@ -22,6 +26,8 @@ export interface AigModelGovernanceVO extends BaseEntity {
   isEnabled?: number | string;
   /** 端点：仅 aig:model:secret 权限时下发 */
   apiEndpoint?: string;
+  /** 是否已配置模型密钥（布尔位，由后端在 SQL 内算好，不含密钥原值） */
+  keyConfigured?: boolean;
   /** 治理记录ID，为空表示尚未登记治理属性 */
   governanceId?: string | number;
   /** 部署类型：LOCAL/GROUP/EXTERNAL_ENTERPRISE/EXTERNAL_API */
@@ -89,6 +95,20 @@ export interface AigModelQuery extends PageQuery {
 }
 
 /**
+ * 模型密钥写入表单（PUT /aigov/model/secret）
+ *
+ * - apiKey 为**明文**，由后端按 snail-ai 的 SM4 口径加密后落库；
+ * - clearKey=true 时忽略 apiKey 并清除已有密钥（显式语义，避免「留空=不修改」的歧义）。
+ */
+export interface AigModelSecretForm {
+  modelId: string | number;
+  /** 明文密钥；clearKey=true 时可省略 */
+  apiKey?: string;
+  /** 是否清除已有密钥 */
+  clearKey?: boolean;
+}
+
+/**
  * 供应商（GET /aigov/model/providers 与 /providers/all）
  * 只含名称/标识/说明/图标/启停，不含任何连接凭据——供应商表本身就没有密钥列。
  */
@@ -141,6 +161,8 @@ export interface AigModelCreateForm {
   modelType?: string;
   adapterKey?: string;
   apiEndpoint?: string;
+  /** 明文 API 密钥（可选）：由后端加密落库，非空时额外要求 aig:model:secret */
+  apiKey?: string;
   description?: string;
   scope?: string;
   isDefault?: boolean;

@@ -25,8 +25,14 @@ import java.time.LocalDate;
  * 任何策略选中的「孤儿模型」，排查成本很高。故部署类型、数据等级上限、生命周期三项
  * 在新增时即必填。</p>
  *
- * <p><b>密钥</b>：只接受「引用」（{@code secretRef}，如 {@code kms://ai/qwen}），
- * 禁止明文；本对象<b>不含</b> {@code api_key} 字段，治理层从不读写该列。</p>
+ * <p><b>密钥</b>：分两条路——</p>
+ * <ul>
+ *     <li>{@code secretRef}：只登记「引用」（如 {@code kms://ai/qwen}），禁止明文；</li>
+ *     <li>{@code apiKey}：<b>明文密钥</b>，由治理层按 snail-ai 的 SM4 口径加密后写入
+ *         {@code sai_model_config.api_key}。仅当 {@code aigov.model-crypto.enabled=true}
+ *         且持有 {@code aig:model:secret} 权限时接受；本字段<b>只进不出</b>，
+ *         任何查询响应都不会回显。</li>
+ * </ul>
  *
  * @author ai-gov
  */
@@ -82,6 +88,19 @@ public class AigModelCreateBo implements Serializable {
      */
     @Size(max = 500, message = "接口地址长度不能超过 500", groups = {AddGroup.class})
     private String apiEndpoint;
+
+    /**
+     * 明文 API 密钥，可留空（留空表示稍后再配）。
+     *
+     * <p>服务端按 snail-ai 的 SM4 口径加密后写入 {@code sai_model_config.api_key}；该列是
+     * snail-ai 运行时的凭据来源，故此处填错的直接后果是「模型调用失败」。
+     * 写此项需要 {@code aig:model:secret} 权限，且 {@code aigov.model-crypto.enabled=true}。</p>
+     *
+     * <p>{@code sai_model_config.api_key} 列为 {@code VARCHAR(1000)}；SM4 密文经 Base64 后
+     * 会膨胀到约 {@code ceil(n/16)*16*4/3}，故明文上限取 500，为密文留出余量。</p>
+     */
+    @Size(max = 500, message = "API 密钥长度不能超过 500", groups = {AddGroup.class})
+    private String apiKey;
 
     /**
      * 说明

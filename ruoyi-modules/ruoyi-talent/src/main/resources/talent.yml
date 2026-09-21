@@ -1,9 +1,0 @@
-talent:
-  # 手机号哈希盐（生产环境必须由密钥管理提供，禁止使用默认值）
-  phone-hash-salt: change-me-in-production
-  # 是否启用病毒扫描（未接入扫描服务时保持 false）
-  virus-scan-enabled: false
-  # 是否启用简历解析（未获批前必须 false）
-  parse-enabled: false
-  # 导出单次最大行数
-  export-max-rows: 10000

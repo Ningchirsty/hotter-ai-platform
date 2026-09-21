@@ -18,10 +18,10 @@
 | Spring Boot | 4.1.0 | 不自行降级或替换 |
 | 权限认证 | Sa-Token | 复用登录、菜单、角色和按钮权限 |
 | 数据访问 | MyBatis-Plus、MPJ | 业务模块保持同一持久层风格 |
-| 数据权限 | `@DataPermission` + MyBatis 拦截器 | 视频列表与修改操作强制使用；**人才库不使用**，因其区域语义无法用框架 `DataScopeType` 封闭枚举表达，改为服务端显式区域过滤（依据见 `docs/talent/02-6.0.0框架API核对表.md`） |
-| 多数据源 | dynamic-datasource | `master`、`video` 两数据源；**人才库业务表建在平台库内**，复用账号/组织/角色/菜单/数据权限 |
+| 数据权限 | `@DataPermission` + MyBatis 拦截器 | 视频列表与修改操作强制使用；招聘与人才模块**同时**使用 RuoYi v6.0.0 的角色—菜单数据权限，以及人才可见范围领域服务 `TalentScopeDomainService`（统一生成人才查询范围并执行资源级鉴权，不依赖前端隐藏字段；详见新设计文档 §6.1 权限判定顺序、§21.14 人才数据权限查询规则） |
+| 多数据源 | dynamic-datasource | `master`、`video` 两数据源；**招聘与人才模块（`ruoyi-hr-talent`）业务表建在平台库内**，招聘过程表用 `hr_recruit_*` 前缀、人才主数据表用 `hr_talent_*` 前缀，复用账号/组织/角色/菜单/数据权限 |
 | 文件存储 | S3 兼容 OSS，支持 MinIO | 为业务 Bucket 配置独立 OSS 客户端 |
-| 工作流 | WarmFlow | 用于视频审核、人才导出审批 |
+| 工作流 | WarmFlow | 用于视频审核；招聘需求与编制审批属后续迭代 |
 | 实时通知 | SSE / WebSocket | 优先 SSE 推送视频任务状态 |
 | 定时与重试 | SnailJob | 清理、超时补偿、指标汇总；任务主队列仍用 Redis |
 | 前端 | 本仓库内置 `frontend/`，为 plus-ui 6.0.0 | 后端与前端同仓维护，多个业务共用同一前端工程 |
@@ -52,7 +52,7 @@
 最常见的错误是把视频、人才字段直接加到 `sys_user`、`sys_dept` 或其他
 `ruoyi-system` 表中。这样会把业务生命周期与平台账号体系耦合，并显著增加以后
 同步上游 v6.x 修复的冲突。本文只引用系统用户、部门、角色和 OSS 能力，业务数据
-放在独立模块与独立数据库中。
+放在独立业务模块中，并按平台库（招聘与人才）与视频库分别落地。
 
 ## 4. 总体架构决策
 
@@ -63,12 +63,12 @@ Cloudflare Tunnel
         |
   单前端工程 frontend/（plus-ui 6.0.0）
   videoai / ai 由域名决定入口；
-  人才库不设独立域名，作为 pm.hottter.cn 管理后台的一级菜单「集团人才库」
+  招聘与人才管理不设独立域名，作为 pm.hottter.cn 管理后台的一级菜单「招聘管理」
         |
   ruoyi-admin 模块化单体
   + ruoyi-system      账号、组织、菜单、角色、审计
   + ruoyi-video       模板、任务、审核、归档、统计
-  + ruoyi-talent      人才档案、简历附件、重复预警、解析复核、台账导出、敏感审计
+  + ruoyi-hr-talent   招聘需求、月度计划与结转、候选人跟进、面试背调、人才档案、简历解析、敏感审计
   + ruoyi-edge        执行节点、签名、调度、回调
         |
   MySQL（平台库 + 视频库）+ Redis + MinIO
@@ -99,7 +99,7 @@ hotter-ai-platform/
 │  ├─ ruoyi-system/                上游系统模块
 │  ├─ ruoyi-workflow/              上游审批模块
 │  ├─ ruoyi-video/                 新增：视频领域
-│  ├─ ruoyi-talent/                新增：人才领域
+│  ├─ ruoyi-hr-talent/             新增：招聘与人才领域
 │  └─ ruoyi-edge/                  新增：GPU 节点与执行协议
 ├─ frontend/                       plus-ui 6.0.0 前端工程（已在本仓库内）
 ├─ deploy/ubuntu/                  部署、健康检查、回滚
@@ -109,7 +109,7 @@ hotter-ai-platform/
 └─ .github/workflows/              CI 和发布流程
 ```
 
-新增模块统一使用 `org.dromara.video`、`org.dromara.talent`、
+新增模块统一使用 `org.dromara.video`、`org.dromara.hrtalent`、
 `org.dromara.edge` 包名，遵循现有 Controller、BO、VO、Service、Mapper、Domain
 分层以及 `BaseEntity`、`BaseMapperPlus`、MapStruct Plus 约定。
 
@@ -125,15 +125,15 @@ hotter-ai-platform/
 | 业务需求 | 直接复用 | 新增适配 |
 |---|---|---|
 | 登录、验证码、Token | `ruoyi-admin`、Sa-Token | 失败锁定策略、管理员二次验证 |
-| 用户、组织、岗位 | `ruoyi-system` | 人才档案只保存 `sys_user_id`、`dept_id` 引用快照 |
-| 角色、菜单、按钮权限 | `sys_role`、`sys_menu` | 新增 `video:*`、`talent:*`、`edge:*` 权限标识 |
-| 部门数据范围 | `@DataPermission` | 视频库切换时固定从 `master` 读取权限范围；人才库改用服务端区域过滤，不依赖框架数据范围 |
-| 操作审计 | `@Log`、操作日志 | 状态流转、签名调用另建不可变业务事件日志；人才库另建 `tl_sensitive_audit` 记录下载/导出/完整信息访问 |
-| 文件存储 | `ruoyi-common-oss` | 独立 Bucket 或对象键前缀、受控流式下载（人才库不下发预签名 URL） |
-| 审批 | `ruoyi-workflow` | 视频审核和人才导出两类流程 |
+| 用户、组织、岗位 | `ruoyi-system` | 人才主档只保存 `owner_id`、`owner_dept_id` 引用快照 |
+| 角色、菜单、按钮权限 | `sys_role`、`sys_menu` | 新增 `video:*`、`recruit:*`、`talent:*`、`edge:*` 权限标识 |
+| 部门数据范围 | `@DataPermission` | 视频库切换时固定从 `master` 读取权限范围；招聘与人才模块复用 RuoYi 角色—菜单数据权限，并由 `TalentScopeDomainService` 统一生成人才可见范围 |
+| 操作审计 | `@Log`、操作日志 | 状态流转、签名调用另建不可变业务事件日志；招聘与人才模块另建 `hr_recruit_sensitive_audit` 记录下载/导出/完整信息访问 |
+| 文件存储 | `ruoyi-common-oss` | 独立 Bucket 或对象键前缀、受控流式下载（下载校验权限后生成短时签名 URL） |
+| 审批 | `ruoyi-workflow` | 视频审核；招聘需求与编制审批属后续迭代 |
 | 任务通知 | `ruoyi-common-push` | 视频任务状态 Topic 与前端订阅 |
 | 定时任务 | `ruoyi-job` / SnailJob | 超时回收、失败补偿、清理、指标聚合 |
-| Excel 导入导出 | `ruoyi-common-excel` | 人才模板校验、导出审批、导出水印与审计 |
+| Excel 导入导出 | `ruoyi-common-excel` | 招聘与人才导入模板校验、导出权限控制与审计 |
 
 ## 7. 权限与数据隔离
 
@@ -149,7 +149,7 @@ hotter-ai-platform/
 | `talent_hr_sz` | 深圳人才维护 | 可见 `SZ` + `GROUP`，仅可写 `SZ` |
 | `talent_hr_st` | 汕头人才维护 | 可见 `ST` + `GROUP`，仅可写 `ST` |
 | `talent_group_admin` | 授权范围内跨地区维护和统计 | 全部区域 |
-| `talent_admin` | 人才库全部权限与单条授权配置 | 全部区域 |
+| `talent_admin` | 招聘与人才全部权限与单条授权配置 | 全部区域 |
 | `talent_viewer` | 用人部门查阅者 | 仅单条授权，手机号脱敏 |
 | `talent_auditor` | 敏感操作审计 | 只读审计记录 |
 | `platform_admin` | 账号、角色、菜单、配置 | 无人才内容修改权限 |
@@ -162,12 +162,22 @@ video:template:list/query/add/edit/publish
 video:task:list/query/add/submit/cancel/retry/download
 video:review:list/query/approve/reject
 video:stats:view
-talent:profile:list/query/add/edit/archive/phone/grant
-talent:attachment:manage/upload/download
-talent:duplicate:view/confirm
-talent:parse:view/confirm/retry
-talent:export:create/download
-talent:audit:list
+recruit:demand:list/query/add/edit/submit/pause/close/import/export
+recruit:plan:list/query/add/edit/confirm/close/export
+recruit:rollover:preview/execute/retry/detail
+recruit:job:list/query/add/edit/assign/close
+recruit:candidate:list/query/add/edit/transfer/stage/phone-view/export
+recruit:interview:list/schedule/feedback/cancel
+recruit:background:list/add/edit/view-sensitive
+recruit:attachment:upload/download/preview/delete
+recruit:dashboard:view/export
+recruit:import:template/upload/confirm/cancel/detail
+recruit:audit:list/export
+talent:profile:list/query/add/edit/archive/phone-view/export
+talent:pool:list/add/edit/member/share
+talent:resume:list/upload/download/parse/review/version
+talent:duplicate:list/confirm/merge/ignore
+talent:grant:list/add/revoke
 edge:node:list/query/add/edit/disable
 edge:task:list/query/reconcile
 ```
@@ -179,15 +189,16 @@ Controller 使用 `@SaCheckPermission`，导出、审核、模板发布、失败
 ### 7.2 数据库适配
 
 ```text
-master  -> ruoyi_platform   （含人才库业务表 tl_*）
+master  -> ruoyi_platform   （含招聘与人才业务表 hr_recruit_* / hr_talent_*）
 video   -> ruoyi_video
 ```
 
 视频业务 Service 类标记 `@DS("video")`。禁止一个本地事务中
 同时写两个数据库；跨库业务采用“本库事务 + 事件/补偿”模式。
 
-**人才库不新建独立数据库**：`tl_*` 业务表建在平台库内，复用账号、组织、角色、
-菜单与数据权限；人才库不切换数据源，因此不需要 `@DS` 注解，也不涉及跨库事务。
+**招聘与人才模块不新建独立数据库**：`hr_recruit_*`（招聘过程）与 `hr_talent_*`（人才主数据）
+业务表建在平台库内，复用账号、组织、角色、菜单与数据权限；该模块不切换数据源，因此
+不需要 `@DS` 注解，也不涉及跨库事务。
 
 RuoYi 数据范围服务 `sdss` 会读取平台库的 `sys_dept` 和 `sys_role_dept`。当业务
 Service 已切换到 `video` 数据源时，必须确保该服务显式使用
@@ -195,7 +206,7 @@ Service 已切换到 `video` 数据源时，必须确保该服务显式使用
 测试，确认 dynamic-datasource 的嵌套切换行为，再决定在原服务加注解，或用框架
 支持的自定义 `ISysDataScopeService` 替换实现。
 
-数据库账号最小权限：平台账号只访问 `ruoyi_platform`（含人才库 `tl_*` 表）；视频账号只访问
+数据库账号最小权限：平台账号只访问 `ruoyi_platform`（含招聘与人才 `hr_recruit_*` / `hr_talent_*` 表）；视频账号只访问
 `ruoyi_video`。应用配置中的凭据只来自生产
 `.env`，不进入 Git。
 
@@ -311,42 +322,36 @@ POST   /edge/v1/tasks/fail               内网回调
 
 前端通过 RuoYi SSE 通道接收状态变化；数据库仍是最终事实来源，断线重连后重新拉取。
 
-## 9. 集团人才库设计
+## 9. 招聘与人才管理设计
 
 ### 9.1 系统与人才边界
 
-`sys_user` 表示可登录账号，人才档案表示人员业务记录，两者不是一一等价：离职人员
-可以保留档案但停用账号，尚未开通账号的人员也可以先进入人才库。档案通过可空的
-`sys_user_id` 关联账号，并保存组织、岗位名称快照用于历史追溯。
+`sys_user` 表示可登录账号，人才主档表示人员业务记录，两者不是一一等价：人才不是系统
+用户，招聘岗位也不等同于 `sys_post`。人才主档与招聘岗位使用独立业务表并可选关联系统
+用户/岗位，同时保存组织、岗位名称快照用于历史追溯。
 
 ### 9.2 核心表
 
-一期交付的是**招聘人才资料库**口径，业务表统一 `tl_` 前缀、建在平台库内，完整定义见
-`script/sql/ry_talent.sql`，字段字典见 `docs/talent/03-数据字典与字段规范.md`。
+一期交付的是**招聘与人才管理一体化**口径，业务表建在平台库内：招聘过程表统一
+`hr_recruit_` 前缀，人才主数据表统一 `hr_talent_` 前缀，共 36 张。完整表名、字段与
+索引定义见《招聘与人才管理一体化系统详细设计方案》§9.2 表命名、§21.13 数据库物理设计约定。
 
-| 表 | 关键字段 |
-|---|---|
-| `tl_talent` | 人才编号、姓名、手机号密文/哈希/后四位、性别、出生日期、学历、期望薪资、岗位、联系日期、区域、状态、共享范围 |
-| `tl_talent_attachment` | 人才、对象键、附件类型、版本、当前版本标记、文件哈希、扫描状态 |
-| `tl_talent_contact` | 人才、联系时间、联系人、结果、备注 |
-| `tl_talent_duplicate` | 来源人才、命中人才、匹配规则、匹配分数、确认结论、确认人 |
-| `tl_talent_access_grant` | 人才、被授权主体（用户/角色）、权限、生效/失效时间、授权人、原因 |
-| `tl_parse_task` | 附件、状态、解析服务版本、重试次数、错误摘要（不存简历正文） |
-| `tl_parse_field` | 任务、字段名、解析值、置信度、确认值、确认人/时间 |
-| `tl_export_task` | 发起人、查询条件快照、状态、对象键、行数、过期时间 |
-| `tl_sensitive_audit` | 操作人、动作、对象、结果、IP 摘要、原因、时间 |
+| 领域 | 表前缀 | 主要表 |
+|---|---|---|
+| 招聘过程 | `hr_recruit_` | `hr_recruit_demand`、`hr_recruit_plan`、`hr_recruit_job`、`hr_recruit_application`、`hr_recruit_interview`、`hr_recruit_background`、`hr_recruit_attachment`、`hr_recruit_standard`、`hr_recruit_channel`、`hr_recruit_peer_company`、`hr_recruit_import_batch`、`hr_recruit_sensitive_audit` 等 |
+| 人才主数据 | `hr_talent_` | `hr_talent_profile`、`hr_talent_resume`、`hr_talent_education`、`hr_talent_work`、`hr_talent_project`、`hr_talent_pool`、`hr_talent_tag`、`hr_talent_follow_up`、`hr_talent_scope_grant`、`hr_talent_duplicate_case`、`hr_talent_parse_task` 等 |
 
-> **二期**：技能、培训、人才盘点、组织档案历史等属于后续范围，届时另立表与菜单，
-> 不与一期招聘资料库混用表前缀语义。
+> **二期**：简历 OCR 与大模型字段解析、WarmFlow 编制审批、招聘网站对接、智能匹配等
+> 属于后续迭代范围，届时另立表与菜单，不与一期表前缀语义混用。
 
 ### 9.3 关键流程
 
 ```text
-人才新增：提交 -> 按钮权限 + 可写区域校验 -> 手机号规范化与哈希 -> 重复预检
+人才新增：提交 -> 按钮权限 + 可写范围校验 -> 手机号规范化与哈希 -> 重复预检
           -> 无命中：建档 / 有命中：返回疑似清单，HR 确认“不同人”才建档（禁止命中即覆盖）
 简历上传：格式/大小/权限校验 -> 自定义对象键写入私有桶 -> 扫描状态机
           -> 仅 CLEAN 可下载 -> 创建解析任务（未获批时落 DISABLED）
-查询下载：列表服务端注入区域范围 -> 返回按角色脱敏 -> 点附件二次校验单条授权与扫描状态
+查询下载：列表由 `TalentScopeDomainService` 注入人才可见范围 -> 返回按角色脱敏 -> 点附件二次校验单条授权与扫描状态
           -> 服务端流式输出 -> 写敏感审计
 台账导出：创建异步任务 -> 冻结查询范围快照 -> 生成 Excel -> 上传私有桶
           -> 24 小时有效期 -> 下载校验归属与时效 -> 写敏感审计
@@ -363,19 +368,19 @@ POST   /edge/v1/tasks/fail               内网回调
 
 | 域名 | 默认入口 | 可见菜单 |
 |---|---|---|
-| `pm.hottter.cn` | RuoYi 管理后台首页 | 集团人才库一级目录及其子菜单（`/talent/profile` 等），外加系统管理与系统监控 |
+| `pm.hottter.cn` | RuoYi 管理后台首页 | 一级菜单「招聘管理」及其子菜单，外加系统管理与系统监控 |
 | `videoai.hottter.cn` | `/video/workbench` | 视频中心及获授权的系统菜单 |
 | `ai.hottter.cn` | `/ai/workbench` | 二期知识库、Agent、Skill |
 
-> **集团人才库不设独立域名与独立入口**：它作为 `pm.hottter.cn` 管理后台的一级菜单目录部署，
-> 前端路由由 RuoYi 菜单动态下发，不注册独立 Host、不配置独立登录页、不跨域调用 API。
-> 前端工程与目录结构见 `docs/talent/`。
+> **招聘与人才管理不设独立域名与独立入口**：它作为 `pm.hottter.cn` 管理后台的一级菜单
+> 「招聘管理」部署，前端路由由 RuoYi 菜单动态下发，不注册独立 Host、不配置独立登录页、
+> 不跨域调用 API，也不部署独立前端工程。前端目录建议见新设计文档 §21.4。
 
 后端权限仍是最终授权依据，域名和前端路由不能作为安全边界。用户拥有多个应用权限时，
 可在顶部应用切换器切换；没有权限时返回 403 页面而不是隐藏错误。
 
 视频端首期页面：任务工作台、创建任务、任务详情、审核队列、模板管理、运营统计。
-人才端首期页面：人才列表、人才详情、技能字典、培训记录、盘点批次、导入中心、导出申请。
+招聘与人才端首期页面：管理驾驶舱、招聘需求、公司月度计划、月度结转中心、岗位需求、候选人跟进、面试管理、背调与报到、人才档案、人才池与分组、简历中心、重复人才治理、人才共享授权、招聘渠道、同行信息、招聘标准、数据导入中心、敏感操作审计。
 
 ## 11. OSS、留存与对象键
 
@@ -390,7 +395,7 @@ talent-export/{requestId}/{uuid}.xlsx
 ```
 
 业务表只保存对象键和摘要，不保存永久公网 URL。下载时校验业务权限，再生成短时签名 URL。
-生命周期按构建包执行：视频中间文件 14 天、失败文件 30 天、人才导出按审批设置短期保留，
+生命周期按构建包执行：视频中间文件 14 天、失败文件 30 天、招聘与人才导出设置短期保留，
 每日清理任务记录删除结果并保留审计事件。
 
 ## 12. 部署设计
@@ -434,20 +439,20 @@ MinIO 和 GPU 执行器连通性，但健康接口不得返回凭据或内部地
 | 0 | 基线与工程化 | 上游源码、前端版本锁定、CI、双数据源、Compose | 后端编译通过，空环境可启动 |
 | 1 | 视频最小闭环 | 模板、任务、上传、队列、执行器协议、状态查询 | 文生/图生任务可完成并保存结果 |
 | 2 | 视频可试点 | 审核、SSE、重试、归档、统计、权限 | 品牌与销售按角色完成试点 |
-| 3 | 人才基础 | 组织映射、档案、技能、培训、导入 | 深圳/汕头只能访问授权数据 |
-| 4 | 人才治理 | 盘点、导出审批、审计、脱敏、清理 | 导出全过程可追溯，越权测试通过 |
+| 3 | 招聘与人才基础 | 招聘需求、月度计划与结转、岗位、候选人、面试、背调、人才档案、导入 | 深圳/汕头只能访问授权数据 |
+| 4 | 人才治理 | 人才池与分组、共享授权、重复治理、导出、审计、脱敏、清理 | 导出全过程可追溯，越权测试通过 |
 | 5 | 上线准备 | 监控、备份、压测、安全测试、回滚演练 | 生产检查清单全部通过 |
 
 ## 15. 第一批实现任务
 
 1. 锁定并导入与后端 `v6.0.0` 兼容的 `plus-ui` Tag。
-2. 新建 `ruoyi-video`、`ruoyi-edge` Maven 空模块并接入启动模块（`ruoyi-talent` 已交付，见 `docs/talent/`）。
-3. 配置双数据源和两个最小权限数据库账号，验证视频库切源时的数据权限行为；人才库不切源。
+2. 新建 `ruoyi-video`、`ruoyi-edge` Maven 空模块并接入启动模块（`ruoyi-hr-talent` 按新设计文档单独建设）。
+3. 配置双数据源和两个最小权限数据库账号，验证视频库切源时的数据权限行为；招聘与人才模块不切源。
 4. 编写视频任务状态机、幂等提交和并发迁移测试。
 5. 定义 GPU 执行器 OpenAPI、签名测试向量和模拟执行器。
 6. 建立 MinIO Bucket、对象键策略、上传校验和临时下载。
 7. 建立视频菜单、角色、字典和首批 SQL 迁移。
-8. 实现视频任务最小闭环后，再开始人才档案模块，避免两个高风险领域同时铺开。
+8. 实现视频任务最小闭环后，再开始招聘与人才模块，避免两个高风险领域同时铺开。
 
 ## 16. 验收红线
 

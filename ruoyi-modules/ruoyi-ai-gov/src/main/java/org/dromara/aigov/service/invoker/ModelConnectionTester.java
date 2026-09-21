@@ -7,6 +7,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.dromara.aigov.domain.vo.AigModelTestTargetVo;
 import org.dromara.aigov.domain.vo.AigModelTestVo;
 import org.dromara.aigov.enums.AigDeploymentTypeEnum;
+import org.dromara.aigov.helper.AigModelSecretCipher;
+import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.json.utils.JsonUtils;
 import org.springframework.stereotype.Component;
@@ -31,6 +33,10 @@ import java.util.Map;
  * </ul>
  * <p><b>安全约定</b>：密钥只用于发请求；响应体里的密钥会被替换成掩码；日志与返回值都不含密钥与完整响应体。
  * </p>
+ * <p><b>密钥必须先解密再使用</b>：{@code sai_model_config.api_key} 是 SM4 密文列，
+ * 直接把列里的值当 Bearer 发出去，上游一定判鉴权失败——那会让「测试连接」在密钥完全正确时
+ * 也报错，比没有这个功能更误导。故这里统一走 {@link AigModelSecretCipher#decrypt}。
+ * 解密依赖 {@code aigov.model-crypto}，未启用时如实报「无法解密」，不做猜测。</p>
  *
  * @author ai-gov
  */
@@ -66,6 +72,11 @@ public class ModelConnectionTester {
     private static final List<String> LOCAL_HINTS = List.of("local");
 
     private final org.springframework.beans.factory.ObjectProvider<ModelInvoker> invokerProvider;
+
+    /**
+     * 模型密钥加解密工具。库里存的是 SM4 密文，发请求前必须先解出明文。
+     */
+    private final AigModelSecretCipher secretCipher;
 
     /**
      * 执行一次连通性测试。
@@ -184,9 +195,19 @@ public class ModelConnectionTester {
      * HTTP 探测：对 OpenAI 兼容端点发一次最小请求。
      *
      * @param vo     结果
-     * @param target 模型快照
+     * @param target 模型快照（{@code apiKey} 是库中的密文，本方法负责解密后再使用）
      */
     private void probeHttp(AigModelTestVo vo, AigModelTestTargetVo target) {
+        // 先解密钥：解不开就没必要发请求了，直接给出可操作的原因。
+        // 注意不要抛出去——连通性测试的失败也是一条结论，要落 health_status 并展示给运维。
+        String apiKey;
+        try {
+            apiKey = resolveApiKey(target);
+        } catch (ServiceException e) {
+            vo.setOk(false);
+            vo.setMessage(e.getMessage());
+            return;
+        }
         String url = buildChatUrl(target.getApiEndpoint());
         String body = JsonUtils.toJsonString(Map.of(
             "model", target.getModelKey(),
@@ -200,13 +221,13 @@ public class ModelConnectionTester {
                 .header("Content-Type", "application/json")
                 .body(body)
                 .timeout(TEST_TIMEOUT_MS);
-            if (StringUtils.isNotBlank(target.getApiKey())) {
-                request.header("Authorization", "Bearer " + target.getApiKey());
+            if (StringUtils.isNotBlank(apiKey)) {
+                request.header("Authorization", "Bearer " + apiKey);
             }
             try (HttpResponse response = request.execute()) {
                 vo.setLatencyMs(System.currentTimeMillis() - start);
                 int status = response.getStatus();
-                String text = mask(response.body(), target.getApiKey());
+                String text = mask(response.body(), apiKey);
                 if (status >= 200 && status < 300) {
                     vo.setOk(true);
                     vo.setMessage("连接成功（HTTP " + status + "）");
@@ -227,8 +248,23 @@ public class ModelConnectionTester {
             vo.setLatencyMs(System.currentTimeMillis() - start);
             vo.setOk(false);
             vo.setMessage("连接异常：" + e.getClass().getSimpleName() + "（地址不可达或超时）");
-            vo.setDetail(truncate(mask(e.getMessage(), target.getApiKey())));
+            vo.setDetail(truncate(mask(e.getMessage(), apiKey)));
         }
+    }
+
+    /**
+     * 取出可用的明文密钥：库中是 SM4 密文，未配置密钥时返回 {@code null}（不带鉴权头）。
+     *
+     * @param target 模型快照
+     * @return 明文密钥或 null
+     * @throws ServiceException 未启用加解密、或密文解不开
+     */
+    private String resolveApiKey(AigModelTestTargetVo target) {
+        String stored = target.getApiKey();
+        if (StringUtils.isBlank(stored)) {
+            return null;
+        }
+        return secretCipher.decrypt(stored);
     }
 
     /**

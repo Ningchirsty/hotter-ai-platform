@@ -8,6 +8,7 @@ import org.dromara.aigov.constant.AigConstants;
 import org.dromara.aigov.domain.bo.AigModelCreateBo;
 import org.dromara.aigov.domain.bo.AigModelGovernanceBo;
 import org.dromara.aigov.domain.bo.AigModelProviderBo;
+import org.dromara.aigov.domain.bo.AigModelSecretBo;
 import org.dromara.aigov.domain.vo.AigModelProviderVo;
 import org.dromara.aigov.domain.vo.AigModelTestVo;
 import org.dromara.aigov.domain.vo.AigModelVo;
@@ -17,6 +18,8 @@ import org.dromara.common.core.domain.R;
 import org.dromara.common.core.validate.AddGroup;
 import org.dromara.common.core.validate.EditGroup;
 import org.dromara.common.core.validate.QueryGroup;
+import org.dromara.common.log.annotation.Log;
+import org.dromara.common.log.enums.BusinessType;
 import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.common.redis.annotation.RepeatSubmit;
 import org.springframework.validation.annotation.Validated;
@@ -36,6 +39,9 @@ import java.util.List;
  * 仅 {@link #createModel} 会写入该表（见 Service 的边界说明）。</p>
  * <p>{@code apiEndpoint} / {@code secretRef} 由 Service 按 {@code aig:model:secret} 权限脱敏，
  * 前端列控制不构成保障，直接调接口同样看不到明文。</p>
+ * <p><b>模型密钥</b>（{@code sai_model_config.api_key}）<b>只写不读</b>：
+ * {@link #updateModelSecret} 接收明文并加密落库；任何查询接口都不回显密钥，
+ * 只回 {@code keyConfigured} 布尔位。</p>
  *
  * @author ai-gov
  */
@@ -146,18 +152,44 @@ public class AigModelController {
     /**
      * 新增模型：登记模型主数据并同时写入首份治理属性。
      *
-     * <p>这是治理层<b>唯一</b>写入 {@code sai_model_config} 的入口，属阶段1 的有意调整
+     * <p>治理层写入 {@code sai_model_config} 的入口之一，属阶段1 的有意调整
      * （原设计只读该表，但 snail-ai 服务端未就绪时无处登记模型）。写侧约束：
-     * 只 INSERT、列白名单、永不触碰 {@code api_key}。</p>
+     * 只 INSERT、列白名单。</p>
+     *
+     * <p>{@code apiKey} 是<b>可选明文</b>密钥，由 Service 加密后写入
+     * {@code sai_model_config.api_key}；非空时额外要求 {@code aig:model:secret}。
+     * 操作日志通过 {@code excludeParamNames} 剔除该字段，避免明文进 {@code sys_oper_log}。</p>
      *
      * @param bo 新增模型参数
      * @return 新模型ID
      */
     @SaCheckPermission(AigConstants.PERM_MODEL_ADD)
+    @Log(title = "AI模型治理", businessType = BusinessType.INSERT, excludeParamNames = {"apiKey"})
     @RepeatSubmit
     @PostMapping
     public R<Long> createModel(@Validated({Default.class, AddGroup.class}) @RequestBody AigModelCreateBo bo) {
         return R.ok(modelGovernanceService.createModel(bo));
+    }
+
+    /**
+     * 写入/清除模型密钥。
+     *
+     * <p><b>为什么单独一个接口</b>：密钥比治理属性敏感得多，拆成独立接口才能让
+     * {@code aig:model:secret} 单独把关——若并入 {@code /governance}，
+     * 「改治理属性」的权限会顺带升级成「改全部模型凭据」。</p>
+     *
+     * <p><b>明文只进不出</b>：请求体里的 {@code apiKey} 由 Service 加密后写入库，
+     * 任何查询接口都不会回显；操作日志同样剔除该字段。</p>
+     *
+     * @param bo 密钥参数（{@code clearKey=true} 时清除已有密钥）
+     * @return 影响行数
+     */
+    @SaCheckPermission(AigConstants.PERM_MODEL_SECRET)
+    @Log(title = "AI模型密钥", businessType = BusinessType.UPDATE, excludeParamNames = {"apiKey"})
+    @RepeatSubmit
+    @PutMapping("/secret")
+    public R<Integer> updateModelSecret(@Validated({Default.class, EditGroup.class}) @RequestBody AigModelSecretBo bo) {
+        return R.ok(modelGovernanceService.updateModelSecret(bo));
     }
 
     /**
