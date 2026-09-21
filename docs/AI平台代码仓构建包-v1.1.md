@@ -17,7 +17,7 @@
 | 登录认证 | 用户直接进入 RuoYi 登录页，使用 RuoYi 账号密码验证 |
 | 视频能力 | 文生视频、图生视频，调用现有 ComfyUI API |
 | 视频试点用户 | 深圳品牌部、深圳销售部、品牌审核员 |
-| 人才库用户 | 深圳 HR、汕头 HR、授权管理人员 |
+| 招聘与人才管理用户 | 深圳 HR、汕头 HR、授权管理人员 |
 | 文件存储 | 深圳 Ubuntu 主机 MinIO，后续可迁移至独立存储 |
 | 代码管理 | GitHub 私有仓库、分支保护、提交留痕、GitHub Actions |
 
@@ -40,13 +40,13 @@
 ────────────────── 深圳 Ubuntu 平台主机 ──────────────────
 Nginx
 ├─ AI 视频前端
-├─ 人才库前端
+├─ RuoYi 管理后台（含招聘管理页面）
 └─ 后续 AI 应用前端
 
 RuoYi-Vue-Plus v6.0.0
 ├─ 用户、组织、角色、权限、菜单、日志
 ├─ AI 视频业务模块
-├─ 人才库业务模块
+├─ 招聘与人才业务模块（ruoyi-hr-talent）
 ├─ 后续知识库模块
 ├─ 后续 Agent 模块
 └─ 后续 Skill 模块
@@ -75,8 +75,9 @@ RuoYi-Vue-Plus v6.0.0
 - ComfyUI、GPU、MySQL、Redis、MinIO 不开放公网。
 - 业务用户不直接访问 ComfyUI，也不能提交原始工作流 JSON。
 - GPU 视频引擎只接受 Ubuntu 平台主机的视频任务服务调用。
-- 人才库与视频业务必须使用独立 MinIO Bucket 前缀和独立权限策略；
-  人才库业务表建在平台库内（复用账号、组织、角色、菜单、数据权限），不新建独立数据库。
+- 招聘与人才业务与视频业务必须使用独立 MinIO Bucket 前缀和独立权限策略；
+  招聘与人才业务表建在平台库内（复用账号、组织、角色、菜单、数据权限），不新建独立数据库，
+  招聘过程表用 `hr_recruit_*` 前缀、人才主数据表用 `hr_talent_*` 前缀（共 36 张）。
 
 ---
 
@@ -85,12 +86,12 @@ RuoYi-Vue-Plus v6.0.0
 | 域名 | 前端 | 授权对象 | 后端模块 |
 |---|---|---|---|
 | `videoai.hottter.cn` | AI 视频生产中心 | 深圳品牌、销售、审核员 | `ruoyi-video` |
-| `pm.hottter.cn` | 现有 RuoYi 管理后台，人才库是其中的一级业务目录「集团人才库」 | 集团人才库管理员、集团 HR、深圳 HR、汕头 HR、查阅者、审计员 | `ruoyi-talent` |
+| `pm.hottter.cn` | 现有 RuoYi 管理后台，招聘与人才管理是其中的一级菜单「招聘管理」 | 集团招聘管理员、集团人才管理员、集团 HR、深圳 HR、汕头 HR、查阅者、审计员 | `ruoyi-hr-talent` |
 | `ai.hottter.cn` | 知识库、Agent、Skill 中心 | 后续按应用授权 | `ruoyi-knowledge`、`ruoyi-agent`、`ruoyi-skill` |
 
-> **集团人才库不设独立子域名、不部署独立前端**：它作为 RuoYi 平台的一级菜单目录挂在现有
-> `pm.hottter.cn` 之下，页面路径形如 `https://pm.hottter.cn/talent/profile`，路由与按钮权限
-> 全部由 RuoYi 菜单管理动态下发（见 `docs/talent/`）。此条为 2026-09 评审确认口径，
+> **招聘与人才管理不设独立子域名、不部署独立前端**：它作为 RuoYi 平台的一级菜单「招聘管理」
+> 挂在现有 `pm.hottter.cn` 之下，页面路由与按钮权限全部由 RuoYi 菜单管理动态下发（页面清单见
+> 《招聘与人才管理一体化系统详细设计方案》§5.1、§12）。此条为 2026-09 评审确认口径，
 > 取代本文档此前 `talent.hotter.cn` + 独立入口的写法。
 
 登录流程：
@@ -127,7 +128,7 @@ ai-platform/
 ├─ nginx             域名分流、前端托管、API 反向代理
 ├─ ruoyi-admin       RuoYi 后端
 ├─ ruoyi-ui-video    视频前端
-├─ ruoyi-ui-talent   人才库前端
+├─ ruoyi-ui-talent   已取消：招聘管理页面并入 RuoYi 管理后台前端，不单独部署
 ├─ ruoyi-ui-ai       后续 AI 应用前端
 ├─ video-worker      视频队列、调度、状态回传、重试
 ├─ mysql             平台与业务数据
@@ -147,14 +148,14 @@ ai-platform/
 ruoyi-modules/
 ├─ ruoyi-system       用户、组织、角色、权限、日志
 ├─ ruoyi-video        视频模板、任务、审核、归档、运营
-├─ ruoyi-talent       组织、岗位、人才档案、技能、培训、盘点
+├─ ruoyi-hr-talent    招聘需求、月度计划与结转、岗位、候选人、面试背调、人才档案与人才池、简历、导入与审计
 ├─ ruoyi-knowledge    企业知识库，二期
 ├─ ruoyi-agent        Agent 编排中心，二期
 ├─ ruoyi-skill        Skill 注册、权限、版本与审计，二期
 └─ ruoyi-edge         视频执行器与边缘节点管理
 ```
 
-原则：不直接修改上游系统模块；视频、人才、知识、Agent、Skill 以独立业务模块开发，降低上游升级冲突。
+原则：不直接修改上游系统模块；视频、招聘与人才、知识、Agent、Skill 以独立业务模块开发，降低上游升级冲突。
 
 ---
 
@@ -231,23 +232,26 @@ GPU 执行器拒绝：未签名请求、过期请求、重复请求、非白名�
 
 ---
 
-## 7. 集团人才库
+## 7. 招聘与人才管理
 
 ### 7.1 一期范围
 
 ```text
-组织与岗位
-├─ 公司、部门、岗位、汇报关系
+招聘过程
+├─ 招聘需求、公司月度计划、月度结转
+├─ 岗位需求、候选人跟进、面试管理
+└─ 背调与报到、招聘标准、渠道与同行信息
 
-人才档案
-├─ 基础信息
-├─ 技能标签
-├─ 培训与认证
-├─ 项目经历
-└─ 人才盘点标签
+人才管理
+├─ 人才档案、人才池与分组
+├─ 简历中心、重复人才治理
+└─ 人才共享授权
+
+平台能力
+├─ 管理驾驶舱、数据导入中心、敏感操作审计
 ```
 
-首期不纳入薪酬、身份证件、健康信息等高敏感个人信息。
+首期不纳入薪酬核算、身份证件、健康信息等高敏感个人信息。
 
 ### 7.2 两地 HR 权限
 
@@ -268,15 +272,18 @@ GPU 执行器拒绝：未签名请求、过期请求、重复请求、非白名�
 
 ```text
 ruoyi_platform  用户、组织、角色、菜单、日志、通用配置
-                + 集团人才库业务表（tl_talent / tl_talent_attachment / tl_talent_contact /
-                  tl_talent_duplicate / tl_talent_access_grant / tl_parse_task /
-                  tl_parse_field / tl_export_task / tl_sensitive_audit）
+                + 招聘与人才业务表（招聘过程 hr_recruit_*，如 hr_recruit_demand /
+                  hr_recruit_plan / hr_recruit_job / hr_recruit_application /
+                  hr_recruit_interview / hr_recruit_background / hr_recruit_sensitive_audit；
+                  人才主数据 hr_talent_*，如 hr_talent_profile / hr_talent_resume /
+                  hr_talent_pool / hr_talent_tag / hr_talent_scope_grant /
+                  hr_talent_duplicate_case / hr_talent_parse_task；共 36 张）
 ruoyi_video     视频模板、任务、审核、执行日志
 ```
 
-> 人才库**不新建独立数据库**：它与平台共用 `ruoyi_platform`，以 `tl_` 前缀区分业务表，
-> 从而直接复用账号、组织、角色、菜单与数据权限。详见 `script/sql/ry_talent.sql`
-> 与 `docs/talent/`。
+> 招聘与人才模块**不新建独立数据库**：它与平台共用 `ruoyi_platform`，以 `hr_recruit_` /
+> `hr_talent_` 前缀区分业务表，从而直接复用账号、组织、角色、菜单与数据权限。完整表结构
+> 见《招聘与人才管理一体化系统详细设计方案》§9.2 表命名、§21.13 数据库物理设计约定。
 
 ### MinIO
 
@@ -290,9 +297,9 @@ talent-export
 platform-backup
 ```
 
-人才库使用独立 Bucket（或 `talent-private/` 对象键前缀）、独立访问策略和导出审计，
-所有人才附件均以私有对象存储，下载只经人才库受控接口，不下发预签名 URL。
-视频模块、品牌用户、销售用户及通用 Agent 默认无权访问人才数据。
+招聘与人才模块使用独立 Bucket（或 `talent-private/` 对象键前缀）、独立访问策略和导出审计，
+所有人才附件均以私有对象存储，下载只经招聘与人才模块受控接口并校验权限，签名地址短有效期。
+视频模块、品牌用户、销售用户及通用 Agent 默认无权访问招聘与人才数据。
 
 建议留存策略：
 
@@ -319,7 +326,7 @@ AI 应用
 
 Skill 必须登记：业务负责人、输入、输出、数据权限、工具权限、审批节点、版本、测试样例、风险等级、成本和审计规则。
 
-禁止 Agent 直接拥有数据库、文件系统、人才库或业务系统的无限权限。所有写入业务系统、对外发送内容、对外发布视频和导出人才信息的操作必须保留人工确认。
+禁止 Agent 直接拥有数据库、文件系统、招聘与人才数据或业务系统的无限权限。所有写入业务系统、对外发送内容、对外发布视频和导出人才信息的操作必须保留人工确认。
 
 ---
 
@@ -403,7 +410,7 @@ sudo bash /opt/hotter-ai-platform/current/deploy/ubuntu/rollback.sh <版本号>
 | 角色 | 首期职责 |
 |---|---|
 | 架构/后端 | RuoYi 模块、权限、视频任务 API、执行器契约 |
-| 前端 | 视频中心、人才库、统一登录、任务与审核页面 |
+| 前端 | 视频中心、招聘管理、统一登录、任务与审核页面 |
 | AI 视频工程师 | ComfyUI 模板、视频执行适配器、GPU 队列与指标 |
 | 运维 | Ubuntu、Docker、Cloudflare Tunnel、备份、监控、发布 |
 | HR 负责人 | 人才字段、数据标准、权限、导出审批、数据质量 |
@@ -419,8 +426,8 @@ sudo bash /opt/hotter-ai-platform/current/deploy/ubuntu/rollback.sh <版本号>
 4. 引入并审查 RuoYi-Vue-Plus v6.0.0 上游源码。
 5. 开发视频模板、视频任务、视频审核、视频前端和 GPU 执行适配器。
 6. 深圳品牌部与销售部试点文生视频、图生视频。
-7. 建设人才库组织、岗位、档案、技能、培训与深圳/汕头权限。
-8. 视频与人才库稳定后，建设产品知识库、Agent 和 Skill 中心。
+7. 建设招聘与人才管理模块：招聘需求、月度计划与结转、岗位、候选人、面试、背调、人才档案与深圳/汕头权限。
+8. 视频与招聘管理稳定后，建设产品知识库、Agent 和 Skill 中心。
 
 ---
 
@@ -429,5 +436,5 @@ sudo bash /opt/hotter-ai-platform/current/deploy/ubuntu/rollback.sh <版本号>
 - 不提交密码、Token、证书、私钥、生产 IP、用户数据、素材和人才档案。
 - 不将 ComfyUI、MySQL、Redis、MinIO 暴露至公网。
 - 不允许普通用户直接调用 GPU 或 ComfyUI。
-- 不允许视频、营销、通用 Agent 默认读取人才库。
+- 不允许视频、营销、通用 Agent 默认读取招聘与人才数据。
 - 不允许未经人工审批的 Agent 自动发送邮件、发布内容、导出人才数据或修改业务系统。

@@ -1,0 +1,28 @@
+# 招聘与人才管理一体化系统（hrtalent）业务默认配置。
+#
+# 该文件已被 ruoyi-admin 的 application.yml 通过 spring.config.import 引入，
+# 文件缺失会导致应用启动失败；所有配置项在 HrTalentProperties 中声明默认值，
+# 生产环境可用环境变量或外部配置中心覆盖，禁止把密钥类配置提交到代码库。
+hrtalent:
+  # 附件允许的扩展名（小写，逗号分隔，不含点）
+  attachment-allow-extensions: pdf,doc,docx,xls,xlsx,ppt,pptx,txt,rtf,jpg,jpeg,png,gif,zip,7z
+  # 单文件大小上限（文件类型或大小不符时抛 HR_RESUME_001）
+  attachment-max-size: 20MB
+  # 单条业务记录允许的附件数量上限
+  attachment-max-count: 20
+  # 预签名下载地址有效期（短时，禁止落库或写日志）
+  presign-ttl: 5m
+  # 导出文件有效期（超期由定时任务清理）
+  export-valid-duration: 7d
+  # 单次导出最大行数
+  export-max-rows: 10000
+  # 单次导入批次最大行数（导入中心）
+  import-max-rows: 5000
+  # 人才附件专用 OSS 配置键；为空时使用 OssFactory 默认配置
+  oss-config-key: ""
+  # 简历解析开关：未取得个人信息处理批准前必须保持 false（HR_RESUME_002）
+  resume-parse-enabled: false
+  # 简历解析器版本标识（写入 hr_talent_parse_task，用于解析结果溯源）
+  resume-parser-version: hr-resume-parser/1.0.0
+  # 电话/邮箱不可逆哈希盐；生产必须由密钥管理注入，禁止使用默认值
+  phone-hash-salt: ""

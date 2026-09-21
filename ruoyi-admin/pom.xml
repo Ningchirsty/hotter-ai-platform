@@ -104,10 +104,10 @@
             <artifactId>ruoyi-workflow</artifactId>
         </dependency>
 
-        <!-- 集团人才库模块 -->
+        <!-- 招聘与人才管理一体化模块 -->
         <dependency>
             <groupId>org.dromara</groupId>
-            <artifactId>ruoyi-talent</artifactId>
+            <artifactId>ruoyi-hr-talent</artifactId>
         </dependency>
 
         <!-- AI治理模块 -->
