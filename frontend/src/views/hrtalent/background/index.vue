@@ -394,7 +394,7 @@
       </el-descriptions>
 
       <template v-if="attachmentVisible">
-        <el-divider content-position="left">背调附件（受控预览 / 下载，均需填写用途并记录审计）</el-divider>
+        <el-divider content-position="left">背调附件（受控预览 / 下载 / 逻辑删除，均需填写用途并记录审计）</el-divider>
         <el-table v-loading="attachmentLoading" border size="small" :data="attachmentList">
           <el-table-column label="文件名" align="center" prop="originalName" show-overflow-tooltip />
           <el-table-column label="类型" align="center" width="120">
@@ -410,7 +410,7 @@
           <el-table-column label="上传时间" align="center" width="170">
             <template #default="scope">{{ parseTime(scope.row.uploadedTime) || '-' }}</template>
           </el-table-column>
-          <el-table-column label="操作" align="center" width="150">
+          <el-table-column label="操作" align="center" width="190">
             <template #default="scope">
               <el-tooltip content="预览（需填用途）" placement="top">
                 <el-button
@@ -428,6 +428,15 @@
                   type="primary"
                   icon="Download"
                   @click="openAttachmentAction(scope.row, 'download')"
+                ></el-button>
+              </el-tooltip>
+              <el-tooltip content="删除（逻辑删除，可追溯）" placement="top">
+                <el-button
+                  v-hasPermi="['recruit:attachment:delete']"
+                  link
+                  type="danger"
+                  icon="Delete"
+                  @click="handleAttachmentDelete(scope.row)"
                 ></el-button>
               </el-tooltip>
             </template>
@@ -642,6 +651,7 @@ import {
 import type { HrApplicationVO } from '@/api/hrtalent/application/types';
 import {
   addBackground,
+  delAttachment,
   downloadAttachment,
   getBackground,
   getBackgroundDetail,
@@ -1000,6 +1010,27 @@ const submitAttachmentAction = () => {
       attachmentDialog.loading = false;
     }
   });
+};
+
+/**
+ * 逻辑删除附件
+ *
+ * 后端只置删除标志：**保留数据行与对象存储文件**，可追溯；菜单注释明确
+ * 「集团招聘管理员亦不得物理删除」，因此确认文案不使用「永久删除」类措辞。
+ */
+const handleAttachmentDelete = async (row: HrAttachmentVO) => {
+  try {
+    await modal.confirm(
+      `是否确认删除附件「${row.originalName || row.attachmentId}」？该操作为逻辑删除（仅置删除标志，保留数据行与对象存储文件，可追溯），不是物理删除。`
+    );
+  } catch {
+    return;
+  }
+  await delAttachment(row.attachmentId!);
+  modal.msgSuccess('已逻辑删除该附件（数据与文件均保留，可追溯）');
+  if (detail.row.backgroundId) {
+    await loadAttachments(detail.row.backgroundId);
+  }
 };
 
 /* ------------------------------ 邀约 / 报到 / 未报到 ------------------------------ */

@@ -95,6 +95,19 @@ public class TalentProfile extends BaseEntity implements Serializable {
     private String phoneHash;
 
     /**
+     * 手机号后四位（设计文档 §8.17「手机号后四位」组合检索；{@code char(4)}）。
+     *
+     * <p><b>口径</b>：与列表脱敏展示同口径的<b>部分信息</b>（脱敏本身即呈现 {@code 138****1234}），
+     * 因此单独落列不额外扩大暴露面；<b>不</b>使用后四位哈希，因为后四位只有 {@code 10^4} 种取值，
+     * 哈希可被瞬间穷举、提供不了保密性。该列<b>只</b>用于后四位精确检索与展示，
+     * 任何情况下不得存放完整号码（列宽 {@code char(4)} 亦在数据库层阻断）。</p>
+     *
+     * <p>由 {@code TalentContactCodec.phoneTail4(...)} 在写入侧实时填充；
+     * <b>存量数据需另行回填</b>（不在本次改造范围）。</p>
+     */
+    private String phoneTail4;
+
+    /**
      * 备用手机号密文（禁止存明文）
      */
     @EncryptField

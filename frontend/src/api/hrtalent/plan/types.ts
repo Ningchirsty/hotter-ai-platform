@@ -199,3 +199,56 @@ export interface HrPlanItemSimilarQuery {
   jobName?: string;
   planMonth?: string;
 }
+
+/**
+ * 触发事件稳定编码（与后端 `IPlanItemStatusService.TRIGGER_*` 常量逐字一致）
+ *
+ * 后端未定义该编码的字典组，因此中文说明由页面按此映射展示，避免自造编码。
+ */
+export const PLAN_ITEM_TRIGGER_EVENT_TEXT: Record<string, string> = {
+  application_stage_changed: '应聘阶段变更',
+  interview_result_changed: '面试结果变更',
+  candidate_arrived: '候选人报到',
+  background_result_changed: '背调结论变更',
+  manual_refresh: '管理员手工重算'
+};
+
+/**
+ * 计划任务状态变更日志视图（RecruitPlanItemStatusLogVo，设计文档 §7.1.5 / §21.15）
+ *
+ * 日志为**追加型**（只插入、不修改），本 VO 只读返回，不含任何写字段。
+ * `from/to` 状态用字典 `recruit_plan_execution_status` / `recruit_plan_completion_status` 翻译，
+ * 后端已对 `to*Status` 回填 `to*StatusLabel`，页面优先使用。
+ */
+export interface HrPlanItemStatusLogVO extends BaseEntity {
+  /** 日志ID */
+  logId?: string | number;
+  /** 计划任务ID */
+  itemId?: string | number;
+  /** 所属计划表头ID */
+  planId?: string | number;
+  /** 触发事件稳定编码（见 PLAN_ITEM_TRIGGER_EVENT_TEXT） */
+  triggerEvent?: string;
+  /** 原自动执行阶段（字典 recruit_plan_execution_status） */
+  fromExecutionStatus?: string;
+  /** 新自动执行阶段（字典 recruit_plan_execution_status） */
+  toExecutionStatus?: string;
+  /** 新自动执行阶段标签（@Translation 回填） */
+  toExecutionStatusLabel?: string;
+  /** 原完成状态（字典 recruit_plan_completion_status） */
+  fromCompletionStatus?: string;
+  /** 新完成状态（字典 recruit_plan_completion_status） */
+  toCompletionStatus?: string;
+  /** 新完成状态标签（@Translation 回填） */
+  toCompletionStatusLabel?: string;
+  /** 刷新时间 */
+  refreshTime?: string;
+  /** 操作人用户ID（自动刷新时可为空） */
+  operatorId?: string | number;
+  /** 操作人昵称（@Translation 回填） */
+  operatorName?: string;
+  /** 备注 */
+  remark?: string;
+  /** 创建时间 */
+  createTime?: string;
+}

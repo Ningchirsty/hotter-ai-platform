@@ -778,9 +778,10 @@ create table if not exists hr_talent_profile (
     gender                varchar(32)     default null               comment '性别（字典编码，如 male/female/unknown）',
     birth_date            date            default null               comment '出生日期（优先保存出生日期）',
     age_snapshot          int(11)         default null               comment '年龄快照（仅导入原值，不反推出生日期）',
-    highest_education     varchar(32)     default null               comment '最高学历（字典编码）',
+    highest_education     varchar(32)     default null               comment '最高学历（high_school/college/bachelor/master/doctor/other，字典 talent_education）',
     phone_cipher          varchar(512)    default null               comment '电话密文（禁止存明文，列表默认脱敏）',
     phone_hash            char(64)        default null               comment '电话标准化不可逆哈希（SHA-256，重复预警用，不唯一）',
+    phone_tail4           char(4)         default null               comment '手机号后四位（§8.17 组合检索要求；与脱敏展示同口径的部分信息，禁止在此列存放完整号码）',
     backup_phone_cipher   varchar(512)    default null               comment '备用手机号密文（禁止存明文，§8.17）',
     backup_phone_hash     char(64)        default null               comment '备用手机号标准化不可逆哈希（SHA-256，与 phone_hash 同口径，§8.17）',
     email_cipher          varchar(512)    default null               comment '邮箱密文（禁止存明文）',
@@ -823,6 +824,7 @@ create table if not exists hr_talent_profile (
     unique key uk_hr_talent_profile_no (talent_no),
     -- 仅普通索引：不唯一，兼容家庭共用电话/邮箱等例外场景
     key idx_hr_talent_profile_phone (phone_hash),
+    key idx_hr_talent_profile_phone_tail4 (phone_tail4),
     key idx_hr_talent_profile_email (email_hash),
     key idx_hr_talent_profile_owner (owner_id, talent_status),
     key idx_hr_talent_profile_city (current_city, talent_status),
@@ -869,9 +871,9 @@ create table if not exists hr_talent_resume (
     current_flag          char(1)         not null default '1'       comment '是否当前版本（0否 1是，同一人才仅一个当前版本）',
     scan_status           varchar(32)     default null               comment '文件安全扫描状态（pending/scanning/passed/failed等稳定编码，§8.13/§21.6/§8.8）',
     parse_status          varchar(32)     not null default 'pending' comment '解析状态（pending/processing/succeeded/failed/reviewing/confirmed，字典 talent_resume_parse_status，§10）',
-    review_status         varchar(32)     not null default 'pending' comment '复核状态（取值复用字典 talent_resume_parse_status）',
+    review_status         varchar(32)     not null default 'pending' comment '复核状态（pending待复核/reviewing复核中/confirmed已确认/rejected已否决，字典 talent_resume_review_status）',
     parser_version        varchar(64)     default null               comment '解析器版本',
-    source_type           varchar(32)     default null               comment '简历来源（upload/import/mail/application等稳定编码）',
+    source_type           varchar(32)     default null               comment '简历来源（manual人工录入/import导入/parse简历解析/system系统生成，字典 talent_source_type）',
     uploaded_by           bigint(20)      default null               comment '上传人用户ID',
     uploaded_time         datetime(3)     default null               comment '上传时间',
     del_flag              char(1)         default '0'                comment '删除标志（0代表存在 1代表删除）',
@@ -895,12 +897,12 @@ create table if not exists hr_talent_education (
     talent_id             bigint(20)      not null                   comment '人才主档ID',
     school_name           varchar(200)    default null               comment '学校名称',
     major                 varchar(200)    default null               comment '专业',
-    education             varchar(32)     default null               comment '学历（字典编码）',
-    degree                varchar(32)     default null               comment '学位（字典编码）',
+    education             varchar(32)     default null               comment '学历（high_school/college/bachelor/master/doctor/other，字典 talent_education）',
+    degree                varchar(32)     default null               comment '学位（none/bachelor/master/doctor/other，字典 talent_degree）',
     start_date            date            default null               comment '入学日期',
     end_date              date            default null               comment '毕业日期',
     full_time_flag        char(1)         not null default '1'       comment '是否全日制（0否 1是）',
-    source_type           varchar(32)     default null               comment '来源类型（resume解析/manual手工/import导入等稳定编码）',
+    source_type           varchar(32)     default null               comment '来源类型（manual人工录入/import导入/parse简历解析/system系统生成，字典 talent_source_type）',
     resume_id             bigint(20)      default null               comment '来源简历版本ID（人工确认为准）',
     sort_no               int(11)         not null default 0         comment '排序号（倒序展示用）',
     del_flag              char(1)         default '0'                comment '删除标志（0代表存在 1代表删除）',
@@ -930,7 +932,7 @@ create table if not exists hr_talent_work (
     current_flag          char(1)         not null default '0'       comment '是否当前在职（0否 1是）',
     responsibility        text                                       comment '工作职责',
     achievement           text                                       comment '工作业绩',
-    source_type           varchar(32)     default null               comment '来源类型（resume解析/manual手工/import导入等稳定编码）',
+    source_type           varchar(32)     default null               comment '来源类型（manual人工录入/import导入/parse简历解析/system系统生成，字典 talent_source_type）',
     resume_id             bigint(20)      default null               comment '来源简历版本ID',
     sort_no               int(11)         not null default 0         comment '排序号（倒序展示用）',
     del_flag              char(1)         default '0'                comment '删除标志（0代表存在 1代表删除）',
@@ -957,7 +959,7 @@ create table if not exists hr_talent_project (
     description           text                                       comment '项目描述',
     responsibility        text                                       comment '项目职责',
     achievement           text                                       comment '项目业绩',
-    source_type           varchar(32)     default null               comment '来源类型（resume解析/manual手工/import导入等稳定编码）',
+    source_type           varchar(32)     default null               comment '来源类型（manual人工录入/import导入/parse简历解析/system系统生成，字典 talent_source_type）',
     resume_id             bigint(20)      default null               comment '来源简历版本ID',
     work_id               bigint(20)      default null               comment '关联工作经历ID',
     sort_no               int(11)         not null default 0         comment '排序号（倒序展示用）',
@@ -1062,7 +1064,7 @@ create table if not exists hr_talent_profile_tag (
     rel_id                bigint(20)      not null                   comment '标签关系ID（主键）',
     talent_id             bigint(20)      not null                   comment '人才主档ID',
     tag_id                bigint(20)      not null                   comment '标签ID',
-    source_type           varchar(32)     default null               comment '来源类型（manual手工/resume解析/system系统等稳定编码）',
+    source_type           varchar(32)     default null               comment '来源类型（manual人工录入/import导入/parse简历解析/system系统生成，字典 talent_source_type）',
     confirmed_by          bigint(20)      default null               comment '确认人用户ID（人工确认为准）',
     confirmed_time        datetime(3)     default null               comment '确认时间',
     del_flag              char(1)         default '0'                comment '删除标志（0代表存在 1代表删除）',
@@ -1142,7 +1144,7 @@ create table if not exists hr_talent_duplicate_case (
     match_level           varchar(32)     default null               comment '匹配级别（high/medium/low或规则编码）',
     match_reason          varchar(500)    default null               comment '匹配原因（命中规则说明，如电话哈希命中）',
     match_score           decimal(5,2)    default null               comment '匹配得分',
-    status                varchar(32)     not null default 'pending' comment '处理状态（pending/merged/not_same/ignored，字典 talent_duplicate_status，§10）',
+    status                varchar(32)     not null default 'pending' comment '处理状态（pending/merged/not_same/ignored/confirmed，字典 talent_duplicate_status，§10）',
     handled_by            bigint(20)      default null               comment '处理人用户ID',
     handled_time          datetime(3)     default null               comment '处理时间',
     del_flag              char(1)         default '0'                comment '删除标志（0代表存在 1代表删除）',
@@ -1221,7 +1223,7 @@ create table if not exists hr_talent_parse_result (
     normalized_value      varchar(1000)   default null               comment '标准化值（人工确认后可写入正式字段）',
     confidence            decimal(5,4)    default null               comment '置信度（0~1，低置信度默认不勾选）',
     source_location       varchar(128)    default null               comment '来源位置（页码或文本偏移）',
-    review_status         varchar(32)     not null default 'pending' comment '复核状态（pending待复核/confirmed已确认/rejected已否决等稳定编码）',
+    review_status         varchar(32)     not null default 'pending' comment '复核状态（pending待复核/reviewing复核中/confirmed已确认/rejected已否决，字典 talent_resume_review_status）',
     reviewed_by           bigint(20)      default null               comment '复核人用户ID',
     reviewed_time         datetime(3)     default null               comment '复核时间',
     del_flag              char(1)         default '0'                comment '删除标志（0代表存在 1代表删除）',
@@ -1235,6 +1237,88 @@ create table if not exists hr_talent_parse_result (
     key idx_hr_talent_parse_result_task (task_id, field_path),
     key idx_hr_talent_parse_result_review (review_status)
 ) engine=innodb comment = '简历候选解析结果表';
+
+-- ----------------------------
+-- 17、人才导出任务（设计 §8.20 / §11 / §21.10）
+--     P4 新增表，对应 P2-决策与缺口台账 §4 第 4 项结构性缺口。
+--     记录筛选条件、字段清单、导出人、用途、记录数与过期时间；结果文件存私有 OSS，
+--     只存对象标识不存长期公网地址，到期自动删除。
+-- ----------------------------
+create table if not exists hr_talent_export_task (
+    task_id               bigint(20)      not null                   comment '导出任务ID（主键）',
+    task_no               varchar(64)     not null                   comment '任务编号（业务编号，唯一）',
+    export_type           varchar(32)     not null default 'normal'  comment '导出类型（normal普通台账/sensitive敏感台账）',
+    scope_json            json                                       comment '筛选条件快照（结构化，禁止写入敏感明文）',
+    fields_json           json                                       comment '导出字段清单快照（结构化）',
+    exported_by           bigint(20)      default null               comment '导出人用户ID',
+    purpose               varchar(255)    default null               comment '导出用途/原因（敏感台账必填，审计追溯用）',
+    record_count          int(11)         not null default 0         comment '导出记录数（非负整数）',
+    oss_id                varchar(64)     default null               comment '结果文件OSS对象标识（不存长期公网地址）',
+    file_name             varchar(255)    default null               comment '结果文件名',
+    status                varchar(32)     not null default 'pending' comment '任务状态（pending/running/success/failed/expired等稳定编码）',
+    failure_reason        varchar(500)    default null               comment '失败原因',
+    expire_time           datetime(3)     default null               comment '结果文件过期时间（到期自动删除）',
+    finished_time         datetime(3)     default null               comment '完成时间',
+    del_flag              char(1)         default '0'                comment '删除标志（0代表存在 1代表删除）',
+    create_dept           bigint(20)      default null               comment '创建部门',
+    create_by             bigint(20)      default null               comment '创建者',
+    create_time           datetime                                   comment '创建时间',
+    update_by             bigint(20)      default null               comment '更新者',
+    update_time           datetime                                   comment '更新时间',
+    remark                varchar(500)    default null               comment '备注',
+    primary key (task_id),
+    unique key uk_hr_talent_export_task_no (task_no),
+    key idx_hr_talent_export_task_operator (exported_by, create_time),
+    key idx_hr_talent_export_task_expire (status, expire_time)
+) engine=innodb comment = '人才导出任务表';
+
+-- ----------------------------
+-- 18、人才分组（设计 §8.15、§5.1 菜单「人才池与分组」）
+--     P4 新增表，对应 P2-决策与缺口台账 §4 第 3 项结构性缺口。
+-- ----------------------------
+create table if not exists hr_talent_group (
+    group_id              bigint(20)      not null                   comment '分组ID（主键）',
+    group_code            varchar(64)     default null               comment '分组编码（业务编码，可选）',
+    group_name            varchar(128)    not null                   comment '分组名称',
+    group_type            varchar(32)     not null default 'personal' comment '分组类型（public公共分组/personal个人收藏，字典 talent_group_type）',
+    owner_dept_id         bigint(20)      default null               comment '归属部门ID（公共分组的维护部门）',
+    owner_id              bigint(20)      default null               comment '负责人/收藏人用户ID',
+    visibility_type       varchar(32)     not null default 'owner'   comment '可见范围（group/company/department/owner/explicit，字典 talent_visibility_type）',
+    status                varchar(32)     not null default 'active'  comment '状态（active生效/inactive停用等稳定编码）',
+    talent_count          int(11)         not null default 0         comment '成员数量冗余计数（非负整数）',
+    del_flag              char(1)         default '0'                comment '删除标志（0代表存在 1代表删除）',
+    create_dept           bigint(20)      default null               comment '创建部门',
+    create_by             bigint(20)      default null               comment '创建者',
+    create_time           datetime                                   comment '创建时间',
+    update_by             bigint(20)      default null               comment '更新者',
+    update_time           datetime                                   comment '更新时间',
+    remark                varchar(500)    default null               comment '备注',
+    primary key (group_id),
+    key idx_hr_talent_group_owner (owner_id, group_type, status),
+    key idx_hr_talent_group_dept (owner_dept_id, group_type)
+) engine=innodb comment = '人才分组表';
+
+-- ----------------------------
+-- 19、人才分组成员（设计 §8.15）
+--     唯一索引 (group_id, talent_id) 防止重复加入；移出分组只结束关系，不删除人才主档。
+-- ----------------------------
+create table if not exists hr_talent_group_member (
+    member_id             bigint(20)      not null                   comment '分组成员ID（主键）',
+    group_id              bigint(20)      not null                   comment '分组ID',
+    talent_id             bigint(20)      not null                   comment '人才主档ID',
+    added_by              bigint(20)      default null               comment '加入人用户ID',
+    added_time            datetime(3)     default null               comment '加入时间',
+    del_flag              char(1)         default '0'                comment '删除标志（0代表存在 1代表删除）',
+    create_dept           bigint(20)      default null               comment '创建部门',
+    create_by             bigint(20)      default null               comment '创建者',
+    create_time           datetime                                   comment '创建时间',
+    update_by             bigint(20)      default null               comment '更新者',
+    update_time           datetime                                   comment '更新时间',
+    remark                varchar(500)    default null               comment '备注',
+    primary key (member_id),
+    unique key uk_hr_talent_group_member (group_id, talent_id),
+    key idx_hr_talent_group_member_talent (talent_id)
+) engine=innodb comment = '人才分组成员表';
 
 -- ============================================================================
 -- 来源：script/sql/hr_talent_menu.sql（菜单 / 角色 / 角色菜单绑定 / 数据字典）
@@ -1286,7 +1370,7 @@ create table if not exists hr_talent_parse_result (
 -- ----------------------------------------------------------------------------
 
 -- ----------------------------
--- 一、字典类型（31 组 = 设计文档 §10 的 23 组 + 本次补齐的 8 组）
+-- 一、字典类型（36 组 = 设计文档 §10 的 23 组 + 前两批补齐的 8 组 + 本批补齐的 5 组）
 -- column: dict_id, dict_name, dict_type, create_dept, create_by, create_time,
 --         update_by, update_time, remark
 -- ----------------------------
@@ -1311,7 +1395,7 @@ insert ignore into sys_dict_type values(1766200000000000018, '人才共享授权
 insert ignore into sys_dict_type values(1766200000000000019, '人才池成员状态',   'talent_pool_member_status',       1761000000000000103, 1761100000000000001, sysdate(), null, null, 'active/paused/removed/converted');
 insert ignore into sys_dict_type values(1766200000000000020, '人才标签类别',     'talent_tag_category',             1761000000000000103, 1761100000000000001, sysdate(), null, null, 'skill/job_direction/industry/experience/language/certificate/other');
 insert ignore into sys_dict_type values(1766200000000000021, '简历解析状态',     'talent_resume_parse_status',      1761000000000000103, 1761100000000000001, sysdate(), null, null, 'pending/processing/succeeded/failed/reviewing/confirmed');
-insert ignore into sys_dict_type values(1766200000000000022, '疑似重复处理状态', 'talent_duplicate_status',         1761000000000000103, 1761100000000000001, sysdate(), null, null, 'pending/merged/not_same/ignored');
+insert ignore into sys_dict_type values(1766200000000000022, '疑似重复处理状态', 'talent_duplicate_status',         1761000000000000103, 1761100000000000001, sysdate(), null, null, 'pending/merged/not_same/ignored/confirmed');
 insert ignore into sys_dict_type values(1766200000000000023, '人才联系结果',     'talent_contact_result',           1761000000000000103, 1761100000000000001, sysdate(), null, null, 'connected/no_answer/refused/interested/follow_up_later/invalid');
 
 -- 本次补齐的 6 组字典（原 23 组 → 29 组，ID 顺延 …024~…029）：
@@ -1339,8 +1423,24 @@ insert ignore into sys_dict_type values(1766200000000000029, '面试方式',    
 insert ignore into sys_dict_type values(1766200000000000030, '邀约结果',            'recruit_offer_result',                1761000000000000103, 1761100000000000001, sysdate(), null, null, 'pending/accepted/rejected');
 insert ignore into sys_dict_type values(1766200000000000031, '阶段变更原因分类',    'recruit_stage_reason_code',           1761000000000000103, 1761100000000000001, sysdate(), null, null, 'skill_mismatch/experience_mismatch/salary_mismatch/education_mismatch/communication/candidate_declined/position_closed/other');
 
+-- 本批补齐的 5 组字典（原 31 组 → 36 组，ID 顺延 …032~…036）：
+--   32. 学历 talent_education（来源 hr_talent_education.education /
+--       hr_talent_profile.highest_education 建表注释「字典编码」，§10 无此组）
+--   33. 学位 talent_degree（来源 hr_talent_education.degree 建表注释「字典编码」，§10 无此组）
+--   34. 简历解析复核状态 talent_resume_review_status（hr_talent_resume.review_status 专用；
+--       该列建表注释要求支持 rejected，而 talent_resume_parse_status 组没有 rejected。
+--       hr_talent_resume.parse_status 继续用 talent_resume_parse_status，两者不得混用）
+--   35. 数据来源类型 talent_source_type（来源 hr_talent_resume/education/work/project.source_type
+--       建表注释「人工/导入/解析等稳定编码」，§10 无此组）
+--   36. 人才分组类型 talent_group_type（来源 hr_talent_group.group_type 建表注释 + §8.15）
+insert ignore into sys_dict_type values(1766200000000000032, '学历',             'talent_education',            1761000000000000103, 1761100000000000001, sysdate(), null, null, 'high_school/college/bachelor/master/doctor/other');
+insert ignore into sys_dict_type values(1766200000000000033, '学位',             'talent_degree',               1761000000000000103, 1761100000000000001, sysdate(), null, null, 'none/bachelor/master/doctor/other');
+insert ignore into sys_dict_type values(1766200000000000034, '简历解析复核状态', 'talent_resume_review_status', 1761000000000000103, 1761100000000000001, sysdate(), null, null, 'pending/reviewing/confirmed/rejected');
+insert ignore into sys_dict_type values(1766200000000000035, '数据来源类型',     'talent_source_type',          1761000000000000103, 1761100000000000001, sysdate(), null, null, 'manual/import/parse/system');
+insert ignore into sys_dict_type values(1766200000000000036, '人才分组类型',     'talent_group_type',           1761000000000000103, 1761100000000000001, sysdate(), null, null, 'public/personal');
+
 -- ----------------------------
--- 二、字典数据（设计文档 §10 全部编码值 + 本次补齐的 8 组）
+-- 二、字典数据（设计文档 §10 全部编码值 + 前两批补齐的 8 组 + 本批补齐的 5 组）
 -- column: dict_code, dict_sort, dict_label, dict_value, dict_type, css_class, list_class,
 --         is_default, create_dept, create_by, create_time, update_by, update_time, remark
 -- ----------------------------
@@ -1496,6 +1596,7 @@ insert ignore into sys_dict_data values(1766300000000000211, 1, '待处理',   '
 insert ignore into sys_dict_data values(1766300000000000212, 2, '已合并',   'merged',   'talent_duplicate_status', '', 'success', 'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '已合并到主档，写入合并日志');
 insert ignore into sys_dict_data values(1766300000000000213, 3, '非同一人', 'not_same', 'talent_duplicate_status', '', 'info',    'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '经确认并非同一人');
 insert ignore into sys_dict_data values(1766300000000000214, 4, '已忽略',   'ignored',  'talent_duplicate_status', '', 'info',    'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '暂不处理，保留预警');
+insert ignore into sys_dict_data values(1766300000000000265, 5, '已确认待合并', 'confirmed', 'talent_duplicate_status', '', 'primary', 'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '人工确认确为同一人，尚未执行合并；不计入「待处理」工作队列');
 
 -- 23. 人才联系结果 talent_contact_result
 insert ignore into sys_dict_data values(1766300000000000221, 1, '已接通',     'connected',       'talent_contact_result', '', 'success', 'Y', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '已取得联系');
@@ -1564,6 +1665,47 @@ insert ignore into sys_dict_data values(1766300000000000262, 6, '候选人主动
 insert ignore into sys_dict_data values(1766300000000000263, 7, '岗位已关闭',          'position_closed',       'recruit_stage_reason_code', '', 'info',    'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '岗位暂停或关闭导致流程终止');
 insert ignore into sys_dict_data values(1766300000000000264, 8, '其他',                'other',                 'recruit_stage_reason_code', '', 'info',    'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '不属于上述分类的其他原因');
 
+-- 32. 学历 talent_education
+--     hr_talent_education.education / hr_talent_profile.highest_education 建表注释「字典编码」；
+--     §10 无此组，本组 6 个编码为本次新定义。
+insert ignore into sys_dict_data values(1766300000000000266, 1, '高中', 'high_school', 'talent_education', '', 'info',    'Y', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '高中及同等学力');
+insert ignore into sys_dict_data values(1766300000000000267, 2, '大专', 'college',     'talent_education', '', 'info',    'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '大专学历');
+insert ignore into sys_dict_data values(1766300000000000268, 3, '本科', 'bachelor',    'talent_education', '', 'primary', 'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '本科学历');
+insert ignore into sys_dict_data values(1766300000000000269, 4, '硕士', 'master',      'talent_education', '', 'success', 'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '硕士研究生学历');
+insert ignore into sys_dict_data values(1766300000000000270, 5, '博士', 'doctor',      'talent_education', '', 'warning', 'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '博士研究生学历');
+insert ignore into sys_dict_data values(1766300000000000271, 6, '其他', 'other',       'talent_education', '', 'info',    'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '其他学历形式');
+
+-- 33. 学位 talent_degree
+--     hr_talent_education.degree 建表注释「字典编码」；§10 无此组，本组 5 个编码为本次新定义。
+insert ignore into sys_dict_data values(1766300000000000272, 1, '无',   'none',     'talent_degree', '', 'info',    'Y', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '未取得学位');
+insert ignore into sys_dict_data values(1766300000000000273, 2, '学士', 'bachelor', 'talent_degree', '', 'primary', 'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '学士学位');
+insert ignore into sys_dict_data values(1766300000000000274, 3, '硕士', 'master',   'talent_degree', '', 'success', 'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '硕士学位');
+insert ignore into sys_dict_data values(1766300000000000275, 4, '博士', 'doctor',   'talent_degree', '', 'warning', 'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '博士学位');
+insert ignore into sys_dict_data values(1766300000000000276, 5, '其他', 'other',    'talent_degree', '', 'info',    'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '其他学位类型');
+
+-- 34. 简历解析复核状态 talent_resume_review_status
+--     hr_talent_resume.review_status 专用；§10 无此组，本组 4 个编码为本次新定义。
+--     parse_status 继续使用 talent_resume_parse_status，两列两字典不得混用。
+insert ignore into sys_dict_data values(1766300000000000277, 1, '待复核', 'pending',   'talent_resume_review_status', '', 'info',    'Y', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '解析结果待人工复核');
+insert ignore into sys_dict_data values(1766300000000000278, 2, '复核中', 'reviewing', 'talent_resume_review_status', '', 'warning', 'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '人工复核进行中');
+insert ignore into sys_dict_data values(1766300000000000279, 3, '已确认', 'confirmed', 'talent_resume_review_status', '', 'success', 'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '复核通过，可写入正式人才字段');
+insert ignore into sys_dict_data values(1766300000000000280, 4, '已否决', 'rejected',  'talent_resume_review_status', '', 'danger',  'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '复核不通过，解析结果不予采信');
+
+-- 35. 数据来源类型 talent_source_type
+--     hr_talent_resume/education/work/project.source_type 建表注释「人工/导入/解析等稳定编码」；
+--     §10 无此组，本组 4 个编码为本次新定义。
+insert ignore into sys_dict_data values(1766300000000000281, 1, '人工录入', 'manual', 'talent_source_type', '', 'primary', 'Y', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '人工录入或页面手工维护');
+insert ignore into sys_dict_data values(1766300000000000282, 2, '导入',     'import', 'talent_source_type', '', 'info',    'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '批量导入或文件导入');
+insert ignore into sys_dict_data values(1766300000000000283, 3, '简历解析', 'parse',  'talent_source_type', '', 'warning', 'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '由简历解析任务写入');
+insert ignore into sys_dict_data values(1766300000000000284, 4, '系统生成', 'system', 'talent_source_type', '', 'info',    'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '由系统任务或规则自动生成');
+
+-- 36. 人才分组类型 talent_group_type
+--     hr_talent_group.group_type 建表注释 + §8.15「公共分组 / 个人收藏」；
+--     本组 2 个编码为本次新定义。
+insert ignore into sys_dict_data values(1766300000000000285, 1, '公共分组', 'public',   'talent_group_type', '', 'success', 'Y', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '由部门或管理员维护的公共人才分组');
+insert ignore into sys_dict_data values(1766300000000000286, 2, '个人收藏', 'personal', 'talent_group_type', '', 'primary', 'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '用户私有的个人收藏分组');
+
+
 -- ----------------------------
 -- 三、角色（9 个，设计文档 §6）
 -- column: role_id, role_name, role_key, role_sort, data_scope, menu_check_strictly,
@@ -1593,12 +1735,17 @@ insert ignore into sys_role values(1766100000000000009, '人才库查阅者',   
 --   * 「人才管理」为二级目录（menu_type='M'，parent_id=招聘管理，path='talent'）。
 --   * component 取自设计文档 §21.4 的 views/hrtalent/<页面>/，前端实际文件为 index.vue。
 --   * 目录/菜单的 perms 取其自身列表权限；其余动作逐条建 F 按钮，权限串逐条取 §5.2。
+--   * 【重要】以下 5 个菜单的 visible 刻意设为 '1'（隐藏），因其**后端整层与前端页面尚未实现**：
+--       管理驾驶舱(…101) / 招聘渠道(…109) / 同行信息(…110) / 招聘标准(…111) / 数据导入中心(…112)。
+--     DDL、权限常量与菜单已在 P1 就位，但实体/Mapper/服务/控制器/前端页面整体缺失，显示出来只会得到空白页。
+--     其中驾驶舱与导入中心属阶段 4；渠道/同行/标准属未分配缺口。**用户裁定：先隐藏，功能另行排期。**
+--     详细说明与理由见 `hr_talent_menu.sql` 同名注释块（两文件必须保持一致）。
 -- ----------------------------
 -- 一级目录
 insert ignore into sys_menu values(1766000000000000001, '招聘管理', 0, 6, 'recruit', null, '', 'N', 'Y', 'M', '0', '0', '', 'peoples', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '招聘与人才管理一体化系统（招聘过程 + 人才主数据）');
 
 -- 1 管理驾驶舱
-insert ignore into sys_menu values(1766000000000000101, '管理驾驶舱', 1766000000000000001, 1, 'dashboard', 'hrtalent/dashboard/index', '', 'N', 'Y', 'C', '0', '0', 'recruit:dashboard:view', 'monitor', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '招聘概览与核心指标');
+insert ignore into sys_menu values(1766000000000000101, '管理驾驶舱', 1766000000000000001, 1, 'dashboard', 'hrtalent/dashboard/index', '', 'N', 'Y', 'C', '1', '0', 'recruit:dashboard:view', 'monitor', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '招聘概览与核心指标');
 -- 2 招聘需求
 insert ignore into sys_menu values(1766000000000000102, '招聘需求', 1766000000000000001, 2, 'demand', 'hrtalent/demand/index', '', 'N', 'Y', 'C', '0', '0', 'recruit:demand:list', 'list', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '需求来源、审批与状态流转');
 -- 3 公司月度计划
@@ -1626,13 +1773,13 @@ insert ignore into sys_menu values(1766000000000000205, '重复人才治理', 17
 --   9.5 人才共享授权
 insert ignore into sys_menu values(1766000000000000206, '人才共享授权', 1766000000000000201, 5, 'grant', 'hrtalent/grant/index', '', 'N', 'Y', 'C', '0', '0', 'talent:grant:list', 'lock', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '人才可见范围与共享授权（含撤销）');
 -- 10 招聘渠道
-insert ignore into sys_menu values(1766000000000000109, '招聘渠道', 1766000000000000001, 10, 'channel', 'hrtalent/channel/index', '', 'N', 'Y', 'C', '0', '0', 'recruit:channel:list', 'link', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '招聘渠道主数据与渠道效果');
+insert ignore into sys_menu values(1766000000000000109, '招聘渠道', 1766000000000000001, 10, 'channel', 'hrtalent/channel/index', '', 'N', 'Y', 'C', '1', '0', 'recruit:channel:list', 'link', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '招聘渠道主数据与渠道效果');
 -- 11 同行信息
-insert ignore into sys_menu values(1766000000000000110, '同行信息', 1766000000000000001, 11, 'peer', 'hrtalent/peer/index', '', 'N', 'Y', 'C', '0', '0', 'recruit:peer:list', 'company', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '同行公司与人才市场信息');
+insert ignore into sys_menu values(1766000000000000110, '同行信息', 1766000000000000001, 11, 'peer', 'hrtalent/peer/index', '', 'N', 'Y', 'C', '1', '0', 'recruit:peer:list', 'company', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '同行公司与人才市场信息');
 -- 12 招聘标准
-insert ignore into sys_menu values(1766000000000000111, '招聘标准', 1766000000000000001, 12, 'standard', 'hrtalent/standard/index', '', 'N', 'Y', 'C', '0', '0', 'recruit:standard:list', 'skill', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '岗位招聘标准与评价项');
+insert ignore into sys_menu values(1766000000000000111, '招聘标准', 1766000000000000001, 12, 'standard', 'hrtalent/standard/index', '', 'N', 'Y', 'C', '1', '0', 'recruit:standard:list', 'skill', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '岗位招聘标准与评价项');
 -- 13 数据导入中心
-insert ignore into sys_menu values(1766000000000000112, '数据导入中心', 1766000000000000001, 13, 'import-center', 'hrtalent/import-center/index', '', 'N', 'Y', 'C', '0', '0', 'recruit:import:list', 'upload', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, 'Excel 模板下载、上传、预检与确认导入');
+insert ignore into sys_menu values(1766000000000000112, '数据导入中心', 1766000000000000001, 13, 'import-center', 'hrtalent/import-center/index', '', 'N', 'Y', 'C', '1', '0', 'recruit:import:list', 'upload', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, 'Excel 模板下载、上传、预检与确认导入');
 -- 14 敏感操作审计
 insert ignore into sys_menu values(1766000000000000113, '敏感操作审计', 1766000000000000001, 14, 'audit', 'hrtalent/audit/index', '', 'N', 'Y', 'C', '0', '0', 'recruit:audit:list', 'eye', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '敏感操作审计记录（只读）');
 
@@ -1768,6 +1915,28 @@ insert ignore into sys_menu values(1766000000000002701, '审计查询', 17660000
 insert ignore into sys_menu values(1766000000000002702, '审计导出', 1766000000000000113, 2, '', '', '', 'N', 'Y', 'F', '0', '0', 'recruit:audit:export', '#', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '');
 
 -- ----------------------------
+-- 四之二、**对既有行的字段修正**（必须用 update，不能用 insert ignore）
+-- ----------------------------
+-- 【为什么必须有这一段 —— 部署陷阱，勿删】
+--   本脚本的 `insert ignore into sys_menu values(...)` 只能保证"行不存在时插入"，
+--   **对已存在的行一律跳过**。因此凡是"修改某个已发布菜单的字段值"，
+--   光改上面的 insert 语句**对已升级的库完全无效**——新装库生效、升级库静默保持旧值。
+--   这类分叉极难排查（"我本地是好的"）。凡改动既有菜单行，**必须在此追加对应的 update**。
+--   update 放在 insert 之后：新装库 insert 已写入正确值，update 为幂等空操作；升级库由 update 修正。
+--
+-- 修正内容：以下 5 个菜单的后端与前端页面尚未实现，须隐藏（visible='1'）。
+--   原因与范围见 `hr_talent_menu.sql` 同名注释块。用户裁定：先隐藏，功能另行排期。
+--   只改 visible，**不动 status**（status='1' 是"停用"，语义不同）与其它任何字段。
+update sys_menu set visible = '1'
+ where menu_id in (
+   1766000000000000101,  -- 管理驾驶舱（阶段 4）
+   1766000000000000109,  -- 招聘渠道（未分配缺口）
+   1766000000000000110,  -- 同行信息（未分配缺口）
+   1766000000000000111,  -- 招聘标准（未分配缺口）
+   1766000000000000112   -- 数据导入中心（阶段 4）
+ );
+
+-- ----------------------------
 -- 五、角色-菜单绑定（按设计文档 §6 的职责与限制分配）
 -- column: role_id, menu_id
 -- 约定：角色能看到的页面必授其一、二级目录，否则菜单树不显示；
@@ -1785,9 +1954,12 @@ insert ignore into sys_role_menu values (1766100000000000001, 176600000000000011
 insert ignore into sys_role_menu values (1766100000000000001, 1766000000000002701);
 
 -- 2) 集团招聘管理员 hr_recruit_admin_group：集团全部招聘业务、标准、渠道、统计和审计。
---    不含人才管理子树（该子树归集团人才管理员）；背调明细（recruit:background:view-sensitive）
---    与候选人电话明文（recruit:candidate:phone-view）为高敏感资源级权限，按 §6 需单独授权，
---    故本角色默认不授这两项。
+--    不含人才管理子树（该子树归集团人才管理员）。
+--    背调明细（recruit:background:view-sensitive）与候选人电话明文（recruit:candidate:phone-view）
+--    属 §6 所述"高敏感资源级权限"：本角色作为集团级招聘负责人默认持有，但记录级仍受可见范围
+--    （TalentScopeDomainService）与授权级别（summary/detail/attachment）约束，且每次访问强制写审计。
+--    §6 的"不能查看其他公司的候选人明文和背调"由可见范围落地，不再靠"不授权限"实现；
+--    公司招聘负责人（hr_company_recruit_owner）仍不授这两项。
 insert ignore into sys_role_menu values (1766100000000000002, 1766000000000000001);
 insert ignore into sys_role_menu values (1766100000000000002, 1766000000000000101);
 insert ignore into sys_role_menu values (1766100000000000002, 1766000000000001001);
@@ -1845,6 +2017,8 @@ insert ignore into sys_role_menu values (1766100000000000002, 176600000000000010
 insert ignore into sys_role_menu values (1766100000000000002, 1766000000000001701);
 insert ignore into sys_role_menu values (1766100000000000002, 1766000000000001702);
 insert ignore into sys_role_menu values (1766100000000000002, 1766000000000001703);
+-- 背调明细查看：集团招聘管理员默认持有（记录级受可见范围约束，每次访问写审计）
+insert ignore into sys_role_menu values (1766100000000000002, 1766000000000001704);
 insert ignore into sys_role_menu values (1766100000000000002, 1766000000000000109);
 insert ignore into sys_role_menu values (1766100000000000002, 1766000000000002301);
 insert ignore into sys_role_menu values (1766100000000000002, 1766000000000002302);
@@ -1871,7 +2045,9 @@ insert ignore into sys_role_menu values (1766100000000000002, 176600000000000270
 insert ignore into sys_role_menu values (1766100000000000002, 1766000000000002702);
 
 -- 3) 集团人才管理员 hr_talent_admin_group：人才主档、人才池、标签、重复治理、共享授权和人才统计。
---    高度敏感附件仍需独立权限 → 不授 talent:profile:phone-view / resume:download。
+--    人才电话明文（talent:profile:phone-view）与简历下载（talent:resume:download）为独立登记的
+--    资源级权限：默认授给集团人才管理员，但记录级仍受人才可见范围与共享授权级别约束，
+--    且每次访问强制写审计（含被拒绝的访问）。
 insert ignore into sys_role_menu values (1766100000000000003, 1766000000000000001);
 insert ignore into sys_role_menu values (1766100000000000003, 1766000000000000101);
 insert ignore into sys_role_menu values (1766100000000000003, 1766000000000001001);
@@ -1883,6 +2059,7 @@ insert ignore into sys_role_menu values (1766100000000000003, 176600000000000180
 insert ignore into sys_role_menu values (1766100000000000003, 1766000000000001803);
 insert ignore into sys_role_menu values (1766100000000000003, 1766000000000001804);
 insert ignore into sys_role_menu values (1766100000000000003, 1766000000000001805);
+insert ignore into sys_role_menu values (1766100000000000003, 1766000000000001806);
 insert ignore into sys_role_menu values (1766100000000000003, 1766000000000001807);
 insert ignore into sys_role_menu values (1766100000000000003, 1766000000000000203);
 insert ignore into sys_role_menu values (1766100000000000003, 1766000000000001901);
@@ -1893,6 +2070,7 @@ insert ignore into sys_role_menu values (1766100000000000003, 176600000000000190
 insert ignore into sys_role_menu values (1766100000000000003, 1766000000000000204);
 insert ignore into sys_role_menu values (1766100000000000003, 1766000000000002001);
 insert ignore into sys_role_menu values (1766100000000000003, 1766000000000002002);
+insert ignore into sys_role_menu values (1766100000000000003, 1766000000000002003);
 insert ignore into sys_role_menu values (1766100000000000003, 1766000000000002004);
 insert ignore into sys_role_menu values (1766100000000000003, 1766000000000002005);
 insert ignore into sys_role_menu values (1766100000000000003, 1766000000000002006);

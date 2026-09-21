@@ -14,6 +14,7 @@ import org.dromara.common.log.enums.BusinessType;
 import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.common.redis.annotation.RepeatSubmit;
 import org.dromara.hrtalent.constant.HrTalentConstants;
+import org.dromara.hrtalent.domain.bo.talent.PhoneViewBo;
 import org.dromara.hrtalent.domain.bo.talent.TalentPrecheckBo;
 import org.dromara.hrtalent.domain.bo.talent.TalentProfileBo;
 import org.dromara.hrtalent.domain.bo.talent.TalentProfileQueryBo;
@@ -94,6 +95,10 @@ public class TalentProfileController {
     /**
      * 创建人才主档（入库前查重，强/中匹配时拒绝静默创建）。
      *
+     * <p>请求体携带 {@code duplicateAck = true} 表示用户已确认「不是同一人」，
+     * 此时才允许在命中强/中匹配的情况下继续创建（设计文档 §7.6.3 只禁止<b>静默</b>创建）；
+     * 未确认时一律拒绝并返回疑似重复提示，与 {@code POST /recruit/candidates} 行为一致。</p>
+     *
      * @param bo 人才主档入参
      * @return 新建的人才主档ID
      */
@@ -102,7 +107,32 @@ public class TalentProfileController {
     @RepeatSubmit
     @PostMapping
     public R<Long> add(@Validated({Default.class, AddGroup.class}) @RequestBody TalentProfileBo bo) {
-        return R.ok(talentProfileService.create(bo, true, false, null));
+        // 查重确认标志由入参透传：人才档案页与候选人页共用同一套「疑似重复」确认语义
+        return R.ok(talentProfileService.create(bo, true, Boolean.TRUE.equals(bo.getDuplicateAck()), null));
+    }
+
+    /**
+     * 查看人才电话明文（资源级二次鉴权 + 审计留痕）。
+     *
+     * <p><b>与候选人侧 {@code POST /recruit/candidates/{id}/phone-view} 的区别</b>：本接口面向人才档案，
+     * <b>不要求该人才存在应聘记录</b>（设计文档 §8.12 已把电话列为人才主档字段）；
+     * 候选人侧会先断言存在应聘记录，因此无应聘记录的人才在那边看不了明文。</p>
+     *
+     * <p>请求体<b>刻意不加</b> {@code @Validated}：用途为空必须在服务层拒绝并写入 {@code denied} 审计，
+     * 若由参数校验框架先行拦截，拒绝动作将无法留痕（与简历下载、附件下载同一口径）。</p>
+     *
+     * @param id 人才主档ID
+     * @param bo 查看用途入参
+     * @return 电话明文（明文不写日志）
+     */
+    @SaCheckPermission(HrTalentConstants.PERM_PROFILE_PHONE_VIEW)
+    @Log(title = "人才电话查看", businessType = BusinessType.OTHER)
+    @RepeatSubmit
+    @PostMapping("/{id}/phone-view")
+    public R<String> phoneView(@NotNull(message = "人才ID不能为空")
+                               @PathVariable("id") Long id,
+                               @RequestBody PhoneViewBo bo) {
+        return R.ok(talentProfileService.viewPhone(id, bo == null ? null : bo.getPurpose()));
     }
 
     /**

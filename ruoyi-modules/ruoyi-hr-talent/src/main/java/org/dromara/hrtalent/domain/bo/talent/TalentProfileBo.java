@@ -219,6 +219,16 @@ public class TalentProfileBo implements Serializable {
     private Integer version;
 
     /**
+     * 是否已确认「不是同一人」：新建主档命中强/中匹配时，必须显式传 {@code true} 才能继续创建
+     * （设计文档 §7.6.3「疑似重复不得静默创建」；默认 {@code false}，不确认即拒绝）。
+     *
+     * <p><b>字段唯一来源</b>：只在本类声明。{@code CandidateCreateBo} 继承本类，
+     * 因此人才档案页 {@code POST /talent/profiles} 与候选人页 {@code POST /recruit/candidates}
+     * 共用同一套查重确认语义，不会出现两个同名来源。</p>
+     */
+    private Boolean duplicateAck;
+
+    /**
      * 备注
      */
     @Size(max = 500, message = "备注长度不能超过 500", groups = {AddGroup.class, EditGroup.class})

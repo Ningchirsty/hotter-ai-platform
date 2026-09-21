@@ -72,7 +72,9 @@ SQL 文件命名（放入 `script/sql/`）：
 `hr_talent_profile_tag`、`hr_talent_follow_up`、`hr_talent_scope_grant`、`hr_talent_duplicate_case`、
 `hr_talent_merge_log`、`hr_talent_parse_task`、`hr_talent_parse_result`
 
-> 共 **16 张**。合计 **37 张**（P1 为 36 张，P3 追加 `hr_recruit_plan_item_status_log`）。
+> 共 **16 张**。**P4 追加**：`hr_talent_export_task`、`hr_talent_group`、`hr_talent_group_member`
+> （依据 §8.20/§8.15，见 `P2-决策与缺口台账.md` §4）—— 共 **19 张**。
+> 合计 **40 张**（P1 为 36 张，P3 追加 1 张招聘表，P4 追加 3 张人才表）。
 > 以设计文档 §9.2 表格的字段为准，字段缺失或多出都算偏离。
 
 **每个字段的核心字段名必须与 §9.2 表格逐字一致**（例如 `hr_recruit_plan_item` 必须有

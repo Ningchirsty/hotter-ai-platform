@@ -28,10 +28,11 @@ import java.util.stream.Collectors;
  * <p><b>多值字段陷阱</b>：{@link #assistantNames} 的翻译源必须是拼成逗号串的只读 getter
  * {@link #getAssistantIdText()}，否则 {@code @Translation} 会静默失效。</p>
  *
- * <p><b>字典缺口说明</b>：性别与学历在设计文档 §10 未定义字典组，
- * 因此提供只读 getter {@link #getGenderText()} / {@link #getHighestEducationText()} 作为
- * 中文兜底，保证页面始终有中文可展示；若后续补齐字典，可把 {@code @Translation} 指向对应字典类型，
- * 无需改动前端契约。</p>
+ * <p><b>标签来源</b>：最高学历的标签<b>统一由字典 {@code talent_education} 翻译产出</b>
+ * （{@link #highestEducationText}，与 {@code hr_talent_education.education}、人才检索共用同一套编码，
+ * 唯一编码为 {@code high_school/college/bachelor/master/doctor/other}，大专为 {@code college}），
+ * 服务层不再维护第二套中文兜底映射。
+ * 性别在设计文档 §10 仍无字典组，暂保留只读 getter {@link #getGenderText()} 作为中文兜底。</p>
  *
  * @author hr-talent
  */
@@ -63,9 +64,15 @@ public class TalentProfileVo implements Serializable {
     private String gender;
 
     /**
-     * 最高学历（字典编码）
+     * 最高学历（字典 {@code talent_education} 编码：high_school/college/bachelor/master/doctor/other）
      */
     private String highestEducation;
+
+    /**
+     * 最高学历标签（字典 {@code talent_education}；唯一标签来源，勿再维护服务层兜底映射）
+     */
+    @Translation(type = TransConstant.DICT_TYPE_TO_LABEL, mapper = "highestEducation", other = "talent_education")
+    private String highestEducationText;
 
     /**
      * 脱敏电话（列表默认口径，明文仅 phone-view 接口返回）
@@ -218,6 +225,36 @@ public class TalentProfileVo implements Serializable {
     private LocalDateTime updateTime;
 
     /**
+     * 资料完整度（0~100，由服务层按设计文档 §8.12 主档基础字段实时计算）。
+     *
+     * <p><b>口径</b>：主档字段填充率 = 已填基础字段数 / 基础字段总数 × 100，
+     * 基础字段取 §8.12「人才主档」的可用列（姓名、性别、出生日期或年龄快照、手机号、邮箱、
+     * 最高学历、当前城市、意向城市、当前公司、当前职位、工作年限、期望岗位、期望薪资、来源、负责人）。
+     * <b>不含</b>简历 / 教育 / 工作 / 标签等派生维度，避免逐行多表统计造成 N+1 查询；
+     * 因此该值是可解释的「主档完整度」而非全量画像完整度。</p>
+     */
+    private Integer completeness;
+
+    /**
+     * 资料完整度分档（high/medium/low 稳定编码）
+     */
+    private String completenessLevel;
+
+    /**
+     * 资料完整度分档中文兜底（§10 未定义分档字典，避免依赖不存在的字典组）。
+     *
+     * @return 中文；完整度为空时返回 null
+     */
+    public String getCompletenessLevelText() {
+        return switch (completenessLevel == null ? "" : completenessLevel) {
+            case "high" -> "高";
+            case "medium" -> "中";
+            case "low" -> "低";
+            default -> null;
+        };
+    }
+
+    /**
      * 协助人用户ID入库原串（英文逗号分隔）。
      *
      * <p>不是数据库直出字段，而是由 {@link #assistantIds} 组合得到的<b>只读</b>属性：
@@ -248,23 +285,6 @@ public class TalentProfileVo implements Serializable {
             case "male" -> "男";
             case "female" -> "女";
             case "unknown" -> "未知";
-            default -> null;
-        };
-    }
-
-    /**
-     * 学历中文兜底（设计文档 §10 未定义学历字典，编码参考常见人力口径）。
-     *
-     * @return 中文，未知/空编码返回 null
-     */
-    public String getHighestEducationText() {
-        return switch (highestEducation == null ? "" : highestEducation) {
-            case "high_school" -> "高中及以下";
-            case "junior_college" -> "大专";
-            case "bachelor" -> "本科";
-            case "master" -> "硕士";
-            case "doctor" -> "博士";
-            case "other" -> "其他";
             default -> null;
         };
     }

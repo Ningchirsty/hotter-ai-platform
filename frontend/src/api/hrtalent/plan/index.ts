@@ -8,6 +8,7 @@ import type {
   HrPlanItemForm,
   HrPlanItemQuery,
   HrPlanItemSimilarQuery,
+  HrPlanItemStatusLogVO,
   HrPlanItemVO,
   HrPlanQuery,
   HrPlanVO,
@@ -134,5 +135,18 @@ export function listSimilarPlanItem(query: HrPlanItemSimilarQuery): AxiosPromise
     url: '/recruit/plan-items/similar',
     method: 'get',
     params: query
+  });
+}
+
+/**
+ * 查询计划任务的状态变更日志（GET /recruit/plan-items/{id}/status-logs）
+ *
+ * 权限沿用既有的 `recruit:plan:query`（后端 RecruitPlanItemController 声明为 PERM_PLAN_QUERY）。
+ * 日志为**追加型**，只有查询没有写接口；按 refresh_time 升序返回。
+ */
+export function listPlanItemStatusLogs(itemId: string | number): AxiosPromise<HrPlanItemStatusLogVO[]> {
+  return request({
+    url: `/recruit/plan-items/${itemId}/status-logs`,
+    method: 'get'
   });
 }

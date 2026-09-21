@@ -92,6 +92,12 @@ public class CandidateController {
     /**
      * 记录用途后返回电话明文（写敏感操作审计）。
      *
+     * <p><b>用途为空不走参数校验</b>：{@code PhoneViewBo.purpose} 刻意不加 {@code @NotBlank}，
+     * 空用途由 {@code CandidateServiceImpl#viewPhone} 在服务层拒绝，并在拒绝前写入 {@code denied} 审计。
+     * 取舍：空用途不再由参数校验返回 400，而返回服务层的中文业务提示；
+     * 换来的是「被拒绝的敏感访问同样留痕」（§15.2）。长度上限仍由本层 {@code @Validated} 拦截，
+     * 与人才档案侧 {@code POST /talent/profiles/{id}/phone-view} 口径一致。</p>
+     *
      * @param id 候选人（人才主档）ID
      * @param bo 查看用途入参
      * @return 电话明文
@@ -103,7 +109,7 @@ public class CandidateController {
     public R<String> phoneView(@NotNull(message = "候选人ID不能为空")
                                @PathVariable("id") Long id,
                                @Validated @RequestBody PhoneViewBo bo) {
-        return R.ok(candidateService.viewPhone(id, bo.getPurpose()));
+        return R.ok(candidateService.viewPhone(id, bo == null ? null : bo.getPurpose()));
     }
 
 }

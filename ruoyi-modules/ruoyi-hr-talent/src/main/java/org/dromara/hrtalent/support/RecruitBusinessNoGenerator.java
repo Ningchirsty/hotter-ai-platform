@@ -60,6 +60,26 @@ public class RecruitBusinessNoGenerator {
     private static final String PREFIX_APPLICATION = "APP";
 
     /**
+     * 人才池编码前缀（P4 追加，沿用本生成器风格）。
+     */
+    private static final String PREFIX_POOL = "POOL";
+
+    /**
+     * 人才标签编码前缀（P4 追加，沿用本生成器风格）。
+     */
+    private static final String PREFIX_TAG = "TAG";
+
+    /**
+     * 人才分组编码前缀（P4 追加，沿用本生成器风格）。
+     */
+    private static final String PREFIX_GROUP = "GRP";
+
+    /**
+     * 人才导出任务编号前缀（P4 F 线追加，沿用本生成器风格）。
+     */
+    private static final String PREFIX_EXPORT = "EXP";
+
+    /**
      * 时间戳部分：精确到毫秒。
      */
     private static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS");
@@ -141,6 +161,48 @@ public class RecruitBusinessNoGenerator {
      */
     public String nextApplicationNo() {
         return next(PREFIX_APPLICATION, LocalDate.now());
+    }
+
+    /**
+     * 生成人才池编码（P4 追加）。
+     * <p>池编码只用于对外展示，{@code hr_talent_pool.uk_hr_talent_pool_code} 是最终唯一约束。</p>
+     *
+     * @return 人才池编码，形如 {@code POOL20260921...-001}
+     */
+    public String nextPoolNo() {
+        return next(PREFIX_POOL, LocalDate.now());
+    }
+
+    /**
+     * 生成人才标签编码（P4 追加）。
+     * <p>标签编码只用于对外展示，{@code hr_talent_tag.uk_hr_talent_tag_code} 是最终唯一约束。</p>
+     *
+     * @return 标签编码，形如 {@code TAG20260921...-001}
+     */
+    public String nextTagNo() {
+        return next(PREFIX_TAG, LocalDate.now());
+    }
+
+    /**
+     * 生成人才分组编码（P4 追加）。
+     * <p>分组编码在 DDL 中可选，这里统一生成以便排查与对接外部系统，
+     * 不作为唯一约束（{@code hr_talent_group} 未建编码唯一索引）。</p>
+     *
+     * @return 分组编码，形如 {@code GRP20260921...-001}
+     */
+    public String nextGroupNo() {
+        return next(PREFIX_GROUP, LocalDate.now());
+    }
+
+    /**
+     * 生成人才导出任务编号（P4 F 线追加）。
+     * <p>任务编号只用于对外展示与排查，{@code hr_talent_export_task.uk_hr_talent_export_task_no}
+     * 是最终唯一约束。</p>
+     *
+     * @return 导出任务编号，形如 {@code EXP20260921...-001}
+     */
+    public String nextExportNo() {
+        return next(PREFIX_EXPORT, LocalDate.now());
     }
 
     /**

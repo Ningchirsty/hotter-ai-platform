@@ -124,6 +124,39 @@ public final class TalentContactCodec {
     }
 
     /**
+     * 取电话规范化后的<b>后四位</b>（设计文档 §8.17 组合检索「手机号后四位」）。
+     *
+     * <p><b>口径与安全说明（重要）</b>：</p>
+     * <ul>
+     *     <li>后四位属于「与脱敏展示同口径的部分信息」——列表脱敏本身就呈现
+     *     {@code 138****1234} 形态，在后四位可见的授权范围内的用户本已获得该信息，
+     *     因此单独落列 {@code hr_talent_profile.phone_tail4} 不额外扩大暴露面；</li>
+     *     <li>之所以<b>不</b>使用「后四位哈希」：后四位只有 {@code 10^4} 种取值，
+     *     哈希可被瞬间穷举，提供不了任何保密性，属安全表演；保存明文后四位反而更诚实，
+     *     也使后四位精确检索可走索引（{@code idx_hr_talent_profile_phone_tail4}）；</li>
+     *     <li>本方法<b>只</b>返回末 4 位，绝不返回完整号码；列宽 {@code char(4)} 亦在数据库层
+     *     阻止完整号码误写入。</li>
+     * </ul>
+     *
+     * <p><b>存量数据</b>：本列由写入侧实时填充，历史数据需另行回填（不在本次改造范围）。</p>
+     *
+     * @param rawPhone 电话明文，可为空
+     * @return 规范化并剔除分隔符后末 4 位数字；入参为空或有效数字不足 4 位时返回 null
+     */
+    public static String phoneTail4(String rawPhone) {
+        String normalized = normalizePhone(rawPhone);
+        if (StringUtils.isBlank(normalized)) {
+            return null;
+        }
+        // 只取数字字符（规范化后可能带 +86 前缀与分隔符残留）
+        String digits = normalized.replaceAll("[^0-9]", "");
+        if (digits.length() < 4) {
+            return null;
+        }
+        return digits.substring(digits.length() - 4);
+    }
+
+    /**
      * 电话脱敏（列表默认口径）。
      *
      * @param rawPhone 电话明文，可为空

@@ -20,10 +20,12 @@ import java.time.LocalDate;
  * </ol>
  *
  * <p><b>不得静默创建重复人员</b>：新建主档时若命中强/中匹配且未显式确认
- * （{@link #duplicateAck} 不为 {@code true}），服务端拒绝创建并返回命中摘要。</p>
+ * （继承自 {@link TalentProfileBo#getDuplicateAck()} 的 {@code duplicateAck} 不为 {@code true}），
+ * 服务端拒绝创建并返回命中摘要。</p>
  *
  * <p>为兼容「先确认不是同一人、再原样提交」的用法，本对象继承 {@link TalentProfileBo}
- * 的全部主档字段；复用分支只读取 {@link #talentId} 与应聘字段。</p>
+ * 的全部主档字段（含 {@code duplicateAck}，该字段<b>只</b>在父类声明，本类不重复声明）；
+ * 复用分支只读取 {@link #talentId} 与应聘字段。</p>
  *
  * @author hr-talent
  */
@@ -38,11 +40,6 @@ public class CandidateCreateBo extends TalentProfileBo {
      * 复用已有主档ID；为空表示新建主档
      */
     private Long talentId;
-
-    /**
-     * 是否已确认「不是同一人」：命中强/中匹配时必须显式传 true 才能继续创建
-     */
-    private Boolean duplicateAck;
 
     /**
      * 是否创建首条应聘记录（默认 true；为 false 时只入库人才主档）

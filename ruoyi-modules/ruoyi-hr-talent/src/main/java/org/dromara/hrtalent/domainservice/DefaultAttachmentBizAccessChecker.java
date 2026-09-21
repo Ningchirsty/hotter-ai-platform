@@ -7,10 +7,12 @@ import org.dromara.common.core.utils.StringUtils;
 import org.dromara.hrtalent.domain.entity.RecruitApplication;
 import org.dromara.hrtalent.domain.entity.RecruitBackground;
 import org.dromara.hrtalent.domain.entity.RecruitInterview;
+import org.dromara.hrtalent.domain.entity.TalentFollowUp;
 import org.dromara.hrtalent.domain.entity.TalentProfile;
 import org.dromara.hrtalent.mapper.RecruitApplicationMapper;
 import org.dromara.hrtalent.mapper.RecruitBackgroundMapper;
 import org.dromara.hrtalent.mapper.RecruitInterviewMapper;
+import org.dromara.hrtalent.mapper.TalentFollowUpMapper;
 import org.dromara.hrtalent.mapper.TalentProfileMapper;
 import org.dromara.hrtalent.support.SensitiveAuditRecorder;
 import org.springframework.stereotype.Component;
@@ -33,7 +35,9 @@ import java.util.Locale;
  *     <li>{@code offer}：录用资料登记在应聘记录上，故按应聘记录ID解析（<b>假设</b>，
  *     若后续独立出录用表需同步修正）；</li>
  *     <li>{@code interview}：经 {@code hr_recruit_interview.application_id} 再解析应聘记录；</li>
- *     <li>{@code background}：经 {@code hr_recruit_background.application_id} 再解析应聘记录。</li>
+ *     <li>{@code background}：经 {@code hr_recruit_background.application_id} 再解析应聘记录；</li>
+ *     <li>{@code follow_up}（P4）：经 {@code hr_talent_follow_up.talent_id} 直接解析人才
+ *     （{@code bizId} 是跟进记录ID {@code follow_id}，不是人才ID）。</li>
  * </ul>
  *
  * <p><b>fail-closed</b>：业务类型不认识、业务记录不存在或已逻辑删除、链路中间断掉，
@@ -69,6 +73,11 @@ public class DefaultAttachmentBizAccessChecker implements AttachmentBizAccessChe
      * 背调记录 Mapper（只读解析 application_id）。
      */
     private final RecruitBackgroundMapper recruitBackgroundMapper;
+
+    /**
+     * 人才跟进记录 Mapper（只读解析 talent_id，P4 追加）。
+     */
+    private final TalentFollowUpMapper talentFollowUpMapper;
 
     /**
      * 人才主档 Mapper（只读装配可见范围快照）。
@@ -131,6 +140,11 @@ public class DefaultAttachmentBizAccessChecker implements AttachmentBizAccessChe
             case SensitiveAuditRecorder.BIZ_BACKGROUND -> {
                 RecruitBackground background = recruitBackgroundMapper.selectById(bizId);
                 yield background == null ? null : resolveTalentIdByApplication(background.getApplicationId());
+            }
+            // 跟进附件：bizId 是 hr_talent_follow_up.follow_id，经跟进记录解析人才ID
+            case SensitiveAuditRecorder.BIZ_FOLLOW_UP -> {
+                TalentFollowUp followUp = talentFollowUpMapper.selectById(bizId);
+                yield followUp == null ? null : followUp.getTalentId();
             }
             default -> null;
         };

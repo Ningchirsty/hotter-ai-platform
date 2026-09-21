@@ -1,6 +1,8 @@
 package org.dromara.hrtalent.domain.vo.talent;
 
 import lombok.Data;
+import org.dromara.common.translation.annotation.Translation;
+import org.dromara.common.translation.constant.TransConstant;
 
 import java.io.Serial;
 import java.io.Serializable;
@@ -12,6 +14,9 @@ import java.time.LocalDateTime;
  *
  * <p>只返回可展示的变更快照与操作人；{@code before_json} / {@code after_json} 均为
  * <b>脱敏后</b>的结构化快照，不含电话/邮箱明文。</p>
+ *
+ * <p><b>操作人展示</b>：{@link #operatorName} 由 {@link #operatorId} 经
+ * {@code USER_ID_TO_NICKNAME} 翻译得到，与 {@code RecruitDemandChangeVo} 的变更历史口径一致。</p>
  *
  * @author hr-talent
  */
@@ -50,6 +55,13 @@ public class TalentProfileChangeVo implements Serializable {
      * 操作人用户ID
      */
     private Long operatorId;
+
+    /**
+     * 操作人昵称（由 {@link #operatorId} 翻译，与
+     * {@code RecruitDemandChangeVo#operatorName} 同一展示口径）
+     */
+    @Translation(type = TransConstant.USER_ID_TO_NICKNAME, mapper = "operatorId")
+    private String operatorName;
 
     /**
      * 操作时间

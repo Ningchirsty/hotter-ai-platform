@@ -14,6 +14,7 @@ import org.dromara.hrtalent.domain.entity.RecruitApplication;
 import org.dromara.hrtalent.domain.entity.RecruitAttachment;
 import org.dromara.hrtalent.domain.entity.RecruitInterview;
 import org.dromara.hrtalent.domain.entity.RecruitSensitiveAudit;
+import org.dromara.hrtalent.domain.entity.TalentFollowUp;
 import org.dromara.hrtalent.domain.entity.TalentProfile;
 import org.dromara.hrtalent.domainservice.AttachmentBizAccessChecker;
 import org.dromara.hrtalent.domainservice.DefaultAttachmentBizAccessChecker;
@@ -25,6 +26,7 @@ import org.dromara.hrtalent.mapper.RecruitAttachmentMapper;
 import org.dromara.hrtalent.mapper.RecruitBackgroundMapper;
 import org.dromara.hrtalent.mapper.RecruitInterviewMapper;
 import org.dromara.hrtalent.mapper.RecruitSensitiveAuditMapper;
+import org.dromara.hrtalent.mapper.TalentFollowUpMapper;
 import org.dromara.hrtalent.mapper.TalentProfileMapper;
 import org.dromara.hrtalent.support.HrTalentOssHelper;
 import org.dromara.hrtalent.support.SensitiveAuditRecorder;
@@ -245,6 +247,7 @@ class RecruitAttachmentServiceImplTest {
             mapperStub(RecruitApplicationMapper.class, application),
             mapperStub(RecruitInterviewMapper.class, null),
             mapperStub(RecruitBackgroundMapper.class, null),
+            mapperStub(TalentFollowUpMapper.class, null),
             mapperStub(TalentProfileMapper.class, profile),
             scope);
         store.put(1L, attachment("application", 55L, "portfolio", 1, "v".repeat(64)));
@@ -270,6 +273,7 @@ class RecruitAttachmentServiceImplTest {
             mapperStub(RecruitApplicationMapper.class, null),
             mapperStub(RecruitInterviewMapper.class, null),
             mapperStub(RecruitBackgroundMapper.class, null),
+            mapperStub(TalentFollowUpMapper.class, null),
             mapperStub(TalentProfileMapper.class, null),
             scope);
 
@@ -280,6 +284,8 @@ class RecruitAttachmentServiceImplTest {
         // 业务定位缺失
         assertThrows(ServiceException.class, () -> checker.check(null, 1L));
         assertThrows(ServiceException.class, () -> checker.check("application", null));
+        // 跟进记录不存在（P4 追加：解析不出人才必须 fail-closed）
+        assertThrows(ServiceException.class, () -> checker.check("follow_up", 404L));
 
         // 面试存在但应聘记录不存在：链路断
         RecruitInterview interview = new RecruitInterview();
@@ -289,6 +295,7 @@ class RecruitAttachmentServiceImplTest {
             mapperStub(RecruitApplicationMapper.class, null),
             mapperStub(RecruitInterviewMapper.class, interview),
             mapperStub(RecruitBackgroundMapper.class, null),
+            mapperStub(TalentFollowUpMapper.class, null),
             mapperStub(TalentProfileMapper.class, null),
             scope);
         assertThrows(ServiceException.class, () -> brokenLink.check("interview", 5L));
@@ -298,6 +305,7 @@ class RecruitAttachmentServiceImplTest {
             mapperStub(RecruitApplicationMapper.class, application(55L, 77L)),
             mapperStub(RecruitInterviewMapper.class, null),
             mapperStub(RecruitBackgroundMapper.class, null),
+            mapperStub(TalentFollowUpMapper.class, null),
             mapperStub(TalentProfileMapper.class, null),
             scope);
         assertThrows(ServiceException.class, () -> noTalent.check("application", 55L));
@@ -317,6 +325,7 @@ class RecruitAttachmentServiceImplTest {
             mapperStub(RecruitApplicationMapper.class, application(55L, 77L)),
             mapperStub(RecruitInterviewMapper.class, interview),
             mapperStub(RecruitBackgroundMapper.class, null),
+            mapperStub(TalentFollowUpMapper.class, null),
             mapperStub(TalentProfileMapper.class, profile(77L, "department")),
             scope);
 
@@ -325,6 +334,28 @@ class RecruitAttachmentServiceImplTest {
         assertNotNull(scope.captured);
         assertEquals(77L, scope.captured.talentId());
         assertEquals(3L, scope.captured.ownerDeptId());
+    }
+
+    @Test
+    @DisplayName("默认鉴权器：跟进记录 → 人才链路解析成功时按人才可见范围判定（P4 追加）")
+    void shouldResolveTalentThroughFollowUp() {
+        TalentFollowUp followUp = new TalentFollowUp();
+        followUp.setFollowId(9L);
+        followUp.setTalentId(77L);
+        ScopeStub scope = new ScopeStub(null);
+        DefaultAttachmentBizAccessChecker checker = new DefaultAttachmentBizAccessChecker(
+            mapperStub(RecruitApplicationMapper.class, null),
+            mapperStub(RecruitInterviewMapper.class, null),
+            mapperStub(RecruitBackgroundMapper.class, null),
+            mapperStub(TalentFollowUpMapper.class, followUp),
+            mapperStub(TalentProfileMapper.class, profile(77L, "owner")),
+            scope);
+
+        checker.check("follow_up", 9L);
+
+        // bizId 是跟进记录ID，必须解析成跟进记录上的人才ID（不是把 9 当人才ID）
+        assertNotNull(scope.captured);
+        assertEquals(77L, scope.captured.talentId());
     }
 
     /* ------------------------------------------------------------------ 上传校验 ------------------------------------------------------------------ */

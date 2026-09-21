@@ -111,3 +111,18 @@ export function downloadAttachment(id: string | number, purpose: string) {
     responseType: 'blob'
   });
 }
+
+/**
+ * 逻辑删除附件（DELETE /recruit/attachments/{ids}，权限 recruit:attachment:delete）
+ *
+ * **逻辑删除**：后端只置删除标志，**保留数据行与对象存储文件**，可追溯；
+ * 菜单注释明确「集团招聘管理员亦不得物理删除」。
+ *
+ * ids 为路径变量 `Long[]`，多个用英文逗号连接（如 `/recruit/attachments/1,2,3`）。
+ */
+export function delAttachment(ids: string | number | Array<string | number>) {
+  return request({
+    url: '/recruit/attachments/' + ids,
+    method: 'delete'
+  });
+}

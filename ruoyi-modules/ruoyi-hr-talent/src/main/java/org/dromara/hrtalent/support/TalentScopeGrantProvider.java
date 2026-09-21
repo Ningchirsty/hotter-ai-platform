@@ -9,7 +9,12 @@ import java.util.Collection;
  * 人才共享授权查询扩展点（SPI）。
  * <p>由领域层定义、数据访问层实现：P1 只落地领域服务骨架，P3 接入
  * {@code hr_talent_scope_grant} 后提供基于 Mapper 的实现（需过滤 {@code del_flag = '0'}、
- * {@code valid_from <= now} 且 {@code valid_to} 为空或未过期）。</p>
+ * {@code revoke_flag = '0'}、{@code valid_from <= now} 且 {@code valid_to} 为空或未过期）。</p>
+ *
+ * <p><b>有效期空值语义</b>（与 DDL 注释一致）：{@code valid_from} 为 {@code NULL} 表示
+ * <b>立即生效</b>，因此条件必须是「{@code valid_from} 为空<b>或</b> {@code valid_from <= now}」，
+ * 不能只写 {@code valid_from <= now}（那会漏掉未填写生效时间的授权，等于静默失效）；
+ * {@code valid_to} 为 {@code NULL} 表示<b>长期有效</b>。</p>
  *
  * <p>未提供实现时，领域服务按「无任何显式授权」处理，即 fail-safe 拒绝，
  * 不得反向放行。</p>

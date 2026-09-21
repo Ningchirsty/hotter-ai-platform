@@ -5,10 +5,13 @@ import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.hrtalent.domain.bo.talent.TalentPrecheckBo;
 import org.dromara.hrtalent.domain.bo.talent.TalentProfileBo;
 import org.dromara.hrtalent.domain.bo.talent.TalentProfileQueryBo;
+import org.dromara.hrtalent.domain.entity.TalentProfile;
 import org.dromara.hrtalent.domain.vo.talent.TalentPrecheckVo;
 import org.dromara.hrtalent.domain.vo.talent.TalentProfileChangeVo;
 import org.dromara.hrtalent.domain.vo.talent.TalentProfileDetailVo;
 import org.dromara.hrtalent.domain.vo.talent.TalentProfileVo;
+
+import java.util.List;
 
 /**
  * 人才主档服务接口（SPEC-P3 §2.1 人才主档与查重）。
@@ -29,6 +32,23 @@ public interface ITalentProfileService {
      * @return 人才主档分页结果（电话/邮箱已脱敏）
      */
     PageResult<TalentProfileVo> queryPage(TalentProfileQueryBo bo, PageQuery pageQuery);
+
+    /**
+     * 按人才导出需要取「可见范围内」的主档实体列表（SPEC-P4 §2.6 F 线内部专用）。
+     *
+     * <p><b>为什么返回实体</b>：敏感台账需要联系方式明文，而明文只存在于
+     * {@code @EncryptField} 解密后的实体上；VO 只承载脱敏串，因此导出必须走实体。</p>
+     *
+     * <p><b>调用方硬约束</b>：调用方<b>必须</b>先完成「导出按钮权限 → 敏感台账独立权限 →
+     * 用途（purpose）校验」三道闸门并写审计，再调用本方法；
+     * 本方法自身只负责「叠加人才可见范围（统一走 {@code TalentScopeDomainService}）+ §8.17 组合条件
+     * + 条数上限」，不重复实现授权规则（设计文档 §8.17、§11.1）。</p>
+     *
+     * @param bo    检索条件（P4 §8.17 增强条件与 {@code GET /talent/profiles} 完全同源），可为空
+     * @param limit 最大返回条数（必须为正数）
+     * @return 主档实体列表（最多 {@code limit} 条，按创建时间倒序）
+     */
+    List<TalentProfile> searchForExport(TalentProfileQueryBo bo, int limit);
 
     /**
      * 人才主档详情。
@@ -97,6 +117,24 @@ public interface ITalentProfileService {
      * @return 电话明文；未登记电话时返回 null
      */
     String getPhonePlain(Long talentId);
+
+    /**
+     * 查看人才电话明文（人才档案域专用接口，对应 {@code POST /talent/profiles/{id}/phone-view}）。
+     *
+     * <p><b>与候选人侧 {@code POST /recruit/candidates/{id}/phone-view} 的区别</b>：
+     * 候选人侧先执行 {@code assertCandidate}（要求该人才存在应聘记录），
+     * 因此<b>无应聘记录的人才无法查看电话明文</b>；本方法只做人才主档资源级鉴权，
+     * <b>不要求有应聘记录</b>（设计文档 §8.12 已将电话列为人才主档字段）。</p>
+     *
+     * <p><b>执行顺序</b>（与简历下载同口径）：用途校验（为空 → 写 {@code denied} 审计并拒绝）
+     * → 资源级鉴权（唯一权威 {@code TalentScopeDomainService}）→ 写审计 → 返回明文；
+     * 明文<b>绝不</b>写入日志。电话密文由 {@code @EncryptField} 自动解密，本方法直接返回解密后的值。</p>
+     *
+     * @param talentId 人才主档ID
+     * @param purpose  查看事由（必填）
+     * @return 电话明文；未登记电话时返回 null
+     */
+    String viewPhone(Long talentId, String purpose);
 
     /**
      * 校验人才可见性（供候选人域复用，避免各处重复实现授权规则）。

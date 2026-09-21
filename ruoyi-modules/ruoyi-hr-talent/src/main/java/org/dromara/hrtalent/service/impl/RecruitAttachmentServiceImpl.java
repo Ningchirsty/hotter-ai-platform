@@ -81,14 +81,15 @@ public class RecruitAttachmentServiceImpl implements IRecruitAttachmentService {
     private static final String CURRENT_FLAG_NO = "0";
 
     /**
-     * 允许承载附件的业务类型：应聘记录 / 面试 / 背调 / 录用资料 / 人才主档。
+     * 允许承载附件的业务类型：应聘记录 / 面试 / 背调 / 录用资料 / 人才主档 / 人才跟进（P4 追加）。
      */
     private static final Set<String> SUPPORTED_BIZ_TYPES = Set.of(
         SensitiveAuditRecorder.BIZ_APPLICATION,
         SensitiveAuditRecorder.BIZ_INTERVIEW,
         SensitiveAuditRecorder.BIZ_BACKGROUND,
         SensitiveAuditRecorder.BIZ_TALENT,
-        SensitiveAuditRecorder.BIZ_OFFER);
+        SensitiveAuditRecorder.BIZ_OFFER,
+        SensitiveAuditRecorder.BIZ_FOLLOW_UP);
 
     /**
      * 允许的 MIME 类型白名单（与允许的扩展名口径一致）。

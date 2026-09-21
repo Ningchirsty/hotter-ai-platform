@@ -58,6 +58,29 @@ import java.util.List;
 public class CandidateServiceImpl implements ICandidateService {
 
     /**
+     * 候选人查询落空的统一提示。
+     *
+     * <p><b>有意不可区分</b>：无论「无应聘记录」还是「人才不存在 / 不可见」，电话明文查看都返回本提示，
+     * 避免攻击者用错误文案差异探测候选人是否存在（见 {@link #viewPhone}）。</p>
+     */
+    private static final String MSG_CANDIDATE_NOT_FOUND = "候选人不存在或已删除";
+
+    /**
+     * 电话明文查看被拒绝的原因码：该人才没有任何应聘记录（数据未录入方向）。
+     *
+     * <p>只写入审计明细 {@code detail_json}，<b>不</b>对外暴露（对外统一提示见
+     * {@link #MSG_CANDIDATE_NOT_FOUND}）。</p>
+     */
+    public static final String DENY_REASON_NO_APPLICATION = "no_application";
+
+    /**
+     * 电话明文查看被拒绝的原因码：人才不存在或不在当前用户可见范围内（权限/错误ID方向）。
+     *
+     * <p>两类原因对外不可区分，仅在审计明细中区分，避免对外提示差异被用作存在性探测旁路。</p>
+     */
+    public static final String DENY_REASON_OUT_OF_SCOPE_OR_ABSENT = "out_of_scope_or_absent";
+
+    /**
      * 人才主档 Mapper（候选人视图查询）。
      */
     private final TalentProfileMapper talentProfileMapper;
@@ -182,7 +205,7 @@ public class CandidateServiceImpl implements ICandidateService {
             throw new ServiceException("候选人ID不能为空");
         }
         if (countApplicationByTalentId(talentId) <= 0) {
-            throw new ServiceException("候选人不存在或已删除");
+            throw new ServiceException(MSG_CANDIDATE_NOT_FOUND);
         }
     }
 
@@ -194,12 +217,57 @@ public class CandidateServiceImpl implements ICandidateService {
                 talentId, purpose, SensitiveAuditRecorder.RESULT_DENIED);
             throw new ServiceException("查看电话明文必须填写用途");
         }
-        assertCandidate(talentId);
-        String plain = talentProfileService.getPhonePlain(talentId);
+        // 显式分两段捕获（不按异常 message 匹配，避免脆弱判定）：
+        // 两段对外行为完全一致（异常类型、提示文案、审计的 event/biz/result 都相同），
+        // 只有 detailJson 的 reason 不同，供运维区分「数据没录」与「权限配置」两类处置方向。
+        try {
+            assertCandidate(talentId);
+        } catch (ServiceException e) {
+            denyPhoneView(talentId, purpose, DENY_REASON_NO_APPLICATION);
+            throw new ServiceException(MSG_CANDIDATE_NOT_FOUND);
+        }
+        String plain;
+        try {
+            plain = talentProfileService.getPhonePlain(talentId);
+        } catch (ServiceException e) {
+            denyPhoneView(talentId, purpose, DENY_REASON_OUT_OF_SCOPE_OR_ABSENT);
+            throw new ServiceException(MSG_CANDIDATE_NOT_FOUND);
+        }
         // 明文返发之前先写审计（SPEC-P3 §3.6）
         sensitiveAuditRecorder.record(SensitiveAuditRecorder.EVENT_PHONE_VIEW, SensitiveAuditRecorder.BIZ_TALENT,
             talentId, purpose, SensitiveAuditRecorder.RESULT_SUCCESS);
         return plain;
+    }
+
+    /**
+     * 记录一次「电话明文查看被拒绝」的审计，并带上真实原因码。
+     *
+     * <p><b>为什么把原因写进审计</b>：对外必须不可区分（防存在性探测旁路），但运维侧需要能区分
+     * 「该人才没有应聘记录」（数据未录入）与「人才存在但不在可见范围 / 不存在」（权限配置或错误ID），
+     * 两者处置方向完全相反。原因码是纯枚举值，符合 {@link SensitiveAuditRecorder} 明细的脱敏约束
+     * （明细中不含电话明文、正文与地址）。</p>
+     *
+     * <p>落入统一分支的语义：两类落空<b>只允许 detailJson 不同</b>，事件类型、业务对象、结果与对外异常
+     * 必须完全一致。</p>
+     *
+     * @param talentId 人才主档ID
+     * @param purpose  查看用途
+     * @param reason   原因码，取 {@link #DENY_REASON_NO_APPLICATION} 或 {@link #DENY_REASON_OUT_OF_SCOPE_OR_ABSENT}
+     */
+    private void denyPhoneView(Long talentId, String purpose, String reason) {
+        // 审计写入依赖 SensitiveAuditRecorder「永不抛异常」的既有契约，因此不会把拒绝变成 500
+        sensitiveAuditRecorder.record(SensitiveAuditRecorder.EVENT_PHONE_VIEW, SensitiveAuditRecorder.BIZ_TALENT,
+            talentId, purpose, SensitiveAuditRecorder.RESULT_DENIED, reasonDetail(reason));
+    }
+
+    /**
+     * 构造原因码明细 JSON（值只来自固定枚举常量，不含任何敏感内容）。
+     *
+     * @param reason 原因码
+     * @return 脱敏明细 JSON
+     */
+    private String reasonDetail(String reason) {
+        return "{\"reason\":\"" + reason + "\"}";
     }
 
     /* ------------------------------------------------------------------ 内部方法 ------------------------------------------------------------------ */

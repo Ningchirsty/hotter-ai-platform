@@ -217,7 +217,7 @@
             <el-table-column label="负责人" align="center" width="110" show-overflow-tooltip>
               <template #default="scope">{{ scope.row.ownerName || scope.row.ownerId || '-' }}</template>
             </el-table-column>
-            <el-table-column label="操作" width="210" align="center" class-name="small-padding fixed-width">
+            <el-table-column label="操作" width="250" align="center" class-name="small-padding fixed-width">
               <template #default="scope">
                 <el-tooltip content="编辑任务" placement="top">
                   <el-button
@@ -235,6 +235,15 @@
                     type="primary"
                     icon="Link"
                     @click="openRolloverChain(scope.row)"
+                  ></el-button>
+                </el-tooltip>
+                <el-tooltip content="状态变更日志（只追加，可追溯）" placement="top">
+                  <el-button
+                    v-hasPermi="['recruit:plan:query']"
+                    link
+                    type="primary"
+                    icon="Clock"
+                    @click="openStatusLogs(scope.row)"
                   ></el-button>
                 </el-tooltip>
                 <el-tooltip content="重算状态" placement="top">
@@ -531,6 +540,78 @@
         </div>
       </template>
     </el-dialog>
+
+    <!-- 计划任务状态变更日志（追加型，只读，用于追溯状态为何变化） -->
+    <el-dialog v-model="statusLogDialog.visible" title="计划任务状态变更日志" width="1020px" append-to-body>
+      <el-alert
+        class="dialog-alert"
+        type="info"
+        :closable="false"
+        show-icon
+        title="状态变更日志为追加型记录（只插入、不修改）：每次自动刷新或管理员手工重算都会留痕，展示「原状态 → 新状态」、触发事件、刷新时间与操作人，用于回答「这个任务的状态为什么变了」。"
+      />
+      <el-descriptions :column="3" border size="small" class="detail-panel">
+        <el-descriptions-item label="任务编号">{{ statusLogDialog.row.itemNo || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="岗位">{{ statusLogDialog.row.jobName || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="计划月份">{{ statusLogDialog.row.planMonth || '-' }}</el-descriptions-item>
+      </el-descriptions>
+      <el-table v-loading="statusLogDialog.loading" border size="small" :data="statusLogList">
+        <el-table-column label="刷新时间" align="center" width="170">
+          <template #default="scope">{{ parseTime(scope.row.refreshTime) || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="触发事件" align="center" width="130">
+          <template #default="scope">
+            {{ triggerEventText(scope.row.triggerEvent) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="自动执行阶段变化" align="center" min-width="200">
+          <template #default="scope">
+            <dict-tag
+              v-if="scope.row.fromExecutionStatus"
+              :options="recruit_plan_execution_status"
+              :value="scope.row.fromExecutionStatus"
+            />
+            <span v-else>-</span>
+            <span class="log-arrow">→</span>
+            <dict-tag
+              v-if="scope.row.toExecutionStatus"
+              :options="recruit_plan_execution_status"
+              :value="scope.row.toExecutionStatus"
+            />
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="完成状态变化" align="center" min-width="200">
+          <template #default="scope">
+            <dict-tag
+              v-if="scope.row.fromCompletionStatus"
+              :options="recruit_plan_completion_status"
+              :value="scope.row.fromCompletionStatus"
+            />
+            <span v-else>-</span>
+            <span class="log-arrow">→</span>
+            <dict-tag
+              v-if="scope.row.toCompletionStatus"
+              :options="recruit_plan_completion_status"
+              :value="scope.row.toCompletionStatus"
+            />
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作人" align="center" width="110">
+          <template #default="scope">
+            {{ scope.row.operatorName || scope.row.operatorId || '自动刷新' }}
+          </template>
+        </el-table-column>
+        <el-table-column label="备注" prop="remark" min-width="140" show-overflow-tooltip />
+      </el-table>
+      <span v-if="!statusLogDialog.loading && !statusLogList.length" class="empty-text">暂无状态变更日志</span>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="statusLogDialog.visible = false">关 闭</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -544,6 +625,7 @@ import {
   listPlan,
   listPlanItemByPlan,
   listPlanItemRolloverChain,
+  listPlanItemStatusLogs,
   listSimilarPlanItem,
   refreshPlanItemStatus,
   updatePlanItem
@@ -553,12 +635,14 @@ import type {
   HrPlanItemEditForm,
   HrPlanItemForm,
   HrPlanItemQuery,
+  HrPlanItemStatusLogVO,
   HrPlanItemVO,
   HrPlanQuery,
   HrPlanVO,
   PlanAction,
   PlanItemAction
 } from '@/api/hrtalent/plan/types';
+import { PLAN_ITEM_TRIGGER_EVENT_TEXT } from '@/api/hrtalent/plan/types';
 import { useLoading } from '@/hooks/async/useLoading';
 import { useSearchReset } from '@/hooks/form/useSearchReset';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
@@ -1012,6 +1096,36 @@ const handleRefreshStatus = async (row: HrPlanItemVO) => {
   await getItemList();
 };
 
+// ------------------------------------------------------------------ 计划任务状态变更日志
+
+const statusLogDialog = reactive<{ visible: boolean; loading: boolean; row: Partial<HrPlanItemVO> }>({
+  visible: false,
+  loading: false,
+  row: {}
+});
+const statusLogList = ref<HrPlanItemStatusLogVO[]>([]);
+
+/** 触发事件中文（编码与后端 IPlanItemStatusService.TRIGGER_* 逐字一致，后端无对应字典） */
+const triggerEventText = (code?: string) => (code ? PLAN_ITEM_TRIGGER_EVENT_TEXT[code] || code : '-');
+
+/** 查询计划任务状态变更日志（追加型，只读；权限沿用 recruit:plan:query） */
+const openStatusLogs = async (row: HrPlanItemVO) => {
+  statusLogDialog.row = row;
+  statusLogDialog.visible = true;
+  statusLogDialog.loading = true;
+  statusLogList.value = [];
+  try {
+    const res = await listPlanItemStatusLogs(row.itemId!);
+    const payload = res.data as unknown;
+    statusLogList.value = Array.isArray(payload) ? (payload as HrPlanItemStatusLogVO[]) : [];
+  } catch {
+    // 拦截器已提示错误，保持空列表
+    statusLogList.value = [];
+  } finally {
+    statusLogDialog.loading = false;
+  }
+};
+
 // ------------------------------------------------------------------ 结转链
 
 const chainDialog = reactive({ visible: false, loading: false });
@@ -1065,5 +1179,16 @@ onMounted(() => {
 
 .partial-tag {
   margin-top: 4px;
+}
+
+/* 状态变更日志：原状态 → 新状态 */
+.log-arrow {
+  margin: 0 6px;
+  color: var(--app-text-muted);
+}
+
+.empty-text {
+  font-size: 12px;
+  color: var(--app-text-muted);
 }
 </style>

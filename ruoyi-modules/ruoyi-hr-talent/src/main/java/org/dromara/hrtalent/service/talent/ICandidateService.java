@@ -57,6 +57,16 @@ public interface ICandidateService {
      * 用途非空时先调用 {@code SensitiveAuditRecorder.record(phone_view, talent, ...)}
      * 写入审计，再解密返回电话明文。</p>
      *
+     * <p><b>落空也要留痕，且对外不可区分</b>（§15.2、§6）：候选人不存在（无应聘记录）与
+     * 人才不存在 / 不可见<b>走同一条落空处置</b>——写同一条 {@code denied} 审计
+     * （事件类型、业务对象、结果完全一致），并抛出<b>同一个</b>提示「候选人不存在或已删除」。
+     * 这是<b>有意</b>的不可区分：一次被拒绝的电话明文访问往往就是越权探测，既必须留痕，
+     * 也不能用错误文案差异让攻击者判断某个候选人是否存在。</p>
+     *
+     * <p><b>诊断能力保留在审计明细</b>：两条落空分支只有 {@code detailJson} 的 {@code reason} 不同
+     * （{@code no_application} / {@code out_of_scope_or_absent}），供运维区分「数据未录入」与
+     * 「权限配置 / 错误ID」两种相反的处置方向；明细只承载纯枚举原因码，不含任何敏感内容。</p>
+     *
      * @param talentId 人才主档ID
      * @param purpose  查看用途/事由（必填）
      * @return 电话明文；未登记电话时返回 null

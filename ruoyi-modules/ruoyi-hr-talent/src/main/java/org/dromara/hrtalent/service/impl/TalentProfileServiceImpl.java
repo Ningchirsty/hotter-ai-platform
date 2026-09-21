@@ -34,6 +34,7 @@ import org.dromara.hrtalent.mapper.TalentProfileMapper;
 import org.dromara.hrtalent.service.talent.ITalentProfileService;
 import org.dromara.hrtalent.support.HrTalentErrorCode;
 import org.dromara.hrtalent.support.RecruitBusinessNoGenerator;
+import org.dromara.hrtalent.support.SensitiveAuditRecorder;
 import org.dromara.hrtalent.support.TalentContactCodec;
 import org.dromara.system.api.model.LoginUser;
 import org.springframework.context.ApplicationEventPublisher;
@@ -109,6 +110,21 @@ public class TalentProfileServiceImpl implements ITalentProfileService {
     private static final String PHONE_PATTERN = "^[+]?[0-9\\-]{6,20}$";
 
     /**
+     * 资料完整度基础字段总数（口径见 {@link #fillCompleteness}）。
+     */
+    private static final int COMPLETENESS_FIELD_TOTAL = 15;
+
+    /**
+     * 完整度分档阈值：高（≥80）。
+     */
+    private static final int COMPLETENESS_LEVEL_HIGH = 80;
+
+    /**
+     * 完整度分档阈值：中（≥50）。
+     */
+    private static final int COMPLETENESS_LEVEL_MEDIUM = 50;
+
+    /**
      * 邮箱基本格式校验。
      */
     private static final String EMAIL_PATTERN = "^[A-Za-z0-9._%+\\-]+@[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,}$";
@@ -148,6 +164,11 @@ public class TalentProfileServiceImpl implements ITalentProfileService {
      */
     private final ApplicationEventPublisher eventPublisher;
 
+    /**
+     * 敏感操作审计统一入口（电话明文查看等动作必须留痕，且审计细节不落日志）。
+     */
+    private final SensitiveAuditRecorder sensitiveAuditRecorder;
+
     @Override
     public PageResult<TalentProfileVo> queryPage(TalentProfileQueryBo bo, PageQuery pageQuery) {
         List<Long> visibleTalentIds = resolveVisibleTalentIds();
@@ -156,53 +177,40 @@ public class TalentProfileServiceImpl implements ITalentProfileService {
             return PageResult.build(List.of(), 0L);
         }
         TalentProfileQueryBo query = bo == null ? new TalentProfileQueryBo() : bo;
-        String phoneHash = TalentContactCodec.phoneHash(query.getPhone());
-        String emailHash = TalentContactCodec.emailHash(query.getEmail());
-        LambdaQueryWrapper<TalentProfile> wrapper = new LambdaQueryWrapper<TalentProfile>()
-            // 可见范围硬约束：人才ID集合由 TalentScopeDomainService 的条件解析得出（§21.14）
-            .in(TalentProfile::getTalentId, visibleTalentIds)
-            .like(StringUtils.isNotBlank(query.getTalentNo()), TalentProfile::getTalentNo, query.getTalentNo())
-            .like(StringUtils.isNotBlank(query.getName()), TalentProfile::getName, query.getName())
-            .eq(phoneHash != null, TalentProfile::getPhoneHash, phoneHash)
-            .eq(emailHash != null, TalentProfile::getEmailHash, emailHash)
-            .eq(StringUtils.isNotBlank(query.getTalentStatus()), TalentProfile::getTalentStatus, query.getTalentStatus())
-            .like(StringUtils.isNotBlank(query.getCurrentCity()), TalentProfile::getCurrentCity, query.getCurrentCity())
-            .like(StringUtils.isNotBlank(query.getExpectedCity()), TalentProfile::getExpectedCity, query.getExpectedCity())
-            .like(StringUtils.isNotBlank(query.getExpectedPosition()), TalentProfile::getExpectedPosition, query.getExpectedPosition())
-            .like(StringUtils.isNotBlank(query.getCurrentCompany()), TalentProfile::getCurrentCompany, query.getCurrentCompany())
-            .eq(StringUtils.isNotBlank(query.getHighestEducation()), TalentProfile::getHighestEducation, query.getHighestEducation())
-            .like(StringUtils.isNotBlank(query.getIndustry()), TalentProfile::getIndustry, query.getIndustry())
-            .eq(query.getOwnerId() != null, TalentProfile::getOwnerId, query.getOwnerId())
-            .eq(query.getOwnerDeptId() != null, TalentProfile::getOwnerDeptId, query.getOwnerDeptId())
-            .eq(StringUtils.isNotBlank(query.getVisibilityType()), TalentProfile::getVisibilityType, query.getVisibilityType())
-            .eq(StringUtils.isNotBlank(query.getDataLevel()), TalentProfile::getDataLevel, query.getDataLevel())
-            .eq(StringUtils.isNotBlank(query.getSourceType()), TalentProfile::getSourceType, query.getSourceType())
-            .ge(query.getWorkYearsBegin() != null, TalentProfile::getWorkYears, query.getWorkYearsBegin())
-            .le(query.getWorkYearsEnd() != null, TalentProfile::getWorkYears, query.getWorkYearsEnd())
-            .ge(query.getCreateDateBegin() != null, TalentProfile::getCreateTime,
-                query.getCreateDateBegin() == null ? null : query.getCreateDateBegin().atStartOfDay())
-            .le(query.getCreateDateEnd() != null, TalentProfile::getCreateTime,
-                query.getCreateDateEnd() == null ? null : query.getCreateDateEnd().atTime(23, 59, 59))
-            // 已合并主档一律不出现在列表（设计文档 §21.14）
-            .ne(TalentProfile::getTalentStatus, TalentStatusEnum.MERGED.getCode())
-            .orderByDesc(TalentProfile::getCreateTime);
-        // 不显式查询已归档时，默认把归档人才排除在日常检索之外
-        if (StringUtils.isBlank(query.getTalentStatus()) && !Boolean.TRUE.equals(query.getIncludeArchived())) {
-            wrapper.ne(TalentProfile::getTalentStatus, TalentStatusEnum.ARCHIVED.getCode());
+        LambdaQueryWrapper<TalentProfile> wrapper = buildSearchWrapper(query, visibleTalentIds);
+        // 走实体查询：联系方式需要解密后由服务层脱敏，完整度也需要实体字段才能计算
+        Page<TalentProfile> entityPage = talentProfileMapper.selectPage(pageQuery.build(), wrapper);
+        List<TalentProfile> entities = entityPage.getRecords() == null ? List.of() : entityPage.getRecords();
+        List<TalentProfileVo> records = new java.util.ArrayList<>(entities.size());
+        for (TalentProfile entity : entities) {
+            TalentProfileVo vo = MapstructUtils.convert(entity, TalentProfileVo.class);
+            if (vo == null) {
+                continue;
+            }
+            maskContact(vo, entity);
+            fillCompleteness(vo, entity);
+            records.add(vo);
         }
-        if (query.getAssistantId() != null) {
-            wrapper.apply("FIND_IN_SET({0}, assistant_ids)", query.getAssistantId());
+        return PageResult.build(records, entityPage.getTotal());
+    }
+
+    @Override
+    public List<TalentProfile> searchForExport(TalentProfileQueryBo bo, int limit) {
+        if (limit <= 0) {
+            throw new ServiceException("导出条数上限必须为正数");
         }
-        // 仅查未被任何应聘记录引用的人才
-        if (Boolean.TRUE.equals(query.getOnlyWithoutApplication())) {
-            wrapper.apply("NOT EXISTS (SELECT 1 FROM hr_recruit_application a2 WHERE a2.talent_id = hr_talent_profile.talent_id AND a2.del_flag = '0')");
+        TalentProfileQueryBo query = bo == null ? new TalentProfileQueryBo() : bo;
+        // 不支持的筛选条件先 fail-fast，避免因「无可见人才」提前返回而无提示
+        requireSupportedFilters(query);
+        List<Long> visibleTalentIds = resolveVisibleTalentIds();
+        if (visibleTalentIds.isEmpty()) {
+            return List.of();
         }
-        Page<TalentProfileVo> page = talentProfileMapper.selectVoPage(pageQuery.build(), wrapper);
-        List<TalentProfileVo> records = page.getRecords();
-        if (CollUtil.isNotEmpty(records)) {
-            records.forEach(this::maskContact);
-        }
-        return PageResult.build(records, page.getTotal());
+        LambdaQueryWrapper<TalentProfile> wrapper = buildSearchWrapper(query, visibleTalentIds);
+        // 只多取一条用于「是否超过上限」的判定，由调用方决定拒绝或截断（§11.1 限制导出规模）
+        wrapper.orderByDesc(TalentProfile::getCreateTime).last("LIMIT " + limit);
+        List<TalentProfile> list = talentProfileMapper.selectList(wrapper);
+        return list == null ? List.of() : list;
     }
 
     @Override
@@ -212,7 +220,8 @@ public class TalentProfileServiceImpl implements ITalentProfileService {
         if (base == null) {
             throw new ServiceException(HrTalentErrorCode.MSG_HR_TALENT_001);
         }
-        maskContact(base);
+        maskContact(base, profile);
+        fillCompleteness(base, profile);
         TalentProfileDetailVo vo = copyToDetail(base, profile);
         vo.setHasApplication(hasApplication(talentId));
         return vo;
@@ -253,6 +262,8 @@ public class TalentProfileServiceImpl implements ITalentProfileService {
         entity.setSourceType(StringUtils.isBlank(bo.getSourceType()) ? SOURCE_MANUAL : bo.getSourceType());
         entity.setPhoneCipher(StringUtils.trim(bo.getPhone()));
         entity.setPhoneHash(TalentContactCodec.phoneHash(bo.getPhone()));
+        // §8.17 后四位检索列：与哈希同源写入，保证「填了号码就能按后四位检索到」
+        entity.setPhoneTail4(TalentContactCodec.phoneTail4(bo.getPhone()));
         entity.setBackupPhoneCipher(StringUtils.trim(bo.getBackupPhone()));
         entity.setBackupPhoneHash(TalentContactCodec.phoneHash(bo.getBackupPhone()));
         entity.setEmailCipher(TalentContactCodec.normalizeEmail(bo.getEmail()));
@@ -300,6 +311,8 @@ public class TalentProfileServiceImpl implements ITalentProfileService {
         if (StringUtils.isNotBlank(bo.getPhone())) {
             update.setPhoneCipher(StringUtils.trim(bo.getPhone()));
             update.setPhoneHash(TalentContactCodec.phoneHash(bo.getPhone()));
+            // 后四位与哈希必须同步改写，避免出现「号码已换、后四位仍是旧值」的脏数据
+            update.setPhoneTail4(TalentContactCodec.phoneTail4(bo.getPhone()));
         }
         if (StringUtils.isNotBlank(bo.getBackupPhone())) {
             update.setBackupPhoneCipher(StringUtils.trim(bo.getBackupPhone()));
@@ -389,6 +402,32 @@ public class TalentProfileServiceImpl implements ITalentProfileService {
     @Override
     public String getPhonePlain(Long talentId) {
         TalentProfile profile = requireVisible(talentId);
+        return profile.getPhoneCipher();
+    }
+
+    @Override
+    public String viewPhone(Long talentId, String purpose) {
+        if (StringUtils.isBlank(purpose)) {
+            // 用途为空：先写 denied 审计再拒绝，保证被拒绝的敏感访问同样留痕
+            sensitiveAuditRecorder.record(SensitiveAuditRecorder.EVENT_PHONE_VIEW,
+                SensitiveAuditRecorder.BIZ_TALENT, talentId, purpose, SensitiveAuditRecorder.RESULT_DENIED);
+            throw new ServiceException("查看电话明文必须填写用途");
+        }
+        // 顺序：资源级鉴权 → 写审计 → 返回明文（与简历下载同口径）
+        TalentProfile profile;
+        try {
+            // 只做人才主档可见性校验：人才档案域不要求存在应聘记录（区别于候选人侧 phone-view）
+            profile = requireVisible(talentId);
+        } catch (ServiceException e) {
+            sensitiveAuditRecorder.record(SensitiveAuditRecorder.EVENT_PHONE_VIEW,
+                SensitiveAuditRecorder.BIZ_TALENT, talentId, purpose, SensitiveAuditRecorder.RESULT_DENIED);
+            throw e;
+        }
+        // 明文返发之前先写审计；审计只记事件/对象/用途/IP，不记明文
+        sensitiveAuditRecorder.record(SensitiveAuditRecorder.EVENT_PHONE_VIEW,
+            SensitiveAuditRecorder.BIZ_TALENT, talentId, purpose, SensitiveAuditRecorder.RESULT_SUCCESS);
+        // phoneCipher 由 @EncryptField 出参拦截器自动解密；日志不记录返回值
+        log.info("查看人才电话明文, talentId={}", talentId);
         return profile.getPhoneCipher();
     }
 
@@ -503,6 +542,9 @@ public class TalentProfileServiceImpl implements ITalentProfileService {
         vo.setVersion(base.getVersion());
         vo.setCreateTime(base.getCreateTime());
         vo.setUpdateTime(base.getUpdateTime());
+        // §8.17 资料完整度：列表与详情口径一致，均为主档字段填充率
+        vo.setCompleteness(base.getCompleteness());
+        vo.setCompletenessLevel(base.getCompletenessLevel());
 
         vo.setFormerName(profile.getFormerName());
         vo.setBirthDate(profile.getBirthDate());
@@ -518,15 +560,200 @@ public class TalentProfileServiceImpl implements ITalentProfileService {
     }
 
     /**
-     * 对列表/详情 VO 填充脱敏电话与邮箱，并拆出协助人ID数组。
+     * 用实体中的联系方式明文填充列表 VO 的脱敏串，并拆出协助人ID数组。
      *
-     * @param vo 人才主档视图对象
+     * <p><b>为什么需要实体</b>：{@code TalentProfileVo} 只有 {@code phoneMasked} / {@code emailMasked}
+     * 两个脱敏字段，MapStruct 无法从实体的 {@code phoneCipher} / {@code emailCipher} 自动映射，
+     * 因此必须由服务层在实体（密文列已被 {@code @EncryptField} 解密拦截器还原为明文）上脱敏后回填。</p>
+     *
+     * @param vo      人才主档视图对象
+     * @param profile 人才主档实体（明文）
      */
-    private void maskContact(TalentProfileVo vo) {
-        vo.setPhoneMasked(TalentContactCodec.maskPhone(vo.getPhoneMasked()));
-        vo.setEmailMasked(TalentContactCodec.maskEmail(vo.getEmailMasked()));
+    private void maskContact(TalentProfileVo vo, TalentProfile profile) {
+        vo.maskPhone(profile == null ? null : profile.getPhoneCipher());
+        vo.maskEmail(profile == null ? null : profile.getEmailCipher());
         if (vo.getAssistantIds() != null) {
             vo.setAssistantIds(TalentContactCodec.splitIds(joinAssistantIds(vo.getAssistantIds())));
+        }
+    }
+
+    /**
+     * 计算并回填资料完整度（0~100 与分档）。
+     *
+     * <p><b>口径（设计文档 §8.12、§8.17）</b>：取主档基础字段的填充率，
+     * 基础字段共 15 项 —— 姓名、性别、（出生日期或年龄快照）、手机号、邮箱、最高学历、
+     * 当前城市、意向城市、当前公司、当前职位、工作年限、期望岗位、（期望薪资下限或上限）、
+     * 主档来源、人才负责人。已填项数 ÷ 15 取整即完整度。</p>
+     *
+     * <p><b>为什么不包含简历 / 教育 / 工作 / 标签</b>：这些是跨表派生维度，
+     * 逐行统计会造成 N+1 查询且极易与真实数据不一致；因此本值为可解释的「主档字段完整度」。
+     * 完整度<b>不作为筛选条件</b>（{@code minCompleteness} 传入即拒绝），相关限制见
+     * {@code docs/hr-talent/P2-决策与缺口台账.md}。</p>
+     *
+     * @param vo      人才主档视图对象
+     * @param profile 人才主档实体
+     */
+    private void fillCompleteness(TalentProfileVo vo, TalentProfile profile) {
+        if (vo == null || profile == null) {
+            return;
+        }
+        int filled = 0;
+        filled += hasText(profile.getName()) ? 1 : 0;
+        filled += hasText(profile.getGender()) ? 1 : 0;
+        filled += (profile.getBirthDate() != null || profile.getAgeSnapshot() != null) ? 1 : 0;
+        filled += hasText(profile.getPhoneCipher()) ? 1 : 0;
+        filled += hasText(profile.getEmailCipher()) ? 1 : 0;
+        filled += hasText(profile.getHighestEducation()) ? 1 : 0;
+        filled += hasText(profile.getCurrentCity()) ? 1 : 0;
+        filled += hasText(profile.getExpectedCity()) ? 1 : 0;
+        filled += hasText(profile.getCurrentCompany()) ? 1 : 0;
+        filled += hasText(profile.getCurrentPosition()) ? 1 : 0;
+        filled += profile.getWorkYears() != null ? 1 : 0;
+        filled += hasText(profile.getExpectedPosition()) ? 1 : 0;
+        filled += (profile.getExpectedSalaryMin() != null || profile.getExpectedSalaryMax() != null) ? 1 : 0;
+        filled += hasText(profile.getSourceType()) ? 1 : 0;
+        filled += profile.getOwnerId() != null ? 1 : 0;
+        int percent = Math.min(100, filled * 100 / COMPLETENESS_FIELD_TOTAL);
+        vo.setCompleteness(percent);
+        vo.setCompletenessLevel(percent >= COMPLETENESS_LEVEL_HIGH ? "high"
+            : percent >= COMPLETENESS_LEVEL_MEDIUM ? "medium" : "low");
+    }
+
+    /**
+     * 判断字符串是否有内容。
+     *
+     * @param value 原值
+     * @return 是否有内容
+     */
+    private boolean hasText(String value) {
+        return StringUtils.isNotBlank(value);
+    }
+
+    /**
+     * 构造人才检索条件（{@code GET /talent/profiles} 与人才导出共用，保证两处口径完全一致）。
+     *
+     * <p><b>可见范围硬约束</b>：调用方必须传入由 {@code TalentScopeDomainService} 条件解析得到的
+     * 可见人才ID集合，本方法<b>不</b>实现任何授权规则（设计文档 §8.17、§11.1、§21.14）。</p>
+     *
+     * <p><b>§8.17 组合条件</b>：姓名、手机号（完整号哈希精确 + 后四位精确）、人才编号、
+     * 当前/历史岗位、意向岗位与标签、学历/专业/毕业院校、当前与意向城市、工作年限/行业/当前公司、
+     * 来源渠道/归属部门/负责人、人才池/人才状态/最近联系时间、是否存在当前简历/解析状态。
+     * 其中的跨表条件（标签、人才池、教育、工作经历、简历）一律用 {@code EXISTS} 子查询表达，
+     * 避免出现重复行并让 {@code IN} 过滤仍能命中主表索引。</p>
+     *
+     * <p><b>后四位检索</b>：基于 {@code hr_talent_profile.phone_tail4} 精确匹配，
+     * <b>不解密全量比对</b>；不使用后四位哈希（{@code 10^4} 种取值可被瞬间穷举）。</p>
+     *
+     * @param query           检索条件（不为 null）
+     * @param visibleTalentIds 当前用户可见的人才ID集合（不为空）
+     * @return 检索条件包装器
+     */
+    private LambdaQueryWrapper<TalentProfile> buildSearchWrapper(TalentProfileQueryBo query, List<Long> visibleTalentIds) {
+        requireSupportedFilters(query);
+        String phoneHash = TalentContactCodec.phoneHash(query.getPhone());
+        String emailHash = TalentContactCodec.emailHash(query.getEmail());
+        LambdaQueryWrapper<TalentProfile> wrapper = new LambdaQueryWrapper<TalentProfile>()
+            // 可见范围硬约束：人才ID集合由 TalentScopeDomainService 的条件解析得出（§21.14）
+            .in(TalentProfile::getTalentId, visibleTalentIds)
+            .like(StringUtils.isNotBlank(query.getTalentNo()), TalentProfile::getTalentNo, query.getTalentNo())
+            .like(StringUtils.isNotBlank(query.getName()), TalentProfile::getName, query.getName())
+            .eq(phoneHash != null, TalentProfile::getPhoneHash, phoneHash)
+            .eq(emailHash != null, TalentProfile::getEmailHash, emailHash)
+            // §8.17 手机号后四位（与脱敏展示同口径的部分信息，明文列精确匹配，可走索引）
+            .eq(StringUtils.isNotBlank(query.getPhoneTail4()), TalentProfile::getPhoneTail4,
+                StringUtils.trim(query.getPhoneTail4()))
+            .eq(StringUtils.isNotBlank(query.getTalentStatus()), TalentProfile::getTalentStatus, query.getTalentStatus())
+            .like(StringUtils.isNotBlank(query.getCurrentCity()), TalentProfile::getCurrentCity, query.getCurrentCity())
+            .like(StringUtils.isNotBlank(query.getExpectedCity()), TalentProfile::getExpectedCity, query.getExpectedCity())
+            .like(StringUtils.isNotBlank(query.getExpectedPosition()), TalentProfile::getExpectedPosition, query.getExpectedPosition())
+            .like(StringUtils.isNotBlank(query.getCurrentPosition()), TalentProfile::getCurrentPosition, query.getCurrentPosition())
+            .like(StringUtils.isNotBlank(query.getCurrentCompany()), TalentProfile::getCurrentCompany, query.getCurrentCompany())
+            .eq(StringUtils.isNotBlank(query.getHighestEducation()), TalentProfile::getHighestEducation, query.getHighestEducation())
+            .like(StringUtils.isNotBlank(query.getIndustry()), TalentProfile::getIndustry, query.getIndustry())
+            .eq(query.getOwnerId() != null, TalentProfile::getOwnerId, query.getOwnerId())
+            .eq(query.getOwnerDeptId() != null, TalentProfile::getOwnerDeptId, query.getOwnerDeptId())
+            .eq(query.getSourceChannelId() != null, TalentProfile::getSourceChannelId, query.getSourceChannelId())
+            .eq(StringUtils.isNotBlank(query.getVisibilityType()), TalentProfile::getVisibilityType, query.getVisibilityType())
+            .eq(StringUtils.isNotBlank(query.getDataLevel()), TalentProfile::getDataLevel, query.getDataLevel())
+            .eq(StringUtils.isNotBlank(query.getSourceType()), TalentProfile::getSourceType, query.getSourceType())
+            .ge(query.getWorkYearsBegin() != null, TalentProfile::getWorkYears, query.getWorkYearsBegin())
+            .le(query.getWorkYearsEnd() != null, TalentProfile::getWorkYears, query.getWorkYearsEnd())
+            .ge(query.getLastFollowTimeBegin() != null, TalentProfile::getLastFollowTime, query.getLastFollowTimeBegin())
+            .le(query.getLastFollowTimeEnd() != null, TalentProfile::getLastFollowTime, query.getLastFollowTimeEnd())
+            .ge(query.getCreateDateBegin() != null, TalentProfile::getCreateTime,
+                query.getCreateDateBegin() == null ? null : query.getCreateDateBegin().atStartOfDay())
+            .le(query.getCreateDateEnd() != null, TalentProfile::getCreateTime,
+                query.getCreateDateEnd() == null ? null : query.getCreateDateEnd().atTime(23, 59, 59))
+            // 已合并主档一律不出现在列表（设计文档 §21.14）
+            .ne(TalentProfile::getTalentStatus, TalentStatusEnum.MERGED.getCode())
+            .orderByDesc(TalentProfile::getCreateTime);
+        // 不显式查询已归档时，默认把归档人才排除在日常检索之外
+        if (StringUtils.isBlank(query.getTalentStatus()) && !Boolean.TRUE.equals(query.getIncludeArchived())) {
+            wrapper.ne(TalentProfile::getTalentStatus, TalentStatusEnum.ARCHIVED.getCode());
+        }
+        if (query.getAssistantId() != null) {
+            wrapper.apply("FIND_IN_SET({0}, assistant_ids)", query.getAssistantId());
+        }
+        // 仅查未被任何应聘记录引用的人才
+        if (Boolean.TRUE.equals(query.getOnlyWithoutApplication())) {
+            wrapper.apply("NOT EXISTS (SELECT 1 FROM hr_recruit_application a2 WHERE a2.talent_id = hr_talent_profile.talent_id AND a2.del_flag = '0')");
+        }
+        // 历史岗位：命中任一工作经历即可（EXISTS 避免重复行，保持主表索引可用）
+        if (StringUtils.isNotBlank(query.getHistoryPosition())) {
+            wrapper.apply("EXISTS (SELECT 1 FROM hr_talent_work w WHERE w.talent_id = hr_talent_profile.talent_id"
+                + " AND w.del_flag = '0' AND w.position_name LIKE CONCAT('%', {0}, '%'))",
+                StringUtils.trim(query.getHistoryPosition()));
+        }
+        // 专业
+        if (StringUtils.isNotBlank(query.getMajor())) {
+            wrapper.apply("EXISTS (SELECT 1 FROM hr_talent_education e WHERE e.talent_id = hr_talent_profile.talent_id"
+                + " AND e.del_flag = '0' AND e.major LIKE CONCAT('%', {0}, '%'))",
+                StringUtils.trim(query.getMajor()));
+        }
+        // 毕业院校
+        if (StringUtils.isNotBlank(query.getSchoolName())) {
+            wrapper.apply("EXISTS (SELECT 1 FROM hr_talent_education e WHERE e.talent_id = hr_talent_profile.talent_id"
+                + " AND e.del_flag = '0' AND e.school_name LIKE CONCAT('%', {0}, '%'))",
+                StringUtils.trim(query.getSchoolName()));
+        }
+        // 人才标签：命中任一标签即可
+        if (CollUtil.isNotEmpty(query.getTagIds())) {
+            List<Long> tagIds = query.getTagIds().stream().filter(Objects::nonNull).distinct().toList();
+            if (!tagIds.isEmpty()) {
+                wrapper.apply("EXISTS (SELECT 1 FROM hr_talent_profile_tag pt WHERE pt.talent_id = hr_talent_profile.talent_id"
+                    + " AND pt.del_flag = '0' AND pt.tag_id IN (" + StringUtils.join(tagIds, ",") + "))");
+            }
+        }
+        // 人才池：必须是该池的有效成员
+        if (query.getPoolId() != null) {
+            wrapper.apply("EXISTS (SELECT 1 FROM hr_talent_pool_member pm WHERE pm.talent_id = hr_talent_profile.talent_id"
+                + " AND pm.del_flag = '0' AND pm.member_status = 'active' AND pm.pool_id = {0})",
+                query.getPoolId());
+        }
+        // 是否存在当前简历
+        if (Boolean.TRUE.equals(query.getHasCurrentResume())) {
+            wrapper.apply("current_resume_id IS NOT NULL");
+        } else if (Boolean.FALSE.equals(query.getHasCurrentResume())) {
+            wrapper.apply("current_resume_id IS NULL");
+        }
+        // 当前简历的解析状态
+        if (StringUtils.isNotBlank(query.getResumeParseStatus())) {
+            wrapper.apply("EXISTS (SELECT 1 FROM hr_talent_resume r WHERE r.talent_id = hr_talent_profile.talent_id"
+                + " AND r.del_flag = '0' AND r.current_flag = '1' AND r.parse_status = {0})",
+                StringUtils.trim(query.getResumeParseStatus()));
+        }
+        return wrapper;
+    }
+
+    /**
+     * 校验本期明确不支持的检索条件，避免静默返回错误结果（fail-fast）。
+     *
+     * @param query 检索条件
+     */
+    private void requireSupportedFilters(TalentProfileQueryBo query) {
+        if (query.getMinCompleteness() != null) {
+            // 完整度是跨表派生值（§8.17），主档无完整度列且本期不物化，故筛选不支持
+            throw new ServiceException("资料完整度筛选暂不支持：完整度为跨表派生值，本期仅在人才列表/详情中计算展示");
         }
     }
 

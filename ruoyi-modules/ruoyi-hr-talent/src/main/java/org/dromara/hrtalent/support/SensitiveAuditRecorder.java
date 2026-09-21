@@ -114,6 +114,13 @@ public class SensitiveAuditRecorder {
      */
     public static final String BIZ_OFFER = "offer";
 
+    /**
+     * 业务类型：人才跟进记录（P4 追加）。
+     * <p>跟进附件走通用业务附件表 {@code hr_recruit_attachment}：
+     * {@code biz_type = 'follow_up'}、{@code biz_id = hr_talent_follow_up.follow_id}（设计文档 §8.8）。</p>
+     */
+    public static final String BIZ_FOLLOW_UP = "follow_up";
+
     private final RecruitSensitiveAuditMapper sensitiveAuditMapper;
 
     /**
