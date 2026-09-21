@@ -82,6 +82,13 @@
               新增模型
             </el-button>
             <el-button
+              v-hasPermi="['aig:model:add']"
+              icon="Connection"
+              @click="openProviderManage"
+            >
+              供应商管理
+            </el-button>
+            <el-button
               v-hasPermi="['aig:model:edit']"
               type="success"
               plain
@@ -136,6 +143,18 @@
             <dict-tag :options="aig_lifecycle_status" :value="scope.row.lifecycleStatus" />
           </template>
         </el-table-column>
+        <!-- 健康状态：由「测试连接」写入治理表 health_status / health_time -->
+        <el-table-column label="连通性" align="center" width="150">
+          <template #default="scope">
+            <div class="health-cell">
+              <el-tag v-if="scope.row.healthStatus" :type="scope.row.healthStatus === 'HEALTHY' ? 'success' : 'danger'">
+                {{ scope.row.healthStatus === 'HEALTHY' ? '连通' : '不通' }}
+              </el-tag>
+              <el-tag v-else type="info">未测试</el-tag>
+              <span v-if="scope.row.healthTime" class="health-time">{{ parseTime(scope.row.healthTime, '{m}-{d} {h}:{i}') }}</span>
+            </div>
+          </template>
+        </el-table-column>
         <!-- 端点与密钥引用：仅 aig:model:secret 授权可见，无权限时该列不渲染 -->
         <el-table-column
           v-hasPermi="['aig:model:secret']"
@@ -165,8 +184,18 @@
             <span>{{ scope.row.validFrom || '-' }} ~ {{ scope.row.validTo || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="120" align="center" class-name="small-padding fixed-width">
+        <el-table-column label="操作" width="150" align="center" class-name="small-padding fixed-width">
           <template #default="scope">
+            <el-tooltip content="测试连接" placement="top">
+              <el-button
+                v-hasPermi="['aig:model:edit']"
+                link
+                type="primary"
+                icon="Connection"
+                :loading="testingId === scope.row.modelId"
+                @click="handleTestConnection(scope.row)"
+              ></el-button>
+            </el-tooltip>
             <el-tooltip content="登记治理属性" placement="top">
               <el-button
                 v-hasPermi="['aig:model:edit']"
@@ -326,14 +355,25 @@
         <el-row :gutter="16">
           <el-col :span="12">
             <el-form-item label="供应商" prop="providerId">
-              <el-select v-model="createForm.providerId" placeholder="请选择供应商" style="width: 100%">
-                <el-option
-                  v-for="item in providerOptions"
-                  :key="item.providerId"
-                  :label="item.providerName"
-                  :value="item.providerId!"
-                />
-              </el-select>
+              <div class="provider-picker">
+                <el-select v-model="createForm.providerId" placeholder="请选择供应商" style="width: 100%">
+                  <el-option
+                    v-for="item in providerOptions"
+                    :key="item.providerId"
+                    :label="item.providerName"
+                    :value="item.providerId!"
+                  />
+                </el-select>
+                <el-button
+                  v-hasPermi="['aig:model:add']"
+                  link
+                  type="primary"
+                  icon="Plus"
+                  @click="openProviderForm()"
+                >
+                  新增供应商
+                </el-button>
+              </div>
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -472,6 +512,115 @@
         </div>
       </template>
     </el-dialog>
+
+    <!-- 供应商管理：内置 7 家之外可自行新增（接入自建推理服务/内部网关/新云厂商） -->
+    <el-dialog v-model="providerManageVisible" title="模型供应商管理" width="900px" append-to-body>
+      <el-alert
+        class="dialog-alert"
+        type="info"
+        :closable="false"
+        show-icon
+        title="供应商只登记名称/标识/说明/启停，表里没有密钥列——密钥属于模型配置，治理层只登记引用。停用后该供应商不再出现在「新增模型」下拉里。"
+      />
+      <div class="provider-toolbar">
+        <el-button v-hasPermi="['aig:model:add']" type="primary" icon="Plus" @click="openProviderForm()">
+          新增供应商
+        </el-button>
+        <el-button icon="Refresh" @click="loadAllProviders">刷新</el-button>
+      </div>
+      <el-table v-loading="providerLoading" border :data="allProviders">
+        <el-table-column label="供应商名称" align="center" prop="providerName" width="160" show-overflow-tooltip />
+        <el-table-column label="标识" align="center" prop="providerKey" width="130" />
+        <el-table-column label="说明" align="center" prop="description" show-overflow-tooltip />
+        <el-table-column label="已有模型" align="center" width="100">
+          <template #default="scope">{{ scope.row.modelCount ?? 0 }}</template>
+        </el-table-column>
+        <el-table-column label="状态" align="center" width="100">
+          <template #default="scope">
+            <el-tag :type="scope.row.isEnabled ? 'success' : 'info'">{{ scope.row.isEnabled ? '启用' : '停用' }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" align="center" width="170" class-name="small-padding fixed-width">
+          <template #default="scope">
+            <el-button v-hasPermi="['aig:model:add']" link type="primary" icon="Edit" @click="openProviderForm(scope.row)">
+              编辑
+            </el-button>
+            <el-button
+              v-hasPermi="['aig:model:add']"
+              link
+              :type="scope.row.isEnabled ? 'danger' : 'success'"
+              @click="toggleProvider(scope.row)"
+            >
+              {{ scope.row.isEnabled ? '停用' : '启用' }}
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
+
+    <!-- 供应商新增/编辑 -->
+    <el-dialog v-model="providerFormVisible" :title="providerFormTitle" width="620px" append-to-body>
+      <el-form ref="providerFormRef" :model="providerForm" :rules="providerRules" label-width="110px">
+        <el-form-item label="供应商名称" prop="providerName">
+          <el-input v-model="providerForm.providerName" placeholder="展示用名称，如 自建推理网关" />
+        </el-form-item>
+        <el-form-item label="供应商标识" prop="providerKey">
+          <el-input
+            v-model="providerForm.providerKey"
+            :disabled="!!providerForm.id"
+            placeholder="小写字母/数字/下划线/中划线，如 internal-gateway"
+          />
+          <div class="form-tip">标识是模型的归属键，创建后不可修改。</div>
+        </el-form-item>
+        <el-form-item label="说明" prop="description">
+          <el-input v-model="providerForm.description" type="textarea" :rows="2" placeholder="例如：自建 OpenAI 兼容网关，仅内网可达" />
+        </el-form-item>
+        <el-form-item label="图标地址" prop="iconUrl">
+          <el-input v-model="providerForm.iconUrl" placeholder="可选，图标 URL" />
+        </el-form-item>
+        <el-form-item label="启用" prop="isEnabled">
+          <el-switch v-model="providerForm.isEnabled" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button type="primary" :loading="providerSubmitting" @click="submitProvider">确 定</el-button>
+          <el-button @click="providerFormVisible = false">取 消</el-button>
+        </div>
+      </template>
+    </el-dialog>
+
+    <!-- 连通性测试结果 -->
+    <el-dialog v-model="testDialog.visible" title="模型连通性测试" width="640px" append-to-body>
+      <el-result
+        :icon="testDialog.result?.ok ? 'success' : 'error'"
+        :title="testDialog.result?.ok ? '连接成功' : '连接失败'"
+        :sub-title="testDialog.result?.message || ''"
+      >
+        <template #extra>
+          <el-descriptions :column="1" border size="small" class="test-detail">
+            <el-descriptions-item label="模型">{{ testDialog.modelLabel }}</el-descriptions-item>
+            <el-descriptions-item label="探测方式">{{ probeLabel(testDialog.result?.probe) }}</el-descriptions-item>
+            <el-descriptions-item v-if="testDialog.result?.endpointHost" label="目标主机">
+              {{ testDialog.result?.endpointHost }}
+            </el-descriptions-item>
+            <el-descriptions-item label="耗时">{{ testDialog.result?.latencyMs ?? '-' }} ms</el-descriptions-item>
+            <el-descriptions-item v-if="testDialog.result?.detail" label="上游返回">
+              <span class="test-detail-text">{{ testDialog.result?.detail }}</span>
+            </el-descriptions-item>
+          </el-descriptions>
+          <div class="test-tips">
+            <p v-if="!testDialog.result?.ok">排查建议：核对访问地址是否需要 /v1 前缀、模型标识是否为厂商侧真实模型名、密钥是否有效且在治理层登记了引用。</p>
+            <p v-else>健康状态已写入治理属性，列表「连通性」列可见。</p>
+          </div>
+        </template>
+      </el-result>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="testDialog.visible = false">关 闭</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -480,10 +629,22 @@ import type {
   AigModelCreateForm,
   AigModelGovernanceForm,
   AigModelGovernanceVO,
+  AigModelProviderForm,
   AigModelProviderOption,
-  AigModelQuery
+  AigModelQuery,
+  AigModelTestResult
 } from '@/api/aigov/model/types';
-import { createModel, getModel, listModel, listModelProviders, updateModelGovernance } from '@/api/aigov/model';
+import {
+  createModel,
+  createModelProvider,
+  getModel,
+  listAllModelProviders,
+  listModel,
+  listModelProviders,
+  testModelConnection,
+  updateModelGovernance,
+  updateModelProvider
+} from '@/api/aigov/model';
 import { useLoading } from '@/hooks/async/useLoading';
 import { useFormDialog } from '@/hooks/dialog/useFormDialog';
 import { useSearchReset } from '@/hooks/form/useSearchReset';
@@ -492,6 +653,7 @@ import { useTableSelection } from '@/hooks/table/useTableSelection';
 import modal from '@/plugins/modal';
 import { useDict } from '@/utils/dict';
 import { checkPermi } from '@/utils/permission';
+import { parseTime } from '@/utils/ruoyi';
 
 defineOptions({ name: 'AigModel' });
 
@@ -721,6 +883,169 @@ const submitCreate = () => {
   });
 };
 
+// ---------------------------------------------------------------- 供应商管理
+
+/** 供应商管理弹窗 */
+const providerManageVisible = ref(false);
+const providerLoading = ref(false);
+const allProviders = ref<AigModelProviderOption[]>([]);
+/** 供应商新增/编辑弹窗 */
+const providerFormVisible = ref(false);
+const providerFormRef = ref<ElFormInstance>();
+const providerSubmitting = ref(false);
+const providerFormTitle = ref('新增供应商');
+
+const initProviderForm = (): AigModelProviderForm => ({
+  id: undefined,
+  providerName: '',
+  providerKey: '',
+  description: '',
+  iconUrl: '',
+  isEnabled: true
+});
+
+const providerForm = ref<AigModelProviderForm>(initProviderForm());
+
+const providerRules = {
+  providerName: [{ required: true, message: '供应商名称不能为空', trigger: 'blur' }],
+  providerKey: [
+    { required: true, message: '供应商标识不能为空', trigger: 'blur' },
+    {
+      pattern: /^[a-z0-9][a-z0-9_-]{1,49}$/,
+      message: '只能用小写字母、数字、下划线或中划线，且以字母或数字开头',
+      trigger: 'blur'
+    }
+  ]
+};
+
+/** 打开供应商管理弹窗 */
+const openProviderManage = async () => {
+  providerManageVisible.value = true;
+  await loadAllProviders();
+};
+
+/** 加载供应商全量列表（含停用） */
+const loadAllProviders = async () => {
+  providerLoading.value = true;
+  try {
+    const res = await listAllModelProviders();
+    allProviders.value = res.data || [];
+  } catch {
+    allProviders.value = [];
+  } finally {
+    providerLoading.value = false;
+  }
+};
+
+/** 打开供应商新增/编辑弹窗 */
+const openProviderForm = (row?: AigModelProviderOption) => {
+  providerForm.value = row
+    ? {
+        id: row.providerId,
+        providerName: row.providerName,
+        providerKey: row.providerKey,
+        description: row.description || '',
+        iconUrl: row.iconUrl || '',
+        isEnabled: !!row.isEnabled
+      }
+    : initProviderForm();
+  providerFormTitle.value = row ? '编辑供应商' : '新增供应商';
+  providerFormVisible.value = true;
+};
+
+/** 提交供应商新增/编辑 */
+const submitProvider = () => {
+  providerFormRef.value?.validate(async (valid: boolean) => {
+    if (!valid) {
+      return;
+    }
+    providerSubmitting.value = true;
+    try {
+      if (providerForm.value.id) {
+        await updateModelProvider({ ...providerForm.value });
+        modal.msgSuccess('修改成功');
+      } else {
+        const res = await createModelProvider({ ...providerForm.value });
+        modal.msgSuccess('新增成功');
+        // 新增后自动选中：用户点「新增供应商」的意图就是马上用它建模型
+        const newId = res.data as unknown as string | number;
+        if (newId != null && createVisible.value) {
+          createForm.value.providerId = newId;
+        }
+      }
+      providerFormVisible.value = false;
+      await loadAllProviders();
+      await refreshProviderOptions();
+    } finally {
+      providerSubmitting.value = false;
+    }
+  });
+};
+
+/** 启用/停用供应商 */
+const toggleProvider = async (row: AigModelProviderOption) => {
+  await updateModelProvider({
+    id: row.providerId,
+    providerName: row.providerName,
+    isEnabled: !row.isEnabled
+  });
+  modal.msgSuccess(row.isEnabled ? '已停用' : '已启用');
+  await loadAllProviders();
+  await refreshProviderOptions();
+};
+
+/** 刷新「新增模型」下拉的供应商选项（仅启用项） */
+const refreshProviderOptions = async () => {
+  try {
+    const res = await listModelProviders();
+    providerOptions.value = res.data || [];
+  } catch {
+    providerOptions.value = [];
+  }
+};
+
+// ---------------------------------------------------------------- 连通性测试
+
+/** 正在测试的模型ID（按钮 loading） */
+const testingId = ref<string | number | undefined>(undefined);
+const testDialog = reactive<{ visible: boolean; result?: AigModelTestResult; modelLabel: string }>({
+  visible: false,
+  result: undefined,
+  modelLabel: ''
+});
+
+/** 探测方式的中文说明 */
+const probeLabel = (probe?: string) => {
+  const map: Record<string, string> = {
+    LOCAL_ENGINE: '本地执行者自检（不出网）',
+    SNAIL_AI: 'snail-ai 链路调用',
+    OPENAI_COMPATIBLE: 'OpenAI 兼容端点探测',
+    UNSUPPORTED: '不支持的适配器'
+  };
+  return probe ? map[probe] || probe : '-';
+};
+
+/** 测试连接：结果写入治理表健康状态，并在弹窗里给出结论与排查建议 */
+const handleTestConnection = async (row: AigModelGovernanceVO) => {
+  testingId.value = row.modelId;
+  try {
+    const res = await testModelConnection(row.modelId!);
+    testDialog.result = res.data || {};
+    testDialog.modelLabel = [row.modelName || row.modelKey, row.modelKey && row.modelName ? `(${row.modelKey})` : '']
+      .filter(Boolean)
+      .join(' ');
+    testDialog.visible = true;
+    if (res.data?.ok) {
+      modal.msgSuccess('连接成功');
+    } else {
+      modal.msgError('连接失败：' + (res.data?.message || '未知原因'));
+    }
+    await getList();
+  } finally {
+    testingId.value = undefined;
+  }
+};
+
 onMounted(() => {
   getList();
 });</script>
@@ -748,5 +1073,52 @@ onMounted(() => {
   font-size: 12px;
   line-height: 1.5;
   color: var(--app-text-muted);
+}
+
+/* 供应商选择 + 「新增供应商」入口同一行 */
+.provider-picker {
+  width: 100%;
+}
+
+.provider-picker .el-button {
+  padding: 0;
+  height: auto;
+}
+
+.provider-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+/* 连通性列：状态标签 + 最近测试时间 */
+.health-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.health-time {
+  font-size: 11px;
+  color: var(--app-text-muted);
+}
+
+.test-detail {
+  margin-top: 8px;
+  text-align: left;
+}
+
+.test-detail-text {
+  word-break: break-all;
+}
+
+.test-tips {
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--app-text-muted);
+  text-align: left;
 }
 </style>

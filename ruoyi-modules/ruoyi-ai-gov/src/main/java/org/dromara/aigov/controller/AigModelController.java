@@ -7,7 +7,9 @@ import lombok.RequiredArgsConstructor;
 import org.dromara.aigov.constant.AigConstants;
 import org.dromara.aigov.domain.bo.AigModelCreateBo;
 import org.dromara.aigov.domain.bo.AigModelGovernanceBo;
+import org.dromara.aigov.domain.bo.AigModelProviderBo;
 import org.dromara.aigov.domain.vo.AigModelProviderVo;
+import org.dromara.aigov.domain.vo.AigModelTestVo;
 import org.dromara.aigov.domain.vo.AigModelVo;
 import org.dromara.aigov.service.IAigModelGovernanceService;
 import org.dromara.common.core.domain.PageResult;
@@ -70,6 +72,62 @@ public class AigModelController {
     @GetMapping("/providers")
     public R<List<AigModelProviderVo>> providers() {
         return R.ok(modelGovernanceService.listProviders());
+    }
+
+    /**
+     * 供应商管理列表（含停用项与各供应商下模型数量）。
+     * <p>与 {@code /providers} 的区别：那个是给新增模型表单用的「仅启用」下拉，
+     * 这个是给供应商管理用的全量列表，因此单独一个路径，避免下拉选项被停用项污染。</p>
+     *
+     * @return 供应商列表
+     */
+    @SaCheckPermission(AigConstants.PERM_MODEL_LIST)
+    @GetMapping("/providers/all")
+    public R<List<AigModelProviderVo>> allProviders() {
+        return R.ok(modelGovernanceService.listAllProviders());
+    }
+
+    /**
+     * 新增供应商：内置 7 家之外，接入自建推理服务/内部网关/新云厂商时先建供应商。
+     * <p>权限沿用「新增模型」所需的写权限（{@code aig:model:add}）：建供应商本身就是为了登记模型，
+     * 单独再切一个权限点只会让授权更碎；表里也没有任何密钥列，不引入新的敏感面。</p>
+     *
+     * @param bo 供应商参数
+     * @return 新供应商ID
+     */
+    @SaCheckPermission(AigConstants.PERM_MODEL_ADD)
+    @RepeatSubmit
+    @PostMapping("/provider")
+    public R<Long> createProvider(@Validated @RequestBody AigModelProviderBo bo) {
+        return R.ok(modelGovernanceService.createProvider(bo));
+    }
+
+    /**
+     * 修改供应商：只允许名称/说明/图标/启停，标识不可改。
+     *
+     * @param bo 供应商参数（id 必填）
+     * @return 影响行数
+     */
+    @SaCheckPermission(AigConstants.PERM_MODEL_ADD)
+    @RepeatSubmit
+    @PutMapping("/provider")
+    public R<Integer> updateProvider(@Validated @RequestBody AigModelProviderBo bo) {
+        return R.ok(modelGovernanceService.updateProvider(bo));
+    }
+
+    /**
+     * 模型连通性测试：按部署类型/适配器分流探测，并把健康状态写回治理表。
+     * <p>权限用 {@code aig:model:edit}（治理写权限）而不是只读权限：这个接口会带着平台侧密钥
+     * 真的向外发一次请求，只读账号不应具备触发外呼的能力。</p>
+     *
+     * @param modelId 模型ID
+     * @return 测试结果（不含密钥）
+     */
+    @SaCheckPermission(AigConstants.PERM_MODEL_EDIT)
+    @PostMapping("/{modelId}/test")
+    public R<AigModelTestVo> testConnection(@NotNull(message = "主键不能为空")
+                                            @PathVariable("modelId") Long modelId) {
+        return R.ok(modelGovernanceService.testConnection(modelId));
     }
 
     /**

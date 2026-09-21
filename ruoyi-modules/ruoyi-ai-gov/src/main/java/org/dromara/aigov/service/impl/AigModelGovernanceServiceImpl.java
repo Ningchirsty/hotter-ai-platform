@@ -10,7 +10,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.dromara.aigov.domain.AigModelGovernance;
 import org.dromara.aigov.domain.bo.AigModelCreateBo;
 import org.dromara.aigov.domain.bo.AigModelGovernanceBo;
+import org.dromara.aigov.domain.bo.AigModelProviderBo;
 import org.dromara.aigov.domain.vo.AigModelProviderVo;
+import org.dromara.aigov.domain.vo.AigModelTestTargetVo;
+import org.dromara.aigov.domain.vo.AigModelTestVo;
 import org.dromara.aigov.domain.vo.AigModelVo;
 import org.dromara.aigov.enums.AigDataLevelEnum;
 import org.dromara.aigov.enums.AigDeploymentTypeEnum;
@@ -20,6 +23,7 @@ import org.dromara.aigov.mapper.AigModelConfigMapper;
 import org.dromara.aigov.mapper.AigModelGovernanceMapper;
 import org.dromara.aigov.mapper.AigModelViewMapper;
 import org.dromara.aigov.service.IAigModelGovernanceService;
+import org.dromara.aigov.service.invoker.ModelConnectionTester;
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
@@ -27,6 +31,7 @@ import org.dromara.common.mybatis.core.page.PageQuery;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -81,6 +86,11 @@ public class AigModelGovernanceServiceImpl implements IAigModelGovernanceService
      * 权限工具（aig:model:secret）。
      */
     private final AigPermissionHelper permissionHelper;
+
+    /**
+     * 模型连通性探测器（本地执行者 / snail-ai / OpenAI 兼容端点）。
+     */
+    private final ModelConnectionTester connectionTester;
 
     @Override
     public PageResult<AigModelVo> list(AigModelGovernanceBo bo, PageQuery pageQuery) {
@@ -208,6 +218,93 @@ public class AigModelGovernanceServiceImpl implements IAigModelGovernanceService
     @Override
     public List<AigModelProviderVo> listProviders() {
         return modelConfigMapper.selectProviderOptions();
+    }
+
+    @Override
+    public List<AigModelProviderVo> listAllProviders() {
+        return modelConfigMapper.selectAllProviders();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Long createProvider(AigModelProviderBo bo) {
+        if (bo == null) {
+            throw new ServiceException("供应商参数不能为空");
+        }
+        String name = StringUtils.trim(bo.getProviderName());
+        String key = StringUtils.trim(bo.getProviderKey()).toLowerCase();
+        if (StringUtils.isBlank(name) || StringUtils.isBlank(key)) {
+            throw new ServiceException("供应商名称与标识都不能为空");
+        }
+        // 标识与名称都要求唯一：标识用于机器识别，名称用于人工在下拉里辨认，重名会让人选错。
+        if (modelConfigMapper.countByProviderKey(key, null) > 0) {
+            throw new ServiceException("供应商标识已存在：" + key);
+        }
+        if (modelConfigMapper.countByProviderName(name, null) > 0) {
+            throw new ServiceException("供应商名称已存在：" + name);
+        }
+        bo.setId(null);
+        bo.setProviderName(name);
+        bo.setProviderKey(key);
+        bo.setIsEnabled(bo.getIsEnabled() == null || Boolean.TRUE.equals(bo.getIsEnabled()));
+        modelConfigMapper.insertProvider(bo);
+        if (bo.getId() == null) {
+            throw new ServiceException("供应商新增失败：未取回主键");
+        }
+        log.info("新增模型供应商完成, providerId={}, providerKey={}, enabled={}", bo.getId(), key, bo.getIsEnabled());
+        return bo.getId();
+    }
+
+    @Override
+    public int updateProvider(AigModelProviderBo bo) {
+        if (bo == null || bo.getId() == null) {
+            throw new ServiceException("供应商ID不能为空");
+        }
+        if (bo.getId() != null && modelConfigMapper.countProvider(bo.getId()) == 0) {
+            throw new ServiceException("供应商不存在：" + bo.getId());
+        }
+        if (StringUtils.isNotBlank(bo.getProviderName())
+            && modelConfigMapper.countByProviderName(StringUtils.trim(bo.getProviderName()), bo.getId()) > 0) {
+            throw new ServiceException("供应商名称已存在：" + bo.getProviderName());
+        }
+        // 标识是模型的归属键，创建后不再允许修改（改标识会让既有模型指向不明）。
+        bo.setProviderKey(null);
+        if (StringUtils.isNotBlank(bo.getProviderName())) {
+            bo.setProviderName(StringUtils.trim(bo.getProviderName()));
+        }
+        int rows = modelConfigMapper.updateProvider(bo);
+        log.info("修改模型供应商完成, providerId={}, rows={}, enabled={}", bo.getId(), rows, bo.getIsEnabled());
+        return rows;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public AigModelTestVo testConnection(Long modelId) {
+        if (modelId == null) {
+            throw new ServiceException("模型ID不能为空");
+        }
+        AigModelTestTargetVo target = modelConfigMapper.selectTestTarget(modelId);
+        if (target == null) {
+            throw new ServiceException("模型不存在：" + modelId);
+        }
+        AigModelTestVo result = connectionTester.test(target);
+        // 把健康状态落回治理表（health_status / health_time 一直存在但此前从未被写入）。
+        // 治理记录缺失时不补建：那属于治理属性登记的职责，测试不该顺手造一条治理记录。
+        AigModelGovernance governance = modelGovernanceMapper.selectOne(
+            new LambdaQueryWrapper<AigModelGovernance>()
+                .eq(AigModelGovernance::getModelId, modelId)
+                .last("limit 1"));
+        if (governance != null) {
+            AigModelGovernance update = new AigModelGovernance();
+            update.setGovernanceId(governance.getGovernanceId());
+            update.setHealthStatus(result.getHealthStatus());
+            update.setHealthTime(LocalDateTime.now());
+            modelGovernanceMapper.updateById(update);
+            result.setCheckedAt(update.getHealthTime());
+        } else {
+            log.info("模型连通性测试：无治理记录，跳过健康状态写入, modelId={}", modelId);
+        }
+        return result;
     }
 
     /**

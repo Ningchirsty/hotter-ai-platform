@@ -5,12 +5,13 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 <mapper namespace="org.dromara.aigov.mapper.AigModelConfigMapper">
 
     <!--
-      模型主数据写入语句。
+      模型/供应商主数据写入口径。
       ⚠️ 安全约束：
-        1. 列清单全部显式白名单，绝不出现 api_key——治理层从不读写该列，
+        1. 写入路径列全部显式白名单，绝不出现 api_key——治理层从不写该列，
            密钥只登记引用（aig_model_governance.secret_ref）；
-        2. 本文件只有 INSERT 与只读校验，没有 UPDATE / DELETE，
-           模型主数据的修改与下架不经过治理层。
+        2. 模型主数据只有 INSERT 与只读校验，没有 UPDATE / DELETE；
+        3. 唯一读 api_key 的是 selectTestTarget（连通性测试需要它发请求），
+           结果只进服务端内部 VO，禁止出现在任何对外响应或日志中。
     -->
     <insert id="insertModel" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
         insert into sai_model_config
@@ -39,6 +40,76 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         from sai_model_provider
         where is_enabled = 1
         order by id asc
+    </select>
+
+    <!-- 供应商管理列表：含停用，并附各供应商下已登记的模型数量（停用前看影响面） -->
+    <select id="selectAllProviders" resultType="org.dromara.aigov.domain.vo.AigModelProviderVo">
+        select p.id            as provider_id,
+               p.provider_name as provider_name,
+               p.provider_key  as provider_key,
+               p.description   as description,
+               p.icon_url      as icon_url,
+               p.is_enabled    as is_enabled,
+               p.created_dt    as created_dt,
+               (select count(1) from sai_model_config c where c.provider_id = p.id) as model_count
+        from sai_model_provider p
+        order by p.is_enabled desc, p.id asc
+    </select>
+
+    <insert id="insertProvider" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        insert into sai_model_provider
+            (provider_name, provider_key, description, icon_url, is_enabled, created_dt, updated_dt)
+        values
+            (#{providerName}, #{providerKey}, #{description}, #{iconUrl},
+             #{isEnabled}, now(), now())
+    </insert>
+
+    <!-- 只允许改名称/说明/图标/启停：标识一旦被模型引用就不再变动 -->
+    <update id="updateProvider">
+        update sai_model_provider
+        <set>
+            <if test="providerName != null and providerName != ''">provider_name = #{providerName},</if>
+            <if test="description != null">description = #{description},</if>
+            <if test="iconUrl != null">icon_url = #{iconUrl},</if>
+            <if test="isEnabled != null">is_enabled = #{isEnabled},</if>
+            updated_dt = now()
+        </set>
+        where id = #{id}
+    </update>
+
+    <select id="countByProviderKey" resultType="int">
+        select count(1) from sai_model_provider
+        where provider_key = #{providerKey}
+        <if test="excludeId != null">and id != #{excludeId}</if>
+    </select>
+
+    <select id="countByProviderName" resultType="int">
+        select count(1) from sai_model_provider
+        where provider_name = #{providerName}
+        <if test="excludeId != null">and id != #{excludeId}</if>
+    </select>
+
+    <!--
+      连通性测试目标：唯一读取 api_key 的语句。
+      api_key 只用于服务端发起探测请求，绝不回传（见 AigModelTestTargetVo 的说明）。
+    -->
+    <select id="selectTestTarget" resultType="org.dromara.aigov.domain.vo.AigModelTestTargetVo">
+        select c.id             as model_id,
+               c.model_key      as model_key,
+               c.model_name     as model_name,
+               c.model_type     as model_type,
+               c.adapter_key    as adapter_key,
+               c.api_endpoint   as api_endpoint,
+               c.api_key        as api_key,
+               c.is_enabled     as is_enabled,
+               p.provider_name  as provider_name,
+               p.provider_key   as provider_key,
+               g.deployment_type as deployment_type
+        from sai_model_config c
+        left join sai_model_provider p on p.id = c.provider_id
+        left join aig_model_governance g on g.model_id = c.id and g.del_flag = '0'
+        where c.id = #{modelId}
+        limit 1
     </select>
 
 </mapper>

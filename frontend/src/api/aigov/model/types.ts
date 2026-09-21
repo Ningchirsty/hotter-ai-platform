@@ -89,13 +89,43 @@ export interface AigModelQuery extends PageQuery {
 }
 
 /**
- * 供应商下拉选项（GET /aigov/model/providers）
- * 只含名称与标识，不含任何连接凭据。
+ * 供应商（GET /aigov/model/providers 与 /providers/all）
+ * 只含名称/标识/说明/图标/启停，不含任何连接凭据——供应商表本身就没有密钥列。
  */
 export interface AigModelProviderOption {
   providerId?: string | number;
   providerName?: string;
   providerKey?: string;
+  description?: string;
+  iconUrl?: string;
+  isEnabled?: boolean | number;
+  /** 该供应商下已登记的模型数量（供应商管理列表用） */
+  modelCount?: number;
+  createdDt?: string;
+}
+
+/** 供应商新增/修改表单（POST/PUT /aigov/model/provider） */
+export interface AigModelProviderForm {
+  id?: string | number;
+  providerName?: string;
+  providerKey?: string;
+  description?: string;
+  iconUrl?: string;
+  isEnabled?: boolean;
+}
+
+/** 连通性测试结果（POST /aigov/model/{modelId}/test） */
+export interface AigModelTestResult {
+  ok?: boolean;
+  /** LOCAL_ENGINE / SNAIL_AI / OPENAI_COMPATIBLE / UNSUPPORTED */
+  probe?: string;
+  endpointHost?: string;
+  latencyMs?: number;
+  message?: string;
+  detail?: string;
+  /** HEALTHY / UNHEALTHY */
+  healthStatus?: string;
+  checkedAt?: string;
 }
 
 /**

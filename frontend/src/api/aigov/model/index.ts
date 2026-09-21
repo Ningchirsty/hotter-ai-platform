@@ -5,8 +5,10 @@ import type {
   AigModelCreateForm,
   AigModelGovernanceForm,
   AigModelGovernanceVO,
+  AigModelProviderForm,
   AigModelProviderOption,
-  AigModelQuery
+  AigModelQuery,
+  AigModelTestResult
 } from './types';
 
 // 查询模型清单（以 snail-ai 的 sai_model_config 为主表，左连治理属性）
@@ -36,11 +38,45 @@ export function updateModelGovernance(data: AigModelGovernanceForm) {
   });
 }
 
-// 供应商下拉选项（新增模型表单用）
+// 供应商下拉选项（新增模型表单用，仅启用项）
 export function listModelProviders(): AxiosPromise<AigModelProviderOption[]> {
   return request({
     url: '/aigov/model/providers',
     method: 'get'
+  });
+}
+
+// 供应商管理列表（含停用项与各供应商下模型数量）
+export function listAllModelProviders(): AxiosPromise<AigModelProviderOption[]> {
+  return request({
+    url: '/aigov/model/providers/all',
+    method: 'get'
+  });
+}
+
+// 新增供应商：内置 7 家之外接入自建服务/新厂商时使用（表内无密钥列）
+export function createModelProvider(data: AigModelProviderForm) {
+  return request({
+    url: '/aigov/model/provider',
+    method: 'post',
+    data: data
+  });
+}
+
+// 修改供应商：只允许名称/说明/图标/启停，标识不可改
+export function updateModelProvider(data: AigModelProviderForm) {
+  return request({
+    url: '/aigov/model/provider',
+    method: 'put',
+    data: data
+  });
+}
+
+// 连通性测试：后端按部署类型/适配器分流探测，并把健康状态写回治理表
+export function testModelConnection(modelId: string | number): AxiosPromise<AigModelTestResult> {
+  return request({
+    url: '/aigov/model/' + modelId + '/test',
+    method: 'post'
   });
 }
 
