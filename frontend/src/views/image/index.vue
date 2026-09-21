@@ -1,47 +1,60 @@
 <template>
-  <div class="image-studio">
-    <header class="studio-head">
-      <div class="head-main">
-        <h2>图像创作</h2>
-        <p class="sub">Qwen-Image-2.1 · 文生图 / 图生图 / 指令改图 / 抠图去背景</p>
-      </div>
-      <div class="head-meta">
-        <span class="pill">{{ activeModule.name }}</span>
-        <span v-if="currentWorkflow" class="pill ghost">{{ currentWorkflow.version }} · {{ currentWorkflow.status }}</span>
-      </div>
-    </header>
+  <div class="studio">
+    <div v-if="showGuide" class="guide-bar">
+      <el-icon><MagicStick /></el-icon>
+      <span>创建任务：选择图像能力，上传素材并描述画面，确认输出档位。四个能力均走 Qwen-Image-2.1 本地 GPU 工作流。</span>
+      <button type="button" title="关闭引导" aria-label="关闭引导" @click="showGuide = false">
+        <el-icon><Close /></el-icon>
+      </button>
+    </div>
 
     <nav class="studio-nav" aria-label="图像创作功能">
       <button
         v-for="view in studioViews"
         :key="view.key"
         type="button"
-        :class="['nav-item', { active: activeView === view.key }]"
+        :class="{ active: activeView === view.key }"
+        :aria-current="activeView === view.key ? 'page' : undefined"
         @click="activeView = view.key"
       >
         <el-icon><component :is="view.icon" /></el-icon>
-        <span>{{ view.label }}</span>
+        {{ view.label }}
       </button>
     </nav>
 
     <!-- ================= 创建 ================= -->
-    <section v-if="activeView === 'create'" class="create-view">
-      <div class="col-left">
-        <div class="capability-grid">
+    <div v-if="activeView === 'create'" class="workbench-grid">
+      <section class="studio-card create-card">
+        <div class="section-heading">
+          <div>
+            <span>图像创作 · Qwen-Image-2.1</span>
+            <h2>{{ activeModule.name }}</h2>
+          </div>
+          <span class="version-pill">{{ versionPill }}</span>
+        </div>
+
+        <div class="capability-grid" aria-label="图像能力">
           <button
             v-for="item in IMAGE_MODULES"
             :key="item.code"
             type="button"
-            :class="['capability-card', { active: item.code === activeModule.code }]"
+            :class="['capability', { active: item.code === activeModule.code }]"
+            :aria-pressed="item.code === activeModule.code"
             @click="selectModule(item)"
           >
+            <el-icon><component :is="moduleIcon(item.code)" /></el-icon>
             <strong>{{ item.name }}</strong>
-            <span>{{ item.desc }}</span>
+            <small>{{ item.desc }}</small>
           </button>
         </div>
 
+        <div class="form-divider" />
+
         <div class="field-block">
-          <label class="field-label">{{ activeModule.promptLabel || '提示词' }}</label>
+          <label>
+            {{ activeModule.promptLabel || '提示词' }}
+            <em>*</em>
+          </label>
           <el-input
             v-model="values.prompt"
             type="textarea"
@@ -50,171 +63,310 @@
             show-word-limit
             :placeholder="activeModule.placeholder || '描述你想要的画面'"
           />
-          <p v-for="tip in activeModule.tips" :key="tip" class="hint">· {{ tip }}</p>
+          <p v-for="tip in activeModule.tips" :key="tip" class="field-hint">· {{ tip }}</p>
         </div>
 
         <div v-if="activeModule.fields.includes('negative_prompt')" class="field-block">
-          <label class="field-label">负向提示词（可选）</label>
+          <label>负向提示词（可选）</label>
           <el-input v-model="values.negative_prompt" :maxlength="500" placeholder="cfg 固定为 1，通常留空" />
         </div>
 
-        <div v-if="activeModule.fields.includes('size')" class="field-row">
-          <div class="field-block">
-            <label class="field-label">输出尺寸</label>
-            <el-select v-model="values.size" placeholder="选择尺寸" style="width: 100%">
-              <el-option v-for="opt in sizeOptions" :key="opt.label" :label="opt.label" :value="opt.label" />
-            </el-select>
-          </div>
-          <div v-if="activeModule.fields.includes('strength')" class="field-block">
-            <label class="field-label">重绘幅度</label>
-            <el-select v-model="values.strength" placeholder="选择幅度" style="width: 100%">
-              <el-option v-for="opt in strengthOptions" :key="opt" :label="opt" :value="opt" />
-            </el-select>
+        <div v-if="activeModule.fields.includes('size')" class="field-block">
+          <label>
+            输出尺寸
+            <em>*</em>
+          </label>
+          <p class="model-group-label">
+            <el-icon><Grid /></el-icon>
+            {{ sizeOptions.length }} 个档位可选
+          </p>
+          <div class="choice-grid size-choices">
+            <button
+              v-for="opt in sizeOptions"
+              :key="opt.label"
+              type="button"
+              :class="{ active: values.size === opt.label }"
+              @click="values.size = opt.label"
+            >
+              {{ opt.label }}
+              <small>{{ opt.width }}×{{ opt.height }}</small>
+            </button>
           </div>
         </div>
 
-        <div v-else-if="activeModule.fields.includes('strength')" class="field-block">
-          <label class="field-label">重绘幅度</label>
-          <el-select v-model="values.strength" placeholder="选择幅度" style="width: 100%">
-            <el-option v-for="opt in strengthOptions" :key="opt" :label="opt" :value="opt" />
-          </el-select>
+        <div v-if="activeModule.fields.includes('strength')" class="field-block">
+          <label>
+            重绘幅度
+            <em>*</em>
+          </label>
+          <p class="model-group-label">
+            <el-icon><Grid /></el-icon>
+            数值越大越偏离原图
+          </p>
+          <div class="choice-grid strength-choices">
+            <button
+              v-for="opt in strengthOptions"
+              :key="opt"
+              type="button"
+              :class="{ active: values.strength === opt }"
+              @click="values.strength = opt"
+            >
+              {{ opt }}
+            </button>
+          </div>
         </div>
 
         <div v-if="activeModule.imageFields || activeModule.imageField" class="field-block">
-          <label class="field-label">
+          <label>
             {{ activeModule.code === 'EDIT' ? '参考图（第一张是编辑目标，必填）' : '输入图片' }}
+            <em>*</em>
           </label>
-          <input
-            ref="fileInput"
-            class="hidden-input"
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            :multiple="activeModule.code === 'EDIT'"
-            @change="handleFiles"
-          />
-          <div class="upload-row">
-            <el-button :loading="uploading" @click="pickFiles">选择图片</el-button>
-            <span v-if="uploading" class="hint">上传中 {{ uploadPercent }}%</span>
-          </div>
-          <div v-if="previewUrls.length" class="thumbs">
-            <div v-for="(url, index) in previewUrls" :key="url" class="thumb">
-              <img :src="url" :alt="'参考图 ' + (index + 1)" />
-              <button type="button" class="thumb-remove" @click="removeImage(index)">移除</button>
-              <span class="thumb-tag">{{ slotLabels[index] }}</span>
+          <label class="upload-zone" :class="{ complete: previewUrls.length > 0 }">
+            <input
+              ref="fileInput"
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              :multiple="activeModule.code === 'EDIT'"
+              @change="handleFiles"
+            />
+            <!--
+              已选图片的预览：没有它用户只能看到一行素材 ID，传错图要等生成完才发现。
+              每张右上角可单独移除，移除后槽位顺序会重排（见 removeImage）。
+            -->
+            <div v-if="previewUrls.length" class="upload-previews">
+              <figure v-for="(url, index) in previewUrls" :key="url">
+                <img :src="url" :alt="slotLabels[index] || '参考图'" />
+                <button
+                  type="button"
+                  :title="'移除' + (slotLabels[index] || '参考图')"
+                  aria-label="移除该图片"
+                  @click.prevent.stop="removeImage(index)"
+                >
+                  <el-icon><Close /></el-icon>
+                </button>
+              </figure>
+              <span class="upload-previews-badge">已上传 {{ previewUrls.length }} 张</span>
             </div>
-          </div>
+            <template v-else>
+              <el-icon><UploadFilled /></el-icon>
+              <b>{{ uploadHint }}</b>
+              <small>
+                {{ uploading && uploadPercent > 0 ? `上传中 ${uploadPercent}%` : '支持 PNG / JPG / WEBP，单张不超过 20MB' }}
+              </small>
+            </template>
+          </label>
         </div>
 
         <div class="submit-row">
-          <el-button
+          <button
             v-hasPermi="['image:creation:submit']"
-            type="primary"
-            size="large"
+            type="button"
+            class="submit-button"
             :disabled="!canSubmit || submitting || uploading"
-            :loading="submitting"
+            :title="canSubmit ? '提交并生成图片' : submitBlockReason"
             @click="submitTask"
           >
-            {{ submitting ? '提交中…' : canSubmit ? '开始生成' : '暂不可提交' }}
-          </el-button>
-          <span v-if="submitBlockReason" class="block-reason">{{ submitBlockReason }}</span>
-        </div>
-      </div>
-
-      <div class="col-right">
-        <section class="panel">
-          <h3>灵感</h3>
-          <button
-            v-for="item in INSPIRATIONS"
-            :key="item.title"
-            type="button"
-            class="inspiration"
-            @click="applyInspiration(item)"
-          >
-            <strong>{{ item.title }}</strong>
-            <span>{{ moduleOf(item.capability)?.name }}</span>
-            <p>{{ item.prompt }}</p>
+            <el-icon><MagicStick /></el-icon>
+            {{ submitting ? '提交中…' : canSubmit ? '提交生成' : '暂不可提交' }}
           </button>
-        </section>
+          <span>{{ submitBlockReason || '提交后将经服务端填充模板并交由 ComfyUI 执行' }}</span>
+        </div>
+      </section>
 
-        <section class="panel">
-          <h3>最近任务</h3>
-          <p v-if="!recentTasks.length" class="empty">暂无任务</p>
-          <div v-for="task in recentTasks" :key="task.id" class="task-line" @click="openDetail(task.id)">
-            <span :class="['status-dot', statusClass(task.status)]"></span>
-            <div class="task-line-main">
-              <strong>{{ task.taskName || task.taskNo }}</strong>
-              <small>{{ statusText(task.status) }} · {{ task.createTime || '' }}</small>
+      <aside class="right-column">
+        <section class="studio-card inspiration-card">
+          <div class="section-heading compact">
+            <div>
+              <h2>灵感 · 一键同款</h2>
+              <span>自动带入能力与描述</span>
             </div>
           </div>
+          <div class="inspiration-list">
+            <article v-for="item in INSPIRATIONS" :key="item.title">
+              <div :class="['inspiration-poster', inspirationTone(item.capability)]">
+                <el-icon><PictureFilled /></el-icon>
+                <span>{{ moduleOf(item.capability)?.name }}</span>
+              </div>
+              <div>
+                <b>{{ item.title }}</b>
+                <p>{{ item.prompt }}</p>
+              </div>
+              <button type="button" @click="applyInspiration(item)">
+                用同款
+                <el-icon><ArrowRight /></el-icon>
+              </button>
+            </article>
+          </div>
         </section>
-      </div>
-    </section>
+
+        <section class="studio-card recent-card">
+          <div class="section-heading compact">
+            <div>
+              <h2>最近任务</h2>
+              <span>当前创作队列</span>
+            </div>
+          </div>
+          <div v-for="task in recentTasks" :key="task.id" class="recent-task" @click="openDetail(task.id)">
+            <span :class="toneOf(task.status)"><i /></span>
+            <div>
+              <b>{{ task.taskName || task.taskNo }}</b>
+              <small>{{ moduleOf(task.capabilityCode)?.name || task.capabilityCode }} · {{ task.sizeLabel || task.workflowCode }}</small>
+            </div>
+            <em>{{ statusText(task.status) }}</em>
+          </div>
+          <div v-if="!recentTasks.length" class="recent-task">
+            <span class="muted"><i /></span>
+            <div>
+              <b>暂无任务</b>
+              <small>创建后可在此查看进度</small>
+            </div>
+            <em>—</em>
+          </div>
+        </section>
+      </aside>
+    </div>
 
     <!-- ================= 我的任务 ================= -->
     <section v-else-if="activeView === 'tasks'" class="content-view">
-      <div class="view-head">
-        <h3>我的任务</h3>
-        <el-button :loading="loadingTasks" @click="loadTasks">刷新</el-button>
+      <div class="view-heading">
+        <div>
+          <span>图像创作</span>
+          <h2>我的任务</h2>
+          <p>显示服务端真实任务记录，仅本人可见。</p>
+        </div>
+        <button type="button" class="primary-action" @click="activeView = 'create'">
+          <el-icon><MagicStick /></el-icon>
+          创建任务
+        </button>
       </div>
-      <el-table :data="tasks" style="width: 100%" empty-text="暂无任务">
-        <el-table-column prop="taskNo" label="任务编号" min-width="200" />
-        <el-table-column prop="taskName" label="名称" min-width="160" />
-        <el-table-column label="状态" width="120">
-          <template #default="{ row }">
-            <el-tag :type="statusTagType(row.status)" size="small">{{ statusText(row.status) }}</el-tag>
+
+      <div class="task-toolbar">
+        <el-input v-model="taskKeyword" placeholder="搜索任务名称或编号" clearable>
+          <template #prefix>
+            <el-icon><Search /></el-icon>
           </template>
-        </el-table-column>
-        <el-table-column label="输出" width="150">
-          <template #default="{ row }">
-            <span v-if="row.outputWidth">{{ row.outputWidth }}×{{ row.outputHeight }}</span>
-            <span v-else class="hint">—</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="createTime" label="创建时间" width="180" />
-        <el-table-column label="操作" width="200" fixed="right">
-          <template #default="{ row }">
-            <el-button link type="primary" @click="openDetail(row.id)">详情</el-button>
-            <el-button v-if="row.status === 'QUEUED'" link type="danger" @click="cancelTask(row.id)">取消</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+        </el-input>
+        <div class="task-filters" aria-label="任务状态筛选">
+          <button
+            v-for="item in taskFilters"
+            :key="item.key"
+            type="button"
+            :class="{ active: taskFilter === item.key }"
+            @click="taskFilter = item.key"
+          >
+            {{ item.label }}
+          </button>
+        </div>
+      </div>
+
+      <div v-if="loadingTasks" class="empty-state">
+        <el-icon><Document /></el-icon>
+        <b>正在加载任务…</b>
+      </div>
+      <div v-else-if="filteredTasks.length" class="task-list">
+        <article v-for="task in filteredTasks" :key="task.id" class="task-card">
+          <div :class="['task-cover', toneOf(task.status)]">
+            <el-icon><component :is="moduleIcon(task.capabilityCode)" /></el-icon>
+            <span>{{ task.sizeLabel || task.strengthLabel || moduleOf(task.capabilityCode)?.name }}</span>
+          </div>
+          <div class="task-main">
+            <div class="task-title-row">
+              <b>{{ task.taskName || task.taskNo }}</b>
+              <span :class="['task-status', toneOf(task.status)]">{{ statusText(task.status) }}</span>
+            </div>
+            <p>
+              {{ moduleOf(task.capabilityCode)?.name || task.capabilityCode }} · {{ task.workflowCode }}
+              <template v-if="task.outputWidth"> · {{ task.outputWidth }}×{{ task.outputHeight }}</template>
+            </p>
+            <small>{{ task.taskNo }} · {{ task.createTime || '—' }}</small>
+            <small v-if="task.errorMessage" class="task-error">{{ task.errorMessage }}</small>
+          </div>
+          <div class="task-actions">
+            <button type="button" title="查看任务" aria-label="查看任务" @click="openDetail(task.id)">
+              <el-icon><View /></el-icon>
+            </button>
+            <button
+              v-if="task.status === 'QUEUED'"
+              type="button"
+              title="取消排队"
+              aria-label="取消排队"
+              @click="cancelTask(task.id)"
+            >
+              <el-icon><Close /></el-icon>
+            </button>
+          </div>
+        </article>
+      </div>
+      <div v-else class="empty-state">
+        <el-icon><Document /></el-icon>
+        <b>没有匹配的任务</b>
+        <span>调整搜索条件，或创建一个新的图像任务。</span>
+      </div>
     </section>
 
     <!-- ================= 素材库 ================= -->
     <section v-else class="content-view">
-      <div class="view-head">
-        <h3>素材库</h3>
-        <div class="upload-row">
+      <div class="view-heading">
+        <div>
+          <span>图像创作</span>
+          <h2>素材库</h2>
+          <p>素材保存在服务端；任务提交时使用素材 ID，不使用浏览器本地文件名。</p>
+        </div>
+        <label class="primary-action asset-upload">
           <input
             ref="assetInput"
-            class="hidden-input"
             type="file"
             accept="image/png,image/jpeg,image/webp"
+            multiple
             @change="handleAssetFiles"
           />
-          <el-button :loading="uploading" @click="assetInput?.click()">上传素材</el-button>
-          <el-button :loading="loadingAssets" @click="loadAssets">刷新</el-button>
-        </div>
+          <el-icon><UploadFilled /></el-icon>
+          {{ uploading ? '上传中…' : '添加素材' }}
+        </label>
       </div>
-      <p v-if="!assets.length" class="empty">暂无素材</p>
-      <div class="asset-grid">
-        <div v-for="asset in assets" :key="asset.id" class="asset-card">
-          <img v-if="assetThumbs[asset.id]" :src="assetThumbs[asset.id]" :alt="asset.originalName || '素材'" @click="openPreview(asset.id)" />
-          <div v-else class="asset-placeholder">无预览</div>
-          <div class="asset-meta">
-            <strong>{{ asset.originalName || '素材 ' + asset.id }}</strong>
+
+      <div v-if="loadingAssets" class="empty-state">
+        <el-icon><UploadFilled /></el-icon>
+        <b>正在加载素材…</b>
+      </div>
+      <div v-else-if="assets.length" class="asset-grid">
+        <article v-for="asset in assets" :key="asset.id" class="asset-card">
+          <div class="asset-preview">
+            <!-- 真实缩略图；取不到时回退成图标，不让卡片出现空白 -->
+            <img
+              v-if="assetThumbs[asset.id]"
+              class="asset-thumb"
+              :src="assetThumbs[asset.id]"
+              :alt="asset.originalName || ''"
+              @click="openPreview(asset.id)"
+            />
+            <template v-else>
+              <el-icon><Picture /></el-icon>
+              <span>{{ asset.sourceKind === 'UPLOAD' ? '上传' : '产出' }}</span>
+            </template>
+          </div>
+          <div class="asset-info">
+            <b>{{ asset.originalName || '素材 ' + asset.id }}</b>
             <small>
               {{ asset.sourceKind === 'UPLOAD' ? '上传' : '产出' }}
               <template v-if="asset.sizeBytes"> · {{ formatSize(asset.sizeBytes) }}</template>
+              · {{ asset.createTime || '—' }}
             </small>
           </div>
-          <el-button link type="danger" size="small" @click="removeAsset(asset.id)">删除</el-button>
-        </div>
+          <button type="button" title="移除素材" aria-label="移除素材" @click="removeAsset(asset.id)">
+            <el-icon><Delete /></el-icon>
+          </button>
+        </article>
+      </div>
+      <div v-else class="empty-state">
+        <el-icon><FolderOpened /></el-icon>
+        <b>素材库还是空的</b>
+        <span>上传图片后，即可在创建任务时使用。</span>
       </div>
     </section>
 
     <!-- ================= 详情弹窗 ================= -->
-    <el-dialog v-model="detailVisible" title="任务详情" width="720px">
+    <el-dialog v-model="detailVisible" title="任务详情" width="min(920px, 92vw)" top="6vh">
       <div v-if="detail">
         <el-descriptions :column="2" border size="small">
           <el-descriptions-item label="任务编号">{{ detail.taskNo }}</el-descriptions-item>
@@ -251,16 +403,31 @@
     </el-dialog>
 
     <!-- ================= 预览弹窗 ================= -->
-    <el-dialog v-model="previewVisible" title="素材预览" width="720px">
+    <el-dialog v-model="previewVisible" title="素材预览" width="min(920px, 92vw)" top="6vh">
       <img v-if="previewUrl" :src="previewUrl" style="width: 100%" alt="素材预览" />
     </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
+import type { Component } from 'vue';
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { Document, FolderOpened, MagicStick } from '@element-plus/icons-vue';
+import {
+  ArrowRight,
+  Close,
+  Delete,
+  Document,
+  FolderOpened,
+  Grid,
+  MagicStick,
+  Picture,
+  PictureFilled,
+  Scissor,
+  Search,
+  UploadFilled,
+  View
+} from '@element-plus/icons-vue';
 import {
   cancelImageTask,
   createImageTask,
@@ -295,11 +462,31 @@ import {
 type StudioView = 'create' | 'tasks' | 'assets';
 
 const activeView = ref<StudioView>('create');
+const showGuide = ref(true);
 const studioViews: Array<{ key: StudioView; label: string; icon: unknown }> = [
   { key: 'create', label: '创建图像', icon: MagicStick },
   { key: 'tasks', label: '我的任务', icon: Document },
   { key: 'assets', label: '素材库', icon: FolderOpened }
 ];
+
+/** 能力卡图标：与视频页同一套视觉语言（能力 → 图标一一对应）。 */
+const moduleIcons: Record<ImageCapabilityCode, Component> = {
+  T2I: Picture,
+  I2I: PictureFilled,
+  EDIT: MagicStick,
+  BGREMOVE: Scissor
+};
+
+function moduleIcon(code: string): Component {
+  return moduleIcons[code as ImageCapabilityCode] ?? Picture;
+}
+
+/** 灵感卡海报色：与视频页一致的三种色调。 */
+function inspirationTone(code: string) {
+  if (code === 'I2I' || code === 'BGREMOVE') return 'cyan';
+  if (code === 'EDIT') return 'rose';
+  return '';
+}
 
 const activeModule = ref<ImageCapabilityModule>(IMAGE_MODULES[0]);
 const values = reactive<Partial<Record<ImageFieldKey, string>>>({});
@@ -316,6 +503,16 @@ const loadingTasks = ref(false);
 const loadingAssets = ref(false);
 const fileInput = ref<HTMLInputElement>();
 const assetInput = ref<HTMLInputElement>();
+
+const taskKeyword = ref('');
+const taskFilter = ref<'ALL' | ImageTaskStatus>('ALL');
+const taskFilters: Array<{ key: 'ALL' | ImageTaskStatus; label: string }> = [
+  { key: 'ALL', label: '全部' },
+  { key: 'QUEUED', label: '排队中' },
+  { key: 'RUNNING', label: '生成中' },
+  { key: 'SUCCEEDED', label: '已完成' },
+  { key: 'FAILED', label: '失败' }
+];
 
 const detailVisible = ref(false);
 const detail = ref<ImageTaskDetailVO>();
@@ -336,6 +533,22 @@ const slotLabels = computed(() =>
   activeModule.value.imageFields ? activeModule.value.imageFields.map((f, i) => (i === 0 ? '目标图' : '参考图 ' + i)) : ['输入图']
 );
 const recentTasks = computed(() => tasks.value.slice(0, 5));
+const versionPill = computed(() => {
+  const workflow = currentWorkflow.value;
+  return workflow ? workflow.version + ' · ' + workflow.status : '工作流读取中';
+});
+const uploadHint = computed(() => {
+  const count = activeModule.value.imageFields?.length || 1;
+  return count > 1 ? `点击上传参考图（最多 ${count} 张）` : '点击上传输入图片';
+});
+const filteredTasks = computed(() => {
+  const keyword = taskKeyword.value.trim().toLowerCase();
+  return tasks.value.filter((task) => {
+    if (taskFilter.value !== 'ALL' && task.status !== taskFilter.value) return false;
+    if (!keyword) return true;
+    return (task.taskName || '').toLowerCase().includes(keyword) || task.taskNo.toLowerCase().includes(keyword);
+  });
+});
 
 /** 提交可用性完全由服务端状态决定，不靠前端猜测。 */
 const canSubmit = computed(() => currentWorkflow.value?.submittable === true);
@@ -349,6 +562,15 @@ const submitBlockReason = computed(() => {
   if (workflow.status === 'RETIRED') return '工作流已停用';
   return '';
 });
+
+/** 状态 → 卡片色调（与视频页同一套 running / queued / done / failed）。 */
+function toneOf(status: string) {
+  if (status === 'SUCCEEDED') return 'done';
+  if (status === 'FAILED' || status === 'TIMEOUT') return 'failed';
+  if (status === 'RUNNING') return 'running';
+  if (status === 'QUEUED') return 'queued';
+  return 'muted';
+}
 
 function selectModule(item: ImageCapabilityModule) {
   activeModule.value = item;
@@ -380,10 +602,6 @@ function applyInspiration(item: ImageInspiration) {
   applyDefaults();
   values.prompt = item.prompt;
   activeView.value = 'create';
-}
-
-function pickFiles() {
-  fileInput.value?.click();
 }
 
 function clearImages() {
@@ -445,7 +663,7 @@ async function handleFiles(event: Event) {
       previewUrls.value.push(URL.createObjectURL(file));
     }
   } catch (error) {
-    ElMessage.error(extractErrorMessage(error) || '上传失败');
+    ElMessage.error((await extractErrorMessage(error)) ?? '上传失败');
   } finally {
     uploading.value = false;
     uploadPercent.value = 0;
@@ -505,7 +723,7 @@ async function submitTask() {
     }
     activeView.value = 'tasks';
   } catch (error) {
-    ElMessage.error(extractErrorMessage(error) || '提交失败');
+    ElMessage.error((await extractErrorMessage(error)) ?? '提交失败');
   } finally {
     submitting.value = false;
   }
@@ -517,7 +735,7 @@ async function loadWorkflows() {
     workflows.value = res.data || [];
     applyDefaults();
   } catch (error) {
-    ElMessage.error(extractErrorMessage(error) || '读取工作流状态失败');
+    ElMessage.error((await extractErrorMessage(error)) ?? '读取工作流状态失败');
   }
 }
 
@@ -531,7 +749,7 @@ async function loadTasks() {
       .forEach((task) => pollingTaskIds.add(String(task.id)));
     if (pollingTaskIds.size > 0) ensurePolling();
   } catch (error) {
-    ElMessage.error(extractErrorMessage(error) || '读取任务失败');
+    ElMessage.error((await extractErrorMessage(error)) ?? '读取任务失败');
   } finally {
     loadingTasks.value = false;
   }
@@ -597,7 +815,7 @@ async function openDetail(taskId: number | string) {
       detailPreviewUrl.value = await fetchImageAssetBlobUrl(outputAssetId);
     }
   } catch (error) {
-    ElMessage.error(extractErrorMessage(error) || '读取任务详情失败');
+    ElMessage.error((await extractErrorMessage(error)) ?? '读取任务详情失败');
   }
 }
 
@@ -612,7 +830,7 @@ async function cancelTask(taskId: number | string) {
     ElMessage.success('已取消');
     await loadTasks();
   } catch (error) {
-    ElMessage.error(extractErrorMessage(error) || '取消失败');
+    ElMessage.error((await extractErrorMessage(error)) ?? '取消失败');
   }
 }
 
@@ -623,7 +841,7 @@ async function loadAssets() {
     assets.value = res.data?.rows || [];
     await loadAssetThumbs();
   } catch (error) {
-    ElMessage.error(extractErrorMessage(error) || '读取素材失败');
+    ElMessage.error((await extractErrorMessage(error)) ?? '读取素材失败');
   } finally {
     loadingAssets.value = false;
   }
@@ -663,7 +881,7 @@ async function handleAssetFiles(event: Event) {
     ElMessage.success('上传完成');
     await loadAssets();
   } catch (error) {
-    ElMessage.error(extractErrorMessage(error) || '上传失败');
+    ElMessage.error((await extractErrorMessage(error)) ?? '上传失败');
   } finally {
     uploading.value = false;
   }
@@ -684,7 +902,7 @@ async function removeAsset(assetId: number | string) {
     }
     await loadAssets();
   } catch (error) {
-    ElMessage.error(extractErrorMessage(error) || '删除失败');
+    ElMessage.error((await extractErrorMessage(error)) ?? '删除失败');
   }
 }
 
@@ -694,7 +912,7 @@ async function openPreview(assetId: number | string) {
     previewUrl.value = await fetchImageAssetBlobUrl(assetId);
     previewVisible.value = true;
   } catch (error) {
-    ElMessage.error(extractErrorMessage(error) || '读取素材失败');
+    ElMessage.error((await extractErrorMessage(error)) ?? '读取素材失败');
   }
 }
 
@@ -708,18 +926,6 @@ function statusText(status: ImageTaskStatus | string) {
     TIMEOUT: '超时'
   };
   return map[status] || status;
-}
-
-function statusTagType(status: ImageTaskStatus | string) {
-  if (status === 'SUCCEEDED') return 'success';
-  if (status === 'FAILED') return 'danger';
-  if (status === 'TIMEOUT') return 'warning';
-  if (status === 'RUNNING') return 'primary';
-  return 'info';
-}
-
-function statusClass(status: ImageTaskStatus | string) {
-  return 'dot-' + String(status).toLowerCase();
 }
 
 function formatSize(bytes?: number | null) {
@@ -745,378 +951,909 @@ onBeforeUnmount(() => {
 });
 </script>
 
+<!--
+  视觉规范与视频创作页（views/video/index.vue）共用同一套暗色 studio 外壳与 token：
+  底色 / 卡片 / 档位选择 / 上传区 / 任务卡 / 素材卡 全部按视频页同款数值实现，
+  仅把「视频」语义替换为图像能力。改这里前先确认视频页有没有同步变更。
+-->
 <style scoped lang="scss">
-.image-studio {
-  padding: 20px 24px 40px;
-  color: #e6ebf2;
+@use '@/assets/styles/tokens-studio.scss';
 
-  .studio-head {
-    display: flex;
-    align-items: flex-end;
-    justify-content: space-between;
-    gap: 16px;
+.studio {
+  min-height: calc(100vh - 135px);
+  padding: 24px;
+  overflow: hidden;
+  color: var(--t1);
+  background: var(--bg);
+  background-image: radial-gradient(900px 460px at 84% -10%, rgba(148, 163, 184, 0.16), transparent 68%);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
 
-    h2 {
-      margin: 0;
-      font-size: 22px;
-      letter-spacing: 0.5px;
-    }
+button {
+  font: inherit;
+}
 
-    .sub {
-      margin: 6px 0 0;
-      color: #8b97a8;
-      font-size: 13px;
-    }
+.guide-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  margin-bottom: 22px;
+  color: #ddd6fe;
+  font-size: 13px;
+  background: rgba(148, 163, 184, 0.1);
+  border: 1px solid rgba(186, 197, 209, 0.24);
+  border-radius: 6px;
+}
+.guide-bar > span {
+  flex: 1;
+}
+.guide-bar button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: var(--t2);
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+}
 
-    .head-meta {
-      display: flex;
-      gap: 8px;
-    }
+.studio-nav {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.studio-nav button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 108px;
+  min-height: 38px;
+  padding: 0 12px;
+  color: var(--t2);
+  font-size: 13px;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+.studio-nav button:hover {
+  color: var(--t1);
+  background: var(--sunken);
+}
+.studio-nav button.active {
+  color: #fff;
+  background: var(--tint);
+  border-color: var(--p);
+}
 
-    .pill {
-      padding: 4px 10px;
-      border-radius: 999px;
-      background: rgba(94, 168, 255, 0.16);
-      color: #9fc7ff;
-      font-size: 12px;
+/* ================= 创建 ================= */
+.workbench-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 390px);
+  gap: 18px;
+  max-width: 1480px;
+  margin: 0 auto;
+}
+.studio-card {
+  padding: 20px;
+  background: rgba(18, 21, 28, 0.94);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.section-heading span {
+  color: var(--t3);
+  font-size: 11px;
+}
+.section-heading h2 {
+  margin: 3px 0 0;
+  font-size: 18px;
+  letter-spacing: 0;
+}
+.section-heading.compact {
+  margin-bottom: 14px;
+}
+.section-heading.compact h2 {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+.version-pill {
+  flex: 0 0 auto;
+  padding: 6px 9px;
+  color: #ddd6fe !important;
+  background: var(--tint);
+  border: 1px solid rgba(186, 197, 209, 0.2);
+  border-radius: 999px;
+}
 
-      &.ghost {
-        background: rgba(255, 255, 255, 0.06);
-        color: #97a3b4;
-      }
-    }
+.capability-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.capability {
+  min-height: 98px;
+  padding: 12px;
+  color: var(--t2);
+  text-align: left;
+  cursor: pointer;
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  transition:
+    border-color 0.18s,
+    background 0.18s,
+    transform 0.18s;
+}
+.capability:hover {
+  border-color: rgba(186, 197, 209, 0.42);
+  transform: translateY(-1px);
+}
+.capability.active {
+  background: var(--tint);
+  border-color: var(--p);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.2);
+}
+.capability .el-icon {
+  display: block;
+  margin-bottom: 9px;
+  color: var(--p-h);
+  font-size: 21px;
+}
+.capability strong,
+.capability small {
+  display: block;
+}
+.capability strong {
+  margin-bottom: 5px;
+  color: var(--t1);
+  font-size: 13px;
+}
+.capability small {
+  min-height: 30px;
+  color: var(--t3);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.form-divider {
+  height: 1px;
+  margin: 20px 0;
+  background: var(--line);
+}
+.field-block {
+  margin-top: 18px;
+}
+.field-block > label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--t2);
+  font-size: 12px;
+  font-weight: 600;
+}
+.field-block label em {
+  color: var(--danger);
+  font-style: normal;
+}
+.field-hint {
+  margin: 8px 0 0;
+  color: var(--t3);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.field-hint + .field-hint {
+  margin-top: 3px;
+}
+.model-group-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 0 8px;
+  color: var(--t3);
+  font-size: 11px;
+}
+
+/* 上传区：与视频页同款虚线大块，含已选图片预览 */
+.upload-zone {
+  display: grid !important;
+  min-height: 112px;
+  place-items: center;
+  align-content: center;
+  gap: 5px;
+  padding: 16px;
+  cursor: pointer;
+  background: var(--sunken);
+  border: 1px dashed var(--line2);
+  border-radius: 7px;
+}
+.upload-zone:hover {
+  border-color: var(--p-h);
+}
+.upload-zone.complete {
+  color: var(--ok);
+  border-color: rgba(52, 211, 153, 0.55);
+}
+.upload-zone input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+.upload-zone .el-icon {
+  font-size: 25px;
+}
+.upload-zone b {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--t1);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.upload-zone small {
+  color: var(--t3);
+  font-size: 10px;
+}
+.upload-previews {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+.upload-previews figure {
+  position: relative;
+  margin: 0;
+}
+.upload-previews img {
+  display: block;
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border: 1px solid var(--line2);
+  border-radius: 6px;
+}
+.upload-previews figure > button {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  color: #fecaca;
+  cursor: pointer;
+  background: rgba(0, 0, 0, 0.66);
+  border: 0;
+  border-radius: 4px;
+}
+.upload-previews-badge {
+  color: var(--t2);
+  font-size: 11px;
+}
+
+.studio :deep(.el-select) {
+  width: 100%;
+}
+.studio :deep(.el-select__wrapper),
+.studio :deep(.el-textarea__inner),
+.studio :deep(.el-input__wrapper) {
+  color: var(--t1);
+  background: var(--sunken);
+  border-color: var(--line2);
+  box-shadow: 0 0 0 1px var(--line2) inset;
+}
+.studio :deep(.el-select__wrapper:hover),
+.studio :deep(.el-textarea__inner:hover),
+.studio :deep(.el-input__wrapper:hover) {
+  box-shadow: 0 0 0 1px var(--p-h) inset;
+}
+.studio :deep(.el-textarea__inner) {
+  min-height: 112px;
+  padding: 12px;
+}
+.studio :deep(.el-input__inner) {
+  color: var(--t1);
+}
+.studio :deep(.el-input__count) {
+  color: var(--t3);
+  background: transparent;
+}
+
+.choice-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.choice-grid.size-choices {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.choice-grid.strength-choices {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.choice-grid button {
+  display: grid;
+  gap: 3px;
+  place-items: center;
+  min-height: 42px;
+  color: var(--t2);
+  cursor: pointer;
+  background: var(--sunken);
+  border: 1px solid var(--line2);
+  border-radius: 6px;
+}
+.choice-grid button small {
+  color: var(--t3);
+  font-size: 10px;
+}
+.choice-grid button.active {
+  color: #fff;
+  background: var(--tint);
+  border-color: var(--p);
+}
+.choice-grid button.active small {
+  color: #ddd6fe;
+}
+.choice-grid button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.submit-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 24px;
+}
+.submit-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 140px;
+  min-height: 42px;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+  background: var(--grad);
+  border: 0;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px var(--glow);
+}
+.submit-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+.submit-row > span {
+  color: var(--t3);
+  font-size: 11px;
+}
+
+/* ================= 右栏 ================= */
+.right-column {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.inspiration-list {
+  display: grid;
+  gap: 10px;
+}
+.inspiration-list article {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+.inspiration-poster {
+  position: relative;
+  display: grid;
+  height: 58px;
+  place-items: center;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.8);
+  background: linear-gradient(135deg, #20103c, #6d28d9);
+  border-radius: 5px;
+}
+.inspiration-poster.cyan {
+  background: linear-gradient(135deg, #082f49, #0e7490);
+}
+.inspiration-poster.rose {
+  background: linear-gradient(135deg, #4c0519, #be123c);
+}
+.inspiration-poster .el-icon {
+  font-size: 20px;
+}
+.inspiration-poster span {
+  position: absolute;
+  right: 5px;
+  bottom: 4px;
+  left: 5px;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inspiration-list b {
+  color: var(--t1);
+  font-size: 11px;
+}
+.inspiration-list p {
+  display: -webkit-box;
+  margin: 5px 0 0;
+  overflow: hidden;
+  color: var(--t3);
+  font-size: 9px;
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.inspiration-list article > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 5px;
+  color: var(--p-h);
+  font-size: 10px;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+}
+
+.recent-task {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 0;
+  cursor: pointer;
+  border-top: 1px solid var(--line);
+}
+.recent-task > span {
+  display: grid;
+  width: 9px;
+  height: 9px;
+  place-items: center;
+  border: 1px solid var(--line2);
+  border-radius: 50%;
+}
+.recent-task > span i {
+  width: 5px;
+  height: 5px;
+  background: var(--t3);
+  border-radius: 50%;
+}
+.recent-task > span.running i {
+  background: var(--p-h);
+  animation: pulse 1.5s infinite;
+}
+.recent-task > span.queued i {
+  background: var(--warn);
+}
+.recent-task > span.done i {
+  background: var(--ok);
+}
+.recent-task > span.failed i {
+  background: var(--danger);
+}
+.recent-task b,
+.recent-task small {
+  display: block;
+}
+.recent-task b {
+  color: var(--t1);
+  font-size: 11px;
+}
+.recent-task small {
+  margin-top: 3px;
+  color: var(--t3);
+  font-size: 9px;
+}
+.recent-task em {
+  color: var(--t3);
+  font-size: 9px;
+  font-style: normal;
+}
+
+/* ================= 任务 / 素材 ================= */
+.content-view {
+  max-width: 1180px;
+  margin: 0 auto;
+}
+.view-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 6px 0 18px;
+}
+.view-heading > div > span {
+  color: var(--p-h);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+}
+.view-heading h2 {
+  margin: 5px 0 6px;
+  color: var(--t1);
+  font-size: 22px;
+  letter-spacing: 0;
+}
+.view-heading p {
+  margin: 0;
+  color: var(--t3);
+  font-size: 12px;
+}
+.primary-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 12px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  background: var(--grad);
+  border: 1px solid var(--p);
+  border-radius: 6px;
+}
+.task-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+  margin-bottom: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.task-toolbar :deep(.el-input) {
+  width: min(340px, 100%);
+}
+.task-toolbar :deep(.el-input__wrapper) {
+  background: var(--sunken);
+  box-shadow: 0 0 0 1px var(--line2) inset;
+}
+.task-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.task-filters button {
+  min-height: 32px;
+  padding: 0 10px;
+  color: var(--t2);
+  font-size: 11px;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--line2);
+  border-radius: 5px;
+}
+.task-filters button.active {
+  color: #fff;
+  background: var(--tint);
+  border-color: var(--p);
+}
+
+.task-list {
+  display: grid;
+  gap: 10px;
+}
+.task-card {
+  display: grid;
+  grid-template-columns: 116px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 15px;
+  padding: 11px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.task-cover {
+  position: relative;
+  display: grid;
+  min-height: 70px;
+  place-items: center;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.8);
+  background: linear-gradient(135deg, #20103c, #6d28d9);
+  border-radius: 6px;
+}
+.task-cover.done {
+  background: linear-gradient(135deg, #083344, #0e7490);
+}
+.task-cover.queued {
+  background: linear-gradient(135deg, #442006, #b45309);
+}
+.task-cover.failed {
+  background: linear-gradient(135deg, #450a0a, #b91c1c);
+}
+.task-cover.muted {
+  background: linear-gradient(135deg, #1f2937, #475569);
+}
+.task-cover .el-icon {
+  font-size: 24px;
+}
+.task-cover span {
+  position: absolute;
+  right: 6px;
+  bottom: 5px;
+  padding: 3px 5px;
+  color: #e5e7eb;
+  font-size: 9px;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 3px;
+}
+.task-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.task-title-row b {
+  overflow: hidden;
+  color: var(--t1);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-main p,
+.task-main small {
+  display: block;
+  margin: 5px 0 0;
+  color: var(--t3);
+  font-size: 11px;
+}
+.task-main small {
+  font-size: 10px;
+}
+.task-status {
+  flex: 0 0 auto;
+  padding: 3px 6px;
+  color: var(--t3);
+  font-size: 10px;
+  background: var(--sunken);
+  border-radius: 3px;
+}
+.task-status.running {
+  color: #ddd6fe;
+  background: var(--tint);
+}
+.task-status.queued {
+  color: #fef3c7;
+  background: rgba(245, 158, 11, 0.15);
+}
+.task-status.done {
+  color: #bbf7d0;
+  background: rgba(52, 211, 153, 0.12);
+}
+.task-status.failed {
+  color: #fecaca;
+  background: rgba(248, 113, 113, 0.14);
+}
+.task-error {
+  color: #fca5a5 !important;
+}
+.task-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.task-actions button,
+.asset-card > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  color: var(--t2);
+  cursor: pointer;
+  background: var(--sunken);
+  border: 1px solid var(--line2);
+  border-radius: 5px;
+}
+.asset-upload input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+.asset-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.asset-card {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.asset-preview {
+  display: grid;
+  height: 62px;
+  place-items: center;
+  align-content: center;
+  gap: 4px;
+  overflow: hidden;
+  color: #ddd6fe;
+  background: linear-gradient(135deg, #20103c, #6d28d9);
+  border-radius: 6px;
+}
+.asset-preview .el-icon {
+  font-size: 20px;
+}
+.asset-preview span {
+  font-size: 9px;
+}
+/* 素材真实缩略图：填满预览位并保持比例，不拉伸变形 */
+.asset-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.asset-info {
+  min-width: 0;
+}
+.asset-info b,
+.asset-info small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.asset-info b {
+  color: var(--t1);
+  font-size: 12px;
+}
+.asset-info small {
+  margin-top: 5px;
+  color: var(--t3);
+  font-size: 10px;
+}
+.asset-card > button:hover {
+  color: #fecaca;
+  border-color: rgba(248, 113, 113, 0.4);
+}
+.empty-state {
+  display: grid;
+  min-height: 230px;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  color: var(--t3);
+  background: var(--surface);
+  border: 1px dashed var(--line2);
+  border-radius: 8px;
+}
+.empty-state .el-icon {
+  color: var(--p-h);
+  font-size: 30px;
+}
+.empty-state b {
+  color: var(--t2);
+  font-size: 13px;
+}
+.empty-state span {
+  font-size: 11px;
+}
+
+/* ================= 弹窗 ================= */
+.detail-preview {
+  margin: 14px 0;
+}
+.detail-preview img {
+  width: 100%;
+  border-radius: 10px;
+}
+.error-text {
+  color: #ff9b9b;
+}
+
+@keyframes pulse {
+  50% {
+    box-shadow: 0 0 0 4px rgba(186, 197, 209, 0.12);
   }
-
-  .studio-nav {
-    display: flex;
-    gap: 8px;
-    margin: 18px 0;
-
-    .nav-item {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 8px 16px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 10px;
-      background: rgba(255, 255, 255, 0.03);
-      color: #aab6c6;
-      cursor: pointer;
-
-      &.active {
-        border-color: rgba(94, 168, 255, 0.6);
-        background: rgba(94, 168, 255, 0.14);
-        color: #e6f0ff;
-      }
-    }
+}
+@media (max-width: 1360px) {
+  .workbench-grid {
+    grid-template-columns: 1fr;
   }
-
-  .create-view {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 320px;
-    gap: 20px;
-  }
-
-  .col-left,
-  .col-right {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
-
-  .capability-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-    gap: 12px;
-
-    .capability-card {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      padding: 14px;
-      text-align: left;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 12px;
-      background: rgba(255, 255, 255, 0.03);
-      color: inherit;
-      cursor: pointer;
-
-      strong {
-        font-size: 15px;
-      }
-
-      span {
-        color: #8b97a8;
-        font-size: 12px;
-        line-height: 1.5;
-      }
-
-      &.active {
-        border-color: rgba(94, 168, 255, 0.6);
-        background: rgba(94, 168, 255, 0.12);
-      }
-    }
-  }
-
-  .field-block {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-
-    .field-label {
-      font-size: 13px;
-      color: #b6c2d2;
-    }
-  }
-
-  .field-row {
+  .right-column {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 12px;
   }
-
-  .hint {
-    margin: 0;
-    color: #7f8b9c;
-    font-size: 12px;
+}
+@media (max-width: 820px) {
+  .studio {
+    padding: 16px;
   }
-
-  .hidden-input {
-    display: none;
+  .asset-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-
-  .upload-row {
+  .capability-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .choice-grid.size-choices,
+  .choice-grid.strength-choices {
+    grid-template-columns: 1fr;
+  }
+  .right-column {
     display: flex;
-    align-items: center;
+  }
+}
+@media (max-width: 520px) {
+  .studio-nav {
+    gap: 5px;
+    overflow-x: auto;
+  }
+  .studio-nav button {
+    min-width: auto;
+    padding: 0 9px;
+    white-space: nowrap;
+  }
+  .view-heading,
+  .task-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .primary-action {
+    width: 100%;
+  }
+  .task-toolbar :deep(.el-input) {
+    width: 100%;
+  }
+  .task-card {
+    grid-template-columns: 74px minmax(0, 1fr);
     gap: 10px;
   }
-
-  .thumbs {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-
-    .thumb {
-      position: relative;
-      width: 120px;
-      border-radius: 10px;
-      overflow: hidden;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-
-      img {
-        display: block;
-        width: 100%;
-        height: 120px;
-        object-fit: cover;
-      }
-
-      .thumb-tag {
-        position: absolute;
-        left: 6px;
-        bottom: 6px;
-        padding: 2px 6px;
-        border-radius: 6px;
-        background: rgba(0, 0, 0, 0.6);
-        font-size: 11px;
-      }
-
-      .thumb-remove {
-        position: absolute;
-        right: 6px;
-        top: 6px;
-        padding: 2px 8px;
-        border: none;
-        border-radius: 6px;
-        background: rgba(0, 0, 0, 0.6);
-        color: #ffb4b4;
-        font-size: 11px;
-        cursor: pointer;
-      }
-    }
+  .task-cover {
+    min-height: 64px;
   }
-
-  .submit-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-
-    .block-reason {
-      color: #f0b866;
-      font-size: 12px;
-    }
+  .task-actions {
+    grid-column: 2;
   }
-
-  .panel {
-    padding: 14px;
-    border: 1px solid rgba(255, 255, 255, 0.07);
-    border-radius: 12px;
-    background: rgba(255, 255, 255, 0.025);
-
-    h3 {
-      margin: 0 0 10px;
-      font-size: 14px;
-      color: #cbd6e4;
-    }
-
-    .inspiration {
-      display: block;
-      width: 100%;
-      margin-bottom: 8px;
-      padding: 10px;
-      text-align: left;
-      border: 1px solid rgba(255, 255, 255, 0.07);
-      border-radius: 10px;
-      background: rgba(255, 255, 255, 0.02);
-      color: inherit;
-      cursor: pointer;
-
-      strong {
-        display: block;
-        font-size: 13px;
-      }
-
-      span {
-        color: #8b97a8;
-        font-size: 11px;
-      }
-
-      p {
-        margin: 6px 0 0;
-        color: #7f8b9c;
-        font-size: 12px;
-        line-height: 1.5;
-      }
-    }
-
-    .task-line {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 4px;
-      cursor: pointer;
-      border-bottom: 1px dashed rgba(255, 255, 255, 0.06);
-
-      .task-line-main {
-        display: flex;
-        flex-direction: column;
-
-        strong {
-          font-size: 12.5px;
-        }
-
-        small {
-          color: #7f8b9c;
-          font-size: 11px;
-        }
-      }
-    }
-  }
-
-  .status-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: #6b7b8c;
-  }
-
-  .dot-succeeded {
-    background: #4ec98a;
-  }
-
-  .dot-failed {
-    background: #ff6b6b;
-  }
-
-  .dot-running {
-    background: #5ea8ff;
-  }
-
-  .dot-queued {
-    background: #b0b8c4;
-  }
-
-  .dot-timeout {
-    background: #f0b866;
-  }
-
-  .dot-canceled {
-    background: #8b97a8;
-  }
-
-  .content-view {
-    .view-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 14px;
-    }
-  }
-
-  .empty {
-    color: #7f8b9c;
-    font-size: 13px;
-  }
-
   .asset-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 14px;
-
-    .asset-card {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      padding: 10px;
-      border: 1px solid rgba(255, 255, 255, 0.07);
-      border-radius: 12px;
-      background: rgba(255, 255, 255, 0.025);
-
-      img,
-      .asset-placeholder {
-        width: 100%;
-        height: 140px;
-        object-fit: cover;
-        border-radius: 8px;
-        background: rgba(255, 255, 255, 0.04);
-        cursor: pointer;
-      }
-
-      .asset-placeholder {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: #6f7b8c;
-        font-size: 12px;
-      }
-
-      .asset-meta {
-        display: flex;
-        flex-direction: column;
-
-        strong {
-          font-size: 12.5px;
-          word-break: break-all;
-        }
-
-        small {
-          color: #7f8b9c;
-          font-size: 11px;
-        }
-      }
-    }
+    grid-template-columns: 1fr;
   }
-
-  .detail-preview {
-    margin: 14px 0;
-
-    img {
-      width: 100%;
-      border-radius: 10px;
-    }
+  .capability-grid {
+    grid-template-columns: 1fr;
   }
-
-  .error-text {
-    color: #ff9b9b;
+  .submit-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .inspiration-list article {
+    grid-template-columns: 74px minmax(0, 1fr);
+  }
+  .inspiration-list article > button {
+    grid-column: 2;
+    justify-self: start;
   }
 }
 </style>
