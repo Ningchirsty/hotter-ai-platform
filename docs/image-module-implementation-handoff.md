@@ -1,7 +1,11 @@
 # 图像创作模块实施交接（按视频创作模块同构搭建）
 
-日期：2026-09-21 · 分支：`feature/image-creation-module` · 执行机：本机 Windows（构建/测试）+
+日期：2026-09-21 · 分支：`feature/image-creation-module`（已并入 `main`）· 执行机：本机 Windows（构建/测试）+
 ComfyUI 主机 `192.168.2.223`
+
+> **更新（2026-09-21 第二轮）**：模块**已合并并部署到生产**（后端+前端，`066ce416`）。
+> 首轮部署因 `ObjectMapper` Bean 冲突导致生产整站不可用、已回滚，修复见 **§12**；
+> 生产接口层验证证据、"登录要加密/验证码" 这两个复现前置条件也都在 §12。
 
 本文记录**做了什么**、**哪些是真机实测过的**、**哪些没做**。未验证项一律标为「未验证」，
 不得当成通过——这套写法沿用 `docs/video-module-implementation-handoff.md` 的规矩。
@@ -15,11 +19,11 @@ ComfyUI 主机 `192.168.2.223`
 | ComfyUI 侧 4 个工作流改中文名 | ✅ 已改并核验（`/api/userdata` 可见） |
 | 4 份 API Format 模板 | ✅ 已产出并**逐个真机跑通出图**（见 §2.3） |
 | 契约 `script/image/workflows/` | ✅ 含 checksum、README、校验脚本与 node 测试（12/12 通过） |
-| 后端 `org.dromara.ai.image` | ✅ 编译通过；单测 28/28 通过 |
-| SQL（4 表 + 菜单，4 方言） | ✅ 脚本已交付；**未在目标库执行** |
-| 前端 `api/image` + `views/image` | ✅ oxlint 0 问题；`pnpm build:prod` 通过 |
+| 后端 `org.dromara.ai.image` | ✅ 编译通过；`ruoyi-ai` 全量 156/156 通过（含视频模块既有用例） |
+| SQL（4 表 + 菜单，4 方言） | ✅ 脚本已交付；**已在生产库执行**（159→163 表，菜单 331→333，见 §11.1） |
+| 前端 `api/image` + `views/image` | ✅ oxlint 0 问题；`pnpm build:prod` 通过；**已部署生产** |
 | 打包与 CI | ✅ 根 Dockerfile 新增 COPY；CI 新增契约 node 测试 + 镜像断言 |
-| 端到端（后端 → ComfyUI → 落库 → 前端） | ❌ **未验证**（缺可运行的后端 + 数据库环境，见 §8） |
+| 端到端（后端 → ComfyUI → 落库 → 前端） | ✅ 隔离实例真机跑通 4/4（§11.2）；✅ 生产接口层验证（§12.3）；❌ 浏览器内点击未做（§12.6） |
 
 ---
 
@@ -413,10 +417,115 @@ image:
 
 ### 11.4 仍未完成（卡在权限/审批）
 
-1. **推送分支与开 PR**：134 上 `GHCR_TOKEN` 的 scope 是 `read:packages`，**不能写代码仓库**，
-   也没有 workflow dispatch 权限 → 需要用户提供具备 repo 写权限的凭据，或由用户自行推送。
-2. **生产部署**：需要 `hotter-release`（root）以不可变 digest 放行；按现有流程由
-   GitHub Actions 的 `deploy-poc.yml` / `deploy-frontend-poc.yml`（`[shenzhen, deploy]` runner）触发。
+1. ~~**推送分支与开 PR**~~：已解决（本地已有仓库写权限凭据，PR #30 / #31 均已合并）。
+2. ~~**生产部署**~~：**已完成**，见 §12。
 3. **业务批准**：四个工作流仍是 DRAFT；提升为 PUBLISHED 后才能在生产页面提交（见 §8.2 第 3 条）。
-4. **真实浏览器点击**：本次只验证到接口层（用脚本打真实后端），未做浏览器点击。
+4. **真实浏览器点击**：已用脚本打真实生产后端（含登录、鉴权、契约、菜单下发）；
+   **浏览器内点击仍未做**（见 §12.5）。
+
+## 12. 执行记录（2026-09-21 第二轮）：生产部署 + 一次真实生产事故的修复
+
+### 12.1 事故：合并即上线，后端启动崩溃、整站不可用（已回滚）
+
+PR #30 合并（`a84f6a6`）后部署生产，后端**启动即崩、整站不可用**，只能回滚到上一镜像。
+生产日志根因：
+
+```
+Unsatisfied dependency expressed through constructor parameter 5:
+No qualifying bean of type 'com.fasterxml.jackson.databind.ObjectMapper' available:
+expected single matching bean but found 2: imageObjectMapper,videoObjectMapper
+```
+
+- **根因**：`VideoModuleConfiguration` 注册了 `videoObjectMapper`，`ImageModuleConfiguration` 又注册了
+  `imageObjectMapper`；生产 `compose.yaml` 里 `VIDEO_ENABLED=true`，两模块同时启用 →
+  容器里出现 2 个 `ObjectMapper` 候选，所有按类型注入直接失败。
+- **为什么 CI 没拦住**：`VideoModuleWiringTest` / `ImageModuleWiringTest` **各自只注册自己模块的配置类**，
+  永远构造不出「两模块同时启用」的组合；而隔离实例（`image-iso`）只开图像模块，同样测不到。
+  这是个结构性盲区，不是漏写某条断言。
+
+**修复（PR #31，`ed5eb0d`，合并为 `066ce416`）**：图像模块**不再贡献任何 `ObjectMapper` Bean**。
+
+| 文件 | 改动 |
+|---|---|
+| `ImageModuleConfiguration` | 删掉 `@Bean imageObjectMapper`，改私有 `newMapper()`，各 Bean 内部构造自用实例 |
+| `ImageTemplatePreparer` | 去掉 `@Component`（构造参数含 `ObjectMapper`），改由配置类显式构造 |
+| `ImageCreationController` | 改用 `private static final ObjectMapper MAPPER`，不再注入 |
+
+**视频模块代码零修改**（仍注册 `videoObjectMapper`）。**防护**：新增
+`VideoImageCoexistenceTest` —— 同一个 `ApplicationContextRunner` 同时启用两个模块，断言上下文能启动、
+`ObjectMapper` 候选数 ≤ 1。该测试在修复前**红**（精确复现上述生产报错），修复后**绿**；
+`ruoyi-ai` 全量 **156/156** 通过。
+
+### 12.2 生产部署（已完成，前后端均已上线）
+
+| 组件 | 不可变镜像 |
+|---|---|
+| 后端 | `ghcr.io/ningchirsty/hotter-ai-platform-backend@sha256:a76913ee2bbb8025d900ca9cda95481e5b2d41e330cad691d725cb9731e13394` |
+| 前端 | `ghcr.io/ningchirsty/hotter-ai-platform-frontend@sha256:6395f0dff72a4ae2e3322f3dd807419c34a6df1b54e4d56652ee79152fceb5da` |
+| git sha | `066ce416f833b3f0bbb20ab5cec9d4629625bc53`（前端 `version.json` 已核对，本地与公网一致） |
+
+- 后端：`sudo /usr/local/sbin/hotter-release backend <image>`，`rc=0`，`health=healthy`、`restarts=0`。
+- 前端：`sudo /usr/local/sbin/hotter-release frontend <image> <sha>`，`rc=0`，公网
+  `https://pm.hottter.cn/version.json` 与本地一致。
+- 回滚基线（上一镜像，已验证可用）：`...backend@sha256:b94e04b049e7831ef493fe5c7e28b6cf2bbf6336e0c14e6f9b7eae2ee149fa2e`。
+- **注意：`/opt/ai-video-poc/compose.yaml` 由运维侧维护、不在仓库里**（仓库只有
+  `script/docker/docker-compose.yml`），`hotter-release` 只读不重写它 —— 所以
+  `IMAGE_*` 变量是**人工加在服务器上**的（compose 第 35-42 行）。换机器/重建环境时必须重新加，
+  否则图像模块不会注册（`IMAGE_ENABLED` 缺失即整个模块不装配）。
+
+### 12.3 生产实测证据（登录态，直连后端 127.0.0.1:18082）
+
+启动日志：
+
+```
+图像工作流契约加载完成：已注册 4 条，模板可用 4 条
+图像创作模块 ComfyUI 端点：http://192.168.2.223:8188
+图像任务后台执行器已装配：并发 1，队列上限 16
+工作流契约加载完成：可提交版本 3 个              ← 视频模块同时正常装配
+图像工作流版本表同步完成：新增 0 条，更新 4 条，表内共 4 条
+```
+
+接口实测（用户 `videoit`，角色 `test1`）：
+
+| 验证项 | 结果 |
+|---|---|
+| `GET /image/capabilities` | 4 条：T2I / I2I / EDIT / BGREMOVE，全部 `status=DRAFT`、`submittable=false`、`testable=false`；BGREMOVE `requireAlpha=true`；中文档位与强度标签正确 |
+| `GET /video/capabilities` | 正常返回（`submittable=true`）→ **两模块共存的生产验证** |
+| `POST /image/tasks`（T2I，DRAFT） | `{"code":400,"msg":"工作流尚未通过实机验收，暂不可提交：wf-t2i-qwen21"}`，且 `image_task` 行数仍为 5（**未落库**）→ 契约闸门生效 |
+| `POST /image/tasks`（错误能力编码） | `{"code":400,"msg":"不支持的能力编码：null"}`（干净的业务报错，非 500） |
+| `GET /system/menu/getRouters` | 下发 `path=image-creation / component=image/index / title=图像创作` |
+| `image_workflow_version` | 4 条 DRAFT，checksum 与契约文件逐字节一致（`d8a773d8…` / `bb4e6b12…` / `0cb740bd…` / `671616e4…`） |
+| 菜单与授权 | `sys_menu` 920002/920003 正常；`sys_role_menu` 已授权角色 `1761300000000000003`(`test1`) |
+
+### 12.4 复现这套接口验证的两个前置条件（否则会误判为「服务坏了」）
+
+1. **登录必须加密**：`/auth/login` 带 `@ApiEncrypt`，明文 POST 会被 `CryptoFilter` 直接拒成
+   `403 没有访问权限，请联系管理员授权`（**这不是权限问题**）。需要按
+   `frontend/src/utils/crypto.ts` + `jsencrypt.ts` 构造：
+   header `encrypt-key` = RSA(PKCS1v15) over `Base64(32 字节 AES key)`；
+   body = `Base64(AES-ECB/PKCS7(JSON))`。
+   **注意 `/image/**` 没有 `@ApiEncrypt`，必须发明文 JSON**（发加密体反而会 415）。
+2. **生产开启了验证码**（`/auth/code` 返回 `captchaEnabled=true`）。自动化验证不必去猜图形：
+   自己申请验证码后从 Redis 读回答案即可 —— 键为 `global:captcha_codes:<uuid>`，TTL 120s。
+3. 公网 `pm.hottter.cn` 走 Cloudflare，脚本默认 UA 会被 `Error 1010` 拦；直连
+   `127.0.0.1:18082`（在 134 上执行）最省事。
+
+### 12.5 本轮发现但**未处理**的两处（都不属于图像模块）
+
+1. **登录日志记录异步 NPE（生产既有问题）**：
+   `SysLoginInfoServiceImpl.recordLoginInfo` 抛
+   `NullPointerException: Cannot invoke "org.eclipse.jetty.server.Request.getHeaders()" because
+   ServletApiRequest.getRequest() is null`（Jetty 12 请求回收后异步线程再取 request）。
+   后果是**登录日志可能不落库**。该类属 `org.dromara.system`，与本模块无关，任何登录都会触发；
+   建议单独排期。
+2. **日志措辞串味（纯文案）**：图像模块复用视频模块的 `LocalFileAssetStorage`，于是图像存储根目录
+   被打成 `视频素材本地存储根目录：/ruoyi/server/temp/image-assets`。功能无影响；
+   由于「视频模块零改动」是本轮的硬约束，未去改这个共享类的日志文案。
+
+### 12.6 浏览器内点击验证（未做）
+
+页面与接口均已就绪，但**尚未在真实浏览器里点一遍**（登录 → AI工具 → 图像创作 → 四个页签 →
+确认提交按钮为禁用态）。技术上没有障碍，只是本轮以接口层验证收口；建议由业务方在
+`https://pm.hottter.cn` 上过一遍，同时决定是否把工作流提升为 PUBLISHED（见 §8.3 的改法）。
+
 
