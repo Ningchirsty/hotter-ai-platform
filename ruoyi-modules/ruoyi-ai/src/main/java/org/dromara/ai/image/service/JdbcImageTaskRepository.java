@@ -54,7 +54,13 @@ public class JdbcImageTaskRepository implements ImageTaskRepository {
         if (rows.isEmpty()) {
             throw ImageTaskException.assetNotFound("素材不存在或无权访问");
         }
-        Map<String, Object> row = rows.get(0);
+        return toAssetRow(rows.get(0));
+    }
+
+    /**
+     * 把一行查询结果映射成 {@link AssetRow}（包级可见，便于离线单测直接覆盖列类型映射）。
+     */
+    static AssetRow toAssetRow(Map<String, Object> row) {
         return new AssetRow(
             ((Number) row.get("id")).longValue(),
             (String) row.get("tenant_id"),
@@ -69,8 +75,33 @@ public class JdbcImageTaskRepository implements ImageTaskRepository {
             (String) row.get("checksum"),
             row.get("width") == null ? null : ((Number) row.get("width")).intValue(),
             row.get("height") == null ? null : ((Number) row.get("height")).intValue(),
-            row.get("has_alpha") != null && ((Number) row.get("has_alpha")).intValue() == 1,
+            row.get("has_alpha") == null ? null : tinyIntToBoolean(row.get("has_alpha")),
             null);
+    }
+
+    /**
+     * 把 {@code TINYINT(1)} 列的值转成 Boolean，**不能假设它是 Number**。
+     *
+     * <p>MySQL Connector/J 默认 {@code tinyInt1isBit=true}，会把 {@code TINYINT(1)} 直接映射为
+     * {@code java.lang.Boolean}。本类曾经写成 {@code ((Number) row.get("has_alpha")).intValue() == 1}，
+     * 结果隔离联调时素材下载/缩略图接口一律 500：
+     * {@code ClassCastException: class java.lang.Boolean cannot be cast to class java.lang.Number}。
+     * 上传与列表接口不受影响（前者不读该列、后者直接把原始行交给 camelCase 转换），
+     * 所以离线单测与「只上传不下载」的用例都发现不了。</p>
+     */
+    static Boolean tinyIntToBoolean(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        if (value instanceof Number number) {
+            return number.intValue() != 0;
+        }
+        String text = String.valueOf(value).trim();
+        // 注意：Boolean.parseBoolean("1") 返回 false，所以不能直接用它兜底
+        return "1".equals(text) || "true".equalsIgnoreCase(text) || "yes".equalsIgnoreCase(text);
     }
 
     @Override

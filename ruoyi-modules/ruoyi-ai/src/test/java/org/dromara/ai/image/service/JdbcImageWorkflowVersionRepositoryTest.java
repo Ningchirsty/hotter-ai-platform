@@ -64,7 +64,7 @@ class JdbcImageWorkflowVersionRepositoryTest {
     void checksumNullWhenTemplateNotLoaded() {
         List<Object> args = JdbcImageWorkflowVersionRepository.upsertArgs(
             1L, sampleVersion(), CHECKSUM, false, "[]", "{}", "{}", "{}", "[]");
-        assertEquals(11, args.indexOf(null), "第 11 个参数（checksum）应为 NULL");
+        assertEquals(10, args.indexOf(null), "第 11 个参数（下标 10，checksum）应为 NULL");
     }
 
     @Test
