@@ -111,6 +111,11 @@ ADD ./ruoyi-admin/target/ruoyi-admin.jar ./app.jar
 # 缺失会导致上下文初始化失败。
 COPY ./script/video/workflows /ruoyi/server/script/video/workflows
 
+# 图像创作模块的契约与 API Format 模板同样必须在镜像内：
+# 后端从 IMAGE_CONTRACT_ROOT（默认 script）读取 script/image/workflows 并校验 SHA-256，
+# 缺模板只会让该工作流「未加载」，但缺契约文件会让上下文初始化直接失败。
+COPY ./script/image/workflows /ruoyi/server/script/image/workflows
+
 SHELL ["/bin/bash", "-c"]
 
 ENTRYPOINT java -Djava.security.egd=file:/dev/./urandom -Dserver.port=${SERVER_PORT} \
