@@ -1,0 +1,489 @@
+{
+  "meta": {
+    "name": "hotter-ai image workflow contracts",
+    "version": "1",
+    "status": "DRAFT",
+    "updatedAt": "2026-09-21",
+    "rules": [
+      "每个 workflowCode 对应后端受控目录下的一份 ComfyUI API Format JSON 模板",
+      "任务提交时后端深拷贝模板，仅覆写 mapping 白名单内的节点输入键",
+      "四个 Qwen-Image-2.1 模板已在 ComfyUI 0.37.0（192.168.2.223:8188）真机验证出图，实测记录见 api/_validation-live.json；但任务 API、鉴权与生产环境尚未联调，故一律保持 DRAFT",
+      "同一 workflowCode 的固定后台参数变化必须递增 version，禁止原地修改 PUBLISHED 版本",
+      "前端仅可见 workflowCode/模型编码/字段白名单/计费展示（见 frontend/src/views/image/modules.ts）"
+    ]
+  },
+  "capabilities": [
+    {
+      "capabilityCode": "T2I",
+      "name": "文生图",
+      "fields": [
+        {
+          "field": "prompt",
+          "required": true,
+          "type": "string",
+          "maxLength": 1000
+        },
+        {
+          "field": "negative_prompt",
+          "required": false,
+          "type": "string",
+          "maxLength": 500
+        },
+        {
+          "field": "size",
+          "required": true,
+          "type": "enum",
+          "options": [
+            "1:1 方图 · 1MP（1024×1024）",
+            "4:3 横图 · 1MP（1152×864）",
+            "3:4 竖图 · 1MP（864×1152）",
+            "16:9 宽屏 · 1MP（1344×768）",
+            "9:16 竖屏 · 1MP（768×1344）",
+            "1:1 方图 · 2K（2048×2048）"
+          ]
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-t2i-qwen21",
+          "modelCode": "QWEN21",
+          "version": "v0.1.0-draft",
+          "status": "DRAFT",
+          "apiJsonFile": "image/workflows/api/wf-t2i-qwen21-v0.1.0.json",
+          "checksum": "d8a773d86c93240a6efe348db9c1ad2d96d4fcd92c75253d8aafc7109cdc7b15",
+          "billing": {
+            "type": "credits",
+            "credits": 2
+          },
+          "mapping": [
+            {
+              "field": "prompt",
+              "nodeId": "4",
+              "inputKey": "prompt",
+              "note": "正向提示词"
+            },
+            {
+              "field": "negative_prompt",
+              "nodeId": "4",
+              "inputKey": "negative_prompt",
+              "note": "cfg=1 时为官方路径，负向提示词通常留空"
+            }
+          ],
+          "fixedParams": {
+            "model": "Qwen-Image-2.1 int8_convrot",
+            "textEncoder": "qwen3vl_8b_int8_convrot",
+            "vae": "qwen_image_2.1_vae_bf16",
+            "sampler": "euler",
+            "scheduler": "simple",
+            "steps": 25,
+            "cfg": 1,
+            "denoise": 1,
+            "seedPolicy": "set by server per task",
+            "sizePolicy": "由后端按 size 档位覆写节点 5 的 width/height"
+          },
+          "outputRule": {
+            "nodeId": "8",
+            "outputField": "images",
+            "format": "png",
+            "mime": "image/png",
+            "multiple": false,
+            "maxSizeMB": 32,
+            "maxPixels": 4194304,
+            "alpha": "preserved"
+          },
+          "perf": {
+            "avgSeconds": 8,
+            "maxSeconds": 60,
+            "timeoutSeconds": 300,
+            "concurrency": 1,
+            "measuredNote": "真机实测（A100 40G，模型已驻留显存）：4.0s / 1024×1024"
+          },
+          "supportedOutputs": [
+            {
+              "size": "1:1 方图 · 1MP（1024×1024）",
+              "width": 1024,
+              "height": 1024
+            },
+            {
+              "size": "4:3 横图 · 1MP（1152×864）",
+              "width": 1152,
+              "height": 864
+            },
+            {
+              "size": "3:4 竖图 · 1MP（864×1152）",
+              "width": 864,
+              "height": 1152
+            },
+            {
+              "size": "16:9 宽屏 · 1MP（1344×768）",
+              "width": 1344,
+              "height": 768
+            },
+            {
+              "size": "9:16 竖屏 · 1MP（768×1344）",
+              "width": 768,
+              "height": 1344
+            },
+            {
+              "size": "1:1 方图 · 2K（2048×2048）",
+              "width": 2048,
+              "height": 2048
+            }
+          ],
+          "fixedFieldValidation": {
+            "size": "1:1 方图 · 1MP（1024×1024）",
+            "supportedSizes": [
+              "1:1 方图 · 1MP（1024×1024）",
+              "4:3 横图 · 1MP（1152×864）",
+              "3:4 竖图 · 1MP（864×1152）",
+              "16:9 宽屏 · 1MP（1344×768）",
+              "9:16 竖屏 · 1MP（768×1344）",
+              "1:1 方图 · 2K（2048×2048）"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "I2I",
+      "name": "图生图",
+      "note": "经典 img2img：输出尺寸跟随输入图（不提供 size 档位），重绘幅度由 strength 控制",
+      "fields": [
+        {
+          "field": "img",
+          "required": true,
+          "type": "file",
+          "accept": [
+            "jpg",
+            "png",
+            "webp"
+          ]
+        },
+        {
+          "field": "prompt",
+          "required": true,
+          "type": "string",
+          "maxLength": 1000
+        },
+        {
+          "field": "negative_prompt",
+          "required": false,
+          "type": "string",
+          "maxLength": 500
+        },
+        {
+          "field": "strength",
+          "required": true,
+          "type": "enum",
+          "options": [
+            "轻微变化 · 0.4",
+            "标准重绘 · 0.75",
+            "强烈重绘 · 0.9"
+          ]
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-i2i-qwen21",
+          "modelCode": "QWEN21",
+          "version": "v0.1.0-draft",
+          "status": "DRAFT",
+          "apiJsonFile": "image/workflows/api/wf-i2i-qwen21-v0.1.0.json",
+          "checksum": "bb4e6b12ee79852d39ce6190017fabcf424a08af7654441b848e9ef111ae610e",
+          "billing": {
+            "type": "credits",
+            "credits": 2
+          },
+          "mapping": [
+            {
+              "field": "img",
+              "nodeId": "4",
+              "inputKey": "image",
+              "note": "后端先上传素材，再把 ComfyUI 输入文件名写入 LoadImage.image"
+            },
+            {
+              "field": "prompt",
+              "nodeId": "6",
+              "inputKey": "prompt",
+              "note": "正向提示词"
+            },
+            {
+              "field": "negative_prompt",
+              "nodeId": "6",
+              "inputKey": "negative_prompt",
+              "note": "cfg=1 时为官方路径，通常留空"
+            },
+            {
+              "field": "strength",
+              "nodeId": "7",
+              "inputKey": "denoise",
+              "note": "唯一允许覆写的采样参数；其余 steps/cfg/sampler 固定"
+            }
+          ],
+          "fixedParams": {
+            "model": "Qwen-Image-2.1 int8_convrot",
+            "textEncoder": "qwen3vl_8b_int8_convrot",
+            "vae": "qwen_image_2.1_vae_bf16",
+            "sampler": "euler",
+            "scheduler": "simple",
+            "steps": 25,
+            "cfg": 1,
+            "seedPolicy": "set by server per task",
+            "sizePolicy": "跟随输入图尺寸，服务端不改写宽高"
+          },
+          "outputRule": {
+            "nodeId": "9",
+            "outputField": "images",
+            "format": "png",
+            "mime": "image/png",
+            "multiple": false,
+            "maxSizeMB": 32,
+            "maxPixels": 4194304,
+            "alpha": "preserved"
+          },
+          "perf": {
+            "avgSeconds": 8,
+            "maxSeconds": 60,
+            "timeoutSeconds": 300,
+            "concurrency": 1,
+            "measuredNote": "真机实测：4.0s / 896×1152（跟随 896×1152 输入图）"
+          },
+          "supportedOutputs": [
+            {
+              "size": "跟随输入图",
+              "width": 0,
+              "height": 0
+            }
+          ],
+          "fixedFieldValidation": {
+            "strength": "标准重绘 · 0.75",
+            "supportedStrengths": [
+              "轻微变化 · 0.4",
+              "标准重绘 · 0.75",
+              "强烈重绘 · 0.9"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "EDIT",
+      "name": "指令改图",
+      "note": "图作为参考 latent 注入文本序列，prompt 用 <image1>、<image2> 引用；image1 是编辑目标",
+      "fields": [
+        {
+          "field": "image1",
+          "required": true,
+          "type": "file",
+          "accept": [
+            "jpg",
+            "png",
+            "webp"
+          ],
+          "note": "编辑目标图（决定输出画布尺寸），prompt 中以 <image1> 引用"
+        },
+        {
+          "field": "image2",
+          "required": false,
+          "type": "file",
+          "accept": [
+            "jpg",
+            "png",
+            "webp"
+          ],
+          "note": "可选参考图，prompt 中以 <image2> 引用"
+        },
+        {
+          "field": "image3",
+          "required": false,
+          "type": "file",
+          "accept": [
+            "jpg",
+            "png",
+            "webp"
+          ],
+          "note": "可选参考图，prompt 中以 <image3> 引用"
+        },
+        {
+          "field": "prompt",
+          "required": true,
+          "type": "string",
+          "maxLength": 1000
+        },
+        {
+          "field": "negative_prompt",
+          "required": false,
+          "type": "string",
+          "maxLength": 500
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-edit-qwen21",
+          "modelCode": "QWEN21",
+          "version": "v0.1.0-draft",
+          "status": "DRAFT",
+          "apiJsonFile": "image/workflows/api/wf-edit-qwen21-v0.1.0.json",
+          "checksum": "0cb740bd6897ad257b8b11d8dcfe74911e9a6d41ae6f169bf4b5ad895131c077",
+          "billing": {
+            "type": "credits",
+            "credits": 4
+          },
+          "mapping": [
+            {
+              "field": "image1",
+              "nodeId": "4",
+              "inputKey": "image",
+              "note": "模板中该节点已固定连到 TextEncodeQwenImage21 的 images.image_1"
+            },
+            {
+              "field": "image2",
+              "nodeId": "5",
+              "inputKey": "image",
+              "note": "模板中该节点已固定连到 images.image_2；未提供时必须删节点与其 images.image_2 输入"
+            },
+            {
+              "field": "image3",
+              "nodeId": "6",
+              "inputKey": "image",
+              "note": "模板中该节点已固定连到 images.image_3；未提供时必须删节点与其 images.image_3 输入"
+            },
+            {
+              "field": "prompt",
+              "nodeId": "7",
+              "inputKey": "prompt",
+              "note": "用 <image1>/<image2>/<image3> 引用参考图；不写占位符参考图几乎不生效"
+            },
+            {
+              "field": "negative_prompt",
+              "nodeId": "7",
+              "inputKey": "negative_prompt",
+              "note": "cfg=1 时为官方路径，通常留空"
+            }
+          ],
+          "fixedParams": {
+            "model": "Qwen-Image-2.1 int8_convrot",
+            "textEncoder": "qwen3vl_8b_int8_convrot",
+            "vae": "qwen_image_2.1_vae_bf16",
+            "sampler": "euler",
+            "scheduler": "simple",
+            "steps": 25,
+            "cfg": 1,
+            "denoise": 1,
+            "seedPolicy": "set by server per task",
+            "sizePolicy": "画布由 image1 决定，服务端不覆写宽高"
+          },
+          "outputRule": {
+            "nodeId": "10",
+            "outputField": "images",
+            "format": "png",
+            "mime": "image/png",
+            "multiple": false,
+            "maxSizeMB": 32,
+            "maxPixels": 4194304,
+            "alpha": "preserved"
+          },
+          "perf": {
+            "avgSeconds": 30,
+            "maxSeconds": 90,
+            "timeoutSeconds": 300,
+            "concurrency": 1,
+            "measuredNote": "真机实测：3 张参考图 24.0s；裁剪为 2 张 20.0s；输出 896×1152"
+          },
+          "supportedOutputs": [
+            {
+              "size": "跟随 image1",
+              "width": 0,
+              "height": 0
+            }
+          ],
+          "fixedFieldValidation": {
+            "maxReferenceImages": 3,
+            "requiredFirstImage": "image1"
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "BGREMOVE",
+      "name": "抠图去背景",
+      "note": "固定提示词的编辑子图，直接输出带 alpha（RGBA）的透明背景 PNG",
+      "fields": [
+        {
+          "field": "img",
+          "required": true,
+          "type": "file",
+          "accept": [
+            "jpg",
+            "png",
+            "webp"
+          ]
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-bgremove-qwen21",
+          "modelCode": "QWEN21",
+          "version": "v0.1.0-draft",
+          "status": "DRAFT",
+          "apiJsonFile": "image/workflows/api/wf-bgremove-qwen21-v0.1.0.json",
+          "checksum": "671616e457c9f8ea9b211911f18997252a3e28670171eb0a0228c8e135447abc",
+          "billing": {
+            "type": "credits",
+            "credits": 3
+          },
+          "mapping": [
+            {
+              "field": "img",
+              "nodeId": "4",
+              "inputKey": "image",
+              "note": "模板中该节点已固定连到 TextEncodeQwenImage21 的 images.image_1"
+            }
+          ],
+          "fixedParams": {
+            "model": "Qwen-Image-2.1 int8_convrot",
+            "textEncoder": "qwen3vl_8b_int8_convrot",
+            "vae": "qwen_image_2.1_vae_bf16",
+            "prompt": "Remove the background, and output a PNG image",
+            "promptPolicy": "固定提示词，不接受前端覆写",
+            "sampler": "euler",
+            "scheduler": "simple",
+            "steps": 25,
+            "cfg": 1,
+            "denoise": 1,
+            "seedPolicy": "set by server per task",
+            "sizePolicy": "画布由输入图决定，服务端不覆写宽高"
+          },
+          "outputRule": {
+            "nodeId": "8",
+            "outputField": "images",
+            "format": "png",
+            "mime": "image/png",
+            "multiple": false,
+            "maxSizeMB": 32,
+            "maxPixels": 4194304,
+            "alpha": "required"
+          },
+          "perf": {
+            "avgSeconds": 25,
+            "maxSeconds": 90,
+            "timeoutSeconds": 300,
+            "concurrency": 1,
+            "measuredNote": "真机实测：冷启动 12.4s、模型驻留 4.0s；输出 896×1152 / RGBA(color_type=6)"
+          },
+          "supportedOutputs": [
+            {
+              "size": "跟随输入图",
+              "width": 0,
+              "height": 0,
+              "alpha": true
+            }
+          ],
+          "fixedFieldValidation": {
+            "alphaRequired": true
+          }
+        }
+      ]
+    }
+  ]
+}

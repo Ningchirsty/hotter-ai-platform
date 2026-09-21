@@ -1,0 +1,46 @@
+{
+  "wf-t2i-qwen21": {
+    "status": "success",
+    "error": "",
+    "file": "image/QwenImage21_t2i_00001_.png",
+    "size": [
+      1024,
+      1024
+    ],
+    "seconds": 4.0,
+    "prompt_id": "66aaffe0-e2ef-4499-9de3-251e8f2352bb"
+  },
+  "wf-i2i-qwen21": {
+    "status": "success",
+    "error": "",
+    "file": "image/QwenImage21_i2i_00001_.png",
+    "size": [
+      896,
+      1152
+    ],
+    "seconds": 4.0,
+    "prompt_id": "4693ab7c-7b14-41d6-8890-2d62d86e5385"
+  },
+  "wf-edit-qwen21": {
+    "status": "success",
+    "error": "",
+    "file": "image/QwenImage21_edit_00003_.png",
+    "size": [
+      896,
+      1152
+    ],
+    "seconds": 24.0,
+    "prompt_id": "8adfee74-1135-481b-89ed-c3dca62a84cc"
+  },
+  "wf-bgremove-qwen21": {
+    "status": "success",
+    "error": "",
+    "file": "image/QwenImage21_bgremove_00001_.png",
+    "size": [
+      896,
+      1152
+    ],
+    "seconds": 4.0,
+    "prompt_id": "7fc86d49-8bb3-4345-be9c-8779f88a5d69"
+  }
+}

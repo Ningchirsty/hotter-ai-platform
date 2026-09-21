@@ -42,6 +42,16 @@ jobs:
       - name: Verify tests actually ran
         run: python3 script/ci/check-test-results.py
 
+      # 工作流契约/模板一致性测试（Node 内置 runner，无第三方依赖）。
+      # 校验：模板存在、字节是规范格式、SHA-256 与契约一致、mapping 与模板节点三方对齐、
+      # 模板里不残留样例提示词。
+      # 此前这些测试**没有接进 CI**（只在 README 里要求人工跑），结果视频契约的状态与断言
+      # 长期不一致却无人发现；本次把两个模块都纳入，避免同类问题再次静默。
+      - name: Verify workflow contracts
+        run: |
+          node --test script/video/workflows/import-h3.test.mjs
+          node --test script/image/workflows/image-contracts.test.mjs
+
       - name: Upload test reports
         if: ${{ always() && github.event_name == 'workflow_dispatch' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -112,6 +122,10 @@ jobs:
              test -s /ruoyi/server/script/video/workflows/video-workflow-contracts.json
              for wf in wf-t2v-h3 wf-i2v-h3 wf-fl2v-h3; do
                test -s "/ruoyi/server/script/video/workflows/api/$wf-v0.1.0.json"
+             done
+             test -s /ruoyi/server/script/image/workflows/image-workflow-contracts.json
+             for wf in wf-t2i-qwen21 wf-i2i-qwen21 wf-edit-qwen21 wf-bgremove-qwen21; do
+               test -s "/ruoyi/server/script/image/workflows/api/$wf-v0.1.0.json"
              done
              command -v ffprobe
              command -v ffmpeg

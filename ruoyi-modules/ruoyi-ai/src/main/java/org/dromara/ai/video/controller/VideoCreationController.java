@@ -19,6 +19,7 @@ import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.common.mybatis.utils.IdGeneratorUtil;
 import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.common.web.core.BaseController;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.validation.annotation.Validated;
@@ -62,12 +63,20 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * <p>归属隔离：所有任务与素材查询都显式带上当前租户与用户。
  * 无法解析租户时<b>失败关闭</b>，不允许退化成全局查询。</p>
+ *
+ * <p><b>为什么控制器也要挂 {@code @ConditionalOnProperty}</b>：本控制器的依赖 Bean
+ * （契约注册表、模板填充器、编排器、工作节点池…）全部来自
+ * {@code @ConditionalOnProperty(prefix="video", name="enabled", havingValue="true")} 的配置类。
+ * 控制器若无条件注册，在模块的默认状态（不配置 {@code video.enabled}）下容器会因找不到构造参数
+ * 抛 {@code UnsatisfiedDependencyException}，即<b>「默认关闭」实际上等于「整个应用起不来」</b>，
+ * 而不是安静地不启用视频功能。该约束由 {@code VideoCreationControllerGatingTest} 守住。</p>
  */
 @Slf4j
 @Validated
 @RestController
 @RequestMapping("/video")
 @RequiredArgsConstructor
+@ConditionalOnProperty(prefix = "video", name = "enabled", havingValue = "true")
 public class VideoCreationController extends BaseController {
 
     /**

@@ -3,5 +3,9 @@
 /Dockerfile text eol=lf
 /.dockerignore text eol=lf
 script/video/workflows/api/*.json text eol=lf
+# 图像创作模块同理：API Format 模板按**文件字节**计算 SHA-256（后端不一致即拒绝加载），
+# 契约 JSON 也要参与规范化比对，因此在 core.autocrlf=true 的 Windows 检出下必须固定 LF。
+script/image/workflows/api/*.json text eol=lf
+script/image/workflows/*.json text eol=lf
 /script/deploy/hotter-release text eol=lf
 /script/deploy/gh-deploy-hotter.sudoers text eol=lf

@@ -608,9 +608,13 @@ class H3TemplatePreparerTest {
             code, tier, dur, inputs.path("width").asInt(), inputs.path("height").asInt(),
             inputs.path("total_frames").asInt(), encode.path("width").asInt(), encode.path("height").asInt(),
             timeline.path("width").asInt(), timeline.path("height").asInt());
-        java.nio.file.Files.writeString(Path.of("/tmp/graph.json"),
-            MAPPER.writeValueAsString(graph), StandardCharsets.UTF_8);
-        System.out.println("[export] 已写出 /tmp/graph.json");
+        // 用 java.io.tmpdir 而不是硬编码 /tmp：在 Windows 上 "/tmp/graph.json" 会被解析成
+        // 当前盘符根下的相对路径（\tmp\graph.json），父目录不存在直接抛 NoSuchFileException，
+        // 让这条「人工导出核对」用例在 Windows 上必然失败（Linux CI 正常）。
+        // 该用例只服务于人工拿图核对，输出路径随平台走即可。
+        java.nio.file.Path exportPath = Path.of(System.getProperty("java.io.tmpdir"), "graph.json");
+        java.nio.file.Files.writeString(exportPath, MAPPER.writeValueAsString(graph), StandardCharsets.UTF_8);
+        System.out.println("[export] 已写出 " + exportPath);
     }
 
     private static WorkflowVersion readVersionFromContract(String code) {
