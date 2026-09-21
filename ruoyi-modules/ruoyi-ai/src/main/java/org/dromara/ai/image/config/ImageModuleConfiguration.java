@@ -121,22 +121,37 @@ public class ImageModuleConfiguration {
         private boolean comfyFreeBeforeSubmit = false;
     }
 
-    @Bean
-    public ObjectMapper imageObjectMapper() {
+    /**
+     * 构造图像模块自用的 {@code ObjectMapper}，<b>不注册成 Spring Bean</b>。
+     *
+     * <p><b>这是一个真实的生产事故换来的教训</b>：视频模块已经注册了 {@code videoObjectMapper}，
+     * 图像模块再注册一个 {@code imageObjectMapper} 后，两个模块同时启用（生产就是这种情况）时
+     * 容器里出现两个 {@code ObjectMapper} 候选，按类型注入一律失败：</p>
+     *
+     * <pre>
+     * Unsatisfied dependency expressed through constructor parameter 5:
+     * No qualifying bean of type 'com.fasterxml.jackson.databind.ObjectMapper' available:
+     * expected single matching bean but found 2: imageObjectMapper,videoObjectMapper
+     * </pre>
+     *
+     * <p>结果就是后端启动即崩、生产整站不可用，只能回滚。因此图像模块<b>不贡献任何
+     * ObjectMapper Bean</b>，需要的地方各自 new 一个（廉价且无状态），从根上消除歧义。
+     * 这条约束由 {@code VideoImageCoexistenceTest} 守住。</p>
+     */
+    private ObjectMapper newMapper() {
         // 刻意不使用 Web 层的 JsonMapper：RuoYi v6 只定制了 HTTP 用的 JsonMapper
         return new ObjectMapper();
     }
 
     @Bean
-    public ImageTemplatePreparer imageTemplatePreparer(ObjectMapper imageObjectMapper) {
-        return new ImageTemplatePreparer(imageObjectMapper);
+    public ImageTemplatePreparer imageTemplatePreparer() {
+        return new ImageTemplatePreparer(newMapper());
     }
 
     @Bean
-    public ImageWorkflowContractRegistry imageWorkflowContractRegistry(ImageProperties properties,
-                                                                      ObjectMapper imageObjectMapper) {
+    public ImageWorkflowContractRegistry imageWorkflowContractRegistry(ImageProperties properties) {
         Path root = Path.of(properties.getContractRoot());
-        ImageWorkflowContractRegistry registry = new ImageWorkflowContractRegistry(root, imageObjectMapper);
+        ImageWorkflowContractRegistry registry = new ImageWorkflowContractRegistry(root, newMapper());
         registry.load();
         applyTestingWorkflows(registry, properties);
         return registry;
@@ -175,10 +190,9 @@ public class ImageModuleConfiguration {
                                                        ImageTaskRepository repository,
                                                        ImageAssetStore assetStore,
                                                        ImageAssetProbe probe,
-                                                       ImageProperties properties,
-                                                       ObjectMapper imageObjectMapper) {
+                                                       ImageProperties properties) {
         ImageComfyClient client = new ImageComfyClient(
-            properties.getComfyBaseUrl(), imageObjectMapper, properties.isComfyAllowLoopback());
+            properties.getComfyBaseUrl(), newMapper(), properties.isComfyAllowLoopback());
         log.info("图像创作模块 ComfyUI 端点：{}", client.getBaseUrl());
         return new ImageTaskOrchestrator(
             registry, preparer, repository, assetStore, probe, client,
@@ -207,10 +221,9 @@ public class ImageModuleConfiguration {
     @ConditionalOnProperty(prefix = "image", name = "sync-contract-to-db", havingValue = "true", matchIfMissing = true)
     public ImageContractDbSync imageContractDbSync(ImageWorkflowContractRegistry registry,
                                                    ImageWorkflowVersionRepository repository,
-                                                   ObjectMapper imageObjectMapper,
                                                    ImageProperties properties) {
         log.info("已启用图像契约→数据库同步镜像（运行时仍以契约文件为权威）");
-        return new ImageContractDbSync(registry, repository, imageObjectMapper, Path.of(properties.getContractRoot()));
+        return new ImageContractDbSync(registry, repository, newMapper(), Path.of(properties.getContractRoot()));
     }
 
     @Bean
