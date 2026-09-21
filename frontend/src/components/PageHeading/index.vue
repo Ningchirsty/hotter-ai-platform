@@ -66,6 +66,8 @@ const MODULE_TABS: Record<string, { label: string; path: string }[]> = {
     { label: '管理驾驶舱', path: '/recruit/dashboard' },
     { label: '招聘需求', path: '/recruit/demand' },
     { label: '公司月度计划', path: '/recruit/plan' },
+    { label: '月度结转中心', path: '/recruit/rollover' },
+    { label: '岗位需求', path: '/recruit/job' },
     { label: '候选人跟进', path: '/recruit/application' },
     { label: '面试管理', path: '/recruit/interview' },
     { label: '人才档案', path: '/recruit/talent/profile' },
