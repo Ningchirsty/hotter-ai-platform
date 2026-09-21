@@ -520,6 +520,11 @@ public interface HrTalentConstants {
     String PERM_STANDARD_EDIT = "recruit:standard:edit";
 
     /**
+     * 权限：数据导入中心列表。
+     */
+    String PERM_IMPORT_LIST = "recruit:import:list";
+
+    /**
      * 权限：导入模板下载。
      */
     String PERM_IMPORT_TEMPLATE = "recruit:import:template";

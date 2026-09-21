@@ -29,7 +29,12 @@ public enum DuplicateStatusEnum {
     /**
      * 已忽略
      */
-    IGNORED("ignored", "已忽略");
+    IGNORED("ignored", "已忽略"),
+    /**
+     * 已确认待合并（人工确认确为同一人但尚未执行合并，区别于 {@link #PENDING} 待人工判定，
+     * 不计入「待处理」工作队列）
+     */
+    CONFIRMED("confirmed", "已确认待合并");
 
     /**
      * 编码（入库值，投入使用后不得随意变更）

@@ -95,6 +95,19 @@
             <artifactId>ruoyi-common-json</artifactId>
         </dependency>
 
+        <!-- 翻译模块：VO 的字典标签与用户名（@Translation）依赖，与 ruoyi-ai-gov 同口径 -->
+        <dependency>
+            <groupId>org.dromara</groupId>
+            <artifactId>ruoyi-common-translation</artifactId>
+        </dependency>
+
+        <!-- 单元测试：与 ruoyi-ai 模块保持一致，版本由 Spring Boot BOM 管理 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
     </dependencies>
 
 </project>

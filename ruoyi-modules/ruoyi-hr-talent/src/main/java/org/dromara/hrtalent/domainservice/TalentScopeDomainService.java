@@ -1,12 +1,14 @@
 package org.dromara.hrtalent.domainservice;
 
 import cn.hutool.core.collection.CollUtil;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.hrtalent.constant.HrTalentConstants;
+import org.dromara.hrtalent.domain.entity.TalentProfile;
 import org.dromara.hrtalent.enums.TalentPermissionLevelEnum;
 import org.dromara.hrtalent.enums.TalentStatusEnum;
 import org.dromara.hrtalent.enums.TalentVisibilityTypeEnum;
@@ -19,6 +21,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -83,6 +86,109 @@ public class TalentScopeDomainService {
     private final ObjectProvider<TalentScopeGrantProvider> grantProvider;
 
     /* ------------------------------------------------------------------ 可见范围 ------------------------------------------------------------------ */
+
+    /**
+     * 生成当前登录用户的人才可见范围查询条件（设计文档 §21.14）。
+     *
+     * <p><b>接法契约</b>：调用方必须把本方法返回的 wrapper <b>原样</b>交给
+     * 只读 Mapper 方法 {@code TalentProfileMapper#selectVisibleTalentIds}
+     * （SQL 形如 {@code SELECT p.talent_id FROM hr_talent_profile p ${ew.customSqlSegment}}），
+     * 由 {@code ${ew.customSqlSegment}} 直接消费条件与参数；</p>
+     *
+     * <p><b>禁止</b>：把本 wrapper 的 {@code getCustomSqlSegment()} 搬到另一个 wrapper 上
+     * （前导 {@code WHERE} 会重复且参数绑定错位），也禁止在 Controller / Service / Mapper 内
+     * 另写一套可见范围规则（§11.1）。</p>
+     *
+     * @return 人才可见范围查询条件（条件中的表别名固定为 {@code p}）
+     */
+    public QueryWrapper<TalentProfile> visibleTalentWrapper() {
+        return visibleTalentWrapper(currentScope());
+    }
+
+    /**
+     * 按指定范围条件生成人才可见范围查询条件（设计文档 §21.14 的 SQL 分支）。
+     *
+     * <p><b>组合契约（重要）</b>：可见性分支必须合成<b>同一条</b> {@code apply} 片段，
+     * 且所有取值<b>全部内联为字面量</b>（可见性编码取枚举常量，部门ID与用户ID来自登录态
+     * {@code Long}，不存在注入面）。原因有两条：</p>
+     * <ul>
+     *     <li>用多次 {@code apply(...)} 拼接 OR 分支时，MyBatis-Plus 会在相邻片段之间补 {@code AND}，
+     *     生成 {@code AND OR (...)} 与悬空 {@code AND )}，SQL 直接语法错误；</li>
+     *     <li>带参数的 {@code apply(sql, values...)} <b>必须</b>使用 {@code {0}}/{@code {1}} 占位符
+     *     （直接写 {@code ?} 会抛 {@code MybatisPlusException: sql not contains "{0}"}），
+     *     而 {@code {0}} 会被渲染成属于<b>本 wrapper</b> 的
+     *     {@code #{ew.paramNameValuePairs.MPGENVALn}}，片段一旦被搬进别的 wrapper 就会参数错位。</li>
+     * </ul>
+     * <p>内联字面量后，条件片段与本 wrapper 的参数表彻底解耦，可安全交给只读 Mapper 的
+     * {@code ${ew.customSqlSegment}} 消费。</p>
+     *
+     * <p>分支顺序：集团共享 → 归属公司 → 归属部门 → 仅人才负责人 → 显式授权；
+     * 空范围返回恒假条件，调用方按空结果处理。前置谓词固定为 {@code p.del_flag = '0'}
+     * 与 {@code p.talent_status <> 'merged'}。</p>
+     *
+     * @param scope 可见范围条件，可为 null
+     * @return 人才可见范围查询条件（条件中不含任何占位符参数）
+     */
+    public QueryWrapper<TalentProfile> visibleTalentWrapper(ScopeCondition scope) {
+        // 表别名固定为 p，与只读 Mapper 的自定义 SQL 保持一致
+        StringBuilder sql = new StringBuilder(256);
+        sql.append("(p.del_flag = '").append(HrTalentConstants.DEL_FLAG_NORMAL).append('\'')
+            .append(" AND p.talent_status <> '").append(TalentStatusEnum.MERGED.getCode()).append('\'');
+        if (scope == null || scope.empty()) {
+            // 无任何可见主体：恒假条件，直接返回空集，避免退化为全量查询
+            sql.append(" AND 1 = 0)");
+            return new QueryWrapper<TalentProfile>().apply(sql.toString());
+        }
+        if (!scope.unlimited() && !scope.unlimitedCompany()) {
+            // 可见性 OR 分支：整体加一层括号、分支之间显式 OR，合并成同一条 apply 片段
+            List<String> branches = new ArrayList<>();
+            branches.add("p.visibility_type = '" + TalentVisibilityTypeEnum.GROUP.getCode() + "'");
+            if (CollUtil.isNotEmpty(scope.allowedCompanyDeptIds())) {
+                branches.add("(p.visibility_type = '" + TalentVisibilityTypeEnum.COMPANY.getCode()
+                    + "' AND p.owner_dept_id IN (" + StringUtils.join(scope.allowedCompanyDeptIds(), ",") + "))");
+            }
+            if (CollUtil.isNotEmpty(scope.allowedDeptIds())) {
+                branches.add("(p.visibility_type = '" + TalentVisibilityTypeEnum.DEPARTMENT.getCode()
+                    + "' AND p.owner_dept_id IN (" + StringUtils.join(scope.allowedDeptIds(), ",") + "))");
+            }
+            if (scope.currentUserId() != null) {
+                branches.add("p.owner_id = " + scope.currentUserId());
+            }
+            String grantPair = grantPairs(scope);
+            if (!grantPair.isEmpty()) {
+                branches.add("EXISTS (SELECT 1 FROM hr_talent_scope_grant g"
+                    + " WHERE g.talent_id = p.talent_id AND g.del_flag = '0'"
+                    + " AND g.valid_from <= NOW() AND (g.valid_to IS NULL OR g.valid_to > NOW())"
+                    + " AND (" + grantPair + "))");
+            }
+            sql.append(" AND (").append(String.join(" OR ", branches)).append(')');
+        }
+        sql.append(')');
+        return new QueryWrapper<TalentProfile>().apply(sql.toString());
+    }
+
+    /**
+     * 构造显式授权主体条件：按「类型 + ID」成对展开，避免不同类型主体 ID 混入同一集合。
+     *
+     * <p>每对条件<b>各自加括号</b>后再用 {@code OR} 连接。虽然 SQL 中 {@code AND} 优先级高于 {@code OR}、
+     * 不加括号语义也正确，但显式分组可避免后续有人在该片段前后追加条件时误判优先级。</p>
+     *
+     * @param scope 可见范围条件
+     * @return 条件片段；无有效主体时返回空串
+     */
+    private String grantPairs(ScopeCondition scope) {
+        if (CollUtil.isEmpty(scope.grantSubjects())) {
+            return "";
+        }
+        List<String> pairs = new ArrayList<>();
+        for (GrantSubject subject : scope.grantSubjects()) {
+            if (subject != null && subject.valid()) {
+                pairs.add("(g.grantee_type = '" + subject.granteeType()
+                    + "' AND g.grantee_id = " + subject.granteeId() + ")");
+            }
+        }
+        return String.join(" OR ", pairs);
+    }
 
     /**
      * 生成当前登录用户的人才可见范围条件（设计文档 §21.14）。
