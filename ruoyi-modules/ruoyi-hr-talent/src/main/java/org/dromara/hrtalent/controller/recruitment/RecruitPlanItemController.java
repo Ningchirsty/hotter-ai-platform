@@ -16,8 +16,10 @@ import org.dromara.hrtalent.constant.HrTalentConstants;
 import org.dromara.hrtalent.domain.bo.recruitment.RecruitPlanItemActionBo;
 import org.dromara.hrtalent.domain.bo.recruitment.RecruitPlanItemBo;
 import org.dromara.hrtalent.domain.bo.recruitment.RecruitPlanItemQueryBo;
+import org.dromara.hrtalent.domain.vo.recruitment.RecruitPlanItemStatusLogVo;
 import org.dromara.hrtalent.domain.vo.recruitment.RecruitPlanItemVo;
 import org.dromara.hrtalent.domain.vo.recruitment.RolloverChainVo;
+import org.dromara.hrtalent.service.recruitment.IPlanItemStatusService;
 import org.dromara.hrtalent.service.recruitment.IRecruitPlanService;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,6 +29,8 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 /**
  * 月度计划任务 控制层（SPEC-P2 §3.2）。
@@ -46,6 +50,11 @@ public class RecruitPlanItemController {
      * 月度计划服务。
      */
     private final IRecruitPlanService recruitPlanService;
+
+    /**
+     * 计划任务状态服务（只读查询状态变更日志，设计文档 §7.1.5 / §21.15）。
+     */
+    private final IPlanItemStatusService planItemStatusService;
 
     /**
      * 跨计划分页查询计划任务。
@@ -144,6 +153,22 @@ public class RecruitPlanItemController {
                                  @PathVariable("id") Long id) {
         recruitPlanService.refreshItemStatus(id);
         return R.ok();
+    }
+
+    /**
+     * 查询计划任务的状态变更日志（设计文档 §7.1.5 / §21.15，只读）。
+     *
+     * <p>按 {@code refresh_time} 升序返回，供结转链与状态审计追溯使用；
+     * 日志为追加型，本接口不提供任何写操作。</p>
+     *
+     * @param id 计划任务ID
+     * @return 状态变更日志列表
+     */
+    @SaCheckPermission(HrTalentConstants.PERM_PLAN_QUERY)
+    @GetMapping("/{id}/status-logs")
+    public R<List<RecruitPlanItemStatusLogVo>> statusLogs(@NotNull(message = "计划任务ID不能为空")
+                                                          @PathVariable("id") Long id) {
+        return R.ok(planItemStatusService.listStatusLogs(id));
     }
 
 }

@@ -5,9 +5,11 @@ import lombok.Getter;
 
 /**
  * 岗位执行项状态枚举。
- * <p>取值依据：设计文档 §8.3「岗位需求」只约定「状态」字段，§10 数据字典表未为岗位状态
- * 单独定义字典类型，故按 {@code hr_recruit_job.status} 建表注释
- * （{@code draft/open/paused/closed}）补齐为稳定英文编码枚举。</p>
+ * <p>对应数据字典 {@code recruit_job_status}，取值 {@code draft/open/paused/closed}。</p>
+ *
+ * <p><b>字典来源说明</b>：设计文档 §10 的数据字典表未为岗位状态单独定义字典类型，本组字典是在 P3 阶段
+ * 依据 {@code hr_recruit_job.status} 的建表注释补齐的（字典组由 23 增至 29 的一部分），
+ * 详见 {@code docs/hr-talent/P2-决策与缺口台账.md}。</p>
  *
  * <p><b>说明</b>：入库一律保存 {@link #getCode()} 稳定编码，中文名称仅用于服务端提示与页面兜底展示；
  * 编码值一旦投入使用不得随意变更（设计文档 §10 末段）。</p>

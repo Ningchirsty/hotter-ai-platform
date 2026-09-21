@@ -2,6 +2,8 @@ package org.dromara.hrtalent.domainservice;
 
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.hrtalent.domain.entity.RecruitPlanItem;
+import org.dromara.hrtalent.enums.ApplicationResultEnum;
+import org.dromara.hrtalent.enums.CandidateStageEnum;
 import org.dromara.hrtalent.enums.PlanCompletionStatusEnum;
 import org.dromara.hrtalent.enums.PlanControlStatusEnum;
 import org.dromara.hrtalent.enums.PlanExecutionStatusEnum;
@@ -9,6 +11,7 @@ import org.dromara.hrtalent.support.HrTalentErrorCode;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 
 /**
  * 月度计划任务三维状态与主展示状态计算领域服务（SPEC-P2 §4.2 / 设计文档 §7.1.4、§7.1.5、§21.15）。
@@ -22,7 +25,8 @@ import java.time.LocalDateTime;
  *     <li>{@code control_status}：人工控制（normal/paused/cancelled），<b>只能由人工动作驱动</b>，
  *     自动刷新永远不得改写该字段，${@code control_reason} 同理。</li>
  *     <li>{@code execution_status}：自动执行阶段（pending/recruiting/interviewing/offer/pending_arrival），
- *     由候选人流程驱动；P2 缺少应聘记录域，阶段值由调用方传入。</li>
+ *     由候选人流程驱动；P3 起由 {@link #resolveExecutionStatus(boolean, Collection)} 依据
+ *     应聘记录的 {@code current_stage} / {@code current_status} 自动推导（§7.1.5）。</li>
  *     <li>{@code completion_status}：完成与结转状态，按人数自动计算。</li>
  * </ul>
  *
@@ -291,6 +295,174 @@ public class PlanItemStatusDomainService {
         }
         return resolveDisplayStatus(item.getControlStatus(), item.getExecutionStatus(),
             item.getCompletionStatus(), item.getRemainingQty());
+    }
+
+    /* ------------------------------------------------------------------ 自动执行阶段推导 ------------------------------------------------------------------ */
+
+    /**
+     * 候选人推进快照：只承载推导 {@code execution_status} 所需的最小事实。
+     *
+     * <p>取值口径与设计文档 §7.1.5 一致：{@code currentStage} 来自
+     * {@code hr_recruit_application.current_stage}，{@code currentStatus} 来自
+     * {@code hr_recruit_application.current_status}，{@code arrivalRegistered} 表示
+     * {@code arrival_date} 已登记。</p>
+     *
+     * @param currentStage      应聘记录当前阶段编码
+     * @param currentStatus     应聘记录当前结果编码
+     * @param arrivalRegistered 是否已登记实际报到
+     * @author hr-talent
+     */
+    public record ApplicationProgress(String currentStage, String currentStatus, boolean arrivalRegistered) {
+
+        /**
+         * 构造「尚未登记报到」的候选人快照。
+         *
+         * @param currentStage  当前阶段编码
+         * @param currentStatus 当前结果编码
+         * @return 候选人推进快照
+         */
+        public static ApplicationProgress of(String currentStage, String currentStatus) {
+            return new ApplicationProgress(currentStage, currentStatus, false);
+        }
+    }
+
+    /**
+     * 判断应聘结果是否为「终态」。
+     *
+     * <p>终态记录<b>不得</b>用其历史阶段把任务状态往回拉（§7.1.5、任务要求）。终态集合为
+     * {@code rejected}（淘汰）、{@code withdrawn}（放弃）、{@code talent_pool}（人才池）、
+     * {@code passed}（已完成）；{@code processing}（处理中）与 {@code paused}（暂缓）仍视为有效。</p>
+     *
+     * @param currentStatus 应聘结果编码，可为空
+     * @return 是否终态
+     */
+    public boolean isTerminalOutcome(String currentStatus) {
+        ApplicationResultEnum result = ApplicationResultEnum.find(currentStatus);
+        if (result == null) {
+            // 未知或空结果按「处理中」处理，宁可保留候选人的有效阶段
+            return false;
+        }
+        return switch (result) {
+            case REJECTED, WITHDRAWN, TALENT_POOL, PASSED -> true;
+            case PROCESSING, PAUSED -> false;
+        };
+    }
+
+    /**
+     * 判断应聘结果是否为「负向终态」：淘汰（{@code rejected}）、放弃（{@code withdrawn}）、
+     * 人才池（{@code talent_pool}）。
+     *
+     * <p>负向终态不再代表任何招聘进展，必须整体剔除；而 {@code passed}（已完成）是<b>正向终态</b>，
+     * 仍表达「至少到待录用」，故不在此列。</p>
+     *
+     * @param currentStatus 应聘结果编码，可为空
+     * @return 是否为负向终态
+     */
+    public boolean isNegativeTerminalOutcome(String currentStatus) {
+        ApplicationResultEnum result = ApplicationResultEnum.find(currentStatus);
+        if (result == null) {
+            return false;
+        }
+        return switch (result) {
+            case REJECTED, WITHDRAWN, TALENT_POOL -> true;
+            case PROCESSING, PAUSED, PASSED -> false;
+        };
+    }
+
+    /**
+     * 计算单个应聘记录所代表的自动执行阶段。
+     *
+     * <p>返回 null 表示该记录对执行阶段<b>无贡献</b>（淘汰 / 放弃 / 人才池，或阶段编码未知）。</p>
+     *
+     * @param progress 候选人推进快照，可为空
+     * @return 该记录对应的执行阶段，无贡献时返回 null
+     */
+    public PlanExecutionStatusEnum resolveApplicationExecutionStatus(ApplicationProgress progress) {
+        if (progress == null) {
+            return null;
+        }
+        // 已登记实际报到：无论结果编码如何都代表「待报到」（报到后 current_status 会被置为 passed）
+        if (progress.arrivalRegistered()) {
+            return PlanExecutionStatusEnum.PENDING_ARRIVAL;
+        }
+        CandidateStageEnum stage = CandidateStageEnum.find(progress.currentStage());
+        if (stage == null) {
+            return null;
+        }
+        if (isNegativeTerminalOutcome(progress.currentStatus())) {
+            return null;
+        }
+        PlanExecutionStatusEnum level = switch (stage) {
+            case ARRIVED, PENDING_ARRIVAL -> PlanExecutionStatusEnum.PENDING_ARRIVAL;
+            case OFFER -> PlanExecutionStatusEnum.OFFER;
+            case FIRST_INTERVIEW, SECOND_INTERVIEW, BACKGROUND -> PlanExecutionStatusEnum.INTERVIEWING;
+            case NEW, RESUME_REVIEW, INVITE -> PlanExecutionStatusEnum.RECRUITING;
+        };
+        // 已通过最终面试或流程已完成（passed）：至少代表「待录用」，但不低于阶段本身所表达的程度
+        if (ApplicationResultEnum.PASSED.getCode().equals(progress.currentStatus())
+            && executionRank(level) < executionRank(PlanExecutionStatusEnum.OFFER)) {
+            return PlanExecutionStatusEnum.OFFER;
+        }
+        return level;
+    }
+
+    /**
+     * 推导计划任务的自动执行阶段 {@code execution_status}（§7.1.5）。
+     *
+     * <p>取全部<b>有效</b>候选人中最靠后的阶段，优先级从高到低：</p>
+     * <ol>
+     *     <li>存在处于「待报到 / 已报到」的有效候选人或已登记报到 → {@code pending_arrival}；</li>
+     *     <li>存在已通过最终面试或处于待录用 / 已发 Offer 的候选人 → {@code offer}；</li>
+     *     <li>存在处于面试阶段（一面 / 二面 / 背调）的候选人 → {@code interviewing}；</li>
+     *     <li>存在有效候选人，或任务已启动 → {@code recruiting}；</li>
+     *     <li>否则 → {@code pending}。</li>
+     * </ol>
+     *
+     * <p><b>终态口径（勿改）</b>：</p>
+     * <ul>
+     *     <li><b>负向终态</b>（{@code rejected} 淘汰 / {@code withdrawn} 放弃 / {@code talent_pool} 人才池）
+     *     整体剔除，不再代表任何招聘进展，<b>不得</b>用其历史阶段把任务状态往回拉；</li>
+     *     <li><b>正向终态</b> {@code passed}（已完成）仍<b>参与</b>推导：它承载「至少到待录用」的语义
+     *     （报到后 {@code current_status} 即为 {@code passed}），因此
+     *     {@code arrivalRegistered = true} 优先判 {@code pending_arrival}，
+     *     {@code passed} + {@code offer} 阶段判 {@code offer}。</li>
+     * </ul>
+     *
+     * @param started    任务是否已启动（无有效候选人时决定 recruiting 还是 pending）
+     * @param progresses 候选人推进快照集合，可为空
+     * @return 自动执行阶段
+     */
+    public PlanExecutionStatusEnum resolveExecutionStatus(boolean started,
+                                                          Collection<ApplicationProgress> progresses) {
+        PlanExecutionStatusEnum furthest = null;
+        if (progresses != null) {
+            for (ApplicationProgress progress : progresses) {
+                PlanExecutionStatusEnum level = resolveApplicationExecutionStatus(progress);
+                if (level != null && (furthest == null || executionRank(level) > executionRank(furthest))) {
+                    furthest = level;
+                }
+            }
+        }
+        if (furthest != null) {
+            return furthest;
+        }
+        return started ? PlanExecutionStatusEnum.RECRUITING : PlanExecutionStatusEnum.PENDING;
+    }
+
+    /**
+     * 执行阶段强弱次序（数值越大表示流程越靠后）。
+     *
+     * @param status 执行阶段
+     * @return 次序值
+     */
+    private int executionRank(PlanExecutionStatusEnum status) {
+        return switch (status) {
+            case PENDING -> 0;
+            case RECRUITING -> 1;
+            case INTERVIEWING -> 2;
+            case OFFER -> 3;
+            case PENDING_ARRIVAL -> 4;
+        };
     }
 
     /* ------------------------------------------------------------------ 刷新落值 ------------------------------------------------------------------ */

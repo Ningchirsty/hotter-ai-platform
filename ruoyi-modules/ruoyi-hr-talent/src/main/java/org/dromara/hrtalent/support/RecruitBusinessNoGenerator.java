@@ -50,6 +50,16 @@ public class RecruitBusinessNoGenerator {
     private static final String PREFIX_ROLLOVER = "ROL";
 
     /**
+     * 人才编号前缀（P3 追加，沿用本生成器风格）。
+     */
+    private static final String PREFIX_TALENT = "TAL";
+
+    /**
+     * 应聘记录编号前缀（P3 追加，沿用本生成器风格）。
+     */
+    private static final String PREFIX_APPLICATION = "APP";
+
+    /**
      * 时间戳部分：精确到毫秒。
      */
     private static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS");
@@ -111,6 +121,26 @@ public class RecruitBusinessNoGenerator {
      */
     public String nextRolloverBatchNo(YearMonth targetMonth) {
         return next(PREFIX_ROLLOVER, targetMonth);
+    }
+
+    /**
+     * 生成人才主档编号（P3 追加）。
+     * <p>人才编号只用于对外展示，{@code hr_talent_profile.uk_hr_talent_profile_no} 是最终唯一约束。</p>
+     *
+     * @return 人才编号，形如 {@code TAL20260921...-001}
+     */
+    public String nextTalentNo() {
+        return next(PREFIX_TALENT, LocalDate.now());
+    }
+
+    /**
+     * 生成应聘记录编号（P3 追加）。
+     * <p>应聘编号只用于对外展示，{@code hr_recruit_application.uk_hr_recruit_application_no} 是最终唯一约束。</p>
+     *
+     * @return 应聘编号，形如 {@code APP20260921...-001}
+     */
+    public String nextApplicationNo() {
+        return next(PREFIX_APPLICATION, LocalDate.now());
     }
 
     /**
