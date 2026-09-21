@@ -100,7 +100,15 @@ public class ImageCreationController extends BaseController {
      */
     private final ImageAssetStore assetStore;
 
-    private final ObjectMapper mapper;
+    /**
+     * 本模块自用的 {@code ObjectMapper}：<b>刻意不注入</b>。
+     *
+     * <p>视频模块已注册 {@code videoObjectMapper}，图像模块若再注册/注入 {@code ObjectMapper}，
+     * 两模块同时启用（生产即是）时会出现两个候选，启动直接失败——这是真实发生过的事故，
+     * 见 {@code ImageModuleConfiguration#newMapper()}。静态实例无状态且线程安全，够用。</p>
+     */
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
     private final JdbcTemplate jdbc;
 
     /**
@@ -337,7 +345,7 @@ public class ImageCreationController extends BaseController {
         String taskName = text(payload.get("taskName"));
         String inputJson;
         try {
-            inputJson = mapper.writeValueAsString(fields);
+            inputJson = MAPPER.writeValueAsString(fields);
         } catch (Exception e) {
             inputJson = null;
         }
@@ -438,7 +446,7 @@ public class ImageCreationController extends BaseController {
         Object raw = task.get("input_json");
         if (raw != null) {
             try {
-                Map<String, Object> fields = asMap(mapper.readValue(String.valueOf(raw), Map.class));
+                Map<String, Object> fields = asMap(MAPPER.readValue(String.valueOf(raw), Map.class));
                 for (String field : List.of("image1", "image2", "image3", "img")) {
                     Long assetId = longOf(fields.get(field));
                     if (assetId != null) {

@@ -7,7 +7,6 @@ import org.dromara.ai.image.domain.ImageCapability;
 import org.dromara.ai.image.domain.ImageWorkflowMapping;
 import org.dromara.ai.image.domain.ImageWorkflowVersion;
 import org.dromara.ai.image.exception.ImageTaskException;
-import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -26,6 +25,11 @@ import java.util.regex.Pattern;
  * <p>与视频模块的 {@code H3TemplatePreparer} 同构，差异在于图像模板的「结构性改写」是
  * 画布宽高与 seed，而白名单里唯一允许覆写的采样参数是图生图的 {@code denoise}。</p>
  *
+ * <p><b>不是 Spring 组件</b>（刻意去掉 {@code @Component}）：它的构造参数是
+ * {@code ObjectMapper}，而视频模块已经注册了一个同类型 Bean；两个模块同时启用时按类型注入会因
+ * 「找到 2 个候选」直接启动失败（真实生产事故，见 {@code ImageModuleConfiguration} 的注释）。
+ * 因此改由 {@code ImageModuleConfiguration} 显式构造并注入。</p>
+ *
  * <p><b>两个真实故障的防护</b>：</p>
  * <ol>
  *   <li>参考图槽位必须裁剪：模板里 {@code LoadImage.image} 为空串时 ComfyUI 会把 input 目录
@@ -33,7 +37,6 @@ import java.util.regex.Pattern;
  *   <li>校验和不匹配必须拒绝：模板被改动而契约没同步时，整条工作流不得加载或提交。</li>
  * </ol>
  */
-@Component
 public class ImageTemplatePreparer {
 
     private static final String ENCODER_TYPE = "TextEncodeQwenImage21";
