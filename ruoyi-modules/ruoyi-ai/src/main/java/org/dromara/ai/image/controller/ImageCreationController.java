@@ -21,6 +21,7 @@ import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.common.mybatis.utils.IdGeneratorUtil;
 import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.common.web.core.BaseController;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -56,12 +57,23 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <p>安全边界：节点 ID、模板 JSON、模型路径从不下发前端；请求体只允许出现契约声明的字段，
  * 白名单校验用的是契约里的 {@code fields}（而不是硬编码列表），提交时后端深拷贝模板并只覆写
  * {@code mapping} 声明的输入键。</p>
+ *
+ * <p><b>为什么控制器也要挂 {@code @ConditionalOnProperty}</b>：本控制器的依赖 Bean
+ * （契约注册表、模板填充器、编排器、素材门面…）全部来自
+ * {@code @ConditionalOnProperty(prefix="image", name="enabled", havingValue="true")} 的配置类。
+ * 如果控制器无条件注册，那么在本模块的<b>默认状态</b>（不配置 {@code image.enabled}）下，
+ * 容器会因为找不到构造参数而抛出
+ * {@code UnsatisfiedDependencyException: ... 'imageCreationController' ... No qualifying bean of type
+ * 'org.dromara.ai.image.service.ImageWorkflowContractRegistry'}，
+ * 也就是<b>部署新镜像而忘了打开开关会把整个若依平台拖垮</b>，而不是安静地不启用图像功能。
+ * 这条约束由 {@code ImageModuleWiringTest} 守住。</p>
  */
 @Slf4j
 @Validated
 @RestController
 @RequestMapping("/image")
 @RequiredArgsConstructor
+@ConditionalOnProperty(prefix = "image", name = "enabled", havingValue = "true")
 public class ImageCreationController extends BaseController {
 
     /**

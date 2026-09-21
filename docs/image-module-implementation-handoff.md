@@ -131,7 +131,38 @@ ComfyUI 主机 `192.168.2.223`
 另：`ImageComfyClient` 是**必须新写**的，不能复用 `HttpComfyClient`——后者的输出解析只认视频扩展名
 （`looksLikeVideo`），图像模板产出的 PNG 会被过滤掉，一次成功执行会被记成「没有产出视频」。
 
-### 3.2 图像不需要 ffmpeg
+### 3.2 「默认关闭」曾经等于「默认起不来」（已修，含视频模块）
+
+**这是本次发现的部署级隐患，直接影响上线顺序，务必先看这一条。**
+
+模块的装配类带 `@ConditionalOnProperty(prefix="image", name="enabled", havingValue="true")`，
+但控制器原本是**无条件注册**的 `@RestController`，而它的构造参数（契约注册表、模板填充器、
+编排器、素材门面…）全部来自那个被跳过的配置类。于是属性缺失——也就是本模块的**默认状态**——
+容器会直接失败：
+
+```
+UnsatisfiedDependencyException: Error creating bean with name 'imageCreationController':
+Unsatisfied dependency expressed through constructor parameter 0:
+No qualifying bean of type 'org.dromara.ai.image.service.ImageWorkflowContractRegistry' available
+```
+
+后果不是「图像功能没启用」，而是**整个若依平台起不来**：部署新镜像时只要忘了设
+`IMAGE_ENABLED=true`，整站不可用。
+
+**修法**：给控制器补上与配置类同款的条件注解（`ImageCreationController`、以及同样有此问题的
+`VideoCreationController`），并由测试守住：
+
+| 测试 | 覆盖 |
+|---|---|
+| `ImageModuleWiringTest`（新增 4 条） | 默认/显式关闭时上下文正常启动且无控制器与注册表；`enabled=true` 但缺 `comfy-base-url` 时**快速失败并指明原因**；`enabled=true` 时控制器与全部协作 Bean 就位、默认值与契约一致（requirePublished=true、并发 1、队列 16、契约 4 条全部加载） |
+| `VideoCreationControllerGatingTest`（新增 2 条） | 视频模块同样的两个「默认关闭必须能启动」场景 |
+
+> 用 `ApplicationContextRunner` 离线验证，不需要数据库 / Redis / ComfyUI。
+> **写这类测试的一个坑**：`ApplicationContextRunner.run()` **不会**把启动失败抛出来，
+> 失败是交给消费方的（`context.getStartupFailure()`）。用 `assertThatThrownBy(() -> runner.run(...))`
+> 去断言「启动失败」会永远通过不了预期——反过来写也会变成一条永远为真的空测试。
+
+### 3.3 图像不需要 ffmpeg
 
 视频侧要 ffprobe/ffmpeg 是因为要量帧率/时长并做帧精确截断；图像只需要宽高、格式与 alpha，
 JDK 自带 ImageIO 足够，因此镜像里不必再加任何二进制。输出实测（`ImageAssetProbe`）与
@@ -229,7 +260,7 @@ JDK 自带 ImageIO 足够，因此镜像里不必再加任何二进制。输出�
 |---|---|---|
 | 后端编译 | `mvnw -pl ruoyi-modules/ruoyi-ai -am -Dmaven.test.skip=true compile` | BUILD SUCCESS |
 | 图像模块单测 | `mvnw ... "-Dtest=org.dromara.ai.image.*Test" test` | **28/28 通过**（preparer 11 / orchestrator 9 / probe 5 / dispatch 3） |
-| `ruoyi-ai` 全模块单测 | `mvnw -pl ruoyi-modules/ruoyi-ai -am "-Dmaven.test.skip=false" "-Dtest.groups=!exclude" test` | **142/142 通过**（含视频模块；修掉 exportGraph 的 Windows 路径问题前是 141/142） |
+| `ruoyi-ai` 全模块单测 | `mvnw -pl ruoyi-modules/ruoyi-ai -am "-Dmaven.test.skip=false" "-Dtest.groups=!exclude" test` | **148/148 通过**（含视频模块；修掉 exportGraph 的 Windows 路径问题前是 141/142，加上装配守卫后为 148） |
 | 契约测试（视频） | `node --test script/video/workflows/import-h3.test.mjs` | **3/3 通过**（修复前 3/3 失败，见 §8.4） |
 | 契约测试（图像） | `node --test script/image/workflows/image-contracts.test.mjs` | **12/12 通过** |
 | 契约 CLI | `node script/image/workflows/image-contracts.mjs` | 4 条全部 OK |
@@ -306,6 +337,12 @@ image:
 
 环境变量（relaxed binding）：`IMAGE_ENABLED` / `IMAGE_CONTRACT_ROOT` / `IMAGE_COMFY_BASE_URL` /
 `IMAGE_STORAGE_ROOT` / `IMAGE_REQUIRE_PUBLISHED` / `IMAGE_TESTING_WORKFLOWS`。
+
+> **部署须知**：不设 `IMAGE_ENABLED` 时，模块**完全不注册**（控制器与所有 Bean 都不创建，
+> 接口不存在）——这是「默认关闭」的正确含义，由 `ImageModuleWiringTest` 守住。
+> 反过来说，`IMAGE_ENABLED=false` 与「不配」都不会让平台启动失败（见 §3.2 修掉的那个隐患）。
+> 要启用必须显式 `IMAGE_ENABLED=true`，并且必须同时给 `IMAGE_COMFY_BASE_URL`，
+> 否则容器会在启动时快速失败并指明是哪个配置缺失。
 
 隔离联调时用 `IMAGE_REQUIRE_PUBLISHED=false` + `IMAGE_TESTING_WORKFLOWS=wf-t2i-qwen21,...`，
 与视频模块同款开关。
