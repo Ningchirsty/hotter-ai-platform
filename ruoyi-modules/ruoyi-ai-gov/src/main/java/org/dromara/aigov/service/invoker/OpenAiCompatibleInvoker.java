@@ -125,6 +125,14 @@ public class OpenAiCompatibleInvoker implements ModelInvoker {
             }
 
             // 3. 组装请求。max_tokens 不设：那是业务语义，不该由调用器替业务方决定
+            //    图片先校验：越界的 base64 会被上游以「请求体过大」拒绝，那种错误对调用方毫无指向性
+            List<ModelImagePayload.ImagePart> images = ModelImagePayload.extract(request.getPayload());
+            if (!images.isEmpty()) {
+                String imageError = ModelImagePayload.validate(images);
+                if (imageError != null) {
+                    return ModelInvokeResult.failure(imageError, System.currentTimeMillis() - start);
+                }
+            }
             String url = buildChatUrl(endpoint);
             String body = buildBody(request);
             HttpRequest http = HttpRequest.post(url)
@@ -176,6 +184,10 @@ public class OpenAiCompatibleInvoker implements ModelInvoker {
     /**
      * 组装请求体。
      *
+     * <p>携带图片时走 OpenAI 兼容的多模态消息格式：{@code content} 由
+     * {@code [{"type":"text"},{"type":"image_url"},...]} 组成。不带图片时仍用纯字符串
+     * {@code content}——那是最通用的写法，没必要为文本调用套多模态外壳。</p>
+     *
      * @param request 调用请求
      * @return JSON 字符串
      */
@@ -184,13 +196,37 @@ public class OpenAiCompatibleInvoker implements ModelInvoker {
         body.put("model", request.getModelKey());
         body.put("messages", List.of(
             Map.of("role", "system", "content", buildSystemPrompt(request.getOutputSchema())),
-            Map.of("role", "user", "content", buildUserPrompt(request))
+            Map.of("role", "user", "content", buildUserContent(request))
         ));
         body.put("stream", false);
         if (properties.isJsonResponseFormat()) {
             body.put("response_format", Map.of("type", "json_object"));
         }
         return JsonUtils.toJsonString(body);
+    }
+
+    /**
+     * 组装 user 消息内容：有图片则输出多模态分片列表，否则输出纯文本。
+     *
+     * @param request 调用请求
+     * @return 字符串或分片列表
+     */
+    private Object buildUserContent(ModelInvokeRequest request) {
+        List<ModelImagePayload.ImagePart> images = ModelImagePayload.extract(request.getPayload());
+        String text = buildUserPrompt(request);
+        if (images.isEmpty()) {
+            return text;
+        }
+        List<Map<String, Object>> parts = new ArrayList<>();
+        parts.add(Map.of("type", "text", "text", text));
+        for (ModelImagePayload.ImagePart image : images) {
+            // 标签要显式写给模型：两张图谁是「参考」谁是「成品」决定了比对方向，
+            // 靠图片顺序让模型猜是不可靠的。
+            String label = StringUtils.isBlank(image.label()) ? "图片" : image.label();
+            parts.add(Map.of("type", "text", "text", "【" + label + "】"));
+            parts.add(Map.of("type", "image_url", "image_url", Map.of("url", image.dataUrl())));
+        }
+        return parts;
     }
 
     /**
@@ -211,6 +247,10 @@ public class OpenAiCompatibleInvoker implements ModelInvoker {
     /**
      * 用户提示词：业务提示词 + 结构化载荷。
      *
+     * <p><b>必须先剥掉图片</b>：{@link ModelImagePayload#withoutImages(Map)} 返回不含
+     * base64 的载荷副本。若直接序列化原始 payload，几十 MB 的 base64 会被塞进提示词文本，
+     * 既污染模型输入也把请求体撑到无法发送。</p>
+     *
      * @param request 调用请求
      * @return 用户提示词
      */
@@ -219,11 +259,12 @@ public class OpenAiCompatibleInvoker implements ModelInvoker {
         if (StringUtils.isNotBlank(request.getPrompt())) {
             sb.append(request.getPrompt());
         }
-        if (request.getPayload() != null && !request.getPayload().isEmpty()) {
+        Map<String, Object> textPayload = ModelImagePayload.withoutImages(request.getPayload());
+        if (!textPayload.isEmpty()) {
             if (sb.length() > 0) {
                 sb.append('\n');
             }
-            sb.append("输入数据（JSON）：").append(JsonUtils.toJsonString(request.getPayload()));
+            sb.append("输入数据（JSON）：").append(JsonUtils.toJsonString(textPayload));
         }
         if (sb.length() == 0) {
             sb.append("请按要求输出 JSON。");

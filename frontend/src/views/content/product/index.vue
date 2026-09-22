@@ -88,6 +88,11 @@
         <el-table-column label="SKU编码" align="center" prop="skuCode" width="150" show-overflow-tooltip />
         <el-table-column label="SKU名称" align="center" prop="skuName" width="160" show-overflow-tooltip />
         <el-table-column label="品类" align="center" prop="category" width="120" show-overflow-tooltip />
+        <el-table-column label="品牌" align="center" prop="brand" width="100" show-overflow-tooltip />
+        <el-table-column label="二级分类" align="center" prop="subCategory" width="160" show-overflow-tooltip />
+        <el-table-column label="产品经理" align="center" prop="productManager" width="110" show-overflow-tooltip />
+        <el-table-column label="尺寸" align="center" prop="sizeSpec" width="180" show-overflow-tooltip />
+        <el-table-column label="结构/工艺" align="center" prop="craft" width="150" show-overflow-tooltip />
         <el-table-column label="版本" align="center" prop="version" width="100" show-overflow-tooltip />
         <el-table-column label="状态" align="center" width="100">
           <template #default="scope">
@@ -167,6 +172,49 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
+            <el-form-item label="品牌" prop="brand">
+              <el-input v-model="form.brand" placeholder="如 趣往" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="二级分类" prop="subCategory">
+              <el-input v-model="form.subCategory" placeholder="如 解构花园-静态花" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="产品经理" prop="productManager">
+              <el-input v-model="form.productManager" placeholder="请输入产品经理" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="尺寸" prop="sizeSpec">
+              <el-input v-model="form.sizeSpec" type="textarea" :rows="2" placeholder="如 257.60*149.30；多形态换行" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="价格" prop="price">
+              <el-input v-model="form.price" placeholder="单位：元，可留空" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-form-item label="结构/工艺" prop="craft">
+          <el-input v-model="form.craft" type="textarea" :rows="2" placeholder="如 UV+喷漆、喷漆+镀铬；多工艺换行" />
+        </el-form-item>
+        <el-form-item label="产品图" prop="productImage">
+          <el-input v-model="form.productImage" placeholder="对象存储键或图片 URL（业务库不存文件本体）" />
+        </el-form-item>
+        <el-form-item label="主推说明" prop="mainPush">
+          <el-input v-model="form.mainPush" type="textarea" :rows="2" placeholder="如「作为单枝花售卖时，为动转静，静态化的形态售卖」" />
+        </el-form-item>
+        <el-form-item label="设计灵感" prop="designInspiration">
+          <el-input v-model="form.designInspiration" type="textarea" :rows="3" placeholder="请输入设计灵感" />
+        </el-form-item>
+        <el-row :gutter="16">
+          <el-col :span="12">
             <el-form-item label="产品版本" prop="version">
               <el-input v-model="form.version" placeholder="如 V2，用于影响面追溯" />
             </el-form-item>
@@ -224,6 +272,15 @@ const initFormData: CpProductForm = {
   skuCode: '',
   skuName: '',
   category: '',
+  brand: '',
+  subCategory: '',
+  productImage: '',
+  mainPush: '',
+  productManager: '',
+  sizeSpec: '',
+  price: '',
+  craft: '',
+  designInspiration: '',
   version: '',
   status: '0',
   remark: ''

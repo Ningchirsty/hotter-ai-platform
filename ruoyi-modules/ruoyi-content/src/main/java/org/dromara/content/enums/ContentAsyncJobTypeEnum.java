@@ -23,7 +23,11 @@ public enum ContentAsyncJobTypeEnum {
     /**
      * 开工包生成
      */
-    PACKAGE("PACKAGE", "开工包生成");
+    PACKAGE("PACKAGE", "开工包生成"),
+    /**
+     * 成品一致性检查（生成结果 vs 原参考图，经 aigov 能力 deliverable_consistency）
+     */
+    OUTPUT_CHECK("OUTPUT_CHECK", "成品一致性检查");
 
     /**
      * 编码（入库值）
