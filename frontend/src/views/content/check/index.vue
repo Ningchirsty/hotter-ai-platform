@@ -472,11 +472,12 @@ const handleClear = (side: 'reference' | 'result') => {
 /**
  * 压缩目标体积（KB）。比对本身只需要 16×16 的亮度网格（本地确定性度量）
  * 或一张看得清的图（视觉模型），全分辨率从来不是必需的。
+ * 取 200KB：生产 Tunnel 上行实测只有 10–20KB/s，两张图合计要落在几十秒内。
  */
-const UPLOAD_TARGET_KB = 300;
+const UPLOAD_TARGET_KB = 200;
 
 /** 小于该体积就原样上传，避免对本来就很小的图再做无意义的再编码 */
-const UPLOAD_PASSTHROUGH_KB = 400;
+const UPLOAD_PASSTHROUGH_KB = 300;
 
 /** 与服务端 ContentFileKindEnum 的图片集合保持一致 */
 const ALLOWED_IMAGE_EXT = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'];

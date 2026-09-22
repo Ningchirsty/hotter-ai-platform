@@ -50,7 +50,11 @@ export function runCheck(data: RunCheckForm): AxiosPromise<string | number> {
   return request({
     url: '/content/check/run',
     method: 'post',
-    data: formData
+    data: formData,
+    // 上传要走受限于生产 Tunnel 的上行（实测 10–20KB/s，而同一入口的下载有 ~300KB/s）。
+    // 客户端已把图片压到 ~200KB，但慢的时候两张仍要几十秒，全局默认的 50s 会把「慢」误判成超时。
+    // 不设到 100s 以上：Cloudflare 自身在 100s 会返回 524。
+    timeout: 95000
   });
 }
 
