@@ -585,6 +585,53 @@ public class VideoCreationController extends BaseController {
     }
 
     /**
+     * 重新执行一个终态失败的任务。
+     *
+     * <p><b>为什么必须补这个接口</b>：后端进程重启时，启动钩子会把遗留的 RUNNING 任务收敛为
+     * {@code FAILED(ORPHANED_BY_RESTART)}，提示语写的是「请重新执行该任务」——但
+     * {@code /execute} 只接受 {@code QUEUED / RUNNING}，用户照着提示去点却点不动
+     * （真实反馈：任务被判重启中断后无路可走，只能手动重建一条）。</p>
+     *
+     * <p>做法与首次执行完全一致：先用一条原子 UPDATE 把终态退回 {@code QUEUED}
+     * （同时清掉失败原因与 finished_time），再交给 {@link VideoTaskDispatchService} 认领入队。
+     * 退回影响 0 行说明已被别人改过（重复点击），如实返回当前状态、绝不重复烧 GPU。</p>
+     */
+    @PostMapping("/tasks/{taskId}/retry")
+    @SaCheckPermission("video:creation:submit")
+    public R<Map<String, Object>> retryTask(@PathVariable Long taskId) {
+        String tenantId = requireTenantId();
+        long userId = LoginHelper.getUserId();
+        Map<String, Object> task = repository.requireOwnedTask(taskId, tenantId, userId);
+        String status = String.valueOf(task.get("status"));
+        VideoTaskStatus from = VideoTaskStatus.valueOf(status);
+        if (!from.isTerminal() || VideoTaskStatus.SUCCEEDED == from) {
+            throw VideoTaskException.invalidContract("只有失败/超时/已取消的任务可以重新执行，当前：" + status);
+        }
+
+        int reopened = repository.reopen(taskId, from);
+        Map<String, Object> body = new HashMap<>();
+        body.put("taskId", taskId);
+        if (reopened == 0) {
+            // 并发下已被别人重试：不重复提交，返回真实状态让前端继续轮询。
+            Map<String, Object> current = repository.requireOwnedTask(taskId, tenantId, userId);
+            body.put("status", String.valueOf(current.get("status")));
+            body.put("accepted", false);
+            return R.ok(body);
+        }
+
+        VideoTaskDispatchService.Outcome outcome = dispatchService.dispatch(taskId,
+            () -> buildContext(task, tenantId, userId));
+        if (outcome == VideoTaskDispatchService.Outcome.QUEUE_FULL) {
+            // 队列满：状态已被 dispatch 回滚为 QUEUED，用户可稍后再点一次重新执行。
+            throw VideoTaskException.invalidContract("执行队列已满，请稍后重试");
+        }
+        body.put("status", outcome == VideoTaskDispatchService.Outcome.ACCEPTED
+            ? VideoTaskStatus.RUNNING.name() : VideoTaskStatus.QUEUED.name());
+        body.put("accepted", outcome == VideoTaskDispatchService.Outcome.ACCEPTED);
+        return R.ok(body);
+    }
+
+    /**
      * 由任务行构造执行上下文。延迟到真正入队时才调用，队列满时不必白构造。
      */
     private VideoTaskOrchestrator.TaskContext buildContext(Map<String, Object> task,

@@ -103,6 +103,19 @@ export const executeVideoTask = (taskId: number | string): AxiosPromise<VideoTas
 };
 
 /**
+ * 重新执行一个失败/超时/被取消的任务（后端把终态退回 QUEUED 再认领入队）。
+ *
+ * <p>为什么需要它：后端进程重启会把遗留的 RUNNING 任务收敛为 FAILED 并提示
+ * 「请重新执行该任务」，但 /execute 只接受 QUEUED/RUNNING——提示让用户做的事当时并没有入口。</p>
+ */
+export const retryVideoTask = (taskId: number | string): AxiosPromise<VideoTaskExecutionResult> => {
+  return request({
+    url: '/video/tasks/' + taskId + '/retry',
+    method: 'post'
+  });
+};
+
+/**
  * 查询 GPU 工作节点与执行队列的实时状态。
  *
  * <p>为什么前端要知道这个：生成一次要 2 到 12 分钟，双卡也只有两个并发位。

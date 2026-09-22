@@ -95,6 +95,23 @@ public interface VideoTaskRepository {
     int failAllRunning(String errorCode, String errorMessage);
 
     /**
+     * 把终态任务（FAILED / TIMEOUT / CANCELED）退回 {@code QUEUED}，供用户「重新执行」。
+     *
+     * <p><b>为什么不能复用 {@link #transition}</b>：重新执行必须同时清掉上一次的失败痕迹
+     * （{@code error_code / error_message}）与 {@code finished_time}，否则列表里会出现
+     * 「排队中却带着失败原因和完成时间」的任务；而 {@code transition} 只在进入终态时写
+     * finished_time、不清历史。</p>
+     *
+     * <p>判断与写入在同一条 UPDATE 里完成，{@code WHERE status = ?} 就是并发锁：
+     * 影响 0 行说明状态已被别人改过（例如重复点击重试），调用方据此返回当前状态，
+     * 绝不重复提交——重复执行意味着白烧一次 GPU。</p>
+     *
+     * @param expectedFrom 期望的起始终态
+     * @return 影响行数
+     */
+    int reopen(long taskId, VideoTaskStatus expectedFrom);
+
+    /**
      * 记录已提交 ComfyUI。
      */
     int markSubmitted(long taskId, String comfyPromptId, int attemptCount);

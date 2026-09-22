@@ -555,6 +555,13 @@ class VideoTaskOrchestratorTest {
         }
 
         @Override
+        public int reopen(long taskId, VideoTaskStatus expectedFrom) {
+            // 与真实 SQL 一致：只有当前状态确实是那个终态才退回 QUEUED（否则 0 行）。
+            transitions.add("REOPEN:" + expectedFrom);
+            return terminalTasks.remove(taskId) ? 1 : 0;
+        }
+
+        @Override
         public int markFailedIfActive(long taskId, String errorCode, String errorMessage) {
             // 与真实 SQL 一致：已经是终态就不再覆盖，返回 0 行。
             if (!terminalTasks.add(taskId)) {

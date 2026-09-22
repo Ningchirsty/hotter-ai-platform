@@ -484,6 +484,22 @@
             >
               <el-icon><Close /></el-icon>
             </button>
+            <!--
+              终态失败/超时/被取消的任务可以一键重新执行。
+              提示语一直写着「请重新执行该任务」，但过去没有这个入口，用户只能手动重建一条。
+            -->
+            <button
+              v-if="retryable(task)"
+              type="button"
+              class="recreate"
+              :disabled="retryingId === String(task.id)"
+              title="按原参数重新执行"
+              aria-label="重新执行"
+              @click="retryTask(task)"
+            >
+              <el-icon><RefreshRight /></el-icon>
+              {{ retryingId === String(task.id) ? '重新执行中…' : '重新执行' }}
+            </button>
             <button v-if="task.status === 'SUCCEEDED'" type="button" class="recreate" @click="recreateTask(task)">
               <el-icon><RefreshRight /></el-icon>
               再创作
@@ -638,6 +654,7 @@ import {
   listVideoAssets,
   listVideoTasks,
   listVideoWorkflows,
+  retryVideoTask,
   uploadVideoAsset
 } from '@/api/video';
 import type {
@@ -1570,6 +1587,39 @@ function recreateTask(task: VideoTaskVO) {
   values.desc = task.taskName ?? values.desc;
   activeView.value = 'create';
   window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+/** 终态且非成功的任务可重新执行（与后端 retry 的状态门禁一致）。 */
+function retryable(task: VideoTaskVO) {
+  return ['FAILED', 'TIMEOUT', 'CANCELED'].includes(task.status);
+}
+
+/** 正在重新执行的任务 id，用于按钮 loading 态（同一条只允许点一次）。 */
+const retryingId = ref('');
+
+/**
+ * 重新执行：后端把终态退回 QUEUED 再认领入队，成功后就地开始轮询。
+ *
+ * <p>为什么需要它：进程重启会把 RUNNING 收敛为 FAILED 并提示「请重新执行该任务」，
+ * 但此前没有这个入口——用户按提示做却点不动，只能手动重建一条。</p>
+ */
+async function retryTask(task: VideoTaskVO) {
+  const id = String(task.id);
+  retryingId.value = id;
+  try {
+    const res = await retryVideoTask(task.id);
+    if (res.data?.accepted === false) {
+      ElMessage.info('该任务已经在执行队列中');
+    } else {
+      ElMessage.success('已重新提交执行');
+    }
+    await loadTasks();
+    startTaskPolling(String(task.id));
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '重新执行失败');
+  } finally {
+    retryingId.value = '';
+  }
 }
 
 function useInspiration(item: Inspiration) {

@@ -226,6 +226,17 @@ public class JdbcVideoTaskRepository implements VideoTaskRepository {
     }
 
     @Override
+    public int reopen(long taskId, VideoTaskStatus expectedFrom) {
+        // 一条语句同时完成「并发守卫 + 清失败痕迹」，避免出现「排队中却带着失败原因与完成时间」。
+        return jdbc.update("""
+            UPDATE video_task
+            SET status = ?, error_code = NULL, error_message = NULL, progress = 0,
+                finished_time = NULL, update_time = NOW()
+            WHERE id = ? AND status = ?
+            """, VideoTaskStatus.QUEUED.name(), taskId, expectedFrom.name());
+    }
+
+    @Override
     public int markFailedIfActive(long taskId, String errorCode, String errorMessage) {
         // 终态列表来自枚举，避免以后新增状态时这里漏改。
         String terminal = java.util.Arrays.stream(VideoTaskStatus.values())
