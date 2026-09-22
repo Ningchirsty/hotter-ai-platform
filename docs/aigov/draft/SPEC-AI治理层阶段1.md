@@ -128,23 +128,44 @@ public interface ModelInvoker {
 }
 
 // service/invoker/ModelInvokeRequest：capabilityCode, modelId, modelKey, modelType,
-//     deploymentType, secretRef, endpoint, dataLevel, prompt(String), payload(Map<String,Object>)
+//     deploymentType, secretRef, endpoint, dataLevel, prompt(String), payload(Map<String,Object>),
+//     outputSchema(String，能力输出模板)
 // service/invoker/ModelInvokeResult：success(boolean), output(String 结构化JSON), errorSummary,
 //     tokensUsed(Long), cost(BigDecimal), latencyMs(long), modelVersion(String)
 ```
 
-**两个实现：**
+> `outputSchema` 是后补的：聊天类调用器必须知道「期望输出哪些字段」才能提示模型按 JSON 回，
+> 否则拿到自由文本，调用编排的 `AigOutputSchemaValidator` 必然判不合格——白白消耗一次调用。
+
+**按部署类型认领，且每种类型只有一个调用器认领**（否则挑选结果依赖 Spring Bean 装配顺序，是不确定的）：
+
+| 部署类型 | 调用器 | 链路 |
+|---|---|---|
+| `LOCAL` | `LocalRuleModelInvoker`（`talent_match`）、`ContentLocalInvoker`（内容生产各能力） | 进程内，不出网 |
+| `GROUP` / `EXTERNAL_ENTERPRISE` | `SnailAiChatInvoker` | 集团 snail-ai（收 agentId，**实际模型由 Agent 决定**） |
+| `EXTERNAL_API` | `OpenAiCompatibleInvoker` | **治理层直连供应商端点**（登记了什么就用什么） |
 
 1. `SnailAiChatInvoker implements ModelInvoker`
-   - `@Component` + `@ConditionalOnBean(OpenApiChatClient.class)`
-   - 注入 `OpenApiChatClient`；`supports()` 返回 `deploymentType != LOCAL`（外部/集团共享走 snail-ai）
-   - `invoke()` 用 `OpenApiChatRequest` 调 `chatSync(...)`，把 `Result` 转成 `ModelInvokeResult`；异常转失败结果，**不得抛出**
-   - 需先用 `SnailAiOpenApi.chat(appId)` 或直接构造 `OpenApiChatRequest` —— **具体字段以 javap 实测为准**（见 §8 待办）
+   - `@Component` + `@ConditionalOnClass(OpenApiChatClient.class)`
+   - `supports()` = `GROUP` 或 `EXTERNAL_ENTERPRISE`（**不含 `EXTERNAL_API`**，见上表）
+   - `invoke()` 调 `chatSync(...)`，把 `Result` 转成 `ModelInvokeResult`；异常转失败结果，**不得抛出**
+   - `available()` = `OpenApiChatClient` 存在 && `aigov.snail-ai.enabled` && `agentId > 0`
 
 2. `LocalRuleModelInvoker implements ModelInvoker`
    - `@Component`，`supports()` 返回 `deploymentType == LOCAL`
    - 阶段1 实现 `talent_match` 的**本地规则匹配**：按输入 `skillTags` 与候选技能标签做交集/权重打分，产出结构化 JSON
    - 不访问任何网络；用于本地端到端验证
+
+3. `OpenAiCompatibleInvoker implements ModelInvoker`（阶段1 追加）
+   - `supports()` 返回 `deploymentType == EXTERNAL_API`；`available()` = `aigov.external-api.enabled`（默认 **true**）
+   - 凭据来源：请求里**不含密钥**，按 `modelId` 走
+     `AigModelConfigMapper.selectTestTarget` 取内部快照，再用 `AigModelSecretCipher` 解密——
+     这样「全仓只有一条语句读 `api_key`」的不变式仍然成立
+   - 请求体：`model` = 库中 `model_key`（原样），`messages` = [system(输出模板提示), user(prompt + payload)]，`stream=false`；
+     **不设 `max_tokens`**（那是业务语义，不该由调用器替业务方决定）
+   - 输出：取 `choices[0].message.content`，容忍 Markdown 围栏与前后解释文字后抠出 JSON 对象；
+     抠不出即失败（不把「模型没按格式回」当成一次彻底崩溃）
+   - 安全：密钥只用于发请求；上游响应体与异常文本在写错误摘要前一律掩码；日志不含密钥与完整响应体
 
 ### 5.2 路由引擎（设计 §6，本模块的核心）
 
@@ -347,12 +368,20 @@ Long durationMs;
 **snail-ai 的聊天入口收的是 `agentId`（Agent），不是 `model_key`（模型）。**
 即：经 snail-ai 调用时，**实际模型由 Agent 决定，治理层无法精确指定某个 `sai_model_config` 模型**。
 
+> **适用范围已收窄为 `GROUP` / `EXTERNAL_ENTERPRISE`**。原先 `SnailAiChatInvoker` 认领了
+> `deploymentType != LOCAL`（含 `EXTERNAL_API`），导致在治理台配好的外部 API 模型
+> 虽然会被路由选中、实际跑的却是 Agent 绑定的另一个模型——「配的是 A、跑的是 B」，
+> 是最难查的一类错配。现已把 `EXTERNAL_API` 交给 `OpenAiCompatibleInvoker` 直连，
+> 该路径**登记了什么就用什么**，本条错配不再适用。
+
 处置口径：
 - `agentId` / `openId` / `timeout` 从配置取（`aigov.snail-ai.*`），**不从 `AigCapabilityModel.modelId` 强推**
 - `available()` = `openApiChatClient != null && aigov.snail-ai.enabled && agentId > 0`
 - `tokensUsed` 与 `cost` 保持 `null` —— 响应结构不返回 token 用量，**禁止编造**
 - 路由引擎仍按 `sai_model_config` 做「能不能用 / 等级够不够」的治理判定，
   但走 snail-ai 路径时实际模型由 Agent 决定；`AigRouteDecision` 需保留该说明
+  （仅 `GROUP` / `EXTERNAL_ENTERPRISE`；`EXTERNAL_API` 的命中提示应写明「直连供应商」）
+- `AigInvokeVo` 下发 `invoker`：部署类型只说明「哪一类模型」，调用器才说明「走的哪条链路」
 - 建立「模型 ↔ Agent」精确映射属于**阶段 2**
 
 ### 其余待办

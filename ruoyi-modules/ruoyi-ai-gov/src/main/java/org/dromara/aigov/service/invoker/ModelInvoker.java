@@ -6,9 +6,16 @@ import org.dromara.aigov.enums.AigDeploymentTypeEnum;
  * 模型调用 SPI。
  * <p>治理层不直接绑死任何模型供应商：路由引擎按 {@link #supports(AigDeploymentTypeEnum)}
  * 筛选调用器，调用编排按 {@link #available()} 判定其是否就绪。</p>
- * <p>阶段1 的两个实现：{@code SnailAiChatInvoker}（集团/外部，走 snail-ai）与
- * {@code LocalRuleModelInvoker}（本地规则，用于 {@code talent_match}）。
- * snail-ai 未启用时治理层仍可编译、可启动、可端到端验证。</p>
+ *
+ * <p><b>按部署类型认领，且每种类型只有一个调用器认领</b>——否则挑选结果会依赖
+ * Spring Bean 的装配顺序，是不确定的。当前分工：</p>
+ * <ul>
+ *     <li>{@code LOCAL} → {@code LocalRuleModelInvoker}（{@code talent_match}）、
+ *         {@code ContentLocalInvoker}（内容生产的若干能力）</li>
+ *     <li>{@code GROUP} / {@code EXTERNAL_ENTERPRISE} → {@code SnailAiChatInvoker}（集团 snail-ai 链路）</li>
+ *     <li>{@code EXTERNAL_API} → {@code OpenAiCompatibleInvoker}（按治理台登记直连端点）</li>
+ * </ul>
+ * <p>各实现都未启用时治理层仍可编译、可启动、可端到端验证。</p>
  *
  * @author ai-gov
  */

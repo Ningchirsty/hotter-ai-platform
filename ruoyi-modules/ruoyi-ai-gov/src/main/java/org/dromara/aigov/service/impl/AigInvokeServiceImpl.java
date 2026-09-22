@@ -203,6 +203,9 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
         request.setDataLevel(AigDataLevelEnum.find(bo.getDataLevel()));
         request.setPrompt(bo.getPrompt());
         request.setPayload(bo.getPayload());
+        // 输出模板必须带上：聊天类调用器要靠它提示模型「按这些字段输出 JSON」，
+        // 否则拿到自由文本，这一步之后的 AigOutputSchemaValidator 必然判不合格。
+        request.setOutputSchema(decision.getOutputSchema());
         if (model != null) {
             request.setModelType(model.getModelType());
             request.setEndpoint(model.getApiEndpoint());
@@ -253,6 +256,9 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
         vo.setModelId(decision.getModelId());
         vo.setModelKey(decision.getModelKey());
         vo.setDeploymentType(decision.getDeploymentType());
+        // 调用器名要下发：部署类型只说明「哪一类模型」，真正执行的是哪个调用器
+        // （直连供应商 vs 走集团 snail-ai）排障时必须一眼可见，否则只能靠猜。
+        vo.setInvoker(decision.getInvoker());
         AigDeploymentTypeEnum deployment = AigDeploymentTypeEnum.find(decision.getDeploymentType());
         vo.setExternalCall(deployment != null && deployment.isExternal());
         vo.setLatencyMs(latencyMs);

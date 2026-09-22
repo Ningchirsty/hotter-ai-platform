@@ -70,4 +70,13 @@ public class ModelInvokeRequest implements Serializable {
      */
     private Map<String, Object> payload;
 
+    /**
+     * 本次能力的输出模板（{@code output_schema} JSON）。
+     *
+     * <p>形如 {@code {"fields":[{"name":"answer","type":"string"}]}}。聊天类调用器必须拿到它
+     * 才能提示模型「按这些字段输出 JSON」——否则模型回一段自由文本，调用编排的
+     * {@code AigOutputSchemaValidator} 必然判为不合格，白白消耗一次调用。</p>
+     */
+    private String outputSchema;
+
 }
