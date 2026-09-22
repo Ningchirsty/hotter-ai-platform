@@ -4,6 +4,7 @@ import cn.hutool.http.HttpRequest;
 import cn.hutool.http.HttpResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.dromara.aigov.config.AigModelTestProperties;
 import org.dromara.aigov.domain.vo.AigModelTestTargetVo;
 import org.dromara.aigov.domain.vo.AigModelTestVo;
 import org.dromara.aigov.enums.AigDeploymentTypeEnum;
@@ -13,10 +14,16 @@ import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.json.utils.JsonUtils;
 import org.springframework.stereotype.Component;
 
+import java.net.ConnectException;
+import java.net.NoRouteToHostException;
+import java.net.SocketTimeoutException;
 import java.net.URI;
+import java.net.UnknownHostException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 模型连通性探测器。
@@ -56,10 +63,12 @@ public class ModelConnectionTester {
     private static final int DETAIL_MAX = 300;
 
     /**
-     * 探测超时（毫秒）。刻意不做成配置项：这是运维动作的固定预算，
-     * 与业务调用超时（aigov.snail-ai.timeout-ms）不是一回事，混在一起会互相牵制。
+     * 从上游错误体里提取 {@code message} 字段。
+     * <p>上游（OpenAI 兼容端点）在 4xx/5xx 时几乎都会给出可操作的原因，例如
+     * {@code {"error":{"message":"orfree is not a valid model ID","code":400}}}。
+     * 只回一句「连接失败（HTTP 400）」会把用户推向排查网络，方向是错的。</p>
      */
-    private static final int TEST_TIMEOUT_MS = 8000;
+    private static final Pattern UPSTREAM_MESSAGE = Pattern.compile("\"message\"\\s*:\\s*\"([^\"]{0,200})\"");
 
     /**
      * 供应商/适配器里出现这些关键字就按 snail-ai 链路探测
@@ -77,6 +86,11 @@ public class ModelConnectionTester {
      * 模型密钥加解密工具。库里存的是 SM4 密文，发请求前必须先解出明文。
      */
     private final AigModelSecretCipher secretCipher;
+
+    /**
+     * 探测的超时与重试预算（{@code aigov.model-test.*}）。
+     */
+    private final AigModelTestProperties testProperties;
 
     /**
      * 执行一次连通性测试。
@@ -215,40 +229,199 @@ public class ModelConnectionTester {
             "max_tokens", 1,
             "stream", false
         ));
+        // 网络抖动（跨境/网关型端点常见）不该以「一次失败」定论：按配置重试，
+        // 但只重试网络层失败——拿到任何 HTTP 状态码都是明确结论，重试无意义。
+        int maxAttempts = Math.max(1, testProperties.getRetries() + 1);
         long start = System.currentTimeMillis();
-        try {
-            HttpRequest request = HttpRequest.post(url)
-                .header("Content-Type", "application/json")
-                .body(body)
-                .timeout(TEST_TIMEOUT_MS);
-            if (StringUtils.isNotBlank(apiKey)) {
-                request.header("Authorization", "Bearer " + apiKey);
-            }
-            try (HttpResponse response = request.execute()) {
-                vo.setLatencyMs(System.currentTimeMillis() - start);
-                int status = response.getStatus();
-                String text = mask(response.body(), apiKey);
-                if (status >= 200 && status < 300) {
-                    vo.setOk(true);
-                    vo.setMessage("连接成功（HTTP " + status + "）");
+        Exception lastError = null;
+        int attemptsMade = 0;
+        for (int i = 1; i <= maxAttempts; i++) {
+            attemptsMade = i;
+            try {
+                HttpRequest request = HttpRequest.post(url)
+                    .header("Content-Type", "application/json")
+                    .body(body)
+                    .timeout(testProperties.getTimeoutMs());
+                if (StringUtils.isNotBlank(apiKey)) {
+                    request.header("Authorization", "Bearer " + apiKey);
+                }
+                try (HttpResponse response = request.execute()) {
+                    vo.setLatencyMs(System.currentTimeMillis() - start);
+                    int status = response.getStatus();
+                    String text = mask(response.body(), apiKey);
                     vo.setDetail(truncate(text));
+                    if (status >= 200 && status < 300) {
+                        vo.setOk(true);
+                        vo.setMessage("连接成功（HTTP " + status + "）");
+                        return;
+                    }
+                    vo.setOk(false);
+                    vo.setMessage(describeHttpFailure(status, text));
                     return;
                 }
-                vo.setOk(false);
-                if (status == 401 || status == 403) {
-                    vo.setMessage("鉴权失败（HTTP " + status + "）：密钥缺失或无效");
-                } else if (status == 404) {
-                    vo.setMessage("地址不存在（HTTP 404）：请确认访问地址是否包含 /v1 等路径前缀");
-                } else {
-                    vo.setMessage("连接失败（HTTP " + status + "）");
+            } catch (Exception e) {
+                lastError = e;
+                if (i < maxAttempts && isTransientNetworkFailure(e)) {
+                    log.warn("模型连通性测试第 {}/{} 次探测网络失败（{}），{}ms 后重试, modelId={}",
+                        i, maxAttempts, rootCause(e).getClass().getSimpleName(),
+                        testProperties.getRetryBackoffMs(), target.getModelId());
+                    sleepQuietly(testProperties.getRetryBackoffMs());
+                    continue;
                 }
-                vo.setDetail(truncate(text));
+                break;
             }
-        } catch (Exception e) {
-            vo.setLatencyMs(System.currentTimeMillis() - start);
-            vo.setOk(false);
-            vo.setMessage("连接异常：" + e.getClass().getSimpleName() + "（地址不可达或超时）");
-            vo.setDetail(truncate(mask(e.getMessage(), apiKey)));
+        }
+        vo.setLatencyMs(System.currentTimeMillis() - start);
+        vo.setOk(false);
+        vo.setMessage("连接异常：" + describeNetworkFailure(lastError)
+            + (attemptsMade > 1 ? "（已尝试 " + attemptsMade + " 次）" : ""));
+        vo.setDetail(truncate(mask(rawMessage(lastError), apiKey)));
+    }
+
+    /**
+     * 沿 cause 链走到最内层异常。Hutool 会把底层 IOException 包成自己的异常，
+     * 只看最外层永远只能得到一句「HttpException」，无法区分 DNS/连接/超时/TLS。
+     *
+     * @param e 异常
+     * @return 最内层异常
+     */
+    private Throwable rootCause(Throwable e) {
+        Throwable cur = e;
+        while (cur.getCause() != null && cur.getCause() != cur) {
+            cur = cur.getCause();
+        }
+        return cur;
+    }
+
+    /**
+     * 取根因的可读消息（根因没消息时退回外层）。
+     *
+     * @param e 异常
+     * @return 消息文本，永不为 null
+     */
+    private String rawMessage(Throwable e) {
+        if (e == null) {
+            return "未知错误";
+        }
+        Throwable root = rootCause(e);
+        String msg = root.getMessage();
+        if (StringUtils.isBlank(msg)) {
+            msg = e.getMessage();
+        }
+        return StringUtils.blankToDefault(msg, root.getClass().getSimpleName());
+    }
+
+    /**
+     * 是否属于「重试一次可能就好了」的网络层失败。
+     *
+     * @param e 异常
+     * @return 是否值得重试
+     */
+    private boolean isTransientNetworkFailure(Throwable e) {
+        Throwable root = rootCause(e);
+        if (root instanceof UnknownHostException
+            || root instanceof SocketTimeoutException
+            || root instanceof ConnectException
+            || root instanceof NoRouteToHostException) {
+            return true;
+        }
+        String msg = rawMessage(e).toLowerCase();
+        return msg.contains("connection reset") || msg.contains("broken pipe") || msg.contains("timed out");
+    }
+
+    /**
+     * 把网络层失败翻译成可操作的结论。
+     * <p>原实现统一回一句「地址不可达或超时」，把 DNS 失败、端口拒绝、TLS 失败、
+     * 读取超时混为一谈——运维据此排查往往方向就是错的。</p>
+     *
+     * @param e 异常
+     * @return 可操作描述
+     */
+    private String describeNetworkFailure(Throwable e) {
+        if (e == null) {
+            return "未知错误";
+        }
+        Throwable root = rootCause(e);
+        String msg = rawMessage(e);
+        String lower = msg.toLowerCase();
+        if (root instanceof UnknownHostException) {
+            return "DNS 解析失败，无法解析目标主机（核对访问地址拼写，以及容器/宿主 DNS 是否可用）";
+        }
+        if (root instanceof SocketTimeoutException) {
+            if (lower.contains("connect")) {
+                return "连接超时，TCP 握手未完成（目标被防火墙丢弃、需要走代理，或出口网络不可达）";
+            }
+            return "读取超时，已连上但对端未在 " + testProperties.getTimeoutMs() + "ms 内返回"
+                + "（可调大 aigov.model-test.timeout-ms）";
+        }
+        if (root instanceof ConnectException) {
+            return "连接被拒绝，目标端口未监听或被主动拒绝（核对地址与端口）";
+        }
+        if (root instanceof NoRouteToHostException) {
+            return "网络不可达，本机没有到目标的路由（容器网络或出口策略受限）";
+        }
+        String cls = root.getClass().getSimpleName();
+        if (cls.contains("SSL") || lower.contains("ssl") || lower.contains("certificate") || lower.contains("pkix")) {
+            return "TLS 握手失败（证书不受信、SNI 不匹配，或链路被中间设备干扰）";
+        }
+        return cls + (StringUtils.isBlank(msg) ? "" : "：" + msg);
+    }
+
+    /**
+     * 把「HTTP 非 2xx」翻译成可操作的结论，并带上上游原文。
+     *
+     * @param status   状态码
+     * @param bodyText 响应体（已掩码）
+     * @return 可操作描述
+     */
+    private String describeHttpFailure(int status, String bodyText) {
+        String upstream = extractUpstreamMessage(bodyText);
+        String base;
+        if (status == 401 || status == 403) {
+            base = "鉴权失败（HTTP " + status + "）：密钥缺失、无效，或该密钥无权访问此模型";
+        } else if (status == 402) {
+            base = "配额不足（HTTP 402）：上游账户额度/余额不足";
+        } else if (status == 404) {
+            base = "地址不存在（HTTP 404）：确认访问地址是否含 /v1 等路径前缀，且模型标识是上游有效模型 ID";
+        } else if (status == 429) {
+            base = "触发限流（HTTP 429）：降低频率或稍后重试";
+        } else if (status >= 500) {
+            base = "上游服务错误（HTTP " + status + "）：对端异常，稍后重试通常可恢复";
+        } else if (status == 400) {
+            base = "请求被拒（HTTP 400）：模型标识或请求参数不被上游接受";
+        } else {
+            base = "连接失败（HTTP " + status + "）";
+        }
+        return StringUtils.isBlank(upstream) ? base : base + "；上游返回：" + upstream;
+    }
+
+    /**
+     * 从上游错误体里取 message 字段。
+     *
+     * @param bodyText 响应体
+     * @return 上游消息，取不到返回 null
+     */
+    private String extractUpstreamMessage(String bodyText) {
+        if (StringUtils.isBlank(bodyText)) {
+            return null;
+        }
+        Matcher matcher = UPSTREAM_MESSAGE.matcher(bodyText);
+        return matcher.find() ? matcher.group(1) : null;
+    }
+
+    /**
+     * 重试等待，忽略中断并恢复中断标记。
+     *
+     * @param ms 等待毫秒
+     */
+    private void sleepQuietly(long ms) {
+        if (ms <= 0) {
+            return;
+        }
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
         }
     }
 
