@@ -45,6 +45,15 @@ public class AigInvokeVo implements Serializable {
     private String deploymentType;
 
     /**
+     * 实际执行的调用器名称（如 OpenAiCompatibleInvoker / SnailAiChatInvoker / LocalRuleModelInvoker）。
+     *
+     * <p>部署类型只说明「哪一类模型」，调用器才说明「走的哪条链路」——
+     * {@code EXTERNAL_API} 由治理层直连供应商端点，{@code GROUP} / {@code EXTERNAL_ENTERPRISE}
+     * 走集团 snail-ai（实际模型由 Agent 决定）。排障时先用它定位，再去看对应调用器的日志。</p>
+     */
+    private String invoker;
+
+    /**
      * 是否外发（true 表示数据离开本地环境，已写入审计）
      */
     private Boolean externalCall;

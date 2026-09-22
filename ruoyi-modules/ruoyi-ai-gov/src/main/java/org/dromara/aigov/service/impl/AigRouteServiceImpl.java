@@ -206,9 +206,15 @@ public class AigRouteServiceImpl implements IAigRouteService {
                 decision.addHit("未找到支持 " + deployment.getCode() + " 且可用的调用器（invoker）");
             } else {
                 decision.setInvoker(invoker.invokerName());
-                if (deployment.isExternal()) {
+                if (deployment == AigDeploymentTypeEnum.EXTERNAL_API) {
+                    // EXTERNAL_API 由治理层直连供应商端点：登记了什么就用什么，
+                    // 不存在「实际模型由别人决定」这回事，提示必须说清楚。
+                    decision.addHit("外部 API：按治理台登记的端点与模型标识直连供应商");
+                } else if (deployment == AigDeploymentTypeEnum.GROUP
+                    || deployment == AigDeploymentTypeEnum.EXTERNAL_ENTERPRISE) {
                     // 明确提示：走 snail-ai 时实际执行的模型由 Agent 决定
-                    decision.addHit("外部/集团共享调用经 snail-ai Agent 执行，实际模型由 Agent 决定，治理层仅判定「该模型是否可用」");
+                    decision.addHit("集团共享/外部企业服务经 snail-ai Agent 执行，实际模型由 Agent 决定，"
+                        + "治理层仅判定「该模型是否可用」");
                 }
             }
             return decision;

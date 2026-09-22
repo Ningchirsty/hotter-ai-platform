@@ -71,8 +71,15 @@ public class SnailAiChatInvoker implements ModelInvoker {
 
     @Override
     public boolean supports(AigDeploymentTypeEnum deploymentType) {
-        // 外部 / 集团共享走 snail-ai；本地私有由 LocalRuleModelInvoker 承担
-        return deploymentType != null && deploymentType != AigDeploymentTypeEnum.LOCAL;
+        // 集团共享 / 外部企业服务走 snail-ai；本地私有由本地调用器承担。
+        //
+        // EXTERNAL_API 已让给 OpenAiCompatibleInvoker 直连，不再绕集团链路：
+        // snail-ai 的聊天入口收的是 agentId，实际执行的模型由 Agent 决定，
+        // 与治理台登记的 model_key / api_endpoint 无关。继续认领它只会造成
+        // 「治理台配的是 A、实际跑的是 B」这种最难查的错配。
+        // 这样切分后，同一种部署类型只有一个调用器认领，不依赖 Bean 装配顺序。
+        return deploymentType == AigDeploymentTypeEnum.GROUP
+            || deploymentType == AigDeploymentTypeEnum.EXTERNAL_ENTERPRISE;
     }
 
     @Override
