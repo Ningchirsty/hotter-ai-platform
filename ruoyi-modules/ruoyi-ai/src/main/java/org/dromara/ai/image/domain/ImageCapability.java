@@ -26,7 +26,17 @@ public enum ImageCapability {
     /**
      * 抠图去背景：固定提示词，输出带 alpha 的透明 PNG。
      */
-    BGREMOVE("bgremove", "抠图去背景", true, false);
+    BGREMOVE("bgremove", "抠图去背景", true, false),
+
+    /**
+     * 白底图：先用抠图工作流拿到透明蒙版，再由后端把蒙版<b>确定性</b>地合成到纯白底。
+     *
+     * <p><b>为什么不让模型直接画白底</b>：模型路线（不管是图生图还是指令改图）都会顺手改掉产品本身，
+     * 实测「保持产品不变」这类约束并不可靠（贴花、文字会被重绘）；而电商白底图恰恰要求
+     * <b>产品像素级不变 + 背景恒为纯白 255</b>。所以这里的分工是「模型负责抠图，程序负责合成」，
+     * 合成这一步没有任何随机性，永远不会把产品画坏。</p>
+     */
+    WHITE_BG("whitebg", "白底图", true, false);
 
     private final String code;
     private final String label;
@@ -63,10 +73,17 @@ public enum ImageCapability {
     }
 
     /**
-     * 是否允许前端覆写提示词（抠图为固定提示词）。
+     * 是否允许前端覆写提示词（抠图与白底图都是固定提示词）。
      */
     public boolean allowsPrompt() {
-        return this != BGREMOVE;
+        return this == T2I || this == I2I || this == EDIT;
+    }
+
+    /**
+     * 是否由后端把抠图蒙版合成到纯白底（只有白底图）。
+     */
+    public boolean compositesOnWhite() {
+        return this == WHITE_BG;
     }
 
     /**

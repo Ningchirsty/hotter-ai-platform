@@ -95,7 +95,7 @@
           </label>
         </div>
 
-        <div class="field-block">
+        <div v-if="activeModule.fields.includes('prompt')" class="field-block">
           <label>
             {{ activeModule.promptLabel || '提示词' }}
             <em>*</em>
@@ -108,6 +108,12 @@
             show-word-limit
             :placeholder="activeModule.placeholder || '描述你想要的画面'"
           />
+          <p v-for="tip in activeModule.tips" :key="tip" class="field-hint">· {{ tip }}</p>
+        </div>
+
+        <!-- 固定提示词的能力（抠图/白底图）：没有可填的提示词，但说明必须照常展示，
+             否则用户只会看到「怎么没有输入框」，不知道提示词是由服务端固定的 -->
+        <div v-else class="field-block">
           <p v-for="tip in activeModule.tips" :key="tip" class="field-hint">· {{ tip }}</p>
         </div>
 

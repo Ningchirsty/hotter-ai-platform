@@ -36,6 +36,7 @@ public class ImageTaskOrchestrator {
     private final ImageAssetStore assetStore;
     private final ImageAssetProbe probe;
     private final ComfyClient comfyClient;
+    private final ImageWhiteBackgroundCompositor whiteBackgroundCompositor;
     private final Supplier<Long> idGenerator;
     private final Duration pollBudget;
     private final Duration pollInterval;
@@ -47,6 +48,7 @@ public class ImageTaskOrchestrator {
                                  ImageAssetStore assetStore,
                                  ImageAssetProbe probe,
                                  ComfyClient comfyClient,
+                                 ImageWhiteBackgroundCompositor whiteBackgroundCompositor,
                                  Supplier<Long> idGenerator,
                                  Duration pollBudget,
                                  Duration pollInterval,
@@ -57,6 +59,7 @@ public class ImageTaskOrchestrator {
         this.assetStore = assetStore;
         this.probe = probe;
         this.comfyClient = comfyClient;
+        this.whiteBackgroundCompositor = whiteBackgroundCompositor;
         this.idGenerator = idGenerator;
         this.pollBudget = pollBudget;
         this.pollInterval = pollInterval;
@@ -169,11 +172,18 @@ public class ImageTaskOrchestrator {
 
     private ExecutionResult archiveOutput(ComfyOutput output, TaskContext context, ImageWorkflowVersion version) {
         byte[] content = comfyClient.fetchOutput(output);
+        ImageCapability capability = ImageCapability.parse(version.capabilityCode());
+        boolean compositedOnWhite = capability != null && capability.compositesOnWhite();
+        if (compositedOnWhite) {
+            // 白底图：ComfyUI 只负责给透明蒙版，白底由这里确定性合成（失败即 OUTPUT_INVALID，不产出假白底）
+            content = whiteBackgroundCompositor.compositeOnWhite(content);
+        }
         long maxBytes = (long) version.maxSizeMb() * 1024 * 1024;
         if (content.length > maxBytes) {
             throw ImageTaskException.outputInvalid("输出图片过大：" + content.length + " 字节，上限 " + version.maxSizeMb() + "MB");
         }
-        String contentType = contentTypeOf(output.fileName(), version.outputMime());
+        // 合成后的产物恒为不透明 PNG，不再沿用抠图文件名推断出来的类型
+        String contentType = compositedOnWhite ? "image/png" : contentTypeOf(output.fileName(), version.outputMime());
         String storageKey = assetStore.storeOutput(context.tenantId(), context.userId(), context.taskId(),
             output.fileName(), content, contentType);
         if (storageKey == null) {

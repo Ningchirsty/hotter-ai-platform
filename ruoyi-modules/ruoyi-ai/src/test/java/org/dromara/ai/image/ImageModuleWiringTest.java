@@ -100,8 +100,8 @@ class ImageModuleWiringTest {
                 assertThat(context).hasSingleBean(ImageAssetStore.class);
 
                 ImageWorkflowContractRegistry registry = context.getBean(ImageWorkflowContractRegistry.class);
-                assertThat(registry.registeredCount()).isEqualTo(4);
-                assertThat(registry.loadedCount()).isEqualTo(4);
+                assertThat(registry.registeredCount()).isEqualTo(5);
+                assertThat(registry.loadedCount()).isEqualTo(5);
 
                 ImageModuleConfiguration.ImageProperties properties =
                     context.getBean(ImageModuleConfiguration.ImageProperties.class);

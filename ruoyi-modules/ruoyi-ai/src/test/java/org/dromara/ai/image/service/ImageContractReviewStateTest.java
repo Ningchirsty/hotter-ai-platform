@@ -28,7 +28,7 @@ class ImageContractReviewStateTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final List<String> CODES = List.of(
-        "wf-t2i-qwen21", "wf-i2i-qwen21", "wf-edit-qwen21", "wf-bgremove-qwen21");
+        "wf-t2i-qwen21", "wf-i2i-qwen21", "wf-edit-qwen21", "wf-bgremove-qwen21", "wf-whitebg-qwen21");
 
     @TempDir
     Path contractRoot;
@@ -63,7 +63,7 @@ class ImageContractReviewStateTest {
 
         int promoted = registry.applyReviewStates(approved);
 
-        assertThat(promoted).isEqualTo(4);
+        assertThat(promoted).isEqualTo(CODES.size());
         for (String code : CODES) {
             assertThat(registry.peek(code).isPublished()).isTrue();
             // 提权后：正式环境可提交（这条正是页面上「提交生成」按钮能不能点的依据）
