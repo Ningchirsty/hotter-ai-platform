@@ -598,12 +598,11 @@ expected single matching bean but found 2: imageObjectMapper,videoObjectMapper
 | 后端 Java 测试 | `ruoyi-ai` **169/169 通过**（新增 `ImageWhiteBackgroundCompositorTest` 6 条 + 白底图归档链路 1 条；上游 `ImageContractReviewStateTest` 的能力清单同步扩到 5 条） |
 | 前端 | `oxlint src` 0 问题；`pnpm build:prod` 成功，产出 `image-*.js` |
 | 未发布闸门回归 | 复用上游的 `ImageContractTestFixture`（临时造 DRAFT 契约），本轮不再重复造轮子——原先自写的 `DraftContractFixture` 已删除，避免两套夹具并存 |
-| 生产端到端 | **待部署后验证**（见 §13.5） |
+| 生产端到端 | ✅ **已部署并验证**（见 §13.6） |
 
 ### 13.5 遗留与取舍
 
-1. **生产端到端验证**：部署后需以真实账号跑一次「白底图」，确认产物无 alpha、角落为纯白、
-   产品与上传图一致（本轮只做到真机模板 + 单测/装配测层面）。
+1. ~~**生产端到端验证**~~：**已完成**，见 §13.6。
 2. **数据库镜像的 `published_by` 为空**：新版本（v0.1.1 / whitebg）由契约同步插入，
    其 `status=PUBLISHED` 但没有 `published_by/published_time`（同步刻意不写这三列，
    以免把人工审核结果冲掉）。权威的批准记录是契约文件本身与本节。
@@ -611,6 +610,38 @@ expected single matching bean but found 2: imageObjectMapper,videoObjectMapper
    契约里切换，不需要改代码。
 4. **图生图的能力边界仍写在提示里而非由后端拦截**：后端不按提示词猜测意图，
    所以填「换白底」不会被拒绝，只是不会生效 —— 这是有意为之（避免用关键词做语义判断）。
+
+### 13.6 生产部署与验证（2026-09-22，走审计路径）
+
+| 组件 | 不可变镜像 |
+|---|---|
+| 后端 | `ghcr.io/ningchirsty/hotter-ai-platform-backend@sha256:4d6a0fdb333fe5ddb163edefa20becfaa957817d5688141bc28751fc9f563247` |
+| 前端 | `ghcr.io/ningchirsty/hotter-ai-platform-frontend@sha256:be2dd3f956097edc029b2c6f87d91c8ddf55abe9da72f868246d4b978c1a1818` |
+| git sha | `0df47c723e8847cd8c61ee394d4f3caa5604705a`（= main，前端 `version.json` 已核对） |
+
+部署方式：触发 `deploy-poc.yml`（workflow 357793284）与 `deploy-frontend-poc.yml`（358379890），
+由 `[shenzhen, deploy]` runner 调 `hotter-release`，两次 run 均 `success`。
+部署前的生产镜像是另一个会话手工构建的 `local/hotter-backend:ratio-3db21521…`；
+本次换成 CI 制品（同一提交同时包含 `3db2152` 的画面比例功能，未覆盖任何上游工作）。
+
+生产实测（用户 `videoit`，真实平台 API）：
+
+| 验证项 | 结果 |
+|---|---|
+| `GET /image/capabilities` | **5 条**：T2I / I2I / EDIT / BGREMOVE / WHITEBG，全部 `PUBLISHED` 且 `submittable=true`（EDIT/BGREMOVE 已是 v0.1.1，WHITEBG v0.1.0） |
+| 提交白底图任务 | `POST /image/tasks`（`capabilityCode=WHITEBG`）→ `SUCCEEDED`，**40.1s** |
+| 产出实测 | **1152×2048**（证明 resolution=1536 生效）、**无 alpha（RGB）**、1,678,203 字节 |
+| 后端日志 | `白底图合成完成：1152×2048，全透明像素占比 32.2%，输出不透明 PNG` |
+| 像素级核对 | 四角与边缘全部为 `255,255,255`；产品（龍字贴花与 X 花纹）与上传图逐像素一致 |
+| 前端 | `version.json` = `0df47c72…`；产物 `image-B2hhKeIl.js` 同时含「白底图」与护栏文案「不能替换背景」 |
+| 后端容器 | `health=healthy`、`restarts=0`，镜像即上表 digest |
+
+**部署时踩到的凭据问题（值得记进运维手册）**：`hotter-release` 用 `/opt/ai-video-poc/.env` 里的
+`GHCR_TOKEN` 登录 GHCR，而那份 PAT 已**静默失效**（GitHub API 返 401），
+`/home/gh-deploy/.docker/config.json` 里那份也**没有包读权限**（GHCR 返 403）——
+表现为两个 deploy workflow 会在 `docker pull` 一步失败。
+已更换为具备 `read:packages` 的新 PAT（旧 `.env` 备份为 `.env.bak-token-<时间戳>`）。
+建议：给该 PAT 设一个到期提醒，并清掉 `gh-deploy` 里那份无权限的旧凭据。
 
 
 
