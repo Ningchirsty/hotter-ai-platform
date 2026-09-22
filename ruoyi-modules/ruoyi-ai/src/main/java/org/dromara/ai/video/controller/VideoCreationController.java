@@ -208,6 +208,28 @@ public class VideoCreationController extends BaseController {
             item.put("supportedDurationsByTier", tierResolutions == null
                 ? java.util.Map.of()
                 : new java.util.LinkedHashMap<>(tierResolutions.getDurations()));
+            // 画面比例与「比例 → 档位」分组：前端据此渲染"先选比例、再选清晰度"。
+            //
+            // 比例不是新的提交字段：档位才是这套模块里唯一的输出旋钮——它已被契约声明、
+            // 被服务端校验、随任务落库、并在成片尺寸断言里使用。把竖屏做成同比例下的另一种档位，
+            // 就不必改任务表与提交流程，也不会出现"落库时丢了比例、重试时按横屏出片"的不一致。
+            // 这里只按契约允许的档位过滤，避免前端给出一个必然被拒的档位。
+            java.util.Set<String> allowedTiers = version.fixedFieldValidation() == null
+                ? java.util.Set.of() : version.fixedFieldValidation().allowedTiers();
+            java.util.Map<String, java.util.List<String>> byRatio = new java.util.LinkedHashMap<>();
+            if (tierResolutions != null) {
+                for (String ratio : tierResolutions.ratioNames()) {
+                    java.util.List<String> tiers = tierResolutions.tiersOf(ratio).stream()
+                        .filter(tier -> allowedTiers.isEmpty() || allowedTiers.contains(tier))
+                        .toList();
+                    if (!tiers.isEmpty()) {
+                        byRatio.put(ratio, tiers);
+                    }
+                }
+            }
+            item.put("supportedRatios", new java.util.ArrayList<>(byRatio.keySet()));
+            item.put("supportedTiersByRatio", byRatio);
+            item.put("defaultRatio", byRatio.isEmpty() ? null : byRatio.keySet().iterator().next());
             item.put("supportedDuration", version.fixedFieldValidation() == null
                 ? null : version.fixedFieldValidation().dur());
             item.put("maxDurationSeconds", version.maxDurationSeconds());

@@ -44,6 +44,17 @@ export interface VideoWorkflowVO {
   supportedDurationsByTier?: Record<string, string[]> | null;
   supportedDuration?: string | null;
   maxDurationSeconds?: number | null;
+  /**
+   * 画面比例的可选项，形如 `['16:9 横屏','9:16 竖屏']`。
+   *
+   * <p>比例不是提交字段：档位才是唯一的输出旋钮（它被校验、随任务落库、并用于成片尺寸断言）。
+   * 服务端只是把「比例 → 档位」分组下发，前端据此先让用户选比例、再在组内选清晰度。</p>
+   */
+  supportedRatios?: string[] | null;
+  /** 比例到该比例下档位的分组，形如 `{ '16:9 横屏': ['高清 · 1080P', …] }`。 */
+  supportedTiersByRatio?: Record<string, string[]> | null;
+  /** 默认比例（服务端给第一个），用于前端初始选中。 */
+  defaultRatio?: string | null;
 }
 
 /** 素材（上传素材或任务成片） */

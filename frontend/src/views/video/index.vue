@@ -196,7 +196,34 @@
           </div>
 
           <div v-else-if="field === 'tier' || field === 'dur'" class="field-block">
-            <label>
+            <!--
+              画面比例：只决定下面清晰度档位的分组，本身不是提交字段——
+              档位才是唯一的输出旋钮（契约声明、服务端校验、随任务落库、成片尺寸断言都用它）。
+              只有服务端确实下发了多个比例时才渲染这一组按钮。
+            -->
+            <template v-if="field === 'tier' && supportedRatios.length > 1">
+              <label>
+                画面比例
+                <em>*</em>
+              </label>
+              <div class="choice-grid ratio-choices" aria-label="画面比例">
+                <button
+                  v-for="item in supportedRatios"
+                  :key="item"
+                  type="button"
+                  :class="{ active: selectedRatio === item }"
+                  :aria-pressed="selectedRatio === item"
+                  @click="selectRatio(item)"
+                >
+                  {{ item }}
+                </button>
+              </div>
+              <label>
+                {{ fieldLabels[field] }}
+                <em>*</em>
+              </label>
+            </template>
+            <label v-else>
               {{ fieldLabels[field] }}
               <em>*</em>
             </label>
@@ -206,7 +233,7 @@
                 :key="item"
                 type="button"
                 :class="{ active: values[field] === item }"
-                :disabled="field === 'tier' && !supportedTiers.includes(item)"
+                :disabled="field === 'tier' && !ratioTiers.includes(item)"
                 @click="selectChoice(field, item)"
               >
                 {{ item }}
@@ -857,15 +884,83 @@ const supportedTiers = computed<string[]>(() => {
   return ['高清 · 1080P'];
 });
 
-/** 档位表变化时把当前选择拉回第一个受支持的档位，避免提交一个必然被拒的档位。 */
-watch(supportedTiers, tiers => {
+/**
+ * 「画面比例 → 档位」分组。
+ *
+ * <p>比例不是提交字段：档位才是这套模块里唯一的输出旋钮（契约声明、服务端校验、随任务落库、
+ * 成片尺寸断言都用它）。服务端把分组下发过来，前端只做展示：先选比例，再在组内选清晰度，
+ * 提交的仍是档位名。这样横竖屏并存而无需改任务表与提交流程。</p>
+ *
+ * <p>旧后端只下发扁平的 `supportedTiers` 时按档位名前缀兜底分组，保证向前兼容。</p>
+ */
+const tiersByRatio = computed<Record<string, string[]>>(() => {
+  const fromServer = currentWorkflow.value?.supportedTiersByRatio;
+  if (fromServer && Object.keys(fromServer).length) return fromServer;
+  const groups: Record<string, string[]> = { '16:9 横屏': [], '9:16 竖屏': [] };
+  for (const tier of supportedTiers.value) {
+    if (tier.startsWith('竖屏')) groups['9:16 竖屏'].push(tier);
+    else groups['16:9 横屏'].push(tier);
+  }
+  return Object.fromEntries(Object.entries(groups).filter(([, list]) => list.length));
+});
+
+/** 可选的画面比例（服务端下发；退回分组表的键）。 */
+const supportedRatios = computed<string[]>(() => {
+  const list = currentWorkflow.value?.supportedRatios;
+  if (Array.isArray(list) && list.length) return list;
+  return Object.keys(tiersByRatio.value);
+});
+
+/** 当前选中的画面比例（仅展示用状态，不随任务提交）。 */
+const selectedRatio = ref<string>('');
+
+/** 当前比例下的档位；分组缺失时退回全部受支持档位。 */
+const ratioTiers = computed<string[]>(() => {
+  const grouped = tiersByRatio.value[selectedRatio.value];
+  if (Array.isArray(grouped) && grouped.length) return grouped;
+  return supportedTiers.value;
+});
+
+/** 切换比例：把档位拉回该比例下的第一档，并同步时长档位。 */
+function selectRatio(ratio: string) {
+  selectedRatio.value = ratio;
+  const tiers = tiersByRatio.value[ratio] ?? [];
   if (tiers.length && !tiers.includes(values.tier ?? '')) {
     values.tier = tiers[0];
-    if (!optionsFor('dur').includes(values.dur ?? '')) {
-      values.dur = optionsFor('dur')[0];
-    }
   }
-});
+  if (!optionsFor('dur').includes(values.dur ?? '')) {
+    values.dur = optionsFor('dur')[0];
+  }
+}
+
+/**
+ * 比例与服务端档位变化时，把「比例 + 档位」拉回一个必然可提交的组合。
+ *
+ * <p>两条 watch 各管一段：前者保证选中的比例仍在服务端允许范围内（并优先用服务端给的默认比例），
+ * 后者保证当前档位属于已选比例。合并成一条会因为互相触发而难以推理。</p>
+ */
+watch(
+  supportedRatios,
+  names => {
+    const preferred = currentWorkflow.value?.defaultRatio;
+    if (!names.length || names.includes(selectedRatio.value)) return;
+    selectRatio(preferred && names.includes(preferred) ? preferred : names[0]);
+  },
+  { immediate: true }
+);
+
+watch(
+  ratioTiers,
+  tiers => {
+    if (tiers.length && !tiers.includes(values.tier ?? '')) {
+      values.tier = tiers[0];
+      if (!optionsFor('dur').includes(values.dur ?? '')) {
+        values.dur = optionsFor('dur')[0];
+      }
+    }
+  },
+  { immediate: true }
+);
 
 const submitBlockReason = computed(() => {
   if (!workflows.value.length) return '正在读取工作流状态…';
@@ -976,6 +1071,8 @@ function isRequired(field: FieldKey) {
 }
 
 function optionsFor(field: FieldKey) {
+  // 档位选项按已选画面比例过滤：竖屏比例下只给竖屏档位，避免选出一个必然被拒的组合。
+  if (field === 'tier') return ratioTiers.value.length ? ratioTiers.value : fieldOptions.tier ?? [];
   if (field !== 'dur') return fieldOptions[field] ?? [];
   // 时长选项以服务端为准：长时长只在低分辨率档位开放（H3 帧数随时长线性增长、
   // 显存与耗时显著上升）。服务端未下发时退回内置兜底值，保证旧后端仍可用。
@@ -2328,6 +2425,10 @@ button {
 }
 .choice-grid.tier-choices {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+/* 画面比例就两个按钮，与下面的清晰度档位留一点间距，视觉上成一组两层 */
+.choice-grid.ratio-choices {
+  margin-bottom: 14px;
 }
 .choice-grid button {
   min-height: 42px;

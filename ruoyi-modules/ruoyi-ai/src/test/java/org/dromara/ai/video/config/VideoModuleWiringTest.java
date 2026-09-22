@@ -11,6 +11,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -89,7 +90,8 @@ class VideoModuleWiringTest {
     @DisplayName("装配：档位与时长矩阵的具体取值（防止误改默认值）")
     void defaultMatrixIsExactlyAsDesigned() {
         VideoTierResolutions tiers = new VideoTierResolutions();
-        assertEquals(List.of("高清 · 1080P", "流畅 · 720P", "标清 · 480P"),
+        assertEquals(List.of("高清 · 1080P", "流畅 · 720P", "标清 · 480P",
+                "竖屏 · 1080×1920", "竖屏 · 720×1280", "竖屏 · 480×864"),
             List.copyOf(tiers.tierNames()), "档位顺序应稳定（前端按此渲染）");
         assertEquals(List.of("5 秒"), tiers.durationsOf("高清 · 1080P"));
         assertEquals(List.of("5 秒", "10 秒"), tiers.durationsOf("流畅 · 720P"));
@@ -97,6 +99,33 @@ class VideoModuleWiringTest {
         // 分辨率必须与原 1080P 行为一致（已上线，不能变）
         assertEquals(new VideoTierResolutions.Resolution(1920, 1088, 1920, 1080, 1920),
             tiers.of("高清 · 1080P"));
+    }
+
+    @Test
+    @DisplayName("装配：画面比例分组与竖屏档位（比例只是档位的分组，不是新的提交字段）")
+    void ratioGroupsAndPortraitTiers() {
+        VideoTierResolutions tiers = new VideoTierResolutions();
+        assertEquals(List.of("16:9 横屏", "9:16 竖屏"), tiers.ratioNames(), "比例顺序应稳定");
+        assertEquals("16:9 横屏", tiers.defaultRatio());
+        assertEquals(List.of("高清 · 1080P", "流畅 · 720P", "标清 · 480P"), tiers.tiersOf("16:9 横屏"));
+        assertEquals(List.of("竖屏 · 1080×1920", "竖屏 · 720×1280", "竖屏 · 480×864"),
+            tiers.tiersOf("9:16 竖屏"));
+        assertTrue(tiers.tiersOf("4:5 竖版").isEmpty(), "未知比例应返回空列表");
+        assertEquals("16:9 横屏", tiers.ratioOf("流畅 · 720P"));
+        assertEquals("9:16 竖屏", tiers.ratioOf("竖屏 · 480×864"));
+        assertNull(tiers.ratioOf("不存在的档位"));
+
+        // 竖屏 = 宽高对调 + 导演阶段按 16 对齐（1088×1920 → 成片 1080×1920）。
+        // 三条竖屏档位的像素总数与同档横屏相同，因此时长矩阵照搬。
+        assertEquals(new VideoTierResolutions.Resolution(1088, 1920, 1080, 1920, 1920),
+            tiers.of("竖屏 · 1080×1920"));
+        assertEquals(new VideoTierResolutions.Resolution(736, 1280, 720, 1280, 1280),
+            tiers.of("竖屏 · 720×1280"));
+        assertEquals(new VideoTierResolutions.Resolution(480, 864, 480, 864, 864),
+            tiers.of("竖屏 · 480×864"));
+        assertEquals(List.of("5 秒"), tiers.durationsOf("竖屏 · 1080×1920"));
+        assertEquals(List.of("5 秒", "10 秒"), tiers.durationsOf("竖屏 · 720×1280"));
+        assertEquals(List.of("5 秒", "10 秒", "20 秒"), tiers.durationsOf("竖屏 · 480×864"));
     }
 
     @Test

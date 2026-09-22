@@ -376,14 +376,18 @@ class H3TemplatePreparerTest {
     }
 
     @Test
-    @DisplayName("多档位：契约声明 1080P/720P/480P，且三档都能通过校验")
-    void contractDeclaresThreeTiers() {
+    @DisplayName("多档位：契约声明横竖两套共 6 个档位（16:9 三档 + 9:16 三档），且都能通过校验")
+    void contractDeclaresSixTiers() {
+        List<String> portrait = List.of("竖屏 · 1080×1920", "竖屏 · 720×1280", "竖屏 · 480×864");
         for (String code : List.of("wf-t2v-h3", "wf-i2v-h3", "wf-fl2v-h3")) {
             java.util.Set<String> tiers = versionOf(code).fixedFieldValidation().allowedTiers();
-            assertEquals(3, tiers.size(), code + " 应声明 3 个档位，实际：" + tiers);
+            assertEquals(6, tiers.size(), code + " 应声明 6 个档位（横竖各三），实际：" + tiers);
             assertTrue(tiers.contains("高清 · 1080P"), code + " 应含 1080P");
             assertTrue(tiers.contains("流畅 · 720P"), code + " 应含 720P");
             assertTrue(tiers.contains("标清 · 480P"), code + " 应含 480P");
+            for (String tier : portrait) {
+                assertTrue(tiers.contains(tier), code + " 应含竖屏档位 " + tier);
+            }
         }
     }
 
@@ -396,6 +400,10 @@ class H3TemplatePreparerTest {
         int[] expected1080 = {1920, 1088, 1920, 1088, 1920, 1088, 1920, 1080};
         int[] expected720 = {1280, 736, 1280, 736, 1280, 736, 1280, 720};
         int[] expected480 = {864, 480, 864, 480, 864, 480, 864, 480};
+        // 竖屏档位：宽高对调后导演阶段（1088×1920）与成片（1080×1920）同样错开一个 16 的台阶
+        int[] expectedPortrait1080 = {1088, 1920, 1088, 1920, 1088, 1920, 1080, 1920};
+        int[] expectedPortrait720 = {736, 1280, 736, 1280, 736, 1280, 720, 1280};
+        int[] expectedPortrait480 = {480, 864, 480, 864, 480, 864, 480, 864};
 
         for (String code : List.of("wf-t2v-h3", "wf-i2v-h3", "wf-fl2v-h3")) {
             assertArrayEquals(expected1080, resolutionsOf(prepareWithTier(code, "高清 · 1080P")),
@@ -404,7 +412,40 @@ class H3TemplatePreparerTest {
                 code + " 720P 分辨率不对");
             assertArrayEquals(expected480, resolutionsOf(prepareWithTier(code, "标清 · 480P")),
                 code + " 480P 分辨率不对");
+            assertArrayEquals(expectedPortrait1080, resolutionsOf(prepareWithTier(code, "竖屏 · 1080×1920")),
+                code + " 竖屏 1080×1920 分辨率不对");
+            assertArrayEquals(expectedPortrait720, resolutionsOf(prepareWithTier(code, "竖屏 · 720×1280")),
+                code + " 竖屏 720×1280 分辨率不对");
+            assertArrayEquals(expectedPortrait480, resolutionsOf(prepareWithTier(code, "竖屏 · 480×864")),
+                code + " 竖屏 480×864 分辨率不对");
         }
+    }
+
+    @Test
+    @DisplayName("竖屏档位：成片尺寸断言按档位取（1080×1920 / 720×1280 / 480×864）")
+    void expectedOutputSizeFollowsPortraitTier() {
+        assertArrayEquals(new int[] {1080, 1920}, preparer.expectedOutputSize("竖屏 · 1080×1920"));
+        assertArrayEquals(new int[] {720, 1280}, preparer.expectedOutputSize("竖屏 · 720×1280"));
+        assertArrayEquals(new int[] {480, 864}, preparer.expectedOutputSize("竖屏 · 480×864"));
+        // 横屏行为不变
+        assertArrayEquals(new int[] {1920, 1080}, preparer.expectedOutputSize("高清 · 1080P"));
+    }
+
+    @Test
+    @DisplayName("竖屏档位：时长矩阵与同档横屏一致，且越档时长仍被拒")
+    void portraitTierDurationMatrix() {
+        WorkflowVersion version = versionOf("wf-t2v-h3");
+        for (String[] ok : List.of(new String[] {"竖屏 · 1080×1920", "5 秒"},
+            new String[] {"竖屏 · 720×1280", "10 秒"}, new String[] {"竖屏 · 480×864", "20 秒"})) {
+            preparer.validateFields(VideoCapability.T2V, version,
+                new H3TemplatePreparer.H3Fields("提示词", null, null, null, ok[0], ok[1]));
+        }
+        // 1080P 竖屏只开放 5 秒（帧数最多、耗时最长）
+        H3TemplatePreparer.H3Fields tooLong = new H3TemplatePreparer.H3Fields(
+            "提示词", null, null, null, "竖屏 · 1080×1920", "10 秒");
+        assertThrows(VideoTaskException.class,
+            () -> preparer.validateFields(VideoCapability.T2V, version, tooLong),
+            "竖屏 1080×1920 不应开放 10 秒");
     }
 
     @Test

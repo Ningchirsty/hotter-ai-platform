@@ -50,6 +50,31 @@ public class VideoTierResolutions {
     public static final String TIER_480P = "标清 · 480P";
 
     /**
+     * 横屏 16:9。
+     */
+    public static final String RATIO_LANDSCAPE = "16:9 横屏";
+
+    /**
+     * 竖屏 9:16。
+     */
+    public static final String RATIO_PORTRAIT = "9:16 竖屏";
+
+    /**
+     * 竖屏 1080×1920。
+     */
+    public static final String TIER_PORTRAIT_1080P = "竖屏 · 1080×1920";
+
+    /**
+     * 竖屏 720×1280。
+     */
+    public static final String TIER_PORTRAIT_720P = "竖屏 · 720×1280";
+
+    /**
+     * 竖屏 480×864。
+     */
+    public static final String TIER_PORTRAIT_480P = "竖屏 · 480×864";
+
+    /**
      * 单个档位的分辨率。
      *
      * @param width      导演阶段宽度（16 的倍数）
@@ -64,6 +89,19 @@ public class VideoTierResolutions {
     private Map<String, Resolution> tiers = defaultTiers();
 
     /**
+     * 「画面比例 → 该比例下的档位（顺序即前端展示顺序）」。
+     *
+     * <p>为什么比例不做成独立字段、而是档位的分组：档位是这套模块里唯一的输出旋钮——
+     * 它已经被契约声明、被服务端校验、随任务落库、并在成片尺寸断言里被使用。
+     * 把竖屏做成"另一个比例的档位"，就不必改任务表、不必改提交流程，也不会出现
+     * 「任务落库时丢了比例、重试时按横屏生成」这类不一致。</p>
+     *
+     * <p>协议与校验因此完全不变：前端先让用户选比例，再把该比例下的档位名提交上来，
+     * 服务端仍旧只认 tier。</p>
+     */
+    private Map<String, java.util.List<String>> ratioTiers = defaultRatioTiers();
+
+    /**
      * 各档位允许的时长档位。
      *
      * <p>为什么按时长做约束、而不是给所有档位开放全部时长：H3 的帧数必须落在
@@ -74,29 +112,93 @@ public class VideoTierResolutions {
     private Map<String, java.util.List<String>> durations = defaultDurations();
 
     /**
-     * 默认档位表。
+     * 默认档位表（横屏 + 竖屏，键为档位名）。
      *
-     * <p>1080P 与原模板完全一致（1920×1088 → 1920×1080），保证已上线行为不变。</p>
+     * <p>1080P 横屏与原模板完全一致（1920×1088 → 1920×1080），保证已上线行为不变。</p>
+     *
+     * <p>竖屏是把宽高对调、并按 16 对齐取整：导演 1088×1920（16×68 / 16×120），
+     * 成片 1080×1920；720P 与 480P 同理。三条竖屏档位同时都是 32 的倍数
+     * （1088/32=34、1920/32=60、736/32=23、1280/32=40、480/32=15、864/32=27），
+     * 因此不触碰 H3 导演节点 widget step=32 的约束。像素总数与同档横屏相同，
+     * 显存与耗时不变，时长矩阵也照搬。</p>
      */
     public static Map<String, Resolution> defaultTiers() {
         Map<String, Resolution> map = new LinkedHashMap<>();
         map.put(TIER_1080P, new Resolution(1920, 1088, 1920, 1080, 1920));
         map.put(TIER_720P, new Resolution(1280, 736, 1280, 720, 1280));
         map.put(TIER_480P, new Resolution(864, 480, 864, 480, 864));
+        map.put(TIER_PORTRAIT_1080P, new Resolution(1088, 1920, 1080, 1920, 1920));
+        map.put(TIER_PORTRAIT_720P, new Resolution(736, 1280, 720, 1280, 1280));
+        map.put(TIER_PORTRAIT_480P, new Resolution(480, 864, 480, 864, 864));
+        return map;
+    }
+
+    /**
+     * 默认的「比例 → 档位」分组，供前端渲染"先选比例、再选清晰度"。
+     */
+    public static Map<String, java.util.List<String>> defaultRatioTiers() {
+        Map<String, java.util.List<String>> map = new LinkedHashMap<>();
+        map.put(RATIO_LANDSCAPE, java.util.List.of(TIER_1080P, TIER_720P, TIER_480P));
+        map.put(RATIO_PORTRAIT, java.util.List.of(TIER_PORTRAIT_1080P, TIER_PORTRAIT_720P, TIER_PORTRAIT_480P));
         return map;
     }
 
     /**
      * 默认时长矩阵，与前端 {@code optionsFor()} 的档位联动保持一致。
      *
-     * <p>1080P 只给 5 秒：该档位帧数最多、耗时最长，放开长时长会让单次任务长时间占用 GPU。</p>
+     * <p>1080P 只给 5 秒：该档位帧数最多、耗时最长，放开长时长会让单次任务长时间占用 GPU。
+     * 竖屏档位像素数与同档横屏相同，因此沿用同一矩阵。</p>
      */
     public static Map<String, java.util.List<String>> defaultDurations() {
         Map<String, java.util.List<String>> map = new LinkedHashMap<>();
         map.put(TIER_1080P, java.util.List.of("5 秒"));
         map.put(TIER_720P, java.util.List.of("5 秒", "10 秒"));
         map.put(TIER_480P, java.util.List.of("5 秒", "10 秒", "20 秒"));
+        map.put(TIER_PORTRAIT_1080P, java.util.List.of("5 秒"));
+        map.put(TIER_PORTRAIT_720P, java.util.List.of("5 秒", "10 秒"));
+        map.put(TIER_PORTRAIT_480P, java.util.List.of("5 秒", "10 秒", "20 秒"));
         return map;
+    }
+
+    /**
+     * 已配置的画面比例（顺序即前端展示顺序），例如 {@code [16:9 横屏, 9:16 竖屏]}。
+     */
+    public java.util.List<String> ratioNames() {
+        return ratioTiers == null ? java.util.List.of() : java.util.List.copyOf(ratioTiers.keySet());
+    }
+
+    /**
+     * 默认比例（第一个），用于前端初始选中。
+     */
+    public String defaultRatio() {
+        java.util.List<String> names = ratioNames();
+        return names.isEmpty() ? null : names.get(0);
+    }
+
+    /**
+     * 某比例下的档位列表；未知比例返回空列表。
+     */
+    public java.util.List<String> tiersOf(String ratio) {
+        if (ratioTiers == null || ratio == null) {
+            return java.util.List.of();
+        }
+        java.util.List<String> list = ratioTiers.get(ratio);
+        return list == null ? java.util.List.of() : java.util.List.copyOf(list);
+    }
+
+    /**
+     * 档位所属的比例；未知档位返回 null。
+     */
+    public String ratioOf(String tier) {
+        if (ratioTiers == null || tier == null) {
+            return null;
+        }
+        for (Map.Entry<String, java.util.List<String>> entry : ratioTiers.entrySet()) {
+            if (entry.getValue() != null && entry.getValue().contains(tier)) {
+                return entry.getKey();
+            }
+        }
+        return null;
     }
 
     /**
