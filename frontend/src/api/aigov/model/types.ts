@@ -20,6 +20,16 @@ export interface AigModelGovernanceVO extends BaseEntity {
   modelName?: string;
   /** snail-ai 模型类型，如 CHAT / EMBEDDING */
   modelType?: string;
+  /** 提供商ID（sai_model_provider.id） */
+  providerId?: string | number;
+  /** 提供商名称（后端左连 sai_model_provider 下发） */
+  providerName?: string;
+  /** 底层协议适配器标识，如 openai-compatible / local-rule */
+  adapterKey?: string;
+  /** 模型描述 */
+  description?: string;
+  /** 作用域：GLOBAL / PERSONAL */
+  scope?: string;
   /** 是否默认模型（1是 0否） */
   isDefault?: number | string;
   /** 是否启用（1启用 0停用） */
@@ -146,6 +156,27 @@ export interface AigModelTestResult {
   /** HEALTHY / UNHEALTHY */
   healthStatus?: string;
   checkedAt?: string;
+}
+
+/**
+ * 编辑模型主数据表单（PUT /aigov/model/base）
+ *
+ * 只改 sai_model_config 的主数据白名单列，**不含密钥**（密钥走 PUT /aigov/model/secret）。
+ * apiEndpoint 对无 aig:model:secret 权限的账号是脱敏的：这类账号应不下发该字段，
+ * 后端也会忽略它，避免把已有端点清空。
+ */
+export interface AigModelBaseForm {
+  modelId: string | number;
+  providerId?: string | number;
+  modelKey?: string;
+  modelName?: string;
+  modelType?: string;
+  adapterKey?: string;
+  apiEndpoint?: string;
+  description?: string;
+  scope?: string;
+  isDefault?: boolean;
+  isEnabled?: boolean;
 }
 
 /**

@@ -84,4 +84,20 @@ public interface AigConstants {
      */
     int AUDIT_SUMMARY_MAX = 500;
 
+    /**
+     * 模型标识的合法形态（新增与编辑共用，避免两处漂移）。
+     *
+     * <p>必须允许斜杠、冒号与开头的波浪号：主流聚合网关（如 OpenRouter）的模型 ID 是
+     * {@code vendor/model}，免费档带 {@code :free}，浮动别名以 {@code ~} 开头。
+     * 实测其公开目录 443 个 ID 全部含斜杠，收窄会整类挡掉。</p>
+     */
+    String MODEL_KEY_PATTERN = "^[A-Za-z0-9~][A-Za-z0-9._:/-]*$";
+
+    /**
+     * 模型标识校验失败时的提示（与 {@link #MODEL_KEY_PATTERN} 配套）。
+     */
+    String MODEL_KEY_PATTERN_MESSAGE =
+        "模型标识只能由字母、数字、点、下划线、中划线、冒号、斜杠组成，且以字母、数字或波浪号开头"
+            + "（如 glm-5.1、openrouter/free、deepseek/deepseek-r1:free）";
+
 }

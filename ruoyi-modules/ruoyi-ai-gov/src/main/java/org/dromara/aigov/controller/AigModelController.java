@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.groups.Default;
 import lombok.RequiredArgsConstructor;
 import org.dromara.aigov.constant.AigConstants;
+import org.dromara.aigov.domain.bo.AigModelBaseBo;
 import org.dromara.aigov.domain.bo.AigModelCreateBo;
 import org.dromara.aigov.domain.bo.AigModelGovernanceBo;
 import org.dromara.aigov.domain.bo.AigModelProviderBo;
@@ -190,6 +191,28 @@ public class AigModelController {
     @PutMapping("/secret")
     public R<Integer> updateModelSecret(@Validated({Default.class, EditGroup.class}) @RequestBody AigModelSecretBo bo) {
         return R.ok(modelGovernanceService.updateModelSecret(bo));
+    }
+
+    /**
+     * 编辑模型主数据（{@code sai_model_config} 的白名单列，<b>不含 api_key</b>）。
+     *
+     * <p><b>为什么需要它</b>：原先治理层只有「新增」一条写路径，登记错了既改不了
+     * （界面上「模型键」是只读展示）也删不掉（无 DELETE 入口），只能跳到 snail-ai 管理端。
+     * 实测就有人因旧校验不允许斜杠、把 {@code openrouter/free} 写成了 {@code orfree}，
+     * 之后无处可改。下架仍不经过治理层（{@code DELETE /aigov/model} 明确不提供）。</p>
+     *
+     * <p>密钥不在这里改：{@code apiKey} 有独立入口 {@code PUT /aigov/model/secret}，
+     * 权限要求也更严（{@code aig:model:secret}）。</p>
+     *
+     * @param bo 编辑参数
+     * @return 影响行数
+     */
+    @SaCheckPermission(AigConstants.PERM_MODEL_EDIT)
+    @Log(title = "AI模型主数据", businessType = BusinessType.UPDATE)
+    @RepeatSubmit
+    @PutMapping("/base")
+    public R<Integer> updateModelBase(@Validated({Default.class, EditGroup.class}) @RequestBody AigModelBaseBo bo) {
+        return R.ok(modelGovernanceService.updateModelBase(bo));
     }
 
     /**

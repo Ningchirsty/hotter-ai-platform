@@ -254,6 +254,27 @@ snail-ai 管理端配一半」的割裂。要点：
 - **已知边界**：`secret_ref` 与 `api_key` 是两套东西。`secret_ref` 只是引用登记，
   没有任何组件解析它；真正生效的是 `api_key`。
 
+**`updateModelBase(bo)` — 模型主数据编辑（阶段1 追加）**
+
+补上治理台内的编辑能力。**这条修订了原设计的写侧边界**：原约定「模型主数据只 INSERT，
+修改与下架都走 snail-ai」，但实测下来登记错了既改不了（界面上「模型键」是只读展示）
+也删不掉（无 DELETE 入口），只能跳到 snail-ai 管理端。下架仍不经过治理层
+（明确不提供 `DELETE /aigov/model`）。
+
+- 更新的是 `sai_model_config` 的**主数据白名单列**（provider_id / model_key / model_name /
+  model_type / adapter_key / api_endpoint / description / scope / is_default / is_enabled），
+  **绝不含 `api_key`**（那有独立入口与更严的权限）。
+- `model_key` 会作为请求体的 `model` **原样发给上游**，因此校验必须允许
+  `vendor/model`、`:free`、`~latest` 这类形态（规则集中在 `AigConstants.MODEL_KEY_PATTERN`）。
+  收窄过一次的教训：旧规则不允许斜杠，导致 OpenRouter 公开目录的 443 个 ID **一个都登记不了**，
+  使用者只能手改成别的名字，最后表现为上游报「xx is not a valid model ID」。
+- `model_key` 唯一性校验**必须排除自身**，否则「不改标识直接保存」会被自己判重。
+- `api_endpoint` 是**三态**，不能只看 `isBlank`：
+  · 无 `aig:model:secret` → 该列对这类账号脱敏（读不到），一律忽略，避免误清空；
+  · 有权限但请求未带该字段 → 视为「本次不改」；
+  · 有权限且带了值 → 按值写，空串视为「显式清空」。
+- 权限 `aig:model:edit`；控制器加 `@Log(businessType=UPDATE)`。
+
 ---
 
 ## 6. Controller（`org.dromara.aigov.controller`）
@@ -261,7 +282,7 @@ snail-ai 管理端配一半」的割裂。要点：
 | 类 | 路径 | 主要接口 | 权限 |
 |---|---|---|---|
 | `AigCapabilityController` | `/aigov/capability` | `GET /list`、`GET /{id}`、`POST`、`PUT`、`DELETE /{id}` | 对应 `aig:capability:*` |
-| `AigModelController` | `/aigov/model` | `GET /list`、`GET /{modelId}`、`POST`（新增模型，可选明文 `apiKey`）、`PUT /governance`、**`PUT /secret`**（写入/清除模型密钥）、`POST /{modelId}/test`（连通性测试）、`GET /providers`、`GET /providers/all`、`POST /provider`、`PUT /provider` | `aig:model:list/query/edit`；新增与供应商走 `aig:model:add`；**密钥走 `aig:model:secret`** |
+| `AigModelController` | `/aigov/model` | `GET /list`、`GET /{modelId}`、`POST`（新增模型，可选明文 `apiKey`）、**`PUT /base`**（编辑模型主数据，不含密钥）、`PUT /governance`、**`PUT /secret`**（写入/清除模型密钥）、`POST /{modelId}/test`（连通性测试）、`GET /providers`、`GET /providers/all`、`POST /provider`、`PUT /provider` | `aig:model:list/query/edit`；新增与供应商走 `aig:model:add`；**密钥走 `aig:model:secret`** |
 | `AigRoutePolicyController` | `/aigov/route` | `GET /list`、`POST`、`PUT`、`DELETE /{id}` | `aig:route:*` |
 | `AigModelBindingController` | `/aigov/binding` | `GET /list`、`POST`、`DELETE /{id}` | `aig:route:*`（绑定属于路由配置） |
 | `AigInvokeController` | `/aigov/invoke` | `POST /{capabilityCode}`、`POST /dryRun` | `aig:capability:query` |

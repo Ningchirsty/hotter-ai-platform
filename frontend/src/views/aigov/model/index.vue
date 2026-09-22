@@ -196,7 +196,7 @@
             <span>{{ scope.row.validFrom || '-' }} ~ {{ scope.row.validTo || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="190" align="center" class-name="small-padding fixed-width">
+        <el-table-column label="操作" width="230" align="center" class-name="small-padding fixed-width">
           <template #default="scope">
             <el-tooltip content="测试连接" placement="top">
               <el-button
@@ -215,6 +215,15 @@
                 type="primary"
                 icon="Edit"
                 @click="handleGovernance(scope.row)"
+              ></el-button>
+            </el-tooltip>
+            <el-tooltip content="编辑模型主数据" placement="top">
+              <el-button
+                v-hasPermi="['aig:model:edit']"
+                link
+                type="primary"
+                icon="Setting"
+                @click="handleEditBase(scope.row)"
               ></el-button>
             </el-tooltip>
             <el-tooltip content="配置模型密钥" placement="top">
@@ -548,6 +557,96 @@
       </template>
     </el-dialog>
 
+    <!-- 编辑模型主数据：登记错了能改回来（原先界面上「模型键」是只读展示，只能跳 snail-ai 管理端） -->
+    <el-dialog v-model="baseDialog.visible" title="编辑模型主数据" width="720px" append-to-body>
+      <el-alert
+        class="dialog-alert"
+        type="info"
+        :closable="false"
+        show-icon
+        title="这里改的是模型主数据本身（sai_model_config）。密钥不在此处修改，请用「配置模型密钥」；下架仍走 snail-ai。"
+      />
+      <el-form ref="baseFormRef" :model="baseForm" :rules="baseRules" label-width="110px">
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="供应商" prop="providerId">
+              <el-select v-model="baseForm.providerId" placeholder="请选择供应商" style="width: 100%">
+                <el-option
+                  v-for="item in providerOptions"
+                  :key="item.providerId"
+                  :label="item.providerName"
+                  :value="item.providerId!"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="模型类型" prop="modelType">
+              <el-select
+                v-model="baseForm.modelType"
+                placeholder="如 CHAT / EMBEDDING"
+                filterable
+                allow-create
+                default-first-option
+                style="width: 100%"
+              >
+                <el-option v-for="t in modelTypeOptions" :key="t" :label="t" :value="t" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-form-item label="模型标识" prop="modelKey">
+          <el-input v-model="baseForm.modelKey" placeholder="上游的模型 ID，如 glm-4.5、openrouter/free" />
+          <div class="form-tip">
+            会作为请求体的 model 原样发给上游，必须与上游模型目录逐字一致（区分大小写）。
+          </div>
+        </el-form-item>
+        <el-form-item label="模型名称" prop="modelName">
+          <el-input v-model="baseForm.modelName" placeholder="展示用名称" />
+        </el-form-item>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="适配器标识" prop="adapterKey">
+              <el-input v-model="baseForm.adapterKey" placeholder="如 openai-compatible、local-rule" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="作用域" prop="scope">
+              <el-select v-model="baseForm.scope" style="width: 100%">
+                <el-option label="全局 GLOBAL" value="GLOBAL" />
+                <el-option label="本地 LOCAL" value="LOCAL" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <!-- 接口地址：无 aig:model:secret 时读不到该列，故不渲染也不下发，避免把已配端点清空 -->
+        <el-form-item v-if="checkPermi(['aig:model:secret'])" label="接口地址" prop="apiEndpoint">
+          <el-input v-model="baseForm.apiEndpoint" placeholder="本地部署可留空" />
+        </el-form-item>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="是否默认">
+              <el-switch v-model="baseForm.isDefault" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="是否启用">
+              <el-switch v-model="baseForm.isEnabled" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-form-item label="说明" prop="description">
+          <el-input v-model="baseForm.description" type="textarea" :rows="2" placeholder="模型用途与来源说明" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button type="primary" :loading="baseSubmitting" @click="submitBase">确 定</el-button>
+          <el-button @click="baseDialog.visible = false">取 消</el-button>
+        </div>
+      </template>
+    </el-dialog>
+
     <!-- 模型密钥：明文只提交一次，后端加密落库；任何界面都不回显密钥 -->
     <el-dialog v-model="secretDialog.visible" title="配置模型密钥" width="640px" append-to-body>
       <el-alert
@@ -711,6 +810,7 @@
 
 <script setup lang="ts">
 import type {
+  AigModelBaseForm,
   AigModelCreateForm,
   AigModelGovernanceForm,
   AigModelGovernanceVO,
@@ -728,6 +828,7 @@ import {
   listModel,
   listModelProviders,
   testModelConnection,
+  updateModelBase,
   updateModelGovernance,
   updateModelProvider,
   updateModelSecret
@@ -971,6 +1072,78 @@ const submitCreate = () => {
       await getList();
     } finally {
       createSubmitting.value = false;
+    }
+  });
+};
+
+// ---------------------------------------------------------------- 编辑模型主数据
+
+/** 编辑主数据弹窗 */
+const baseDialog = ref({ visible: false });
+const baseFormRef = ref<ElFormInstance>();
+const baseSubmitting = ref(false);
+const baseForm = ref<AigModelBaseForm>({ modelId: '' });
+
+const baseRules = {
+  providerId: [{ required: true, message: '请选择供应商', trigger: 'change' }],
+  modelKey: [
+    { required: true, message: '模型标识不能为空', trigger: 'blur' },
+    {
+      // 与后端 AigConstants.MODEL_KEY_PATTERN 保持一致
+      pattern: /^[A-Za-z0-9~][A-Za-z0-9._:/-]*$/,
+      message: '只能由字母、数字、点、下划线、中划线、冒号、斜杠组成，且以字母、数字或波浪号开头',
+      trigger: 'blur'
+    }
+  ],
+  modelName: [{ required: true, message: '模型名称不能为空', trigger: 'blur' }],
+  modelType: [{ required: true, message: '模型类型不能为空', trigger: 'change' }]
+};
+
+/** 打开编辑弹窗，用列表行数据回填（列表已含主数据字段） */
+const handleEditBase = async (row: AigModelGovernanceVO) => {
+  baseForm.value = {
+    modelId: row.modelId!,
+    providerId: row.providerId,
+    modelKey: row.modelKey ?? '',
+    modelName: row.modelName ?? '',
+    modelType: row.modelType ?? 'CHAT',
+    adapterKey: row.adapterKey ?? '',
+    apiEndpoint: row.apiEndpoint ?? '',
+    description: row.description ?? '',
+    scope: row.scope ?? 'GLOBAL',
+    isDefault: isOn(row.isDefault),
+    isEnabled: isOn(row.isEnabled)
+  };
+  baseDialog.value.visible = true;
+  try {
+    const res = await listModelProviders();
+    providerOptions.value = res.data || [];
+  } catch {
+    // 拦截器已提示；这里降级为空选项，避免弹窗整体不可用
+    providerOptions.value = [];
+  }
+};
+
+/** 提交主数据编辑 */
+const submitBase = () => {
+  baseFormRef.value?.validate(async (valid: boolean) => {
+    if (!valid) {
+      return;
+    }
+    const payload: AigModelBaseForm = { ...baseForm.value };
+    // 无 aig:model:secret 权限时不下发接口地址：该列对这类账号是脱敏的（读不到），
+    // 照常下发就会把已配端点清空。后端也会忽略它，属于双保险。
+    if (!checkPermi(['aig:model:secret'])) {
+      delete payload.apiEndpoint;
+    }
+    baseSubmitting.value = true;
+    try {
+      await updateModelBase(payload);
+      modal.msgSuccess('保存成功');
+      baseDialog.value.visible = false;
+      await getList();
+    } finally {
+      baseSubmitting.value = false;
     }
   });
 };

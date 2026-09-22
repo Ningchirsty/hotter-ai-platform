@@ -2,6 +2,7 @@ package org.dromara.aigov.mapper;
 
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.dromara.aigov.domain.bo.AigModelBaseBo;
 import org.dromara.aigov.domain.bo.AigModelCreateBo;
 import org.dromara.aigov.domain.bo.AigModelProviderBo;
 import org.dromara.aigov.domain.vo.AigModelProviderVo;
@@ -24,8 +25,8 @@ import java.util.List;
  *         写入值必须是<b>密文</b>——由 {@code AigModelSecretCipher} 按 snail-ai 的
  *         SM4 口径产出。明文一旦落库，snail-ai 运行时解密失败，模型会静默不可用；</li>
  *     <li>本接口只做 INSERT、供应商的有限 UPDATE（名称/说明/图标/启停），
- *         以及 {@code api_key} 的单列 UPDATE；模型主数据的其它列<b>不提供 UPDATE / DELETE</b>，
- *         修改与下架走 snail-ai 或治理属性；</li>
+ *         以及模型主数据的白名单 UPDATE（{@link #updateModelBase}，<b>不含 api_key</b>）
+ *         与 {@code api_key} 的单列 UPDATE；<b>不提供 DELETE</b>——下架仍走 snail-ai；</li>
  *     <li>读 {@code api_key} 的只有 {@link #selectTestTarget(Long)}：连通性测试必须拿到
  *         平台侧密钥才能发请求，结果只进 {@code AigModelTestTargetVo}（服务端内部类型），
  *         绝不出现在任何对外响应或日志里。至于「是否已配置密钥」，由
@@ -49,6 +50,28 @@ public interface AigModelConfigMapper {
      * @return 影响行数
      */
     int insertModel(AigModelCreateBo bo);
+
+    /**
+     * 编辑模型主数据（白名单列；<b>不含 {@code api_key}</b>）。
+     *
+     * <p>白名单列会被<b>整体覆写</b>（含写入 null），因此可以把说明/端点清空；
+     * 唯一的例外是 {@code api_endpoint}——它以 {@code null} 表示「本次不改」，
+     * 由 Service 按权限决定是否填充（无 {@code aig:model:secret} 的账号读不到该列，
+     * 若照常参与更新就会把它误清空）。</p>
+     *
+     * @param bo 编辑参数
+     * @return 影响行数
+     */
+    int updateModelBase(AigModelBaseBo bo);
+
+    /**
+     * 按模型标识统计（唯一性校验，可排除自身）。
+     *
+     * @param modelKey  模型标识
+     * @param excludeId 需要排除的模型ID（编辑时排除自身），可为 null
+     * @return 已存在的条数
+     */
+    int countByModelKeyExcluding(@Param("modelKey") String modelKey, @Param("excludeId") Long excludeId);
 
     /**
      * 写入/清除模型密钥（<b>只更新 {@code api_key} 一列</b>）。
