@@ -83,9 +83,21 @@ public interface SystemConstants {
     Long DEFAULT_DEPT_ID = 1761000000000000100L;
 
     /**
-     * 排除敏感属性字段
+     * 排除敏感属性字段。
+     *
+     * <p>这些字段名会同时作用于「请求参数日志」（{@code PlusWebInvokeTimeInterceptor} 会原样打印
+     * JSON 请求体）与「操作日志」（{@code LogAspect}）。凡是凭据类字段都必须登记在这里，
+     * 否则会以明文落进日志文件与操作日志表。</p>
+     *
+     * <p>补 {@code apiKey}/{@code accessKey}/{@code secretKey} 的原因：AI 治理台「录入模型密钥」接口
+     * （{@code PUT /aigov/model/secret}）的请求体形如 {@code {"modelId":7,"apiKey":"sk-..."}}，
+     * 对象存储配置接口同理。这些接口虽然在自己的 {@code @Log(excludeParamNames=...)} 里排除了字段，
+     * 但全局的请求参数日志不走那条注解——实测确实把明文密钥写进了 sys-console.log。</p>
      */
-    String[] EXCLUDE_PROPERTIES = {"password", "oldPassword", "newPassword", "confirmPassword"};
+    String[] EXCLUDE_PROPERTIES = {
+        "password", "oldPassword", "newPassword", "confirmPassword",
+        "apiKey", "apiSecret", "accessKey", "accessKeySecret", "secretKey", "privateKey"
+    };
 
 
 }
