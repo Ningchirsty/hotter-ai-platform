@@ -178,7 +178,7 @@
               v-model="values.desc"
               type="textarea"
               :rows="4"
-              maxlength="200"
+              maxlength="1000"
               show-word-limit
               :placeholder="currentModule.placeholder"
             />

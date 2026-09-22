@@ -492,6 +492,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus';
 import {
   ArrowRight,
+  Brush,
   Close,
   Delete,
   Document,
@@ -548,12 +549,19 @@ const studioViews: Array<{ key: StudioView; label: string; icon: unknown }> = [
   { key: 'assets', label: '素材库', icon: FolderOpened }
 ];
 
-/** 能力卡图标：与视频页同一套视觉语言（能力 → 图标一一对应）。 */
+/**
+ * 能力卡图标：与视频页同一套视觉语言（能力 → 图标一一对应）。
+ *
+ * <p>这里用穷尽映射而不是「有就取、没有就兜底」：能力编码是后端契约的一部分，
+ * 新增能力（例如 2026-09-22 的 WHITEBG 白底图）时希望类型检查直接报出来，
+ * 而不是页面悄悄显示一个兜底图标。</p>
+ */
 const moduleIcons: Record<ImageCapabilityCode, Component> = {
   T2I: Picture,
   I2I: PictureFilled,
   EDIT: MagicStick,
-  BGREMOVE: Scissor
+  BGREMOVE: Scissor,
+  WHITEBG: Brush
 };
 
 function moduleIcon(code: string): Component {
@@ -1264,7 +1272,9 @@ button {
 
 .capability-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  /* auto-fit 而不是写死列数：能力是后端契约的一部分，会随交付增加
+     （2026-09-22 加了白底图 WHITEBG 后写死 4 列就会剩一张孤零零的卡片） */
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
   gap: 8px;
 }
 .capability {

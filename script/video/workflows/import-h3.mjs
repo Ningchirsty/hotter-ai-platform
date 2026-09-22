@@ -100,7 +100,7 @@ async function importGraphs(files) {
   imageCapability.name = '图生视频';
   imageCapability.fields = [
     { field: 'img', required: true, type: 'file', accept: ['jpg', 'png', 'webp'] },
-    { field: 'desc', required: true, type: 'string', maxLength: 200 },
+    { field: 'desc', required: true, type: 'string', maxLength: 1000 },
     { field: 'tier', required: true, type: 'enum', options: ['高清 · 1080P', '流畅 · 720P', '标清 · 480P'] },
     { field: 'dur', required: true, type: 'enum', options: ['5 秒', '10 秒', '20 秒'] }
   ];

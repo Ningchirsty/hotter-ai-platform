@@ -31,7 +31,7 @@
           "field": "desc",
           "required": true,
           "type": "string",
-          "maxLength": 200
+          "maxLength": 1000
         },
         {
           "field": "tier",
@@ -453,7 +453,7 @@
           "field": "desc",
           "required": true,
           "type": "string",
-          "maxLength": 200
+          "maxLength": 1000
         },
         {
           "field": "tier",
@@ -571,7 +571,7 @@
           "field": "desc",
           "required": true,
           "type": "string",
-          "maxLength": 200
+          "maxLength": 1000
         },
         {
           "field": "tier",
@@ -950,7 +950,7 @@
           "field": "desc",
           "required": true,
           "type": "string",
-          "maxLength": 200
+          "maxLength": 1000
         },
         {
           "field": "dur",
@@ -1105,7 +1105,7 @@
           "field": "desc",
           "required": false,
           "type": "string",
-          "maxLength": 200
+          "maxLength": 1000
         },
         {
           "field": "dur",
@@ -1321,7 +1321,7 @@
           "field": "desc",
           "required": false,
           "type": "string",
-          "maxLength": 200
+          "maxLength": 1000
         }
       ],
       "workflows": [
