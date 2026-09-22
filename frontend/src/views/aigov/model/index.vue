@@ -415,7 +415,7 @@
         <el-row :gutter="16">
           <el-col :span="12">
             <el-form-item label="模型标识" prop="modelKey">
-              <el-input v-model="createForm.modelKey" placeholder="全局唯一，如 qwen-plus" />
+              <el-input v-model="createForm.modelKey" placeholder="上游的模型 ID，如 glm-4.5、openrouter/free" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -921,8 +921,10 @@ const createRules = {
   modelKey: [
     { required: true, message: '模型标识不能为空', trigger: 'blur' },
     {
-      pattern: /^[A-Za-z0-9][A-Za-z0-9._-]*$/,
-      message: '只能由字母、数字、点、下划线、中划线组成，且以字母或数字开头',
+      // 与后端 AigModelCreateBo 的 @Pattern 保持一致：必须允许 斜杠/冒号/开头的波浪号，
+      // 否则 OpenRouter 这类 vendor/model（含 :free 后缀、~latest 别名）无法登记
+      pattern: /^[A-Za-z0-9~][A-Za-z0-9._:/-]*$/,
+      message: '只能由字母、数字、点、下划线、中划线、冒号、斜杠组成，且以字母、数字或波浪号开头',
       trigger: 'blur'
     }
   ],
