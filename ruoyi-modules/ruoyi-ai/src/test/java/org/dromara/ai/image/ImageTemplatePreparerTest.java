@@ -9,9 +9,11 @@ import org.dromara.ai.image.exception.ImageTaskException;
 import org.dromara.ai.image.service.ImageTemplatePreparer;
 import org.dromara.ai.image.service.ImageTemplatePreparer.ImageFields;
 import org.dromara.ai.image.service.ImageWorkflowContractRegistry;
+import org.dromara.ai.image.support.ImageContractTestFixture;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -32,6 +34,9 @@ class ImageTemplatePreparerTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final Path ROOT = Path.of("..", "..", "script");
+
+    @TempDir
+    Path draftRoot;
 
     private static ImageWorkflowContractRegistry registry;
     private static ImageTemplatePreparer preparer;
@@ -55,11 +60,14 @@ class ImageTemplatePreparerTest {
 
     @Test
     @DisplayName("DRAFT 工作流不可提交（正式与联调都不行）")
-    void draftRejected() {
+    void draftRejected() throws Exception {
+        // 不依赖"仓库契约恰好还是 DRAFT"：契约一旦发布，直接读仓库契约的这条断言就会失效。
+        // 自造一份 DRAFT 契约，让断言与仓库的发布状态解耦。
+        ImageWorkflowContractRegistry draft = ImageContractTestFixture.registry(draftRoot, "DRAFT");
         ImageTaskException e = assertThrows(ImageTaskException.class,
-            () -> registry.require("wf-t2i-qwen21", false));
+            () -> draft.require("wf-t2i-qwen21", false));
         assertTrue(e.getMessage().contains("尚未通过实机验收"), e.getMessage());
-        assertThrows(ImageTaskException.class, () -> registry.require("wf-nope", false));
+        assertThrows(ImageTaskException.class, () -> draft.require("wf-nope", false));
     }
 
     @Test

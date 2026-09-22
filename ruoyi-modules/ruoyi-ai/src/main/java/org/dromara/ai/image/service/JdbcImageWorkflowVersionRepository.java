@@ -56,6 +56,14 @@ public class JdbcImageWorkflowVersionRepository implements ImageWorkflowVersionR
             update_time = NOW()
         """;
 
+    /**
+     * 审核状态查询语句（包级可见，便于测试断言列与语义一致）。
+     */
+    static final String REVIEW_STATE_SQL = """
+        SELECT workflow_code, version, checksum, status
+          FROM image_workflow_version
+        """;
+
     private final JdbcTemplate jdbc;
 
     public JdbcImageWorkflowVersionRepository(JdbcTemplate jdbc) {
@@ -103,5 +111,14 @@ public class JdbcImageWorkflowVersionRepository implements ImageWorkflowVersionR
     public long count() {
         Long count = jdbc.queryForObject("SELECT COUNT(*) FROM image_workflow_version", Long.class);
         return count == null ? 0 : count;
+    }
+
+    @Override
+    public List<WorkflowReviewState> findReviewStates() {
+        return jdbc.query(REVIEW_STATE_SQL, (rs, rowNum) -> new WorkflowReviewState(
+            rs.getString("workflow_code"),
+            rs.getString("version"),
+            rs.getString("checksum"),
+            rs.getString("status")));
     }
 }

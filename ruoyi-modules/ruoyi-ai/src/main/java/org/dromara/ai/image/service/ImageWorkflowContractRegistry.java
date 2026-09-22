@@ -239,15 +239,79 @@ public class ImageWorkflowContractRegistry {
         if (current == null || !templates.containsKey(workflowCode)) {
             return false;
         }
-        ImageWorkflowVersion promoted = new ImageWorkflowVersion(
+        byCode.put(workflowCode, withStatus(current, "TESTING"));
+        log.warn("工作流 {} 已标记为 TESTING（仅限隔离联调环境）", workflowCode);
+        return true;
+    }
+
+    /**
+     * 按<b>库里的审核结果</b>提升内存绑定的发布状态。
+     *
+     * <p>为什么需要它（真实事故）：契约文件被打进后端镜像，而"补丁式重建镜像"
+     * （{@code FROM 旧镜像 + COPY 新 jar}）会把旧基座里的契约一起带回来。
+     * 一次这样的重建把已验收发布的图像工作流静默退回 DRAFT，页面立刻变成"暂不可提交"。
+     * 把发布状态的权威放进 {@code image_workflow_version} 后，换任何镜像都不会改变审核结论。</p>
+     *
+     * <p>四条守住边界的规则，避免"提权"变成后门：</p>
+     * <ol>
+     *   <li><b>只提不降</b>：库里是 PUBLISHED 才提升；契约里已 RETIRED 的不覆盖（撤回优先）；</li>
+     *   <li><b>版本必须一致</b>：新版本不继承旧版本的审核结论，必须重新验收；</li>
+     *   <li><b>checksum 必须一致</b>：模板被原地改动过（违反"固定参数变化必须递增 version"）不继承，并告警；</li>
+     *   <li><b>模板必须已加载</b>：模板没通过校验的绑定提升了也没用（提交时仍会被拒）。</li>
+     * </ol>
+     *
+     * @param states 库中的审核状态（通常来自 {@code image_workflow_version} 全表）
+     * @return 实际提升的条数
+     */
+    public int applyReviewStates(Collection<WorkflowReviewState> states) {
+        if (states == null || states.isEmpty()) {
+            return 0;
+        }
+        int promoted = 0;
+        for (WorkflowReviewState state : states) {
+            if (state == null || state.workflowCode() == null || !"PUBLISHED".equalsIgnoreCase(state.status())) {
+                continue;
+            }
+            ImageWorkflowVersion current = byCode.get(state.workflowCode());
+            if (current == null || current.isPublished()) {
+                continue;
+            }
+            if ("RETIRED".equalsIgnoreCase(current.status())) {
+                log.warn("工作流 {} 契约中已是 RETIRED，忽略库中的 PUBLISHED（撤回优先）", state.workflowCode());
+                continue;
+            }
+            if (!current.version().equals(state.version())) {
+                log.info("工作流 {} 库中审核的是 {}，当前契约版本 {} —— 新版本需重新验收，不继承发布状态",
+                    state.workflowCode(), state.version(), current.version());
+                continue;
+            }
+            if (state.checksum() == null || !state.checksum().equalsIgnoreCase(current.checksum())) {
+                log.warn("工作流 {} 模板字节与已审核版本不一致（checksum 变化），不继承发布状态 —— "
+                    + "固定后台参数变化必须递增 version，禁止原地改 PUBLISHED 版本", state.workflowCode());
+                continue;
+            }
+            if (!templates.containsKey(state.workflowCode())) {
+                log.warn("工作流 {} 模板未加载，跳过发布状态提升", state.workflowCode());
+                continue;
+            }
+            byCode.put(state.workflowCode(), withStatus(current, "PUBLISHED"));
+            promoted++;
+            log.info("工作流 {} 按库中审核结果提升为 PUBLISHED（version={}）", state.workflowCode(), current.version());
+        }
+        if (promoted > 0) {
+            log.info("图像工作流按库中审核结果提升 {} 条为 PUBLISHED（发布状态权威在库，不在镜像）", promoted);
+        }
+        return promoted;
+    }
+
+    /** record 不可变：复制一份并替换状态。 */
+    private static ImageWorkflowVersion withStatus(ImageWorkflowVersion current, String status) {
+        return new ImageWorkflowVersion(
             current.workflowCode(), current.capabilityCode(), current.modelCode(), current.version(),
-            "TESTING", current.apiJsonFile(), current.checksum(), current.capabilityFields(), current.mapping(),
+            status, current.apiJsonFile(), current.checksum(), current.capabilityFields(), current.mapping(),
             current.outputNodeId(),
             current.outputField(), current.outputFormat(), current.outputMime(), current.sizePresets(),
             current.defaultSize(), current.supportedStrengths(), current.defaultStrength(), current.requireAlpha(),
             current.maxPixels(), current.maxSizeMb(), current.timeoutSeconds());
-        byCode.put(workflowCode, promoted);
-        log.warn("工作流 {} 已标记为 TESTING（仅限隔离联调环境）", workflowCode);
-        return true;
     }
 }

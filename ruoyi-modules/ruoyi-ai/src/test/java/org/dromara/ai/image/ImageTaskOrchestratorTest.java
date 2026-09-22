@@ -9,6 +9,7 @@ import org.dromara.ai.image.service.ImageTaskOrchestrator;
 import org.dromara.ai.image.service.ImageTaskRepository;
 import org.dromara.ai.image.service.ImageTemplatePreparer;
 import org.dromara.ai.image.service.ImageWorkflowContractRegistry;
+import org.dromara.ai.image.support.ImageContractTestFixture;
 import org.dromara.ai.video.comfy.ComfyClient;
 import org.dromara.ai.video.comfy.ComfyOutput;
 import org.dromara.ai.video.service.AssetStorage;
@@ -148,9 +149,18 @@ class ImageTaskOrchestratorTest {
 
     @Test
     @DisplayName("DRAFT 工作流拒绝提交（即使其它条件都满足）")
-    void draftRejected() {
+    void draftRejected() throws Exception {
+        // 这条断言必须与"仓库契约发布到哪一步"解耦：契约提升为 PUBLISHED 后，
+        // 用真实契约构造的 DRAFT 场景就不存在了（曾经因此变红，并且真的去等 ComfyUI 白等 300 秒）。
+        ImageWorkflowContractRegistry draftRegistry =
+            ImageContractTestFixture.registry(tempDir.resolve("draft-contract"), "DRAFT");
+        ImageTaskOrchestrator draftOrchestrator = new ImageTaskOrchestrator(
+            draftRegistry, new ImageTemplatePreparer(MAPPER), repository,
+            new ImageAssetStore(storage), new ImageAssetProbe(), client,
+            () -> 900001L, Duration.ofSeconds(300), Duration.ofMillis(20), false);
+
         ImageTaskException e = assertThrows(ImageTaskException.class,
-            () -> orchestrator.execute(context("wf-t2i-qwen21", "T2I", List.of())));
+            () -> draftOrchestrator.execute(context("wf-t2i-qwen21", "T2I", List.of())));
         assertTrue(e.getMessage().contains("尚未通过实机验收"), e.getMessage());
         assertEquals("FAILED", repository.lastStatus);
         assertEquals(0, repository.submitted);
