@@ -62,6 +62,61 @@ public class ContentProductBo implements Serializable {
     private String category;
 
     /**
+     * 品牌（如 趣往）
+     */
+    @Size(max = 64, message = "品牌长度不能超过 64", groups = {AddGroup.class, EditGroup.class})
+    private String brand;
+
+    /**
+     * 二级分类（如 解构花园-静态花）
+     */
+    @Size(max = 64, message = "二级分类长度不能超过 64", groups = {AddGroup.class, EditGroup.class})
+    private String subCategory;
+
+    /**
+     * 产品图引用（对象存储键或 URL）
+     */
+    @Size(max = 500, message = "产品图引用长度不能超过 500", groups = {AddGroup.class, EditGroup.class})
+    private String productImage;
+
+    /**
+     * 主推说明
+     */
+    @Size(max = 500, message = "主推说明长度不能超过 500", groups = {AddGroup.class, EditGroup.class})
+    private String mainPush;
+
+    /**
+     * 产品经理
+     */
+    @Size(max = 64, message = "产品经理长度不能超过 64", groups = {AddGroup.class, EditGroup.class})
+    private String productManager;
+
+    /**
+     * 尺寸规格
+     */
+    @Size(max = 255, message = "尺寸规格长度不能超过 255", groups = {AddGroup.class, EditGroup.class})
+    private String sizeSpec;
+
+    /**
+     * 价格（元）
+     */
+    @jakarta.validation.constraints.DecimalMin(value = "0", message = "价格不能为负数",
+        groups = {AddGroup.class, EditGroup.class})
+    private java.math.BigDecimal price;
+
+    /**
+     * 结构/工艺
+     */
+    @Size(max = 255, message = "结构/工艺长度不能超过 255", groups = {AddGroup.class, EditGroup.class})
+    private String craft;
+
+    /**
+     * 设计灵感
+     */
+    @Size(max = 1000, message = "设计灵感长度不能超过 1000", groups = {AddGroup.class, EditGroup.class})
+    private String designInspiration;
+
+    /**
      * 产品版本
      */
     @Size(max = 32, message = "产品版本长度不能超过 32", groups = {AddGroup.class, EditGroup.class})

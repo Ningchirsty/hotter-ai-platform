@@ -53,6 +53,51 @@ public class CpProductVo implements Serializable {
     private String category;
 
     /**
+     * 品牌（如 趣往）
+     */
+    private String brand;
+
+    /**
+     * 二级分类（如 解构花园-静态花）
+     */
+    private String subCategory;
+
+    /**
+     * 产品图引用（对象存储键或 URL）
+     */
+    private String productImage;
+
+    /**
+     * 主推说明
+     */
+    private String mainPush;
+
+    /**
+     * 产品经理
+     */
+    private String productManager;
+
+    /**
+     * 尺寸规格
+     */
+    private String sizeSpec;
+
+    /**
+     * 价格（元）
+     */
+    private java.math.BigDecimal price;
+
+    /**
+     * 结构/工艺
+     */
+    private String craft;
+
+    /**
+     * 设计灵感
+     */
+    private String designInspiration;
+
+    /**
      * 产品版本
      */
     private String version;

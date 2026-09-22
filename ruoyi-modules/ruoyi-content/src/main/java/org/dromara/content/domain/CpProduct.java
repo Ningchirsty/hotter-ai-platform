@@ -58,6 +58,51 @@ public class CpProduct extends BaseEntity implements Serializable {
     private String category;
 
     /**
+     * 品牌（如 趣往）
+     */
+    private String brand;
+
+    /**
+     * 二级分类（如 解构花园-静态花）
+     */
+    private String subCategory;
+
+    /**
+     * 产品图引用（对象存储键或 URL；业务库不存文件本体）
+     */
+    private String productImage;
+
+    /**
+     * 主推说明（原表该列常填售卖形态/口径说明，故为文本而非布尔）
+     */
+    private String mainPush;
+
+    /**
+     * 产品经理
+     */
+    private String productManager;
+
+    /**
+     * 尺寸规格（如 257.60*149.30；多形态用换行分隔）
+     */
+    private String sizeSpec;
+
+    /**
+     * 价格（元）
+     */
+    private java.math.BigDecimal price;
+
+    /**
+     * 结构/工艺（如 UV+喷漆、喷漆+镀铬）
+     */
+    private String craft;
+
+    /**
+     * 设计灵感
+     */
+    private String designInspiration;
+
+    /**
      * 产品版本（用于影响面追溯）
      */
     private String version;
