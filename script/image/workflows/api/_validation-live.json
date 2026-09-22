@@ -8,7 +8,9 @@
       1024
     ],
     "seconds": 4.0,
-    "prompt_id": "66aaffe0-e2ef-4499-9de3-251e8f2352bb"
+    "prompt_id": "66aaffe0-e2ef-4499-9de3-251e8f2352bb",
+    "templateVersion": "v0.1.0-draft",
+    "note": "契约未改动，保留首轮真机记录"
   },
   "wf-i2i-qwen21": {
     "status": "success",
@@ -19,28 +21,47 @@
       1152
     ],
     "seconds": 4.0,
-    "prompt_id": "4693ab7c-7b14-41d6-8890-2d62d86e5385"
+    "prompt_id": "4693ab7c-7b14-41d6-8890-2d62d86e5385",
+    "templateVersion": "v0.1.0-draft",
+    "note": "契约未改动，保留首轮真机记录"
   },
   "wf-edit-qwen21": {
     "status": "success",
     "error": "",
-    "file": "image/QwenImage21_edit_00003_.png",
+    "file": "image/QwenImage21_edit_00009_.png",
     "size": [
-      896,
-      1152
+      1152,
+      2048
     ],
-    "seconds": 24.0,
-    "prompt_id": "8adfee74-1135-481b-89ed-c3dca62a84cc"
+    "seconds": 39.3,
+    "prompt_id": "7b3d4a8c-5c8c-438e-b055-6e63be239dbe",
+    "templateVersion": "v0.1.1",
+    "note": "2026-09-22 重测：模板改为 resolution=1536 后，输入 1276×2270 的图输出 1152×2048（原 1024 档只有 768×1376）；背景换纯白指令实测生效，产品保持不变"
   },
   "wf-bgremove-qwen21": {
     "status": "success",
     "error": "",
-    "file": "image/QwenImage21_bgremove_00001_.png",
+    "file": "image/QwenImage21_bgremove_00011_.png",
     "size": [
-      896,
-      1152
+      1152,
+      2048
     ],
-    "seconds": 4.0,
-    "prompt_id": "7fc86d49-8bb3-4345-be9c-8779f88a5d69"
+    "seconds": 39.2,
+    "prompt_id": "8d8b1dd7-d33b-490c-b9ba-16393287c983",
+    "templateVersion": "v0.1.1",
+    "note": "2026-09-22 重测：resolution=1536；蒙版全透明像素占比 31.5%，角落 alpha=0"
+  },
+  "wf-whitebg-qwen21": {
+    "status": "success",
+    "error": "",
+    "file": "image/QwenImage21_whitebg_00002_.png",
+    "size": [
+      1152,
+      2048
+    ],
+    "seconds": 30.3,
+    "prompt_id": "a4ef1414-61db-4ee7-8491-cf956a2b5e87",
+    "templateVersion": "v0.1.0",
+    "note": "2026-09-22 真机：随机 seed 非缓存 30.3s（同图结构缓存命中时 3s）；蒙版全透明占比 31.6%，后端合成纯白后输出不透明 PNG，产品像素级不变"
   }
 }

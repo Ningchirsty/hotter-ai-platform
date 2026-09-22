@@ -8,6 +8,7 @@ import org.dromara.ai.image.service.ImageAssetStore;
 import org.dromara.ai.image.service.ImageTaskOrchestrator;
 import org.dromara.ai.image.service.ImageTaskRepository;
 import org.dromara.ai.image.service.ImageTemplatePreparer;
+import org.dromara.ai.image.service.ImageWhiteBackgroundCompositor;
 import org.dromara.ai.image.service.ImageWorkflowContractRegistry;
 import org.dromara.ai.image.support.ImageContractTestFixture;
 import org.dromara.ai.video.comfy.ComfyClient;
@@ -65,6 +66,7 @@ class ImageTaskOrchestratorTest {
         orchestrator = new ImageTaskOrchestrator(
             registry, new ImageTemplatePreparer(MAPPER), repository,
             new ImageAssetStore(storage), new ImageAssetProbe(), client,
+            new ImageWhiteBackgroundCompositor(),
             () -> 900001L, Duration.ofSeconds(300), Duration.ofMillis(20), false);
     }
 
@@ -126,6 +128,7 @@ class ImageTaskOrchestratorTest {
         ImageTaskOrchestrator zeroBudget = new ImageTaskOrchestrator(
             registry, new ImageTemplatePreparer(MAPPER), repository,
             new ImageAssetStore(storage), new ImageAssetProbe(), client,
+            new ImageWhiteBackgroundCompositor(),
             () -> 900002L, Duration.ZERO, Duration.ofMillis(1), false);
 
         ImageTaskException e = assertThrows(ImageTaskException.class,
@@ -157,6 +160,7 @@ class ImageTaskOrchestratorTest {
         ImageTaskOrchestrator draftOrchestrator = new ImageTaskOrchestrator(
             draftRegistry, new ImageTemplatePreparer(MAPPER), repository,
             new ImageAssetStore(storage), new ImageAssetProbe(), client,
+            new ImageWhiteBackgroundCompositor(),
             () -> 900001L, Duration.ofSeconds(300), Duration.ofMillis(20), false);
 
         ImageTaskException e = assertThrows(ImageTaskException.class,
@@ -189,6 +193,35 @@ class ImageTaskOrchestratorTest {
             () -> orchestrator.execute(context("wf-bgremove-qwen21", "BGREMOVE", List.of(7L))));
         assertEquals("OUTPUT_INVALID", e.getErrorCode());
         assertTrue(e.getMessage().contains("透明通道"), e.getMessage());
+    }
+
+    @Test
+    @DisplayName("白底图：抠图蒙版被合成到纯白底后归档，交付物不带 alpha")
+    void whiteBackgroundCompositesOnArchive() throws Exception {
+        registry.markTesting("wf-whitebg-qwen21");
+        repository.assets.put(8L, new ImageTaskRepository.AssetRow(8L, "000000", 1L, null, "IMAGE", "UPLOAD",
+            "in.png", storage.storeUpload("000000", 1L, "in.png", png(32, 32, false), "image/png"), "image/png",
+            100L, null, 32, 32, false, null));
+        client.pollState = ComfyClient.PollResult.State.SUCCEEDED;
+        // ComfyUI 侧给的是「整幅全透明」的蒙版：合成后应当得到整幅纯白、且不再带 alpha
+        client.output = png(32, 32, true);
+
+        ImageTaskOrchestrator.ExecutionResult result =
+            orchestrator.execute(context("wf-whitebg-qwen21", "WHITEBG", List.of(8L)));
+
+        assertFalse(result.hasAlpha(), "白底图交付物不应带 alpha 通道");
+        assertEquals(32, result.width());
+        assertEquals(32, result.height());
+        assertEquals(ImageTaskStatus.SUCCEEDED.name(), repository.lastStatus);
+
+        ImageTaskRepository.AssetRow row = repository.insertedAssets.get(0);
+        assertEquals("image/png", row.contentType(), "合成结果固定按 PNG 交付");
+        assertFalse(Boolean.TRUE.equals(row.hasAlpha()), "落库的实测 alpha 必须为 false");
+        BufferedImage stored = ImageIO.read(new java.io.ByteArrayInputStream(storage.read(row.storageKey())));
+        assertNotNull(stored, "归档内容必须可被解析");
+        assertFalse(stored.getColorModel().hasAlpha(), "归档内容必须是不透明图");
+        assertEquals(0xFFFFFF, stored.getRGB(0, 0) & 0xFFFFFF, "透明区域必须被合成为纯白");
+        assertEquals(0xFFFFFF, stored.getRGB(31, 31) & 0xFFFFFF, "整幅都应是纯白");
     }
 
     @Test

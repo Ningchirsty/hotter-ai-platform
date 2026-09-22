@@ -31,6 +31,7 @@ const EXPECTED_MAPPING = {
   I2I: ['img', 'prompt', 'negative_prompt', 'strength'],
   EDIT: ['image1', 'image2', 'image3', 'prompt', 'negative_prompt'],
   BGREMOVE: ['img'],
+  WHITEBG: ['img'],
 };
 
 /** 期望的输出节点与模板节点数。 */
@@ -39,6 +40,17 @@ const EXPECTED_SHAPE = {
   'wf-i2i-qwen21': { outputNode: '9', nodes: 9 },
   'wf-edit-qwen21': { outputNode: '10', nodes: 10 },
   'wf-bgremove-qwen21': { outputNode: '8', nodes: 8 },
+  'wf-whitebg-qwen21': { outputNode: '8', nodes: 8 },
+};
+
+/** 固定提示词（不接受前端覆写）的能力。 */
+const FIXED_PROMPT_CAPABILITIES = ['BGREMOVE', 'WHITEBG'];
+
+/** 参考图槽位数期望（单图能力 1 个，指令改图 3 个）。 */
+const EXPECTED_SLOTS = {
+  'wf-edit-qwen21': 3,
+  'wf-bgremove-qwen21': 1,
+  'wf-whitebg-qwen21': 1,
 };
 
 const MODEL_TRIO = {
@@ -52,13 +64,13 @@ test('契约文件存在且能力/工作流数量符合预期', () => {
   assert.equal(contract.meta.status, 'PUBLISHED', 'meta.status 必须与各条目状态一致（生产端到端验收通过后为 PUBLISHED）');
   assert.deepEqual(
     contract.capabilities.map((c) => c.capabilityCode),
-    ['T2I', 'I2I', 'EDIT', 'BGREMOVE'],
+    ['T2I', 'I2I', 'EDIT', 'BGREMOVE', 'WHITEBG'],
   );
   for (const c of contract.capabilities) {
     assert.equal(c.workflows.length, 1, `${c.capabilityCode} 应绑定 1 个工作流`);
     assert.ok(c.name && /[\u4e00-\u9fa5]/.test(c.name), `${c.capabilityCode} 的中文名缺失`);
   }
-  assert.equal(bindings(contract).length, 4);
+  assert.equal(bindings(contract).length, 5);
 });
 
 test('每个模板都存在、格式规范、SHA-256 与契约一致', () => {
@@ -70,10 +82,18 @@ test('每个模板都存在、格式规范、SHA-256 与契约一致', () => {
   }
 });
 
-test('工作流状态与 meta 一致且已发布（2026-09-21 生产端到端验收通过后提升）', () => {
+test('工作流状态与 meta 一致、版本号合法；已发布条目必须带真机验证记录', () => {
   for (const { workflow } of bindings(contract)) {
     assert.equal(workflow.status, contract.meta.status, `${workflow.workflowCode} 状态必须与 meta.status 一致`);
-    assert.equal(workflow.version, 'v0.1.0-draft');
+    // 版本号只断言格式：2026-09-22 因分辨率 1024→1536 递增过版本（v0.1.1），
+    // 硬编码具体版本会让每次正常升版都变红（视频模块踩过这个坑）。
+    // 允许历史遗留的 -draft 后缀：T2I/I2I 的版本号与库中审核记录绑定，不能为了好看而改名
+    // （改名会让「按 version 继承审核结果」失配，白白丢掉已审核的继承链）。
+    assert.match(workflow.version, /^v\d+\.\d+\.\d+(-draft)?$/, `${workflow.workflowCode} 版本号格式不合法`);
+    if (workflow.status === 'PUBLISHED') {
+      assert.match(workflow.checksum, /^[0-9a-f]{64}$/, `${workflow.workflowCode} 已发布但没有真实 checksum`);
+      assert.ok(workflow.perf?.timeoutSeconds > 0, `${workflow.workflowCode} 已发布但缺少 perf.timeoutSeconds`);
+    }
   }
 });
 
@@ -165,11 +185,11 @@ test('模板不残留样例提示词或样例文件名（由服务端按任务�
         assert.equal(node.inputs.image, '', `${workflow.workflowCode} 节点 ${id} 残留了样例文件名`);
       }
       if (node.class_type === 'TextEncodeQwenImage21') {
-        const editable = capability.capabilityCode !== 'BGREMOVE';
+        const editable = !FIXED_PROMPT_CAPABILITIES.includes(capability.capabilityCode);
         if (editable) {
           assert.equal(node.inputs.prompt, '', `${workflow.workflowCode} 残留了样例提示词`);
         } else {
-          assert.ok(node.inputs.prompt.length > 0, '抠图模板必须带固定提示词');
+          assert.ok(node.inputs.prompt.length > 0, '固定提示词模板必须带提示词');
         }
         assert.equal(node.inputs.negative_prompt, '');
       }
@@ -181,7 +201,7 @@ test('模板不残留样例提示词或样例文件名（由服务端按任务�
 });
 
 test('参考图槽位：images.image_N 必须指向存在的 LoadImage 节点', () => {
-  for (const code of ['wf-edit-qwen21', 'wf-bgremove-qwen21']) {
+  for (const code of Object.keys(EXPECTED_SLOTS)) {
     const { workflow } = bindings(contract).find((b) => b.workflow.workflowCode === code);
     const r = verifyBinding(workflow);
     const encoder = Object.entries(r.template).find(([, n]) => n.class_type === 'TextEncodeQwenImage21');
@@ -196,12 +216,21 @@ test('参考图槽位：images.image_N 必须指向存在的 LoadImage 节点', 
       assert.equal(target.class_type, 'LoadImage', `${code} 的 ${key} 必须连到 LoadImage`);
       assert.equal(link[1], 0);
     }
-    assert.equal(
-      slots.length,
-      code === 'wf-bgremove-qwen21' ? 1 : 3,
-      `${code} 的参考图槽位数与契约描述不符`,
-    );
+    assert.equal(slots.length, EXPECTED_SLOTS[code], `${code} 的参考图槽位数与契约描述不符`);
   }
+});
+
+test('白底图（WHITEBG）走「抠图蒙版 + 后端合成」，不要求最终产物带 alpha', () => {
+  const { workflow } = bindings(contract).find((b) => b.workflow.workflowCode === 'wf-whitebg-qwen21');
+  assert.equal(workflow.outputRule.alpha, 'composited-on-white',
+    '白底图的输出规则必须声明由后端合成，否则会被当成「抠图必须输出 RGBA」而误判');
+  assert.ok(workflow.postProcess, '白底图必须声明后处理步骤，否则契约读不出「白底是合成的」');
+  assert.equal(workflow.postProcess.step, 'composite-on-white');
+  assert.equal(workflow.postProcess.backgroundColor, '#FFFFFF');
+  // 与抠图同构：同一图结构、同一固定提示词，只有输出前缀不同
+  const bg = bindings(contract).find((b) => b.workflow.workflowCode === 'wf-bgremove-qwen21').workflow;
+  assert.equal(workflow.fixedParams.prompt, bg.fixedParams.prompt);
+  assert.equal(workflow.fixedParams.resolution, bg.fixedParams.resolution);
 });
 
 test('契约声明的模板路径落在后端受控目录内', () => {
@@ -210,11 +239,11 @@ test('契约声明的模板路径落在后端受控目录内', () => {
     const p = templatePath(workflow, root);
     assert.ok(p.startsWith(root), '模板必须位于 contract-root 之内');
     assert.ok(existsSync(p), `模板不存在：${workflow.apiJsonFile}`);
-    assert.match(workflow.apiJsonFile, /^image\/workflows\/api\/wf-[a-z0-9-]+-v0\.1\.0\.json$/);
+    assert.match(workflow.apiJsonFile, /^image\/workflows\/api\/wf-[a-z0-9-]+-v\d+\.\d+\.\d+\.json$/);
   }
 });
 
-test('真机验证记录存在且四个模板均实测成功', () => {
+test('真机验证记录存在且每个模板均实测成功', () => {
   const reportPath = `${contractRoot()}/image/workflows/api/_validation-live.json`;
   assert.ok(existsSync(reportPath), '缺少真机验证记录 _validation-live.json');
   const report = JSON.parse(readFileSync(reportPath, 'utf8'));

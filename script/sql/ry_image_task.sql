@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS image_task (
   user_id             BIGINT        NOT NULL COMMENT '所属用户',
   task_no             VARCHAR(64)   NOT NULL COMMENT '业务编号 IMAGE-yyyyMMdd-xxxxxx',
   task_name           VARCHAR(255)  NULL,
-  capability_code     VARCHAR(32)   NOT NULL COMMENT 'T2I/I2I/EDIT/BGREMOVE',
+  capability_code     VARCHAR(32)   NOT NULL COMMENT 'T2I/I2I/EDIT/BGREMOVE/WHITEBG',
   workflow_code       VARCHAR(64)   NOT NULL COMMENT '契约 workflowCode',
   workflow_version    VARCHAR(32)   NOT NULL,
   model_code          VARCHAR(32)   NULL,

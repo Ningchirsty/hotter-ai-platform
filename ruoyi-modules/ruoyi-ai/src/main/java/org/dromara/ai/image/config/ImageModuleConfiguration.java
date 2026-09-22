@@ -12,6 +12,7 @@ import org.dromara.ai.image.service.ImageTaskExecutionService;
 import org.dromara.ai.image.service.ImageTaskOrchestrator;
 import org.dromara.ai.image.service.ImageTaskRepository;
 import org.dromara.ai.image.service.ImageTemplatePreparer;
+import org.dromara.ai.image.service.ImageWhiteBackgroundCompositor;
 import org.dromara.ai.image.service.ImageWorkflowContractRegistry;
 import org.dromara.ai.image.service.ImageWorkflowVersionRepository;
 import org.dromara.ai.video.service.AssetStorage;
@@ -179,6 +180,14 @@ public class ImageModuleConfiguration {
         return new ImageAssetProbe();
     }
 
+    /**
+     * 白底图合成器（纯 JDK ImageIO，无状态、无外部依赖）。
+     */
+    @Bean
+    public ImageWhiteBackgroundCompositor imageWhiteBackgroundCompositor() {
+        return new ImageWhiteBackgroundCompositor();
+    }
+
     @Bean
     public ImageAssetStore imageAssetStore(ImageProperties properties) {
         return new ImageAssetStore(createAssetStorage(properties));
@@ -190,12 +199,13 @@ public class ImageModuleConfiguration {
                                                        ImageTaskRepository repository,
                                                        ImageAssetStore assetStore,
                                                        ImageAssetProbe probe,
+                                                       ImageWhiteBackgroundCompositor whiteBackgroundCompositor,
                                                        ImageProperties properties) {
         ImageComfyClient client = new ImageComfyClient(
             properties.getComfyBaseUrl(), newMapper(), properties.isComfyAllowLoopback());
         log.info("图像创作模块 ComfyUI 端点：{}", client.getBaseUrl());
         return new ImageTaskOrchestrator(
-            registry, preparer, repository, assetStore, probe, client,
+            registry, preparer, repository, assetStore, probe, client, whiteBackgroundCompositor,
             IdGeneratorUtil::nextLongId,
             Duration.ofSeconds(properties.getPollBudgetSeconds()),
             Duration.ofSeconds(Math.max(1, properties.getPollIntervalSeconds())),

@@ -12,7 +12,7 @@
 
 CREATE TABLE IF NOT EXISTS image_workflow_version (
   id               BIGINT       NOT NULL COMMENT '主键（雪花 ID）',
-  capability_code  VARCHAR(32)  NOT NULL COMMENT 'T2I/I2I/EDIT/BGREMOVE',
+  capability_code  VARCHAR(32)  NOT NULL COMMENT 'T2I/I2I/EDIT/BGREMOVE/WHITEBG',
   workflow_code    VARCHAR(64)  NOT NULL,
   model_code       VARCHAR(32)  NULL,
   version          VARCHAR(32)  NOT NULL,

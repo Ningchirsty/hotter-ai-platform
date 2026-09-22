@@ -49,11 +49,11 @@ class ImageTemplatePreparerTest {
     }
 
     @Test
-    @DisplayName("契约可加载：4 条注册、4 份模板通过校验")
+    @DisplayName("契约可加载：5 条注册、5 份模板通过校验")
     void contractLoads() {
-        assertEquals(4, registry.registeredCount());
-        assertEquals(4, registry.loadedCount());
-        for (String code : List.of("wf-t2i-qwen21", "wf-i2i-qwen21", "wf-edit-qwen21", "wf-bgremove-qwen21")) {
+        assertEquals(5, registry.registeredCount());
+        assertEquals(5, registry.loadedCount());
+        for (String code : List.of("wf-t2i-qwen21", "wf-i2i-qwen21", "wf-edit-qwen21", "wf-bgremove-qwen21", "wf-whitebg-qwen21")) {
             assertTrue(registry.isTemplateLoaded(code), code + " 模板应通过校验");
         }
     }

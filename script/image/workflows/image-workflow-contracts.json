@@ -1,14 +1,16 @@
 {
   "meta": {
     "name": "hotter-ai image workflow contracts",
-    "version": "1",
+    "version": "2",
     "status": "PUBLISHED",
-    "updatedAt": "2026-09-21",
+    "updatedAt": "2026-09-22",
     "rules": [
       "每个 workflowCode 对应后端受控目录下的一份 ComfyUI API Format JSON 模板",
       "任务提交时后端深拷贝模板，仅覆写 mapping 白名单内的节点输入键",
-      "四个 Qwen-Image-2.1 模板已在 ComfyUI 0.37.0（192.168.2.223:8188）真机验证出图（api/_validation-live.json），并于 2026-09-21 在生产环境完成端到端验收（上传→建任务→执行→轮询→产出校验，4/4 通过，记录见 docs/image-module-implementation-handoff.md 与生产运维记录），故状态提升为 PUBLISHED",
-      "同一 workflowCode 的固定后台参数变化必须递增 version，禁止原地修改 PUBLISHED 版本",
+      "五个 Qwen-Image-2.1 模板已在 ComfyUI 0.37.0（192.168.2.223:8188）真机验证出图（api/_validation-live.json），并于 2026-09-21/22 在生产环境完成端到端验收（上传→建任务→执行→轮询→产出实测），故状态为 PUBLISHED",
+      "同一 workflowCode 的固定后台参数变化必须递增 version，禁止原地修改 PUBLISHED 版本。2026-09-22 因画布分辨率 1024→1536（修「输入 2.9MP 却输出 1MP」）递增：wf-edit-qwen21 → v0.1.1、wf-bgremove-qwen21 → v0.1.1；v0.1.0 模板保留作审计",
+      "发布状态以数据库 image_workflow_version 的人工审核结果为准：启动时叠加到内存绑定（只提不降、契约 RETIRED 优先、且要求 version 与 checksum 一致）。本文件里的 status 是基线；换镜像后若库中审核结果仍在，页面不应回退为「暂不可提交」",
+      "WHITEBG（白底图）复用抠图工作流的透明蒙版，纯白底由后端确定性合成（ImageWhiteBackgroundCompositor），ComfyUI 侧不生成白底；因此其 outputRule.alpha 为 composited-on-white：不要求最终产物带 alpha，但要求抠图阶段必须产出可用蒙版",
       "前端仅可见 workflowCode/模型编码/字段白名单/计费展示（见 frontend/src/views/image/modules.ts）"
     ]
   },
@@ -321,10 +323,10 @@
         {
           "workflowCode": "wf-edit-qwen21",
           "modelCode": "QWEN21",
-          "version": "v0.1.0-draft",
+          "version": "v0.1.1",
           "status": "PUBLISHED",
-          "apiJsonFile": "image/workflows/api/wf-edit-qwen21-v0.1.0.json",
-          "checksum": "0cb740bd6897ad257b8b11d8dcfe74911e9a6d41ae6f169bf4b5ad895131c077",
+          "apiJsonFile": "image/workflows/api/wf-edit-qwen21-v0.1.1.json",
+          "checksum": "d1661b41ef1661d42b30a37391830821058d17ae4bce50d9f65a09783cd5dee3",
           "billing": {
             "type": "credits",
             "credits": 4
@@ -371,7 +373,8 @@
             "cfg": 1,
             "denoise": 1,
             "seedPolicy": "set by server per task",
-            "sizePolicy": "画布由 image1 决定，服务端不覆写宽高"
+            "sizePolicy": "画布由 image1 决定（resolution=1536 决定总像素），服务端不覆写宽高",
+            "resolution": 1536
           },
           "outputRule": {
             "nodeId": "10",
@@ -384,11 +387,11 @@
             "alpha": "preserved"
           },
           "perf": {
-            "avgSeconds": 30,
-            "maxSeconds": 90,
+            "avgSeconds": 40,
+            "maxSeconds": 120,
             "timeoutSeconds": 300,
             "concurrency": 1,
-            "measuredNote": "真机实测：3 张参考图 24.0s；裁剪为 2 张 20.0s；输出 896×1152"
+            "measuredNote": "真机实测（2026-09-22）：39.3s / 1152×2048（输入 1276×2270，resolution=1536）；同图 1024 档约 20s"
           },
           "supportedOutputs": [
             {
@@ -400,7 +403,8 @@
           "fixedFieldValidation": {
             "maxReferenceImages": 3,
             "requiredFirstImage": "image1"
-          }
+          },
+          "note": "resolution=1536（v0.1.0 为 1024）：修掉「输入 2.9MP 却输出 1MP」的静默降分辨率"
         }
       ]
     },
@@ -424,10 +428,10 @@
         {
           "workflowCode": "wf-bgremove-qwen21",
           "modelCode": "QWEN21",
-          "version": "v0.1.0-draft",
+          "version": "v0.1.1",
           "status": "PUBLISHED",
-          "apiJsonFile": "image/workflows/api/wf-bgremove-qwen21-v0.1.0.json",
-          "checksum": "671616e457c9f8ea9b211911f18997252a3e28670171eb0a0228c8e135447abc",
+          "apiJsonFile": "image/workflows/api/wf-bgremove-qwen21-v0.1.1.json",
+          "checksum": "38213bc6bada7260304f432d216caee16b50d250b9d6633734c9aeef377b7972",
           "billing": {
             "type": "credits",
             "credits": 3
@@ -452,7 +456,8 @@
             "cfg": 1,
             "denoise": 1,
             "seedPolicy": "set by server per task",
-            "sizePolicy": "画布由输入图决定，服务端不覆写宽高"
+            "sizePolicy": "画布由输入图决定（resolution=1536 决定总像素），服务端不覆写宽高",
+            "resolution": 1536
           },
           "outputRule": {
             "nodeId": "8",
@@ -465,11 +470,11 @@
             "alpha": "required"
           },
           "perf": {
-            "avgSeconds": 25,
-            "maxSeconds": 90,
+            "avgSeconds": 40,
+            "maxSeconds": 120,
             "timeoutSeconds": 300,
             "concurrency": 1,
-            "measuredNote": "真机实测：冷启动 12.4s、模型驻留 4.0s；输出 896×1152 / RGBA(color_type=6)"
+            "measuredNote": "真机实测（2026-09-22）：39.2s / 1152×2048（resolution=1536）；同图 1024 档约 15s"
           },
           "supportedOutputs": [
             {
@@ -481,6 +486,92 @@
           ],
           "fixedFieldValidation": {
             "alphaRequired": true
+          },
+          "note": "resolution=1536（v0.1.0 为 1024）：抠图蒙版不再被降到 1MP"
+        }
+      ]
+    },
+    {
+      "capabilityCode": "WHITEBG",
+      "name": "白底图",
+      "note": "电商白底图：先用抠图工作流拿透明蒙版，再由后端把蒙版合成到纯白底（255,255,255）。产品像素级不变、白底恒定 —— 不经过任何模型生成，因此不会像「让模型画白底」那样把产品一起改掉（实测图生图/指令改图都做不到像素级保持）",
+      "fields": [
+        {
+          "field": "img",
+          "required": true,
+          "type": "file",
+          "accept": [
+            "jpg",
+            "png",
+            "webp"
+          ]
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-whitebg-qwen21",
+          "modelCode": "QWEN21",
+          "version": "v0.1.0",
+          "status": "PUBLISHED",
+          "apiJsonFile": "image/workflows/api/wf-whitebg-qwen21-v0.1.0.json",
+          "checksum": "a03e081df25da9962b3505170e279216ab9d2e73dfc6a7f781a99b60081a1466",
+          "billing": {
+            "type": "credits",
+            "credits": 3
+          },
+          "mapping": [
+            {
+              "field": "img",
+              "nodeId": "4",
+              "inputKey": "image",
+              "note": "模板中该节点已固定连到 TextEncodeQwenImage21 的 images.image_1"
+            }
+          ],
+          "fixedParams": {
+            "model": "Qwen-Image-2.1 int8_convrot",
+            "textEncoder": "qwen3vl_8b_int8_convrot",
+            "vae": "qwen_image_2.1_vae_bf16",
+            "prompt": "Remove the background, and output a PNG image",
+            "promptPolicy": "固定提示词，不接受前端覆写",
+            "sampler": "euler",
+            "scheduler": "simple",
+            "steps": 25,
+            "cfg": 1,
+            "denoise": 1,
+            "resolution": 1536,
+            "seedPolicy": "set by server per task",
+            "sizePolicy": "画布由输入图决定（resolution=1536 决定总像素），服务端不覆写宽高"
+          },
+          "outputRule": {
+            "nodeId": "8",
+            "outputField": "images",
+            "format": "png",
+            "mime": "image/png",
+            "multiple": false,
+            "maxSizeMB": 32,
+            "maxPixels": 4194304,
+            "alpha": "composited-on-white",
+            "alphaNote": "ComfyUI 侧必须产出带 alpha 的蒙版（后端会断言），但最终交付物是合成后的不透明 PNG"
+          },
+          "perf": {
+            "avgSeconds": 30,
+            "maxSeconds": 120,
+            "timeoutSeconds": 300,
+            "concurrency": 1,
+            "measuredNote": "真机实测（2026-09-22）：30.3s / 1152×2048（随机 seed，非缓存）；同图结构缓存命中时 3s"
+          },
+          "supportedOutputs": [
+            {
+              "size": "跟随输入图",
+              "width": 0,
+              "height": 0
+            }
+          ],
+          "postProcess": {
+            "step": "composite-on-white",
+            "implementation": "org.dromara.ai.image.service.ImageWhiteBackgroundCompositor",
+            "backgroundColor": "#FFFFFF",
+            "outputMime": "image/png"
           }
         }
       ]
