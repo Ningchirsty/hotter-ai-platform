@@ -165,8 +165,8 @@ type PendingTask = {
   subtitle: string;
 };
 
-// 视频创作页面已下沉到「视频创作」目录之下（图像创作也挂在该目录下），路径随之变为 /video-creation/video
-const VIDEO_CREATION = '/ai-tools/video-creation/video';
+// 视频创作与图像创作同为 AI工具 下的同级页面，视频创作路径回到 /ai-tools/video-creation
+const VIDEO_CREATION = '/ai-tools/video-creation';
 const TASK_WAITING = '/approval/task/taskWaiting';
 // hero 标题固定文案（设计稿要求一行呈现，不换行），非业务数据。
 const HERO_TITLE = '让灵感绽放，让工作从容发生。';

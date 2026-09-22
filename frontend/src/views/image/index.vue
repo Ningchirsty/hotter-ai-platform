@@ -50,6 +50,51 @@
 
         <div class="form-divider" />
 
+        <!--
+          先上传、后写文字：参考图决定输出画布（image1 定尺寸）与主体，
+          用户的心智顺序是「给图 → 说要求」，所以上传区放在提示词上方。
+        -->
+        <div v-if="activeModule.imageFields || activeModule.imageField" class="field-block">
+          <label>
+            {{ activeModule.code === 'EDIT' ? '参考图（第一张是编辑目标，必填）' : '输入图片' }}
+            <em>*</em>
+          </label>
+          <label class="upload-zone" :class="{ complete: previewUrls.length > 0 }">
+            <input
+              ref="fileInput"
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              :multiple="activeModule.code === 'EDIT'"
+              @change="handleFiles"
+            />
+            <!--
+              已选图片的预览：没有它用户只能看到一行素材 ID，传错图要等生成完才发现。
+              每张右上角可单独移除，移除后槽位顺序会重排（见 removeImage）。
+            -->
+            <div v-if="previewUrls.length" class="upload-previews">
+              <figure v-for="(url, index) in previewUrls" :key="url">
+                <img :src="url" :alt="slotLabels[index] || '参考图'" />
+                <button
+                  type="button"
+                  :title="'移除' + (slotLabels[index] || '参考图')"
+                  aria-label="移除该图片"
+                  @click.prevent.stop="removeImage(index)"
+                >
+                  <el-icon><Close /></el-icon>
+                </button>
+              </figure>
+              <span class="upload-previews-badge">已上传 {{ previewUrls.length }} 张</span>
+            </div>
+            <template v-else>
+              <el-icon><UploadFilled /></el-icon>
+              <b>{{ uploadHint }}</b>
+              <small>
+                {{ uploading && uploadPercent > 0 ? `上传中 ${uploadPercent}%` : '支持 PNG / JPG / WEBP，单张不超过 20MB' }}
+              </small>
+            </template>
+          </label>
+        </div>
+
         <div class="field-block">
           <label>
             {{ activeModule.promptLabel || '提示词' }}
@@ -114,47 +159,6 @@
               {{ opt }}
             </button>
           </div>
-        </div>
-
-        <div v-if="activeModule.imageFields || activeModule.imageField" class="field-block">
-          <label>
-            {{ activeModule.code === 'EDIT' ? '参考图（第一张是编辑目标，必填）' : '输入图片' }}
-            <em>*</em>
-          </label>
-          <label class="upload-zone" :class="{ complete: previewUrls.length > 0 }">
-            <input
-              ref="fileInput"
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              :multiple="activeModule.code === 'EDIT'"
-              @change="handleFiles"
-            />
-            <!--
-              已选图片的预览：没有它用户只能看到一行素材 ID，传错图要等生成完才发现。
-              每张右上角可单独移除，移除后槽位顺序会重排（见 removeImage）。
-            -->
-            <div v-if="previewUrls.length" class="upload-previews">
-              <figure v-for="(url, index) in previewUrls" :key="url">
-                <img :src="url" :alt="slotLabels[index] || '参考图'" />
-                <button
-                  type="button"
-                  :title="'移除' + (slotLabels[index] || '参考图')"
-                  aria-label="移除该图片"
-                  @click.prevent.stop="removeImage(index)"
-                >
-                  <el-icon><Close /></el-icon>
-                </button>
-              </figure>
-              <span class="upload-previews-badge">已上传 {{ previewUrls.length }} 张</span>
-            </div>
-            <template v-else>
-              <el-icon><UploadFilled /></el-icon>
-              <b>{{ uploadHint }}</b>
-              <small>
-                {{ uploading && uploadPercent > 0 ? `上传中 ${uploadPercent}%` : '支持 PNG / JPG / WEBP，单张不超过 20MB' }}
-              </small>
-            </template>
-          </label>
         </div>
 
         <div class="submit-row">
@@ -265,9 +269,22 @@
       </div>
       <div v-else-if="filteredTasks.length" class="task-list">
         <article v-for="task in filteredTasks" :key="task.id" class="task-card">
-          <div :class="['task-cover', toneOf(task.status)]">
-            <el-icon><component :is="moduleIcon(task.capabilityCode)" /></el-icon>
-            <span>{{ task.sizeLabel || task.strengthLabel || moduleOf(task.capabilityCode)?.name }}</span>
+          <!--
+            成片封面：成功任务的产出缩略图（走后端 thumbnail 接口，约几十 KB）。
+            取不到时回退成「能力图标 + 档位」，不留空白；点封面直接开预览。
+          -->
+          <div :class="['task-cover', toneOf(task.status)]" @click="previewTask(task)">
+            <img
+              v-if="coverFor(task)"
+              class="task-cover-img"
+              :src="coverFor(task)"
+              :alt="task.taskName || task.taskNo"
+            />
+            <template v-else>
+              <el-icon><component :is="moduleIcon(task.capabilityCode)" /></el-icon>
+              <span>{{ task.sizeLabel || task.strengthLabel || moduleOf(task.capabilityCode)?.name }}</span>
+            </template>
+            <span v-if="coverFor(task)" class="task-cover-zoom"><el-icon><ZoomIn /></el-icon></span>
           </div>
           <div class="task-main">
             <div class="task-title-row">
@@ -282,7 +299,16 @@
             <small v-if="task.errorMessage" class="task-error">{{ task.errorMessage }}</small>
           </div>
           <div class="task-actions">
-            <button type="button" title="查看任务" aria-label="查看任务" @click="openDetail(task.id)">
+            <button
+              type="button"
+              :title="previewable(task) ? '预览产出' : '该任务暂无可预览产出'"
+              :aria-label="previewable(task) ? '预览产出' : '该任务暂无可预览产出'"
+              :disabled="!previewable(task)"
+              @click="previewTask(task)"
+            >
+              <el-icon><ZoomIn /></el-icon>
+            </button>
+            <button type="button" title="查看任务详情" aria-label="查看任务详情" @click="openDetail(task.id)">
               <el-icon><View /></el-icon>
             </button>
             <button
@@ -406,18 +432,64 @@
     <el-dialog v-model="previewVisible" title="素材预览" width="min(920px, 92vw)" top="6vh">
       <img v-if="previewUrl" :src="previewUrl" style="width: 100%" alt="素材预览" />
     </el-dialog>
+
+    <!--
+      产出预览：任务界面必须能直接看图。
+      内容经鉴权接口取回后转成 blob URL（<img src> 不会带 Authorization 头），
+      关闭时统一 revoke，避免内存里的 base64/blob 越堆越多。
+    -->
+    <el-dialog
+      v-model="taskPreviewVisible"
+      :title="taskPreviewTask?.taskName || taskPreviewTask?.taskNo || '产出预览'"
+      width="min(920px, 92vw)"
+      top="6vh"
+      destroy-on-close
+      @closed="closeTaskPreview"
+    >
+      <div class="preview-body">
+        <div v-if="taskPreviewLoading" class="empty-state">
+          <el-icon><ZoomIn /></el-icon>
+          <b>正在加载产出…</b>
+        </div>
+        <div v-else-if="taskPreviewError" class="empty-state">
+          <el-icon><Close /></el-icon>
+          <b>{{ taskPreviewError }}</b>
+          <span>可能是该任务还没有产出，或素材已被清理。</span>
+        </div>
+        <img v-else-if="taskPreviewUrl" class="preview-image" :src="taskPreviewUrl" :alt="'产出预览'" />
+        <div v-else class="empty-state">
+          <el-icon><ZoomIn /></el-icon>
+          <b>暂无可预览的产出</b>
+        </div>
+
+        <dl v-if="taskPreviewMeta.length" class="preview-meta">
+          <div v-for="row in taskPreviewMeta" :key="row.label">
+            <dt>{{ row.label }}</dt>
+            <dd>{{ row.value }}</dd>
+          </div>
+        </dl>
+      </div>
+      <template #footer>
+        <el-button :disabled="!taskPreviewUrl" @click="downloadTaskOutput">
+          <el-icon><Download /></el-icon>
+          下载原图
+        </el-button>
+        <el-button type="primary" @click="taskPreviewVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import type { Component } from 'vue';
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import {
   ArrowRight,
   Close,
   Delete,
   Document,
+  Download,
   FolderOpened,
   Grid,
   MagicStick,
@@ -426,7 +498,8 @@ import {
   Scissor,
   Search,
   UploadFilled,
-  View
+  View,
+  ZoomIn
 } from '@element-plus/icons-vue';
 import {
   cancelImageTask,
@@ -519,6 +592,18 @@ const detail = ref<ImageTaskDetailVO>();
 const detailPreviewUrl = ref('');
 const previewVisible = ref(false);
 const previewUrl = ref('');
+
+/** 任务产出封面缓存：assetId -> blob URL（走缩略图接口，几十 KB，不拉原图）。 */
+const taskCoverUrls = ref<Record<string, string>>({});
+const taskCoverLoading = new Set<string>();
+
+/** 产出预览弹窗状态。 */
+const taskPreviewVisible = ref(false);
+const taskPreviewTask = ref<ImageTaskVO>();
+const taskPreviewUrl = ref('');
+const taskPreviewLoading = ref(false);
+const taskPreviewError = ref('');
+const taskPreviewMeta = ref<Array<{ label: string; value: string }>>([]);
 
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 const TERMINAL_STATUSES: ImageTaskStatus[] = ['SUCCEEDED', 'FAILED', 'CANCELED', 'TIMEOUT'];
@@ -916,6 +1001,98 @@ async function openPreview(assetId: number | string) {
   }
 }
 
+/** 只有成功且有产出素材的任务才谈得上预览。 */
+function previewable(task: ImageTaskVO) {
+  return task.status === 'SUCCEEDED' && task.outputAssetId !== null && task.outputAssetId !== undefined;
+}
+
+function coverFor(task: ImageTaskVO) {
+  const id = task.outputAssetId;
+  return id === null || id === undefined ? '' : (taskCoverUrls.value[String(id)] ?? '');
+}
+
+/**
+ * 为成功任务加载产出封面。
+ *
+ * 走缩略图接口而不是原图：列表一次可能十几条，原图每张几百 KB~1MB，
+ * 经公网拉原图会让列表迟迟出不来；缩略图只有几十 KB。取不到就静默失败，
+ * 卡片回退成「能力图标 + 档位」，封面不该成为「能不能看」的开关。
+ */
+async function loadTaskCovers() {
+  for (const task of filteredTasks.value) {
+    if (!previewable(task)) continue;
+    const key = String(task.outputAssetId);
+    if (taskCoverUrls.value[key] || taskCoverLoading.has(key)) continue;
+    taskCoverLoading.add(key);
+    try {
+      const url = await fetchImageAssetThumbnailBlobUrl(task.outputAssetId as number | string);
+      taskCoverUrls.value = { ...taskCoverUrls.value, [key]: url };
+    } catch {
+      /* 忽略：封面只是锦上添花 */
+    } finally {
+      taskCoverLoading.delete(key);
+    }
+  }
+}
+
+/**
+ * 打开产出预览。
+ *
+ * 产出内容要走鉴权接口取回再转 blob URL（<img src> 不带 Authorization 头），
+ * 关闭时 revoke，避免 blob 越堆越多。
+ */
+async function previewTask(task: ImageTaskVO) {
+  taskPreviewTask.value = task;
+  taskPreviewVisible.value = true;
+  taskPreviewError.value = '';
+  if (taskPreviewUrl.value) {
+    URL.revokeObjectURL(taskPreviewUrl.value);
+    taskPreviewUrl.value = '';
+  }
+  taskPreviewMeta.value = [
+    { label: '任务编号', value: task.taskNo },
+    { label: '能力', value: moduleOf(task.capabilityCode)?.name || task.capabilityCode },
+    { label: '输出尺寸', value: task.outputWidth ? task.outputWidth + '×' + task.outputHeight : '—' },
+    { label: '透明通道', value: task.outputHasAlpha ? '有' : '无' },
+    { label: '完成时间', value: task.finishedTime || task.createTime || '—' }
+  ];
+  if (!previewable(task)) {
+    taskPreviewError.value = '该任务没有产出';
+    return;
+  }
+  taskPreviewLoading.value = true;
+  try {
+    taskPreviewUrl.value = await fetchImageAssetBlobUrl(task.outputAssetId as number | string);
+  } catch (error) {
+    taskPreviewError.value = (await extractErrorMessage(error)) ?? '读取产出失败';
+  } finally {
+    taskPreviewLoading.value = false;
+  }
+}
+
+function closeTaskPreview() {
+  if (taskPreviewUrl.value) {
+    URL.revokeObjectURL(taskPreviewUrl.value);
+    taskPreviewUrl.value = '';
+  }
+  taskPreviewError.value = '';
+  taskPreviewTask.value = undefined;
+}
+
+/** 下载原图：文件名用任务号，避免浏览器存成随机名。 */
+function downloadTaskOutput() {
+  if (!taskPreviewUrl.value || !taskPreviewTask.value) return;
+  const link = document.createElement('a');
+  link.href = taskPreviewUrl.value;
+  link.download = (taskPreviewTask.value.taskNo || 'image-task') + '.png';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+/** 任务列表变化（含轮询出新产出）时补齐封面。 */
+watch(filteredTasks, () => void loadTaskCovers(), { immediate: true });
+
 function statusText(status: ImageTaskStatus | string) {
   const map: Record<string, string> = {
     QUEUED: '排队中',
@@ -946,8 +1123,10 @@ onBeforeUnmount(() => {
   if (pollTimer !== undefined) clearInterval(pollTimer);
   previewUrls.value.forEach((url) => URL.revokeObjectURL(url));
   Object.values(assetThumbs).forEach((url) => URL.revokeObjectURL(url));
+  Object.values(taskCoverUrls.value).forEach((url) => URL.revokeObjectURL(url));
   if (detailPreviewUrl.value) URL.revokeObjectURL(detailPreviewUrl.value);
   if (previewUrl.value) URL.revokeObjectURL(previewUrl.value);
+  if (taskPreviewUrl.value) URL.revokeObjectURL(taskPreviewUrl.value);
 });
 </script>
 
@@ -1604,6 +1783,30 @@ button {
   background: rgba(0, 0, 0, 0.4);
   border-radius: 3px;
 }
+/* 有产出时封面放真实缩略图，点击/按钮都能开预览 */
+.task-cover {
+  cursor: pointer;
+}
+.task-cover-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+.task-cover .task-cover-zoom {
+  position: absolute;
+  right: 6px;
+  bottom: 5px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  color: #e5e7eb;
+  font-size: 12px;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 4px;
+}
 .task-title-row {
   display: flex;
   align-items: center;
@@ -1670,6 +1873,10 @@ button {
   background: var(--sunken);
   border: 1px solid var(--line2);
   border-radius: 5px;
+}
+.task-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 .asset-upload input {
   position: absolute;
@@ -1770,6 +1977,38 @@ button {
 .detail-preview img {
   width: 100%;
   border-radius: 10px;
+}
+
+/* 产出预览弹窗：内容在浅色弹窗里，故这里用固定深色文字而不是 studio 的浅色 token */
+.preview-body {
+  display: grid;
+  gap: 14px;
+}
+.preview-image {
+  width: 100%;
+  max-height: 62vh;
+  object-fit: contain;
+  background: #0d1016;
+  border-radius: 8px;
+}
+.preview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin: 0;
+}
+.preview-meta > div {
+  display: grid;
+  gap: 2px;
+}
+.preview-meta dt {
+  color: #6b7280;
+  font-size: 11px;
+}
+.preview-meta dd {
+  margin: 0;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 .error-text {
   color: #ff9b9b;
