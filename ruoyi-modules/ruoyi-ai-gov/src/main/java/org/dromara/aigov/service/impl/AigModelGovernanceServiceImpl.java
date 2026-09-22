@@ -8,6 +8,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.aigov.domain.AigModelGovernance;
+import org.dromara.aigov.domain.bo.AigModelBaseBo;
 import org.dromara.aigov.domain.bo.AigModelCreateBo;
 import org.dromara.aigov.domain.bo.AigModelGovernanceBo;
 import org.dromara.aigov.domain.bo.AigModelProviderBo;
@@ -253,6 +254,43 @@ public class AigModelGovernanceServiceImpl implements IAigModelGovernanceService
             bo.getId(), bo.getModelKey(), deployment.getCode(), dataLevel.getCode(), lifecycle.getCode(),
             encryptedApiKey != null);
         return bo.getId();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int updateModelBase(AigModelBaseBo bo) {
+        if (bo == null || bo.getModelId() == null) {
+            throw new ServiceException("模型ID不能为空");
+        }
+        if (modelViewMapper.selectModelById(bo.getModelId()) == null) {
+            throw new ServiceException("模型不存在：" + bo.getModelId());
+        }
+        // 供应商可以改，但必须指向真实存在的供应商，否则列表里会出现无归属的孤儿模型
+        if (bo.getProviderId() == null || modelConfigMapper.countProvider(bo.getProviderId()) == 0) {
+            throw new ServiceException("供应商不存在：" + bo.getProviderId());
+        }
+        // 标识是路由与审计的引用键，必须全局唯一。
+        // 这里必须排除自身：否则「一个字段都不改、直接保存」会被自己判成重复。
+        if (modelConfigMapper.countByModelKeyExcluding(bo.getModelKey(), bo.getModelId()) > 0) {
+            throw new ServiceException("模型标识已存在：" + bo.getModelKey());
+        }
+        // api_endpoint 有三态，必须分开处理（XML 里 null 表示「本次不改」）：
+        //   · 无 aig:model:secret → 该列对这类账号是脱敏的（读不到），一律忽略，避免误清空；
+        //   · 有权限但请求里没带该字段（null）→ 视为「本次不改」，不能顺手清掉；
+        //   · 有权限且带了值 → 按给的值写；空串视为「显式清空」。
+        // 注意不能用 isBlank 判空：那会把「未提供」也当成「清空」。
+        if (!permissionHelper.canViewModelSecret()) {
+            bo.setApiEndpoint(null);
+        } else if (bo.getApiEndpoint() != null) {
+            bo.setApiEndpoint(bo.getApiEndpoint().trim());
+        }
+        bo.setScope(StringUtils.isBlank(bo.getScope()) ? DEFAULT_SCOPE : bo.getScope());
+        bo.setIsDefault(Boolean.TRUE.equals(bo.getIsDefault()));
+        bo.setIsEnabled(bo.getIsEnabled() == null || Boolean.TRUE.equals(bo.getIsEnabled()));
+        int rows = modelConfigMapper.updateModelBase(bo);
+        log.info("编辑模型主数据完成, modelId={}, modelKey={}, providerId={}, modelType={}, enabled={}, rows={}",
+            bo.getModelId(), bo.getModelKey(), bo.getProviderId(), bo.getModelType(), bo.getIsEnabled(), rows);
+        return rows;
     }
 
     @Override

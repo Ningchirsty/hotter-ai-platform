@@ -1,5 +1,6 @@
 package org.dromara.aigov.service;
 
+import org.dromara.aigov.domain.bo.AigModelBaseBo;
 import org.dromara.aigov.domain.bo.AigModelCreateBo;
 import org.dromara.aigov.domain.bo.AigModelGovernanceBo;
 import org.dromara.aigov.domain.bo.AigModelProviderBo;
@@ -73,6 +74,20 @@ public interface IAigModelGovernanceService {
      * @return 新模型ID
      */
     Long createModel(AigModelCreateBo bo);
+
+    /**
+     * 编辑模型主数据（{@code sai_model_config} 的白名单列，<b>不含 {@code api_key}</b>）。
+     *
+     * <p>补上治理台内的编辑能力：原先登记错了既改不了（界面只读）也删不掉（无 DELETE），
+     * 只能跳到 snail-ai 管理端。密钥仍走 {@link #updateModelSecret}，两者权限分开。</p>
+     *
+     * <p>{@code apiEndpoint} 对无 {@code aig:model:secret} 权限的账号是脱敏的，
+     * 因此本方法会在缺少该权限时忽略它，避免把已有端点清空。</p>
+     *
+     * @param bo 编辑参数
+     * @return 影响行数
+     */
+    int updateModelBase(AigModelBaseBo bo);
 
     /**
      * 写入/清除模型密钥（{@code sai_model_config.api_key}，只更新该列）。

@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
+import org.dromara.aigov.constant.AigConstants;
 import org.dromara.common.core.validate.AddGroup;
 
 import java.io.Serial;
@@ -61,12 +62,22 @@ public class AigModelCreateBo implements Serializable {
     private String modelName;
 
     /**
-     * 模型标识（业务唯一键，路由与审计按它引用模型）
+     * 模型标识（业务唯一键，路由与审计按它引用模型）。
+     *
+     * <p><b>必须允许「斜杠 / 冒号 / 开头的波浪号」</b>：这个字段最终会作为请求体的
+     * {@code model} 原样发给上游，而主流聚合网关的模型 ID 就是 {@code vendor/model} 形式，
+     * 免费档还带 {@code :free} 后缀，浮动别名以 {@code ~} 开头。
+     * 早期规则只允许「字母数字点下划线中划线」，实测对 OpenRouter 公开目录里的
+     * 443 个模型 ID <b>一个都接受不了</b>（全部含斜杠）——那等于把这类供应商挡在门外，
+     * 也会逼得使用者手改成别的名字，最终表现为上游报「xx is not a valid model ID」。</p>
+     *
+     * <p>规则取自 {@link AigConstants#MODEL_KEY_PATTERN}，与编辑入口共用一份，避免漂移。
+     * 放开这几个字符是安全的：{@code model_key} 只进 JSON 请求体、SQL 参数与审计日志，
+     * 从不被拼进 URL 路径或文件名（已全仓核查）。</p>
      */
     @NotBlank(message = "模型标识不能为空", groups = {AddGroup.class})
     @Size(max = 100, message = "模型标识长度不能超过 100", groups = {AddGroup.class})
-    @Pattern(regexp = "^[A-Za-z0-9][A-Za-z0-9._-]*$",
-        message = "模型标识只能由字母、数字、点、下划线、中划线组成，且以字母或数字开头",
+    @Pattern(regexp = AigConstants.MODEL_KEY_PATTERN, message = AigConstants.MODEL_KEY_PATTERN_MESSAGE,
         groups = {AddGroup.class})
     private String modelKey;
 

@@ -256,7 +256,7 @@ public class ModelConnectionTester {
                         return;
                     }
                     vo.setOk(false);
-                    vo.setMessage(describeHttpFailure(status, text));
+                    vo.setMessage(describeHttpFailure(status, text, target.getModelKey()));
                     return;
                 }
             } catch (Exception e) {
@@ -370,25 +370,34 @@ public class ModelConnectionTester {
     /**
      * 把「HTTP 非 2xx」翻译成可操作的结论，并带上上游原文。
      *
+     * <p><b>为什么要回显「本次发送的模型标识」</b>：400/404 这一类失败里，上游只会说
+     * 「某某 ID 不合法」，而运维看到这句话时并不知道我们究竟发了什么——只能回去翻库。
+     * 之前实测就遇到「上游返回：orfree is not a valid model ID」这种只能靠猜的报错。
+     * 把发出去的标识一并写进结论，这类问题一眼可判。</p>
+     *
      * @param status   状态码
      * @param bodyText 响应体（已掩码）
+     * @param modelKey 本次探测实际发送的模型标识
      * @return 可操作描述
      */
-    private String describeHttpFailure(int status, String bodyText) {
+    private String describeHttpFailure(int status, String bodyText, String modelKey) {
         String upstream = extractUpstreamMessage(bodyText);
+        String sent = "本次发送的模型标识为「" + StringUtils.blankToDefault(modelKey, "(空)") + "」";
         String base;
         if (status == 401 || status == 403) {
             base = "鉴权失败（HTTP " + status + "）：密钥缺失、无效，或该密钥无权访问此模型";
         } else if (status == 402) {
             base = "配额不足（HTTP 402）：上游账户额度/余额不足";
         } else if (status == 404) {
-            base = "地址不存在（HTTP 404）：确认访问地址是否含 /v1 等路径前缀，且模型标识是上游有效模型 ID";
+            base = "地址不存在（HTTP 404）：确认访问地址是否含 /v1 等路径前缀，且模型标识是上游有效模型 ID。"
+                + sent;
         } else if (status == 429) {
             base = "触发限流（HTTP 429）：降低频率或稍后重试";
         } else if (status >= 500) {
             base = "上游服务错误（HTTP " + status + "）：对端异常，稍后重试通常可恢复";
         } else if (status == 400) {
-            base = "请求被拒（HTTP 400）：模型标识或请求参数不被上游接受";
+            base = "请求被拒（HTTP 400）：上游不接受本次请求。" + sent
+                + "，请与上游模型目录逐字核对（区分大小写；聚合网关常要求 vendor/model 前缀或 -free 后缀）";
         } else {
             base = "连接失败（HTTP " + status + "）";
         }

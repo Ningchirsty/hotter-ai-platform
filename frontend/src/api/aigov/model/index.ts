@@ -2,6 +2,7 @@ import type { PageResult } from '@/api/types';
 import type { AxiosPromise } from '@/utils/api-types';
 import request from '@/utils/request';
 import type {
+  AigModelBaseForm,
   AigModelCreateForm,
   AigModelGovernanceForm,
   AigModelGovernanceVO,
@@ -86,6 +87,16 @@ export function createModel(data: AigModelCreateForm) {
   return request({
     url: '/aigov/model',
     method: 'post',
+    data: data
+  });
+}
+
+// 编辑模型主数据（PUT /aigov/model/base）
+// 只改主数据白名单列，不含密钥；apiEndpoint 对无 aig:model:secret 的账号应不下发。
+export function updateModelBase(data: AigModelBaseForm) {
+  return request({
+    url: '/aigov/model/base',
+    method: 'put',
     data: data
   });
 }

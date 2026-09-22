@@ -12,7 +12,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
            绝不与其它列混在一次 UPDATE 里。写入值必须是**密文**——由
            AigModelSecretCipher 按 snail-ai 的 SM4 口径产出；明文落库会让
            snail-ai 运行时解密失败，模型静默不可用；
-        3. 模型主数据的其它列只有 INSERT 与只读校验，没有 UPDATE / DELETE；
+        3. 模型主数据：INSERT（新增）与白名单 UPDATE（编辑），**没有 DELETE**——
+           下架仍走 snail-ai。编辑的白名单里同样没有 api_key；
         4. 读 api_key 的只有 selectTestTarget（连通性测试需要它发请求），
            结果只进服务端内部 VO，禁止出现在任何对外响应或日志中。
     -->
@@ -28,6 +29,27 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </insert>
 
     <!--
+      编辑模型主数据：白名单列整体覆写（可写 null 以便清空说明等），**绝不含 api_key**。
+      唯一例外是 api_endpoint——它以 null 表示「本次不改」：无 aig:model:secret 权限的账号
+      在列表里读不到该列，若照常参与更新就会把已有端点误清空（Service 已按权限决定是否填充）。
+    -->
+    <update id="updateModelBase">
+        update sai_model_config
+        set provider_id = #{providerId},
+            model_key   = #{modelKey},
+            model_name  = #{modelName},
+            model_type  = #{modelType},
+            adapter_key = #{adapterKey,jdbcType=VARCHAR},
+            description = #{description,jdbcType=VARCHAR},
+            scope       = #{scope},
+            is_default  = #{isDefault},
+            is_enabled  = #{isEnabled},
+            <if test="apiEndpoint != null">api_endpoint = #{apiEndpoint,jdbcType=VARCHAR},</if>
+            updated_dt  = now()
+        where id = #{modelId}
+    </update>
+
+    <!--
       写入/清除模型密钥：**只更新 api_key 一列**。
       apiKey 传 null 表示清除（CryptoHelper 对空密文返回空串，snail-ai 侧视为未配置）。
     -->
@@ -40,6 +62,13 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
     <select id="countByModelKey" resultType="int">
         select count(1) from sai_model_config where model_key = #{modelKey}
+    </select>
+
+    <!-- 编辑时的唯一性校验：把自身排除掉，否则「不改标识直接保存」会把自己判成重复 -->
+    <select id="countByModelKeyExcluding" resultType="int">
+        select count(1) from sai_model_config
+        where model_key = #{modelKey}
+        <if test="excludeId != null">and id != #{excludeId}</if>
     </select>
 
     <select id="countProvider" resultType="int">
