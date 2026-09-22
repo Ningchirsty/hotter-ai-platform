@@ -84,7 +84,15 @@ export function verifyBinding(workflow, root = contractRoot()) {
   return { ok: errors.length === 0, errors, file, checksum, template: parsed };
 }
 
-/** 重算并把 checksum 写回契约（仅改 checksum 字段与 meta.updatedAt）。 */
+/**
+ * 重算并把 checksum 写回契约（仅在确实有变化时改动 `meta.updatedAt`）。
+ *
+ * <p><b>为什么不能无条件盖日期</b>：`updatedAt` 表达的是"最后一次实际变更日期"。
+ * 早期实现每次调用都把它改成当天并写回文件，于是
+ * ①「重算不应改变契约内容」这条测试在跨天之后必红（文件字节多了个新日期），
+ * ② 一次只读的校验会悄悄弄脏工作区。真实事故：跨天当天 Backend CI 因此变红，
+ * 而该步骤失败会连带跳过镜像发布。</p>
+ */
 export function rewriteChecksums(path = CONTRACT_PATH) {
   const contract = loadContract(path);
   const changed = [];
@@ -100,8 +108,14 @@ export function rewriteChecksums(path = CONTRACT_PATH) {
       workflow.checksum = checksum;
     }
   }
-  contract.meta.updatedAt = new Date().toISOString().slice(0, 10);
-  writeFileSync(path, canonicalize(contract), 'utf8');
+  if (changed.length > 0) {
+    contract.meta.updatedAt = new Date().toISOString().slice(0, 10);
+  }
+  // 仍然写回规范格式（修正手改造成的格式漂移），但内容一致时不落盘。
+  const next = canonicalize(contract);
+  if (next !== readFileSync(path, 'utf8')) {
+    writeFileSync(path, next, 'utf8');
+  }
   return changed;
 }
 
