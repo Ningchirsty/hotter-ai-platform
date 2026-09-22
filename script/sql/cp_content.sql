@@ -242,6 +242,48 @@ create table cp_async_job (
     key idx_cp_job_status (status)
 ) engine=innodb comment = '内容生产-异步作业';
 
+-- ----------------------------
+-- 9、成品一致性检查（生成结果 vs 原参考图）
+-- 依据：SPEC 增补章节 §11。覆盖任务出稿之后的验收环节。
+--
+-- 红线（SPEC §0.1 第 2 条）：本表只记录检查结论，不产生、也不修改任何产品事实；
+-- 参考图与 AI 结论不得反向成为产品结构/颜色/数量/包装/参数的依据。
+-- 图片不入本表：两张图均作为 cp_task_file 附件存对象存储，这里只存 file_id 引用。
+-- ----------------------------
+drop table if exists cp_output_check;
+create table cp_output_check (
+    check_id        bigint(20)      not null                   comment '检查ID',
+    check_no        varchar(32)     not null                   comment '检查单号（对外展示，CK+日期+序号）',
+    task_id         bigint(20)      not null                   comment '任务ID',
+    reference_file_id bigint(20)    not null                   comment '原参考图附件ID（cp_task_file.file_id）',
+    result_file_id  bigint(20)      not null                   comment '生成结果附件ID（cp_task_file.file_id）',
+    status          varchar(16)     not null default 'PENDING' comment '检查状态（PENDING/RUNNING/DONE/FAILED）',
+    verdict         varchar(16)     default null               comment '检查结论（CONSISTENT/INCONSISTENT/UNCERTAIN），未出结论为 null',
+    score           decimal(5,2)    default null               comment '一致性得分 0-100；算不出时留空，不编造',
+    summary         varchar(1000)   default null               comment '结论摘要（给用户看的一句话）',
+    findings_json   text                                       comment '差异清单 JSON',
+    metrics_json    text                                       comment '本地确定性度量 JSON（尺寸/比例/网格差异）',
+    model_id        bigint(20)      default null               comment '实际执行的模型ID（sai_model_config.id）',
+    model_key       varchar(128)    default null               comment '实际执行的模型标识',
+    deployment_type varchar(32)     default null               comment '实际执行的部署类型',
+    invoker_name    varchar(64)     default null               comment '实际执行的调用器名称',
+    trace_id        varchar(64)     default null               comment '治理层调用链ID（aig_invocation_audit.trace_id）',
+    failure_reason  varchar(500)    default null               comment '未取得结论的可读原因（status=FAILED 时必填）',
+    checked_by      bigint(20)      default null               comment '检查发起人',
+    checked_at      datetime        default null               comment '检查完成时间',
+    remark          varchar(500)    default null               comment '备注',
+    del_flag        char(1)         default '0'                comment '删除标志（0存在 1删除）',
+    create_dept     bigint(20)      default null               comment '创建部门',
+    create_by       bigint(20)      default null               comment '创建者',
+    create_time     datetime                                   comment '创建时间',
+    update_by       bigint(20)      default null               comment '更新者',
+    update_time     datetime                                   comment '更新时间',
+    primary key (check_id),
+    unique key uk_cp_output_check_no (check_no),
+    key idx_cp_output_check_task (task_id, del_flag),
+    key idx_cp_output_check_status (status, verdict)
+) engine=innodb comment = '内容生产-成品一致性检查';
+
 -- ============================================================================
 -- 闸门规则种子
 -- 依据设计文档 §8.2「不同交付物的强制项」。

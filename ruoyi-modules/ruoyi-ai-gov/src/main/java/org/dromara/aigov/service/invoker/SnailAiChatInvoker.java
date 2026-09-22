@@ -108,6 +108,13 @@ public class SnailAiChatInvoker implements ModelInvoker {
         }
         long start = System.currentTimeMillis();
         try {
+            // 图片型载荷必须显式拒绝：snail-ai OpenAPI 只收文本 content，
+            // 「忽略图片照常发文本」会让模型在没见过图的情况下给出结论，
+            // 调用方无法区分「真的比对过」与「只是没报错」。
+            String imageError = ModelImagePayload.requireUnsupported(request.getPayload(), "snail-ai");
+            if (imageError != null) {
+                return ModelInvokeResult.failure(imageError, System.currentTimeMillis() - start);
+            }
             OpenApiChatRequest chatRequest = new OpenApiChatRequest();
             chatRequest.setAgentId(agentId);
             chatRequest.setOpenId(properties.getOpenId());
@@ -144,10 +151,12 @@ public class SnailAiChatInvoker implements ModelInvoker {
     private String buildContent(ModelInvokeRequest request) {
         Map<String, Object> payload = request.getPayload();
         String prompt = StringUtils.blankToDefault(request.getPrompt(), "");
-        if (payload == null || payload.isEmpty()) {
+        // 双保险：即便上面的拒绝分支被绕过，也绝不把 base64 序列化进 content
+        Map<String, Object> textPayload = ModelImagePayload.withoutImages(payload);
+        if (textPayload.isEmpty()) {
             return prompt;
         }
-        return prompt + "\n" + JsonUtils.toJsonString(payload);
+        return prompt + "\n" + JsonUtils.toJsonString(textPayload);
     }
 
 }

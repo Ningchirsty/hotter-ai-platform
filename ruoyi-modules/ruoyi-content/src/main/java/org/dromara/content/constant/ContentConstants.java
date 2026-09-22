@@ -109,6 +109,25 @@ public interface ContentConstants {
      */
     String PERM_GATE_REMOVE = "content:gateRule:remove";
 
+    // ---------------- 成品一致性检查 ----------------
+
+    /**
+     * 成品检查-列表
+     */
+    String PERM_CHECK_LIST = "content:check:list";
+    /**
+     * 成品检查-查询
+     */
+    String PERM_CHECK_QUERY = "content:check:query";
+    /**
+     * 成品检查-发起（上传参考图与成品图并触发比对）
+     */
+    String PERM_CHECK_RUN = "content:check:run";
+    /**
+     * 成品检查-删除
+     */
+    String PERM_CHECK_REMOVE = "content:check:remove";
+
     // ---------------- 治理层能力编码（设计文档 §9.1） ----------------
 
     /**
@@ -119,6 +138,30 @@ public interface ContentConstants {
      * 资料预检能力编码
      */
     String CAP_BRIEF_PRECHECK = "brief_precheck";
+    /**
+     * 成品一致性检查能力编码（生成结果 vs 原参考图）
+     */
+    String CAP_DELIVERABLE_CONSISTENCY = "deliverable_consistency";
+
+    // ---------------- 成品一致性检查的图片约定 ----------------
+
+    /**
+     * 参考图标签。
+     * <p>与 {@link #IMAGE_LABEL_RESULT} 一起构成调用载荷的顺序契约：
+     * {@code images[0]} 必须是参考图、{@code images[1]} 必须是成品图。
+     * 两张图说反了结论就完全说反，且从结果上看不出来，故必须显式标注并校验。</p>
+     */
+    String IMAGE_LABEL_REFERENCE = "参考图";
+    /**
+     * 成品图标签
+     */
+    String IMAGE_LABEL_RESULT = "成品图";
+
+    /**
+     * 单张检查图片上限（字节）：与对象存储读取上限（50MB）不同，
+     * 这里要 base64 进请求体，故收紧到 8MB（base64 后约 11MB）。
+     */
+    long MAX_CHECK_IMAGE_SIZE = 8L * 1024 * 1024;
 
     // ---------------- 其它 ----------------
 

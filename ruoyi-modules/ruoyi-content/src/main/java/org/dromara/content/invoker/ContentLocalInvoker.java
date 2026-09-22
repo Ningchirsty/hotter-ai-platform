@@ -4,6 +4,7 @@ import cn.hutool.core.collection.CollUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.aigov.enums.AigDeploymentTypeEnum;
+import org.dromara.aigov.service.invoker.ModelImagePayload;
 import org.dromara.aigov.service.invoker.ModelInvokeRequest;
 import org.dromara.aigov.service.invoker.ModelInvokeResult;
 import org.dromara.aigov.service.invoker.ModelInvoker;
@@ -12,11 +13,13 @@ import org.dromara.common.json.utils.JsonUtils;
 import org.dromara.content.constant.ContentConstants;
 import org.dromara.content.helper.ContentDocumentExtractor;
 import org.dromara.content.helper.ContentFieldExtractor;
+import org.dromara.content.helper.ContentImageInspector;
 import org.dromara.content.helper.ContentPrecheckEngine;
 import org.dromara.content.helper.ExtractedDocument;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -66,7 +69,8 @@ public class ContentLocalInvoker implements ModelInvoker {
     @Override
     public boolean supportsCapability(String capabilityCode) {
         return ContentConstants.CAP_DOCUMENT_PARSE.equals(capabilityCode)
-            || ContentConstants.CAP_BRIEF_PRECHECK.equals(capabilityCode);
+            || ContentConstants.CAP_BRIEF_PRECHECK.equals(capabilityCode)
+            || ContentConstants.CAP_DELIVERABLE_CONSISTENCY.equals(capabilityCode);
     }
 
     @Override
@@ -84,6 +88,9 @@ public class ContentLocalInvoker implements ModelInvoker {
         try {
             if (ContentConstants.CAP_DOCUMENT_PARSE.equals(request.getCapabilityCode())) {
                 return parseDocument(request, start);
+            }
+            if (ContentConstants.CAP_DELIVERABLE_CONSISTENCY.equals(request.getCapabilityCode())) {
+                return checkConsistency(request, start);
             }
             return precheck(request, start);
         } catch (Exception e) {
@@ -158,6 +165,101 @@ public class ContentLocalInvoker implements ModelInvoker {
         log.info("资料预检完成, candidateCount={}, ruleCount={}, conflictCount={}, missingCount={}",
             candidates.size(), rules.size(), r.getConflicts().size(), r.getMissings().size());
         return ModelInvokeResult.success(JsonUtils.toJsonString(out), System.currentTimeMillis() - start);
+    }
+
+    /**
+     * 成品一致性检查：本地确定性比对（参考图 vs 成品图）。
+     *
+     * <p><b>约定 {@code images[0]} 是参考图、{@code images[1]} 是成品图</b>。标签不符时直接失败，
+     * 不靠顺序猜：两张图说反了，结论就完全说反了，而且从结果上根本看不出来。</p>
+     *
+     * <p>本方法只做不需要模型也能确凿测出的部分（画布几何 + 归一化网格结构差异），
+     * 语义判断（颜色准确性、文字内容、Logo 是否被改）交给视觉模型或人工——
+     * 摘要里会明确写出这个边界，不让「一致」这两个字被过度解读。</p>
+     *
+     * @param request 调用请求（payload 需含 images）
+     * @param start   起始时间
+     * @return 调用结果
+     */
+    private ModelInvokeResult checkConsistency(ModelInvokeRequest request, long start) {
+        Map<String, Object> payload = request.getPayload() == null ? Map.of() : request.getPayload();
+        List<ModelImagePayload.ImagePart> images = ModelImagePayload.extract(payload);
+        if (images.size() < 2) {
+            return ModelInvokeResult.failure("成品一致性检查需要「参考图 + 成品图」共两张，实际收到 "
+                + images.size() + " 张", System.currentTimeMillis() - start);
+        }
+        ModelImagePayload.ImagePart reference = images.get(0);
+        ModelImagePayload.ImagePart result = images.get(1);
+        if (!ContentConstants.IMAGE_LABEL_REFERENCE.equals(reference.label())
+            || !ContentConstants.IMAGE_LABEL_RESULT.equals(result.label())) {
+            return ModelInvokeResult.failure("图片标签不符合约定：第 1 张须为「"
+                + ContentConstants.IMAGE_LABEL_REFERENCE + "」、第 2 张须为「"
+                + ContentConstants.IMAGE_LABEL_RESULT + "」，实际为「" + reference.label()
+                + "」「" + result.label() + "」", System.currentTimeMillis() - start);
+        }
+
+        byte[] referenceBytes = decodeImage(reference);
+        byte[] resultBytes = decodeImage(result);
+        if (referenceBytes == null || resultBytes == null) {
+            return ModelInvokeResult.failure("图片 base64 解码失败", System.currentTimeMillis() - start);
+        }
+
+        ContentImageInspector.Comparison comparison = ContentImageInspector.compare(referenceBytes, resultBytes);
+        String verdict = ContentImageInspector.localVerdict(comparison);
+        String summary = ContentImageInspector.localSummary(comparison, verdict);
+
+        List<Map<String, Object>> findings = new ArrayList<>();
+        for (String note : comparison.notes()) {
+            findings.add(finding("结构比对", comparison.comparable() ? "INFO" : "WARN", note));
+        }
+        if (!comparison.comparable()) {
+            findings.add(finding("版面关系", "WARN",
+                "两图不可直接做像素级比对，本次未给出相似度分值，请以视觉模型或人工复核为准"));
+        }
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("verdict", verdict);
+        // score 只在真的算出来时才写：输出模板不强制该字段，编造一个分值比不给更糟
+        if (comparison.gridSimilarity() != null) {
+            out.put("score", Math.round(comparison.gridSimilarity() * 100d) / 100d);
+        }
+        out.put("summary", summary);
+        out.put("findings", findings);
+        out.put("pendingConfirm", List.of(
+            "本地结构化比对仅覆盖画布几何与明暗结构，不含颜色准确性、文字内容与 Logo 合规性判断"));
+        log.info("成品一致性本地比对完成, verdict={}, comparable={}, similarity={}",
+            verdict, comparison.comparable(), comparison.gridSimilarity());
+        return ModelInvokeResult.success(JsonUtils.toJsonString(out), System.currentTimeMillis() - start);
+    }
+
+    /**
+     * 解码 base64 图片。
+     *
+     * @param part 图片分片
+     * @return 字节数组；失败返回 null
+     */
+    private byte[] decodeImage(ModelImagePayload.ImagePart part) {
+        try {
+            return Base64.getDecoder().decode(part.base64());
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    /**
+     * 构造一条差异项。
+     *
+     * @param category    类别
+     * @param severity    严重度（INFO/WARN/ERROR）
+     * @param description 描述
+     * @return Map
+     */
+    private Map<String, Object> finding(String category, String severity, String description) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("category", category);
+        item.put("severity", severity);
+        item.put("description", description);
+        return item;
     }
 
     /**

@@ -169,11 +169,33 @@
 |---|---|---|
 | job_id | bigint PK | |
 | task_id | bigint | |
-| job_type | varchar(16) | PARSE / PRECHECK / PACKAGE |
+| job_type | varchar(16) | PARSE / PRECHECK / PACKAGE / OUTPUT_CHECK |
 | status | varchar(16) | QUEUED / RUNNING / SUCCESS / FAILED |
 | progress | int | 0–100 |
 | message | varchar(500) | 失败原因（用户可读） |
 | started_at / finished_at | datetime | |
+
+### 2.9 `cp_output_check` 成品一致性检查（§11 增补）
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| check_id | bigint PK | |
+| check_no | varchar(32) | 检查单号，唯一（CK+日期+序号） |
+| task_id | bigint | |
+| reference_file_id | bigint | 原参考图附件（`cp_task_file.file_id`） |
+| result_file_id | bigint | 生成结果附件（`cp_task_file.file_id`） |
+| status | varchar(16) | 见 §3.9 |
+| verdict | varchar(16) | 见 §3.10，未出结论为 null |
+| score | decimal(5,2) | 0–100；**算不出时留空**，不填 0 或 100 |
+| summary | varchar(1000) | 结论摘要 |
+| findings_json | text | 差异清单 |
+| metrics_json | text | 本地确定性度量（尺寸/比例/网格差异） |
+| model_id / model_key / deployment_type / invoker_name | | 实际执行者（治理层路由结果，排障用） |
+| trace_id | varchar(64) | `aig_invocation_audit.trace_id` |
+| failure_reason | varchar(500) | 未取得结论的可读原因 |
+| checked_by / checked_at | bigint / datetime | |
+
+> 图片本体不入本表：两张图都是 `cp_task_file` 附件（对象存储），本表只存 `file_id`。
 
 ---
 
@@ -188,6 +210,13 @@
 - **3.6** CardStatus：`PENDING` / `RESOLVED` / `BLOCKED`（暂不确认并阻断）/ `CLOSED`
 - **3.7** GateLevel：`BLOCK` / `CONDITION` / `NOTICE`
 - **3.8** 数据等级：复用 aigov 的 `PUBLIC` / `INTERNAL` / `RESTRICTED`（字典 `aig_data_level`），**不另建一套**
+- **3.9** CheckStatus（§11 增补）：`PENDING` / `RUNNING` / `DONE` / `FAILED`
+  - 与作业状态**刻意分开**：作业回答「这次调度跑没跑完」，检查回答「这次比对有没有结果」。
+    「作业 SUCCESS 但输出不符合模板」是一种真实情形——流程跑通了但没拿到结论，
+    合成一个字段就再也区分不出「流程坏了」与「结论没拿到」。
+- **3.10** CheckVerdict（§11 增补）：`CONSISTENT` / `INCONSISTENT` / `UNCERTAIN`
+  - `UNCERTAIN` 是必需的第三态：图片不可解码、或两图长宽比差异过大（参考图是单张产品图、
+    成品是整版长图）时，强行归入「一致/不一致」都是在制造假结论。
 
 ---
 
@@ -283,6 +312,33 @@ ContentParseService
 
 `immutableItems` 必须包含「产品主体、Logo、包装文字」——对应设计文档 §10「AI 生产 Agent 禁止自由重绘」。
 
+### 4.6 成品一致性检查（能力 `deliverable_consistency`，§11 增补）
+
+```
+输入：images[0]=原参考图、images[1]=生成结果（base64）
+      localMetrics（本地确定性度量，见下）
+处理：
+  1) 本地确定性度量（不依赖模型，始终执行并留痕）
+     画布尺寸/长宽比 → 归一化 16×16 灰度网格 → 结构相似度 0–100
+  2) 经治理层调用能力 deliverable_consistency
+     → 绑定了 PRIMARY 视觉模型则用它；否则落到本地内容引擎（FALLBACK 绑定）
+  3) 输出 verdict / summary / findings，落 cp_output_check
+  4) verdict=INCONSISTENT → 生成一张 EXCEPTION 互动卡（CONDITION 级）
+```
+
+**图片顺序即契约**：`images[0]` 必须是参考图、`images[1]` 必须是成品图，本地调用器会校验标签，
+不符即失败。两张图说反了结论就完全说反，且从结果上根本看不出来。
+
+**本地度量的边界必须写在结论里**：16×16 网格亮度相似度只反映版面与明暗结构，
+不含颜色准确性、文字内容与 Logo 合规性。因此本地结论的阈值刻意保守
+（≥92 判一致、<60 判不一致、中间判无法判定），且摘要里明确写出这个边界。
+
+**分值不编造**：`output_schema` 只强制 `verdict` / `summary` / `findings` 三个字段，
+`score` 是可选的。若把 `score` 写进必填，模型与本地实现在算不出分值时都只能编一个数字出来。
+
+**降级为 `UNCERTAIN` 而非硬判**：两图长宽比偏差超过 20% 时不做像素级比对——
+参考图是局部细节、成品是整版长图这种情形下，任何相似度数字都没有意义。
+
 ---
 
 ## 5. 异步模型
@@ -324,6 +380,12 @@ ContentParseService
 | 6.24 | GET | `/content/gateRule/list` | `content:gateRule:list` | 闸门规则分页 |
 | 6.25 | GET | `/content/gateRule/{ruleId}` | `content:gateRule:query` | 规则详情 |
 | 6.26 | POST/PUT/DELETE | `/content/gateRule` | `content:gateRule:add/edit/remove` | 规则维护 |
+| 6.27 | GET | `/content/check/list` | `content:check:list` | 成品检查分页（支持 taskNo / status / verdict / onlyFailed） |
+| 6.28 | GET | `/content/check/{checkId}` | `content:check:query` | 检查详情 |
+| 6.29 | GET | `/content/check/byTask/{taskId}` | `content:check:query` | 某任务的检查记录 |
+| 6.30 | POST | `/content/check/run` | `content:check:run` | 发起检查（multipart：taskId / referenceFileId 或 referenceFile / resultFile）；**不加 `@RepeatSubmit`**，理由同 6.6 |
+| 6.31 | DELETE | `/content/check/{checkId}` | `content:check:remove` | 逻辑删除检查记录 |
+| 6.32 | GET | `/content/check/{checkId}/image/{side}` | `content:check:query` | 图片预览（side=reference/result；不暴露对象存储直链） |
 
 > **实施后补充说明（据实修订）**：原 §6 未包含事实确认接口。实施中发现一个功能缺口——
 > 闸门只认 `CONFIRMED` 事实，而预检只为「冲突」与「缺失」生成卡片（§3.1 的设计意图），
@@ -344,7 +406,8 @@ ContentParseService
    ├─ 互动确认卡           content/card/index      1765000000000000102
    ├─ 设计开工包           content/workPackage/index 1765000000000000103
    ├─ 产品与SKU            content/product/index   1765000000000000104
-   └─ 闸门规则             content/gateRule/index  1765000000000000105
+   ├─ 闸门规则             content/gateRule/index  1765000000000000105
+   └─ 成品一致性检查       content/check/index     1765000000000000106
 ```
 
 角色：`content_admin`（内容生产管理员，全部权限）、`content_member`（内容生产人员，任务与卡片权限，无删除/无规则维护）。
@@ -401,3 +464,56 @@ ContentParseService
 6. Controller 与权限
 7. 前端五页
 8. 冒烟脚本 + 全量验证
+
+---
+
+## 11. 增补：成品一致性检查（阶段1A 范围扩展）
+
+> 本节为实施后增补。阶段1A 原范围只覆盖「开工前」，**出稿之后的验收是空白**——
+> 成品图和当初的参考图到底一不一致，只能靠人肉看。本节补齐该环节。
+
+### 11.1 一句话定义
+
+把「生成的结果图」与「原参考图」摆在一起比对，判断成品是否忠实还原参考图
+（主体形态、颜色、数量、结构、Logo、包装文字），输出一致/不一致/无法判定与差异清单。
+
+### 11.2 三条硬边界
+
+| # | 边界 | 落到实现 |
+|---|---|---|
+| 1 | **只做验收，不产生产品事实** | 全程不写 `cp_fact_snapshot`。互动卡只给 `SUPPLEMENT`（已返工，重新提交）与 `BLOCK`（阻断流转）两个选项——`CONFIRM`/`OTHER` 会写入事实快照，用它处理「成品画错了」直接违反红线 2 |
+| 2 | **不静默外发** | RESTRICTED 一律 `allow_external='N'`；PUBLIC/INTERNAL 虽允许外部，但业务侧还有第二道闸：`cp_task.allow_external != 'Y'` 时若路由指向外部部署模型，检查直接以可读原因失败，不"顺手"发出去 |
+| 3 | **不编造结论** | 没拿到结论时 `status=FAILED` 而非伪装成「一致」；`score` 算不出就留空；证据不足一律 `UNCERTAIN` |
+
+### 11.3 大模型怎么接（本机接入的本地或外部模型）
+
+内容模块照旧**只调用能力编码**，不直接接触模型地址。要启用视觉模型：
+
+1. 在「管理中心 → 模型注册中心」新增/启用一个**支持图片输入**的模型
+   （本地私有 `LOCAL`、集团共享 `GROUP`，或直连的 OpenAI 兼容 `EXTERNAL_API`）；
+2. 在「能力绑定」里把该模型绑定到能力 `deliverable_consistency`，`usage_type` 选 `PRIMARY`；
+3. 无需改代码、无需发版——路由按 `PRIMARY → GRAY → FALLBACK` 顺序挑选，
+   `PRIMARY` 会排在本地兜底之前。
+
+**本地兜底**：本地内容引擎以 `FALLBACK` 绑定本能力。治理台没有绑定视觉模型时，
+仍能完成画布几何与归一化网格结构的确定性比对，能力不会因「没配模型」而不可用。
+
+**多模态请求体**：`OpenAiCompatibleInvoker` 支持 OpenAI 兼容的多模态消息格式
+（`content` 为 `[{"type":"text"},{"type":"image_url","image_url":{"url":"data:..."}}]`）。
+图片一律放在 payload 的 `images` 键下（`ModelImagePayload` 契约）；文本调用器必须用
+`withoutImages` 剥离后再序列化——否则几十 MB 的 base64 会被塞进提示词文本。
+**不支持图片的调用器（snail-ai）遇图片载荷一律显式失败**，不得静默忽略：
+那会让模型在没见过图的情况下给出「一致」，错得毫无痕迹。
+
+### 11.4 验收方式
+
+1. `ruoyi-admin -am` 全链路 BUILD SUCCESS；菜单「成品一致性检查」可见
+2. 上传一对图片发起检查 → 断言 `cp_output_check` 落一条记录，`status=DONE`
+3. **断言 `metrics_json` 非空**：本地度量是唯一不依赖模型、可复算的证据，必须留痕
+4. **断言 `aig_invocation_audit` 有 `deliverable_consistency` 的留痕**，且 `input_summary`
+   里 `images` 记作 `array`（**不得**出现 base64 —— 脱敏只写字段名与值类型）
+5. **反向断言**：检查前后 `cp_fact_snapshot` 行数与内容不变（红线 2）
+6. 任务 `allow_external != 'Y'` 且路由指向外部模型时 → 断言检查 `FAILED` 且原因可读，
+   同时断言**没有发生外部调用**（`external_call='N'`）
+7. 结论为 `INCONSISTENT` 时 → 断言生成 EXCEPTION 互动卡；重复检查不堆叠卡片
+
