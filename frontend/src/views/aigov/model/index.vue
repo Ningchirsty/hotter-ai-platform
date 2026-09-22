@@ -910,8 +910,14 @@ const { resetQuery } = useSearchReset({
   afterReset: () => handleQuery()
 });
 
-/** sai_model_config 的 is_default / is_enabled 可能以 1 或 '1' 下发 */
-const isOn = (value?: number | string) => value === 1 || value === '1';
+/**
+ * sai_model_config 的 is_default / is_enabled 由后端以 **Boolean**（true/false）下发。
+ *
+ * ⚠️ 这里曾经只认 1 / '1'，而 `true === 1` 为 false，导致「默认」「启用」两列**恒显示为否/停用**，
+ * 编辑弹窗的两个开关也永远初始为关——用户看着是关的、直接点保存，就会把**已启用的模型静默停用**。
+ * 因此必须同时认 boolean 与 1/'1'（历史口径）。
+ */
+const isOn = (value?: number | string | boolean | null) => value === true || value === 1 || value === '1';
 
 /** 查询模型清单 */
 const getList = async () => {
