@@ -191,7 +191,7 @@
           >
             <el-button type="primary" plain icon="Upload">选择图片</el-button>
             <template #tip>
-              <div class="el-upload__tip">支持 PNG / JPEG / GIF / BMP / WebP，单张不超过 8MB。</div>
+              <div class="el-upload__tip">支持 PNG / JPEG / GIF / BMP / WebP，单张不超过 8MB。上传前会自动压缩，无需自行处理体积。</div>
             </template>
           </el-upload>
         </el-form-item>
@@ -206,7 +206,7 @@
           >
             <el-button type="primary" plain icon="Upload">选择生成结果</el-button>
             <template #tip>
-              <div class="el-upload__tip">出稿的成品图，单张不超过 8MB。与参考图一起提交后异步比对。</div>
+              <div class="el-upload__tip">出稿的成品图，单张不超过 8MB，上传前会自动压缩。与参考图一起提交后异步比对。</div>
             </template>
           </el-upload>
         </el-form-item>
@@ -328,6 +328,7 @@
 </template>
 
 <script setup lang="ts">
+import { compressAccurately } from 'image-conversion';
 import type { CheckFinding, CheckMetrics, CpOutputCheckQuery, CpOutputCheckVO } from '@/api/content/check/types';
 import { delCheck, fetchCheckImageBlobUrl, getCheck, listCheck, runCheck } from '@/api/content/check';
 import { listTask, listTaskFiles } from '@/api/content/task';
@@ -466,6 +467,93 @@ const handleClear = (side: 'reference' | 'result') => {
   }
 };
 
+// ---------------- 上传前压缩 ----------------
+
+/**
+ * 压缩目标体积（KB）。比对本身只需要 16×16 的亮度网格（本地确定性度量）
+ * 或一张看得清的图（视觉模型），全分辨率从来不是必需的。
+ */
+const UPLOAD_TARGET_KB = 300;
+
+/** 小于该体积就原样上传，避免对本来就很小的图再做无意义的再编码 */
+const UPLOAD_PASSTHROUGH_KB = 400;
+
+/** 与服务端 ContentFileKindEnum 的图片集合保持一致 */
+const ALLOWED_IMAGE_EXT = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'];
+
+/** 单张原图硬上限（与服务端 MAX_CHECK_IMAGE_SIZE 一致） */
+const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+
+/**
+ * 上传前把图片压到目标体积。
+ *
+ * 为什么必须压：浏览器经 Cloudflare Tunnel 的上行实测只有 ~20KB/s（同机直连内网是 300MB/s）。
+ * 一次检查要传两张图，原图动辄 3–8MB，光传输就要 150–800 秒——必然先撞前端 50s 请求超时，
+ * 再撞 Cloudflare 的 100s 上限（HTTP 524）。压到几百 KB 后传输降到十几秒以内，比对精度不受影响。
+ *
+ * @param file 用户选择的原图
+ * @returns 可直接上传的文件（压缩后，或原样返回）
+ */
+const prepareUploadImage = async (file: File): Promise<File> => {
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  if (!ALLOWED_IMAGE_EXT.includes(ext)) {
+    throw new Error(`「${file.name}」不是图片，仅支持 PNG / JPEG / GIF / BMP / WebP`);
+  }
+  if (file.size <= UPLOAD_PASSTHROUGH_KB * 1024) {
+    return file;
+  }
+  try {
+    const compressed = await compressAccurately(file, UPLOAD_TARGET_KB);
+    // 统一按 JPEG 上传：体积可控，且服务端按扩展名判类型，.jpg 必然通过。
+    // 代价是丢透明通道——本功能比对的是实物产品照片，可以接受。
+    const name = file.name.replace(/\.[^.]+$/, '') + '.jpg';
+    return new File([compressed], name, { type: 'image/jpeg' });
+  } catch {
+    // 压缩失败不直接拦死：原图若在服务端上限内仍可提交，超限时由服务端如实拒绝
+    if (file.size > MAX_UPLOAD_BYTES) {
+      throw new Error(`「${file.name}」压缩失败且原图超过 8MB，请先自行裁剪后再上传`);
+    }
+    return file;
+  }
+};
+
+/** 轮询定时器句柄 */
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+/** 停止轮询 */
+const stopPolling = () => {
+  if (pollTimer !== null) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+};
+
+/**
+ * 轮询检查结论。
+ *
+ * 比对跑在单线程异步执行器里：上传慢时请求本身就要十几秒，走视觉模型最坏一分钟以上。
+ * 只刷新一次会让用户一直看到「检查中」，误以为卡死。这里 3 秒一轮、最多 40 轮（约 2 分钟），
+ * 该条记录进入 DONE / FAILED 即停。
+ *
+ * @param checkId 本次提交的检查ID
+ */
+const startPolling = (checkId?: string | number) => {
+  stopPolling();
+  const target = checkId === undefined || checkId === null ? undefined : String(checkId);
+  let ticks = 0;
+  pollTimer = setInterval(async () => {
+    ticks += 1;
+    await getList();
+    const row = target ? checkList.value.find((item) => String(item.checkId) === target) : undefined;
+    const status = row ? String(row.status) : '';
+    if ((target && (status === 'DONE' || status === 'FAILED')) || ticks >= 40) {
+      stopPolling();
+    }
+  }, 3000);
+};
+
+onBeforeUnmount(() => stopPolling());
+
 /** 提交检查 */
 const submitRun = async () => {
   if (!runForm.value.taskId) {
@@ -486,18 +574,29 @@ const submitRun = async () => {
   }
   running.value = true;
   try {
+    // 先压缩再上传：上行经 Cloudflare 只有 ~20KB/s，原图直传必然超时（见 prepareUploadImage）
+    let preparedResult: File;
+    let preparedReference: File | undefined;
+    try {
+      preparedResult = await prepareUploadImage(resultFile.value);
+      preparedReference =
+        referenceMode.value === 'UPLOAD' && referenceFile.value ? await prepareUploadImage(referenceFile.value) : undefined;
+    } catch (e: any) {
+      modal.msgError(e?.message || '图片处理失败，请检查文件后重试');
+      return;
+    }
     const checkId = await runCheck({
       taskId: runForm.value.taskId,
       referenceFileId: referenceMode.value === 'EXISTING' ? runForm.value.referenceFileId : undefined,
-      referenceFile: referenceMode.value === 'UPLOAD' ? referenceFile.value! : undefined,
-      resultFile: resultFile.value,
+      referenceFile: preparedReference,
+      resultFile: preparedResult,
       remark: runForm.value.remark
     });
     runDialog.visible = false;
-    modal.msgSuccess('已提交检查，稍后在列表中查看结论');
+    modal.msgSuccess('已提交检查，正在比对，完成后会自动刷新列表');
     await getList();
-    // 异步作业在单线程执行器里跑；稍等一会再自动刷新一次，省掉用户手动点刷新
-    setTimeout(() => getList(), 2500);
+    // 上传本身就要十几秒，走视觉模型最坏一分钟以上；只刷一次会让用户一直看到「检查中」
+    startPolling(checkId);
     if (checkId) {
       // 保持 checkId 引用，便于排障时定位（不弹窗打扰）
       console.debug('checkId =', checkId);
