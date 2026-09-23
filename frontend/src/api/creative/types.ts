@@ -372,10 +372,10 @@ export const SCREEN_STATUS_LABELS: Record<string, string> = {
   REJECTED: '待人工处理'
 };
 
-/** QA 结论 → 展示 */
+/** QA 结论 → 展示（不一致的候选是否已被筛除，看该屏的说明列） */
 export const QA_VERDICT_LABELS: Record<string, string> = {
   CONSISTENT: '一致',
-  INCONSISTENT: '不一致（已筛除）',
+  INCONSISTENT: '不一致',
   UNCERTAIN: '无法判定（转人工）'
 };
 

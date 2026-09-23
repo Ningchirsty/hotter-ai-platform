@@ -360,6 +360,14 @@ public class CreativeProductionServiceImpl implements ICreativeProductionService
             }
             String note = failed > 0
                 ? "已失败 " + failed + " 次（上限 " + MAX_ATTEMPTS_PER_SCREEN + " 次尝试，到顶转人工）" : null;
+            // 已选定的候选若质检不一致：不静默推翻人的决定，但必须在页面上大声提示——
+            // 「状态已选定 + 质检不一致」是一个需要人来处理的冲突，不能悄悄放过去。
+            if (selected != null && VERDICT_INCONSISTENT.equalsIgnoreCase(selected.getQaVerdict())) {
+                note = "已选定候选的质检结论为「不一致」，需人工处理（可重出这一屏后再选定）";
+            } else if (selected == null && latest != null
+                && DpGenerationStatusEnum.REJECTED.getCode().equals(latest.getStatus())) {
+                note = "候选因质检不一致被筛除，请重出这一屏";
+            }
             list.add(new ScreenProduction(screen.getId(), screen.getScreenNo(), screen.getScreenTypeDesc(),
                 status, rows.size(), selected == null ? null : selected.getId(),
                 latest == null ? null : latest.getId(),
