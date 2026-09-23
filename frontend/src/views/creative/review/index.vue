@@ -138,16 +138,139 @@
         </p>
       </section>
 
-      <!-- 后续阶段占位说明 -->
+      <!-- 机排版与终审（R3） -->
       <section class="panel">
         <div class="block-head">
-          <h3>后续（R3）</h3>
+          <h3>机排版与终审</h3>
+          <div class="head-actions">
+            <el-tag :type="detailPage?.rendererAvailable ? 'success' : 'danger'" size="small">
+              {{ detailPage?.rendererAvailable ? '渲染服务可达' : '渲染服务不可达' }}
+            </el-tag>
+            <span class="muted">
+              模板 {{ detailPage?.templateKey || '—' }} · 当前版本 v{{ detailPage?.currentVersion ?? 0 }}
+              （{{ detailPage?.statusDesc || '未排版' }}）
+            </span>
+            <el-button size="small" plain :loading="rendering" @click="doRender">
+              {{ (detailPage?.currentVersion ?? 0) > 0 ? '重新渲染 V0.8' : '渲染机排版 V0.8' }}
+            </el-button>
+          </div>
         </div>
+
         <p class="muted">
-          机排版 V0.8、人工精修与终审在 R3 交付：由独立渲染服务把逐屏结果编成 750×N 长图，
-          再走整页质检与终审。当前页面只承载视觉门，避免把未交付的功能混进审核页。
+          渲染会把每屏<b>已选定</b>的产出与分镜文案排成 750×N 长图；没有已选定产出的屏会在图上明确画出
+          「这一屏还没有产出」，不会留白糊弄。
         </p>
+        <el-alert
+          v-if="(detailPage?.screensWithoutSelection || []).length"
+          type="warning"
+          show-icon
+          :closable="false"
+          class="gate-alert"
+          :title="`以下屏还没有已选定的产出：${(detailPage?.screensWithoutSelection || []).join('、')}`"
+        />
+        <el-alert
+          v-if="detailPage && detailPage.rendererAvailable === false"
+          type="error"
+          show-icon
+          :closable="false"
+          class="gate-alert"
+          title="渲染服务不可达，无法排版（请确认 creative-renderer 容器已启动）"
+        />
+
+        <el-table
+          v-if="(detailPage?.versions || []).length"
+          :data="detailPage?.versions || []"
+          size="small"
+          class="version-table"
+        >
+          <el-table-column label="版本" width="150">
+            <template #default="{ row }">
+              <div class="cell-main">v{{ asVersion(row).version }} · {{ asVersion(row).kindDesc }}</div>
+              <div class="muted small">{{ asVersion(row).createTime }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column label="长图" width="130">
+            <template #default="{ row }">
+              {{ asVersion(row).pageWidth }}×{{ asVersion(row).pageHeight }}
+            </template>
+          </el-table-column>
+          <el-table-column label="状态" width="130">
+            <template #default="{ row }">
+              <el-tag size="small" :type="versionStatusType(asVersion(row).status)">
+                {{ LAYOUT_VERSION_STATUS_LABELS[asVersion(row).status || ''] || asVersion(row).status }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="渲染证据 / 审核意见" min-width="280">
+            <template #default="{ row }">
+              <div class="muted small">{{ asVersion(row).remark || '—' }}</div>
+              <div v-if="asVersion(row).reviewComment" class="review-line">
+                审核：{{ asVersion(row).reviewComment }}
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="230" fixed="right">
+            <template #default="{ row }">
+              <el-button
+                size="small"
+                text
+                type="primary"
+                :disabled="!asVersion(row).previewable"
+                :loading="previewingId === String(asVersion(row).id)"
+                @click="doPreview(asVersion(row))"
+              >
+                预览长图
+              </el-button>
+              <el-button
+                size="small"
+                text
+                type="success"
+                :disabled="asVersion(row).status !== 'RENDERED'"
+                :loading="reviewingId === String(asVersion(row).id)"
+                @click="doVersionReview(asVersion(row), true)"
+              >
+                通过
+              </el-button>
+              <el-button
+                size="small"
+                text
+                type="danger"
+                :disabled="asVersion(row).status !== 'RENDERED'"
+                :loading="reviewingId === String(asVersion(row).id)"
+                @click="doVersionReview(asVersion(row), false)"
+              >
+                打回
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <p v-else class="empty">
+          还没有排版版本。先在上面通过视觉门、到「视觉方向与分镜」页逐屏出图并选定候选，再回来渲染。
+        </p>
+
+        <div v-if="(detailPage?.currentVersion ?? 0) > 0" class="final-row">
+          <div class="final-hint">
+            <b>交付最终版（V1.0）</b>
+            <span class="muted">
+              设计师在 V0.8 基础上精修后上传长图；上传即登记为新版本并标记交付完成，历史版本全部保留。
+            </span>
+          </div>
+          <el-upload
+            :show-file-list="false"
+            accept="image/png,image/jpeg"
+            :http-request="doUploadFinal"
+          >
+            <el-button :loading="uploadingFinal">上传精修最终版</el-button>
+          </el-upload>
+        </div>
       </section>
+
+      <el-dialog v-model="previewVisible" title="详情页长图预览" width="820px" @closed="closePreview">
+        <div class="long-preview">
+          <img v-if="previewUrl" :src="previewUrl" alt="详情页长图" />
+          <p v-else class="muted">加载中…</p>
+        </div>
+      </el-dialog>
     </template>
   </div>
 </template>
@@ -155,24 +278,56 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
+import type { UploadRequestOptions } from 'element-plus';
 import {
+  fetchDetailPreviewBlobUrl,
+  getDetailPage,
   getVisualGate,
   listCreativeProject,
+  renderDetailPage,
+  reviewDetailVersion,
   reviewVisualGate,
-  submitVisualGate
+  submitVisualGate,
+  uploadDetailFinal
 } from '@/api/creative';
-import type { CreativeProjectVO, GateEvaluationVO, GateItem } from '@/api/creative/types';
+import type {
+  CreativeProjectVO,
+  DpDetailPageVO,
+  DpDetailPageVersionVO,
+  GateEvaluationVO,
+  GateItem,
+  TagType
+} from '@/api/creative/types';
+import { LAYOUT_VERSION_STATUS_LABELS } from '@/api/creative/types';
 
 const projects = ref<CreativeProjectVO[]>([]);
 const taskId = ref('');
 const gate = ref<GateEvaluationVO | null>(null);
+const detailPage = ref<DpDetailPageVO | null>(null);
 const loading = ref(false);
 const submitting = ref(false);
 const reviewing = ref('');
 const comment = ref('');
+const rendering = ref(false);
+const reviewingId = ref('');
+const previewingId = ref('');
+const uploadingFinal = ref(false);
+const previewVisible = ref(false);
+const previewUrl = ref('');
 
 function asItem(row: unknown): GateItem {
   return row as GateItem;
+}
+
+function asVersion(row: unknown): DpDetailPageVersionVO {
+  return row as DpDetailPageVersionVO;
+}
+
+function versionStatusType(status?: string): TagType {
+  if (status === 'APPROVED') return 'success';
+  if (status === 'REJECTED') return 'danger';
+  if (status === 'RENDERED') return 'warning';
+  return 'info';
 }
 
 async function loadProjects() {
@@ -190,12 +345,84 @@ async function loadAll() {
   if (!taskId.value) return;
   loading.value = true;
   try {
-    const res = await getVisualGate(taskId.value);
-    gate.value = res.data || null;
+    const [gateRes, detailRes] = await Promise.all([
+      getVisualGate(taskId.value),
+      getDetailPage(taskId.value)
+    ]);
+    gate.value = gateRes.data || null;
+    detailPage.value = detailRes.data || null;
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '加载视觉门失败');
   } finally {
     loading.value = false;
+  }
+}
+
+async function doRender() {
+  rendering.value = true;
+  try {
+    const res = await renderDetailPage(taskId.value);
+    detailPage.value = res.data || null;
+    const latest = (detailPage.value?.versions || [])[0];
+    ElMessage.success(latest
+      ? `已渲染 v${latest.version}（${latest.pageWidth}×${latest.pageHeight}）`
+      : '已渲染');
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '渲染失败');
+  } finally {
+    rendering.value = false;
+  }
+}
+
+async function doPreview(row: DpDetailPageVersionVO) {
+  previewingId.value = String(row.id);
+  previewVisible.value = true;
+  try {
+    const url = await fetchDetailPreviewBlobUrl(taskId.value, row.id);
+    if (previewUrl.value) URL.revokeObjectURL(previewUrl.value);
+    previewUrl.value = url;
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '读取长图失败');
+  } finally {
+    previewingId.value = '';
+  }
+}
+
+function closePreview() {
+  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value);
+  previewUrl.value = '';
+}
+
+async function doVersionReview(row: DpDetailPageVersionVO, approve: boolean) {
+  if (!approve) {
+    try {
+      await ElMessageBox.confirm('打回后这一版需要重新渲染或修改。确认打回？', '终审打回', { type: 'warning' });
+    } catch {
+      return;
+    }
+  }
+  reviewingId.value = String(row.id);
+  try {
+    await reviewDetailVersion(taskId.value, row.id, approve, approve ? '终审通过' : '终审打回');
+    ElMessage.success(approve ? '已通过，可进入人工精修' : '已打回');
+    await loadAll();
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '终审失败');
+  } finally {
+    reviewingId.value = '';
+  }
+}
+
+async function doUploadFinal(options: UploadRequestOptions) {
+  uploadingFinal.value = true;
+  try {
+    await uploadDetailFinal(taskId.value, options.file as File, '人工精修最终版');
+    ElMessage.success('最终版已上传并登记为 V1.0');
+    await loadAll();
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '上传失败');
+  } finally {
+    uploadingFinal.value = false;
   }
 }
 
@@ -360,6 +587,54 @@ onMounted(async () => {
 }
 .bad {
   color: #fde68a;
+}
+
+.review-line {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #a5b4fc;
+}
+
+.cell-main {
+  font-size: 13px;
+}
+.small {
+  font-size: 12px;
+}
+
+.version-table {
+  margin-top: 12px;
+}
+
+.final-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 14px;
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.final-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+.final-hint .muted {
+  margin: 0;
+}
+
+.long-preview {
+  display: grid;
+  place-items: center;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+.long-preview img {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
 }
 
 .muted {

@@ -13,6 +13,8 @@ import type {
   CreativeWorkflowVO,
   DnaPromptVO,
   DpGenerationVO,
+  DpLayoutTemplateVO,
+  DpDetailPageVO,
   DpStageEventVO,
   DpStoryboardVO,
   DpVisualDirectionVO,
@@ -303,6 +305,83 @@ export function runCandidateQa(taskId: string | number, generationId: string | n
     method: 'post'
   });
 }
+
+// ------------------------------------------------------------------
+// R3：模板库与详情页排版
+// ------------------------------------------------------------------
+
+/** 模板列表（含与渲染服务的实时校验和对账） */
+export function listLayoutTemplates(): AxiosPromise<DpLayoutTemplateVO[]> {
+  return request({ url: '/creative/templates', method: 'get' });
+}
+
+/** 与渲染服务对账（登记新模板；校验和变化则退回草稿） */
+export function syncLayoutTemplates(): AxiosPromise<DpLayoutTemplateVO[]> {
+  return request({ url: '/creative/templates/sync', method: 'post' });
+}
+
+/** 发布模板 */
+export function publishLayoutTemplate(templateId: string | number) {
+  return request({ url: `/creative/templates/${templateId}/publish`, method: 'post' });
+}
+
+/** 退役模板 */
+export function retireLayoutTemplate(templateId: string | number) {
+  return request({ url: `/creative/templates/${templateId}/retire`, method: 'post' });
+}
+
+/** 详情页与版本列表 */
+export function getDetailPage(taskId: string | number): AxiosPromise<DpDetailPageVO> {
+  return request({ url: `/creative/projects/${taskId}/detail-page`, method: 'get' });
+}
+
+/** 渲染一版机排版 V0.8（同步等待渲染完成） */
+export function renderDetailPage(taskId: string | number): AxiosPromise<DpDetailPageVO> {
+  return request({ url: `/creative/projects/${taskId}/detail-page/render`, method: 'post', timeout: 180000 });
+}
+
+/** 终审：通过或打回 */
+export function reviewDetailVersion(
+  taskId: string | number,
+  versionId: string | number,
+  approve: boolean,
+  comment?: string
+) {
+  return request({
+    url: `/creative/projects/${taskId}/detail-page/versions/${versionId}/review`,
+    method: 'post',
+    params: { approve, comment }
+  });
+}
+
+/** 上传人工精修后的最终版 V1.0 */
+export function uploadDetailFinal(
+  taskId: string | number,
+  file: File,
+  comment?: string
+): AxiosPromise<DpDetailPageVO> {
+  const formData = new FormData();
+  formData.append('file', file);
+  return request({
+    url: `/creative/projects/${taskId}/detail-page/final`,
+    method: 'post',
+    params: comment ? { comment } : undefined,
+    data: formData
+  });
+}
+
+/** 取版本长图 blob URL（调用方负责 revokeObjectURL） */
+export const fetchDetailPreviewBlobUrl = async (
+  taskId: string | number,
+  versionId: string | number
+): Promise<string> => {
+  const res = await request({
+    url: `/creative/projects/${taskId}/detail-page/versions/${versionId}/preview`,
+    method: 'get',
+    responseType: 'blob'
+  });
+  return toMediaBlobUrl(res.data, '长图');
+};
 
 /**
  * 把返回体转成可直接放进 `<img>` 的 blob URL。

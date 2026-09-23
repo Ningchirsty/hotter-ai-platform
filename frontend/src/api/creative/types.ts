@@ -379,6 +379,78 @@ export const QA_VERDICT_LABELS: Record<string, string> = {
   UNCERTAIN: '无法判定（转人工）'
 };
 
+// ------------------------------------------------------------------
+// R3：模板库与详情页排版
+// ------------------------------------------------------------------
+
+/** 视觉模板（含与渲染服务的实时对账） */
+export interface DpLayoutTemplateVO {
+  id: string | number;
+  templateCode?: string;
+  templateName?: string;
+  templateType?: string;
+  version?: string;
+  htmlTemplateKey?: string;
+  status?: string;
+  statusDesc?: string;
+  enabled?: string;
+  remark?: string;
+  registeredChecksum?: string;
+  rendererChecksum?: string;
+  checksumMatches?: boolean;
+  rendererAvailable?: boolean;
+  templateBytes?: number;
+}
+
+/** 详情页版本 */
+export interface DpDetailPageVersionVO {
+  id: string | number;
+  version?: number;
+  kind?: string;
+  kindDesc?: string;
+  renderedFileId?: string | number;
+  pageWidth?: number;
+  pageHeight?: number;
+  screenCount?: number;
+  status?: string;
+  statusDesc?: string;
+  reviewBy?: string | number;
+  reviewAt?: string;
+  reviewComment?: string;
+  remark?: string;
+  createTime?: string;
+  previewable?: boolean;
+}
+
+/** 详情页 */
+export interface DpDetailPageVO {
+  id?: string | number;
+  taskId?: string | number;
+  currentVersion?: number;
+  status?: string;
+  statusDesc?: string;
+  remark?: string;
+  versions?: DpDetailPageVersionVO[];
+  /** 还没有已选定产出的屏号 */
+  screensWithoutSelection?: string[];
+  rendererAvailable?: boolean;
+  templateKey?: string;
+}
+
+/** 模板状态 → 展示 */
+export const TEMPLATE_STATUS_LABELS: Record<string, string> = {
+  DRAFT: '草稿（待发布）',
+  PUBLISHED: '已发布',
+  RETIRED: '已退役'
+};
+
+/** 详情页版本状态 → 展示 */
+export const LAYOUT_VERSION_STATUS_LABELS: Record<string, string> = {
+  RENDERED: '已渲染待终审',
+  APPROVED: '已通过',
+  REJECTED: '已打回'
+};
+
 /** 阶段编码 → 可读描述（前端兜底；权威描述在后端 DpVisualStageEnum） */
 export const CREATIVE_STAGE_LABELS: Record<string, string> = {
   MATERIAL_READY: '资料就绪',
