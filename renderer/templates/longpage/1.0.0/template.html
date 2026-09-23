@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <style>
+    /* 详情页长图模板（750 × N）：把逐屏按类型排成一条长图。
+       约束：所有素材以 data URI 内联（渲染期零网络请求，保证可复现）；
+       每屏的 DOM 结构固定，便于「单屏渲染 == 整页中该屏」的一致性验收。 */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 750px; background: #ffffff; }
+    body { font-family: "Noto Sans CJK SC", "Noto Sans SC", sans-serif; color: #1c1c1c; }
+    .page { width: 750px; }
+
+    .screen { width: 750px; padding: 44px 56px 52px; background: var(--bg, #f5f5f3); }
+    .screen + .screen { margin-top: 0; }
+    .screen-type-detail, .screen-type-size { background: #ffffff; }
+
+    .kicker { font-size: 18px; letter-spacing: 2px; color: #8a8a8a; margin-bottom: 12px; }
+    .title { font-size: 38px; line-height: 1.35; font-weight: 700; }
+    .subtitle { margin-top: 12px; font-size: 22px; line-height: 1.6; color: #4a4a4a; }
+    .body { margin-top: 16px; font-size: 20px; line-height: 1.9; color: #333333; }
+    .image-block { margin-top: 28px; }
+    .image-block img { width: 100%; border-radius: 12px; display: block; background: #ffffff; }
+    .solo { margin-top: 30px; padding: 18px 22px; font-size: 17px; line-height: 1.8;
+            color: #4c3fb0; background: rgba(124, 58, 237, 0.08);
+            border-left: 3px solid rgba(124, 58, 237, 0.55); }
+    .missing { margin-top: 28px; padding: 40px 0; text-align: center; font-size: 18px;
+               color: #b04a4a; background: rgba(176, 74, 74, 0.06); border: 1px dashed rgba(176, 74, 74, 0.4); border-radius: 10px; }
+    .footer { padding: 40px 56px 56px; font-size: 16px; line-height: 1.9; color: #8a8a8a; background: #ffffff; }
+  </style>
+</head>
+<body>
+  <div class="page" id="page-root"></div>
+  <script>
+    const LAYOUT = __LAYOUT__;
+
+    function el(tag, cls, text) {
+      const node = document.createElement(tag);
+      if (cls) node.className = cls;
+      if (text !== undefined && text !== null && String(text).length) node.textContent = String(text);
+      return node;
+    }
+
+    function renderScreen(screen, dna) {
+      const typeClass = 'screen-type-' + String(screen.screenType || '').toLowerCase();
+      const section = el('section', 'screen ' + typeClass);
+      section.dataset.screenNo = screen.screenNo || '';
+      section.style.setProperty('--bg', (dna && dna.background) || '#f5f5f3');
+
+      section.appendChild(el('div', 'kicker', screen.screenNo + ' · ' + (screen.screenTypeDesc || '')));
+      section.appendChild(el('h2', 'title', screen.title));
+      section.appendChild(el('p', 'subtitle', screen.subtitle));
+
+      if (screen.image) {
+        const block = el('div', 'image-block');
+        const img = el('img');
+        img.src = screen.image;
+        block.appendChild(img);
+        section.appendChild(block);
+      } else {
+        // 缺图不糊弄：明确画出「这一屏还没有可用产出」，而不是留白让人以为渲染失败
+        section.appendChild(el('div', 'missing', '这一屏还没有已选定的产出图'));
+      }
+
+      section.appendChild(el('p', 'body', screen.body));
+      section.appendChild(el('p', 'solo', '画面独白：' + (screen.soloStatement || '')));
+      return section;
+    }
+
+    function render() {
+      const root = document.getElementById('page-root');
+      const dna = LAYOUT.dna || {};
+      (LAYOUT.screens || []).forEach(function (s) { root.appendChild(renderScreen(s, dna)); });
+      const footer = el('div', 'footer', LAYOUT.footerNote);
+      root.appendChild(footer);
+      // 注意：这里**不做**高度整数化——模板脚本执行时字体与图片尚未就绪，
+      // 此时量出的高度会把屏高压错（内容被裁）。整数化由渲染服务在
+      // 「等字体与图片解码完成」之后统一执行，见 server.mjs 的 normalizeIntegerGeometry。
+    }
+
+    render();
+  </script>
+</body>
+</html>

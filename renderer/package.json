@@ -1,0 +1,18 @@
+{
+  "name": "hotter-creative-renderer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI 视觉工厂 独立渲染服务：模板 + layout JSON → PNG（单屏 / 750×N 长图）",
+  "type": "module",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs",
+    "smoke": "node smoke.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "playwright": "1.49.1"
+  }
+}

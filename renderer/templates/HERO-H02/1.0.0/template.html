@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <style>
+    /* HERO-H02 · 单屏主图模板（750 宽）
+       设计约束：只用排版与留白表达层级，不画假 UI、不写未经确认的卖点文案。 */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 750px; background: #ffffff; }
+    body {
+      font-family: "Noto Sans CJK SC", "Noto Sans SC", sans-serif;
+      color: #1c1c1c;
+      -webkit-font-smoothing: antialiased;
+    }
+    .screen { width: 750px; padding: 48px 56px 56px; background: var(--bg, #f5f5f3); }
+    .hero-image { width: 100%; border-radius: 12px; display: block; background: #ffffff; }
+    .headline { margin-top: 36px; font-size: 40px; line-height: 1.35; font-weight: 700; letter-spacing: 0.5px; }
+    .sub { margin-top: 14px; font-size: 24px; line-height: 1.6; color: #4a4a4a; }
+    .body { margin-top: 18px; font-size: 20px; line-height: 1.9; color: #333333; }
+    .meta { margin-top: 28px; display: flex; gap: 12px; flex-wrap: wrap; }
+    .chip { padding: 6px 16px; font-size: 18px; color: #2e6da4; background: rgba(46,109,164,0.10); border-radius: 999px; }
+    .swatches { margin-top: 26px; display: flex; gap: 10px; }
+    .swatch { width: 34px; height: 34px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.08); }
+    .footer-note { margin-top: 34px; font-size: 16px; color: #8a8a8a; }
+  </style>
+</head>
+<body>
+  <section class="screen" id="screen-root"></section>
+  <script>
+    const LAYOUT = __LAYOUT__;
+
+    function el(tag, cls, text) {
+      const node = document.createElement(tag);
+      if (cls) node.className = cls;
+      if (text !== undefined && text !== null && String(text).length) node.textContent = String(text);
+      return node;
+    }
+
+    function render() {
+      const s = LAYOUT.screen || {};
+      const root = document.getElementById('screen-root');
+      root.style.setProperty('--bg', (LAYOUT.dna && LAYOUT.dna.background) || '#f5f5f3');
+
+      if (s.image) {
+        const img = el('img', 'hero-image');
+        img.src = s.image;
+        root.appendChild(img);
+      }
+      root.appendChild(el('h1', 'headline', s.title));
+      root.appendChild(el('p', 'sub', s.subtitle));
+      root.appendChild(el('p', 'body', s.body));
+
+      const meta = el('div', 'meta');
+      (s.chips || []).forEach(function (c) { meta.appendChild(el('span', 'chip', c)); });
+      if (meta.childNodes.length) root.appendChild(meta);
+
+      const colors = (LAYOUT.dna && LAYOUT.dna.swatches) || [];
+      if (colors.length) {
+        const box = el('div', 'swatches');
+        colors.forEach(function (hex) {
+          const dot = el('span', 'swatch');
+          dot.style.background = hex;
+          box.appendChild(dot);
+        });
+        root.appendChild(box);
+      }
+      root.appendChild(el('p', 'footer-note', s.soloStatement));
+    }
+
+    render();
+  </script>
+</body>
+</html>
