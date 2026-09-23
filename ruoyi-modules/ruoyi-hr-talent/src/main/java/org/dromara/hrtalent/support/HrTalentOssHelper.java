@@ -43,6 +43,11 @@ public class HrTalentOssHelper {
     private static final Duration DEFAULT_PRESIGN_TTL = Duration.ofSeconds(120);
 
     /**
+     * 导入源文件的对象键分段：{@code hr-talent-private/imports/{batchId}/source.xlsx}。
+     */
+    private static final String KEY_SEG_IMPORTS = "imports";
+
+    /**
      * 招聘与人才管理业务配置。
      */
     private final HrTalentProperties hrTalentProperties;
@@ -198,6 +203,38 @@ public class HrTalentOssHelper {
     public String buildExportKey(Long exportId) {
         return HrTalentConstants.OBJECT_KEY_ROOT + "/" + HrTalentConstants.KEY_SEG_EXPORTS
             + "/" + exportId + "/" + HrTalentConstants.EXPORT_FILE_NAME;
+    }
+
+    /**
+     * 构造数据导入源文件对象键：{@code hr-talent-private/imports/{batchId}/source.xlsx}。
+     *
+     * <p>为什么要留源文件：导入是两段式（先预检、后确认）。确认时按本对象键把文件取回来重放，
+     * 而不是把解析结果攥在进程内存里等用户点确认——重启或多人操作都不会丢，
+     * 事后也能回答「这次导入到底传的是什么文件」。</p>
+     *
+     * @param batchId 导入批次ID
+     * @return 对象键
+     */
+    public String buildImportKey(Long batchId) {
+        return HrTalentConstants.OBJECT_KEY_ROOT + "/" + KEY_SEG_IMPORTS
+            + "/" + batchId + "/source.xlsx";
+    }
+
+    /**
+     * 读取对象的全部字节。
+     *
+     * @param key 对象键
+     * @return 字节数组
+     * @throws ServiceException 读取失败
+     */
+    public byte[] getBytes(String key) {
+        try (java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream()) {
+            client().download(key, out);
+            return out.toByteArray();
+        } catch (Exception e) {
+            log.error("招聘附件对象读取失败, exception={}", e.getClass().getSimpleName());
+            throw new ServiceException("文件读取失败");
+        }
     }
 
     /* ------------------------------------------------------------------ 内部方法 ------------------------------------------------------------------ */

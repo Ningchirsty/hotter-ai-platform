@@ -2,6 +2,7 @@ package org.dromara.hrtalent.controller.recruitment;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import cn.dev33.satoken.annotation.SaMode;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.groups.Default;
@@ -19,8 +20,13 @@ import org.dromara.hrtalent.domain.bo.recruitment.RecruitPlanBo;
 import org.dromara.hrtalent.domain.bo.recruitment.RecruitPlanItemBo;
 import org.dromara.hrtalent.domain.bo.recruitment.RecruitPlanItemQueryBo;
 import org.dromara.hrtalent.domain.bo.recruitment.RecruitPlanQueryBo;
+import org.dromara.hrtalent.domain.vo.recruitment.RecruitImportBatchVo;
+import org.dromara.hrtalent.domain.vo.recruitment.RecruitImportPreviewVo;
+import org.dromara.hrtalent.domain.vo.recruitment.RecruitImportResultVo;
 import org.dromara.hrtalent.domain.vo.recruitment.RecruitPlanItemVo;
 import org.dromara.hrtalent.domain.vo.recruitment.RecruitPlanVo;
+import org.dromara.hrtalent.enums.RecruitImportTypeEnum;
+import org.dromara.hrtalent.service.recruitment.IRecruitImportService;
 import org.dromara.hrtalent.service.recruitment.IRecruitPlanService;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -29,7 +35,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * 公司月度计划 控制层（SPEC-P2 §3.2）。
@@ -50,6 +58,11 @@ public class RecruitPlanController {
      * 月度计划服务。
      */
     private final IRecruitPlanService recruitPlanService;
+
+    /**
+     * 导入服务（模板下载 / 预检 / 确认）。
+     */
+    private final IRecruitImportService importService;
 
     /**
      * 分页查询公司月度计划表头。
@@ -162,6 +175,79 @@ public class RecruitPlanController {
                            @PathVariable("planId") Long planId,
                            @Validated({Default.class, AddGroup.class}) @RequestBody RecruitPlanItemBo bo) {
         return R.ok(recruitPlanService.addItem(planId, bo));
+    }
+
+    /* ------------------------------------------------------------------ 批量导入 ------------------------------------------------------------------ */
+
+    /**
+     * 下载月度计划导入模板。
+     *
+     * @param response HTTP 响应
+     */
+    @SaCheckPermission(HrTalentConstants.PERM_IMPORT_TEMPLATE)
+    @Log(title = "月度计划导入", businessType = BusinessType.EXPORT)
+    @PostMapping("/importTemplate")
+    public void importTemplate(HttpServletResponse response) {
+        importService.writeTemplate(RecruitImportTypeEnum.PLAN, response);
+    }
+
+    /**
+     * 上传并预检月度计划（不写业务数据）。
+     *
+     * <p>模板是「公司 + 月份 + 岗位 + 人数」的扁平表；确认导入时系统会按公司+月份
+     * 复用或自动创建计划表头，用户不需要先逐个公司手工建表头。</p>
+     *
+     * @param file 文件
+     * @return 预检结果
+     */
+    @SaCheckPermission(HrTalentConstants.PERM_IMPORT_UPLOAD)
+    @Log(title = "月度计划导入", businessType = BusinessType.IMPORT)
+    @PostMapping("/importPreview")
+    public R<RecruitImportPreviewVo> importPreview(@RequestParam("file") MultipartFile file) {
+        return R.ok(importService.preview(RecruitImportTypeEnum.PLAN, file));
+    }
+
+    /**
+     * 确认导入月度计划。
+     *
+     * @param batchId 批次ID
+     * @return 导入结果
+     */
+    @SaCheckPermission(HrTalentConstants.PERM_IMPORT_CONFIRM)
+    @Log(title = "月度计划导入", businessType = BusinessType.IMPORT)
+    @RepeatSubmit
+    @PostMapping("/importConfirm")
+    public R<RecruitImportResultVo> importConfirm(@NotNull(message = "批次ID不能为空")
+                                                  @RequestParam("batchId") Long batchId) {
+        return R.ok(importService.confirm(batchId));
+    }
+
+    /**
+     * 取消导入批次。
+     *
+     * @param batchId 批次ID
+     * @return 操作结果
+     */
+    @SaCheckPermission(HrTalentConstants.PERM_IMPORT_CANCEL)
+    @Log(title = "月度计划导入", businessType = BusinessType.UPDATE)
+    @RepeatSubmit
+    @PostMapping("/importCancel")
+    public R<Void> importCancel(@NotNull(message = "批次ID不能为空")
+                                @RequestParam("batchId") Long batchId) {
+        importService.cancel(batchId);
+        return R.ok();
+    }
+
+    /**
+     * 导入批次分页（追溯计划任务的来源批次）。
+     *
+     * @param pageQuery 分页参数
+     * @return 批次分页
+     */
+    @SaCheckPermission(HrTalentConstants.PERM_IMPORT_LIST)
+    @GetMapping("/importBatches")
+    public R<PageResult<RecruitImportBatchVo>> importBatches(PageQuery pageQuery) {
+        return R.ok(importService.queryBatchPage(RecruitImportTypeEnum.PLAN.getCode(), pageQuery));
     }
 
 }
