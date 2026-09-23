@@ -6,6 +6,7 @@ import org.dromara.content.domain.bo.ContentTaskBo;
 import org.dromara.content.domain.vo.CpTaskFileVo;
 import org.dromara.content.domain.vo.CpTaskVo;
 import org.dromara.content.domain.vo.ContentTaskDetailVo;
+import org.dromara.content.domain.vo.ContentFactSyncVo;
 import org.dromara.content.helper.ContentGateEngine;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -98,5 +99,24 @@ public interface IContentTaskService {
      * @return 判定结论
      */
     ContentGateEngine.GateResult recheck(Long taskId);
+
+    /**
+     * 把任务所选产品在「产品与SKU」模块里的主数据同步为产品事实。
+     *
+     * <p>解决的实际问题：用户在新增任务时选中了产品，但闸门只认 {@code cp_fact_snapshot}
+     * 里已确认的事实——产品主数据里有名称和 SKU 也不算数，于是「选了产品还要再录一遍」。</p>
+     *
+     * <p><b>边界（重要）</b>：只同步产品与SKU模块<b>确实拥有</b>的两个字段
+     * （{@code product_name}、{@code sku_code}）。主体版本/颜色/数量/参数/包装版本
+     * 在该模块里本就没有对应列，只能来自产品资料（解析+确认）或人工录入——
+     * 这也守住了「产品事实只能来自经确认的产品资料」的红线。</p>
+     *
+     * <p><b>不覆盖人的判断</b>：若同字段已存在<b>不同取值</b>，本次写入降级为「待确认」，
+     * 交给事实清单/互动卡由人裁定，绝不自动把主数据值确认成事实。</p>
+     *
+     * @param taskId 任务ID
+     * @return 同步结果（写入/跳过/冲突条数与逐条说明）
+     */
+    ContentFactSyncVo syncProductFacts(Long taskId);
 
 }

@@ -16,6 +16,7 @@ import org.dromara.content.constant.ContentConstants;
 import org.dromara.content.domain.bo.ContentTaskBo;
 import org.dromara.content.domain.vo.CpTaskFileVo;
 import org.dromara.content.domain.vo.CpTaskVo;
+import org.dromara.content.domain.vo.ContentFactSyncVo;
 import org.dromara.content.domain.vo.ContentTaskDetailVo;
 import org.dromara.content.helper.ContentGateEngine;
 import org.dromara.content.service.IContentTaskService;
@@ -194,6 +195,23 @@ public class ContentTaskController {
     @PostMapping("/{taskId}/recheck")
     public R<ContentGateEngine.GateResult> recheck(@NotNull(message = "任务ID不能为空") @PathVariable("taskId") Long taskId) {
         return R.ok(taskService.recheck(taskId));
+    }
+
+    /**
+     * 把任务所选产品在「产品与SKU」里的主数据（名称 / SKU）同步为产品事实。
+     *
+     * <p>新建任务时已自动同步一次；本接口用于产品主数据被更正后重新拉取，
+     * 或任务换了产品之后再次对齐。与既有取值冲突时不会自动确认，只落为待确认候选。</p>
+     *
+     * @param taskId 任务ID
+     * @return 同步结果
+     */
+    @SaCheckPermission(ContentConstants.PERM_TASK_EDIT)
+    @RepeatSubmit
+    @Log(title = "内容任务", businessType = BusinessType.UPDATE)
+    @PostMapping("/{taskId}/productFacts/sync")
+    public R<ContentFactSyncVo> syncProductFacts(@NotNull(message = "任务ID不能为空") @PathVariable("taskId") Long taskId) {
+        return R.ok(taskService.syncProductFacts(taskId));
     }
 
 }

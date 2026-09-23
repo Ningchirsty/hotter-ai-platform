@@ -224,7 +224,14 @@
         <el-row :gutter="16">
           <el-col :span="12">
             <el-form-item label="产品" prop="productId">
-              <el-select v-model="form.productId" placeholder="请选择产品" clearable filterable style="width: 100%">
+              <el-select
+                v-model="form.productId"
+                placeholder="请选择产品"
+                clearable
+                filterable
+                style="width: 100%"
+                @change="handleFormProductChange"
+              >
                 <el-option
                   v-for="p in productList"
                   :key="String(p.productId)"
@@ -236,10 +243,27 @@
           </el-col>
           <el-col :span="12">
             <el-form-item label="SKU编码" prop="skuCode">
-              <el-input v-model="form.skuCode" placeholder="可留空，默认取产品的SKU" />
+              <el-input v-model="form.skuCode" placeholder="留空则取所选产品的SKU（保存时自动带出）" />
             </el-form-item>
           </el-col>
         </el-row>
+        <el-alert
+          v-if="selectedProduct"
+          class="product-hint"
+          type="info"
+          :closable="false"
+          show-icon
+          :title="'已选产品：' + (selectedProduct.productName || '—') + '（' + (selectedProduct.productCode || '—') + '）'"
+        >
+          <div class="product-hint-line">
+            品牌 {{ selectedProduct.brand || '—' }} · 二级分类 {{ selectedProduct.subCategory || '—' }} · 产品经理
+            {{ selectedProduct.productManager || '—' }} · 产品SKU {{ selectedProduct.skuCode || '—' }}
+          </div>
+          <div class="product-hint-line muted">
+            保存后会自动把「产品名称」「SKU」按产品与SKU主数据写入为已确认事实（来源可追溯）；
+            主体版本、颜色、数量、参数、包装版本不在该模块中，仍需来自产品资料或手工录入。
+          </div>
+        </el-alert>
         <el-row :gutter="16">
           <el-col :span="12">
             <el-form-item label="截止时间" prop="deadline">
@@ -386,6 +410,19 @@
               <el-table-column label="是否必须存在" align="center" width="120">
                 <template #default="scope">{{ scope.row.requirePresent === 'N' ? '可缺失' : '必须存在' }}</template>
               </el-table-column>
+              <el-table-column label="操作" align="center" width="130">
+                <template #default="scope">
+                  <el-button
+                    v-hasPermi="['content:task:edit']"
+                    link
+                    type="primary"
+                    icon="Plus"
+                    @click="openManualDialogFor(scope.row)"
+                  >
+                    录入该字段
+                  </el-button>
+                </template>
+              </el-table-column>
             </el-table>
             <p v-else class="muted">无未满足的强制项。</p>
           </div>
@@ -410,6 +447,19 @@
               </el-table-column>
               <el-table-column label="说明" align="center">
                 <template #default>当前可开工，但必须补齐或确定替代方案（会写入开工包缺口）</template>
+              </el-table-column>
+              <el-table-column label="操作" align="center" width="130">
+                <template #default="scope">
+                  <el-button
+                    v-hasPermi="['content:task:edit']"
+                    link
+                    type="primary"
+                    icon="Plus"
+                    @click="openManualDialogFor(scope.row)"
+                  >
+                    录入该字段
+                  </el-button>
+                </template>
               </el-table-column>
             </el-table>
             <p v-else class="muted">无未满足的条件项。</p>
@@ -547,6 +597,16 @@
                   @click="handleConfirmUnambiguous"
                 >
                   一键确认无争议项
+                </el-button>
+                <el-button
+                  v-hasPermi="['content:task:edit']"
+                  plain
+                  icon="Refresh"
+                  :disabled="!detailTaskId"
+                  :loading="syncingProductFacts"
+                  @click="handleSyncProductFacts"
+                >
+                  同步产品信息
                 </el-button>
                 <el-button v-hasPermi="['content:task:edit']" plain icon="Plus" @click="openManualDialog">
                   手工录入事实
@@ -722,10 +782,33 @@
     </el-drawer>
 
     <!-- 手工录入事实 -->
-    <el-dialog v-model="manualDialog.visible" title="手工录入事实" width="560px" append-to-body>
+    <el-dialog v-model="manualDialog.visible" title="手工录入事实" width="600px" append-to-body>
       <el-form ref="manualFormRef" :model="manualForm" :rules="manualRules" label-width="100px">
-        <el-form-item label="字段编码" prop="fieldCode">
-          <el-input v-model="manualForm.fieldCode" placeholder="如 product_height" />
+        <el-form-item label="事实字段" prop="fieldCode">
+          <el-select
+            v-if="!manualCustomMode"
+            v-model="manualForm.fieldCode"
+            placeholder="请选择要录入的事实字段"
+            filterable
+            style="width: 100%"
+          >
+            <el-option-group v-if="gateFieldOptions.length" label="本交付类型的闸门要求项">
+              <el-option v-for="o in gateFieldOptions" :key="o.fieldCode" :label="optionLabel(o)" :value="o.fieldCode!" />
+            </el-option-group>
+            <el-option-group v-if="otherFieldOptions.length" label="其他已登记字段（不影响本任务闸门）">
+              <el-option v-for="o in otherFieldOptions" :key="o.fieldCode" :label="optionLabel(o)" :value="o.fieldCode!" />
+            </el-option-group>
+          </el-select>
+          <el-input v-else v-model="manualForm.fieldCode" placeholder="请输入已在「闸门规则」中登记过的字段编码" />
+          <div class="manual-tip">
+            <el-button link type="primary" @click="manualCustomMode = !manualCustomMode">
+              {{ manualCustomMode ? '改为从列表选择（推荐）' : '改为自定义编码' }}
+            </el-button>
+            <span class="muted">闸门只认与闸门规则完全一致的编码；编码写错会出现「事实录进去了、闸门却不动」。</span>
+          </div>
+          <div v-if="manualSelectedOption?.description" class="manual-desc">
+            {{ manualSelectedOption.description }}
+          </div>
         </el-form-item>
         <el-form-item label="字段值" prop="value">
           <el-input v-model="manualForm.value" placeholder="请输入经责任人确认的值" />
@@ -839,7 +922,7 @@
 
 <script setup lang="ts">
 import type { CardEvidenceItem, CardImpactItem, CardOptionItem, CpInteractionCardVO } from '@/api/content/card/types';
-import type { CpFactSnapshotVO } from '@/api/content/fact/types';
+import type { CpFactFieldOptionVO, CpFactSnapshotVO } from '@/api/content/fact/types';
 import type { CpProductVO } from '@/api/content/product/types';
 import type {
   CpAsyncJobVO,
@@ -851,7 +934,7 @@ import type {
 } from '@/api/content/task/types';
 import type { WorkPackageContent } from '@/api/content/workPackage/types';
 import { resolveCard } from '@/api/content/card';
-import { addManualFact, confirmFact, confirmUnambiguousFacts, rejectFact } from '@/api/content/fact';
+import { addManualFact, confirmFact, confirmUnambiguousFacts, factFieldOptions, rejectFact } from '@/api/content/fact';
 import { productOptions } from '@/api/content/product';
 import {
   addTask,
@@ -859,6 +942,7 @@ import {
   getTask,
   listTask,
   recheckGate,
+  syncProductFacts,
   triggerParse,
   triggerPrecheck,
   updateTask,
@@ -997,6 +1081,28 @@ const handleUpdate = async (row?: Partial<CpTaskVO>) => {
   const res = await getTask(taskId!);
   Object.assign(form.value, res.data?.task || {});
   showDialog('修改内容任务');
+};
+
+/** 表单里当前选中的产品（用于展示产品与SKU信息，避免只显示一个产品名） */
+const selectedProduct = computed(() =>
+  productList.value.find(p => String(p.productId) === String(form.value.productId))
+);
+
+/**
+ * 选中产品时把 SKU 带出来。
+ *
+ * 此前 placeholder 写着「可留空，默认取产品的SKU」，但前后端都没有实现这个默认值——
+ * 实测选中产品后 cp_task.sku_code 仍是空串。这里补上：仅在用户没填过时自动带出，
+ * 不覆盖用户已经手填的 SKU。
+ */
+const handleFormProductChange = (productId: string | number | undefined) => {
+  const product = productList.value.find(p => String(p.productId) === String(productId));
+  if (!product) {
+    return;
+  }
+  if (!form.value.skuCode) {
+    form.value.skuCode = product.skuCode || '';
+  }
 };
 
 const submitForm = () => {
@@ -1288,16 +1394,67 @@ const manualDialog = reactive<DialogOption>({ visible: false, title: '手工录�
 const manualFormRef = ref<ElFormInstance>();
 const manualSaving = ref(false);
 const manualForm = reactive({ fieldCode: '', value: '', remark: '' });
+/** 是否使用「自定义编码」输入（默认从下拉选，避免手打编码踩空） */
+const manualCustomMode = ref(false);
+/** 本任务可录入的字段选项（本交付类型的闸门要求项在前） */
+const fieldOptionList = ref<CpFactFieldOptionVO[]>([]);
 const manualRules = {
-  fieldCode: [{ required: true, message: '字段编码不能为空', trigger: 'blur' }],
+  fieldCode: [{ required: true, message: '事实字段不能为空', trigger: 'change' }],
   value: [{ required: true, message: '字段值不能为空', trigger: 'blur' }]
 };
 
-const openManualDialog = () => {
+const gateFieldOptions = computed(() => fieldOptionList.value.filter(o => o.requiredByGate));
+const otherFieldOptions = computed(() => fieldOptionList.value.filter(o => !o.requiredByGate));
+const manualSelectedOption = computed(() =>
+  fieldOptionList.value.find(o => o.fieldCode === manualForm.fieldCode)
+);
+
+/** 下拉项文案：中文名（编码）· 闸门等级 · 已确认标记 */
+const optionLabel = (o: CpFactFieldOptionVO) => {
+  const parts = [`${o.fieldName || o.fieldCode}（${o.fieldCode}）`];
+  if (o.gateLevel) parts.push(o.gateLevel);
+  if (o.satisfied) parts.push('已确认');
+  return parts.join(' · ');
+};
+
+/** 拉取可录入字段选项；失败不阻断录入（退化为自定义编码） */
+const loadFieldOptions = async () => {
+  if (!detailTaskId.value) {
+    fieldOptionList.value = [];
+    return;
+  }
+  try {
+    const res = await factFieldOptions(detailTaskId.value);
+    fieldOptionList.value = res.data || [];
+  } catch {
+    fieldOptionList.value = [];
+    manualCustomMode.value = true;
+  }
+};
+
+const openManualDialog = async () => {
   manualForm.fieldCode = '';
   manualForm.value = '';
   manualForm.remark = '';
+  manualCustomMode.value = false;
   manualDialog.visible = true;
+  await loadFieldOptions();
+};
+
+/**
+ * 从闸门表的「录入该字段」进入：编码与中文名已确定，直接预填，不用用户抄编码。
+ *
+ * @param rule 闸门规则行（含 fieldCode / fieldName）
+ */
+const openManualDialogFor = async (rule: any) => {
+  await openManualDialog();
+  if (rule?.fieldCode) {
+    manualForm.fieldCode = rule.fieldCode;
+    // 闸门规则里的编码未必在别名表里，若下拉里没有它则退回自定义模式，保证能填进去
+    if (!fieldOptionList.value.some(o => o.fieldCode === rule.fieldCode)) {
+      manualCustomMode.value = true;
+    }
+  }
 };
 
 const submitManual = () => {
@@ -1314,10 +1471,35 @@ const submitManual = () => {
       modal.msgSuccess('录入成功');
       manualDialog.visible = false;
       await loadDetail();
+      await getList();
     } finally {
       manualSaving.value = false;
     }
   });
+};
+
+// ------------------------------------------------- 产品主数据 → 产品事实（同步）
+
+const syncingProductFacts = ref(false);
+
+/** 把所选产品在「产品与SKU」里的名称/SKU 同步为产品事实（冲突时只落待确认） */
+const handleSyncProductFacts = async () => {
+  if (!detailTaskId.value) return;
+  syncingProductFacts.value = true;
+  try {
+    const res = await syncProductFacts(detailTaskId.value);
+    const data = res.data || {};
+    const msg = `同步完成：写入 ${data.synced ?? 0} 条、跳过 ${data.skipped ?? 0} 条、冲突待裁定 ${data.conflicts ?? 0} 条`;
+    if (data.conflicts) {
+      modal.msgWarning(msg + '。冲突项未自动确认，请在事实清单中裁定。');
+    } else {
+      modal.msgSuccess(msg);
+    }
+    await loadDetail();
+    await getList();
+  } finally {
+    syncingProductFacts.value = false;
+  }
 };
 
 // ---------------------------------------------------------------- 互动卡处理
@@ -1493,6 +1675,34 @@ onBeforeUnmount(() => {
 @include pageShell.table-crud-page;
 
 .form-tip {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--app-text-muted);
+}
+
+/* 表单里选中产品后的信息提示（展示产品与SKU模块已有的标识信息） */
+.product-hint {
+  margin: 0 0 12px;
+
+  .product-hint-line {
+    font-size: 12px;
+    line-height: 1.7;
+  }
+}
+
+/* 手工录入事实：字段下拉的辅助说明 */
+.manual-tip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.manual-desc {
   margin-top: 4px;
   font-size: 12px;
   line-height: 1.5;

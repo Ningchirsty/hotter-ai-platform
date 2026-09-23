@@ -10,6 +10,7 @@ import org.dromara.common.redis.annotation.RepeatSubmit;
 import org.dromara.content.constant.ContentConstants;
 import org.dromara.content.domain.bo.ContentFactManualBo;
 import org.dromara.content.domain.vo.CpFactSnapshotVo;
+import org.dromara.content.domain.vo.ContentFactFieldOptionVo;
 import org.dromara.content.service.IContentFactService;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -109,6 +110,23 @@ public class ContentFactController {
     @PostMapping("/manual")
     public R<Long> manual(@Validated @RequestBody ContentFactManualBo bo) {
         return R.ok(factService.addManual(bo.getTaskId(), bo.getFieldCode(), bo.getValue(), bo.getRemark()));
+    }
+
+    /**
+     * 某任务可录入的事实字段选项。
+     *
+     * <p>供「手工录入事实」把字段编码做成下拉：闸门只认与规则完全一致的编码，
+     * 让用户手打编码等于给了一个必然踩空的机会。权限复用 {@code content:task:query}
+     * （只是读任务相关的字段清单），不强制要求闸门规则的维护权限。</p>
+     *
+     * @param taskId 任务ID
+     * @return 字段选项（本交付类型的闸门要求项在前）
+     */
+    @SaCheckPermission(ContentConstants.PERM_TASK_QUERY)
+    @GetMapping("/fieldOptions")
+    public R<List<ContentFactFieldOptionVo>> fieldOptions(
+        @NotNull(message = "任务ID不能为空") @RequestParam("taskId") Long taskId) {
+        return R.ok(factService.fieldOptions(taskId));
     }
 
 }

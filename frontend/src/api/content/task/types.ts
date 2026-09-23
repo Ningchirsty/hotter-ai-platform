@@ -134,3 +134,15 @@ export interface TaskFileUploadForm {
   dataLevel?: string;
   file: File;
 }
+
+/** 产品主数据 → 产品事实 的同步结果 */
+export interface ContentFactSyncVO {
+  /** 写入为已确认事实的条数 */
+  synced?: number;
+  /** 已有同值已确认事实、无需处理的条数 */
+  skipped?: number;
+  /** 与既有取值冲突、只落为待确认候选的条数 */
+  conflicts?: number;
+  /** 逐条说明 */
+  messages?: string[];
+}

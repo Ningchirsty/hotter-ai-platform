@@ -1,6 +1,6 @@
 import type { AxiosPromise } from '@/utils/api-types';
 import request from '@/utils/request';
-import type { CpFactManualForm, CpFactSnapshotVO } from './types';
+import type { CpFactManualForm, CpFactFieldOptionVO, CpFactSnapshotVO } from './types';
 
 // 按任务列出事实行（含待确认候选与已确认事实）
 export function listFact(taskId: string | number): AxiosPromise<CpFactSnapshotVO[]> {
@@ -42,5 +42,14 @@ export function addManualFact(data: CpFactManualForm): AxiosPromise<string | num
     url: '/content/fact/manual',
     method: 'post',
     data: data
+  });
+}
+
+// 某任务可录入的事实字段选项（本交付类型的闸门要求项在前）
+export function factFieldOptions(taskId: string | number): AxiosPromise<CpFactFieldOptionVO[]> {
+  return request({
+    url: '/content/fact/fieldOptions',
+    method: 'get',
+    params: { taskId: taskId }
   });
 }
