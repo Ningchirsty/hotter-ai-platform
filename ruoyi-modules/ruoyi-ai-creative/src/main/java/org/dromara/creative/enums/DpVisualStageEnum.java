@@ -155,7 +155,9 @@ public enum DpVisualStageEnum {
      *     强行要求逐步经过每个状态只会逼出「假过渡」；</li>
      *     <li><b>回退</b>：只允许退到「待确认 / 返工」态（见 {@link #isReworkTarget()}），
      *     不允许退回某个「生成中」态——那会让页面出现永不结束的中间态；</li>
-     *     <li>终态 {@link #COMPLETED} 不可再动：返工走新版本，而不是改阶段。</li>
+     *     <li>终态 {@link #COMPLETED}：<b>允许回到「重新排版 / 人工精修」这几个返工步骤</b>。
+     *     交付后修订是常态，而返工的正规方式就是产出新版本（新版本号由服务层保证），
+     *     阶段自然要跟着回到工作态；但<b>不允许</b>退回更早阶段（那看起来像整条链路重跑）。</li>
      * </ul>
      *
      * @param target 目标阶段
@@ -166,12 +168,21 @@ public enum DpVisualStageEnum {
             return true;
         }
         if (this == COMPLETED) {
-            return false;
+            return target.isPostDeliveryRework();
         }
         if (target.ordinal() > this.ordinal()) {
             return true;
         }
         return target.isReworkTarget();
+    }
+
+    /**
+     * 是否为「交付后返工」可回到的步骤（交付后修订必须产出新版本，阶段回到这几步是合理的）。
+     *
+     * @return 是否可作为交付后返工目标
+     */
+    public boolean isPostDeliveryRework() {
+        return this == LAYOUT_PROCESSING || this == V08_READY || this == DESIGN_REFINING;
     }
 
     /**
