@@ -11,6 +11,8 @@ import org.dromara.common.satoken.utils.LoginHelper;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.security.MessageDigest;
 import java.time.LocalDate;
@@ -385,6 +387,49 @@ public class ImageTaskSubmissionService {
                 ImageTaskStatus.QUEUED.name(), false, "NOT_DISPATCHED", false);
         }
         Map<String, Object> task = repository.requireOwnedTask(taskId, tenantId, userId);
+        return dispatchTask(taskId, taskNo, tenantId, userId, task);
+    }
+
+    /**
+     * 派发任务：有事务则提交后派发，否则立即派发。
+     *
+     * <p><b>为什么不能直接立即派发</b>：调用方常常处在事务里（视觉工厂的
+     * {@code submitHero} 就是），而执行线程会立刻按 {@code tenant+user} 反查刚插入的素材行。
+     * 在事务提交前派发，执行线程读不到未提交的素材，任务会以 {@code ASSET_NOT_FOUND}
+     * 直接失败——这是实际发生过的竞态（同一段代码的另一次提交只是恰好赢了竞态，
+     * 所以问题看起来是「偶发」）。提交后派发还带来一个额外好处：事务回滚时任务行一起消失，
+     * 不会被派发出去。</p>
+     *
+     * <p>包级可见，便于用单测直接钉住这个时序（不需要登录上下文）。</p>
+     *
+     * @param taskId   任务 ID
+     * @param taskNo   任务号
+     * @param tenantId 执行者租户
+     * @param userId   执行者用户
+     * @param task     任务行（构建执行上下文用）
+     * @return 提交结果
+     */
+    Submission dispatchTask(long taskId, String taskNo, String tenantId, long userId,
+                            Map<String, Object> task) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    try {
+                        ImageTaskDispatchService.Outcome outcome =
+                            dispatchService.dispatch(taskId, () -> buildContext(task, tenantId, userId));
+                        log.info("事务提交后派发图像任务 {} 结果 {}", taskId, outcome);
+                    } catch (Exception e) {
+                        // 派发失败不能回滚已提交的业务数据；任务停在 QUEUED，
+                        // 由调用方的读时刷新（dispatchQueued）补派发。
+                        log.warn("事务提交后派发图像任务 {} 失败：{}", taskId, e.getMessage());
+                    }
+                }
+            });
+            return new Submission(taskId, taskNo, tenantId, userId,
+                ImageTaskStatus.QUEUED.name(), true, "DEFERRED_AFTER_COMMIT", false);
+        }
+
         ImageTaskDispatchService.Outcome outcome =
             dispatchService.dispatch(taskId, () -> buildContext(task, tenantId, userId));
         boolean accepted = outcome == ImageTaskDispatchService.Outcome.ACCEPTED

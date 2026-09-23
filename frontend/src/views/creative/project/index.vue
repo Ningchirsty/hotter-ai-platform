@@ -350,8 +350,14 @@ const previewUrl = ref('');
 const createForm = reactive({ taskName: '', productId: '' as string | number, remark: '' });
 const heroForm = reactive({ workflowCode: '', prompt: '', negativePrompt: '' });
 
-/** blob URL 台账：key → URL，切换/卸载时统一回收，避免内存泄漏 */
-const objectUrls = new Map<string, string>();
+/**
+ * blob URL 台账：key → URL。
+ *
+ * 必须是响应式（ref + 展开赋值），不能用普通 Map——普通 Map 的增删不会触发重渲染，
+ * 表现为「接口全 200、页面上的 <img> 永远不出现」（这个坑实际踩过一次）。
+ * 切换/卸载时统一 revoke，避免内存泄漏。
+ */
+const objectUrls = ref<Record<string, string>>({});
 let pollTimer: number | undefined;
 let pollTicks = 0;
 const POLL_INTERVAL_MS = 5000;
@@ -360,19 +366,22 @@ const POLL_MAX_TICKS = 120;
 const imageFiles = computed(() => files.value.filter((f) => (f.fileKind || '').toUpperCase() === 'IMAGE'));
 
 function urlOf(key: string): string {
-  return objectUrls.get(key) || '';
+  return objectUrls.value[key] || '';
 }
 
 function setUrl(key: string, url: string) {
-  const old = objectUrls.get(key);
+  const old = objectUrls.value[key];
   if (old) URL.revokeObjectURL(old);
-  objectUrls.set(key, url);
+  objectUrls.value = { ...objectUrls.value, [key]: url };
 }
 
 function releaseUrl(key: string) {
-  const old = objectUrls.get(key);
-  if (old) URL.revokeObjectURL(old);
-  objectUrls.delete(key);
+  const old = objectUrls.value[key];
+  if (!old) return;
+  URL.revokeObjectURL(old);
+  const next = { ...objectUrls.value };
+  delete next[key];
+  objectUrls.value = next;
 }
 
 function stageLabel(stage?: string): string {
@@ -462,7 +471,7 @@ async function loadDetail() {
 async function loadFileThumbs() {
   for (const file of imageFiles.value) {
     const key = 'file-' + file.fileId;
-    if (objectUrls.has(key)) continue;
+    if (objectUrls.value[key]) continue;
     try {
       const url = await fetchCreativeFileBlobUrl(currentProjectId.value, file.fileId as string | number);
       setUrl(key, url);
@@ -479,7 +488,7 @@ async function loadGenerationThumbs() {
       releaseUrl(key);
       continue;
     }
-    if (objectUrls.has(key)) continue;
+    if (objectUrls.value[key]) continue;
     try {
       const url = await fetchGenerationThumbnailBlobUrl(gen.id);
       setUrl(key, url);
@@ -670,8 +679,8 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   stopPolling();
-  objectUrls.forEach((url) => URL.revokeObjectURL(url));
-  objectUrls.clear();
+  Object.values(objectUrls.value).forEach((url) => URL.revokeObjectURL(url));
+  objectUrls.value = {};
   if (previewUrl.value) URL.revokeObjectURL(previewUrl.value);
 });
 </script>
