@@ -309,11 +309,17 @@
           <el-descriptions-item label="比对口径">
             {{ metrics.compareMode === 'PIXEL' ? '逐像素（两图尺寸一致）' : (metrics.compareMode === 'GRID' ? '网格均值（两图尺寸不同）' : '—') }}
           </el-descriptions-item>
-          <el-descriptions-item label="相似度">
+          <el-descriptions-item label="判定相似度">
             <strong>{{ metrics.similarity === null || metrics.similarity === undefined ? '—' : metrics.similarity }}</strong>
+            <span class="muted">（由最差区域得出）</span>
           </el-descriptions-item>
-          <el-descriptions-item label="平均通道差">
+          <el-descriptions-item label="最差区域通道差">
+            {{ metrics.hotspotChannelDiff === null || metrics.hotspotChannelDiff === undefined ? '—' : metrics.hotspotChannelDiff }}
+            <span class="muted">/255</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="全图平均通道差">
             {{ metrics.meanChannelDiff === null || metrics.meanChannelDiff === undefined ? '—' : metrics.meanChannelDiff }}
+            <span class="muted">/255（仅供参考，不用于判定）</span>
           </el-descriptions-item>
           <el-descriptions-item label="网格口径参考">
             {{ metrics.gridSimilarity === null || metrics.gridSimilarity === undefined ? '—' : metrics.gridSimilarity }}
@@ -595,22 +601,21 @@ const submitRun = async () => {
       modal.msgError(e?.message || '图片处理失败，请检查文件后重试');
       return;
     }
-    const checkId = await runCheck({
+    const res = await runCheck({
       taskId: runForm.value.taskId,
       referenceFileId: referenceMode.value === 'EXISTING' ? runForm.value.referenceFileId : undefined,
       referenceFile: preparedReference,
       resultFile: preparedResult,
       remark: runForm.value.remark
     });
+    // 取 res.data：request 返回的是 RuoYi 包装对象，直接把整个对象当 id 用会变成
+    // String(对象) === "[object Object]"，轮询永远匹配不到记录，只能空转满 40 轮。
+    const checkId = res.data;
     runDialog.visible = false;
     modal.msgSuccess('已提交检查，正在比对，完成后会自动刷新列表');
     await getList();
     // 上传本身就要十几秒，走视觉模型最坏一分钟以上；只刷一次会让用户一直看到「检查中」
     startPolling(checkId);
-    if (checkId) {
-      // 保持 checkId 引用，便于排障时定位（不弹窗打扰）
-      console.debug('checkId =', checkId);
-    }
   } finally {
     running.value = false;
   }

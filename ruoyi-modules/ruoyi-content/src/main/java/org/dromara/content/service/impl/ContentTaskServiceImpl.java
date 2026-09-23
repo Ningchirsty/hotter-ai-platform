@@ -14,6 +14,7 @@ import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.json.utils.JsonUtils;
 import org.dromara.common.mybatis.core.page.PageQuery;
+import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.content.constant.ContentConstants;
 import org.dromara.content.domain.CpAsyncJob;
 import org.dromara.content.domain.CpFactSnapshot;
@@ -30,6 +31,7 @@ import org.dromara.content.domain.vo.CpInteractionCardVo;
 import org.dromara.content.domain.vo.CpTaskFileVo;
 import org.dromara.content.domain.vo.CpTaskVo;
 import org.dromara.content.domain.vo.CpWorkPackageVo;
+import org.dromara.content.domain.vo.ContentFactSyncVo;
 import org.dromara.content.domain.vo.ContentTaskDetailVo;
 import org.dromara.content.enums.ContentAsyncJobTypeEnum;
 import org.dromara.content.enums.ContentCardStatusEnum;
@@ -41,6 +43,7 @@ import org.dromara.content.enums.ContentGateLevelEnum;
 import org.dromara.content.enums.ContentParseStatusEnum;
 import org.dromara.content.enums.ContentTaskStatusEnum;
 import org.dromara.content.helper.ContentAsyncExecutor;
+import org.dromara.content.helper.ContentFieldAlias;
 import org.dromara.content.helper.ContentGateEngine;
 import org.dromara.content.helper.ContentOssHelper;
 import org.dromara.content.mapper.CpAsyncJobMapper;
@@ -53,11 +56,13 @@ import org.dromara.content.mapper.CpWorkPackageMapper;
 import org.dromara.content.service.IContentGateRuleService;
 import org.dromara.content.service.IContentTaskGateService;
 import org.dromara.content.service.IContentTaskService;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -87,6 +92,28 @@ public class ContentTaskServiceImpl implements IContentTaskService {
      * 默认数据等级
      */
     private static final String DEFAULT_DATA_LEVEL = "INTERNAL";
+
+    /**
+     * 产品事实的「主数据」来源标注（写入 {@code source_locator}，让事实清单能显示出处）
+     */
+    private static final String PRODUCT_MASTER_SOURCE = "产品与SKU主数据";
+
+    /**
+     * 主数据来源事实的备注（说明可追溯性与效力边界）
+     */
+    private static final String PRODUCT_MASTER_REMARK =
+        "由任务所选产品的「产品与SKU」主数据写入（人工维护来源）；如与该产品的资料不一致，以资料确认结果为准";
+
+    /**
+     * 可由产品主数据同步的字段 → 中文名。
+     *
+     * <p>刻意只放这两个：{@code cp_product} 只有名称与 SKU 两个字段能对上闸门要求，
+     * 其余强制项（主体版本/颜色/数量/参数/包装版本）在该表里没有对应列。</p>
+     */
+    private static final Map<String, String> PRODUCT_MASTER_FIELD_LABELS = Map.of(
+        "product_name", "产品名称",
+        "sku_code", "SKU"
+    );
 
     /**
      * 任务 Mapper
@@ -203,14 +230,28 @@ public class ContentTaskServiceImpl implements IContentTaskService {
         }
         CpTask entity = BeanUtil.copyProperties(bo, CpTask.class);
         entity.setTaskId(null);
-        entity.setTaskNo(nextTaskNo());
         entity.setStatus(ContentTaskStatusEnum.DRAFT.getCode());
         entity.setDataLevel(StringUtils.isBlank(bo.getDataLevel()) ? DEFAULT_DATA_LEVEL : bo.getDataLevel());
         entity.setAllowExternal(ContentConstants.NO);
         if (StringUtils.isBlank(entity.getOwnerName()) && bo.getOwnerId() != null) {
             entity.setOwnerName(String.valueOf(bo.getOwnerId()));
         }
-        taskMapper.insert(entity);
+        // SKU 留空时回落到所选产品的 SKU：界面一直承诺「默认取产品的SKU」，但此前前后端都没实现，
+        // 实测选中产品后 cp_task.sku_code 仍是空串。放在服务端兜底，前端与接口调用方行为才一致。
+        if (StringUtils.isBlank(entity.getSkuCode()) && entity.getProductId() != null) {
+            CpProduct skuSource = productMapper.selectById(entity.getProductId());
+            if (skuSource != null && StringUtils.isNotBlank(skuSource.getSkuCode())) {
+                entity.setSkuCode(skuSource.getSkuCode());
+            }
+        }
+        insertTaskWithGeneratedNo(entity);
+        // 把所选产品在「产品与SKU」里的名称/SKU 直接写成已确认事实：
+        // 否则用户明明选了产品，闸门仍要求把这两项再录一遍（实测确认过该现象）。
+        if (entity.getProductId() != null) {
+            ContentFactSyncVo sync = writeProductFacts(entity);
+            log.info("新建任务同步产品主数据事实, taskId={}, synced={}, skipped={}, conflicts={}",
+                entity.getTaskId(), sync.getSynced(), sync.getSkipped(), sync.getConflicts());
+        }
         log.info("新建内容任务, taskId={}, taskNo={}, deliverableType={}",
             entity.getTaskId(), entity.getTaskNo(), entity.getDeliverableType());
         return entity.getTaskId();
@@ -229,6 +270,125 @@ public class ContentTaskServiceImpl implements IContentTaskService {
         entity.setTaskNo(null);
         entity.setStatus(null);
         taskMapper.updateById(entity);
+        // 换了产品或改了 SKU 时把主数据事实同步过来（幂等：取值已一致就不重复写入）
+        if (entity.getProductId() != null) {
+            CpTask latest = taskMapper.selectById(exist.getTaskId());
+            if (latest != null) {
+                writeProductFacts(latest);
+            }
+        }
+    }
+
+    @Override
+    public ContentFactSyncVo syncProductFacts(Long taskId) {
+        CpTask task = load(taskId);
+        ContentFactSyncVo result = writeProductFacts(task);
+        if (task.getProductId() != null) {
+            // 显式动作（人工点同步）：事实变了就重算闸门，与「确认/否决/手工录入」同口径。
+            // 注意 create/update 走的是 writeProductFacts（不重算状态）——任务状态只由
+            // 闸门重算这一条规则入口流转，创建时不该顺手把 DRAFT 改掉。
+            taskGateService.recheckAndApply(taskId);
+        }
+        return result;
+    }
+
+    /**
+     * 把产品与SKU模块的主数据写成产品事实（只写事实，不改任务状态）。
+     *
+     * <p><b>只同步主数据确实拥有的两个字段</b>：{@code product_name} 与 {@code sku_code}。
+     * 闸门要的 main_version / color / quantity / spec_params / package_version 在
+     * {@code cp_product} 里根本没有对应列，只能来自产品资料或人工录入。</p>
+     *
+     * <p><b>冲突保护</b>：同字段已有不同取值时，本次写入降级为「待确认」——
+     * 让主数据与资料的分歧以冲突候选的形式交给人裁定，而不是自动把主数据值变成事实。</p>
+     *
+     * @param task 任务（需含 productId）
+     * @return 同步结果
+     */
+    private ContentFactSyncVo writeProductFacts(CpTask task) {
+        ContentFactSyncVo vo = new ContentFactSyncVo();
+        if (task == null || task.getProductId() == null) {
+            vo.getMessages().add("任务未关联产品，无可同步的产品与SKU信息");
+            return vo;
+        }
+        CpProduct product = productMapper.selectById(task.getProductId());
+        if (product == null) {
+            vo.getMessages().add("任务关联的产品已不存在，请重新选择产品");
+            return vo;
+        }
+
+        // SKU 以任务上填写的为准（任务可选具体 SKU），任务没填才回落到产品的默认 SKU
+        Map<String, String> masterValues = new LinkedHashMap<>();
+        masterValues.put("product_name", product.getProductName());
+        masterValues.put("sku_code", StringUtils.isNotBlank(task.getSkuCode())
+            ? task.getSkuCode() : product.getSkuCode());
+
+        String sourceLocator = PRODUCT_MASTER_SOURCE + " · 产品编码 " + product.getProductCode();
+        for (Map.Entry<String, String> entry : masterValues.entrySet()) {
+            String code = entry.getKey();
+            String value = entry.getValue();
+            String label = PRODUCT_MASTER_FIELD_LABELS.getOrDefault(code, code);
+            if (StringUtils.isBlank(value)) {
+                vo.getMessages().add(label + "：产品与SKU主数据中该项为空，未写入");
+                continue;
+            }
+            List<CpFactSnapshot> rows = factSnapshotMapper.selectList(new LambdaQueryWrapper<CpFactSnapshot>()
+                .eq(CpFactSnapshot::getTaskId, task.getTaskId())
+                .eq(CpFactSnapshot::getFieldCode, code));
+
+            boolean sameConfirmed = false;
+            boolean differentExists = false;
+            int maxVersion = 1;
+            String existingName = null;
+            for (CpFactSnapshot row : rows) {
+                if (StringUtils.isBlank(existingName)) {
+                    existingName = row.getFieldName();
+                }
+                if (row.getSnapshotVersion() != null && row.getSnapshotVersion() > maxVersion) {
+                    maxVersion = row.getSnapshotVersion();
+                }
+                if (value.equals(row.getFieldValue())) {
+                    if (ContentFactConfirmStatusEnum.CONFIRMED.getCode().equals(row.getConfirmStatus())) {
+                        sameConfirmed = true;
+                    }
+                } else {
+                    differentExists = true;
+                }
+            }
+            if (sameConfirmed) {
+                vo.setSkipped(vo.getSkipped() + 1);
+                vo.getMessages().add(label + "：已有取值相同的已确认事实，未重复写入");
+                continue;
+            }
+
+            CpFactSnapshot entity = new CpFactSnapshot();
+            entity.setTaskId(task.getTaskId());
+            entity.setSnapshotVersion(maxVersion + 1);
+            entity.setFieldCode(code);
+            entity.setFieldName(StringUtils.blankToDefault(existingName, ContentFieldAlias.fieldName(code)));
+            entity.setFieldValue(value);
+            entity.setSourceLocator(sourceLocator);
+            entity.setConfirmedBy(LoginHelper.getUserId());
+            entity.setConfirmedAt(LocalDateTime.now());
+            if (differentExists) {
+                // 与既有取值冲突：不自动确认，留给人工裁定
+                entity.setConfirmStatus(ContentFactConfirmStatusEnum.PENDING.getCode());
+                entity.setRemark(PRODUCT_MASTER_REMARK + "；与任务中已有取值不一致，故仅作待确认候选，请人工裁定");
+                factSnapshotMapper.insert(entity);
+                vo.setConflicts(vo.getConflicts() + 1);
+                vo.getMessages().add(label + "：与任务中已有取值不一致，已作为「待确认」候选写入，"
+                    + "不会自动成为事实；请在事实清单或互动卡中裁定");
+            } else {
+                entity.setConfirmStatus(ContentFactConfirmStatusEnum.CONFIRMED.getCode());
+                entity.setRemark(PRODUCT_MASTER_REMARK);
+                factSnapshotMapper.insert(entity);
+                vo.setSynced(vo.getSynced() + 1);
+                vo.getMessages().add(label + "：已按产品与SKU主数据写入并确认为事实（" + value + "）");
+            }
+        }
+        log.info("产品主数据事实同步, taskId={}, productCode={}, synced={}, skipped={}, conflicts={}",
+            task.getTaskId(), product.getProductCode(), vo.getSynced(), vo.getSkipped(), vo.getConflicts());
+        return vo;
     }
 
     @Override
@@ -772,23 +932,49 @@ public class ContentTaskServiceImpl implements IContentTaskService {
     /**
      * 生成任务号：CT + yyyyMMdd + 4 位序号。
      *
+     * <p><b>必须把已逻辑删除的行算进去</b>：{@code uk_cp_task_no} 唯一索引只建在
+     * {@code task_no} 上，不含 {@code del_flag}。若按「可见行」取序号，删光当天任务后
+     * 序号会从 0001 重来，插入直接撞唯一索引——现象是「当天把任务删完之后，当天再也建不了新任务」。
+     * 所以这里走 {@link CpTaskMapper#selectMaxTaskNoIncludeDeleted(String)}。</p>
+     *
+     * @param offset 在最大已用序号基础上再往后顺延的位数（用于并发撞号后重试）
      * @return 任务号
      */
-    private String nextTaskNo() {
+    private String nextTaskNo(int offset) {
         String prefix = "CT" + LocalDate.now().format(TASK_NO_DATE);
-        CpTask last = taskMapper.selectOne(new LambdaQueryWrapper<CpTask>()
-            .likeRight(CpTask::getTaskNo, prefix)
-            .orderByDesc(CpTask::getTaskNo)
-            .last("limit 1"));
+        String max = taskMapper.selectMaxTaskNoIncludeDeleted(prefix);
         int seq = 1;
-        if (last != null && StringUtils.isNotBlank(last.getTaskNo()) && last.getTaskNo().length() > prefix.length()) {
+        if (StringUtils.isNotBlank(max) && max.length() > prefix.length()) {
             try {
-                seq = Integer.parseInt(last.getTaskNo().substring(prefix.length())) + 1;
+                seq = Integer.parseInt(max.substring(prefix.length())) + 1;
             } catch (NumberFormatException ignored) {
                 seq = 1;
             }
         }
-        return prefix + String.format("%04d", seq);
+        return prefix + String.format("%04d", seq + offset);
+    }
+
+    /**
+     * 带任务号生成地插入任务：撞唯一索引时顺延序号重试。
+     *
+     * <p>任务号是「当天最大序号 + 1」，两人同时建任务会算出同一个号。这里不引入分布式锁
+     * （为一个演示级并发量上锁不划算），而是让唯一索引当仲裁者：撞了就换下一个号再试。
+     * 重试上限取 20，远超正常并发量，超过就如实失败而不是无限重试。</p>
+     *
+     * @param task 任务（taskNo 由本方法填充）
+     */
+    private void insertTaskWithGeneratedNo(CpTask task) {
+        for (int offset = 0; offset < 20; offset++) {
+            task.setTaskNo(nextTaskNo(offset));
+            try {
+                taskMapper.insert(task);
+                return;
+            } catch (DuplicateKeyException e) {
+                // 该任务号刚被并发请求占用（或历史软删除行占用），顺延一位重试
+                log.warn("任务号被占用，顺延重试, taskNo={}, offset={}", task.getTaskNo(), offset);
+            }
+        }
+        throw new ServiceException("生成任务号失败（当日序号冲突），请稍后重试");
     }
 
     /**

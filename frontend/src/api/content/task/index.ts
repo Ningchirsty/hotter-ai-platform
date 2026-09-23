@@ -2,6 +2,7 @@ import type { PageResult } from '@/api/types';
 import type { AxiosPromise } from '@/utils/api-types';
 import request from '@/utils/request';
 import type {
+  ContentFactSyncVO,
   ContentGateResult,
   ContentTaskDetailVO,
   CpTaskFileVO,
@@ -94,6 +95,14 @@ export function triggerPrecheck(taskId: string | number): AxiosPromise<string | 
 export function recheckGate(taskId: string | number): AxiosPromise<ContentGateResult> {
   return request({
     url: '/content/task/' + taskId + '/recheck',
+    method: 'post'
+  });
+}
+
+// 把任务所选产品在「产品与SKU」里的主数据（名称/SKU）同步为产品事实
+export function syncProductFacts(taskId: string | number): AxiosPromise<ContentFactSyncVO> {
+  return request({
+    url: '/content/task/' + taskId + '/productFacts/sync',
     method: 'post'
   });
 }

@@ -16,6 +16,7 @@ import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -213,6 +214,62 @@ class ContentImageInspectorTest {
         assertFalse(c.diffZones().isEmpty(), "局部改动应当报出差异方位");
         assertTrue(c.diffZones().get(0).startsWith("左上"),
             "改动在左上角，首个差异方位应为「左上」，实际=" + c.diffZones());
+        // 局部被改就不能判「一致」：改动集中在局部时，最差区域必须显著高于全图平均
+        assertTrue(c.hotspotDiff() > c.meanChannelDiff(),
+            "局部改动的区域差应明显大于全图平均（最差 " + c.hotspotDiff()
+                + " vs 平均 " + c.meanChannelDiff() + "）");
+        assertNotEquals("CONSISTENT", ContentImageInspector.localVerdict(c),
+            "有局部改动的成品不得判为「一致」，实际相似度=" + c.similarity());
+    }
+
+    @Test
+    @DisplayName("白底商品图：只有中央产品块换了配色，绝不能判「一致」")
+    void smallProductRecolouredOnSharedBackground() throws Exception {
+        // 这是实测捅出来的口子：白底产品图里背景往往占九成以上且完全相同，
+        // 按「全图平均通道差」判定时，中央那点真实差异会被背景平均掉——
+        // 1600×1200 白底、中央 200×200 产品块由红改蓝，旧口径只得 5/255、判 98 分「一致」。
+        // 判定改为「最差 1% 区域」后必须判「不一致」。
+        BufferedImage ref = whiteWithBox(1600, 1200, 200, 0xDC1E1E);
+        BufferedImage res = whiteWithBox(1600, 1200, 200, 0x1E3CDC);
+
+        ContentImageInspector.Comparison c = ContentImageInspector.compare(png(ref), png(res));
+
+        assertTrue(c.comparable());
+        assertEquals("PIXEL", c.compareMode());
+        // 全图平均确实很小——正是这个量不该拿来判定
+        assertTrue(c.meanChannelDiff() < 20d,
+            "白底占比极高时全图平均本就应该很小，实际=" + c.meanChannelDiff());
+        // 但最差区域必须把真实差异暴露出来
+        assertTrue(c.hotspotDiff() > 100d,
+            "产品块配色完全不同，最差区域应远高于平均，实际=" + c.hotspotDiff());
+        assertNotEquals("CONSISTENT", ContentImageInspector.localVerdict(c),
+            "产品块换了配色不得判「一致」，实际相似度=" + c.similarity()
+                + "（平均 " + c.meanChannelDiff() + "，最差区域 " + c.hotspotDiff() + "）");
+    }
+
+    @Test
+    @DisplayName("同尺寸、整幅异色：最差区域与全图平均一致，判定不受影响")
+    void wholeImageRecolourStillFlagged() throws Exception {
+        ContentImageInspector.Comparison c = ContentImageInspector.compare(
+            png(solid(W, H, 0x00AA00)), png(solid(W, H, 0xAA0000)));
+
+        assertEquals("INCONSISTENT", ContentImageInspector.localVerdict(c));
+        assertEquals(c.meanChannelDiff(), c.hotspotDiff(), 0.5d,
+            "整幅均匀着色时，最差区域应与全图平均相同");
+    }
+
+    /** 白底 + 中央方形产品块 */
+    private static BufferedImage whiteWithBox(int w, int h, int box, int boxRgb) {
+        BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+        int x0 = (w - box) / 2;
+        int y0 = (h - box) / 2;
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                boolean in = x >= x0 && x < x0 + box && y >= y0 && y < y0 + box;
+                img.setRGB(x, y, in ? boxRgb : 0xFAFAFA);
+            }
+        }
+        return img;
     }
 
     @Test

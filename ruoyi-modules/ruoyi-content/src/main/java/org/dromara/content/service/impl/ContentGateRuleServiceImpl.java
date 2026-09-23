@@ -102,6 +102,18 @@ public class ContentGateRuleServiceImpl implements IContentGateRuleService {
             .orderByAsc(CpGateRule::getSortNo));
     }
 
+    @Override
+    public java.util.Set<String> allEnabledFieldCodes() {
+        java.util.Set<String> codes = new java.util.LinkedHashSet<>();
+        for (CpGateRule rule : gateRuleMapper.selectList(new LambdaQueryWrapper<CpGateRule>()
+            .eq(CpGateRule::getEnabled, ENABLED))) {
+            if (StringUtils.isNotBlank(rule.getFieldCode())) {
+                codes.add(rule.getFieldCode());
+            }
+        }
+        return codes;
+    }
+
     /**
      * 加载规则，不存在抛异常。
      *

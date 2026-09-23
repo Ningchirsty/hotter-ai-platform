@@ -1,6 +1,7 @@
 package org.dromara.content.service;
 
 import org.dromara.content.domain.vo.CpFactSnapshotVo;
+import org.dromara.content.domain.vo.ContentFactFieldOptionVo;
 
 import java.util.List;
 
@@ -60,5 +61,17 @@ public interface IContentFactService {
      * @return 新增快照行ID
      */
     Long addManual(Long taskId, String fieldCode, String value, String remark);
+
+    /**
+     * 某任务可录入的事实字段选项。
+     *
+     * <p>返回「本交付类型闸门要求的字段（带中文名与是否已满足）」+「别名表里其他已登记字段」。
+     * 前端据此把字段编码做成下拉，避免用户手打编码——打错一个字符就会得到一条
+     * 闸门根本不认的事实，而且没有任何提示。</p>
+     *
+     * @param taskId 任务ID
+     * @return 字段选项（闸门要求项在前）
+     */
+    List<ContentFactFieldOptionVo> fieldOptions(Long taskId);
 
 }

@@ -61,4 +61,14 @@ public interface IContentGateRuleService {
      */
     List<org.dromara.content.domain.CpGateRule> listEnabledRules(String deliverableType);
 
+    /**
+     * 取所有启用规则涉及的事实字段编码（不限交付类型）。
+     *
+     * <p>用于校验「手工录入的字段编码是不是治理侧认得出来的编码」。闸门规则是表驱动、
+     * 运营可改的，因此不能只拿别名表当白名单——否则运营新加一条规则，手工录入反而被拒。</p>
+     *
+     * @return 字段编码集合
+     */
+    java.util.Set<String> allEnabledFieldCodes();
+
 }

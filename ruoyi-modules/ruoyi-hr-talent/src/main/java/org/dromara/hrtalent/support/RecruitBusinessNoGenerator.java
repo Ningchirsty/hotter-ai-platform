@@ -80,6 +80,11 @@ public class RecruitBusinessNoGenerator {
     private static final String PREFIX_EXPORT = "EXP";
 
     /**
+     * 数据导入批次编号前缀。
+     */
+    private static final String PREFIX_IMPORT = "IMP";
+
+    /**
      * 时间戳部分：精确到毫秒。
      */
     private static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS");
@@ -203,6 +208,17 @@ public class RecruitBusinessNoGenerator {
      */
     public String nextExportNo() {
         return next(PREFIX_EXPORT, LocalDate.now());
+    }
+
+    /**
+     * 生成数据导入批次编号。
+     * <p>批次编号只用于对外展示与排查，{@code hr_recruit_import_batch.uk_hr_recruit_import_batch_no}
+     * 是最终唯一约束。</p>
+     *
+     * @return 批次编号，形如 {@code IMP20260921...-001}
+     */
+    public String nextImportBatchNo() {
+        return next(PREFIX_IMPORT, LocalDate.now());
     }
 
     /**

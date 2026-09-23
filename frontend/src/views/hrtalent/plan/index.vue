@@ -60,6 +60,23 @@
             </p>
           </div>
           <div class="toolbar-actions">
+            <el-button
+              v-hasPermi="['recruit:import:template']"
+              plain
+              icon="Download"
+              @click="handleDownloadTemplate"
+            >
+              下载模板
+            </el-button>
+            <el-button
+              v-hasPermi="['recruit:import:upload']"
+              type="success"
+              plain
+              icon="Upload"
+              @click="importVisible = true"
+            >
+              批量导入计划
+            </el-button>
             <el-button v-hasPermi="['recruit:plan:add']" type="primary" icon="Plus" @click="handleAddPlan">
               新增计划
             </el-button>
@@ -612,6 +629,15 @@
         </div>
       </template>
     </el-dialog>
+
+    <!-- 批量导入：模板 → 预检 → 确认；按「公司 + 月份」复用或自动创建计划表头 -->
+    <RecruitImportDialog
+      v-model="importVisible"
+      title="批量导入子公司月度招聘计划"
+      base-path="/recruit/plans"
+      template-name="月度招聘计划导入模板.xlsx"
+      @done="getList"
+    />
   </div>
 </template>
 
@@ -648,9 +674,19 @@ import { useSearchReset } from '@/hooks/form/useSearchReset';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import modal from '@/plugins/modal';
 import { useDict } from '@/utils/dict';
+import { download } from '@/utils/request';
 import { parseTime } from '@/utils/ruoyi';
+import RecruitImportDialog from '../components/RecruitImportDialog.vue';
 
 defineOptions({ name: 'HrPlan' });
+
+/** 批量导入弹窗可见性（模板 → 预检 → 确认） */
+const importVisible = ref(false);
+
+/** 下载月度计划导入模板 */
+const handleDownloadTemplate = () => {
+  download('/recruit/plans/importTemplate', {}, '月度招聘计划导入模板.xlsx');
+};
 
 const {
   recruit_plan_status,

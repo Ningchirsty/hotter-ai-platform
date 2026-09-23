@@ -98,6 +98,20 @@ public final class ContentImageInspector {
     private static final double SIM_INCONSISTENT = 75d;
 
     /**
+     * 判定所依据的「最差区域」占比：取差异最大的 1% 网格单元的平均通道差。
+     *
+     * <p><b>为什么不能拿全图平均判</b>：白底产品图是最常见的素材形态——背景占 97% 且完全相同，
+     * 只有中央产品块换了颜色时，全图平均通道差只有 5/255，会算出 98/100 的「一致」。
+     * 也就是说，<b>越是大片相同的背景，越容易把真实差异平均掉</b>，
+     * 而这恰恰是电商图的常态。改用「最差区域」后，同一对图（实测）由 98 分「一致」
+     * 变为 46 分「不一致」，而同一张图另存/轻微位移仍判「一致」（差异是全局均匀的微小量）。</p>
+     *
+     * <p>取「前 1% 单元的平均」而不是「单个最差单元」：单个单元容易被压缩振铃、
+     * 单点污渍带偏；取一小片区域的均值既能反映局部真实改动，又不会被单点噪声触发。</p>
+     */
+    private static final double HOTSPOT_RATIO = 0.01d;
+
+    /**
      * 区域平均通道差超过该值（0–255）才值得把该方位作为差异点报出来。
      */
     private static final double ZONE_MIN_DIFF = 12d;
@@ -151,16 +165,18 @@ public final class ContentImageInspector {
      * @param reference       参考图信息
      * @param result          成品图信息
      * @param comparable      画布是否可比（都解码成功且长宽比接近）
-     * @param similarity      权威相似度 0–100（逐像素或网格，见 {@code compareMode}）；不可比时为 null
+     * @param similarity      权威相似度 0–100，<b>由「最差区域」得出</b>（判定依据）；不可比时为 null
      * @param compareMode     比对模式：{@code PIXEL}（同尺寸逐像素）/{@code GRID}（尺寸不同按网格）
-     * @param meanChannelDiff 平均通道差 0–255（R/G/B 一起算）：相似度的原始尺度
+     * @param meanChannelDiff 全图平均通道差 0–255（R/G/B 一起算）：仅供参考，<b>不用于判定</b>
+     * @param hotspotDiff     最差 1% 区域的平均通道差 0–255：判定所依据的量
      * @param gridSimilarity  仅网格口径的相似度 0–100，供对照与差异方位定位
      * @param diffZones       差异最集中的方位（人类可读）；无显著差异时为空列表
      * @param notes           度量说明（给用户看的，不是给程序看的）
      */
     public record Comparison(ImageInfo reference, ImageInfo result, boolean comparable,
                              Double similarity, String compareMode, Double meanChannelDiff,
-                             Double gridSimilarity, List<String> diffZones, List<String> notes) {
+                             Double hotspotDiff, Double gridSimilarity, List<String> diffZones,
+                             List<String> notes) {
 
         /**
          * 转成可入库的 JSON 友好结构。
@@ -183,6 +199,7 @@ public final class ContentImageInspector {
             map.put("similarity", similarity == null ? null : round(similarity));
             map.put("compareMode", compareMode);
             map.put("meanChannelDiff", meanChannelDiff == null ? null : round(meanChannelDiff));
+            map.put("hotspotChannelDiff", hotspotDiff == null ? null : round(hotspotDiff));
             map.put("gridSimilarity", gridSimilarity == null ? null : round(gridSimilarity));
             map.put("diffZones", diffZones);
             map.put("gridSize", GRID);
@@ -290,29 +307,42 @@ public final class ContentImageInspector {
             notes.add("图片像素读取失败，无法生成结构签名");
             return notComparable(refInfo, resInfo, notes);
         }
-        double gridMeanDiff = meanChannelDiff(refGrid, resGrid);
+        // 网格口径：单元均值之间的差。它天然更宽松（单元内高频差异被平均掉），
+        // 因此只作对照与方位定位，不用于出结论。
+        double[] gridCellDiffs = cellChannelDiffs(refGrid, resGrid);
+        double gridMeanDiff = mean(gridCellDiffs);
         double gridSimilarity = similarityOf(gridMeanDiff);
         List<String> zones = diffZones(refGrid, resGrid);
 
         // 尺寸一致才谈得上逐像素对齐；这是最贴近「原图 vs 成品图」的口径，优先采用
-        Double pixelDiff = pixelChannelDiff(refImage, resImage);
+        double[] pixelCellDiffs = pixelCellChannelDiffs(refImage, resImage);
         double meanChannelDiff;
-        double similarity;
+        double hotspotDiff;
         String mode;
-        if (pixelDiff != null) {
+        if (pixelCellDiffs != null) {
             mode = MODE_PIXEL;
-            meanChannelDiff = pixelDiff;
-            similarity = similarityOf(pixelDiff);
-            notes.add("两图尺寸一致，按相同坐标逐像素比对 R/G/B，平均通道差 "
-                + Math.round(meanChannelDiff) + "/255，相似度 " + Math.round(similarity) + "/100");
+            meanChannelDiff = mean(pixelCellDiffs);
+            hotspotDiff = hotspotDiff(pixelCellDiffs);
+            notes.add("两图尺寸一致，按相同坐标逐像素比对 R/G/B；全图平均通道差 "
+                + Math.round(meanChannelDiff) + "/255，最差 1% 区域 "
+                + Math.round(hotspotDiff) + "/255，判定相似度 " + Math.round(similarityOf(hotspotDiff)) + "/100");
         } else {
             mode = MODE_GRID;
             meanChannelDiff = gridMeanDiff;
-            similarity = gridSimilarity;
+            hotspotDiff = hotspotDiff(gridCellDiffs);
             notes.add("两图尺寸不同，按 " + GRID + "×" + GRID
-                + " 网格均值比对 R/G/B，平均通道差 " + Math.round(meanChannelDiff)
-                + "/255，相似度 " + Math.round(similarity) + "/100；"
+                + " 网格均值比对 R/G/B；全图平均通道差 " + Math.round(meanChannelDiff)
+                + "/255，最差 1% 区域 " + Math.round(hotspotDiff) + "/255，判定相似度 "
+                + Math.round(similarityOf(hotspotDiff)) + "/100；"
                 + "尺寸不同无法逐像素对齐，该结论比同尺寸时更宽松");
+        }
+        // 判定用「最差区域」而不是全图平均：白底商品图里背景往往占到九成以上且完全相同，
+        // 拿全图平均会把中央那点真实差异平均掉（实测「红产品换蓝产品」只得 5/255、判 98 分一致）。
+        // 详见 HOTSPOT_RATIO 的说明。
+        double similarity = similarityOf(hotspotDiff);
+        if (hotspotDiff - meanChannelDiff >= ZONE_MIN_DIFF) {
+            notes.add("差异不是全局均匀的：全图平均 " + Math.round(meanChannelDiff)
+                + "/255，而最差区域达 " + Math.round(hotspotDiff) + "/255，说明改动集中在局部");
         }
         if (!zones.isEmpty()) {
             notes.add("差异最集中的方位：" + String.join("、", zones));
@@ -322,7 +352,68 @@ public final class ContentImageInspector {
             + "仍需人工或视觉模型确认");
 
         return new Comparison(refInfo, resInfo, true, similarity, mode, meanChannelDiff,
-            gridSimilarity, zones, notes);
+            hotspotDiff, gridSimilarity, zones, notes);
+    }
+
+    /**
+     * 逐格平均通道差。
+     *
+     * @param cellDiffs 每格的平均通道差
+     * @return 全格平均
+     */
+    private static double mean(double[] cellDiffs) {
+        if (cellDiffs == null || cellDiffs.length == 0) {
+            return 0d;
+        }
+        double sum = 0d;
+        for (double d : cellDiffs) {
+            sum += d;
+        }
+        return sum / cellDiffs.length;
+    }
+
+    /**
+     * 「最差区域」通道差：差异最大的前 {@value #HOTSPOT_RATIO} 比例单元的平均值。
+     *
+     * <p>取一小片区域的均值而不是单个最差单元：单格容易被压缩振铃或单点污渍带偏，
+     * 而一小片区域的均值既能反映真实的局部改动，又不会被单点噪声触发。</p>
+     *
+     * @param cellDiffs 每格的平均通道差
+     * @return 最差区域的平均通道差；无数据返回 0
+     */
+    private static double hotspotDiff(double[] cellDiffs) {
+        if (cellDiffs == null || cellDiffs.length == 0) {
+            return 0d;
+        }
+        double[] sorted = cellDiffs.clone();
+        java.util.Arrays.sort(sorted);
+        int take = Math.max(1, (int) Math.round(sorted.length * HOTSPOT_RATIO));
+        double sum = 0d;
+        for (int i = sorted.length - take; i < sorted.length; i++) {
+            sum += sorted[i];
+        }
+        return sum / take;
+    }
+
+    /**
+     * 逐格平均通道差（网格签名版）：每个单元先按通道取绝对差，再对通道取平均。
+     *
+     * @param refGrid 参考图网格签名
+     * @param resGrid 成品图网格签名
+     * @return 长度 {@value #GRID}×{@value #GRID} 的每格通道差
+     */
+    private static double[] cellChannelDiffs(double[] refGrid, double[] resGrid) {
+        int cells = GRID * GRID;
+        double[] diffs = new double[cells];
+        for (int i = 0; i < cells; i++) {
+            int base = i * CHANNELS;
+            double sum = 0d;
+            for (int c = 0; c < CHANNELS; c++) {
+                sum += Math.abs(refGrid[base + c] - resGrid[base + c]);
+            }
+            diffs[i] = sum / CHANNELS;
+        }
+        return diffs;
     }
 
     /**
@@ -334,7 +425,7 @@ public final class ContentImageInspector {
      * @return 不可比对的结果
      */
     private static Comparison notComparable(ImageInfo refInfo, ImageInfo resInfo, List<String> notes) {
-        return new Comparison(refInfo, resInfo, false, null, null, null, null, List.of(), notes);
+        return new Comparison(refInfo, resInfo, false, null, null, null, null, null, List.of(), notes);
     }
 
     /**
@@ -350,15 +441,16 @@ public final class ContentImageInspector {
     }
 
     /**
-     * 逐像素比对（仅当两图尺寸完全一致）：按相同坐标比较 R/G/B。
+     * 逐像素比对（仅当两图尺寸完全一致）：按相同坐标比较 R/G/B，按 {@value #GRID}×{@value #GRID}
+     * 单元分别累计，得到「每格平均通道差」——判定所依据的「最差区域」就是从这份数据里取的。
      *
      * <p>超大图按统一步长抽稀，抽稀不改变两图的坐标对应关系，因此语义不变。</p>
      *
      * @param refImage 参考图
      * @param resImage 成品图
-     * @return 平均通道差 0–255；尺寸不一致或无采样点时返回 null
+     * @return 长度 {@value #GRID}×{@value #GRID} 的每格平均通道差；尺寸不一致或无采样点时返回 null
      */
-    private static Double pixelChannelDiff(BufferedImage refImage, BufferedImage resImage) {
+    private static double[] pixelCellChannelDiffs(BufferedImage refImage, BufferedImage resImage) {
         int w = refImage.getWidth();
         int h = refImage.getHeight();
         if (w != resImage.getWidth() || h != resImage.getHeight()) {
@@ -372,38 +464,30 @@ public final class ContentImageInspector {
         while (total / ((long) step * step) > MAX_PIXEL_SAMPLES) {
             step++;
         }
-        double sum = 0d;
-        long samples = 0;
+        double[] sums = new double[GRID * GRID];
+        long[] counts = new long[GRID * GRID];
         for (int y = 0; y < h; y += step) {
+            int gy = Math.min(GRID - 1, (int) ((long) y * GRID / h));
             for (int x = 0; x < w; x += step) {
+                int gx = Math.min(GRID - 1, (int) ((long) x * GRID / w));
                 int a = refImage.getRGB(x, y);
                 int b = resImage.getRGB(x, y);
-                sum += Math.abs(((a >> 16) & 0xFF) - ((b >> 16) & 0xFF))
+                int cell = gy * GRID + gx;
+                sums[cell] += Math.abs(((a >> 16) & 0xFF) - ((b >> 16) & 0xFF))
                     + Math.abs(((a >> 8) & 0xFF) - ((b >> 8) & 0xFF))
                     + Math.abs((a & 0xFF) - (b & 0xFF));
-                samples += CHANNELS;
+                counts[cell] += CHANNELS;
             }
         }
-        return samples == 0 ? null : sum / samples;
-    }
-
-    /**
-     * 两个网格签名之间的平均通道差。
-     *
-     * @param refGrid 参考图网格签名
-     * @param resGrid 成品图网格签名
-     * @return 平均通道差 0–255
-     */
-    private static double meanChannelDiff(double[] refGrid, double[] resGrid) {
-        int cells = GRID * GRID;
-        double sum = 0d;
-        for (int i = 0; i < cells; i++) {
-            int base = i * CHANNELS;
-            for (int c = 0; c < CHANNELS; c++) {
-                sum += Math.abs(refGrid[base + c] - resGrid[base + c]);
+        double[] diffs = new double[GRID * GRID];
+        boolean any = false;
+        for (int i = 0; i < diffs.length; i++) {
+            if (counts[i] > 0) {
+                diffs[i] = sums[i] / counts[i];
+                any = true;
             }
         }
-        return sum / (cells * CHANNELS);
+        return any ? diffs : null;
     }
 
     /**
@@ -551,17 +635,26 @@ public final class ContentImageInspector {
         }
         String modeText = MODE_PIXEL.equals(comparison.compareMode())
             ? "逐像素" : GRID + "×" + GRID + " 网格";
-        String base = "原图与成品图按" + modeText + "比对颜色与结构，相似度 "
-            + Math.round(comparison.similarity()) + "/100"
-            + (comparison.meanChannelDiff() == null ? ""
-                : "（平均通道差 " + Math.round(comparison.meanChannelDiff()) + "/255）")
-            + "。";
+        // 措辞刻意写清「两张图各自独立、未做合成」，并说明判定依据是「最差区域」：
+        // 全图平均会把大片相同背景里的局部改动平均掉，只看平均会给出假「一致」。
+        StringBuilder base = new StringBuilder();
+        base.append("两张图各自独立比对（未做任何拼接或合成），口径：").append(modeText)
+            .append("，判定相似度 ").append(Math.round(comparison.similarity())).append("/100");
+        if (comparison.hotspotDiff() != null) {
+            base.append("（最差 1% 区域通道差 ").append(Math.round(comparison.hotspotDiff())).append("/255");
+            if (comparison.meanChannelDiff() != null) {
+                base.append("，全图平均 ").append(Math.round(comparison.meanChannelDiff())).append("/255");
+            }
+            base.append("）");
+        }
+        base.append("。");
         String zones = comparison.diffZones() == null || comparison.diffZones().isEmpty()
             ? "" : "差异最集中在：" + String.join("、", comparison.diffZones()) + "。";
+        String prefix = base.toString();
         return switch (verdict) {
-            case "CONSISTENT" -> base + zones + "颜色与版面结构高度接近；画面中的文字内容与 Logo 语义请人工确认。";
-            case "INCONSISTENT" -> base + zones + "与参考图差异明显，请核对是否为同一版面、同一配色。";
-            default -> base + zones + "差异处于中间地带，本地度量不足以判定，请人工复核或改用视觉模型。";
+            case "CONSISTENT" -> prefix + zones + "颜色与版面结构高度接近；画面中的文字内容与 Logo 语义请人工确认。";
+            case "INCONSISTENT" -> prefix + zones + "与参考图差异明显（判定取最差区域，避免被大片相同背景稀释），请核对是否为同一版面、同一配色。";
+            default -> prefix + zones + "差异处于中间地带，本地度量不足以判定，请人工复核或改用视觉模型。";
         };
     }
 

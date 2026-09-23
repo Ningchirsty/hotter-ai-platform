@@ -451,6 +451,69 @@ public class RecruitPlanServiceImpl implements IRecruitPlanService {
 
     /* ------------------------------------------------------------------ 内部方法 ------------------------------------------------------------------ */
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public PlanHeader findOrCreatePlan(Long companyDeptId, String companyName, String planMonth) {
+        if (companyDeptId == null) {
+            throw new ServiceException("公司不能为空");
+        }
+        String month = requirePlanMonth(planMonth);
+        // 命中即复用：一个公司一个月只有一张表头，导入不该因为表头已存在而失败
+        RecruitPlan exist = findPlan(companyDeptId, month);
+        if (exist != null) {
+            return new PlanHeader(exist.getPlanId(), false);
+        }
+        RecruitPlanBo bo = new RecruitPlanBo();
+        bo.setCompanyDeptId(companyDeptId);
+        bo.setCompanyName(companyName);
+        bo.setPlanMonth(month);
+        bo.setRemark("由数据导入自动创建");
+        return new PlanHeader(create(bo), true);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Long addImportedItem(Long planId, RecruitPlanItemBo bo, Long batchId) {
+        RecruitPlan plan = loadPlan(planId);
+        if (PlanStatusEnum.CLOSED.getCode().equals(plan.getStatus())) {
+            throw new ServiceException(HrTalentErrorCode.MSG_HR_PLAN_001);
+        }
+        if (bo == null) {
+            throw new ServiceException("计划任务参数不能为空");
+        }
+        if (bo.getPlanQty() == null || bo.getPlanQty() <= 0) {
+            throw new ServiceException("计划人数必须大于 0");
+        }
+        RecruitPlanItem entity = new RecruitPlanItem();
+        entity.setPlanId(plan.getPlanId());
+        entity.setPlanMonth(plan.getPlanMonth());
+        entity.setCompanyDeptId(plan.getCompanyDeptId());
+        entity.setCompanyName(plan.getCompanyName());
+        entity.setSourceType(PlanSourceTypeEnum.NEW.getCode());
+        entity.setUseDeptId(bo.getUseDeptId());
+        entity.setUseDeptName(bo.getUseDeptName());
+        entity.setJobName(bo.getJobName());
+        entity.setPlanQty(bo.getPlanQty());
+        entity.setCreditedArrivalQty(0);
+        entity.setRemainingQty(planItemStatusDomainService.resolveRemainingQty(bo.getPlanQty(), 0));
+        entity.setControlStatus(PlanControlStatusEnum.NORMAL.getCode());
+        entity.setExecutionStatus(PlanExecutionStatusEnum.PENDING.getCode());
+        entity.setCompletionStatus(PlanCompletionStatusEnum.UNFINISHED.getCode());
+        entity.setLastRefreshTime(LocalDateTime.now());
+        entity.setCarryoverEnabled(resolveCarryoverEnabled(bo.getCarryoverEnabled(), true));
+        entity.setOwnerId(bo.getOwnerId());
+        entity.setUrgency(resolveUrgency(bo.getUrgency(), true));
+        entity.setStandardDays(bo.getStandardDays());
+        entity.setRemark(bo.getRemark());
+        // 导入溯源：这条任务是哪一次导入、哪个文件带来的
+        entity.setImportBatchId(batchId);
+        Long itemId = insertItem(entity, plan.getPlanMonth());
+        log.info("导入新增月度计划任务, itemId={}, itemNo={}, planId={}, batchId={}, jobName={}",
+            itemId, entity.getItemNo(), plan.getPlanId(), batchId, entity.getJobName());
+        planItemStatusService.refreshPlanTotals(plan.getPlanId());
+        return itemId;
+    }
+
     /**
      * 构造计划任务查询条件。
      *
