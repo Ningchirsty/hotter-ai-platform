@@ -309,11 +309,17 @@
           <el-descriptions-item label="比对口径">
             {{ metrics.compareMode === 'PIXEL' ? '逐像素（两图尺寸一致）' : (metrics.compareMode === 'GRID' ? '网格均值（两图尺寸不同）' : '—') }}
           </el-descriptions-item>
-          <el-descriptions-item label="相似度">
+          <el-descriptions-item label="判定相似度">
             <strong>{{ metrics.similarity === null || metrics.similarity === undefined ? '—' : metrics.similarity }}</strong>
+            <span class="muted">（由最差区域得出）</span>
           </el-descriptions-item>
-          <el-descriptions-item label="平均通道差">
+          <el-descriptions-item label="最差区域通道差">
+            {{ metrics.hotspotChannelDiff === null || metrics.hotspotChannelDiff === undefined ? '—' : metrics.hotspotChannelDiff }}
+            <span class="muted">/255</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="全图平均通道差">
             {{ metrics.meanChannelDiff === null || metrics.meanChannelDiff === undefined ? '—' : metrics.meanChannelDiff }}
+            <span class="muted">/255（仅供参考，不用于判定）</span>
           </el-descriptions-item>
           <el-descriptions-item label="网格口径参考">
             {{ metrics.gridSimilarity === null || metrics.gridSimilarity === undefined ? '—' : metrics.gridSimilarity }}

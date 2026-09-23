@@ -85,12 +85,18 @@ export interface CheckMetrics {
   referenceAspect?: number;
   resultAspect?: number;
   comparable?: boolean;
-  /** 权威相似度 0-100（原图 vs 成品图）；不可比时为空 */
+  /** 判定相似度 0-100（由「最差区域」得出，两张图各自独立比对）；不可比时为空 */
   similarity?: number | null;
   /** 比对口径：PIXEL=同尺寸逐像素；GRID=尺寸不同按网格 */
   compareMode?: 'PIXEL' | 'GRID';
-  /** 平均通道差 0-255（R/G/B 一起算）：相似度的原始尺度 */
+  /**
+   * 全图平均通道差 0-255（R/G/B 一起算）。
+   * 仅供参考、**不用于判定**：白底商品图里背景常占九成以上且完全相同，
+   * 拿全图平均会把中央那点真实差异平均掉（实测产品块红改蓝只得 5/255）。
+   */
   meanChannelDiff?: number | null;
+  /** 最差 1% 区域的平均通道差 0-255：判定所依据的量 */
+  hotspotChannelDiff?: number | null;
   /** 仅网格口径的相似度，供对照（对高频纹理不敏感，不作为结论依据） */
   gridSimilarity?: number | null;
   meanLumaDiff?: number | null;
