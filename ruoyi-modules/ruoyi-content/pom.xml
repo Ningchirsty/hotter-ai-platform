@@ -106,6 +106,13 @@
             <version>3.0.7</version>
         </dependency>
 
+        <!-- 单元测试：本地度量（原图 vs 成品图）的口径锁定，见 ContentImageInspectorTest -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
     </dependencies>
 
 </project>

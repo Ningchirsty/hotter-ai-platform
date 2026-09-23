@@ -173,9 +173,12 @@ public class ContentLocalInvoker implements ModelInvoker {
      * <p><b>约定 {@code images[0]} 是参考图、{@code images[1]} 是成品图</b>。标签不符时直接失败，
      * 不靠顺序猜：两张图说反了，结论就完全说反了，而且从结果上根本看不出来。</p>
      *
-     * <p>本方法只做不需要模型也能确凿测出的部分（画布几何 + 归一化网格结构差异），
-     * 语义判断（颜色准确性、文字内容、Logo 是否被改）交给视觉模型或人工——
-     * 摘要里会明确写出这个边界，不让「一致」这两个字被过度解读。</p>
+     * <p>本方法只做不需要模型也能确凿测出的部分（画布几何 + 归一化网格上的
+     * <b>颜色与版面结构</b>差异），语义判断（画面里的文字内容、Logo 是否被改）
+     * 交给视觉模型或人工——摘要里会明确写出这个边界，不让「一致」这两个字被过度解读。</p>
+     *
+     * <p>比对对象始终是<b>参考图与成品图两张独立的图</b>：两张图各自采样成网格签名后
+     * 逐格相对比较，不存在拼接、叠加或合成。</p>
      *
      * @param request 调用请求（payload 需含 images）
      * @param start   起始时间
@@ -212,6 +215,13 @@ public class ContentLocalInvoker implements ModelInvoker {
         for (String note : comparison.notes()) {
             findings.add(finding("结构比对", comparison.comparable() ? "INFO" : "WARN", note));
         }
+        // 差异方位单独列一条：验收时最想知道的就是「哪里不一样」，
+        // 混在说明性 notes 里会被读过去
+        if (comparison.diffZones() != null && !comparison.diffZones().isEmpty()) {
+            findings.add(finding("差异方位",
+                "INCONSISTENT".equals(verdict) ? "ERROR" : "WARN",
+                "差异最集中的区域：" + String.join("、", comparison.diffZones())));
+        }
         if (!comparison.comparable()) {
             findings.add(finding("版面关系", "WARN",
                 "两图不可直接做像素级比对，本次未给出相似度分值，请以视觉模型或人工复核为准"));
@@ -220,15 +230,17 @@ public class ContentLocalInvoker implements ModelInvoker {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("verdict", verdict);
         // score 只在真的算出来时才写：输出模板不强制该字段，编造一个分值比不给更糟
-        if (comparison.gridSimilarity() != null) {
-            out.put("score", Math.round(comparison.gridSimilarity() * 100d) / 100d);
+        if (comparison.similarity() != null) {
+            out.put("score", Math.round(comparison.similarity() * 100d) / 100d);
         }
         out.put("summary", summary);
         out.put("findings", findings);
         out.put("pendingConfirm", List.of(
-            "本地结构化比对仅覆盖画布几何与明暗结构，不含颜色准确性、文字内容与 Logo 合规性判断"));
-        log.info("成品一致性本地比对完成, verdict={}, comparable={}, similarity={}",
-            verdict, comparison.comparable(), comparison.gridSimilarity());
+            "本地结构化比对覆盖颜色、纹理与版面结构，不含画面内文字内容与 Logo 语义判断，"
+                + "该部分需人工或视觉模型确认"));
+        log.info("成品一致性本地比对完成, verdict={}, comparable={}, mode={}, similarity={}, channelDiff={}",
+            verdict, comparison.comparable(), comparison.compareMode(),
+            comparison.similarity(), comparison.meanChannelDiff());
         return ModelInvokeResult.success(JsonUtils.toJsonString(out), System.currentTimeMillis() - start);
     }
 

@@ -306,13 +306,22 @@
           <el-descriptions-item label="画布可比">
             {{ metrics.comparable ? '是' : '否' }}
           </el-descriptions-item>
-          <el-descriptions-item label="网格相似度">
+          <el-descriptions-item label="比对口径">
+            {{ metrics.compareMode === 'PIXEL' ? '逐像素（两图尺寸一致）' : (metrics.compareMode === 'GRID' ? '网格均值（两图尺寸不同）' : '—') }}
+          </el-descriptions-item>
+          <el-descriptions-item label="相似度">
+            <strong>{{ metrics.similarity === null || metrics.similarity === undefined ? '—' : metrics.similarity }}</strong>
+          </el-descriptions-item>
+          <el-descriptions-item label="平均通道差">
+            {{ metrics.meanChannelDiff === null || metrics.meanChannelDiff === undefined ? '—' : metrics.meanChannelDiff }}
+          </el-descriptions-item>
+          <el-descriptions-item label="网格口径参考">
             {{ metrics.gridSimilarity === null || metrics.gridSimilarity === undefined ? '—' : metrics.gridSimilarity }}
           </el-descriptions-item>
-          <el-descriptions-item label="平均亮度差">
-            {{ metrics.meanLumaDiff === null || metrics.meanLumaDiff === undefined ? '—' : metrics.meanLumaDiff }}
+          <el-descriptions-item label="差异方位">
+            <span v-if="metrics.diffZones?.length">{{ metrics.diffZones.join('、') }}</span>
+            <span v-else class="muted">未发现显著区域差异</span>
           </el-descriptions-item>
-          <el-descriptions-item label="网格">{{ metrics.gridSize || '—' }} × {{ metrics.gridSize || '—' }}</el-descriptions-item>
         </el-descriptions>
         <ul v-if="metrics?.notes?.length" class="note-list">
           <li v-for="(note, idx) in metrics!.notes" :key="idx">{{ note }}</li>
