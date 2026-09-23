@@ -19,12 +19,19 @@ import org.dromara.creative.domain.DpGeneration;
 import org.dromara.creative.domain.bo.CreativeHeroBo;
 import org.dromara.creative.domain.vo.CreativeProjectVo;
 import org.dromara.creative.domain.vo.DpGenerationVo;
+import org.dromara.creative.domain.vo.DpStoryboardVo;
+import org.dromara.creative.domain.vo.DpVisualDirectionVo;
 import org.dromara.creative.enums.DpGenerationStatusEnum;
 import org.dromara.creative.enums.DpVisualStageEnum;
+import org.dromara.creative.helper.DnaPromptBuilder;
 import org.dromara.creative.mapper.CreativeTaskStageMapper;
 import org.dromara.creative.mapper.DpGenerationMapper;
+import org.dromara.creative.service.ICreativeDirectionService;
+import org.dromara.creative.service.ICreativeDnaService;
+import org.dromara.creative.service.ICreativeGateService;
 import org.dromara.creative.service.ICreativeGenerationService;
 import org.dromara.creative.service.ICreativeProjectService;
+import org.dromara.creative.service.ICreativeStoryboardService;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -49,17 +56,12 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class CreativeGenerationServiceImpl implements ICreativeGenerationService {
 
-    /**
-     * 默认提示词里的共性视觉要求（可被用户覆盖）。
-     */
-    private static final String DEFAULT_PROMPT_TEMPLATE =
-        "电商详情页主图：%s。产品居中摆放，纯净浅色背景，柔和影棚光，商业摄影质感，"
-        + "高清细节，保留产品原有结构与配色，画面干净利落、留白充足。";
-
-    private static final String DEFAULT_NEGATIVE_PROMPT =
-        "文字, 水印, logo 错位, 产品变形, 结构缺失, 多余物体, 杂乱背景, 低分辨率, 过曝";
-
     private final ICreativeProjectService projectService;
+    private final ICreativeDnaService dnaService;
+    private final ICreativeDirectionService directionService;
+    private final ICreativeStoryboardService storyboardService;
+    private final ICreativeGateService gateService;
+    private final DnaPromptBuilder dnaPromptBuilder;
     private final IContentTaskService contentTaskService;
     private final ContentOssHelper contentOssHelper;
     private final DpGenerationMapper generationMapper;
@@ -73,6 +75,10 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
     @Override
     @Transactional(rollbackFor = Exception.class)
     public DpGenerationVo submitHero(Long taskId, CreativeHeroBo bo) {
+        // 视觉门前置：未过门不放行。放在最前面，避免白白生成素材、占一次 GPU。
+        // 门禁在后端强制，前端按钮状态只是提示——绕过页面直接调接口同样会被拒。
+        gateService.requireCanProduce(taskId);
+
         CreativeProjectVo project = projectService.getProject(taskId);
         ImageTaskSubmissionService submission = requireSubmission();
 
@@ -88,14 +94,25 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
         String contentType = guessContentType(reference.getFileExt());
         long assetId = submission.storeAsset(reference.getFileName(), bytes, contentType);
 
-        // 3) 工作流与提示词
+        // 3) 工作流与提示词：提示词由「已锁定的视觉基因」派生（人可在页面上改，改了以人写的为准）
         String workflowCode = StringUtils.isBlank(bo.getWorkflowCode())
             ? CreativeConstants.DEFAULT_HERO_WORKFLOW : bo.getWorkflowCode();
         ImageWorkflowVersion version = requireWorkflow(submission, workflowCode);
-        String prompt = StringUtils.isBlank(bo.getPrompt())
-            ? buildDefaultPrompt(project.getProductName()) : bo.getPrompt();
-        String negativePrompt = StringUtils.isBlank(bo.getNegativePrompt())
-            ? DEFAULT_NEGATIVE_PROMPT : bo.getNegativePrompt();
+        Long dnaId = dnaService.activeDnaId(taskId);
+        List<String> promptApplied = new ArrayList<>();
+        String prompt = bo.getPrompt();
+        String negativePrompt = bo.getNegativePrompt();
+        if (StringUtils.isBlank(prompt) || StringUtils.isBlank(negativePrompt)) {
+            DnaPromptBuilder.Prompt derived = dnaPromptBuilder.build(
+                dnaService.activeDna(taskId), project.getProductName(), "HERO 主图");
+            if (StringUtils.isBlank(prompt)) {
+                prompt = derived.prompt();
+                promptApplied = derived.applied();
+            }
+            if (StringUtils.isBlank(negativePrompt)) {
+                negativePrompt = derived.negativePrompt();
+            }
+        }
 
         // 4) 候选序号（同项目累加；重试也会递增，因此「第几次尝试」可数）
         long existing = countGenerations(taskId);
@@ -121,6 +138,11 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
         DpGeneration row = new DpGeneration();
         row.setTaskId(taskId);
         row.setCandidateNo(candidateNo);
+        row.setDnaId(dnaId);
+        DpVisualDirectionVo direction = directionService.selected(taskId);
+        row.setDirectionId(direction == null ? null : direction.getId());
+        DpStoryboardVo storyboard = storyboardService.latest(taskId);
+        row.setStoryboardId(storyboard == null ? null : storyboard.getId());
         row.setWorkflowCode(workflowCode);
         row.setWorkflowVersion(version.version());
         row.setPrompt(prompt);
@@ -147,6 +169,11 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
         detail.put("candidateNo", candidateNo);
         detail.put("referenceFileId", reference.getFileId());
         detail.put("dispatched", result.accepted());
+        detail.put("dnaId", dnaId);
+        detail.put("directionId", row.getDirectionId());
+        detail.put("storyboardId", row.getStoryboardId());
+        detail.put("promptFromDna", !promptApplied.isEmpty());
+        detail.put("promptApplied", promptApplied);
         projectService.moveStage(taskId, DpVisualStageEnum.PRODUCING, "HERO_SUBMIT",
             JsonUtils.toJsonString(detail));
         return toVo(row);
@@ -426,8 +453,9 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
     }
 
     private String buildDefaultPrompt(String productName) {
-        String subject = StringUtils.isBlank(productName) ? "当前产品" : productName;
-        return String.format(DEFAULT_PROMPT_TEMPLATE, subject);
+        // 提示词统一由 DnaPromptBuilder 派生（它内部已处理「没有基因」的默认值），
+        // 这里不再保留第二套默认模板——两处默认值迟早会不一致。
+        return dnaPromptBuilder.build(null, productName, "HERO 主图").prompt();
     }
 
     private DpGenerationVo toVo(DpGeneration row) {

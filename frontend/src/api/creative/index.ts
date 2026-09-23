@@ -4,15 +4,20 @@ import type { AxiosPromise } from '@/utils/api-types';
 import request from '@/utils/request';
 import type {
   CreativeDnaForm,
+  CreativeDirectionForm,
   CreativeHeroForm,
   CreativeProjectForm,
   CreativeProjectQuery,
   CreativeProjectVO,
+  CreativeScreenForm,
   CreativeWorkflowVO,
   DnaPromptVO,
   DpGenerationVO,
   DpStageEventVO,
-  DpVisualDnaVO
+  DpStoryboardVO,
+  DpVisualDirectionVO,
+  DpVisualDnaVO,
+  GateEvaluationVO
 } from './types';
 
 // ------------------------------------------------------------------
@@ -174,6 +179,85 @@ export function getDnaPrompt(taskId: string | number, screenHint?: string): Axio
     url: `/creative/projects/${taskId}/dna/prompt`,
     method: 'get',
     params: screenHint ? { screenHint } : undefined
+  });
+}
+
+// ------------------------------------------------------------------
+// 视觉方向 / 分镜 / 视觉门
+// ------------------------------------------------------------------
+
+/** 生成 A/B/C 视觉方向 */
+export function generateDirections(taskId: string | number): AxiosPromise<DpVisualDirectionVO[]> {
+  return request({ url: `/creative/projects/${taskId}/directions/generate`, method: 'post' });
+}
+
+/** 方向列表 */
+export function listDirections(taskId: string | number): AxiosPromise<DpVisualDirectionVO[]> {
+  return request({ url: `/creative/projects/${taskId}/directions`, method: 'get' });
+}
+
+/** 选定方向 */
+export function selectDirection(taskId: string | number, directionId: string | number) {
+  return request({
+    url: `/creative/projects/${taskId}/directions/${directionId}/select`,
+    method: 'post'
+  });
+}
+
+/** 编辑方向文案 */
+export function updateDirection(taskId: string | number, data: CreativeDirectionForm) {
+  return request({ url: `/creative/projects/${taskId}/directions`, method: 'put', data });
+}
+
+/** 生成一版分镜 */
+export function generateStoryboard(taskId: string | number): AxiosPromise<DpStoryboardVO> {
+  return request({ url: `/creative/projects/${taskId}/storyboard/generate`, method: 'post' });
+}
+
+/** 最新一版分镜（含屏） */
+export function getStoryboard(taskId: string | number): AxiosPromise<DpStoryboardVO | null> {
+  return request({ url: `/creative/projects/${taskId}/storyboard`, method: 'get' });
+}
+
+/** 分镜版本列表 */
+export function listStoryboardVersions(taskId: string | number): AxiosPromise<DpStoryboardVO[]> {
+  return request({ url: `/creative/projects/${taskId}/storyboard/versions`, method: 'get' });
+}
+
+/** 编辑一屏 */
+export function updateScreen(taskId: string | number, data: CreativeScreenForm) {
+  return request({ url: `/creative/projects/${taskId}/storyboard/screen`, method: 'put', data });
+}
+
+/** 锁定分镜 */
+export function lockStoryboard(taskId: string | number, storyboardId?: string | number) {
+  return request({
+    url: `/creative/projects/${taskId}/storyboard/lock`,
+    method: 'post',
+    params: storyboardId ? { storyboardId } : undefined
+  });
+}
+
+/** 视觉门评估 */
+export function getVisualGate(taskId: string | number): AxiosPromise<GateEvaluationVO> {
+  return request({ url: `/creative/projects/${taskId}/visual-gate`, method: 'get' });
+}
+
+/** 提交视觉门审核 */
+export function submitVisualGate(taskId: string | number): AxiosPromise<GateEvaluationVO> {
+  return request({ url: `/creative/projects/${taskId}/visual-gate/submit`, method: 'post' });
+}
+
+/** 处理视觉门（人工确认或打回） */
+export function reviewVisualGate(
+  taskId: string | number,
+  option: 'CONFIRM' | 'BLOCK',
+  comment?: string
+): AxiosPromise<GateEvaluationVO> {
+  return request({
+    url: `/creative/projects/${taskId}/visual-gate/review`,
+    method: 'post',
+    params: { option, comment }
   });
 }
 

@@ -216,6 +216,127 @@ export const DNA_SOURCE_LABELS: Record<string, string> = {
   FACTS: '事实推导'
 };
 
+// ------------------------------------------------------------------
+// 视觉方向 / 分镜 / 视觉门
+// ------------------------------------------------------------------
+
+/** 视觉方向 */
+export interface DpVisualDirectionVO {
+  id: string | number;
+  taskId: string | number;
+  directionCode?: string;
+  directionName?: string;
+  concept?: string;
+  strategy?: Record<string, unknown>;
+  strategyJson?: string;
+  differences?: string[];
+  previewFileIds?: string[];
+  status?: string;
+  statusDesc?: string;
+  sortNo?: number;
+  source?: string;
+  selectedBy?: string | number;
+  selectedAt?: string;
+  remark?: string;
+  createTime?: string;
+}
+
+/** 分镜单屏 */
+export interface DpStoryboardScreenVO {
+  id: string | number;
+  storyboardId: string | number;
+  taskId: string | number;
+  screenNo?: string;
+  sortNo?: number;
+  screenType?: string;
+  screenTypeDesc?: string;
+  title?: string;
+  subtitle?: string;
+  bodyText?: string;
+  pictureSoloStatement?: string;
+  spec?: Record<string, unknown>;
+  specJson?: string;
+  workflowCode?: string;
+  productLockLevel?: string;
+  status?: string;
+  remark?: string;
+}
+
+/** 分镜版本 */
+export interface DpStoryboardVO {
+  id: string | number;
+  taskId: string | number;
+  storyboardNo?: string;
+  version?: number;
+  visualDirectionId?: string | number;
+  visualDirectionName?: string;
+  visualDnaId?: string | number;
+  visualDnaVersion?: number;
+  screenCount?: number;
+  status?: string;
+  statusDesc?: string;
+  source?: string;
+  sourceDesc?: string;
+  approvedBy?: string | number;
+  approvedAt?: string;
+  remark?: string;
+  createTime?: string;
+  screens?: DpStoryboardScreenVO[];
+}
+
+/** 方向编辑表单 */
+export interface CreativeDirectionForm {
+  id: string | number;
+  directionName?: string;
+  concept?: string;
+  remark?: string;
+}
+
+/** 分镜单屏编辑表单 */
+export interface CreativeScreenForm {
+  id: string | number;
+  title?: string;
+  subtitle?: string;
+  bodyText?: string;
+  pictureSoloStatement?: string;
+  shot?: string;
+  composition?: string;
+  lighting?: string;
+  background?: string;
+  workflowCode?: string;
+  productLockLevel?: string;
+  remark?: string;
+}
+
+/** 视觉门准入项 */
+export interface GateItem {
+  code: string;
+  label: string;
+  /** BLOCK 硬性 / CONDITION 建议 */
+  level: string;
+  passed: boolean;
+  detail: string;
+}
+
+/** 视觉门评估 */
+export interface GateEvaluationVO {
+  items: GateItem[];
+  blocked: string[];
+  submittable: boolean;
+  passed: boolean;
+  cardStatus?: string;
+  cardId?: string | number;
+  stage?: string;
+  stageDesc?: string;
+}
+
+/** 方向来源 */
+export const DIRECTION_SOURCE_LABELS: Record<string, string> = {
+  TEMPLATE: '取舍模板派生',
+  AI: '模型生成',
+  MANUAL: '人工'
+};
+
 /** 阶段编码 → 可读描述（前端兜底；权威描述在后端 DpVisualStageEnum） */
 export const CREATIVE_STAGE_LABELS: Record<string, string> = {
   MATERIAL_READY: '资料就绪',
