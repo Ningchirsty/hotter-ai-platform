@@ -1,0 +1,17 @@
+fix(content): 修复删过检查后无法再发起检查（单号撞唯一索引）
+
+现象：发起成品一致性检查返回 HTTP 200 + code 409「数据库中已存在该记录」。
+
+根因：uk_cp_output_check_no 唯一索引只建在 check_no 上，不含 del_flag；
+而 nextCheckNo() 用 MyBatis-Plus 通用查询取「当天最大单号」，该查询会自动追加
+del_flag='0'。当天记录一旦被软删除（用户在页面删过、或清理过），可见 max 变成 null，
+序号从 0001 重新开始，插入立刻撞唯一索引。实测当天 6 条记录全部软删除后，
+visible_max=NULL、real_max=CK202609230002，每次发起都撞 CK202609230001。
+
+修复：
+- 新增 CpOutputCheckMapper#selectMaxCheckNoIncludeDeleted，用原生 @Select
+  绕开逻辑删除注入，取「含软删除行」的真实最大单号
+- nextCheckNo(offset) 支持顺延；insertCheckWithGeneratedNo 在撞唯一索引时
+  顺延序号重试（上限 20 次），并发下不再直接失败
+- 顺带说明：这类「唯一索引不含 del_flag + 逻辑删除」的组合是通用坑，
+  软删除与唯一约束同时存在时，序号生成必须看得见被删的行

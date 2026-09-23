@@ -41,6 +41,7 @@ import org.dromara.content.mapper.CpTaskFileMapper;
 import org.dromara.content.mapper.CpTaskMapper;
 import org.dromara.content.service.IContentOutputCheckService;
 import org.dromara.content.service.IContentTaskService;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -254,14 +255,13 @@ public class ContentOutputCheckServiceImpl implements IContentOutputCheckService
         Long resultId = taskService.uploadFile(taskId, task.getDataLevel(), resultFile);
 
         CpOutputCheck check = new CpOutputCheck();
-        check.setCheckNo(nextCheckNo());
         check.setTaskId(taskId);
         check.setReferenceFileId(referenceId);
         check.setResultFileId(resultId);
         check.setStatus(ContentCheckStatusEnum.PENDING.getCode());
         check.setCheckedBy(LoginHelper.getUserId());
         check.setRemark(remark);
-        checkMapper.insert(check);
+        insertCheckWithGeneratedNo(check);
 
         final Long checkId = check.getCheckId();
         asyncExecutor.submit(taskId, ContentAsyncJobTypeEnum.OUTPUT_CHECK, () -> checkWorker(checkId));
@@ -778,24 +778,49 @@ public class ContentOutputCheckServiceImpl implements IContentOutputCheckService
     /**
      * 生成检查单号：CK + yyyyMMdd + 4 位序号。
      *
+     * <p><b>必须把已逻辑删除的行算进去</b>：{@code uk_cp_output_check_no} 唯一索引只建在
+     * {@code check_no} 上，不含 {@code del_flag}。若按「可见行」取序号，删光当天记录后
+     * 序号会从 0001 重来，插入直接撞唯一索引——现象是「删过一次检查后，再也发不起新检查」。
+     * 所以这里走 {@link CpOutputCheckMapper#selectMaxCheckNoIncludeDeleted(String)}。</p>
+     *
+     * @param offset 在最大已用序号基础上再往后顺延的位数（用于并发撞号后重试）
      * @return 检查单号
      */
-    private String nextCheckNo() {
+    private String nextCheckNo(int offset) {
         String prefix = "CK" + LocalDate.now().format(CHECK_NO_DATE);
-        CpOutputCheck last = checkMapper.selectOne(new LambdaQueryWrapper<CpOutputCheck>()
-            .likeRight(CpOutputCheck::getCheckNo, prefix)
-            .orderByDesc(CpOutputCheck::getCheckNo)
-            .last("limit 1"));
+        String max = checkMapper.selectMaxCheckNoIncludeDeleted(prefix);
         int seq = 1;
-        if (last != null && StringUtils.isNotBlank(last.getCheckNo())
-            && last.getCheckNo().length() > prefix.length()) {
+        if (StringUtils.isNotBlank(max) && max.length() > prefix.length()) {
             try {
-                seq = Integer.parseInt(last.getCheckNo().substring(prefix.length())) + 1;
+                seq = Integer.parseInt(max.substring(prefix.length())) + 1;
             } catch (NumberFormatException ignored) {
                 seq = 1;
             }
         }
-        return prefix + String.format("%04d", seq);
+        return prefix + String.format("%04d", seq + offset);
+    }
+
+    /**
+     * 带单号生成地插入检查记录：撞唯一索引时顺延序号重试。
+     *
+     * <p>单号是「当天最大序号 + 1」，两人同时发起检查会算出同一个号。这里不做全局锁
+     * （为一个演示级并发量上分布式锁不划算），而是让唯一索引当仲裁者：撞了就换下一个号再试。
+     * 重试上限取 20，远超正常并发量，超过就如实失败而不是无限重试。</p>
+     *
+     * @param check 检查记录（checkNo 由本方法填充）
+     */
+    private void insertCheckWithGeneratedNo(CpOutputCheck check) {
+        for (int offset = 0; offset < 20; offset++) {
+            check.setCheckNo(nextCheckNo(offset));
+            try {
+                checkMapper.insert(check);
+                return;
+            } catch (DuplicateKeyException e) {
+                // 该单号刚被并发请求占用（或历史软删除行占用），顺延一位重试
+                log.warn("检查单号被占用，顺延重试, checkNo={}, offset={}", check.getCheckNo(), offset);
+            }
+        }
+        throw new ServiceException("生成检查单号失败（当日序号冲突），请稍后重试");
     }
 
     /**
