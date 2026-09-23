@@ -148,19 +148,22 @@
                   placeholder="留空则用默认主图提示词（产品居中、纯净背景、影棚光、保留原有结构与配色）"
                 />
               </div>
-              <p v-if="promptFromDna" class="dna-hint">
-                已按<b>视觉基因</b>预填提示词（用到的维度：{{ promptApplied.join('、') }}）。可以改；改了就以你写的为准。
-              </p>
-              <p v-else-if="dnaLocked" class="dna-hint">
-                检测到已锁定的视觉基因，但派生提示词尚未载入——点
-                <el-button link type="primary" size="small" @click="prefillPromptFromDna">这里</el-button>
-                载入。
-              </p>
-              <p v-else class="dna-hint muted">
-                这个项目还没有锁定视觉基因，提示词按默认模板生成。建议先到
-                <el-button link type="primary" size="small" @click="openDna">视觉基因</el-button>
-                定义配色与光线。
-              </p>
+              <template v-if="dnaStateLoaded">
+                <p v-if="promptFromDna" class="dna-hint">
+                  已按<b>视觉基因</b>预填提示词（用到的维度：{{ promptApplied.join('、') }}）。可以改；改了就以你写的为准。
+                </p>
+                <p v-else-if="dnaLocked" class="dna-hint">
+                  将按<b>已锁定的视觉基因 {{ dnaLockedVersion }}</b>出图，但派生提示词尚未载入——点
+                  <el-button link type="primary" size="small" @click="prefillPromptFromDna">这里</el-button>
+                  载入。
+                </p>
+                <p v-else class="dna-hint muted">
+                  这个项目还没有锁定视觉基因，提示词按默认模板生成。建议先到
+                  <el-button link type="primary" size="small" @click="openDna">视觉基因</el-button>
+                  定义配色与光线并锁定。
+                </p>
+              </template>
+              <p v-else class="dna-hint muted">正在检查该项目的视觉基因…</p>
               <div class="form-row">
                 <label>负向提示</label>
                 <el-input
@@ -321,6 +324,7 @@ import {
   listCreativeProject,
   listCreativeTimeline,
   listCreativeWorkflows,
+  listDnaVersions,
   listGenerations,
   retryGeneration,
   submitHero,
@@ -370,6 +374,9 @@ const heroForm = reactive({ workflowCode: '', prompt: '', negativePrompt: '' });
 const promptFromDna = ref(false);
 const promptApplied = ref<string[]>([]);
 const dnaLocked = ref(false);
+const dnaLockedVersion = ref('');
+/** 基因判定是否已完成：完成前不显示任何结论，避免闪一下「还没有锁定基因」这种错信息 */
+const dnaStateLoaded = ref(false);
 
 /**
  * blob URL 台账：key → URL。
@@ -493,14 +500,29 @@ async function loadDetail() {
 /** 看这个项目有没有锁定基因，并决定是否预填提示词（只在用户没写过提示词时预填） */
 async function loadDnaState() {
   promptFromDna.value = false;
+  dnaLockedVersion.value = '';
+  dnaStateLoaded.value = false;
   try {
-    const dnaRes = await getDna(currentProjectId.value);
-    dnaLocked.value = dnaRes.data?.locked === true;
+    // 口径必须与后端一致：出图用的是「已锁定版本」，不是「最新版本」。
+    // 锁定 v1 之后又改出 v2 时，最新版是待确认的 v2，但实际出图依据仍是 v1。
+    const [latest, versionRes] = await Promise.all([
+      getDna(currentProjectId.value),
+      listDnaVersions(currentProjectId.value)
+    ]);
+    const lockedVersion = (versionRes.data || []).find((item) => item.locked);
+    dnaLocked.value = Boolean(lockedVersion);
+    if (lockedVersion) {
+      dnaLockedVersion.value = `v${lockedVersion.version}`;
+    } else if (latest.data) {
+      dnaLockedVersion.value = '';
+    }
     if (dnaLocked.value && !heroForm.prompt.trim()) {
       await prefillPromptFromDna();
     }
   } catch {
     dnaLocked.value = false;
+  } finally {
+    dnaStateLoaded.value = true;
   }
 }
 
