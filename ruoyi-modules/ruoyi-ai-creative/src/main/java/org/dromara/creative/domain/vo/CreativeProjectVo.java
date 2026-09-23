@@ -76,6 +76,16 @@ public class CreativeProjectVo implements Serializable {
     private String status;
 
     /**
+     * 资料敏感级别（PUBLIC/INTERNAL/RESTRICTED）——视觉模型调用要按它选路由
+     */
+    private String dataLevel;
+
+    /**
+     * 是否允许外部 AI（Y/N）——未授权时即便路由命中外部模型也不发出去
+     */
+    private String allowExternal;
+
+    /**
      * 当前阻断原因（闸门写入）
      */
     private String blockReason;

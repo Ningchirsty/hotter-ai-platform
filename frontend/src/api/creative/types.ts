@@ -113,6 +113,109 @@ export interface CreativeWorkflowVO {
   published?: boolean;
 }
 
+/** Visual DNA（视觉基因） */
+export interface DpVisualDnaVO {
+  id: string | number;
+  taskId: string | number;
+  dnaNo?: string;
+  version?: number;
+  status?: string;
+  statusDesc?: string;
+  subject?: string;
+  styleKeywords?: string[];
+  avoidKeywords?: string[];
+  colors?: Record<string, string>;
+  lighting?: Record<string, string>;
+  productRatio?: Record<string, number>;
+  saturation?: string;
+  contrastLevel?: string;
+  whitespaceLevel?: string;
+  typographyStyle?: string;
+  sceneType?: string;
+  dnaJson?: string;
+  /** AI / MANUAL / FACTS */
+  source?: string;
+  sourceDesc?: string;
+  modelKey?: string;
+  traceId?: string;
+  evidence?: Array<Record<string, string>>;
+  /** 非空表示不可锁定 */
+  issues?: string[];
+  approvedBy?: string | number;
+  approvedAt?: string;
+  remark?: string;
+  createTime?: string;
+  locked?: boolean;
+}
+
+/** 视觉基因编辑表单 */
+export interface CreativeDnaForm {
+  id?: string | number;
+  styleKeywords?: string[];
+  avoidKeywords?: string[];
+  colorPrimary?: string;
+  colorSecondary?: string;
+  colorAccent?: string;
+  colorBg?: string;
+  saturation?: string;
+  contrastLevel?: string;
+  whitespaceLevel?: string;
+  lightingType?: string;
+  lightingDir?: string;
+  productRatioMin?: number;
+  productRatioMax?: number;
+  typographyStyle?: string;
+  sceneType?: string;
+  remark?: string;
+}
+
+/** DNA 派生的提示词 */
+export interface DnaPromptVO {
+  prompt: string;
+  negativePrompt: string;
+  applied: string[];
+}
+
+/** 饱和度/对比度/留白档位 */
+export const DNA_LEVEL_OPTIONS = [
+  { value: 'LOW', label: '低' },
+  { value: 'MEDIUM', label: '中' },
+  { value: 'HIGH', label: '高' }
+];
+
+/** 光线类型 */
+export const DNA_LIGHTING_TYPES = [
+  { value: 'SOFT', label: '柔和散射光' },
+  { value: 'HARD', label: '硬质方向光' },
+  { value: 'STUDIO', label: '影棚布光' },
+  { value: 'NATURAL', label: '自然光' }
+];
+
+/** 光位 */
+export const DNA_LIGHTING_DIRS = [
+  { value: 'FRONT', label: '正面光' },
+  { value: 'SIDE', label: '侧光' },
+  { value: 'TOP', label: '顶光' },
+  { value: 'BACK', label: '背光/轮廓光' }
+];
+
+/** Element Plus 标签类型（限制成联合类型，模板里 :type 才通得过类型检查） */
+export type TagType = 'primary' | 'success' | 'info' | 'warning' | 'danger';
+
+/** 来源徽标颜色 */
+export const DNA_SOURCE_TYPES: Record<string, TagType> = {
+  AI: 'success',
+  MANUAL: 'warning',
+  FACTS: 'info'
+};
+
+/** 来源徽标文案 */
+export const DNA_SOURCE_LABELS: Record<string, string> = {
+  AI: '视觉模型',
+  MANUAL: '人工编辑',
+  FACTS: '事实推导'
+};
+
 /** 阶段编码 → 可读描述（前端兜底；权威描述在后端 DpVisualStageEnum） */
 export const CREATIVE_STAGE_LABELS: Record<string, string> = {
   MATERIAL_READY: '资料就绪',

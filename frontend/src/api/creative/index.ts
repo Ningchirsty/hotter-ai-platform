@@ -3,13 +3,16 @@ import type { CpTaskFileVO } from '@/api/content/task/types';
 import type { AxiosPromise } from '@/utils/api-types';
 import request from '@/utils/request';
 import type {
+  CreativeDnaForm,
   CreativeHeroForm,
   CreativeProjectForm,
   CreativeProjectQuery,
   CreativeProjectVO,
   CreativeWorkflowVO,
+  DnaPromptVO,
   DpGenerationVO,
-  DpStageEventVO
+  DpStageEventVO,
+  DpVisualDnaVO
 } from './types';
 
 // ------------------------------------------------------------------
@@ -116,6 +119,61 @@ export function listProductions(query: {
     url: '/creative/productions',
     method: 'get',
     params: query
+  });
+}
+
+// ------------------------------------------------------------------
+// Visual DNA（视觉基因）
+// ------------------------------------------------------------------
+
+/** 生成一版视觉基因 */
+export function generateDna(taskId: string | number): AxiosPromise<DpVisualDnaVO> {
+  return request({
+    url: `/creative/projects/${taskId}/dna/generate`,
+    method: 'post'
+  });
+}
+
+/** 最新一版视觉基因（未生成过时 data 为 null） */
+export function getDna(taskId: string | number): AxiosPromise<DpVisualDnaVO | null> {
+  return request({
+    url: `/creative/projects/${taskId}/dna`,
+    method: 'get'
+  });
+}
+
+/** 视觉基因版本列表（倒序） */
+export function listDnaVersions(taskId: string | number): AxiosPromise<DpVisualDnaVO[]> {
+  return request({
+    url: `/creative/projects/${taskId}/dna/versions`,
+    method: 'get'
+  });
+}
+
+/** 保存视觉基因编辑（已锁定版本会自动新建版本） */
+export function saveDna(taskId: string | number, data: CreativeDnaForm): AxiosPromise<DpVisualDnaVO> {
+  return request({
+    url: `/creative/projects/${taskId}/dna`,
+    method: 'put',
+    data: data
+  });
+}
+
+/** 锁定视觉基因（锁定前必须通过自洽校验） */
+export function lockDna(taskId: string | number, dnaId?: string | number): AxiosPromise<DpVisualDnaVO> {
+  return request({
+    url: `/creative/projects/${taskId}/dna/lock`,
+    method: 'post',
+    params: dnaId ? { dnaId } : undefined
+  });
+}
+
+/** 按当前生效基因派生提示词 */
+export function getDnaPrompt(taskId: string | number, screenHint?: string): AxiosPromise<DnaPromptVO> {
+  return request({
+    url: `/creative/projects/${taskId}/dna/prompt`,
+    method: 'get',
+    params: screenHint ? { screenHint } : undefined
   });
 }
 

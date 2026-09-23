@@ -79,6 +79,7 @@
               </div>
             </div>
             <div class="detail-actions">
+              <el-button size="small" @click="openDna">视觉基因</el-button>
               <el-button size="small" @click="loadDetail">刷新</el-button>
               <el-button size="small" @click="timelineVisible = true">操作日志</el-button>
             </div>
@@ -147,6 +148,19 @@
                   placeholder="留空则用默认主图提示词（产品居中、纯净背景、影棚光、保留原有结构与配色）"
                 />
               </div>
+              <p v-if="promptFromDna" class="dna-hint">
+                已按<b>视觉基因</b>预填提示词（用到的维度：{{ promptApplied.join('、') }}）。可以改；改了就以你写的为准。
+              </p>
+              <p v-else-if="dnaLocked" class="dna-hint">
+                检测到已锁定的视觉基因，但派生提示词尚未载入——点
+                <el-button link type="primary" size="small" @click="prefillPromptFromDna">这里</el-button>
+                载入。
+              </p>
+              <p v-else class="dna-hint muted">
+                这个项目还没有锁定视觉基因，提示词按默认模板生成。建议先到
+                <el-button link type="primary" size="small" @click="openDna">视觉基因</el-button>
+                定义配色与光线。
+              </p>
               <div class="form-row">
                 <label>负向提示</label>
                 <el-input
@@ -301,6 +315,8 @@ import {
   fetchGenerationPreviewBlobUrl,
   fetchGenerationThumbnailBlobUrl,
   getCreativeProject,
+  getDna,
+  getDnaPrompt,
   listCreativeFiles,
   listCreativeProject,
   listCreativeTimeline,
@@ -349,6 +365,11 @@ const previewUrl = ref('');
 
 const createForm = reactive({ taskName: '', productId: '' as string | number, remark: '' });
 const heroForm = reactive({ workflowCode: '', prompt: '', negativePrompt: '' });
+
+/** 提示词是否来自视觉基因（页面如实说明，不让人以为是自己写的） */
+const promptFromDna = ref(false);
+const promptApplied = ref<string[]>([]);
+const dnaLocked = ref(false);
 
 /**
  * blob URL 台账：key → URL。
@@ -463,9 +484,44 @@ async function loadDetail() {
     void loadFileThumbs();
     void loadGenerationThumbs();
     syncPolling();
+    void loadDnaState();
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '加载项目详情失败');
   }
+}
+
+/** 看这个项目有没有锁定基因，并决定是否预填提示词（只在用户没写过提示词时预填） */
+async function loadDnaState() {
+  promptFromDna.value = false;
+  try {
+    const dnaRes = await getDna(currentProjectId.value);
+    dnaLocked.value = dnaRes.data?.locked === true;
+    if (dnaLocked.value && !heroForm.prompt.trim()) {
+      await prefillPromptFromDna();
+    }
+  } catch {
+    dnaLocked.value = false;
+  }
+}
+
+/** 用视觉基因派生提示词预填出图框 */
+async function prefillPromptFromDna() {
+  try {
+    const res = await getDnaPrompt(currentProjectId.value, 'HERO 主图');
+    heroForm.prompt = res.data?.prompt || '';
+    heroForm.negativePrompt = res.data?.negativePrompt || '';
+    promptApplied.value = res.data?.applied || [];
+    promptFromDna.value = true;
+    ElMessage.success('已按视觉基因预填提示词');
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '派生提示词失败');
+  }
+}
+
+/** 跳到视觉基因页（带上当前项目） */
+function openDna() {
+  if (!currentProjectId.value) return;
+  window.open(`/creative/dna?taskId=${currentProjectId.value}`, '_self');
 }
 
 async function loadFileThumbs() {
@@ -1132,6 +1188,17 @@ button {
 }
 .hint {
   font-size: 12px;
+  color: var(--t3);
+}
+
+.dna-hint {
+  margin: 0 0 10px;
+  padding-left: 88px;
+  font-size: 12px;
+  line-height: 1.8;
+  color: #a5b4fc;
+}
+.dna-hint.muted {
   color: var(--t3);
 }
 .empty {

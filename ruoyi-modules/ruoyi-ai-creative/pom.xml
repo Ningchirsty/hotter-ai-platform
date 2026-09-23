@@ -86,6 +86,13 @@
             <artifactId>ruoyi-ai</artifactId>
         </dependency>
 
+        <!-- AI 治理层：视觉基因的模型分析经 IAigInvokeService 调用（能力编码 + 数据等级 + 载荷），
+             由治理层决定路由到本地还是外部模型，并逐次审计。业务侧不直连任何模型。 -->
+        <dependency>
+            <groupId>org.dromara</groupId>
+            <artifactId>ruoyi-ai-gov</artifactId>
+        </dependency>
+
         <!-- 单元测试 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

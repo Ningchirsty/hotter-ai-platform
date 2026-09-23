@@ -41,6 +41,21 @@ public class DpGenerationVo implements Serializable {
     private Long screenId;
 
     /**
+     * 生成时采用的视觉基因版本（null＝R0 历史候选，早于基因功能）
+     */
+    private Long dnaId;
+
+    /**
+     * 采用的视觉方向
+     */
+    private Long directionId;
+
+    /**
+     * 采用的分镜版本
+     */
+    private Long storyboardId;
+
+    /**
      * 候选序号
      */
     private Integer candidateNo;

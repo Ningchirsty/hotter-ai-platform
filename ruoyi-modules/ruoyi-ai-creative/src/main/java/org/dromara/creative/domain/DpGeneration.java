@@ -45,6 +45,21 @@ public class DpGeneration extends BaseEntity implements Serializable {
     private Long screenId;
 
     /**
+     * 生成时采用的视觉基因版本（dp_visual_dna.id；R0 历史候选为 null）
+     */
+    private Long dnaId;
+
+    /**
+     * 生成时采用的视觉方向（dp_visual_direction.id）
+     */
+    private Long directionId;
+
+    /**
+     * 生成时采用的分镜版本（dp_storyboard.id）
+     */
+    private Long storyboardId;
+
+    /**
      * 候选序号（同屏第几次）
      */
     private Integer candidateNo;

@@ -255,6 +255,8 @@ public class CreativeProjectServiceImpl implements ICreativeProjectService {
         vo.setOwnerId(task.getOwnerId());
         vo.setOwnerName(task.getOwnerName());
         vo.setStatus(task.getStatus());
+        vo.setDataLevel(task.getDataLevel());
+        vo.setAllowExternal(task.getAllowExternal());
         vo.setBlockReason(task.getBlockReason());
         vo.setPendingCardCount(task.getPendingCardCount());
         vo.setBlockingCardCount(task.getBlockingCardCount());
