@@ -199,8 +199,12 @@ service.interceptors.request.use(
 // 响应拦截器
 service.interceptors.response.use(
   (res: any) => {
-    // 二进制响应（图片/视频预览与下载）直接透传。
-    // 否则下面的 `res.data.code` 会读到 undefined，把正常的二进制当成业务失败。
+    // 二进制响应（图片/视频预览与下载）直接透传<b>完整 axios 响应</b>。
+    // 两点原因：
+    //   1. 下面的 `res.data.code` 对 Blob 会读到 undefined，把正常的二进制当成业务失败；
+    //   2. 下载类调用方还需要 `resp.headers`（download-filename / content-disposition）来定文件名，
+    //      只返回 res.data 就拿不到响应头了（见 views/hrtalent/* 的 resolveBlobResponse）。
+    // 因此消费方必须自己取 `res.data`：直接 `new Blob([resp])` 会写出 "[object Object]"。
     if (res.config?.responseType === 'blob' || res.config?.responseType === 'arraybuffer') {
       return res;
     }
@@ -224,10 +228,6 @@ service.interceptors.response.use(
     const code = res.data.code || HttpStatus.SUCCESS;
     // 获取错误信息
     const msg = res.data.msg || errorCode[code] || errorCode['default'];
-    // 二进制数据则直接返回
-    if (res.request.responseType === 'blob' || res.request.responseType === 'arraybuffer') {
-      return res.data;
-    }
     if (code === 401) {
       // prettier-ignore
       if (!isRelogin.show) {
@@ -299,13 +299,16 @@ export function download(url: string, params: any, fileName: string) {
 			responseType: "blob",
 		})
 		.then(async (resp: any) => {
-			const isLogin = blobValidate(resp);
+			// 二进制响应的响应拦截器返回的是「完整 axios 响应」而不是响应体本身（见响应拦截器处的说明）。
+			// 这里必须先取出 res.data：早先直接 new Blob([resp])，写进磁盘的其实是字符串 "[object Object]"
+			// （15 字节），所有走这个 helper 的导出与模板下载都会存下一个打不开的假文件。
+			const data = resp && resp.data !== undefined ? resp.data : resp;
+			const isLogin = blobValidate(data);
 			if (isLogin) {
-				const blob = new Blob([resp]);
+				const blob = new Blob([data]);
 				saveBlob(blob, fileName);
 			} else {
-				const blob = new Blob([resp]);
-				const resText = await blob.text();
+				const resText = await data.text();
 				const rspObj = JSON.parse(resText);
 				const errMsg =
 					errorCode[rspObj.code] || rspObj.msg || errorCode["default"];

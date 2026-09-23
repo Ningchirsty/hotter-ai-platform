@@ -53,6 +53,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 招聘数据导入服务实现（招聘期限标准 / 月度招聘计划）。
@@ -220,9 +221,17 @@ public class RecruitImportServiceImpl implements IRecruitImportService {
                 // 列宽按表头长度粗估，保证在 Excel 里一眼能看清列名
                 data.setColumnWidth(i, Math.min(60, Math.max(14, columns.get(i).header().length() * 4)) * 256);
             }
+            // 明确指定打开时停在「数据」表：数据表本身只有表头、没有任何示例行，
+            // 若打开时落在说明表上，用户会以为「模板是空白的」，甚至把说明表当成模板去填。
+            workbook.setActiveSheet(0);
+            workbook.setSelectedTab(0);
+
             // 说明单独放一张表：写进数据表会被当成数据行，或者逼解析端去跳过固定行数
             Sheet help = workbook.createSheet("填写说明");
-            Row helpHeader = help.createRow(0);
+            Row note = help.createRow(0);
+            note.createCell(0).setCellValue("【数据请填在「数据」工作表】本表只是列说明，不要在本表填数据");
+            help.setColumnWidth(0, 60 * 256);
+            Row helpHeader = help.createRow(1);
             helpHeader.createCell(0).setCellValue("列名");
             helpHeader.createCell(1).setCellValue("是否必填");
             helpHeader.createCell(2).setCellValue("填写说明");
@@ -230,7 +239,7 @@ public class RecruitImportServiceImpl implements IRecruitImportService {
             help.setColumnWidth(1, 10 * 256);
             help.setColumnWidth(2, 80 * 256);
             for (int i = 0; i < columns.size(); i++) {
-                Row row = help.createRow(i + 1);
+                Row row = help.createRow(i + 2);
                 row.createCell(0).setCellValue(columns.get(i).header());
                 row.createCell(1).setCellValue(columns.get(i).required() ? "必填" : "选填");
                 row.createCell(2).setCellValue(columns.get(i).hint());
@@ -275,7 +284,8 @@ public class RecruitImportServiceImpl implements IRecruitImportService {
         } catch (Exception e) {
             throw new ServiceException("文件读取失败，请重新上传");
         }
-        RecruitImportExcelReader.SheetData sheet = excelReader.read(bytes);
+        RecruitImportExcelReader.SheetData sheet = excelReader.read(bytes,
+            expectedHeadersOf(type), requiredHeadersOf(type));
 
         // 1. 先建批次拿到主键，源文件对象键以批次ID为分段
         RecruitImportBatch batch = new RecruitImportBatch();
@@ -354,7 +364,9 @@ public class RecruitImportServiceImpl implements IRecruitImportService {
             .set(RecruitImportBatch::getStartedTime, LocalDateTime.now()));
 
         // 取回源文件重放：不依赖进程内存，重启或多端操作都不会丢
-        RecruitImportExcelReader.SheetData sheet = excelReader.read(ossHelper.getBytes(batch.getSourceFileOssId()));
+        RecruitImportExcelReader.SheetData sheet = excelReader.read(
+            ossHelper.getBytes(batch.getSourceFileOssId()),
+            expectedHeadersOf(type), requiredHeadersOf(type));
         Validation validation = validate(type, sheet);
         // 重放阶段新出现的问题也要留痕（预检到确认之间组织机构可能变了）
         saveIssues(batchId, sheet.sheetName(), validation.issues());
@@ -439,7 +451,8 @@ public class RecruitImportServiceImpl implements IRecruitImportService {
      * @return 校验结果
      */
     private Validation validate(RecruitImportTypeEnum type, RecruitImportExcelReader.SheetData sheet) {
-        requireColumns(type, sheet.headers());
+        // 必需列由 RecruitImportExcelReader 在挑选工作表/表头行时一并校验：
+        // 它才知道用户实际填的是哪张表、表头长什么样，报错才能带上诊断信息。
         Directories dirs = Directories.of(deptService, userService);
         List<Issue> issues = new ArrayList<>();
         Set<Integer> errorRows = new LinkedHashSet<>();
@@ -461,25 +474,6 @@ public class RecruitImportServiceImpl implements IRecruitImportService {
             }
         }
         return new Validation(sheet.rows().size(), issues, errorRows, null, rows);
-    }
-
-    /**
-     * 校验必需列是否齐全。
-     *
-     * @param type    导入类型
-     * @param headers 实际表头
-     */
-    private void requireColumns(RecruitImportTypeEnum type, List<String> headers) {
-        List<String> missing = new ArrayList<>();
-        for (ColumnDef column : columnsOf(type)) {
-            if (column.required() && !headers.contains(column.header())) {
-                missing.add(column.header());
-            }
-        }
-        if (!missing.isEmpty()) {
-            throw new ServiceException("导入文件缺少必需列：" + String.join("、", missing)
-                + "。请用页面上的「下载模板」重新填报");
-        }
     }
 
     /**
@@ -1141,6 +1135,29 @@ public class RecruitImportServiceImpl implements IRecruitImportService {
      */
     private List<ColumnDef> columnsOf(RecruitImportTypeEnum type) {
         return type == RecruitImportTypeEnum.PLAN ? PLAN_COLUMNS : STANDARD_COLUMNS;
+    }
+
+    /**
+     * 该导入类型的全部列名（含选填），交给读取器用来挑选最匹配的工作表与表头行。
+     *
+     * @param type 导入类型
+     * @return 列名列表
+     */
+    private List<String> expectedHeadersOf(RecruitImportTypeEnum type) {
+        return columnsOf(type).stream().map(ColumnDef::header).toList();
+    }
+
+    /**
+     * 该导入类型的必填列名。
+     *
+     * @param type 导入类型
+     * @return 必填列名集合
+     */
+    private Set<String> requiredHeadersOf(RecruitImportTypeEnum type) {
+        return columnsOf(type).stream()
+            .filter(ColumnDef::required)
+            .map(ColumnDef::header)
+            .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
     /**
