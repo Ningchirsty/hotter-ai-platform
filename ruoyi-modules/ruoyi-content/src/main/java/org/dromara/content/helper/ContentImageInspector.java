@@ -9,6 +9,7 @@ import javax.imageio.stream.ImageInputStream;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -63,6 +64,22 @@ public final class ContentImageInspector {
      * 局部改动会被整格平均稀释到看不出来。</p>
      */
     private static final int GRID = 32;
+
+    /**
+     * 「同一张画面」判定的网格均值容差（0–255 通道尺度）。
+     *
+     * <p>取值来自实测（32×32×3 网格的最大单元格差，构造图 400×400）：</p>
+     * <ul>
+     *   <li>同一份字节：0.0；同图 JPEG q=0.95：1.07；q=0.8：<b>1.77</b>；q=0.6：3.03；q=0.4：4.13</li>
+     *   <li>同图 JPEG q=0.8 二次编码：1.87</li>
+     *   <li>真正不同的图：纯色微调（120,120,120 → 124,118,121）：<b>4.00</b>；
+     *       两张不同噪声图：29.5；改掉一个 20×20 小角：104.4；红底 vs 蓝底：170.0</li>
+     * </ul>
+     * <p>取 2.0：能覆盖「同图按 200KB 目标重新编码」这一现实场景（q≥0.8），
+     * 又停在 4.00 这条真实不同图的下界之外。<b>已知边界</b>：同一张图若被压到 q≈0.4
+     * 这种极低质量，格差会超过阈值而漏过——常见的「同一个文件选两次」由字节相等这条兜住。</p>
+     */
+    private static final double SAME_PICTURE_TOLERANCE = 2.0d;
 
     /**
      * 每个网格单元记录的通道数（R、G、B）
@@ -578,6 +595,52 @@ public final class ContentImageInspector {
             }
         }
         return grid;
+    }
+
+    /**
+     * 判定两张图是不是「同一张画面」。
+     *
+     * <p><b>为什么需要它</b>：参考图与成品图若是同一张图，比对结果必然是「一致」——
+     * 这不是「成品忠实还原了参考图」，而是一次毫无信息量的自比。更糟的是它看起来像一次通过的验收。
+     * 现实中很容易发生：参考图从任务已有附件里挑，而那张附件恰好是上一轮检查上传的成品图，
+     * 或者两次上传的是同一个文件。这种情况应该在发起前就拦住，而不是给一个漂亮的「一致」。</p>
+     *
+     * <p><b>为什么带 1/255 的容差</b>：同一张图被重新编码（例如前端统一转 JPEG）后字节不同、
+     * 像素也会有极轻微变化，逐字节比较会漏掉。判据取「尺寸相同，且 32×32 网格的每个通道均值
+     * 都相差不超过 {@value #SAME_PICTURE_TOLERANCE}」——两张真正不同的照片绝无可能在
+     * 3072 个格子上同时落进 1/255 以内，所以这个阈值既抓得住重复图，也不会误伤。</p>
+     *
+     * @param referenceBytes 参考图字节
+     * @param resultBytes    成品图字节
+     * @return 判定为同一张画面返回 true
+     */
+    public static boolean isSamePicture(byte[] referenceBytes, byte[] resultBytes) {
+        if (referenceBytes == null || resultBytes == null
+            || referenceBytes.length == 0 || resultBytes.length == 0) {
+            return false;
+        }
+        if (Arrays.equals(referenceBytes, resultBytes)) {
+            return true;
+        }
+        BufferedImage refImage = decode(referenceBytes);
+        BufferedImage resImage = decode(resultBytes);
+        if (refImage == null || resImage == null) {
+            return false;
+        }
+        if (refImage.getWidth() != resImage.getWidth() || refImage.getHeight() != resImage.getHeight()) {
+            return false;
+        }
+        double[] refGrid = gridSignature(refImage);
+        double[] resGrid = gridSignature(resImage);
+        if (refGrid == null || resGrid == null || refGrid.length != resGrid.length) {
+            return false;
+        }
+        for (int i = 0; i < refGrid.length; i++) {
+            if (Math.abs(refGrid[i] - resGrid[i]) > SAME_PICTURE_TOLERANCE) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

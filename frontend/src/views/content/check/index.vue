@@ -178,7 +178,10 @@
               :value="item.fileId!"
             />
           </el-select>
-          <div class="tip">仅列出该任务下已上传的图片附件；没有合适的就改用「上传新参考图」。</div>
+          <div class="tip">
+            仅列出该任务下已上传的图片附件；没有合适的就改用「上传新参考图」。
+            <strong>注意这里要选「参考图」，不要选成上一轮检查用过的成品图</strong>——两张图相同时比对结果必然是「一致」，没有参考价值。
+          </div>
         </el-form-item>
 
         <el-form-item v-else label="上传参考图">
@@ -586,6 +589,19 @@ const submitRun = async () => {
   }
   if (referenceMode.value === 'UPLOAD' && !referenceFile.value) {
     modal.msgWarning('请上传参考图');
+    return;
+  }
+  // 两个槽位放的是同一个文件时直接拦下：自比必然得到「一致」，那不是验收结论。
+  // 服务端也会拦（参考图可能来自任务已有附件，前端看不到内容），这里只是省掉一次无用的上传。
+  if (
+    referenceMode.value === 'UPLOAD' &&
+    referenceFile.value &&
+    resultFile.value &&
+    referenceFile.value.name === resultFile.value.name &&
+    referenceFile.value.size === resultFile.value.size &&
+    referenceFile.value.lastModified === resultFile.value.lastModified
+  ) {
+    modal.msgWarning('原参考图与成品图是同一个文件：自比必然得到「一致」，请各自选对');
     return;
   }
   running.value = true;

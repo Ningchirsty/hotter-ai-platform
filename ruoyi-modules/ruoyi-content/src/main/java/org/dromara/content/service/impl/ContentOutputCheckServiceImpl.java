@@ -239,19 +239,36 @@ public class ContentOutputCheckServiceImpl implements IContentOutputCheckService
         }
 
         // 参考图：优先用任务里已有的附件，避免同一张图重复入库
-        Long referenceId;
+        // 先把两张图的字节都拿到手：下面要用它们判定「是不是同一张画面」，再决定是否落存储。
+        byte[] referenceBytes;
+        Long referenceId = null;
         if (referenceFileId != null) {
             CpTaskFile existing = taskFileMapper.selectById(referenceFileId);
             if (existing == null || !taskId.equals(existing.getTaskId())) {
                 throw new ServiceException("参考图附件不存在，或不属于该任务");
             }
             requireImage(existing.getFileExt(), existing.getFileName());
+            referenceBytes = ossHelper.getBytes(existing.getFileRef());
             referenceId = existing.getFileId();
         } else {
+            referenceBytes = readUploadBytes(referenceFile);
+        }
+        byte[] resultBytes = readUploadBytes(resultFile);
+
+        // 自比必须拦在发起之前。
+        // 参考图与成品图是同一张图时，比对结果必然是「一致」——但那不是「成品忠实还原了参考图」，
+        // 而是一次毫无信息量的自比，且外观上像一次通过的验收。现实里很容易发生：
+        // 参考图从任务已有附件里挑，而那张恰好是上一轮检查上传的成品图；或两次传的是同一个文件。
+        if (ContentImageInspector.isSamePicture(referenceBytes, resultBytes)) {
+            throw new ServiceException("原参考图与成品图是同一张图片：自比必然得到「一致」，"
+                + "反映不了成品是否忠实还原参考图。请确认两张图各自选对（参考图别选成上一轮的成品图）");
+        }
+
+        // 校验通过后才写对象存储与附件表：被拒绝时不留下一堆用不上的附件与对象
+        if (referenceId == null) {
             referenceId = taskService.uploadFile(taskId, task.getDataLevel(), referenceFile);
             markAsReference(referenceId);
         }
-
         Long resultId = taskService.uploadFile(taskId, task.getDataLevel(), resultFile);
 
         CpOutputCheck check = new CpOutputCheck();
@@ -628,6 +645,20 @@ public class ContentOutputCheckServiceImpl implements IContentOutputCheckService
         taskFileMapper.update(null, new LambdaUpdateWrapper<CpTaskFile>()
             .eq(CpTaskFile::getFileId, fileId)
             .set(CpTaskFile::getSourceType, "REFERENCE"));
+    }
+
+    /**
+     * 读取上传文件的字节，失败时给出统一提示。
+     *
+     * @param file 上传文件
+     * @return 字节
+     */
+    private byte[] readUploadBytes(MultipartFile file) {
+        try {
+            return file.getBytes();
+        } catch (Exception e) {
+            throw new ServiceException("图片读取失败，请重新上传");
+        }
     }
 
     /**

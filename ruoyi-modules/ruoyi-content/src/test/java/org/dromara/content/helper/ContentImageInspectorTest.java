@@ -292,4 +292,69 @@ class ContentImageInspectorTest {
         assertEquals("UNCERTAIN", ContentImageInspector.localVerdict(c));
         assertFalse(c.notes().isEmpty(), "必须给出不可用的可读原因");
     }
+
+    // ------------------------------------------------------------------
+    // 「同一张画面」判定：拦住自比（参考图 == 成品图）
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("同一份字节：判定为同一张画面")
+    void sameBytesIsSamePicture() throws Exception {
+        byte[] bytes = png(gradient(W, H, 20, 120, 200));
+        assertTrue(ContentImageInspector.isSamePicture(bytes, bytes),
+            "逐字节相同必须判为同一张，否则自比拦不住");
+    }
+
+    @Test
+    @DisplayName("同一张图重新编码（前端统一转 JPEG）后仍判定为同一张画面")
+    void reencodedSameImageIsSamePicture() throws Exception {
+        BufferedImage img = gradient(W, H, 30, 90, 150);
+        byte[] asPng = png(img);
+        byte[] asJpeg = jpeg(img, 0.8f);
+
+        assertFalse(java.util.Arrays.equals(asPng, asJpeg), "前提：两份字节确实不同");
+        assertTrue(ContentImageInspector.isSamePicture(asPng, asJpeg),
+            "同图重新编码必须仍被判为同一张，否则前端转码后的自比会漏过去");
+    }
+
+    @Test
+    @DisplayName("近乎相同但确实不同的图：不能被误判（阈值下界的另一侧）")
+    void nearIdenticalButDifferentIsNotSame() throws Exception {
+        // 实测这一对的网格最大格差是 4.00，正是「真实不同图」的下界；
+        // 阈值若从 2.0 放宽到 5.0 就会把这种图当成同一张，于是这条用例把阈值上界钉住。
+        byte[] a = png(gradient(W, H, 120, 120, 120));
+        byte[] b = png(gradient(W, H, 124, 118, 121));
+        assertFalse(ContentImageInspector.isSamePicture(a, b),
+            "整体色值有可见偏差的不同图，不能被自比规则吞掉");
+    }
+
+    @Test
+    @DisplayName("两张明显不同的图：绝不能误判为同一张")
+    void differentPicturesAreNotSame() throws Exception {
+        byte[] a = png(gradient(W, H, 200, 30, 30));
+        byte[] b = png(gradient(W, H, 30, 30, 200));
+        assertFalse(ContentImageInspector.isSamePicture(a, b), "红底与蓝底不能算同一张");
+        assertFalse(ContentImageInspector.isSamePicture(png(noise(W, H, 1)), png(noise(W, H, 2))),
+            "两张不同的噪声图不能算同一张");
+    }
+
+    @Test
+    @DisplayName("只改了一个局部：不算同一张画面")
+    void locallyEditedPictureIsNotSame() throws Exception {
+        BufferedImage base = gradient(W, H, 120, 120, 120);
+        BufferedImage edited = withPatch(base, 0, 0, 80, 80, 0x000000);
+        assertFalse(ContentImageInspector.isSamePicture(png(base), png(edited)),
+            "改掉一个角落就应当判为不同——否则「成品改了 Logo」会被自比规则吞掉");
+    }
+
+    @Test
+    @DisplayName("尺寸不同或字节不可解码：不判为同一张画面")
+    void sizeMismatchAndUndecodableAreNotSame() throws Exception {
+        assertFalse(ContentImageInspector.isSamePicture(
+            png(solid(400, 400, 0xFFFFFF)), png(solid(200, 800, 0xFFFFFF))), "尺寸不同不能判同一张");
+        assertFalse(ContentImageInspector.isSamePicture(null, png(solid(10, 10, 0))), "null 不能判同一张");
+        assertFalse(ContentImageInspector.isSamePicture(new byte[0], new byte[0]), "空字节不能判同一张");
+        assertFalse(ContentImageInspector.isSamePicture("x".getBytes(), "y".getBytes()),
+            "不可解码的内容不能判同一张（宁可放过，也不误伤）");
+    }
 }
