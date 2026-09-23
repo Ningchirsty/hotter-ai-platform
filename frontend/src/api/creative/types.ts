@@ -337,6 +337,48 @@ export const DIRECTION_SOURCE_LABELS: Record<string, string> = {
   MANUAL: '人工'
 };
 
+// ------------------------------------------------------------------
+// R2：逐屏生产
+// ------------------------------------------------------------------
+
+/** 单屏生产状态 */
+export interface ScreenProductionVO {
+  screenId: string | number;
+  screenNo?: string;
+  screenTypeDesc?: string;
+  /** DRAFT/GENERATING/GENERATED/APPROVED/REJECTED */
+  status?: string;
+  candidateCount?: number;
+  selectedGenerationId?: string | number;
+  latestGenerationId?: string | number;
+  latestStatus?: string;
+  qaVerdict?: string;
+  note?: string;
+}
+
+/** 一轮批量生产结果 */
+export interface ProductionRunVO {
+  submitted: number;
+  skipped: number;
+  screens: ScreenProductionVO[];
+}
+
+/** 屏生产状态 → 展示 */
+export const SCREEN_STATUS_LABELS: Record<string, string> = {
+  DRAFT: '未出图',
+  GENERATING: '出图中',
+  GENERATED: '已出图',
+  APPROVED: '已选定',
+  REJECTED: '待人工处理'
+};
+
+/** QA 结论 → 展示 */
+export const QA_VERDICT_LABELS: Record<string, string> = {
+  CONSISTENT: '一致',
+  INCONSISTENT: '不一致（已筛除）',
+  UNCERTAIN: '无法判定（转人工）'
+};
+
 /** 阶段编码 → 可读描述（前端兜底；权威描述在后端 DpVisualStageEnum） */
 export const CREATIVE_STAGE_LABELS: Record<string, string> = {
   MATERIAL_READY: '资料就绪',

@@ -75,6 +75,36 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
     @Override
     @Transactional(rollbackFor = Exception.class)
     public DpGenerationVo submitHero(Long taskId, CreativeHeroBo bo) {
+        return submitInternal(taskId, null, "HERO 主图", bo.getFileId(), bo.getPrompt(),
+            bo.getNegativePrompt(), bo.getWorkflowCode(), bo.getSizeLabel(), bo.getStrengthLabel(),
+            "HERO_SUBMIT");
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public DpGenerationVo submitForScreen(Long taskId, Long screenId, String screenHint, String prompt,
+                                          String negativePrompt, String workflowCode,
+                                          String sizeLabel, String strengthLabel) {
+        return submitInternal(taskId, screenId, screenHint, null, prompt, negativePrompt,
+            workflowCode, sizeLabel, strengthLabel, "SCREEN_SUBMIT");
+    }
+
+    /**
+     * 出图提交的内部实现：HERO 单张与逐屏批量都走这里。
+     *
+     * <p>刻意不复制两份装配逻辑——R0 就在内核侧留过一次「两处重复」的债，
+     * 这里再复制一次以后必然出现「单张能出、批量少记一个字段」这类偏差。</p>
+     *
+     * @param screenId      分镜单屏ID（HERO 单张为 null）
+     * @param screenHint    画面用途（用于派生提示词，如「HERO 主图」「卖点一」）
+     * @param fileId        指定参考图附件ID（可空＝取最近一张图片附件）
+     * @param promptInput   用户提示词（空则按基因派生）
+     * @param eventAction   事件动作编码
+     * @return 生成记录
+     */
+    private DpGenerationVo submitInternal(Long taskId, Long screenId, String screenHint, Long fileId,
+                                          String promptInput, String negativeInput, String workflowInput,
+                                          String sizeLabel, String strengthLabel, String eventAction) {
         // 视觉门前置：未过门不放行。放在最前面，避免白白生成素材、占一次 GPU。
         // 门禁在后端强制，前端按钮状态只是提示——绕过页面直接调接口同样会被拒。
         gateService.requireCanProduce(taskId);
@@ -84,7 +114,7 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
 
         // 1) 挑参考图：指定优先，否则取最近一张图片附件
         List<CpTaskFileVo> files = contentTaskService.listFiles(taskId);
-        CpTaskFileVo reference = resolveReference(taskId, bo.getFileId(), files);
+        CpTaskFileVo reference = resolveReference(taskId, fileId, files);
 
         // 2) 参考图字节 → 内核素材（内核按 tenant+user 校验归属，必须由执行者本人上传）
         byte[] bytes = contentOssHelper.getBytes(reference.getFileRef());
@@ -95,16 +125,16 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
         long assetId = submission.storeAsset(reference.getFileName(), bytes, contentType);
 
         // 3) 工作流与提示词：提示词由「已锁定的视觉基因」派生（人可在页面上改，改了以人写的为准）
-        String workflowCode = StringUtils.isBlank(bo.getWorkflowCode())
-            ? CreativeConstants.DEFAULT_HERO_WORKFLOW : bo.getWorkflowCode();
+        String workflowCode = StringUtils.isBlank(workflowInput)
+            ? CreativeConstants.DEFAULT_HERO_WORKFLOW : workflowInput;
         ImageWorkflowVersion version = requireWorkflow(submission, workflowCode);
         Long dnaId = dnaService.activeDnaId(taskId);
         List<String> promptApplied = new ArrayList<>();
-        String prompt = bo.getPrompt();
-        String negativePrompt = bo.getNegativePrompt();
+        String prompt = promptInput;
+        String negativePrompt = negativeInput;
         if (StringUtils.isBlank(prompt) || StringUtils.isBlank(negativePrompt)) {
             DnaPromptBuilder.Prompt derived = dnaPromptBuilder.build(
-                dnaService.activeDna(taskId), project.getProductName(), "HERO 主图");
+                dnaService.activeDna(taskId), project.getProductName(), screenHint);
             if (StringUtils.isBlank(prompt)) {
                 prompt = derived.prompt();
                 promptApplied = derived.applied();
@@ -124,8 +154,8 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
         ImageTaskSubmissionService.Submission result = submission.submitAndDispatch(
             new ImageTaskSubmissionService.Command(
                 version.capabilityCode(), workflowCode,
-                "视觉工厂 HERO · " + project.getTaskName(),
-                prompt, negativePrompt, bo.getSizeLabel(), bo.getStrengthLabel(),
+                "视觉工厂 " + screenHint + " · " + project.getTaskName(),
+                prompt, negativePrompt, sizeLabel, strengthLabel,
                 List.of(assetId), idempotencyKey, true));
 
         // 6) 幂等命中：内核已有同一任务，直接返回已有记录，不重复插入
@@ -137,6 +167,7 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
 
         DpGeneration row = new DpGeneration();
         row.setTaskId(taskId);
+        row.setScreenId(screenId);
         row.setCandidateNo(candidateNo);
         row.setDnaId(dnaId);
         DpVisualDirectionVo direction = directionService.selected(taskId);
@@ -174,7 +205,9 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
         detail.put("storyboardId", row.getStoryboardId());
         detail.put("promptFromDna", !promptApplied.isEmpty());
         detail.put("promptApplied", promptApplied);
-        projectService.moveStage(taskId, DpVisualStageEnum.PRODUCING, "HERO_SUBMIT",
+        detail.put("screenId", screenId);
+        detail.put("screenHint", screenHint);
+        projectService.moveStage(taskId, DpVisualStageEnum.PRODUCING, eventAction,
             JsonUtils.toJsonString(detail));
         return toVo(row);
     }

@@ -17,7 +17,8 @@ import type {
   DpStoryboardVO,
   DpVisualDirectionVO,
   DpVisualDnaVO,
-  GateEvaluationVO
+  GateEvaluationVO,
+  ProductionRunVO
 } from './types';
 
 // ------------------------------------------------------------------
@@ -258,6 +259,48 @@ export function reviewVisualGate(
     url: `/creative/projects/${taskId}/visual-gate/review`,
     method: 'post',
     params: { option, comment }
+  });
+}
+
+// ------------------------------------------------------------------
+// R2：逐屏批量生产、选定、QA
+// ------------------------------------------------------------------
+
+/** 按已锁定分镜逐屏批量出图 */
+export function startProduction(taskId: string | number, force = false): AxiosPromise<ProductionRunVO> {
+  return request({
+    url: `/creative/projects/${taskId}/production/start`,
+    method: 'post',
+    params: { force }
+  });
+}
+
+/** 刷新生产状态（候选状态 / QA 结论 / 自动重试） */
+export function refreshProduction(taskId: string | number): AxiosPromise<ProductionRunVO> {
+  return request({ url: `/creative/projects/${taskId}/production/refresh`, method: 'post' });
+}
+
+/** 单屏重生成 */
+export function regenerateScreen(taskId: string | number, screenId: string | number) {
+  return request({
+    url: `/creative/projects/${taskId}/screens/${screenId}/regenerate`,
+    method: 'post'
+  });
+}
+
+/** 选定候选（人动作；自动登记产出并发起质检） */
+export function selectCandidate(taskId: string | number, generationId: string | number) {
+  return request({
+    url: `/creative/projects/${taskId}/generations/${generationId}/select`,
+    method: 'post'
+  });
+}
+
+/** 发起质检（只筛除不放行） */
+export function runCandidateQa(taskId: string | number, generationId: string | number) {
+  return request({
+    url: `/creative/projects/${taskId}/generations/${generationId}/qa`,
+    method: 'post'
   });
 }
 

@@ -138,6 +138,92 @@
           </div>
         </div>
       </section>
+
+      <!-- 逐屏生产 -->
+      <section class="panel">
+        <div class="block-head">
+          <h3>3. 逐屏出图与质检</h3>
+          <div class="head-actions">
+            <span class="muted">
+              本次提交 {{ production?.submitted ?? 0 }} 屏、跳过 {{ production?.skipped ?? 0 }} 屏
+            </span>
+            <el-button size="small" plain :loading="refreshing" @click="doRefreshProduction">刷新状态</el-button>
+            <el-button
+              size="small"
+              type="primary"
+              :disabled="!storyboard || storyboard.status !== 'LOCKED'"
+              :loading="producing"
+              @click="doStartProduction"
+            >
+              按分镜批量出图
+            </el-button>
+          </div>
+        </div>
+        <p class="muted">
+          提示词由已锁定基因按屏派生；失败候选每屏最多自动重试到 3 次尝试（到顶转人工）。
+          质检结论只用于筛选：<b>不一致的候选会被筛除，一致的也不会自动选定</b>。
+        </p>
+        <el-table v-if="production" :data="production.screens" size="small">
+          <el-table-column prop="screenNo" label="屏" width="70" />
+          <el-table-column prop="screenTypeDesc" label="类型" width="90" />
+          <el-table-column label="状态" width="120">
+            <template #default="{ row }">
+              <el-tag size="small" :type="screenStatusType(asScreen(row).status)">
+                {{ SCREEN_STATUS_LABELS[asScreen(row).status || ''] || asScreen(row).status }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="candidateCount" label="候选数" width="80" />
+          <el-table-column label="最新候选" width="110">
+            <template #default="{ row }">
+              {{ GENERATION_STATUS_LABELS[asScreen(row).latestStatus || ''] || asScreen(row).latestStatus || '—' }}
+            </template>
+          </el-table-column>
+          <el-table-column label="质检" width="160">
+            <template #default="{ row }">
+              <span :class="qaClass(asScreen(row).qaVerdict)">
+                {{ QA_VERDICT_LABELS[asScreen(row).qaVerdict || ''] || asScreen(row).qaVerdict || '未质检' }}
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column label="说明" min-width="150">
+            <template #default="{ row }">{{ asScreen(row).note || '—' }}</template>
+          </el-table-column>
+          <el-table-column label="操作" width="250" fixed="right">
+            <template #default="{ row }">
+              <el-button
+                size="small"
+                text
+                type="primary"
+                :loading="busyScreen === String(asScreen(row).screenId)"
+                @click="doRegenerate(asScreen(row))"
+              >
+                重出这一屏
+              </el-button>
+              <el-button
+                size="small"
+                text
+                type="success"
+                :disabled="!latestGenerationOf(asScreen(row))"
+                :loading="selectingGen === String(latestGenerationOf(asScreen(row)))"
+                @click="doSelectCandidate(asScreen(row))"
+              >
+                选定候选
+              </el-button>
+              <el-button
+                size="small"
+                text
+                :disabled="!latestGenerationOf(asScreen(row))"
+                :loading="qaGen === String(latestGenerationOf(asScreen(row)))"
+                @click="doQa(asScreen(row))"
+              >
+                质检
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <p v-else class="empty">还没有生产记录。分镜锁定后点「按分镜批量出图」。</p>
+      </section>
     </template>
 
     <!-- 编辑方向 -->
@@ -200,7 +286,12 @@ import {
   listCreativeProject,
   listDirections,
   lockStoryboard,
+  refreshProduction,
+  regenerateScreen,
+  runCandidateQa,
+  selectCandidate,
   selectDirection,
+  startProduction,
   updateDirection,
   updateScreen
 } from '@/api/creative';
@@ -210,14 +301,23 @@ import type {
   CreativeScreenForm,
   DpStoryboardScreenVO,
   DpStoryboardVO,
-  DpVisualDirectionVO
+  DpVisualDirectionVO,
+  ProductionRunVO,
+  ScreenProductionVO,
+  TagType
 } from '@/api/creative/types';
-import { DIRECTION_SOURCE_LABELS } from '@/api/creative/types';
+import {
+  DIRECTION_SOURCE_LABELS,
+  GENERATION_STATUS_LABELS,
+  QA_VERDICT_LABELS,
+  SCREEN_STATUS_LABELS
+} from '@/api/creative/types';
 
 const projects = ref<CreativeProjectVO[]>([]);
 const taskId = ref('');
 const directions = ref<DpVisualDirectionVO[]>([]);
 const storyboard = ref<DpStoryboardVO | null>(null);
+const production = ref<ProductionRunVO | null>(null);
 const loading = ref(false);
 const generatingDir = ref(false);
 const generatingSb = ref(false);
@@ -230,6 +330,109 @@ const screenEditVisible = ref(false);
 const directionForm = reactive<CreativeDirectionForm>({ id: '' });
 const screenForm = reactive<CreativeScreenForm>({ id: '' });
 const templateSource = ref('');
+const producing = ref(false);
+const refreshing = ref(false);
+const busyScreen = ref('');
+const selectingGen = ref('');
+const qaGen = ref('');
+
+function asScreen(row: unknown): ScreenProductionVO {
+  return row as ScreenProductionVO;
+}
+
+function latestGenerationOf(row: ScreenProductionVO): string | number | undefined {
+  return row.latestGenerationId;
+}
+
+function screenStatusType(status?: string): TagType {
+  switch (status) {
+    case 'APPROVED':
+      return 'success';
+    case 'GENERATED':
+      return 'primary';
+    case 'GENERATING':
+      return 'warning';
+    case 'REJECTED':
+      return 'danger';
+    default:
+      return 'info';
+  }
+}
+
+function qaClass(verdict?: string): string {
+  if (verdict === 'CONSISTENT') return 'good';
+  if (verdict === 'INCONSISTENT') return 'bad';
+  if (verdict === 'UNCERTAIN') return 'warn';
+  return '';
+}
+
+async function doStartProduction() {
+  producing.value = true;
+  try {
+    const res = await startProduction(taskId.value, false);
+    production.value = res.data || null;
+    ElMessage.success(`已提交 ${res.data?.submitted ?? 0} 屏出图，跳过 ${res.data?.skipped ?? 0} 屏`);
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '批量出图失败');
+  } finally {
+    producing.value = false;
+  }
+}
+
+async function doRefreshProduction() {
+  refreshing.value = true;
+  try {
+    const res = await refreshProduction(taskId.value);
+    production.value = res.data || null;
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '刷新失败');
+  } finally {
+    refreshing.value = false;
+  }
+}
+
+async function doRegenerate(row: ScreenProductionVO) {
+  busyScreen.value = String(row.screenId);
+  try {
+    await regenerateScreen(taskId.value, row.screenId);
+    ElMessage.success(`${row.screenNo} 已重新提交出图`);
+    await doRefreshProduction();
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '重出失败');
+  } finally {
+    busyScreen.value = '';
+  }
+}
+
+async function doSelectCandidate(row: ScreenProductionVO) {
+  const generationId = latestGenerationOf(row);
+  if (!generationId) return;
+  selectingGen.value = String(generationId);
+  try {
+    await selectCandidate(taskId.value, generationId);
+    ElMessage.success(`${row.screenNo} 已选定候选，并已登记产出与发起质检`);
+    await doRefreshProduction();
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '选定失败');
+  } finally {
+    selectingGen.value = '';
+  }
+}
+
+async function doQa(row: ScreenProductionVO) {
+  const generationId = latestGenerationOf(row);
+  if (!generationId) return;
+  qaGen.value = String(generationId);
+  try {
+    await runCandidateQa(taskId.value, generationId);
+    ElMessage.success('已发起质检（只筛除，不放行）');
+    await doRefreshProduction();
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '发起质检失败');
+  } finally {
+    qaGen.value = '';
+  }
+}
 
 function strategyKeys(item: DpVisualDirectionVO): string[] {
   return Object.keys(item.strategy || {}).filter((key) => key !== 'schema' && key !== 'differences');
@@ -266,6 +469,13 @@ async function loadAll() {
     directions.value = dirRes.data || [];
     storyboard.value = sbRes.data || null;
     templateSource.value = directions.value[0]?.source || '';
+    // 顺带拉一次逐屏生产状态（含 QA 结论回填与自动重试结果）
+    try {
+      const prodRes = await refreshProduction(taskId.value);
+      production.value = prodRes.data || null;
+    } catch {
+      /* 生产状态拉取失败不影响方向/分镜查看 */
+    }
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '加载失败');
   } finally {
@@ -613,6 +823,16 @@ onMounted(async () => {
 }
 .small {
   font-size: 12px;
+}
+
+.good {
+  color: #a7f3d0;
+}
+.bad {
+  color: #fca5a5;
+}
+.warn {
+  color: #fde68a;
 }
 
 .muted {

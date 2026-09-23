@@ -33,6 +33,23 @@ public interface ICreativeGenerationService {
     DpGenerationVo submitHero(Long taskId, CreativeHeroBo bo);
 
     /**
+     * 针对某个分镜单屏提交出图（R2 逐屏批量出图的基本动作）。
+     *
+     * @param taskId         项目ID
+     * @param screenId       分镜单屏ID
+     * @param screenHint     画面用途（用于派生提示词，如「主图」「卖点一」）
+     * @param prompt         提示词（空则按锁定基因 + 画面用途派生）
+     * @param negativePrompt 负向提示词（可空）
+     * @param workflowCode   出图能力（可空＝默认已发布契约）
+     * @param sizeLabel      尺寸档位（可空）
+     * @param strengthLabel  重绘强度档位（可空）
+     * @return 生成记录
+     */
+    DpGenerationVo submitForScreen(Long taskId, Long screenId, String screenHint, String prompt,
+                                   String negativePrompt, String workflowCode,
+                                   String sizeLabel, String strengthLabel);
+
+    /**
      * 项目的出图候选列表（先刷新状态再返回，按时间倒序）。
      *
      * @param taskId 项目ID

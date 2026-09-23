@@ -13,6 +13,7 @@ import org.dromara.creative.constant.CreativeConstants;
 import org.dromara.creative.domain.bo.CreativeHeroBo;
 import org.dromara.creative.domain.vo.DpGenerationVo;
 import org.dromara.creative.service.ICreativeGenerationService;
+import org.dromara.creative.service.ICreativeProductionService;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
@@ -47,6 +48,7 @@ import java.util.Map;
 public class CreativeProductionController {
 
     private final ICreativeGenerationService generationService;
+    private final ICreativeProductionService productionService;
 
     /**
      * 提交一次 HERO 主图出图。
@@ -143,6 +145,92 @@ public class CreativeProductionController {
     public R<PageResult<DpGenerationVo>> productions(@RequestParam(value = "status", required = false) String status,
                                                      PageQuery pageQuery) {
         return R.ok(generationService.queryPage(status, pageQuery));
+    }
+
+    // ------------------------------------------------------------------
+    // R2：逐屏批量生产、候选选定、QA
+    // ------------------------------------------------------------------
+
+    /**
+     * 按已锁定分镜逐屏批量出图。
+     *
+     * @param taskId 项目ID
+     * @param force  为 true 时已有候选的屏也再出一张
+     * @return 生产结果（逐屏状态）
+     */
+    @SaCheckPermission(CreativeConstants.PERM_PRODUCTION_START)
+    @Log(title = "逐屏批量出图", businessType = BusinessType.INSERT)
+    @RepeatSubmit()
+    @PostMapping("/projects/{taskId}/production/start")
+    public R<ICreativeProductionService.ProductionRun> startProduction(
+        @NotNull(message = "项目ID不能为空") @PathVariable("taskId") Long taskId,
+        @RequestParam(value = "force", required = false, defaultValue = "false") boolean force) {
+        return R.ok(productionService.start(taskId, force));
+    }
+
+    /**
+     * 刷新生产状态（候选状态、QA 结论、自动重试）。
+     *
+     * @param taskId 项目ID
+     * @return 逐屏状态
+     */
+    @SaCheckPermission(CreativeConstants.PERM_PRODUCTION_LIST)
+    @PostMapping("/projects/{taskId}/production/refresh")
+    public R<ICreativeProductionService.ProductionRun> refreshProduction(
+        @NotNull(message = "项目ID不能为空") @PathVariable("taskId") Long taskId) {
+        return R.ok(productionService.refresh(taskId));
+    }
+
+    /**
+     * 单屏重出（重生成这一屏）。
+     *
+     * @param taskId   项目ID
+     * @param screenId 屏ID
+     * @return 新候选
+     */
+    @SaCheckPermission(CreativeConstants.PERM_STORYBOARD_REGENERATE)
+    @Log(title = "单屏重生成", businessType = BusinessType.INSERT)
+    @RepeatSubmit()
+    @PostMapping("/projects/{taskId}/screens/{screenId}/regenerate")
+    public R<DpGenerationVo> regenerateScreen(@NotNull(message = "项目ID不能为空")
+                                              @PathVariable("taskId") Long taskId,
+                                              @NotNull(message = "屏ID不能为空")
+                                              @PathVariable("screenId") Long screenId) {
+        return R.ok(productionService.regenerateScreen(taskId, screenId));
+    }
+
+    /**
+     * 选定候选（人动作；选定后自动登记产出并发起质检）。
+     *
+     * @param taskId       项目ID
+     * @param generationId 候选ID
+     * @return 更新后的候选
+     */
+    @SaCheckPermission(CreativeConstants.PERM_PRODUCTION_SELECT)
+    @Log(title = "候选选定", businessType = BusinessType.UPDATE)
+    @PostMapping("/projects/{taskId}/generations/{generationId}/select")
+    public R<DpGenerationVo> selectCandidate(@NotNull(message = "项目ID不能为空")
+                                             @PathVariable("taskId") Long taskId,
+                                             @NotNull(message = "候选ID不能为空")
+                                             @PathVariable("generationId") Long generationId) {
+        return R.ok(productionService.select(taskId, generationId));
+    }
+
+    /**
+     * 发起质检（只筛除不放行）。
+     *
+     * @param taskId       项目ID
+     * @param generationId 候选ID
+     * @return 更新后的候选
+     */
+    @SaCheckPermission(CreativeConstants.PERM_QA_RUN)
+    @Log(title = "候选质检", businessType = BusinessType.INSERT)
+    @PostMapping("/projects/{taskId}/generations/{generationId}/qa")
+    public R<DpGenerationVo> runQa(@NotNull(message = "项目ID不能为空")
+                                   @PathVariable("taskId") Long taskId,
+                                   @NotNull(message = "候选ID不能为空")
+                                   @PathVariable("generationId") Long generationId) {
+        return R.ok(productionService.runQa(taskId, generationId));
     }
 
     /**
