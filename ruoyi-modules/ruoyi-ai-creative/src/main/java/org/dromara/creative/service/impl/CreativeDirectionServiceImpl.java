@@ -105,7 +105,12 @@ public class CreativeDirectionServiceImpl implements ICreativeDirectionService {
         for (DpVisualDirection entity : created) {
             entity.setSource(SOURCE_TEMPLATE);
             directionMapper.insert(entity);
-            result.add(toVo(entity, List.of()));
+        }
+        // 差异点必须在这里也算出来：generate 的响应与 list/select 的响应不能有两种形状，
+        // 否则页面「刚生成完看不到差异、刷新后才看到」。
+        List<String> diff = differences(created);
+        for (DpVisualDirection entity : created) {
+            result.add(toVo(entity, diff));
         }
 
         Map<String, Object> event = new LinkedHashMap<>();

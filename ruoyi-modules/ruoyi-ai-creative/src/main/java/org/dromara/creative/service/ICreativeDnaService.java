@@ -37,6 +37,18 @@ public interface ICreativeDnaService {
     DpVisualDnaVo latest(Long taskId);
 
     /**
+     * 当前已锁定的基因版本（出图与视觉门的判据）。
+     *
+     * <p><b>为什么单独一个方法</b>：出图用的是「已锁定版本」，而「最新版本」可能是锁定之后
+     * 又改出来的待确认稿。凡是判断「基因是否就绪」的地方都必须用本方法——用「最新版是否锁定」
+     * 会在「锁定 v1 → 改出 v2」时把项目误判为未锁定（这个口径错误在前后端各犯过一次）。</p>
+     *
+     * @param taskId 项目ID
+     * @return 已锁定版本；没有则 null
+     */
+    DpVisualDnaVo locked(Long taskId);
+
+    /**
      * 版本列表（倒序）。
      *
      * @param taskId 项目ID

@@ -462,7 +462,10 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
         DpGenerationVo vo = new DpGenerationVo();
         vo.setId(row.getId());
         vo.setTaskId(row.getTaskId());
-        vo.setScreenId(row.getScreenId());        vo.setCandidateNo(row.getCandidateNo());
+        vo.setScreenId(row.getScreenId());
+        vo.setDnaId(row.getDnaId());
+        vo.setDirectionId(row.getDirectionId());
+        vo.setStoryboardId(row.getStoryboardId());        vo.setCandidateNo(row.getCandidateNo());
         vo.setWorkflowCode(row.getWorkflowCode());
         vo.setWorkflowVersion(row.getWorkflowVersion());
         vo.setPrompt(row.getPrompt());

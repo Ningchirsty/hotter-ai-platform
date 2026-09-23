@@ -8,12 +8,10 @@ import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.json.utils.JsonUtils;
 import org.dromara.common.mybatis.utils.IdGeneratorUtil;
 import org.dromara.common.satoken.utils.LoginHelper;
-import org.dromara.content.domain.bo.ContentCardResolveBo;
 import org.dromara.content.domain.vo.CpFactSnapshotVo;
-import org.dromara.content.domain.vo.CpTaskFileVo;
 import org.dromara.content.domain.vo.ContentTaskDetailVo;
 import org.dromara.content.enums.ContentFactConfirmStatusEnum;
-import org.dromara.content.service.IContentCardService;
+import org.dromara.content.service.IContentTaskGateService;
 import org.dromara.content.service.IContentTaskService;
 import org.dromara.creative.domain.DpStageEvent;
 import org.dromara.creative.domain.vo.CreativeProjectVo;
@@ -67,7 +65,7 @@ public class CreativeGateServiceImpl implements ICreativeGateService {
     private final ICreativeDirectionService directionService;
     private final ICreativeStoryboardService storyboardService;
     private final IContentTaskService contentTaskService;
-    private final IContentCardService contentCardService;
+    private final IContentTaskGateService contentTaskGateService;
     private final CreativeCardMapper cardMapper;
     private final DpStageEventMapper eventMapper;
 
@@ -78,13 +76,18 @@ public class CreativeGateServiceImpl implements ICreativeGateService {
 
         List<GateItem> items = new ArrayList<>();
 
-        // 1) 视觉基因已锁定（硬性）：出图的提示词与规范都从它派生，没有它就没有「统一视觉」
-        DpVisualDnaVo dna = dnaService.latest(taskId);
-        boolean dnaLocked = dna != null && dna.isLocked();
+        // 1) 视觉基因已锁定（硬性）：出图的提示词与规范都从它派生，没有它就没有「统一视觉」。
+        //    判据必须是「已锁定版本」而不是「最新版本」——最新版可能是锁定后又改出来的待确认稿，
+        //    而实际出图依据仍是那一版锁定的基因。
+        DpVisualDnaVo lockedDna = dnaService.locked(taskId);
+        DpVisualDnaVo latestDna = dnaService.latest(taskId);
+        boolean dnaLocked = lockedDna != null;
         items.add(new GateItem("DNA_LOCKED", "视觉基因已锁定", LEVEL_BLOCK, dnaLocked,
-            dna == null ? "尚未生成视觉基因" : (dnaLocked
-                ? "已锁定 " + dna.getDnaNo() + "（来源：" + dna.getSourceDesc() + "）"
-                : "当前最新版本 " + dna.getDnaNo() + " 状态为「" + dna.getStatusDesc() + "」，请先锁定")));
+            dnaLocked
+                ? "已锁定 " + lockedDna.getDnaNo() + "（来源：" + lockedDna.getSourceDesc() + "）"
+                : (latestDna == null ? "尚未生成视觉基因"
+                    : "尚无已锁定版本；最新版 " + latestDna.getDnaNo()
+                        + " 状态为「" + latestDna.getStatusDesc() + "」，请先锁定")));
 
         // 2) 参考图齐备（硬性）：出图要拿它当输入
         long images = imageCount(detail);
@@ -170,12 +173,15 @@ public class CreativeGateServiceImpl implements ICreativeGateService {
         if (cardId == null) {
             throw new ServiceException("没有待处理的视觉门确认项，请先「提交视觉门」");
         }
-        // 复用内容模块的卡片处理：它会写处理人/时间并重算闸门（打回会阻断内容任务流转）
-        ContentCardResolveBo resolveBo = new ContentCardResolveBo();
-        resolveBo.setCardId(cardId);
-        resolveBo.setOption(normalized);
-        resolveBo.setComment(comment);
-        contentCardService.resolve(resolveBo);
+        // 审批卡的状态流转由视觉工厂自己完成（内容模块的 resolve 语义是「采用候选事实值」，
+        // 审批卡没有候选值，借道会报错或把审批记成「补充资料」）。
+        // 但闸门重算是复用的：打回后必须让内容侧状态同步为待确认。
+        String status = OPTION_CONFIRM.equals(normalized) ? "RESOLVED" : "BLOCKED";
+        int updated = cardMapper.resolveApprovalCard(cardId, status, normalized, comment, LoginHelper.getUserId());
+        if (updated == 0) {
+            throw new ServiceException("该确认项已被处理过，请刷新后重试");
+        }
+        contentTaskGateService.recheckAndApply(taskId);
 
         if (OPTION_CONFIRM.equals(normalized)) {
             projectService.moveStage(taskId, DpVisualStageEnum.VISUAL_LOCKED, ACTION_PASS,

@@ -4,6 +4,7 @@ import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
 import java.util.Map;
 
@@ -70,5 +71,35 @@ public interface CreativeCardMapper {
          ORDER BY card_id DESC LIMIT 1
         """)
     String selectLatestCardStatus(@Param("taskId") Long taskId, @Param("fieldCode") String fieldCode);
+
+    /**
+     * 处理审批卡（人工确认或打回）。
+     *
+     * <p><b>为什么不复用内容模块的 {@code IContentCardService.resolve}</b>：它的
+     * {@code CONFIRM} 语义是「采用某个<b>候选事实值</b>」，会去 {@code cp_fact_snapshot}
+     * 里找该字段的候选行——审批卡没有候选值，必然报「该字段已无候选值」。
+     * 强行借道只会把审批记成「补充资料」，让卡片历史变得不可读。</p>
+     *
+     * <p>因此这里只做卡片自身的状态流转（与内容模块同一张表、同一套状态枚举），
+     * 而<b>闸门重算是复用的</b>（打回后调内容模块的 recheckAndApply，让内容任务状态同步为待确认）。</p>
+     *
+     * @param cardId  卡片ID
+     * @param status  目标状态（RESOLVED 通过 / BLOCKED 打回）
+     * @param option  处理选项（CONFIRM / BLOCK，写入 resolved_option 便于回溯）
+     * @param comment 意见
+     * @param userId  处理人
+     * @return 影响行数（0 表示卡已被别人处理过）
+     */
+    @Update("""
+        UPDATE cp_interaction_card
+           SET status = #{status}, resolved_option = #{option}, resolved_by = #{userId},
+               resolved_at = NOW(), remark = #{comment}, update_by = #{userId}, update_time = NOW()
+         WHERE card_id = #{cardId} AND status = 'PENDING' AND del_flag = '0'
+        """)
+    int resolveApprovalCard(@Param("cardId") Long cardId,
+                            @Param("status") String status,
+                            @Param("option") String option,
+                            @Param("comment") String comment,
+                            @Param("userId") Long userId);
 
 }

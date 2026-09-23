@@ -215,6 +215,12 @@ public class CreativeDnaServiceImpl implements ICreativeDnaService {
     }
 
     @Override
+    public DpVisualDnaVo locked(Long taskId) {
+        DpVisualDna entity = lockedEntity(taskId);
+        return entity == null ? null : toVo(entity);
+    }
+
+    @Override
     public List<DpVisualDnaVo> versions(Long taskId) {
         List<DpVisualDna> rows = dnaMapper.selectList(new LambdaQueryWrapper<DpVisualDna>()
             .eq(DpVisualDna::getTaskId, taskId)
