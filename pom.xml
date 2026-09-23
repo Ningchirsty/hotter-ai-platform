@@ -459,6 +459,13 @@
                 <version>${revision}</version>
             </dependency>
 
+            <!-- AI 视觉工厂模块 -->
+            <dependency>
+                <groupId>org.dromara</groupId>
+                <artifactId>ruoyi-ai-creative</artifactId>
+                <version>${revision}</version>
+            </dependency>
+
             <!-- demo模块 -->
             <dependency>
                 <groupId>org.dromara</groupId>

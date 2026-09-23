@@ -122,6 +122,12 @@
             <artifactId>ruoyi-content</artifactId>
         </dependency>
 
+        <!-- AI 视觉工厂模块（依赖 content 与 ai，单向） -->
+        <dependency>
+            <groupId>org.dromara</groupId>
+            <artifactId>ruoyi-ai-creative</artifactId>
+        </dependency>
+
         <!-- Spring Boot Admin 客户端 -->
         <dependency>
             <groupId>de.codecentric</groupId>
