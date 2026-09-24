@@ -5,6 +5,7 @@ import org.dromara.ai.image.exception.ImageTaskException;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -83,6 +84,45 @@ public class ImageAssetProbe {
         } catch (IOException e) {
             log.warn("读取图像文件失败：{}（{}）", path.getFileName(), e.getMessage());
             return Probe.unmeasured(size);
+        }
+    }
+
+    /**
+     * 只读宽高（不解码像素）。
+     *
+     * <p>用途：派发前预检「入参图会不会导致产出超限」。这类判断只需要宽高，
+     * 用 {@link ImageReader#getWidth(int)} 读头部即可，不必把整张图解进内存——
+     * 一张 100MP 的图整解会直接把堆打满，而预检本来就该是廉价动作。</p>
+     *
+     * @param content 图片字节
+     * @return 实测结果（读不出时 {@code measured=false}）
+     */
+    public static Probe probeBytes(byte[] content) {
+        if (content == null || content.length == 0) {
+            return Probe.unmeasured(0);
+        }
+        try (var stream = ImageIO.createImageInputStream(new ByteArrayInputStream(content))) {
+            if (stream == null) {
+                return Probe.unmeasured(content.length);
+            }
+            var readers = ImageIO.getImageReaders(stream);
+            if (!readers.hasNext()) {
+                log.warn("ImageIO 无法识别该图像字节（长度 {}）", content.length);
+                return Probe.unmeasured(content.length);
+            }
+            var reader = readers.next();
+            try {
+                reader.setInput(stream, true, true);
+                int width = reader.getWidth(0);
+                int height = reader.getHeight(0);
+                String format = reader.getFormatName();
+                return new Probe(width, height, format, false, content.length, true);
+            } finally {
+                reader.dispose();
+            }
+        } catch (IOException e) {
+            log.warn("读取图像字节尺寸失败：{}", e.getMessage());
+            return Probe.unmeasured(content.length);
         }
     }
 

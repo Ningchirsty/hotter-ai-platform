@@ -24,6 +24,7 @@ import org.dromara.creative.domain.vo.DpVisualDirectionVo;
 import org.dromara.creative.enums.DpGenerationStatusEnum;
 import org.dromara.creative.enums.DpVisualStageEnum;
 import org.dromara.creative.helper.DnaPromptBuilder;
+import org.dromara.creative.helper.ReferenceImageFitter;
 import org.dromara.creative.mapper.CreativeTaskStageMapper;
 import org.dromara.creative.mapper.DpGenerationMapper;
 import org.dromara.creative.service.ICreativeDirectionService;
@@ -112,22 +113,27 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
         CreativeProjectVo project = projectService.getProject(taskId);
         ImageTaskSubmissionService submission = requireSubmission();
 
+        // 0) 工作流契约要先拿到：它的 maxPixels 决定「参考图能有多大」。
+        //    这个顺序是必须的——wf-i2i-qwen21 按输入图尺寸出图，参考图超上限时产出必然被判 OUTPUT_INVALID，
+        //    所以必须先按契约预算把要送模型的那份图适配好，再上传素材。
+        String workflowCode = StringUtils.isBlank(workflowInput)
+            ? CreativeConstants.DEFAULT_HERO_WORKFLOW : workflowInput;
+        ImageWorkflowVersion version = requireWorkflow(submission, workflowCode);
+
         // 1) 挑参考图：指定优先，否则取最近一张图片附件
         List<CpTaskFileVo> files = contentTaskService.listFiles(taskId);
         CpTaskFileVo reference = resolveReference(taskId, fileId, files);
 
-        // 2) 参考图字节 → 内核素材（内核按 tenant+user 校验归属，必须由执行者本人上传）
+        // 2) 参考图字节 → 适配工作流像素预算 → 内核素材（内核按 tenant+user 校验归属，必须由执行者本人上传）
         byte[] bytes = contentOssHelper.getBytes(reference.getFileRef());
         if (bytes == null || bytes.length == 0) {
             throw new ServiceException("参考图内容为空，无法出图：" + reference.getFileName());
         }
-        String contentType = guessContentType(reference.getFileExt());
-        long assetId = submission.storeAsset(reference.getFileName(), bytes, contentType);
+        ReferenceImageFitter.Fitted fitted =
+            ReferenceImageFitter.fit(bytes, reference.getFileName(), version.maxPixels());
+        long assetId = submission.storeAsset(fitted.fileName(), fitted.bytes(), fitted.contentType());
 
-        // 3) 工作流与提示词：提示词由「已锁定的视觉基因」派生（人可在页面上改，改了以人写的为准）
-        String workflowCode = StringUtils.isBlank(workflowInput)
-            ? CreativeConstants.DEFAULT_HERO_WORKFLOW : workflowInput;
-        ImageWorkflowVersion version = requireWorkflow(submission, workflowCode);
+        // 3) 提示词：由「已锁定的视觉基因」派生（人可在页面上改，改了以人写的为准）
         Long dnaId = dnaService.activeDnaId(taskId);
         List<String> promptApplied = new ArrayList<>();
         String prompt = promptInput;
@@ -180,7 +186,7 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
         row.setNegativePrompt(negativePrompt);
         row.setInputFileId(reference.getFileId());
         row.setInputAssetId(assetId);
-        row.setInputJson(JsonUtils.toJsonString(inputSnapshot(reference, version, assetId)));
+        row.setInputJson(JsonUtils.toJsonString(inputSnapshot(reference, version, assetId, fitted)));
         row.setImageTaskId(result.imageTaskId());
         row.setExecTenantId(result.tenantId());
         row.setExecUserId(result.userId());
@@ -191,6 +197,19 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
             row.setErrorMessage("暂未派发（" + result.outcome() + "），系统会自动重试派发");
         }
         generationMapper.insert(row);
+
+        if (fitted.scaled()) {
+            // 参考图被适配过就留一条事件：页面上要能回答「这张图是按多大的参考图出的」
+            projectService.appendEvent(taskId, "GENERATION", "REFERENCE_SCALED",
+                JsonUtils.toJsonString(Map.of(
+                    "generationId", row.getId() == null ? 0L : row.getId(),
+                    "fromWidth", fitted.fromWidth() == null ? 0 : fitted.fromWidth(),
+                    "fromHeight", fitted.fromHeight() == null ? 0 : fitted.fromHeight(),
+                    "toWidth", fitted.width() == null ? 0 : fitted.width(),
+                    "toHeight", fitted.height() == null ? 0 : fitted.height(),
+                    "maxPixels", fitted.maxPixels(),
+                    "note", StringUtils.blankToDefault(fitted.note(), ""))));
+        }
 
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("generationId", row.getId());
@@ -472,8 +491,8 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
         return submission;
     }
 
-    private Map<String, Object> inputSnapshot(CpTaskFileVo reference,
-                                              ImageWorkflowVersion version, long assetId) {
+    private Map<String, Object> inputSnapshot(CpTaskFileVo reference, ImageWorkflowVersion version,
+                                              long assetId, ReferenceImageFitter.Fitted fitted) {
         Map<String, Object> snapshot = new LinkedHashMap<>();
         snapshot.put("referenceFileId", reference.getFileId());
         snapshot.put("referenceFileName", reference.getFileName());
@@ -482,6 +501,15 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
         snapshot.put("workflowVersion", version.version());
         snapshot.put("modelCode", version.modelCode());
         snapshot.put("capabilityCode", version.capabilityCode());
+        snapshot.put("workflowMaxPixels", version.maxPixels());
+        // 送模型的图与附件原图可能不是同一份（该工作流按输入图尺寸出图，超上限必须适配）——如实记录
+        snapshot.put("inputScaled", fitted.scaled());
+        if (fitted.scaled()) {
+            snapshot.put("inputFrom", fitted.fromWidth() + "x" + fitted.fromHeight());
+            snapshot.put("inputTo", fitted.width() + "x" + fitted.height());
+            snapshot.put("inputScaleNote", fitted.note());
+            snapshot.put("inputAssetName", fitted.fileName());
+        }
         return snapshot;
     }
 

@@ -39,4 +39,17 @@ public class ImageTaskException extends RuntimeException {
     public static ImageTaskException outputInvalid(String message) {
         return new ImageTaskException("OUTPUT_INVALID", message);
     }
+
+    /**
+     * 入参不满足工作流的输出预算（派发前就拒绝，不烧 GPU）。
+     *
+     * <p>与 {@link #outputInvalid} 分开是因为两者含义完全不同：那个是「出完了但产出不合格」，
+     * 这个根本还没出图——把入参问题报成 OUTPUT_INVALID 会让排查方向跑到模型侧去。</p>
+     *
+     * @param message 可执行的原因
+     * @return 异常
+     */
+    public static ImageTaskException inputTooLarge(String message) {
+        return new ImageTaskException("INPUT_TOO_LARGE", message);
+    }
 }

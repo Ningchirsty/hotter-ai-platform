@@ -357,6 +357,10 @@ public class ImageTaskSubmissionService {
             prompt, command.negativePrompt(), sizeLabel, strengthLabel,
             effectiveAssets.stream().map(String::valueOf).toList(), 0L));
 
+        // 2.5) 派发前预检：工作流按输入图出图时，输入图超过输出像素上限 → 出图必然被判 OUTPUT_INVALID。
+        //      这里提前拒绝，省掉一次「出完图才知道无效」的 GPU 消耗，并给出可执行的原因。
+        assertInputFitsOutputBudget(version, sizeLabel, effectiveAssets, tenantId, userId);
+
         // 3) 幂等：同键已有任务直接返回
         String idempotencyKey = command.idempotencyKey();
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
@@ -532,6 +536,91 @@ public class ImageTaskSubmissionService {
     // ------------------------------------------------------------------
     // 内部
     // ------------------------------------------------------------------
+
+    /**
+     * 派发前预检：入参图的像素是否超过该工作流的输出上限。
+     *
+     * <p><b>为什么需要</b>（生产实测的真实故障）：{@code wf-i2i-qwen21} 的契约是
+     * {@code sizePolicy=跟随输入图尺寸}，且只声明了「跟随输入图」这一个输出档位，
+     * 同时 {@code outputRule.maxPixels=4194304}。于是参考图 2496×2992（7.47MP）会产出同样大小，
+     * 被 {@link ImageAssetProbe#assertAcceptable} 判为 {@code OUTPUT_INVALID}——但那已经出完图了，
+     * 一次 GPU 就这么白烧。这里把同一件事提前到派发前判定。
+     *
+     * <p><b>只在「输出跟随输入」时才判定</b>：若工作流的输出由尺寸档位决定（档位宽高都是正数），
+     * 输入图多大都不影响产出上限，此时拦下来是误伤。</p>
+     *
+     * @param version        工作流契约
+     * @param sizeLabel      本次尺寸档位（已取过默认值）
+     * @param inputAssetIds  入参素材
+     * @param tenantId       租户
+     * @param userId         用户
+     */
+    private void assertInputFitsOutputBudget(ImageWorkflowVersion version, String sizeLabel,
+                                             List<Long> inputAssetIds, String tenantId, long userId) {
+        if (inputAssetIds == null || inputAssetIds.isEmpty()) {
+            return;
+        }
+        if (!outputFollowsInput(version, sizeLabel)) {
+            // 输出由尺寸档位决定（或无法判定）：输入图多大都不影响产出上限，拦下来就是误伤
+            return;
+        }
+        for (Long assetId : inputAssetIds) {
+            if (assetId == null) {
+                continue;
+            }
+            byte[] content;
+            try {
+                content = readAssetBytes(assetId, tenantId, userId);
+            } catch (Exception e) {
+                // 素材读不到不是本预检的职责：归属/存在性由前面的 requireOwnedAsset 与执行阶段负责
+                continue;
+            }
+            ImageAssetProbe.Probe probe = ImageAssetProbe.probeBytes(content);
+            if (probe.exceedsPixels(version.maxPixels())) {
+                throw ImageTaskException.inputTooLarge("参考图 " + probe.width() + "×" + probe.height()
+                    + "（" + (long) probe.width() * probe.height() + " 像素）超过工作流 "
+                    + version.workflowCode() + " 的输出上限 " + version.maxPixels() + " 像素；"
+                    + "该工作流按输入图尺寸出图，请先把参考图压缩到上限以内，或改用带尺寸档位的工作流");
+            }
+        }
+    }
+
+    /**
+     * 判定「该工作流的产出尺寸是否跟随输入图」。
+     *
+     * <p><b>判据来自契约的真实形态</b>：契约注册表在解析时会把 {@code width/height <= 0} 的档位过滤掉
+     * （{@code supportedOutputs: 跟随输入图 {0,0}} 因此<b>不会</b>出现在 {@code sizePresets} 里），所以：</p>
+     * <ul>
+     *   <li>{@code sizePresets} 为空 ⇒ 契约没有声明任何固定尺寸档位 ⇒ <b>产出跟随输入图</b>
+     *       （wf-i2i-qwen21 / wf-edit-qwen21 / wf-bgremove-qwen21 / wf-whitebg-qwen21 四个都是这样）；</li>
+     *   <li>{@code sizePresets} 非空 ⇒ 产出由档位决定（wf-t2i-qwen21），输入图多大都不影响产出上限。</li>
+     * </ul>
+     *
+     * <p><b>为什么单独抽出来</b>：这里踩过一次 NPE——本方法早期实现拿 {@code sizeLabel} 去查
+     * {@code sizePresets}，而这条工作流的 {@code sizeLabel} 生产库里全是 NULL（契约没有 defaultSize），
+     * 契约解析出的又是不可变 Map，{@code get(null)} 直接抛 NPE（出图接口 500）。
+     * 这类「空档位 + 不可变 Map」的组合必须由测试钉住，而不是靠线上试。</p>
+     *
+     * @param version   工作流契约
+     * @param sizeLabel 本次尺寸档位（可能为 null）
+     * @return 产出尺寸是否跟随输入图
+     */
+    static boolean outputFollowsInput(ImageWorkflowVersion version, String sizeLabel) {
+        if (version == null) {
+            return false;
+        }
+        Map<String, int[]> presets = version.sizePresets();
+        if (presets == null || presets.isEmpty()) {
+            return true;
+        }
+        if (sizeLabel == null || sizeLabel.isBlank()) {
+            // 有固定档位却没给档位：内核会用 defaultSize 兜底，这里无法断定，保守不拦
+            return false;
+        }
+        int[] preset = presets.get(sizeLabel);
+        // 防御：若将来注册表不再过滤 {0,0}，这里仍能判对
+        return preset != null && preset.length >= 2 && preset[0] <= 0 && preset[1] <= 0;
+    }
 
     private ImageTaskOrchestrator.TaskContext buildContext(Map<String, Object> task, String tenantId, long userId) {
         List<Long> inputAssetIds = new ArrayList<>();

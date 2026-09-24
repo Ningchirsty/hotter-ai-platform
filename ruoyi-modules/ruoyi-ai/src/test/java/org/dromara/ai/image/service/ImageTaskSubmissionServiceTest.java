@@ -2,6 +2,7 @@ package org.dromara.ai.image.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.dromara.ai.image.domain.ImageTaskStatus;
+import org.dromara.ai.image.domain.ImageWorkflowVersion;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -20,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
@@ -53,9 +55,12 @@ class ImageTaskSubmissionServiceTest {
 
     private ImageTaskSubmissionService service;
 
+    /** 真实契约注册表：入参预算判定要拿真实契约来测（尤其是「档位为空的跟随输入图」这条） */
+    private ImageWorkflowContractRegistry registry;
+
     @BeforeEach
     void setUp() {
-        ImageWorkflowContractRegistry registry = new ImageWorkflowContractRegistry(ROOT, MAPPER);
+        registry = new ImageWorkflowContractRegistry(ROOT, MAPPER);
         registry.load();
         // ImageAssetStore 是具体类，直接 mock：本测试只关心派发时序，不需要真实存储
         service = new ImageTaskSubmissionService(
@@ -117,6 +122,33 @@ class ImageTaskSubmissionServiceTest {
 
         assertEquals(false, submission.accepted());
         assertEquals(ImageTaskStatus.QUEUED.name(), submission.status());
+    }
+
+    @Test
+    @DisplayName("档位为空的「跟随输入图」工作流：判定不抛 NPE（生产踩过的坑），且判为跟随输入")
+    void outputFollowsInputWithNullSizeLabel() {
+        // 真实契约：wf-i2i-qwen21 只支持「跟随输入图」，注册表会把 {0,0} 档位过滤掉，
+        // 因此它的 sizePresets 是空的、defaultSize 也为空——生产库里 image_task.size_label 全是 NULL。
+        // 早期实现拿 null 去查不可变 sizePresets 直接 NPE（出图接口 500），这条测试钉住它。
+        ImageWorkflowVersion i2i = registry.require("wf-i2i-qwen21", true);
+        assertTrue(i2i.sizePresets() == null || i2i.sizePresets().isEmpty(),
+            "该工作流不该有固定尺寸档位（契约只声明「跟随输入图」）");
+        assertTrue(ImageTaskSubmissionService.outputFollowsInput(i2i, null),
+            "没有固定档位 ⇒ 产出跟随输入图，预检必须生效");
+        assertTrue(ImageTaskSubmissionService.outputFollowsInput(i2i, i2i.defaultSize()),
+            "传入契约自己的默认档位（可能为空）同样不得抛异常");
+        assertTrue(i2i.maxPixels() > 0, "契约必须给出像素上限，预检才有依据");
+    }
+
+    @Test
+    @DisplayName("带真实尺寸档位的工作流：不判为跟随输入（不能误伤正常出图）")
+    void fixedSizeWorkflowIsNotTreatedAsFollowInput() {
+        ImageWorkflowVersion t2i = registry.require("wf-t2i-qwen21", true);
+        assertTrue(t2i.sizePresets() != null && !t2i.sizePresets().isEmpty(), "文生图应有尺寸档位");
+        assertEquals(false, ImageTaskSubmissionService.outputFollowsInput(t2i, t2i.defaultSize()),
+            "输出由档位决定时不该被入图预检拦下");
+        assertEquals(false, ImageTaskSubmissionService.outputFollowsInput(null, "任意"),
+            "契约缺失时保守返回不判定");
     }
 
     private Map<String, Object> taskRow() {
