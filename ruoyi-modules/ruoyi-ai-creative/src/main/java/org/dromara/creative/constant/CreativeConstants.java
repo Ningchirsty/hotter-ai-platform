@@ -86,4 +86,29 @@ public interface CreativeConstants {
      */
     String DEFAULT_HERO_CAPABILITY = "I2I";
 
+    // ---------------- 本地 LLM 创作能力（R4） ----------------
+
+    /**
+     * 能力编码：视觉方向草稿（治理台需注册同名能力 + 路由策略 + 模型绑定）。
+     *
+     * <p>没有注册或没有可用模型时，调用会被治理层明确拒绝（{@code decision≠MODEL}），
+     * 业务侧如实回落到参数化模板并把来源标成 TEMPLATE——不存在静默假装用了模型。</p>
+     */
+    String CAP_DIRECTION_DRAFT = "creative_direction_draft";
+
+    /**
+     * 能力编码：分镜草稿
+     */
+    String CAP_STORYBOARD_DRAFT = "creative_storyboard_draft";
+
+    /**
+     * 来源：AI 模型产出（有可用模型且逐字段验收通过时才用）
+     */
+    String SOURCE_MODEL = "MODEL";
+
+    /**
+     * 来源：模板派生（含参数化模板；未使用模型）
+     */
+    String SOURCE_TEMPLATE = "TEMPLATE";
+
 }

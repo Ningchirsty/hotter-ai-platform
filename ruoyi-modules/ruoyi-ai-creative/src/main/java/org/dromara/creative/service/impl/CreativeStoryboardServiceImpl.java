@@ -1,6 +1,7 @@
 package org.dromara.creative.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,6 +22,7 @@ import org.dromara.creative.domain.vo.DpStoryboardScreenVo;
 import org.dromara.creative.domain.vo.DpStoryboardVo;
 import org.dromara.creative.domain.vo.DpVisualDirectionVo;
 import org.dromara.creative.enums.DpVisualStageEnum;
+import org.dromara.creative.helper.CreativeDraftBrain;
 import org.dromara.creative.helper.CreativeDraftFactory;
 import org.dromara.creative.helper.VisualDnaSchema;
 import org.dromara.creative.mapper.DpStoryboardMapper;
@@ -86,6 +88,7 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
     private final ICreativeDirectionService directionService;
     private final ICreativeProjectService projectService;
     private final IContentTaskService contentTaskService;
+    private final CreativeDraftBrain brain;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -108,16 +111,73 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
         storyboard.setVisualDirectionId(direction == null ? null : direction.getId());
         storyboard.setScreenCount(TEMPLATES.size());
         storyboard.setRhythmJson(rhythm());
+
+        // 参数化草稿：每屏标题/副标题/正文/画面独白由「事实 + 基因 + 产品名 + 屏类型」推导。
+        List<CreativeDraftFactory.ScreenDraft> drafts =
+            CreativeDraftFactory.screens(dna, project.getProductName(), facts);
+
+        // 有可用模型就用模型润色（LOCAL 优先，不出公司）；没有就如实回落参数化草稿。
+        // 逐屏逐字段采纳：模型没给的屏保留草稿文案，绝不因为「模型返回了」就整段照抄。
+        String source = CreativeConstants.SOURCE_TEMPLATE;
+        String modelKey = null;
+        String traceId = null;
+        String modelReason = null;
+        int adopted = 0;
+        CreativeDraftBrain.Suggestion suggestion = brain.suggest(CreativeConstants.CAP_STORYBOARD_DRAFT,
+            project.getDataLevel(), "Y".equalsIgnoreCase(project.getAllowExternal()),
+            storyboardPrompt(project, facts, drafts), storyboardPayload(dna, facts, drafts));
+        if (suggestion.applied()) {
+            modelKey = suggestion.modelKey();
+            traceId = suggestion.traceId();
+            List<CreativeDraftFactory.ScreenDraft> merged = new ArrayList<>();
+            java.util.Set<String> usedTitles = new java.util.HashSet<>();
+            for (CreativeDraftFactory.ScreenDraft draft : drafts) {
+                JsonNode item = findScreen(suggestion.json(), draft.type(), merged.size());
+                if (item == null) {
+                    merged.add(draft);
+                    continue;
+                }
+                String title = CreativeDraftBrain.text(item, "title", 60);
+                // 标题守卫：模型偶尔把 7 屏标题都写成同一个产品名（比参数化草稿还差）。
+                // 标题为空或与前面某屏重复时，保留草稿标题——不是编造，是不接受「更差但合法」的产出。
+                if (title != null && !usedTitles.add(title)) {
+                    modelReason = appendReason(modelReason,
+                        "第 " + (merged.size() + 1) + " 屏标题与前面重复，已保留草稿标题「" + draft.title() + "」");
+                    title = null;
+                }
+                String subtitle = CreativeDraftBrain.text(item, "subtitle", 120);
+                String body = CreativeDraftBrain.text(item, "bodyText", 400);
+                String solo = CreativeDraftBrain.text(item, "soloStatement", 400);
+                if (title == null && subtitle == null && body == null && solo == null) {
+                    merged.add(draft);
+                    continue;
+                }
+                adopted++;
+                merged.add(new CreativeDraftFactory.ScreenDraft(draft.type(), draft.label(),
+                    draft.productLockLevel(),
+                    title == null ? draft.title() : title,
+                    subtitle == null ? draft.subtitle() : subtitle,
+                    body == null ? draft.bodyText() : body,
+                    solo == null ? draft.soloStatement() : solo));
+            }
+            drafts = merged;
+            if (adopted > 0) {
+                source = CreativeConstants.SOURCE_MODEL;
+            } else {
+                modelReason = "模型返回里没有可采纳的分镜文案（字段缺失或超长），已全部保留参数化草稿；"
+                    + "实际顶层字段=" + CreativeDraftBrain.fieldNames(suggestion.json());
+            }
+        } else {
+            modelReason = suggestion.reason();
+        }
+        storyboard.setSource(source);
         storyboard.setStatus(STATUS_DRAFT);
-        storyboard.setSource(SOURCE_TEMPLATE);
         storyboardMapper.insert(storyboard);
 
         int sortNo = 0;
-        List<CreativeDraftFactory.ScreenDraft> drafts =
-            CreativeDraftFactory.screens(dna, project.getProductName(), facts);
         for (int i = 0; i < TEMPLATES.size(); i++) {
             ScreenTemplate template = TEMPLATES.get(i);
-            // 骨架来自 TEMPLATES，文案来自参数化草稿；两者数量必须一致，
+            // 骨架来自 TEMPLATES，文案来自草稿；两者数量必须一致，
             // 不一致属于编码错误，宁可当场炸掉也不要静默少一屏
             CreativeDraftFactory.ScreenDraft draft = drafts.get(i);
             sortNo++;
@@ -144,7 +204,11 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
         event.put("screenCount", TEMPLATES.size());
         event.put("dnaId", dnaId);
         event.put("directionId", storyboard.getVisualDirectionId());
-        event.put("source", SOURCE_TEMPLATE);
+        event.put("source", source);
+        event.put("modelKey", modelKey);
+        event.put("modelTraceId", traceId);
+        event.put("modelAdoptedScreens", adopted);
+        event.put("modelReason", modelReason);
         projectService.moveStage(taskId, DpVisualStageEnum.STORYBOARD_REVIEW, "STORYBOARD_GENERATE",
             JsonUtils.toJsonString(event));
         return loadVo(storyboard);
@@ -252,6 +316,119 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
     // ------------------------------------------------------------------
     // 内部
     // ------------------------------------------------------------------
+
+    /**
+     * 组提示词：把「已确认事实 + 参数化草稿」交给模型润色，并写死 JSON 契约。
+     *
+     * @param project 项目
+     * @param facts   已确认事实
+     * @param drafts  参数化草稿
+     * @return 提示词
+     */
+    private static String storyboardPrompt(CreativeProjectVo project, Map<String, String> facts,
+                                           List<CreativeDraftFactory.ScreenDraft> drafts) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("为电商详情页项目「")
+            .append(StringUtils.blankToDefault(project.getProductName(),
+                StringUtils.blankToDefault(project.getTaskName(), "当前产品")))
+            .append("」改写 7 屏分镜文案。\n");
+        sb.append("已确认产品事实（只能用这些，不得编造）：")
+            .append(facts.isEmpty() ? "暂无" : JsonUtils.toJsonString(facts)).append("\n");
+        sb.append("屏的顺序与类型固定，不得增删改顺序：\n");
+        for (CreativeDraftFactory.ScreenDraft draft : drafts) {
+            sb.append("  ").append(draft.type()).append("：").append(draft.title())
+                .append(" —— ").append(draft.soloStatement()).append("\n");
+        }
+        sb.append("输出 JSON：{\"screens\":[{\"type\":\"HERO\",\"title\":\"形如「产品名 · 这一屏要讲什么」，"
+            + "不超过 30 字，7 屏标题必须两两不同\",\"subtitle\":\"可省略\",\"bodyText\":\"可省略\","
+            + "\"soloStatement\":\"20~200 字：这一屏的画面自己要讲清什么\"}, ...共 7 项]}。"
+            + "type 必须与上面给出的完全一致，只输出这个 JSON。");
+        return sb.toString();
+    }
+
+    /**
+     * 追加一条未采纳说明（可多条累积，页面如实展示）。
+     *
+     * @param current 现有说明
+     * @param extra   新增说明
+     * @return 合并后的说明
+     */
+    private static String appendReason(String current, String extra) {
+        return StringUtils.isBlank(current) ? extra : current + "；" + extra;
+    }
+
+    /**
+     * 结构化载荷。
+     *
+     * @param dna    基因
+     * @param facts  事实
+     * @param drafts 草稿
+     * @return 载荷
+     */
+    private static Map<String, Object> storyboardPayload(ObjectNode dna, Map<String, String> facts,
+                                                        List<CreativeDraftFactory.ScreenDraft> drafts) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("task", "storyboard-draft");
+        payload.put("facts", facts);
+        payload.put("dna", dna.toString());
+        payload.put("screenTypes", drafts.stream().map(CreativeDraftFactory.ScreenDraft::type).toList());
+        return payload;
+    }
+
+    /**
+     * 在模型输出里按屏类型找对应项；同类型有多屏（两个卖点屏）时按出现顺序取。
+     *
+     * @param json      模型输出
+     * @param type      屏类型
+     * @param usedCount 该类型此前已被取走的次数
+     * @return 对应节点；找不到返回 null
+     */
+    private static JsonNode findScreen(ObjectNode json, String type, int usedCount) {
+        if (json == null) {
+            return null;
+        }
+        JsonNode array = json.path("screens");
+        if (!array.isArray()) {
+            array = json.path("items");
+        }
+        if (array.isArray()) {
+            int seen = 0;
+            int total = Math.max(1, countOfType(array, type));
+            for (JsonNode item : array) {
+                if (!type.equalsIgnoreCase(CreativeDraftBrain.text(item, "type", 24))) {
+                    continue;
+                }
+                if (seen == usedCount % total) {
+                    return item;
+                }
+                seen++;
+            }
+            return null;
+        }
+        // 按屏类型做键的形式：{"HERO": {...}}（两个同类型屏只能取到第一个，第二个回落到草稿）
+        JsonNode keyed = json.path(type);
+        if (keyed.isObject() && usedCount == 0) {
+            return keyed;
+        }
+        return null;
+    }
+
+    /**
+     * 统计模型输出里某屏类型出现的次数（两个卖点屏要分别对上）。
+     *
+     * @param array 模型输出的 screens
+     * @param type  屏类型
+     * @return 次数
+     */
+    private static int countOfType(JsonNode array, String type) {
+        int count = 0;
+        for (JsonNode item : array) {
+            if (type.equalsIgnoreCase(CreativeDraftBrain.text(item, "type", 24))) {
+                count++;
+            }
+        }
+        return count;
+    }
 
     /**
      * 屏骨架模板（R4 起只保留结构性字段，文案交给参数化草稿工厂）。
@@ -431,9 +608,13 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
     }
 
     private static String sourceDesc(String source) {
-        return SOURCE_TEMPLATE.equals(source)
-            ? "由屏骨架 + 参数化文案（已确认事实 + 锁定基因 + 参考图实测 + 选定方向派生，未使用模型）"
-            : source;
+        if (SOURCE_TEMPLATE.equals(source)) {
+            return "由屏骨架 + 参数化文案（已确认事实 + 锁定基因 + 参考图实测 + 选定方向派生，未使用模型）";
+        }
+        if (CreativeConstants.SOURCE_MODEL.equals(source)) {
+            return "由受管模型产出文案（经逐字段验收后才采纳；屏骨架固定 7 屏）";
+        }
+        return source;
     }
 
 }

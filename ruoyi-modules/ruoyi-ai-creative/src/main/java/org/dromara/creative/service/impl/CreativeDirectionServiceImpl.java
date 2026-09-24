@@ -1,6 +1,7 @@
 package org.dromara.creative.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,11 +13,13 @@ import org.dromara.content.domain.vo.CpFactSnapshotVo;
 import org.dromara.content.domain.vo.ContentTaskDetailVo;
 import org.dromara.content.enums.ContentFactConfirmStatusEnum;
 import org.dromara.content.service.IContentTaskService;
+import org.dromara.creative.constant.CreativeConstants;
 import org.dromara.creative.domain.DpVisualDirection;
 import org.dromara.creative.domain.bo.CreativeDirectionBo;
 import org.dromara.creative.domain.vo.CreativeProjectVo;
 import org.dromara.creative.domain.vo.DpVisualDirectionVo;
 import org.dromara.creative.enums.DpVisualStageEnum;
+import org.dromara.creative.helper.CreativeDraftBrain;
 import org.dromara.creative.helper.CreativeDraftFactory;
 import org.dromara.creative.helper.VisualDnaSchema;
 import org.dromara.creative.mapper.DpVisualDirectionMapper;
@@ -59,6 +62,7 @@ public class CreativeDirectionServiceImpl implements ICreativeDirectionService {
     private final ICreativeDnaService dnaService;
     private final ICreativeProjectService projectService;
     private final IContentTaskService contentTaskService;
+    private final CreativeDraftBrain brain;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -83,21 +87,60 @@ public class CreativeDirectionServiceImpl implements ICreativeDirectionService {
 
         // 参数化草稿：方向名/取舍说明/策略明细全部由「锁定基因（含参考图实测）+ 已确认事实 + 产品名」推导。
         // 同输入可复现（不引入随机数），不同输入必然不同——这正是「刷新内容永远一样」的修复点。
-        // 来源仍如实标 TEMPLATE：参数化模板不是模型产物。
         CreativeProjectVo project = projectService.getProject(taskId);
         Map<String, String> facts = confirmedFacts(contentTaskService.getDetail(taskId));
         List<CreativeDraftFactory.DirectionDraft> drafts =
             CreativeDraftFactory.directions(dna, project.getProductName(), facts);
 
+        // 有可用模型就用模型润色文案（LOCAL 优先，不出公司）；没有就如实回落参数化模板。
+        // 采纳是逐字段的：模型没给的字段保留参数化草稿，绝不因为「模型返回了」就整段照抄。
+        String source = CreativeConstants.SOURCE_TEMPLATE;
+        String modelKey = null;
+        String traceId = null;
+        String modelReason = null;
+        int adopted = 0;
+        CreativeDraftBrain.Suggestion suggestion = brain.suggest(CreativeConstants.CAP_DIRECTION_DRAFT,
+            project.getDataLevel(), "Y".equalsIgnoreCase(project.getAllowExternal()),
+            directionPrompt(project, facts, drafts), directionPayload(dna, facts, drafts));
+        if (suggestion.applied()) {
+            modelKey = suggestion.modelKey();
+            traceId = suggestion.traceId();
+            List<CreativeDraftFactory.DirectionDraft> merged = new ArrayList<>();
+            for (CreativeDraftFactory.DirectionDraft draft : drafts) {
+                JsonNode item = findDirection(suggestion.json(), draft.code());
+                String name = CreativeDraftBrain.text(item, "name", 40);
+                String concept = CreativeDraftBrain.text(item, "concept", 400);
+                if (name == null && concept == null) {
+                    merged.add(draft);
+                    continue;
+                }
+                adopted++;
+                merged.add(new CreativeDraftFactory.DirectionDraft(draft.code(),
+                    name == null ? draft.name() : name,
+                    concept == null ? draft.concept() : concept,
+                    draft.strategy()));
+            }
+            drafts = merged;
+            if (adopted > 0) {
+                source = CreativeConstants.SOURCE_MODEL;
+            } else {
+                modelReason = "模型返回里没有可采纳的方向文案（字段缺失或超长），已全部保留参数化草稿；"
+                    + "实际顶层字段=" + CreativeDraftBrain.fieldNames(suggestion.json());
+            }
+        } else {
+            modelReason = suggestion.reason();
+        }
+
         List<DpVisualDirection> created = new ArrayList<>();
         for (CreativeDraftFactory.DirectionDraft draft : drafts) {
-            created.add(build(taskId, draft.code(), draft.name(), draft.concept(),
-                draft.strategy(), created.size() + 1));
+            DpVisualDirection entity = build(taskId, draft.code(), draft.name(), draft.concept(),
+                draft.strategy(), created.size() + 1);
+            entity.setSource(source);
+            created.add(entity);
         }
 
         List<DpVisualDirectionVo> result = new ArrayList<>();
         for (DpVisualDirection entity : created) {
-            entity.setSource(SOURCE_TEMPLATE);
             directionMapper.insert(entity);
         }
         // 差异点必须在这里也算出来：generate 的响应与 list/select 的响应不能有两种形状，
@@ -110,7 +153,11 @@ public class CreativeDirectionServiceImpl implements ICreativeDirectionService {
         Map<String, Object> event = new LinkedHashMap<>();
         event.put("dnaId", dnaId);
         event.put("directions", result.stream().map(DpVisualDirectionVo::getDirectionCode).toList());
-        event.put("source", SOURCE_TEMPLATE);
+        event.put("source", source);
+        event.put("modelKey", modelKey);
+        event.put("modelTraceId", traceId);
+        event.put("modelAdopted", adopted);
+        event.put("modelReason", modelReason);
         projectService.moveStage(taskId, DpVisualStageEnum.DIRECTION_REVIEW, "DIRECTION_GENERATE",
             JsonUtils.toJsonString(event));
         return result;
@@ -218,13 +265,104 @@ public class CreativeDirectionServiceImpl implements ICreativeDirectionService {
     }
 
     /**
+     * 组提示词：把「已确认事实 + 基因摘要 + 参数化草稿」一起交给模型，并写死 JSON 契约。
+     *
+     * <p>把参数化草稿作为基线一起给出，是为了让模型**在已有取舍上润色**而不是另起一套；
+     * 同时明确「不得编造未给出的事实」，与全局的「不猜」纪律一致。</p>
+     *
+     * @param project 项目
+     * @param facts   已确认事实
+     * @param drafts  参数化草稿
+     * @return 提示词
+     */
+    private static String directionPrompt(CreativeProjectVo project, Map<String, String> facts,
+                                         List<CreativeDraftFactory.DirectionDraft> drafts) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("为电商详情页项目「")
+            .append(StringUtils.blankToDefault(project.getProductName(),
+                StringUtils.blankToDefault(project.getTaskName(), "当前产品")))
+            .append("」改写 3 条视觉方向的名称与说明。\n");
+        sb.append("已确认产品事实（只能用这些，不得编造）：")
+            .append(facts.isEmpty() ? "暂无" : JsonUtils.toJsonString(facts)).append("\n");
+        sb.append("当前参数化草稿（在这套取舍上润色，不要另起一套）：\n");
+        for (CreativeDraftFactory.DirectionDraft draft : drafts) {
+            sb.append("  ").append(draft.code()).append("：").append(draft.name())
+                .append(" —— ").append(draft.concept()).append("\n");
+            sb.append("     策略依据：").append(draft.strategy().get("dnaBasis")).append("\n");
+        }
+        sb.append("输出 JSON：{\"directions\":[{\"code\":\"A\",\"name\":\"不超过 20 字\","
+            + "\"concept\":\"40~200 字，说明这条方向怎么拍、为什么适合\"},"
+            + "{\"code\":\"B\",...},{\"code\":\"C\",...}]}。只输出这个 JSON。");
+        return sb.toString();
+    }
+
+    /**
+     * 结构化载荷（审计只存摘要，不存全文）。
+     *
+     * @param dna    基因
+     * @param facts  事实
+     * @param drafts 草稿
+     * @return 载荷
+     */
+    private static Map<String, Object> directionPayload(ObjectNode dna, Map<String, String> facts,
+                                                       List<CreativeDraftFactory.DirectionDraft> drafts) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("task", "visual-direction-draft");
+        payload.put("facts", facts);
+        payload.put("dna", dna.toString());
+        payload.put("baseline", drafts.stream().map(d -> Map.of(
+            "code", d.code(), "name", d.name())).toList());
+        return payload;
+    }
+
+    /**
+     * 在模型输出里按 code 找方向项。
+     *
+     * <p>三种真实见过的形状都接：{@code {"directions":[{"code":"A",...}]}}（契约形状）、
+     * 被包成 {@code {"items":[...]}} 的裸数组、以及 {@code {"A":{...},"B":{...}}} 这种按编码做键的形式。
+     * 只按结构取，不补造内容——取不到就回落参数化草稿。</p>
+     *
+     * @param json 模型输出
+     * @param code 方向编码（A/B/C）
+     * @return 对应节点；找不到返回 null
+     */
+    private static JsonNode findDirection(ObjectNode json, String code) {
+        if (json == null) {
+            return null;
+        }
+        JsonNode array = json.path("directions");
+        if (!array.isArray()) {
+            array = json.path("items");
+        }
+        if (array.isArray()) {
+            for (JsonNode item : array) {
+                if (code.equalsIgnoreCase(CreativeDraftBrain.text(item, "code", 8))) {
+                    return item;
+                }
+            }
+            return null;
+        }
+        // 按编码做键的形式：{"A": {"name": ...}}
+        JsonNode keyed = json.path(code);
+        if (keyed.isObject()) {
+            return keyed;
+        }
+        for (String key : List.of(code.toLowerCase(java.util.Locale.ROOT), "方向" + code)) {
+            JsonNode alt = json.path(key);
+            if (alt.isObject()) {
+                return alt;
+            }
+        }
+        return null;
+    }
+
+    /**
      * 只取「已确认」的事实：未确认的一律不带入文案，避免把待核信息写进交付物。
      *
      * @param detail 任务详情
      * @return 字段编码 → 值
      */
-    private Map<String, String> confirmedFacts(ContentTaskDetailVo detail) {
-        Map<String, String> facts = new LinkedHashMap<>();
+    private Map<String, String> confirmedFacts(ContentTaskDetailVo detail) {        Map<String, String> facts = new LinkedHashMap<>();
         if (detail == null || detail.getFacts() == null) {
             return facts;
         }
