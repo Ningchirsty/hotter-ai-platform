@@ -9,6 +9,7 @@ import org.dromara.common.log.enums.BusinessType;
 import org.dromara.common.redis.annotation.RepeatSubmit;
 import org.dromara.creative.constant.CreativeConstants;
 import org.dromara.creative.domain.bo.CreativeDnaBo;
+import org.dromara.creative.domain.vo.DnaRecommendationVo;
 import org.dromara.creative.domain.vo.DpVisualDnaVo;
 import org.dromara.creative.helper.DnaPromptBuilder;
 import org.dromara.creative.service.ICreativeDnaService;
@@ -52,6 +53,19 @@ public class CreativeDnaController {
     @PostMapping("/generate")
     public R<DpVisualDnaVo> generate(@NotNull(message = "项目ID不能为空") @PathVariable("taskId") Long taskId) {
         return R.ok(dnaService.generate(taskId));
+    }
+
+    /**
+     * 按参考图推荐规范内容（不落库：只把推荐值 + 逐字段依据返回给页面，由人确认后再保存）。
+     *
+     * @param taskId 项目ID
+     * @return 推荐结果（含依据、可信度、测不出来的字段、与事实的冲突）
+     */
+    @SaCheckPermission(CreativeConstants.PERM_DNA_ANALYZE)
+    @PostMapping("/recommend")
+    public R<DnaRecommendationVo> recommend(@NotNull(message = "项目ID不能为空")
+                                            @PathVariable("taskId") Long taskId) {
+        return R.ok(dnaService.recommend(taskId));
     }
 
     /**

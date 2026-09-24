@@ -19,10 +19,12 @@ import org.dromara.content.service.IContentTaskService;
 import org.dromara.creative.domain.DpVisualDna;
 import org.dromara.creative.domain.bo.CreativeDnaBo;
 import org.dromara.creative.domain.vo.CreativeProjectVo;
+import org.dromara.creative.domain.vo.DnaRecommendationVo;
 import org.dromara.creative.domain.vo.DpVisualDnaVo;
 import org.dromara.creative.enums.DpVisualStageEnum;
 import org.dromara.creative.helper.DnaPromptBuilder;
 import org.dromara.creative.helper.DnaSeedBuilder;
+import org.dromara.creative.helper.ReferenceImageAnalyzer;
 import org.dromara.creative.helper.VisualBrainAdapter;
 import org.dromara.creative.helper.VisualDnaSchema;
 import org.dromara.creative.mapper.DpVisualDnaMapper;
@@ -60,6 +62,11 @@ public class CreativeDnaServiceImpl implements ICreativeDnaService {
     private static final String SOURCE_MANUAL = "MANUAL";
 
     /**
+     * 来源：参考图实测推导
+     */
+    private static final String SOURCE_IMAGE = "IMAGE";
+
+    /**
      * 状态
      */
     private static final String STATUS_DRAFT = "DRAFT";
@@ -70,6 +77,7 @@ public class CreativeDnaServiceImpl implements ICreativeDnaService {
     private final DnaSeedBuilder seedBuilder;
     private final DnaPromptBuilder promptBuilder;
     private final VisualBrainAdapter visualBrain;
+    private final ReferenceImageAnalyzer imageAnalyzer;
     private final ContentOssHelper contentOssHelper;
     private final ICreativeProjectService projectService;
     private final IContentTaskService contentTaskService;
@@ -88,7 +96,21 @@ public class CreativeDnaServiceImpl implements ICreativeDnaService {
         // 视觉模型补全：治理层路由得到模型（且任务允许外部 AI）才调用；否则如实保留「事实推导」来源。
         // 这里不做任何「模型不可用就用默认值假装 AI」的事——来源字段会如实写进基因并展示给用户。
         List<String> notes = new ArrayList<>(seed.notes());
-        String source = DnaSeedBuilder.SOURCE_FACTS;
+
+        // 参考图实测：配色/饱和度/对比度/留白/产品占比直接量出来；已由事实确定的项（如颜色）不覆盖。
+        // 顺序上放在模型补全之前——先量准客观量，模型只在此基础上做语义补充。
+        ReferenceImageAnalyzer.Analysis imageAnalysis = analyzeReference(detail);
+        List<String> imageApplied = imageAnalysis == null
+            ? List.of() : applyImageAnalysis(seed.dna(), imageAnalysis);
+        if (imageApplied.isEmpty() && imageAnalysis != null) {
+            notes.add("参考图已分析，但没有可采纳项（可能是主体不清晰）");
+        } else if (!imageApplied.isEmpty()) {
+            notes.add("以下字段由参考图实测得到：" + String.join("、", imageApplied)
+                + "（本地像素分析，非模型结论）");
+        }
+
+        // 视觉模型补全：治理层路由得到模型（且任务允许外部 AI）才调用；否则如实保留来源。
+        String source = imageApplied.isEmpty() ? DnaSeedBuilder.SOURCE_FACTS : SOURCE_IMAGE;
         String modelKey = null;
         String traceId = null;
         VisualBrainAdapter.Analysis analysis = analyzeWithBrain(taskId, project, detail, seed.dna());
@@ -206,6 +228,58 @@ public class CreativeDnaServiceImpl implements ICreativeDnaService {
             ObjectNode targetRatio = target.withObject("/productRatio");
             ratio.properties().forEach(entry -> targetRatio.put(entry.getKey(), entry.getValue().asInt()));
         }
+    }
+
+    @Override
+    public DnaRecommendationVo recommend(Long taskId) {
+        CreativeProjectVo project = projectService.getProject(taskId);
+        ContentTaskDetailVo detail = contentTaskService.getDetail(taskId);
+        DnaRecommendationVo vo = new DnaRecommendationVo();
+
+        CpTaskFileVo reference = firstImageFile(detail);
+        byte[] bytes = reference == null ? null : readBytes(reference);
+        ReferenceImageAnalyzer.Analysis analysis = bytes == null ? null : imageAnalyzer.analyze(bytes);
+        if (analysis == null) {
+            vo.setAnalyzed(false);
+            vo.getNotes().add(reference == null
+                ? "该项目还没有参考图：请先在「视觉项目」页上传产品图，再来按图推荐"
+                : "参考图无法解码（格式不支持或文件损坏）：请换一张 PNG/JPG/WEBP");
+            vo.getSkipped().add("所有字段：没有可用于分析的参考图");
+            return vo;
+        }
+
+        vo.setAnalyzed(true);
+        vo.setImageName(reference.getFileName());
+        vo.setImageWidth(analysis.width());
+        vo.setImageHeight(analysis.height());
+        vo.setObservedProductRatio(analysis.observedRatio());
+        vo.getNotes().addAll(analysis.notes());
+        vo.getSkipped().addAll(analysis.skipped());
+        for (ReferenceImageAnalyzer.Recommendation rec : analysis.recommendations()) {
+            applyRecommendationToVo(vo, rec);
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("field", rec.field());
+            row.put("value", rec.value());
+            row.put("basis", rec.basis());
+            row.put("reliability", rec.reliability());
+            vo.getEvidence().add(row);
+        }
+
+        // 与已确认事实对账：事实优先，冲突要说出来让人判断，而不是静默覆盖
+        Map<String, String> facts = confirmedFactMap(detail);
+        String colorFact = facts.get("color");
+        if (StringUtils.isNotBlank(colorFact) && StringUtils.isNotBlank(vo.getColorPrimary())) {
+            String factHex = seedBuilder.toHex(colorFact);
+            if (factHex != null && !factHex.equalsIgnoreCase(vo.getColorPrimary())) {
+                vo.getConflicts().add("已确认事实「颜色」= " + colorFact + "（" + factHex
+                    + "），参考图实测主色 " + vo.getColorPrimary()
+                    + "：以事实为准，实测色可作辅色/点缀色参考");
+            }
+        }
+        if (StringUtils.isBlank(project.getProductName())) {
+            vo.getConflicts().add("项目未关联产品名：主体只能按「当前产品」占位，建议到内容任务里补上产品");
+        }
+        return vo;
     }
 
     @Override
@@ -379,6 +453,172 @@ public class CreativeDnaServiceImpl implements ICreativeDnaService {
         return names;
     }
 
+    /**
+     * 取项目里第一张图片附件（参考图）。
+     */
+    private CpTaskFileVo firstImageFile(ContentTaskDetailVo detail) {
+        if (detail == null || detail.getFiles() == null) {
+            return null;
+        }
+        for (CpTaskFileVo file : detail.getFiles()) {
+            if ("IMAGE".equalsIgnoreCase(file.getFileKind()) && StringUtils.isNotBlank(file.getFileRef())) {
+                return file;
+            }
+        }
+        return null;
+    }
+
+    private byte[] readBytes(CpTaskFileVo file) {
+        try {
+            return contentOssHelper.getBytes(file.getFileRef());
+        } catch (Exception e) {
+            log.warn("读取参考图失败 fileId={} error={}", file.getFileId(), e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 分析参考图；无图或解不开返回 null。
+     */
+    private ReferenceImageAnalyzer.Analysis analyzeReference(ContentTaskDetailVo detail) {
+        CpTaskFileVo reference = firstImageFile(detail);
+        if (reference == null) {
+            return null;
+        }
+        byte[] bytes = readBytes(reference);
+        return bytes == null ? null : imageAnalyzer.analyze(bytes);
+    }
+
+    /**
+     * 把参考图实测结果合进基因：**已由事实确定的项不覆盖**，其余覆盖默认值。
+     *
+     * @param dna      基因树
+     * @param analysis 实测结果
+     * @return 实际采纳的字段名
+     */
+    private List<String> applyImageAnalysis(ObjectNode dna, ReferenceImageAnalyzer.Analysis analysis) {
+        List<String> applied = new ArrayList<>();
+        for (ReferenceImageAnalyzer.Recommendation rec : analysis.recommendations()) {
+            switch (rec.field()) {
+                case "colors.primary" -> {
+                    // 主色可能来自已确认的颜色事实：事实优先，实测只补空缺
+                    if (StringUtils.isBlank(dna.path("colors").path("primary").asText(null))) {
+                        dna.withObject("/colors").put("primary", String.valueOf(rec.value()));
+                        applied.add(rec.field());
+                    }
+                }
+                case "colors.secondary" -> {
+                    if (StringUtils.isBlank(dna.path("colors").path("secondary").asText(null))) {
+                        dna.withObject("/colors").put("secondary", String.valueOf(rec.value()));
+                        applied.add(rec.field());
+                    }
+                }
+                case "colors.accent" -> {
+                    if (StringUtils.isBlank(dna.path("colors").path("accent").asText(null))) {
+                        dna.withObject("/colors").put("accent", String.valueOf(rec.value()));
+                        applied.add(rec.field());
+                    }
+                }
+                case "colors.background" -> {
+                    dna.withObject("/colors").put("background", String.valueOf(rec.value()));
+                    applied.add(rec.field());
+                }
+                case "saturation" -> {
+                    dna.put("saturation", String.valueOf(rec.value()));
+                    applied.add(rec.field());
+                }
+                case "contrastLevel" -> {
+                    dna.put("contrastLevel", String.valueOf(rec.value()));
+                    applied.add(rec.field());
+                }
+                case "whitespaceLevel" -> {
+                    dna.put("whitespaceLevel", String.valueOf(rec.value()));
+                    applied.add(rec.field());
+                }
+                case "sceneType" -> {
+                    dna.put("sceneType", String.valueOf(rec.value()));
+                    applied.add(rec.field());
+                }
+                case "lighting.type" -> {
+                    dna.withObject("/lighting").put("type", String.valueOf(rec.value()));
+                    applied.add(rec.field());
+                }
+                case "lighting.direction" -> {
+                    dna.withObject("/lighting").put("direction", String.valueOf(rec.value()));
+                    applied.add(rec.field());
+                }
+                case "productRatio" -> {
+                    int[] range = parseRatio(String.valueOf(rec.value()));
+                    if (range != null) {
+                        VisualDnaSchema.setProductRatio(dna, range[0], range[1]);
+                        applied.add(rec.field());
+                    }
+                }
+                default -> {
+                    // 未知字段不处理（不猜）
+                }
+            }
+            VisualDnaSchema.addEvidence(dna, "IMAGE", rec.field(), String.valueOf(rec.value()),
+                "参考图实测（" + rec.reliability() + "）：" + rec.basis());
+        }
+        return applied;
+    }
+
+    /**
+     * 把单条推荐写进返回对象。
+     */
+    private void applyRecommendationToVo(DnaRecommendationVo vo, ReferenceImageAnalyzer.Recommendation rec) {
+        String value = String.valueOf(rec.value());
+        switch (rec.field()) {
+            case "colors.primary" -> vo.setColorPrimary(value);
+            case "colors.secondary" -> vo.setColorSecondary(value);
+            case "colors.accent" -> vo.setColorAccent(value);
+            case "colors.background" -> vo.setColorBg(value);
+            case "saturation" -> vo.setSaturation(value);
+            case "contrastLevel" -> vo.setContrastLevel(value);
+            case "whitespaceLevel" -> vo.setWhitespaceLevel(value);
+            case "sceneType" -> vo.setSceneType(value);
+            case "lighting.type" -> vo.setLightingType(value);
+            case "lighting.direction" -> vo.setLightingDir(value);
+            case "productRatio" -> {
+                int[] range = parseRatio(value);
+                if (range != null) {
+                    vo.setProductRatioMin(range[0]);
+                    vo.setProductRatioMax(range[1]);
+                }
+            }
+            default -> {
+                // 未知字段忽略
+            }
+        }
+    }
+
+    /**
+     * 解析 "min~max" 形式的占比区间。
+     */
+    private static int[] parseRatio(String value) {
+        if (value == null || !value.contains("~")) {
+            return null;
+        }
+        try {
+            String[] parts = value.split("~");
+            return new int[] {Integer.parseInt(parts[0].trim()), Integer.parseInt(parts[1].trim())};
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /**
+     * 已确认事实 → 字段编码到值的映射。
+     */
+    private Map<String, String> confirmedFactMap(ContentTaskDetailVo detail) {
+        Map<String, String> map = new LinkedHashMap<>();
+        for (DnaSeedBuilder.FactRow fact : confirmedFacts(detail)) {
+            map.putIfAbsent(fact.fieldCode(), fact.value());
+        }
+        return map;
+    }
+
     private DpVisualDna latestEntity(Long taskId) {
         List<DpVisualDna> rows = dnaMapper.selectList(new LambdaQueryWrapper<DpVisualDna>()
             .eq(DpVisualDna::getTaskId, taskId)
@@ -542,6 +782,7 @@ public class CreativeDnaServiceImpl implements ICreativeDnaService {
         return switch (StringUtils.blankToDefault(source, "")) {
             case SOURCE_AI -> "视觉模型分析生成" + (StringUtils.isBlank(modelKey) ? "" : "（模型：" + modelKey + "）");
             case SOURCE_MANUAL -> "人工编辑版本";
+            case SOURCE_IMAGE -> "由参考图实测推导（本地像素分析，未经模型）+ 已确认事实与默认值";
             case DnaSeedBuilder.SOURCE_FACTS -> "由已确认的产品事实与默认规范推导（未经视觉模型分析）";
             default -> source;
         };

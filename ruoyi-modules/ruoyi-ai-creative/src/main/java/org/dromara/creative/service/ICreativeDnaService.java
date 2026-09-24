@@ -2,6 +2,7 @@ package org.dromara.creative.service;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dromara.creative.domain.bo.CreativeDnaBo;
+import org.dromara.creative.domain.vo.DnaRecommendationVo;
 import org.dromara.creative.domain.vo.DpVisualDnaVo;
 import org.dromara.creative.helper.DnaPromptBuilder;
 
@@ -18,10 +19,22 @@ import java.util.List;
 public interface ICreativeDnaService {
 
     /**
+     * 按参考图给出规范内容推荐（不落库、不改状态）。
+     *
+     * <p>配色/饱和度/对比度/留白/产品占比是**本地像素实测**；光线与场景是弱启发（标注 MEDIUM）；
+     * 风格关键词、禁忌词、字体风格**测不出来就明确说测不出来**，不给假结论。
+     * 与已确认事实冲突时以事实为准，并把冲突列出来让人判断。</p>
+     *
+     * @param taskId 项目ID
+     * @return 推荐结果（含逐字段依据与冲突）
+     */
+    DnaRecommendationVo recommend(Long taskId);
+
+    /**
      * 生成一版新的视觉基因（版本递增）。
      *
-     * <p>输入是「已确认的产品事实 + 参考图 + 明确标注的默认值」；模型可用时用于补全，
-     * 不可用时来源如实标为 FACTS，绝不把默认值包装成模型结论。</p>
+     * <p>输入是「已确认的产品事实 + 参考图实测 + 明确标注的默认值」；模型可用时用于补全，
+     * 不可用时来源如实标注，绝不把默认值包装成模型结论。</p>
      *
      * @param taskId 项目ID
      * @return 新版本

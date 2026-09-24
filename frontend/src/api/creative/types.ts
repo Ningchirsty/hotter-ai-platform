@@ -451,6 +451,34 @@ export const LAYOUT_VERSION_STATUS_LABELS: Record<string, string> = {
   REJECTED: '已打回'
 };
 
+/** 「按参考图推荐」结果 */
+export interface DnaRecommendationVO {
+  analyzed: boolean;
+  imageName?: string;
+  imageWidth?: number;
+  imageHeight?: number;
+  colorPrimary?: string;
+  colorSecondary?: string;
+  colorAccent?: string;
+  colorBg?: string;
+  saturation?: string;
+  contrastLevel?: string;
+  whitespaceLevel?: string;
+  sceneType?: string;
+  lightingType?: string;
+  lightingDir?: string;
+  productRatioMin?: number;
+  productRatioMax?: number;
+  observedProductRatio?: number;
+  /** 逐字段依据：field / value / basis / reliability */
+  evidence?: Array<{ field?: string; value?: string; basis?: string; reliability?: string }>;
+  /** 与已确认事实的冲突 */
+  conflicts?: string[];
+  /** 测不出来、明确不猜的字段与原因 */
+  skipped?: string[];
+  notes?: string[];
+}
+
 /** 阶段编码 → 可读描述（前端兜底；权威描述在后端 DpVisualStageEnum） */
 export const CREATIVE_STAGE_LABELS: Record<string, string> = {
   MATERIAL_READY: '资料就绪',

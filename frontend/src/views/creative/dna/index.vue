@@ -97,8 +97,16 @@
       <section class="panel">
         <div class="block-head">
           <h3>规范内容</h3>
-          <span class="muted">改动保存即生效；已锁定版本保存会自动新建一版</span>
+          <div class="head-actions">
+            <span class="muted">改动保存即生效；已锁定版本保存会自动新建一版</span>
+            <el-button size="small" :loading="recommending" @click="doRecommend">按参考图推荐</el-button>
+          </div>
         </div>
+        <p class="muted recommend-hint">
+          配色、饱和度、对比度、留白、产品占比由参考图<b>实测</b>得出；光线与场景是弱启发（标注 MEDIUM）。
+          风格关键词、禁忌词、字体风格像素层面推不出来，<b>不会编</b>——需要人工填或由品牌调性事实带入。
+          推荐只填表单，<b>点「保存」才落库</b>。
+        </p>
 
         <div class="form-grid">
           <div class="form-item span2">
@@ -258,6 +266,60 @@
         </el-table>
       </section>
     </template>
+    <!-- 推荐依据 -->
+    <el-dialog v-model="recommendVisible" title="参考图推荐依据" width="820px">
+      <template v-if="recommendation">
+        <p class="muted">
+          参考图：{{ recommendation.imageName }}
+          <template v-if="recommendation.imageWidth">
+            （{{ recommendation.imageWidth }}×{{ recommendation.imageHeight }}）
+          </template>
+          <template v-if="recommendation.observedProductRatio != null">
+            　实测产品占画面 {{ recommendation.observedProductRatio.toFixed(0) }}%
+          </template>
+        </p>
+
+        <el-alert
+          v-for="(item, index) in recommendation.conflicts || []"
+          :key="'c' + index"
+          type="warning"
+          show-icon
+          :closable="false"
+          class="notice"
+          :title="item"
+        />
+
+        <el-table :data="recommendation.evidence || []" size="small" class="ev-table">
+          <el-table-column prop="field" label="字段" width="150" />
+          <el-table-column prop="value" label="推荐值" width="130" />
+          <el-table-column label="可信度" width="100">
+            <template #default="{ row }">
+              <el-tag size="small" :type="row.reliability === 'HIGH' ? 'success' : 'warning'">
+                {{ row.reliability === 'HIGH' ? '实测' : '弱启发' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="basis" label="依据" min-width="300" show-overflow-tooltip />
+        </el-table>
+
+        <div v-if="(recommendation.skipped || []).length" class="skip-block">
+          <h4>测不出来、明确不猜的字段</h4>
+          <ul class="note-list">
+            <li v-for="(item, index) in recommendation.skipped" :key="'s' + index">{{ item }}</li>
+          </ul>
+        </div>
+
+        <div v-if="(recommendation.notes || []).length" class="skip-block">
+          <h4>说明</h4>
+          <ul class="note-list">
+            <li v-for="(item, index) in recommendation.notes" :key="'n' + index">{{ item }}</li>
+          </ul>
+        </div>
+      </template>
+      <template #footer>
+        <el-button type="primary" @click="recommendVisible = false">知道了（已填入表单，保存后生效）</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -265,8 +327,15 @@
 import { onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { listCreativeProject } from '@/api/creative';
-import { generateDna, getDna, getDnaPrompt, listDnaVersions, lockDna, saveDna } from '@/api/creative';
-import type { CreativeDnaForm, CreativeProjectVO, DnaPromptVO, DpVisualDnaVO, TagType } from '@/api/creative/types';
+import { generateDna, getDna, getDnaPrompt, listDnaVersions, lockDna, recommendDna, saveDna } from '@/api/creative';
+import type {
+  CreativeDnaForm,
+  CreativeProjectVO,
+  DnaPromptVO,
+  DnaRecommendationVO,
+  DpVisualDnaVO,
+  TagType
+} from '@/api/creative/types';
 import {
   DNA_LIGHTING_DIRS,
   DNA_LIGHTING_TYPES,
@@ -286,6 +355,9 @@ const loading = ref(false);
 const generating = ref(false);
 const saving = ref(false);
 const locking = ref(false);
+const recommending = ref(false);
+const recommendVisible = ref(false);
+const recommendation = ref<DnaRecommendationVO | null>(null);
 
 const form = reactive<CreativeDnaForm>({});
 
@@ -322,6 +394,46 @@ function fillForm(source: DpVisualDnaVO | null) {
 
 function resetForm() {
   fillForm(dna.value);
+}
+
+/**
+ * 按参考图推荐：把实测值填进表单并展示逐字段依据。
+ *
+ * 刻意**只填表单、不自动保存**：推荐值是给眼睛过一遍的，落库仍是人的动作。
+ * 与已确认事实冲突时，事实优先——冲突由后端在 conflicts 里说明。
+ */
+async function doRecommend() {
+  if (!taskId.value) return;
+  recommending.value = true;
+  try {
+    const res = await recommendDna(taskId.value);
+    const data = res.data || null;
+    recommendation.value = data;
+    if (!data?.analyzed) {
+      ElMessage.warning((data?.notes || ['没有可用于分析的参考图'])[0]);
+      recommendVisible.value = true;
+      return;
+    }
+    // 只覆盖推荐有值的字段，其余保留用户已填内容
+    if (data.colorPrimary) form.colorPrimary = data.colorPrimary;
+    if (data.colorSecondary) form.colorSecondary = data.colorSecondary;
+    if (data.colorAccent) form.colorAccent = data.colorAccent;
+    if (data.colorBg) form.colorBg = data.colorBg;
+    if (data.saturation) form.saturation = data.saturation;
+    if (data.contrastLevel) form.contrastLevel = data.contrastLevel;
+    if (data.whitespaceLevel) form.whitespaceLevel = data.whitespaceLevel;
+    if (data.sceneType) form.sceneType = data.sceneType;
+    if (data.lightingType) form.lightingType = data.lightingType;
+    if (data.lightingDir) form.lightingDir = data.lightingDir;
+    if (data.productRatioMin != null) form.productRatioMin = data.productRatioMin;
+    if (data.productRatioMax != null) form.productRatioMax = data.productRatioMax;
+    recommendVisible.value = true;
+    ElMessage.success(`已按参考图填好 ${data.evidence?.length ?? 0} 项，确认后点「保存」`);
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '按参考图推荐失败');
+  } finally {
+    recommending.value = false;
+  }
 }
 
 async function loadProjects() {
@@ -551,10 +663,39 @@ onMounted(async () => {
 
 .block-head {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 12px;
+}
+.head-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.recommend-hint {
+  margin-bottom: 14px;
+}
+.notice {
+  margin-bottom: 10px;
+}
+.ev-table {
+  margin-top: 6px;
+}
+.skip-block {
+  margin-top: 14px;
+}
+.skip-block h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+.note-list {
+  padding-left: 18px;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.9;
+  color: var(--t2);
 }
 
 .form-grid {

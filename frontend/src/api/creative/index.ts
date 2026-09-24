@@ -19,6 +19,7 @@ import type {
   DpStoryboardVO,
   DpVisualDirectionVO,
   DpVisualDnaVO,
+  DnaRecommendationVO,
   GateEvaluationVO,
   ProductionRunVO
 } from './types';
@@ -147,6 +148,15 @@ export function getDna(taskId: string | number): AxiosPromise<DpVisualDnaVO | nu
   return request({
     url: `/creative/projects/${taskId}/dna`,
     method: 'get'
+  });
+}
+
+/** 按参考图推荐规范内容（不落库，返回推荐值 + 逐字段依据） */
+export function recommendDna(taskId: string | number): AxiosPromise<DnaRecommendationVO> {
+  return request({
+    url: `/creative/projects/${taskId}/dna/recommend`,
+    method: 'post',
+    timeout: 60000
   });
 }
 
