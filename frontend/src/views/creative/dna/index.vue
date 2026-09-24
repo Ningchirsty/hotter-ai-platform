@@ -1,5 +1,6 @@
 <template>
   <div class="studio">
+    <CreativeFlowGuide :task-id="taskId" :refresh-token="flowToken" />
     <header class="dna-head">
       <div>
         <h2>视觉基因 DNA</h2>
@@ -343,9 +344,12 @@ import {
   DNA_SOURCE_LABELS,
   DNA_SOURCE_TYPES
 } from '@/api/creative/types';
+import CreativeFlowGuide from '../components/CreativeFlowGuide.vue';
 
 const projects = ref<CreativeProjectVO[]>([]);
 const taskId = ref('');
+// 流程指引线的刷新令牌：只在动作成功后 +1，避免把它塞进加载函数导致每次进页面重复读阶段
+const flowToken = ref(0);
 const dna = ref<DpVisualDnaVO | null>(null);
 const versions = ref<DpVisualDnaVO[]>([]);
 const prompt = ref<DnaPromptVO | null>(null);
@@ -493,6 +497,7 @@ async function doGenerate() {
     dna.value = res.data || null;
     ElMessage.success(`已生成 v${dna.value?.version}，来源：${sourceLabel(dna.value?.source)}`);
     await loadAll();
+    flowToken.value += 1;
   } catch (error) {
     ElMessage.error(await extractErrorMessage(error) ?? '生成视觉基因失败');
   } finally {
@@ -511,6 +516,7 @@ async function doSave() {
     dna.value = res.data || null;
     ElMessage.success(wasLocked ? '已基于锁定版新建一版' : '已保存');
     await loadAll();
+    flowToken.value += 1;
   } catch (error) {
     ElMessage.error(await extractErrorMessage(error) ?? '保存失败');
   } finally {
@@ -535,6 +541,7 @@ async function doLock() {
     dna.value = res.data || null;
     ElMessage.success('已锁定');
     await loadAll();
+    flowToken.value += 1;
   } catch (error) {
     ElMessage.error(await extractErrorMessage(error) ?? '锁定失败');
   } finally {

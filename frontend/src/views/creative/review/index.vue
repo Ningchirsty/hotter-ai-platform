@@ -1,5 +1,6 @@
 <template>
   <div class="studio">
+    <CreativeFlowGuide :task-id="taskId" :refresh-token="flowToken" />
     <header class="page-head">
       <div>
         <h2>详情页与审核</h2>
@@ -35,9 +36,8 @@
               <el-tag v-else-if="gate.cardStatus === 'BLOCKED'" type="danger" effect="dark">已打回</el-tag>
               <el-tag v-else type="info" effect="dark">未提交</el-tag>
             </h3>
-            <p class="muted">
-              当前视觉阶段：{{ gate.stageDesc }}（{{ gate.stage }}）
-              <template v-if="gate.cardId">　确认项卡号：{{ gate.cardId }}</template>
+            <p v-if="gate.cardId" class="muted">
+              确认项卡号：{{ gate.cardId }}
             </p>
           </div>
           <div class="gate-actions">
@@ -299,9 +299,12 @@ import type {
   TagType
 } from '@/api/creative/types';
 import { LAYOUT_VERSION_STATUS_LABELS } from '@/api/creative/types';
+import CreativeFlowGuide from '../components/CreativeFlowGuide.vue';
 
 const projects = ref<CreativeProjectVO[]>([]);
 const taskId = ref('');
+// 流程指引线的刷新令牌：只在动作成功后 +1，加载函数里不动它
+const flowToken = ref(0);
 const gate = ref<GateEvaluationVO | null>(null);
 const detailPage = ref<DpDetailPageVO | null>(null);
 const loading = ref(false);
@@ -367,6 +370,7 @@ async function doRender() {
     ElMessage.success(latest
       ? `已渲染 v${latest.version}（${latest.pageWidth}×${latest.pageHeight}）`
       : '已渲染');
+    flowToken.value += 1;
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '渲染失败');
   } finally {
@@ -406,6 +410,7 @@ async function doVersionReview(row: DpDetailPageVersionVO, approve: boolean) {
     await reviewDetailVersion(taskId.value, row.id, approve, approve ? '终审通过' : '终审打回');
     ElMessage.success(approve ? '已通过，可进入人工精修' : '已打回');
     await loadAll();
+    flowToken.value += 1;
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '终审失败');
   } finally {
@@ -419,6 +424,7 @@ async function doUploadFinal(options: UploadRequestOptions) {
     await uploadDetailFinal(taskId.value, options.file as File, '人工精修最终版');
     ElMessage.success('最终版已上传并登记为 V1.0');
     await loadAll();
+    flowToken.value += 1;
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '上传失败');
   } finally {
@@ -432,6 +438,7 @@ async function doSubmit() {
     const res = await submitVisualGate(taskId.value);
     gate.value = res.data || null;
     ElMessage.success('已提交视觉门，等待人工确认');
+    flowToken.value += 1;
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '提交失败');
   } finally {
@@ -456,6 +463,7 @@ async function doReview(option: 'CONFIRM' | 'BLOCK') {
     const res = await reviewVisualGate(taskId.value, option, comment.value || undefined);
     gate.value = res.data || null;
     ElMessage.success(option === 'CONFIRM' ? '已确认，出图已放行' : '已打回');
+    flowToken.value += 1;
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '处理失败');
   } finally {

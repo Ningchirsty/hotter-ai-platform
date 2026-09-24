@@ -1,5 +1,6 @@
 <template>
   <div class="studio">
+    <CreativeFlowGuide :task-id="taskId" :refresh-token="flowToken" />
     <header class="page-head">
       <div>
         <h2>视觉方向与分镜</h2>
@@ -312,9 +313,12 @@ import {
   QA_VERDICT_LABELS,
   SCREEN_STATUS_LABELS
 } from '@/api/creative/types';
+import CreativeFlowGuide from '../components/CreativeFlowGuide.vue';
 
 const projects = ref<CreativeProjectVO[]>([]);
 const taskId = ref('');
+// 流程指引线的刷新令牌：只在动作成功后 +1，加载/刷新函数里不动它
+const flowToken = ref(0);
 const directions = ref<DpVisualDirectionVO[]>([]);
 const storyboard = ref<DpStoryboardVO | null>(null);
 const production = ref<ProductionRunVO | null>(null);
@@ -372,6 +376,7 @@ async function doStartProduction() {
     const res = await startProduction(taskId.value, false);
     production.value = res.data || null;
     ElMessage.success(`已提交 ${res.data?.submitted ?? 0} 屏出图，跳过 ${res.data?.skipped ?? 0} 屏`);
+    flowToken.value += 1;
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '批量出图失败');
   } finally {
@@ -397,6 +402,7 @@ async function doRegenerate(row: ScreenProductionVO) {
     await regenerateScreen(taskId.value, row.screenId);
     ElMessage.success(`${row.screenNo} 已重新提交出图`);
     await doRefreshProduction();
+    flowToken.value += 1;
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '重出失败');
   } finally {
@@ -412,6 +418,7 @@ async function doSelectCandidate(row: ScreenProductionVO) {
     await selectCandidate(taskId.value, generationId);
     ElMessage.success(`${row.screenNo} 已选定候选，并已登记产出与发起质检`);
     await doRefreshProduction();
+    flowToken.value += 1;
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '选定失败');
   } finally {
@@ -427,6 +434,7 @@ async function doQa(row: ScreenProductionVO) {
     await runCandidateQa(taskId.value, generationId);
     ElMessage.success('已发起质检（只筛除，不放行）');
     await doRefreshProduction();
+    flowToken.value += 1;
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '发起质检失败');
   } finally {
@@ -489,6 +497,7 @@ async function doGenerateDirections() {
     await generateDirections(taskId.value);
     ElMessage.success('已生成 A/B/C 三个方向');
     await loadAll();
+    flowToken.value += 1;
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '生成方向失败');
   } finally {
@@ -502,6 +511,7 @@ async function doSelect(item: DpVisualDirectionVO) {
     await selectDirection(taskId.value, item.id);
     ElMessage.success(`已选定方向 ${item.directionCode}`);
     await loadAll();
+    flowToken.value += 1;
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '选定失败');
   } finally {
@@ -524,6 +534,7 @@ async function doSaveDirection() {
     ElMessage.success('已保存');
     directionEditVisible.value = false;
     await loadAll();
+    flowToken.value += 1;
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '保存失败');
   } finally {
@@ -537,6 +548,7 @@ async function doGenerateStoryboard() {
     await generateStoryboard(taskId.value);
     ElMessage.success('已生成分镜');
     await loadAll();
+    flowToken.value += 1;
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '生成分镜失败');
   } finally {
@@ -559,6 +571,7 @@ async function doLockStoryboard() {
     await lockStoryboard(taskId.value, storyboard.value?.id);
     ElMessage.success('分镜已锁定');
     await loadAll();
+    flowToken.value += 1;
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '锁定失败');
   } finally {
@@ -588,6 +601,7 @@ async function doSaveScreen() {
     ElMessage.success('已保存');
     screenEditVisible.value = false;
     await loadAll();
+    flowToken.value += 1;
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '保存失败');
   } finally {

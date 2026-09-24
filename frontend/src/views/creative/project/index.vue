@@ -1,5 +1,7 @@
 <template>
   <div class="studio">
+    <CreativeFlowGuide :task-id="currentProjectId" :refresh-token="flowToken" />
+
     <div v-if="showGuide" class="guide-bar">
       <span>
         R0 接线版：项目复用「内容生产协同」的电商详情页任务，出图复用图像创作内核（已发布工作流）。
@@ -120,10 +122,115 @@
               </div>
             </section>
 
+            <!-- 事实确认 -->
+            <section class="block">
+              <div class="block-head">
+                <h4>2. 事实确认</h4>
+                <div class="block-actions">
+                  <span class="muted">已确认 {{ confirmedFacts.length }} 条 / 共 {{ facts.length }} 行</span>
+                  <el-button
+                    size="small"
+                    plain
+                    :loading="factBusy === 'confirmUnambiguous'"
+                    @click="doConfirmUnambiguousFacts"
+                  >
+                    一键确认无歧义项
+                  </el-button>
+                  <el-button size="small" type="primary" plain @click="openManualFact()">人工录入</el-button>
+                </div>
+              </div>
+              <p class="hint">
+                只有 <b>CONFIRMED</b> 的事实才会进入基因 / 方向 / 分镜文案的推导；PENDING 与已否决都不算。
+              </p>
+              <p v-if="factLoadError" class="fact-error">
+                {{ factLoadError }}（点右上「刷新」重试，页面不会用默认值糊过去）
+              </p>
+
+              <p v-if="!fieldOptionsLoaded && !factLoadError" class="fact-error">
+                字段选项接口没取到，无法判断闸门必填项是否齐备——不猜，请在下方事实表里逐条确认。
+              </p>
+              <template v-else>
+                <ul class="fact-check">
+                  <li v-for="option in requiredFieldOptions" :key="String(option.fieldCode)" :class="{ ok: option.satisfied }">
+                    <span class="mark">{{ option.satisfied ? '✓' : '✗' }}</span>
+                    <span class="check-name">{{ option.fieldName || option.fieldCode }}</span>
+                    <span class="muted">{{ option.fieldCode }} · {{ option.gateLevel || '—' }}</span>
+                  </li>
+                  <li v-if="!requiredFieldOptions.length" class="muted">该交付类型没有声明必填事实项。</li>
+                </ul>
+                <div v-if="unsatisfiedRequiredOptions.length" class="block-actions">
+                  <el-button
+                    v-for="option in unsatisfiedRequiredOptions"
+                    :key="'fill-' + option.fieldCode"
+                    size="small"
+                    @click="openManualFact(option.fieldCode)"
+                  >
+                    ＋ 录入「{{ option.fieldName || option.fieldCode }}」
+                  </el-button>
+                </div>
+              </template>
+
+              <el-table v-if="facts.length" :data="facts" size="small" class="fact-table">
+                <el-table-column label="字段" width="150" show-overflow-tooltip>
+                  <template #default="{ row }">
+                    {{ asFact(row).fieldName || asFact(row).fieldCode }}
+                  </template>
+                </el-table-column>
+                <el-table-column label="值" width="150" show-overflow-tooltip>
+                  <template #default="{ row }">
+                    {{ asFact(row).fieldValue }}<span v-if="asFact(row).unit"> {{ asFact(row).unit }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="来源" min-width="200" show-overflow-tooltip>
+                  <template #default="{ row }">
+                    {{ asFact(row).sourceFileName || '—' }}
+                    <span v-if="asFact(row).sourceLocator" class="muted">· {{ asFact(row).sourceLocator }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="原文摘录" min-width="200" show-overflow-tooltip>
+                  <template #default="{ row }">{{ asFact(row).sourceExcerpt || '—' }}</template>
+                </el-table-column>
+                <el-table-column label="状态" width="100">
+                  <template #default="{ row }">
+                    <el-tag size="small" :type="factStatusType(asFact(row).confirmStatus)">
+                      {{ factStatusLabel(asFact(row).confirmStatus) }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="140" fixed="right">
+                  <template #default="{ row }">
+                    <el-button
+                      link
+                      size="small"
+                      type="primary"
+                      :disabled="asFact(row).confirmStatus === 'CONFIRMED'"
+                      :loading="factBusy === 'fact-' + asFact(row).snapshotId"
+                      @click="doConfirmFact(asFact(row))"
+                    >
+                      确认
+                    </el-button>
+                    <el-button
+                      link
+                      size="small"
+                      type="danger"
+                      :disabled="asFact(row).confirmStatus === 'REJECTED'"
+                      :loading="factBusy === 'fact-' + asFact(row).snapshotId"
+                      @click="doRejectFact(asFact(row))"
+                    >
+                      驳回
+                    </el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+              <p v-else class="empty">
+                还没有事实候选。资料解析后会自动落成待确认行；也可以点「人工录入」补齐。
+              </p>
+            </section>
+
             <!-- 出图 -->
             <section class="block">
               <div class="block-head">
-                <h4>2. 生成 HERO 主图</h4>
+                <h4>3. 生成 HERO 主图</h4>
                 <span class="muted">R0 每次出 1 张候选；重试=新增一次候选</span>
               </div>
               <div class="form-row">
@@ -191,7 +298,7 @@
             <!-- 候选 -->
             <section class="block">
               <div class="block-head">
-                <h4>3. 出图候选</h4>
+                <h4>4. 出图候选</h4>
                 <span class="muted">
                   {{ generations.length }} 条
                   <template v-if="polling">· 状态跟踪中…</template>
@@ -240,6 +347,46 @@
         </template>
       </section>
     </div>
+
+    <!-- 人工录入事实 -->
+    <el-dialog v-model="manualFactVisible" title="人工录入事实" width="520px">
+      <el-form label-width="90px">
+        <el-form-item label="字段">
+          <el-select
+            v-model="manualForm.fieldCode"
+            filterable
+            allow-create
+            default-first-option
+            placeholder="从闸门字段里选（不支持时可直接输入编码）"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="option in fieldOptions"
+              :key="String(option.fieldCode)"
+              :label="optionLabel(option)"
+              :value="option.fieldCode"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="字段值">
+          <el-input v-model="manualForm.value" placeholder="字段值" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="manualForm.remark" placeholder="备注（可空）" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="manualFactVisible = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="factBusy === 'manualFact'"
+          :disabled="!manualForm.fieldCode || !manualForm.value"
+          @click="doAddManualFact"
+        >
+          录入（落为待确认）
+        </el-button>
+      </template>
+    </el-dialog>
 
     <!-- 新建项目 -->
     <el-dialog v-model="createVisible" title="新建视觉项目" width="520px">
@@ -307,10 +454,19 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import type { UploadRequestOptions } from 'element-plus';
 import { productOptions } from '@/api/content/product';
 import type { CpProductVO } from '@/api/content/product/types';
+import {
+  addManualFact,
+  confirmFact,
+  confirmUnambiguousFacts,
+  factFieldOptions,
+  listFact,
+  rejectFact
+} from '@/api/content/fact';
+import type { CpFactFieldOptionVO, CpFactSnapshotVO } from '@/api/content/fact/types';
 import type { CpTaskFileVO } from '@/api/content/task/types';
 import {
   addCreativeProject,
@@ -334,7 +490,8 @@ import type {
   CreativeProjectVO,
   CreativeWorkflowVO,
   DpGenerationVO,
-  DpStageEventVO
+  DpStageEventVO,
+  TagType
 } from '@/api/creative/types';
 import {
   CREATIVE_STAGE_LABELS,
@@ -342,6 +499,7 @@ import {
   GENERATION_STATUS_LABELS,
   GENERATION_STATUS_TYPES
 } from '@/api/creative/types';
+import CreativeFlowGuide from '../components/CreativeFlowGuide.vue';
 
 const GUIDE_KEY = 'hotter.creative.guide.dismissed';
 
@@ -357,6 +515,19 @@ const timeline = ref<DpStageEventVO[]>([]);
 const workflows = ref<CreativeWorkflowVO[]>([]);
 const products = ref<CpProductVO[]>([]);
 const selectedFileId = ref<string | number>('');
+
+/** 事实确认（闸门必填项 + 事实清单） */
+const facts = ref<CpFactSnapshotVO[]>([]);
+const fieldOptions = ref<CpFactFieldOptionVO[]>([]);
+/** 字段选项接口是否取到：取不到就不下「必填项齐了没」的结论 */
+const fieldOptionsLoaded = ref(false);
+const factLoadError = ref('');
+const factBusy = ref('');
+const manualFactVisible = ref(false);
+const manualForm = reactive({ fieldCode: '', value: '', remark: '' });
+
+/** 流程指引线刷新令牌：事实动作成功后 +1，指引线会重新读一次阶段 */
+const flowToken = ref(0);
 
 const submitting = ref(false);
 const creating = ref(false);
@@ -392,6 +563,10 @@ const POLL_INTERVAL_MS = 5000;
 const POLL_MAX_TICKS = 120;
 
 const imageFiles = computed(() => files.value.filter((f) => (f.fileKind || '').toUpperCase() === 'IMAGE'));
+
+const confirmedFacts = computed(() => facts.value.filter((f) => f.confirmStatus === 'CONFIRMED'));
+const requiredFieldOptions = computed(() => fieldOptions.value.filter((o) => o.requiredByGate));
+const unsatisfiedRequiredOptions = computed(() => requiredFieldOptions.value.filter((o) => !o.satisfied));
 
 function urlOf(key: string): string {
   return objectUrls.value[key] || '';
@@ -468,6 +643,10 @@ async function selectProject(project: CreativeProjectVO) {
   currentProjectId.value = project.taskId ?? '';
   currentProject.value = project;
   selectedFileId.value = '';
+  facts.value = [];
+  fieldOptions.value = [];
+  fieldOptionsLoaded.value = false;
+  factLoadError.value = '';
   stopPolling();
   await loadDetail();
 }
@@ -475,16 +654,27 @@ async function selectProject(project: CreativeProjectVO) {
 async function loadDetail() {
   if (!currentProjectId.value) return;
   try {
-    const [detail, fileRes, genRes, timelineRes] = await Promise.all([
+    // 事实/字段选项跟着项目详情一起取：失败时不让整页详情跟着失败，
+    // 但也不能静默——置 factLoadError，页面上照实写出「没取到」。
+    const [detail, fileRes, genRes, timelineRes, factRes, optionRes] = await Promise.all([
       getCreativeProject(currentProjectId.value),
       listCreativeFiles(currentProjectId.value),
       listGenerations(currentProjectId.value),
-      listCreativeTimeline(currentProjectId.value)
+      listCreativeTimeline(currentProjectId.value),
+      listFact(currentProjectId.value).catch(() => null),
+      factFieldOptions(currentProjectId.value).catch(() => null)
     ]);
     currentProject.value = detail.data;
     files.value = fileRes.data || [];
     generations.value = genRes.data || [];
     timeline.value = timelineRes.data || [];
+    facts.value = factRes?.data || [];
+    fieldOptions.value = optionRes?.data || [];
+    fieldOptionsLoaded.value = optionRes != null;
+    factLoadError.value =
+      factRes == null || optionRes == null
+        ? '该项目的事实数据没取到（事实清单或字段选项接口失败），下面显示的内容可能不完整'
+        : '';
     if (!selectedFileId.value && imageFiles.value.length) {
       selectedFileId.value = imageFiles.value[0].fileId ?? '';
     }
@@ -495,6 +685,135 @@ async function loadDetail() {
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '加载项目详情失败');
   }
+}
+
+// ------------------------------------------------------------------
+// 事实确认（闸门必填项 / 事实清单 / 人工录入）
+// ------------------------------------------------------------------
+
+/** 重新取事实与字段选项（事实动作成功后调用，不重跑整页） */
+async function loadFacts() {
+  if (!currentProjectId.value) return;
+  const [factRes, optionRes] = await Promise.all([
+    listFact(currentProjectId.value).catch(() => null),
+    factFieldOptions(currentProjectId.value).catch(() => null)
+  ]);
+  facts.value = factRes?.data || [];
+  fieldOptions.value = optionRes?.data || [];
+  fieldOptionsLoaded.value = optionRes != null;
+  factLoadError.value =
+    factRes == null || optionRes == null
+      ? '该项目的事实数据没取到（事实清单或字段选项接口失败），下面显示的内容可能不完整'
+      : '';
+}
+
+async function doConfirmFact(row: CpFactSnapshotVO) {
+  if (row.snapshotId == null) return;
+  factBusy.value = 'fact-' + row.snapshotId;
+  try {
+    await confirmFact(row.snapshotId);
+    ElMessage.success('已确认该值');
+    await loadFacts();
+    flowToken.value += 1;
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '确认失败');
+  } finally {
+    factBusy.value = '';
+  }
+}
+
+async function doRejectFact(row: CpFactSnapshotVO) {
+  if (row.snapshotId == null) return;
+  try {
+    await ElMessageBox.confirm('驳回后该候选值不会被采用，是否继续？', '驳回候选值', { type: 'warning' });
+  } catch {
+    return;
+  }
+  factBusy.value = 'fact-' + row.snapshotId;
+  try {
+    await rejectFact(row.snapshotId);
+    ElMessage.success('已驳回该候选值');
+    await loadFacts();
+    flowToken.value += 1;
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '驳回失败');
+  } finally {
+    factBusy.value = '';
+  }
+}
+
+async function doConfirmUnambiguousFacts() {
+  if (!currentProjectId.value) return;
+  factBusy.value = 'confirmUnambiguous';
+  try {
+    const res = await confirmUnambiguousFacts(currentProjectId.value);
+    ElMessage.success(`已确认 ${res.data ?? 0} 条无争议项`);
+    await loadFacts();
+    flowToken.value += 1;
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '一键确认失败');
+  } finally {
+    factBusy.value = '';
+  }
+}
+
+/** 打开人工录入对话框（可从「缺某项」的按钮带出字段编码） */
+function openManualFact(fieldCode?: string) {
+  if (fieldCode) manualForm.fieldCode = fieldCode;
+  manualFactVisible.value = true;
+}
+
+async function doAddManualFact() {
+  if (!currentProjectId.value || !manualForm.fieldCode || !manualForm.value) return;
+  factBusy.value = 'manualFact';
+  try {
+    await addManualFact({
+      taskId: currentProjectId.value,
+      fieldCode: manualForm.fieldCode,
+      value: manualForm.value,
+      remark: manualForm.remark || undefined
+    });
+    ElMessage.success('已录入，状态为「待确认」——请在事实表里确认后才算数');
+    manualForm.value = '';
+    manualForm.remark = '';
+    manualFactVisible.value = false;
+    await loadFacts();
+    flowToken.value += 1;
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '录入失败');
+  } finally {
+    factBusy.value = '';
+  }
+}
+
+function factStatusLabel(status?: string): string {
+  if (status === 'PENDING') return '待确认';
+  if (status === 'CONFIRMED') return '已确认';
+  if (status === 'CONFLICT') return '冲突';
+  if (status === 'REJECTED') return '已否决';
+  return status || '—';
+}
+
+function factStatusType(status?: string): TagType {
+  if (status === 'CONFIRMED') return 'success';
+  if (status === 'CONFLICT') return 'danger';
+  if (status === 'REJECTED') return 'info';
+  return 'warning';
+}
+
+function optionLabel(option: CpFactFieldOptionVO): string {
+  const parts = [`${option.fieldName || option.fieldCode}（${option.fieldCode}）`];
+  if (option.gateLevel) parts.push(option.gateLevel);
+  if (option.satisfied) parts.push('已确认');
+  return parts.join(' · ');
+}
+
+/**
+ * el-table 插槽行类型是 DefaultRow，数据其实是我们的 VO；
+ * 在模板里显式收窄，而不是把函数参数放宽成 any。
+ */
+function asFact(row: unknown): CpFactSnapshotVO {
+  return row as CpFactSnapshotVO;
 }
 
 /** 看这个项目有没有锁定基因，并决定是否预填提示词（只在用户没写过提示词时预填） */
@@ -1211,6 +1530,49 @@ button {
 .hint {
   font-size: 12px;
   color: var(--t3);
+}
+
+/* 事实确认 */
+.block-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.fact-check {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0;
+  margin: 0 0 12px;
+  list-style: none;
+}
+.fact-check li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+  color: var(--t2);
+}
+.fact-check .mark {
+  color: #ef4444;
+  font-weight: 700;
+}
+.fact-check li.ok .mark {
+  color: #10b981;
+}
+.fact-check .check-name {
+  color: var(--t1);
+}
+.fact-table {
+  margin-top: 4px;
+  background: transparent;
+}
+.fact-error {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  line-height: 1.8;
+  color: #fca5a5;
 }
 
 .dna-hint {
