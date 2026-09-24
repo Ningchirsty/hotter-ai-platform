@@ -12,6 +12,7 @@ import org.dromara.ai.image.service.ImageAssetStore;
 import org.dromara.ai.image.service.ImageTaskDispatchService;
 import org.dromara.ai.image.service.ImageTaskOrchestrator;
 import org.dromara.ai.image.service.ImageTaskRepository;
+import org.dromara.ai.image.service.ImageTaskSubmissionService;
 import org.dromara.ai.image.service.ImageTemplatePreparer;
 import org.dromara.ai.image.service.ImageWorkflowContractRegistry;
 import org.dromara.ai.video.support.CamelCase;
@@ -93,6 +94,11 @@ public class ImageCreationController extends BaseController {
     private final ImageTemplatePreparer preparer;
     private final ImageTaskRepository repository;
     private final ImageTaskDispatchService dispatchService;
+
+    /**
+     * 建任务/派发的唯一装配入口（与视觉工厂共用一处，避免两处漂移）
+     */
+    private final ImageTaskSubmissionService submissionService;
 
     /**
      * 图像模块自有的素材存储门面（配置类在内部构造，不作为 {@code AssetStorage} Bean 暴露，
@@ -274,99 +280,51 @@ public class ImageCreationController extends BaseController {
 
     /**
      * 创建任务（只入库，不执行）。
+     *
+     * <p>装配逻辑（能力与契约校验、字段白名单、素材归属、幂等、入库、事件）统一委托给
+     * {@link ImageTaskSubmissionService}：视觉工厂要在同进程内按屏出图，也走这同一个服务。
+     * 曾经是「控制器一套、服务一套」两处装配，改一处忘另一处就会出现
+     * 「单张能出、批量少记字段」这类偏差，因此在这里收敛为一处。</p>
      */
     @PostMapping("/tasks")
     @SaCheckPermission("image:creation:submit")
     public R<Map<String, Object>> createTask(@RequestBody Map<String, Object> payload) {
-        String tenantId = requireTenantId();
-        long userId = requireUserId();
-
-        String capabilityCode = text(payload.get("capabilityCode"));
-        String workflowCode = text(payload.get("workflowCode"));
-        ImageCapability capability = ImageCapability.parse(capabilityCode);
-        if (capability == null) {
-            throw ImageTaskException.invalidContract("不支持的能力编码：" + capabilityCode);
-        }
-        ImageWorkflowVersion version = registry.require(workflowCode, false);
-        if (!capability.code().equalsIgnoreCase(version.capabilityCode())) {
-            throw ImageTaskException.invalidContract("能力与工作流不匹配");
-        }
-
         Map<String, Object> fields = asMap(payload.get("fields"));
-        preparer.validateFieldWhitelist(version.capabilityFields(), fields);
+        String capabilityCode = text(payload.get("capabilityCode"));
+        ImageCapability capability = ImageCapability.parse(capabilityCode);
 
-        String prompt = text(fields.get("prompt"));
-        String negativePrompt = text(fields.get("negative_prompt"));
-        String sizeLabel = text(fields.get("size"));
-        String strengthLabel = text(fields.get("strength"));
-        if (sizeLabel == null || sizeLabel.isBlank()) {
-            sizeLabel = version.defaultSize();
-        }
-        if (strengthLabel == null || strengthLabel.isBlank()) {
-            strengthLabel = version.defaultStrength();
-        }
-
+        // 素材槽位顺序即契约：EDIT 为 image1..image3（允许空位），其余需图能力为 img
         List<Long> inputAssetIds = new ArrayList<>();
-        Long firstAssetId = null;
         if (capability == ImageCapability.EDIT) {
             for (String field : List.of("image1", "image2", "image3")) {
-                Long assetId = longOf(fields.get(field));
-                inputAssetIds.add(assetId);
-                if (firstAssetId == null) {
-                    firstAssetId = assetId;
-                }
+                inputAssetIds.add(longOf(fields.get(field)));
             }
-        } else if (capability.requiresImage()) {
-            Long assetId = longOf(fields.get("img"));
-            inputAssetIds.add(assetId);
-            firstAssetId = assetId;
-        }
-        // 归属校验：非本人素材按「不存在」处理，不能等到执行阶段才发现
-        for (Long assetId : inputAssetIds) {
-            if (assetId != null) {
-                repository.requireOwnedAsset(assetId, tenantId, userId);
-            }
+        } else if (capability != null && capability.requiresImage()) {
+            inputAssetIds.add(longOf(fields.get("img")));
         }
 
-        preparer.validateFields(capability, version, new ImageTemplatePreparer.ImageFields(
-            prompt, negativePrompt, sizeLabel, strengthLabel,
-            inputAssetIds.stream().filter(java.util.Objects::nonNull).map(String::valueOf).toList(), 0L));
+        ImageTaskSubmissionService.Submission submission = submissionService.submit(
+            new ImageTaskSubmissionService.Command(
+                capabilityCode,
+                text(payload.get("workflowCode")),
+                text(payload.get("taskName")),
+                text(fields.get("prompt")),
+                text(fields.get("negative_prompt")),
+                text(fields.get("size")),
+                text(fields.get("strength")),
+                inputAssetIds,
+                text(payload.get("idempotencyKey")),
+                false,
+                fields));
 
-        String idempotencyKey = text(payload.get("idempotencyKey"));
-        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
-            Long existing = repository.findByIdempotencyKey(tenantId, userId, idempotencyKey);
-            if (existing != null) {
-                return R.ok(taskSummary(existing, tenantId, userId, true));
-            }
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("taskId", submission.imageTaskId());
+        summary.put("taskNo", submission.taskNo());
+        summary.put("status", submission.status());
+        if (submission.idempotent()) {
+            summary.put("idempotent", true);
         }
-
-        long taskId = IdGeneratorUtil.nextLongId();
-        String taskNo = taskNoOf(taskId);
-        String taskName = text(payload.get("taskName"));
-        String inputJson;
-        try {
-            inputJson = MAPPER.writeValueAsString(fields);
-        } catch (Exception e) {
-            inputJson = null;
-        }
-        try {
-            repository.insertTask(new ImageTaskRepository.TaskRow(
-                taskId, tenantId, userId, taskNo,
-                taskName == null || taskName.isBlank() ? capability.label() + " · " + version.modelCode() : taskName,
-                capability.code().toUpperCase(), workflowCode, version.version(), version.modelCode(),
-                ImageTaskStatus.QUEUED.name(), sizeLabel, strengthLabel,
-                prompt, negativePrompt, inputJson, idempotencyKey, LoginHelper.getDeptId()));
-        } catch (org.springframework.dao.DuplicateKeyException e) {
-            // 并发下的幂等兜底：插入冲突说明另一个请求刚建好同一幂等键的任务
-            Long existing = idempotencyKey == null ? null : repository.findByIdempotencyKey(tenantId, userId, idempotencyKey);
-            if (existing != null) {
-                return R.ok(taskSummary(existing, tenantId, userId, true));
-            }
-            throw e;
-        }
-        AtomicInteger sequence = new AtomicInteger();
-        repository.appendEvent(IdGeneratorUtil.nextLongId(), taskId, tenantId, sequence.incrementAndGet(), "CREATED", "任务已创建");
-        return R.ok(taskSummary(taskId, tenantId, userId, false));
+        return R.ok(summary);
     }
 
     /**
@@ -377,19 +335,15 @@ public class ImageCreationController extends BaseController {
     public R<Map<String, Object>> executeTask(@PathVariable Long taskId) {
         String tenantId = requireTenantId();
         long userId = requireUserId();
-        Map<String, Object> task = repository.requireOwnedTask(taskId, tenantId, userId);
-        String status = String.valueOf(task.get("status"));
-        if (!ImageTaskStatus.QUEUED.name().equals(status) && !ImageTaskStatus.RUNNING.name().equals(status)) {
-            throw new ImageTaskException("INVALID_CONTRACT", "任务当前状态不可执行：" + status);
-        }
-        ImageTaskDispatchService.Outcome outcome = dispatchService.dispatch(taskId, () -> buildContext(task, tenantId, userId));
+        // 归属校验、状态可执行性判断与派发同样委托给提交服务（与建任务收敛在同一处）
+        String outcome = submissionService.dispatchOwned(taskId, tenantId, userId);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("taskId", taskId);
-        result.put("accepted", outcome == ImageTaskDispatchService.Outcome.ACCEPTED
-            || outcome == ImageTaskDispatchService.Outcome.ALREADY_CLAIMED);
-        result.put("status", outcome == ImageTaskDispatchService.Outcome.QUEUE_FULL
+        result.put("accepted", ImageTaskDispatchService.Outcome.ACCEPTED.name().equals(outcome)
+            || ImageTaskDispatchService.Outcome.ALREADY_CLAIMED.name().equals(outcome));
+        result.put("status", ImageTaskDispatchService.Outcome.QUEUE_FULL.name().equals(outcome)
             ? ImageTaskStatus.QUEUED.name() : ImageTaskStatus.RUNNING.name());
-        if (outcome == ImageTaskDispatchService.Outcome.QUEUE_FULL) {
+        if (ImageTaskDispatchService.Outcome.QUEUE_FULL.name().equals(outcome)) {
             throw new ImageTaskException("QUEUE_FULL", "执行队列已满，请稍后重试");
         }
         return R.ok(result);
@@ -439,56 +393,6 @@ public class ImageCreationController extends BaseController {
             throw new ImageTaskException("INVALID_CONTRACT", "任务不在排队中，无法取消");
         }
         return R.ok();
-    }
-
-    private ImageTaskOrchestrator.TaskContext buildContext(Map<String, Object> task, String tenantId, long userId) {
-        List<Long> inputAssetIds = new ArrayList<>();
-        Object raw = task.get("input_json");
-        if (raw != null) {
-            try {
-                Map<String, Object> fields = asMap(MAPPER.readValue(String.valueOf(raw), Map.class));
-                for (String field : List.of("image1", "image2", "image3", "img")) {
-                    Long assetId = longOf(fields.get(field));
-                    if (assetId != null) {
-                        inputAssetIds.add(assetId);
-                    }
-                }
-            } catch (Exception e) {
-                log.warn("任务 {} 的 input_json 解析失败：{}", task.get("id"), e.getMessage());
-            }
-        }
-        return new ImageTaskOrchestrator.TaskContext(
-            ((Number) task.get("id")).longValue(),
-            tenantId,
-            userId,
-            task.get("create_dept") == null ? null : ((Number) task.get("create_dept")).longValue(),
-            String.valueOf(task.get("capability_code")),
-            String.valueOf(task.get("workflow_code")),
-            task.get("prompt") == null ? null : String.valueOf(task.get("prompt")),
-            task.get("negative_prompt") == null ? null : String.valueOf(task.get("negative_prompt")),
-            task.get("size_label") == null ? null : String.valueOf(task.get("size_label")),
-            task.get("strength_label") == null ? null : String.valueOf(task.get("strength_label")),
-            inputAssetIds,
-            false,
-            IdGeneratorUtil::nextLongId,
-            new AtomicInteger());
-    }
-
-    private Map<String, Object> taskSummary(long taskId, String tenantId, long userId, boolean idempotent) {
-        Map<String, Object> task = repository.requireOwnedTask(taskId, tenantId, userId);
-        Map<String, Object> summary = new LinkedHashMap<>();
-        summary.put("taskId", task.get("id"));
-        summary.put("taskNo", task.get("task_no"));
-        summary.put("status", task.get("status"));
-        if (idempotent) {
-            summary.put("idempotent", true);
-        }
-        return summary;
-    }
-
-    private static String taskNoOf(long taskId) {
-        return "IMAGE-" + LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE)
-            + "-" + String.format("%06d", Math.floorMod(taskId, 1_000_000L));
     }
 
     private static String sha256Hex(byte[] content) {

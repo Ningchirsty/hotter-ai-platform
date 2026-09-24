@@ -5,7 +5,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
-import org.dromara.common.json.utils.JsonUtils;
 import org.dromara.content.domain.vo.CpOutputCheckVo;
 import org.dromara.content.service.IContentOutputCheckService;
 import org.dromara.creative.domain.DpGeneration;
@@ -42,6 +41,24 @@ import java.util.Map;
 @Service
 @RequiredArgsConstructor
 public class CreativeProductionServiceImpl implements ICreativeProductionService {
+
+    /**
+     * 事件载荷用本地 Jackson 序列化。
+     *
+     * <p>刻意不用 {@code JsonUtils}：它经 Hutool 的 SpringUtil 取 Bean，脱离 Spring 容器
+     * （例如策略单测里）会在静态初始化阶段就失败。事件只是写一段 JSON 文本，本地序列化足够，
+     * 也让「自动重试策略」这种会真烧 GPU 的逻辑可以脱离容器被确定性测试。</p>
+     */
+    private static final com.fasterxml.jackson.databind.ObjectMapper MAPPER =
+        new com.fasterxml.jackson.databind.ObjectMapper();
+
+    private static String toJson(java.util.Map<String, Object> payload) {
+        try {
+            return MAPPER.writeValueAsString(payload);
+        } catch (Exception e) {
+            return "{}";
+        }
+    }
 
     /**
      * 每屏最大尝试次数（首次 + 自动重试），到顶后停止自动重试、转人工。
@@ -101,7 +118,7 @@ public class CreativeProductionServiceImpl implements ICreativeProductionService
         }
         if (submitted > 0) {
             projectService.appendEvent(taskId, "GENERATION", "PRODUCTION_START",
-                JsonUtils.toJsonString(Map.of("submitted", submitted, "skipped", skipped,
+                toJson(Map.of("submitted", submitted, "skipped", skipped,
                     "force", force, "storyboardVersion", storyboard.getVersion())));
         }
         return new ProductionRun(submitted, skipped, screenStatuses(taskId));
@@ -163,7 +180,7 @@ public class CreativeProductionServiceImpl implements ICreativeProductionService
         }
 
         projectService.appendEvent(taskId, "GENERATION", "CANDIDATE_SELECTED",
-            JsonUtils.toJsonString(Map.of("generationId", row.getId(),
+            toJson(Map.of("generationId", row.getId(),
                 "screenId", row.getScreenId() == null ? 0L : row.getScreenId(),
                 "candidateNo", row.getCandidateNo() == null ? 0 : row.getCandidateNo())));
         syncScreenStatus(taskId, row.getScreenId());
@@ -222,7 +239,7 @@ public class CreativeProductionServiceImpl implements ICreativeProductionService
         row.setQaVerdict(null);
         generationMapper.updateById(row);
         projectService.appendEvent(taskId, "QA", "QA_SUBMIT",
-            JsonUtils.toJsonString(Map.of("generationId", row.getId(), "checkId", checkId,
+            toJson(Map.of("generationId", row.getId(), "checkId", checkId,
                 "referenceFileId", row.getInputFileId())));
     }
 
@@ -261,7 +278,7 @@ public class CreativeProductionServiceImpl implements ICreativeProductionService
                 generationMapper.updateById(row);
                 projectService.appendEvent(taskId, "QA", "QA_" + StringUtils.blankToDefault(
                     check.getVerdict(), "UNKNOWN"),
-                    JsonUtils.toJsonString(Map.of("generationId", row.getId(),
+                    toJson(Map.of("generationId", row.getId(),
                         "checkId", check.getCheckId(),
                         "verdict", StringUtils.blankToDefault(check.getVerdict(), ""),
                         "score", check.getScore() == null ? "" : check.getScore().toPlainString(),
@@ -275,12 +292,16 @@ public class CreativeProductionServiceImpl implements ICreativeProductionService
     /**
      * 失败候选自动重试（每屏最多 {@link #MAX_ATTEMPTS_PER_SCREEN} 次尝试），到顶转人工。
      *
+     * <p>包级可见（不是 private）：重试策略是「自动环节只做减法也会做加法」的地方——
+     * 它会真的再烧一次 GPU，必须能被单测直接钉住，而不是只能靠真实失败去碰。</p>
+     *
      * @param taskId 项目ID
      */
-    private void autoRetryFailed(Long taskId) {
+    int autoRetryFailed(Long taskId) {
+        int retried = 0;
         DpStoryboardVo storyboard = storyboardService.latest(taskId);
         if (storyboard == null || storyboard.getScreens() == null) {
-            return;
+            return 0;
         }
         for (DpStoryboardScreenVo screen : storyboard.getScreens()) {
             List<DpGeneration> rows = generationsOfScreen(taskId, screen.getId());
@@ -310,8 +331,9 @@ public class CreativeProductionServiceImpl implements ICreativeProductionService
                 screen.getScreenNo(), failed, rows.size(), MAX_ATTEMPTS_PER_SCREEN);
             try {
                 submitScreen(taskId, screen);
+                retried++;
                 projectService.appendEvent(taskId, "GENERATION", "AUTO_RETRY",
-                    JsonUtils.toJsonString(Map.of("screenId", screen.getId(),
+                    toJson(Map.of("screenId", screen.getId(),
                         "screenNo", StringUtils.blankToDefault(screen.getScreenNo(), ""),
                         "failedCount", failed, "attempts", rows.size() + 1,
                         "maxAttempts", MAX_ATTEMPTS_PER_SCREEN)));
@@ -319,6 +341,7 @@ public class CreativeProductionServiceImpl implements ICreativeProductionService
                 log.warn("屏 {} 自动重试提交失败：{}", screen.getScreenNo(), e.getMessage());
             }
         }
+        return retried;
     }
 
     /**

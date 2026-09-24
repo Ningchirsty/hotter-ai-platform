@@ -213,6 +213,9 @@ public class ImageTaskSubmissionService {
      * @param inputAssetIds   输入素材 ID（按槽位顺序：img 或 image1..3）
      * @param idempotencyKey  幂等键（可空）
      * @param requirePublished 是否要求工作流已发布（生产用 true）
+     * @param rawFields       调用方收到的原始 fields（可空）。给了就按契约做字段白名单校验——
+     *                        控制器路径靠它保持「客户端多传字段要报错」的既有行为；
+     *                        视觉工厂自己组装字段，传 null。
      */
     public record Command(
         String capabilityCode,
@@ -224,7 +227,18 @@ public class ImageTaskSubmissionService {
         String strengthLabel,
         List<Long> inputAssetIds,
         String idempotencyKey,
-        boolean requirePublished) {
+        boolean requirePublished,
+        Map<String, Object> rawFields) {
+
+        /**
+         * 便利构造：不校验原始字段（视觉工厂路径）。
+         */
+        public Command(String capabilityCode, String workflowCode, String taskName, String prompt,
+                       String negativePrompt, String sizeLabel, String strengthLabel,
+                       List<Long> inputAssetIds, String idempotencyKey, boolean requirePublished) {
+            this(capabilityCode, workflowCode, taskName, prompt, negativePrompt, sizeLabel,
+                strengthLabel, inputAssetIds, idempotencyKey, requirePublished, null);
+        }
     }
 
     /**
@@ -277,6 +291,10 @@ public class ImageTaskSubmissionService {
         ImageWorkflowVersion version = registry.require(command.workflowCode(), command.requirePublished());
         if (!capability.code().equalsIgnoreCase(version.capabilityCode())) {
             throw ImageTaskException.invalidContract("能力与工作流不匹配");
+        }
+        // 调用方给了原始字段就先做白名单校验（保持控制器路径「多传字段要报错」的既有行为）
+        if (command.rawFields() != null) {
+            preparer.validateFieldWhitelist(version.capabilityFields(), command.rawFields());
         }
 
         // 1) 组装 fields：只放该能力契约声明过的键，避免白名单校验误伤
@@ -467,6 +485,24 @@ public class ImageTaskSubmissionService {
         String status = String.valueOf(task.get("status"));
         if (!ImageTaskStatus.QUEUED.name().equals(status)) {
             return "INVALID_STATUS";
+        }
+        return dispatchService.dispatch(imageTaskId, () -> buildContext(task, tenantId, userId)).name();
+    }
+
+    /**
+     * 派发「我的任务」（控制器路径用）：允许 QUEUED 与 RUNNING，与既有控制器语义一致。
+     *
+     * @param imageTaskId 内核任务 ID
+     * @param tenantId    执行者租户
+     * @param userId      执行者用户
+     * @return 派发结果名（ACCEPTED / ALREADY_CLAIMED / QUEUE_FULL）
+     * @throws ImageTaskException 任务不属于该用户，或当前状态不可执行
+     */
+    public String dispatchOwned(long imageTaskId, String tenantId, long userId) {
+        Map<String, Object> task = repository.requireOwnedTask(imageTaskId, tenantId, userId);
+        String status = String.valueOf(task.get("status"));
+        if (!ImageTaskStatus.QUEUED.name().equals(status) && !ImageTaskStatus.RUNNING.name().equals(status)) {
+            throw new ImageTaskException("INVALID_CONTRACT", "任务当前状态不可执行：" + status);
         }
         return dispatchService.dispatch(imageTaskId, () -> buildContext(task, tenantId, userId)).name();
     }
