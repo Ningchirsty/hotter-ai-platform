@@ -30,6 +30,7 @@ import org.dromara.content.enums.ContentCardTypeEnum;
 import org.dromara.content.enums.ContentCheckStatusEnum;
 import org.dromara.content.enums.ContentCheckVerdictEnum;
 import org.dromara.content.enums.ContentFileKindEnum;
+import org.dromara.content.enums.ContentFileSourceEnum;
 import org.dromara.content.enums.ContentGateLevelEnum;
 import org.dromara.content.helper.ContentAsyncExecutor;
 import org.dromara.content.helper.ContentImageInspector;
@@ -253,7 +254,42 @@ public class ContentOutputCheckServiceImpl implements IContentOutputCheckService
         }
 
         Long resultId = taskService.uploadFile(taskId, task.getDataLevel(), resultFile);
+        // 角色标注：这张图是系统生成的结果，不是人工上传的资料
+        markAsGenerated(resultId);
 
+        return insertAndSubmit(taskId, referenceId, resultId, remark);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Long runWithFiles(Long taskId, Long referenceFileId, Long resultFileId, String remark) {
+        loadTask(taskId);
+        if (referenceFileId == null || resultFileId == null) {
+            throw new ServiceException("参考图与成品图附件都不能为空");
+        }
+        CpTaskFile reference = taskFileMapper.selectById(referenceFileId);
+        if (reference == null || !taskId.equals(reference.getTaskId())) {
+            throw new ServiceException("参考图附件不存在，或不属于该任务");
+        }
+        CpTaskFile result = taskFileMapper.selectById(resultFileId);
+        if (result == null || !taskId.equals(result.getTaskId())) {
+            throw new ServiceException("成品图附件不存在，或不属于该任务");
+        }
+        requireImage(reference.getFileExt(), reference.getFileName());
+        requireImage(result.getFileExt(), result.getFileName());
+        return insertAndSubmit(taskId, referenceFileId, resultFileId, remark);
+    }
+
+    /**
+     * 建检查记录并交给异步工作（{@link #run} 与 {@link #runWithFiles} 的公共尾部）。
+     *
+     * @param taskId          任务ID
+     * @param referenceId     参考图附件ID
+     * @param resultId        成品图附件ID
+     * @param remark          备注
+     * @return 检查ID
+     */
+    private Long insertAndSubmit(Long taskId, Long referenceId, Long resultId, String remark) {
         CpOutputCheck check = new CpOutputCheck();
         check.setTaskId(taskId);
         check.setReferenceFileId(referenceId);
@@ -627,7 +663,18 @@ public class ContentOutputCheckServiceImpl implements IContentOutputCheckService
     private void markAsReference(Long fileId) {
         taskFileMapper.update(null, new LambdaUpdateWrapper<CpTaskFile>()
             .eq(CpTaskFile::getFileId, fileId)
-            .set(CpTaskFile::getSourceType, "REFERENCE"));
+            .set(CpTaskFile::getSourceType, ContentFileSourceEnum.REFERENCE.getCode()));
+    }
+
+    /**
+     * 把成品图附件标成系统生成（R4 起统一角色口径）。
+     *
+     * @param fileId 附件ID
+     */
+    private void markAsGenerated(Long fileId) {
+        taskFileMapper.update(null, new LambdaUpdateWrapper<CpTaskFile>()
+            .eq(CpTaskFile::getFileId, fileId)
+            .set(CpTaskFile::getSourceType, ContentFileSourceEnum.GENERATED.getCode()));
     }
 
     /**

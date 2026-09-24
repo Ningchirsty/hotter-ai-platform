@@ -106,6 +106,16 @@ public class DpGenerationVo implements Serializable {
     private String qaVerdict;
 
     /**
+     * 产品保真基准的产品图附件ID（cp_task_file.file_id）
+     */
+    private Long productFileId;
+
+    /**
+     * 以产品图为基准的质检结论（只提示，不自动筛除）
+     */
+    private String productVerdict;
+
+    /**
      * 失败码
      */
     private String errorCode;

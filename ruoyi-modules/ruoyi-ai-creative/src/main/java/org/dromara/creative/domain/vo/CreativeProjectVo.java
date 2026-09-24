@@ -116,6 +116,24 @@ public class CreativeProjectVo implements Serializable {
     private Integer imageFileCount;
 
     /**
+     * 该项目的产品是否已配置产品图（cp_product.product_image）。
+     *
+     * <p>R4 之前这个字段恒为 false：生产库 45 个产品的产品图全为空，
+     * 出图只能拿上传的参考图当基准。页面据此提示「先把产品照片设为产品图」。</p>
+     */
+    private Boolean productImageConfigured;
+
+    /**
+     * 产品图文件名（未配置时为 null）
+     */
+    private String productImageFileName;
+
+    /**
+     * 产品图来源任务（不是本项目时页面要如实标注来源）
+     */
+    private Long productImageSourceTaskId;
+
+    /**
      * 出图候选数（详情接口填充）
      */
     private Integer generationCount;

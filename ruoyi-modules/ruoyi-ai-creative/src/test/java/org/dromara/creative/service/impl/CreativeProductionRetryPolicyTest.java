@@ -9,6 +9,7 @@ import org.dromara.creative.mapper.DpGenerationMapper;
 import org.dromara.creative.mapper.DpStoryboardMapper;
 import org.dromara.creative.mapper.DpStoryboardScreenMapper;
 import org.dromara.content.service.IContentOutputCheckService;
+import org.dromara.content.service.IContentProductService;
 import org.dromara.creative.service.ICreativeGateService;
 import org.dromara.creative.service.ICreativeGenerationService;
 import org.dromara.creative.service.ICreativeProjectService;
@@ -68,13 +69,16 @@ class CreativeProductionRetryPolicyTest {
     private DpStoryboardScreenMapper screenMapper;
     @Mock
     private IContentOutputCheckService outputCheckService;
+    @Mock
+    private IContentProductService productService;
 
     private CreativeProductionServiceImpl service;
 
     @BeforeEach
     void setUp() {
         service = new CreativeProductionServiceImpl(projectService, gateService, generationService,
-            storyboardService, generationMapper, storyboardMapper, screenMapper, outputCheckService);
+            storyboardService, generationMapper, storyboardMapper, screenMapper, outputCheckService,
+            productService);
     }
 
     @Test

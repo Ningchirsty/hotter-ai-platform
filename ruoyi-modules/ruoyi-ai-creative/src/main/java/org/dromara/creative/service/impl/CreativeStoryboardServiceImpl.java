@@ -21,6 +21,7 @@ import org.dromara.creative.domain.vo.DpStoryboardScreenVo;
 import org.dromara.creative.domain.vo.DpStoryboardVo;
 import org.dromara.creative.domain.vo.DpVisualDirectionVo;
 import org.dromara.creative.enums.DpVisualStageEnum;
+import org.dromara.creative.helper.CreativeDraftFactory;
 import org.dromara.creative.helper.VisualDnaSchema;
 import org.dromara.creative.mapper.DpStoryboardMapper;
 import org.dromara.creative.mapper.DpStoryboardScreenMapper;
@@ -63,23 +64,20 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
     private static final String STATUS_LOCKED = "LOCKED";
 
     /**
-     * 屏类型定义：编号不参与展示，只表达顺序。
+     * 屏结构骨架：屏类型、展示名与产品保真等级是稳定业务骨架（顺序 = 讲故事的节奏）。
+     *
+     * <p>R4 起，每屏的标题/副标题/正文/画面独白<b>不再来自这里</b>：
+     * 文案由 {@link CreativeDraftFactory#screens} 按「事实 + 基因 + 产品名」推导。
+     * 之前把固定句子写在这个 record 里，正是「70 行分镜只有 7 句不同独白」的来源。</p>
      */
     private static final List<ScreenTemplate> TEMPLATES = List.of(
-        new ScreenTemplate("HERO", "主图", "STRICT",
-            "一眼看清这是什么产品：形态、配色、材质，无需文案也能认出来"),
-        new ScreenTemplate("SELLING_POINT", "卖点一", "LOOSE",
-            "把第一个卖点用画面讲清楚，而不是靠一行字解释"),
-        new ScreenTemplate("SELLING_POINT", "卖点二", "LOOSE",
-            "把第二个卖点用画面讲清楚，与前一个卖点在画面上有区分"),
-        new ScreenTemplate("SCENE", "使用场景", "LOOSE",
-            "展示它在真实生活里的样子：放在哪、和什么在一起、什么氛围"),
-        new ScreenTemplate("DETAIL", "细节工艺", "STRICT",
-            "让人相信做工：材质纹理、结构接缝、表面处理经得起看"),
-        new ScreenTemplate("SIZE", "尺寸参数", "STRICT",
-            "不靠文案也能感知大小与构成，比例必须真实"),
-        new ScreenTemplate("BRAND", "品牌收尾", "LOOSE",
-            "留下品牌印象并收尾，画面克制、不抢产品")
+        new ScreenTemplate("HERO", "主图", "STRICT"),
+        new ScreenTemplate("SELLING_POINT", "卖点一", "LOOSE"),
+        new ScreenTemplate("SELLING_POINT", "卖点二", "LOOSE"),
+        new ScreenTemplate("SCENE", "使用场景", "LOOSE"),
+        new ScreenTemplate("DETAIL", "细节工艺", "STRICT"),
+        new ScreenTemplate("SIZE", "尺寸参数", "STRICT"),
+        new ScreenTemplate("BRAND", "品牌收尾", "LOOSE")
     );
 
     private final DpStoryboardMapper storyboardMapper;
@@ -115,7 +113,13 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
         storyboardMapper.insert(storyboard);
 
         int sortNo = 0;
-        for (ScreenTemplate template : TEMPLATES) {
+        List<CreativeDraftFactory.ScreenDraft> drafts =
+            CreativeDraftFactory.screens(dna, project.getProductName(), facts);
+        for (int i = 0; i < TEMPLATES.size(); i++) {
+            ScreenTemplate template = TEMPLATES.get(i);
+            // 骨架来自 TEMPLATES，文案来自参数化草稿；两者数量必须一致，
+            // 不一致属于编码错误，宁可当场炸掉也不要静默少一屏
+            CreativeDraftFactory.ScreenDraft draft = drafts.get(i);
             sortNo++;
             DpStoryboardScreen screen = new DpStoryboardScreen();
             screen.setStoryboardId(storyboard.getId());
@@ -123,10 +127,10 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
             screen.setScreenNo(String.format("S%02d", sortNo));
             screen.setSortNo(sortNo);
             screen.setScreenType(template.type());
-            screen.setTitle(title(template, project, facts));
-            screen.setSubtitle(subtitle(template, facts));
-            screen.setBodyText(body(template, project, facts));
-            screen.setPictureSoloStatement(template.soloStatement());
+            screen.setTitle(draft.title());
+            screen.setSubtitle(draft.subtitle());
+            screen.setBodyText(draft.bodyText());
+            screen.setPictureSoloStatement(draft.soloStatement());
             screen.setSpecJson(spec(template, dna, direction));
             screen.setWorkflowCode(CreativeConstants.DEFAULT_HERO_WORKFLOW);
             screen.setProductLockLevel(template.productLockLevel());
@@ -250,50 +254,13 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
     // ------------------------------------------------------------------
 
     /**
-     * 屏结构模板。
+     * 屏骨架模板（R4 起只保留结构性字段，文案交给参数化草稿工厂）。
      *
      * @param type             屏类型
      * @param label            展示名
      * @param productLockLevel 产品保真等级
-     * @param soloStatement    画面独白（该屏画面自己要讲清的事）
      */
-    private record ScreenTemplate(String type, String label, String productLockLevel, String soloStatement) {
-    }
-
-    private String title(ScreenTemplate template, CreativeProjectVo project, Map<String, String> facts) {
-        String product = StringUtils.blankToDefault(project.getProductName(),
-            StringUtils.blankToDefault(project.getTaskName(), "产品"));
-        return switch (template.type()) {
-            case "HERO" -> product + " · 主图";
-            case "SELLING_POINT" -> product + " · " + template.label();
-            case "SCENE" -> product + " · " + template.label();
-            case "DETAIL" -> product + " · " + template.label();
-            case "SIZE" -> product + " · " + template.label();
-            case "BRAND" -> "品牌收尾";
-            default -> product + " · " + template.label();
-        };
-    }
-
-    private String subtitle(ScreenTemplate template, Map<String, String> facts) {
-        return switch (template.type()) {
-            case "SIZE" -> firstNonBlank(facts.get("spec_params"), facts.get("quantity"), "尺寸与构成");
-            case "DETAIL" -> firstNonBlank(facts.get("main_version"), "工艺与结构细节");
-            case "BRAND" -> firstNonBlank(facts.get("package_version"), "品牌与包装");
-            default -> null;
-        };
-    }
-
-    private String body(ScreenTemplate template, CreativeProjectVo project, Map<String, String> facts) {
-        return switch (template.type()) {
-            case "HERO" -> joinNonBlank("，", facts.get("product_name"), facts.get("color"),
-                facts.get("main_version"));
-            case "SELLING_POINT" -> null;
-            case "SCENE" -> null;
-            case "DETAIL" -> joinNonBlank("；", facts.get("craft") == null ? facts.get("spec_params") : facts.get("craft"));
-            case "SIZE" -> joinNonBlank("；", facts.get("spec_params"), facts.get("quantity"));
-            case "BRAND" -> joinNonBlank("；", facts.get("package_version"), facts.get("brand_tone"));
-            default -> null;
-        };
+    private record ScreenTemplate(String type, String label, String productLockLevel) {
     }
 
     private String spec(ScreenTemplate template, ObjectNode dna, DpVisualDirectionVo direction) {
@@ -465,26 +432,8 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
 
     private static String sourceDesc(String source) {
         return SOURCE_TEMPLATE.equals(source)
-            ? "由屏结构模板 + 已确认事实 + 锁定基因 + 选定方向派生（未使用模型）" : source;
-    }
-
-    private static String firstNonBlank(String... values) {
-        for (String value : values) {
-            if (StringUtils.isNotBlank(value)) {
-                return value;
-            }
-        }
-        return null;
-    }
-
-    private static String joinNonBlank(String separator, String... values) {
-        List<String> parts = new ArrayList<>();
-        for (String value : values) {
-            if (StringUtils.isNotBlank(value)) {
-                parts.add(value);
-            }
-        }
-        return parts.isEmpty() ? null : String.join(separator, parts);
+            ? "由屏骨架 + 参数化文案（已确认事实 + 锁定基因 + 参考图实测 + 选定方向派生，未使用模型）"
+            : source;
     }
 
 }

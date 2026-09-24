@@ -105,6 +105,15 @@ public class DpGeneration extends BaseEntity implements Serializable {
     private Long inputAssetId;
 
     /**
+     * 产品保真基准：产品图附件ID（cp_task_file.file_id，source_type=PRODUCT）
+     *
+     * <p>与 {@link #inputFileId}（本次出图实际喂进模型的参考图）分开记：
+     * 「模型看的是哪张图」与「产品本体长什么样」是两件事，
+     * 出图之后要能回答「这版是按哪张产品图核对保真的」。</p>
+     */
+    private Long productFileId;
+
+    /**
      * 执行内核任务ID（image_task.id）
      */
     private Long imageTaskId;
@@ -163,6 +172,22 @@ public class DpGeneration extends BaseEntity implements Serializable {
      * QA 结论镜像（权威在 cp_output_check）
      */
     private String qaVerdict;
+
+    /**
+     * 产品图基准检查ID（cp_output_check.check_id）
+     *
+     * <p>参考图基准（{@link #qaCheckId}）回答「改动了多少风格」；
+     * 产品图基准回答「产品还是不是那个产品」。两者都跑，结论分别留痕。</p>
+     */
+    private Long productCheckId;
+
+    /**
+     * 产品图基准质检结论镜像（CONSISTENT/INCONSISTENT/UNCERTAIN）
+     *
+     * <p><b>只提示，不自动筛除</b>：产品图与生成图的差异可能正是设计意图（换背景、换角度），
+     * 自动筛除会替人做艺术判断；这里只把结论响亮地摆出来。</p>
+     */
+    private String productVerdict;
 
     /**
      * 耗时（毫秒）

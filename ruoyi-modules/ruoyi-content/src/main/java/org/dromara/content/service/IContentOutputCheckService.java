@@ -61,6 +61,22 @@ public interface IContentOutputCheckService {
              MultipartFile resultFile, String remark);
 
     /**
+     * 用两个<b>已有附件</b>发起一次检查（不重复登记附件）。
+     *
+     * <p>为什么需要它：R4 起同一张生成图要跑两次比对——一次以「参考图」为基准（风格改动多少），
+     * 一次以「产品图」为基准（产品还是不是那个产品）。若第二次再走 {@link #run} 上传一次，
+     * 同一张生成图会在附件表里躺两条记录，「这张图是哪一次检查的成品」立刻说不清。
+     * 本方法只复用已有附件，结论各自独立留痕。</p>
+     *
+     * @param taskId          任务ID
+     * @param referenceFileId 参考图附件ID（必填，须属于该任务）
+     * @param resultFileId    成品图附件ID（必填，须属于该任务）
+     * @param remark          备注（可空，建议写明基准是哪张图）
+     * @return 检查ID
+     */
+    Long runWithFiles(Long taskId, Long referenceFileId, Long resultFileId, String remark);
+
+    /**
      * 删除检查记录（逻辑删除；附件与对象存储保留，便于追溯）。
      *
      * @param checkId 检查ID

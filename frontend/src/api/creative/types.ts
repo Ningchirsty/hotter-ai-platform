@@ -45,6 +45,30 @@ export interface CreativeProjectForm {
   remark?: string;
 }
 
+/**
+ * 项目的产品图视图（对齐后端 ICreativeProjectService.ProductImageView）。
+ *
+ * 产品图挂在产品主数据（cp_product.product_image）上，不属于任何单个任务；
+ * 因此 fileId / sourceTaskId 可能是别的项目里的附件，页面要如实标注来源。
+ */
+export interface ProjectProductImageVO {
+  productId?: string | number;
+  productName?: string;
+  /** 该产品是否已有产品图；只有 true 才能用于「产品图 | 生成图」并排对比 */
+  configured?: boolean;
+  /** 本项目里产品图角色的附件ID（可空：产品图来自别的项目） */
+  fileId?: string | number;
+  fileName?: string;
+  /** 产品图来源任务（不是本项目时用于如实标注） */
+  sourceTaskId?: string | number;
+  setAt?: string;
+  setBy?: string | number;
+  /** 后端代理预览地址（未配置时为 null）；页面仍走 blob 助手取图，不直接用对象存储键 */
+  previewUrl?: string;
+  /** 可读说明（未配置时告诉人怎么补） */
+  note?: string;
+}
+
 /** 视觉项目查询条件 */
 export interface CreativeProjectQuery extends PageQuery {
   queryTaskName?: string;
@@ -67,6 +91,13 @@ export interface DpGenerationVO {
   outputWidth?: number;
   outputHeight?: number;
   qaVerdict?: string;
+  /**
+   * 以「产品图」为基准的质检结论（CONSISTENT / INCONSISTENT / UNCERTAIN）。
+   *
+   * 只提示、不自动筛除：产品图与生成图的差异很可能正是设计意图（换背景/换角度）。
+   * 可能为 null（尚未质检或基准跑不起来）——页面必须如实显示「未质检」，不得当成通过。
+   */
+  productVerdict?: string;
   errorCode?: string;
   errorMessage?: string;
   durationMs?: number;
@@ -377,6 +408,39 @@ export const QA_VERDICT_LABELS: Record<string, string> = {
   CONSISTENT: '一致',
   INCONSISTENT: '不一致',
   UNCERTAIN: '无法判定（转人工）'
+};
+
+/**
+ * 产品基准结论 → 展示。
+ *
+ * 与 QA_VERDICT_LABELS 的区别是「基准不同」：QA 比的是出图输入图，这条比的是产品图。
+ * 只提示，不自动筛除。
+ */
+export const PRODUCT_VERDICT_LABELS: Record<string, string> = {
+  CONSISTENT: '与产品图一致',
+  INCONSISTENT: '与产品图有差异',
+  UNCERTAIN: '无法判定（转人工）'
+};
+
+/**
+ * 附件来源角色 → 展示（cp_task_file.source_type，R4 统一口径）。
+ *
+ * UPLOAD 人工上传 / REFERENCE 被引用为参考图 / PRODUCT 产品图 / GENERATED 系统生成。
+ * 页面靠它把「产品图 / 参考图 / 生成图」标清楚，避免三种图混在一起分不出谁是谁。
+ */
+export const FILE_SOURCE_LABELS: Record<string, string> = {
+  UPLOAD: '上传图',
+  REFERENCE: '参考图',
+  PRODUCT: '产品图',
+  GENERATED: '生成图'
+};
+
+/** 附件来源角色 → Element Plus 标签类型 */
+export const FILE_SOURCE_TYPES: Record<string, TagType> = {
+  UPLOAD: 'info',
+  REFERENCE: 'primary',
+  PRODUCT: 'success',
+  GENERATED: 'warning'
 };
 
 // ------------------------------------------------------------------

@@ -73,6 +73,21 @@ public class CpProduct extends BaseEntity implements Serializable {
     private String productImage;
 
     /**
+     * 产品图来源任务（cp_task.task_id）：追溯这张图是谁在哪个项目里设的
+     */
+    private Long productImageTaskId;
+
+    /**
+     * 产品图设定时间
+     */
+    private java.time.LocalDateTime productImageSetAt;
+
+    /**
+     * 产品图设定人（sys_user.user_id）
+     */
+    private Long productImageSetBy;
+
+    /**
      * 主推说明（原表该列常填售卖形态/口径说明，故为文本而非布尔）
      */
     private String mainPush;

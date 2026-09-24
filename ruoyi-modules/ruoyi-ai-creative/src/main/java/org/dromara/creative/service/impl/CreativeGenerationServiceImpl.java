@@ -509,6 +509,8 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
         vo.setOutputWidth(row.getOutputWidth());
         vo.setOutputHeight(row.getOutputHeight());
         vo.setQaVerdict(row.getQaVerdict());
+        vo.setProductFileId(row.getProductFileId());
+        vo.setProductVerdict(row.getProductVerdict());
         vo.setErrorCode(row.getErrorCode());
         vo.setErrorMessage(row.getErrorMessage());
         vo.setDurationMs(row.getDurationMs());

@@ -21,7 +21,8 @@ import type {
   DpVisualDnaVO,
   DnaRecommendationVO,
   GateEvaluationVO,
-  ProductionRunVO
+  ProductionRunVO,
+  ProjectProductImageVO
 } from './types';
 
 // ------------------------------------------------------------------
@@ -54,22 +55,58 @@ export function addCreativeProject(data: CreativeProjectForm): AxiosPromise<stri
   });
 }
 
-/** 上传项目参考图（表单字段名固定 file） */
-export function uploadCreativeReference(taskId: string | number, file: File): AxiosPromise<string | number> {
+/**
+ * 上传项目参考图（表单字段名固定 file）。
+ *
+ * @param asProductImage 勾选「同时设为该产品的产品图」时传 true：
+ *                       后端会在同一次调用里把该附件写回 cp_product.product_image。
+ *                       项目没有关联产品时后端会直接拒绝（不落孤儿图）。
+ */
+export function uploadCreativeReference(
+  taskId: string | number,
+  file: File,
+  asProductImage?: boolean
+): AxiosPromise<string | number> {
   const formData = new FormData();
   formData.append('file', file);
   return request({
     url: '/creative/projects/' + taskId + '/reference',
     method: 'post',
+    params: asProductImage ? { asProductImage: true } : undefined,
     data: formData
   });
 }
 
-/** 项目附件列表（含参考图） */
+/** 项目附件列表（含参考图；sourceType 区分 上传图/参考图/产品图/生成图） */
 export function listCreativeFiles(taskId: string | number): AxiosPromise<CpTaskFileVO[]> {
   return request({
     url: '/creative/projects/' + taskId + '/files',
     method: 'get'
+  });
+}
+
+/**
+ * 项目所属产品的产品图信息。
+ *
+ * 只有 configured === true 才表示该产品真的有产品图；未配置时 note 里写清了怎么补，
+ * 页面如实照搬，不猜。
+ */
+export function getProjectProductImage(taskId: string | number): AxiosPromise<ProjectProductImageVO> {
+  return request({
+    url: '/creative/projects/' + taskId + '/product-image',
+    method: 'get'
+  });
+}
+
+/** 把项目里已有的某个附件登记为该产品的产品图 */
+export function bindProjectProductImage(
+  taskId: string | number,
+  fileId: string | number
+): AxiosPromise<ProjectProductImageVO> {
+  return request({
+    url: '/creative/projects/' + taskId + '/product-image',
+    method: 'post',
+    data: { fileId: fileId }
   });
 }
 
@@ -450,4 +487,20 @@ export const fetchCreativeFileBlobUrl = async (
     responseType: 'blob'
   });
   return toMediaBlobUrl(res.data, '参考图');
+};
+
+/**
+ * 取该产品当前产品图的 blob URL（调用方负责 revokeObjectURL）。
+ *
+ * 与 fetchDetailPreviewBlobUrl / fetchCreativeFileBlobUrl 完全同构：只做「字节 → 对象URL」，
+ * 不做任何自动回收——回收时机由页面决定，避免图片在渲染前就被 revoke。
+ * 未配置产品图时后端会明确报错，页面照实显示，不静默留空。
+ */
+export const fetchProductImageBlobUrl = async (taskId: string | number): Promise<string> => {
+  const res = await request({
+    url: `/creative/projects/${taskId}/product-image/content`,
+    method: 'get',
+    responseType: 'blob'
+  });
+  return toMediaBlobUrl(res.data, '产品图');
 };

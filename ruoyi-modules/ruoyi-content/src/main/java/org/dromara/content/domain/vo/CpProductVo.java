@@ -68,6 +68,27 @@ public class CpProductVo implements Serializable {
     private String productImage;
 
     /**
+     * 产品图来源任务（cp_task.task_id）
+     */
+    private Long productImageTaskId;
+
+    /**
+     * 产品图设定时间
+     */
+    private java.time.LocalDateTime productImageSetAt;
+
+    /**
+     * 产品图设定人（sys_user.user_id）
+     */
+    private Long productImageSetBy;
+
+    /**
+     * 产品图是否已配置：对象存储键是私有桶键，前端不能直连，
+     * 只能通过后端代理预览接口读（见 {@code /content/product/{id}/image/content}）。
+     */
+    private Boolean productImageConfigured;
+
+    /**
      * 主推说明
      */
     private String mainPush;

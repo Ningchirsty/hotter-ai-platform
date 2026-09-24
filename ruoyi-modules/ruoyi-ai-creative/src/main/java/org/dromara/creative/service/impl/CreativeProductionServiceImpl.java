@@ -7,6 +7,7 @@ import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
 import org.dromara.content.domain.vo.CpOutputCheckVo;
 import org.dromara.content.service.IContentOutputCheckService;
+import org.dromara.content.service.IContentProductService;
 import org.dromara.creative.domain.DpGeneration;
 import org.dromara.creative.domain.vo.DpGenerationVo;
 import org.dromara.creative.domain.vo.DpStoryboardScreenVo;
@@ -82,6 +83,7 @@ public class CreativeProductionServiceImpl implements ICreativeProductionService
     private final DpStoryboardMapper storyboardMapper;
     private final DpStoryboardScreenMapper screenMapper;
     private final IContentOutputCheckService outputCheckService;
+    private final IContentProductService productService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -234,13 +236,39 @@ public class CreativeProductionServiceImpl implements ICreativeProductionService
         String contentType = "image/png";
         SimpleMultipartFile resultFile = new SimpleMultipartFile(
             "file", "candidate-" + row.getCandidateNo() + ".png", contentType, bytes);
+
+        // 基准一：本次出图实际喂进模型的参考图（回答「风格改动了多少」）。
+        // 结论不一致 → 不参与选定（既有「只筛除不放行」口径）。
         Long checkId = outputCheckService.run(taskId, row.getInputFileId(), null, resultFile, remark);
         row.setQaCheckId(checkId);
         row.setQaVerdict(null);
+
+        // 基准二：产品图（回答「产品还是不是那个产品」）。用刚才已登记的成品图附件再跑一次，
+        // 不重复上传，避免同一张生成图在附件表里出现两条。
+        Long productFileId = productService.ensureProductAttachment(taskId);
+        row.setProductFileId(productFileId);
+        row.setProductCheckId(null);
+        row.setProductVerdict(null);
+        if (productFileId != null) {
+            try {
+                CpOutputCheckVo first = outputCheckService.getDetail(checkId);
+                Long resultFileId = first == null ? null : first.getResultFileId();
+                if (resultFileId != null) {
+                    row.setProductCheckId(outputCheckService.runWithFiles(taskId, productFileId, resultFileId,
+                        (remark == null ? "" : remark + "；") + "基准=产品图"));
+                }
+            } catch (Exception e) {
+                // 产品基准跑不起来不该让「参考图基准」这条主线失败：如实记原因，页面照实显示
+                log.warn("产品图基准质检提交失败 generationId={} reason={}", row.getId(), e.getMessage());
+                row.setErrorMessage("产品图基准质检未提交：" + e.getMessage());
+            }
+        }
         generationMapper.updateById(row);
         projectService.appendEvent(taskId, "QA", "QA_SUBMIT",
             toJson(Map.of("generationId", row.getId(), "checkId", checkId,
-                "referenceFileId", row.getInputFileId())));
+                "referenceFileId", row.getInputFileId(),
+                "productFileId", productFileId == null ? "" : productFileId,
+                "productCheckId", row.getProductCheckId() == null ? "" : row.getProductCheckId())));
     }
 
     /**
@@ -285,6 +313,50 @@ public class CreativeProductionServiceImpl implements ICreativeProductionService
                         "traceId", StringUtils.blankToDefault(check.getTraceId(), ""))));
             } catch (Exception e) {
                 log.warn("回填候选 {} 的质检结论失败：{}", row.getId(), e.getMessage());
+            }
+        }
+        refreshProductQa(taskId);
+    }
+
+    /**
+     * 回填「以产品图为基准」的质检结论。
+     *
+     * <p><b>只提示，不自动筛除</b>：产品图与生成图的差异很可能正是设计意图（换背景、换角度、
+     * 换景别），自动按它筛除等于替人做艺术判断——那是这套系统一直拒绝做的事。
+     * 这里只把结论写进记录并留一条事件，让页面把它响亮地摆出来，决定权仍在人手上。</p>
+     *
+     * @param taskId 项目ID
+     */
+    private void refreshProductQa(Long taskId) {
+        List<DpGeneration> pending = generationMapper.selectList(new LambdaQueryWrapper<DpGeneration>()
+            .eq(DpGeneration::getTaskId, taskId)
+            .isNotNull(DpGeneration::getProductCheckId)
+            .isNull(DpGeneration::getProductVerdict));
+        for (DpGeneration row : pending) {
+            try {
+                CpOutputCheckVo check = outputCheckService.getDetail(row.getProductCheckId());
+                if (check == null || !"DONE".equalsIgnoreCase(check.getStatus())) {
+                    if (check != null && "FAILED".equalsIgnoreCase(check.getStatus())) {
+                        row.setProductVerdict(VERDICT_UNCERTAIN);
+                        generationMapper.updateById(row);
+                        projectService.appendEvent(taskId, "QA", "QA_PRODUCT_UNCERTAIN",
+                            toJson(Map.of("generationId", row.getId(),
+                                "checkId", row.getProductCheckId(),
+                                "reason", StringUtils.blankToDefault(check.getFailureReason(), "未知原因"))));
+                    }
+                    continue;
+                }
+                row.setProductVerdict(check.getVerdict());
+                generationMapper.updateById(row);
+                projectService.appendEvent(taskId, "QA", "QA_PRODUCT_" + StringUtils.blankToDefault(
+                    check.getVerdict(), "UNKNOWN"),
+                    toJson(Map.of("generationId", row.getId(),
+                        "checkId", check.getCheckId(),
+                        "verdict", StringUtils.blankToDefault(check.getVerdict(), ""),
+                        "baseline", "product",
+                        "note", "产品图基准：只提示，不自动筛除")));
+            } catch (Exception e) {
+                log.warn("回填候选 {} 的产品图基准结论失败：{}", row.getId(), e.getMessage());
             }
         }
     }

@@ -12,6 +12,7 @@ import org.dromara.content.domain.vo.CpTaskFileVo;
 import org.dromara.content.domain.vo.ContentTaskDetailVo;
 import org.dromara.content.domain.vo.CpTaskVo;
 import org.dromara.content.helper.ContentOssHelper;
+import org.dromara.content.service.IContentProductService;
 import org.dromara.content.service.IContentTaskService;
 import org.dromara.creative.constant.CreativeConstants;
 import org.dromara.creative.domain.DpStageEvent;
@@ -51,6 +52,7 @@ public class CreativeProjectServiceImpl implements ICreativeProjectService {
     private static final long MAX_REFERENCE_BYTES = 20L * 1024 * 1024;
 
     private final IContentTaskService contentTaskService;
+    private final IContentProductService productService;
     private final ContentOssHelper contentOssHelper;
     private final CreativeTaskStageMapper stageMapper;
     private final DpStageEventMapper eventMapper;
@@ -85,7 +87,30 @@ public class CreativeProjectServiceImpl implements ICreativeProjectService {
         long imageCount = detail.getFiles() == null ? 0
             : detail.getFiles().stream().filter(f -> "IMAGE".equalsIgnoreCase(f.getFileKind())).count();
         vo.setImageFileCount((int) imageCount);
+        fillProductImage(vo);
         return vo;
+    }
+
+    /**
+     * 填充项目的产品图信息（未配置时明确置 false，不猜）。
+     *
+     * @param vo 项目视图
+     */
+    private void fillProductImage(CreativeProjectVo vo) {
+        vo.setProductImageConfigured(false);
+        if (vo.getProductId() == null) {
+            return;
+        }
+        try {
+            IContentProductService.ProductImage image = productService.imageOf(vo.getProductId());
+            vo.setProductImageConfigured(image.configured());
+            vo.setProductImageFileName(image.fileName());
+            vo.setProductImageSourceTaskId(image.sourceTaskId());
+        } catch (Exception e) {
+            // 产品被删/数据异常不应把整个项目页带崩；页面按「产品图未配置」展示并给出补齐入口
+            log.warn("读取产品图失败 taskId={} productId={} error={}",
+                vo.getTaskId(), vo.getProductId(), e.getMessage());
+        }
     }
 
     @Override
@@ -110,6 +135,12 @@ public class CreativeProjectServiceImpl implements ICreativeProjectService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Long uploadReference(Long taskId, MultipartFile file) {
+        return uploadReference(taskId, file, false);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Long uploadReference(Long taskId, MultipartFile file, boolean asProductImage) {
         if (file == null || file.isEmpty()) {
             throw new ServiceException("请选择要上传的图片");
         }
@@ -120,12 +151,77 @@ public class CreativeProjectServiceImpl implements ICreativeProjectService {
         if (contentType == null || !contentType.toLowerCase().startsWith("image/")) {
             throw new ServiceException("参考图必须是图片（png/jpg/webp）");
         }
+        // 「同时设为产品图」要在落对象存储之前先判断可行性：没有关联产品的项目不可能设产品图，
+        // 与其传完再报错留一张孤儿图，不如先拒绝
+        Long productId = null;
+        if (asProductImage) {
+            CreativeProjectVo project = getProject(taskId);
+            if (project.getProductId() == null) {
+                throw new ServiceException("该项目没有关联产品，无法设为产品图；请先在项目里选择产品");
+            }
+            productId = project.getProductId();
+        }
         // 复用内容模块的附件上传（落对象存储 + 登记 cp_task_file，业务留痕在内容侧）
         Long fileId = contentTaskService.uploadFile(taskId, null, file);
+        if (asProductImage) {
+            productService.bindImageFromFile(productId, fileId);
+        }
         String stage = readStage(taskId);
-        moveStage(taskId, DpVisualStageEnum.MATERIAL_READY, "REFERENCE_UPLOADED",
-            "{\"fileId\":" + fileId + ",\"fromStage\":" + quote(stage) + "}");
+        moveStage(taskId, DpVisualStageEnum.MATERIAL_READY,
+            asProductImage ? "REFERENCE_UPLOADED_AS_PRODUCT_IMAGE" : "REFERENCE_UPLOADED",
+            "{\"fileId\":" + fileId + ",\"asProductImage\":" + asProductImage
+                + ",\"fromStage\":" + quote(stage) + "}");
         return fileId;
+    }
+
+    @Override
+    public ProductImageView productImage(Long taskId) {
+        CreativeProjectVo project = getProject(taskId);
+        if (project.getProductId() == null) {
+            return new ProductImageView(null, project.getProductName(), false, null, null, null, null, null,
+                null, "该项目没有关联产品：请先在项目里选择产品，才能把上传的产品照片登记为产品图");
+        }
+        IContentProductService.ProductImage image = productService.imageOf(project.getProductId());
+        if (!image.configured()) {
+            return new ProductImageView(project.getProductId(), project.getProductName(), false, null, null, null,
+                null, null, null,
+                "该产品还没有产品图：在项目里上传产品照片时勾选「同时设为产品图」，"
+                    + "或在附件上点「设为产品图」");
+        }
+        // 本项目是否有产品图角色的附件（有则前端可直接用它做并排对比）
+        Long localFileId = productService.ensureProductAttachment(taskId);
+        return new ProductImageView(project.getProductId(), project.getProductName(), true, localFileId,
+            image.fileName(), image.sourceTaskId(), image.setAt(), image.setBy(),
+            "/creative/projects/" + taskId + "/product-image/content",
+            taskId.equals(image.sourceTaskId()) ? "产品图来自本项目"
+                : "产品图来自其它项目（taskId=" + image.sourceTaskId() + "），本项目已登记同一张图作为基准");
+    }
+
+    @Override
+    public FileContent productImageContent(Long taskId) {
+        CreativeProjectVo project = getProject(taskId);
+        if (project.getProductId() == null) {
+            throw new ServiceException("该项目没有关联产品，无法读取产品图");
+        }
+        IContentProductService.ProductImage image = productService.imageOf(project.getProductId());
+        if (!image.configured()) {
+            throw new ServiceException("该产品还没有产品图");
+        }
+        byte[] bytes = productService.imageBytes(project.getProductId());
+        return new FileContent(bytes, contentTypeOf(image.fileExt()), image.fileName());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ProductImageView bindProductImage(Long taskId, Long fileId) {
+        CreativeProjectVo project = getProject(taskId);
+        if (project.getProductId() == null) {
+            throw new ServiceException("该项目没有关联产品，无法设为产品图；请先在项目里选择产品");
+        }
+        productService.bindImageFromFile(project.getProductId(), fileId);
+        appendEvent(taskId, "PRODUCT_IMAGE", "PRODUCT_IMAGE_SET",
+            "{\"fileId\":" + fileId + ",\"productId\":" + project.getProductId() + "}");
+        return productImage(taskId);
     }
 
     @Override

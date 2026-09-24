@@ -6,6 +6,8 @@ import jakarta.validation.groups.Default;
 import lombok.RequiredArgsConstructor;
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.core.domain.R;
+import org.dromara.common.core.exception.ServiceException;
+import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.core.validate.AddGroup;
 import org.dromara.common.core.validate.EditGroup;
 import org.dromara.common.core.validate.QueryGroup;
@@ -29,10 +31,12 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 视觉项目 控制层。
@@ -94,16 +98,77 @@ public class CreativeProjectController {
     /**
      * 上传项目参考图（产品图）。
      *
-     * @param taskId 项目ID
-     * @param file   图片文件
+     * @param taskId         项目ID
+     * @param file           图片文件
+     * @param asProductImage 是否同时设为该产品的产品图（默认否）
      * @return 附件ID
      */
     @SaCheckPermission(CreativeConstants.PERM_PROJECT_UPLOAD)
     @Log(title = "视觉项目参考图", businessType = BusinessType.INSERT)
     @PostMapping("/{taskId}/reference")
     public R<Long> uploadReference(@NotNull(message = "项目ID不能为空") @PathVariable("taskId") Long taskId,
-                                   @RequestPart("file") MultipartFile file) {
-        return R.ok(projectService.uploadReference(taskId, file));
+                                   @RequestPart("file") MultipartFile file,
+                                   @RequestParam(value = "asProductImage", required = false, defaultValue = "false")
+                                   boolean asProductImage) {
+        return R.ok(projectService.uploadReference(taskId, file, asProductImage));
+    }
+
+    /**
+     * 项目所属产品的产品图信息。
+     *
+     * @param taskId 项目ID
+     * @return 产品图视图（未配置时 note 里说明怎么补）
+     */
+    @SaCheckPermission(CreativeConstants.PERM_PROJECT_QUERY)
+    @GetMapping("/{taskId}/product-image")
+    public R<ICreativeProjectService.ProductImageView> productImage(
+        @NotNull(message = "项目ID不能为空") @PathVariable("taskId") Long taskId) {
+        return R.ok(projectService.productImage(taskId));
+    }
+
+    /**
+     * 产品图内容（后端代理预览）。
+     *
+     * @param taskId 项目ID
+     * @return 图片字节
+     */
+    @SaCheckPermission(CreativeConstants.PERM_PROJECT_QUERY)
+    @GetMapping("/{taskId}/product-image/content")
+    public ResponseEntity<byte[]> productImageContent(
+        @NotNull(message = "项目ID不能为空") @PathVariable("taskId") Long taskId) {
+        ICreativeProjectService.FileContent content = projectService.productImageContent(taskId);
+        return ResponseEntity.ok()
+            .contentType(MediaType.parseMediaType(content.contentType()))
+            .header("X-Content-Type-Options", "nosniff")
+            .header("Vary", "Authorization")
+            .body(content.bytes());
+    }
+
+    /**
+     * 把项目里的某个附件设为该产品的产品图。
+     *
+     * @param taskId 项目ID
+     * @param body   请求体，字段 {@code fileId}
+     * @return 设定后的产品图视图
+     */
+    @SaCheckPermission(CreativeConstants.PERM_PROJECT_EDIT)
+    @RepeatSubmit()
+    @Log(title = "视觉项目产品图", businessType = BusinessType.UPDATE)
+    @PostMapping("/{taskId}/product-image")
+    public R<ICreativeProjectService.ProductImageView> bindProductImage(
+        @NotNull(message = "项目ID不能为空") @PathVariable("taskId") Long taskId,
+        @RequestBody Map<String, Object> body) {
+        Object raw = body == null ? null : body.get("fileId");
+        if (raw == null || StringUtils.isBlank(String.valueOf(raw))) {
+            throw new ServiceException("请指定要设为产品图的附件（fileId）");
+        }
+        Long fileId;
+        try {
+            fileId = Long.valueOf(String.valueOf(raw).trim());
+        } catch (NumberFormatException e) {
+            throw new ServiceException("附件ID格式不正确：" + raw);
+        }
+        return R.ok(projectService.bindProductImage(taskId, fileId));
     }
 
     /**

@@ -8,10 +8,16 @@ import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.json.utils.JsonUtils;
 import org.dromara.common.satoken.utils.LoginHelper;
+import org.dromara.content.domain.vo.CpFactSnapshotVo;
+import org.dromara.content.domain.vo.ContentTaskDetailVo;
+import org.dromara.content.enums.ContentFactConfirmStatusEnum;
+import org.dromara.content.service.IContentTaskService;
 import org.dromara.creative.domain.DpVisualDirection;
 import org.dromara.creative.domain.bo.CreativeDirectionBo;
+import org.dromara.creative.domain.vo.CreativeProjectVo;
 import org.dromara.creative.domain.vo.DpVisualDirectionVo;
 import org.dromara.creative.enums.DpVisualStageEnum;
+import org.dromara.creative.helper.CreativeDraftFactory;
 import org.dromara.creative.helper.VisualDnaSchema;
 import org.dromara.creative.mapper.DpVisualDirectionMapper;
 import org.dromara.creative.service.ICreativeDirectionService;
@@ -52,6 +58,7 @@ public class CreativeDirectionServiceImpl implements ICreativeDirectionService {
     private final DpVisualDirectionMapper directionMapper;
     private final ICreativeDnaService dnaService;
     private final ICreativeProjectService projectService;
+    private final IContentTaskService contentTaskService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -74,32 +81,19 @@ public class CreativeDirectionServiceImpl implements ICreativeDirectionService {
             directionMapper.updateById(old);
         }
 
-        String primary = dna.path("colors").path("primary").asText("");
-        String background = dna.path("colors").path("background").asText("#F5F5F3");
-        String lightingType = dna.path("lighting").path("type").asText("SOFT");
+        // 参数化草稿：方向名/取舍说明/策略明细全部由「锁定基因（含参考图实测）+ 已确认事实 + 产品名」推导。
+        // 同输入可复现（不引入随机数），不同输入必然不同——这正是「刷新内容永远一样」的修复点。
+        // 来源仍如实标 TEMPLATE：参数化模板不是模型产物。
+        CreativeProjectVo project = projectService.getProject(taskId);
+        Map<String, String> facts = confirmedFacts(contentTaskService.getDetail(taskId));
+        List<CreativeDraftFactory.DirectionDraft> drafts =
+            CreativeDraftFactory.directions(dna, project.getProductName(), facts);
 
         List<DpVisualDirection> created = new ArrayList<>();
-        created.add(build(taskId, "A", "纯净影棚",
-            "同一基因下的「最克制」拍法：纯色背景、居中构图、影棚光，信息最清楚，适合主图与参数屏。",
-            strategy(background, "纯色底（沿用基因背景色 " + background + "）",
-                "影棚均匀布光（基因光型 " + lightingType + "）",
-                "产品居中、正投影，四周留白均等",
-                "专业、克制、以产品为主"),
-            1));
-        created.add(build(taskId, "B", "生活场景",
-            "同一基因下的「最有代入感」拍法：暖白环境、三分法构图、自然光，适合卖点与场景屏。",
-            strategy("#F7F1E8", "生活场景（暖白桌面/家居环境）",
-                "自然光 + 侧光，带柔和投影",
-                "产品偏左或偏右三分位，留白处放文案",
-                "温暖、日常、可代入"),
-            2));
-        created.add(build(taskId, "C", "情绪特写",
-            "同一基因下的「最有质感」拍法：深色渐变、局部特写、硬光轮廓，适合细节与材质屏。",
-            strategy(darken(background), "主题暗场（深色渐变）",
-                "硬质方向光 + 轮廓光，强调材质反射",
-                "局部特写（结构/工艺/材质），大特写裁切",
-                "精致、高级、强调质感"),
-            3));
+        for (CreativeDraftFactory.DirectionDraft draft : drafts) {
+            created.add(build(taskId, draft.code(), draft.name(), draft.concept(),
+                draft.strategy(), created.size() + 1));
+        }
 
         List<DpVisualDirectionVo> result = new ArrayList<>();
         for (DpVisualDirection entity : created) {
@@ -223,17 +217,23 @@ public class CreativeDirectionServiceImpl implements ICreativeDirectionService {
         return entity;
     }
 
-    private Map<String, Object> strategy(String background, String scene, String lighting,
-                                        String composition, String mood) {
-        Map<String, Object> strategy = new LinkedHashMap<>();
-        strategy.put("schema", "visual-direction/1");
-        strategy.put("background", background);
-        strategy.put("scene", scene);
-        strategy.put("lighting", lighting);
-        strategy.put("composition", composition);
-        strategy.put("mood", mood);
-        strategy.put("differences", List.of("background", "scene", "lighting", "composition", "mood"));
-        return strategy;
+    /**
+     * 只取「已确认」的事实：未确认的一律不带入文案，避免把待核信息写进交付物。
+     *
+     * @param detail 任务详情
+     * @return 字段编码 → 值
+     */
+    private Map<String, String> confirmedFacts(ContentTaskDetailVo detail) {
+        Map<String, String> facts = new LinkedHashMap<>();
+        if (detail == null || detail.getFacts() == null) {
+            return facts;
+        }
+        for (CpFactSnapshotVo fact : detail.getFacts()) {
+            if (ContentFactConfirmStatusEnum.CONFIRMED.getCode().equals(fact.getConfirmStatus())) {
+                facts.putIfAbsent(fact.getFieldCode(), fact.getFieldValue());
+            }
+        }
+        return facts;
     }
 
     /**
@@ -325,23 +325,6 @@ public class CreativeDirectionServiceImpl implements ICreativeDirectionService {
 
     private static String appendRemark(String remark, String extra) {
         return StringUtils.isBlank(remark) ? extra : remark + "；" + extra;
-    }
-
-    /**
-     * 把背景色压暗一档，用于「暗场」方向；非合法色值时原样返回（不猜）。
-     */
-    private static String darken(String hex) {
-        if (hex == null || !hex.matches("^#([0-9A-Fa-f]{6})$")) {
-            return "#1C1C1C";
-        }
-        int r = Integer.parseInt(hex.substring(1, 3), 16);
-        int g = Integer.parseInt(hex.substring(3, 5), 16);
-        int b = Integer.parseInt(hex.substring(5, 7), 16);
-        int factor = 45;
-        r = Math.max(12, r * factor / 100);
-        g = Math.max(12, g * factor / 100);
-        b = Math.max(12, b * factor / 100);
-        return String.format("#%02X%02X%02X", r, g, b);
     }
 
 }
