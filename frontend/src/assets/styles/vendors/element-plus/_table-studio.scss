@@ -12,6 +12,16 @@
  */
 .studio,
 html.dark .studio {
+  /*
+   * 表头那条规则（`_tag.scss` 里 `.el-table .el-table__header-wrapper th`）带 `!important`
+   * 且吃的是 **`--tableHeaderBg`** 这个全局亮色 token（`tokens/_theme.scss:20 = #f8fafc`）。
+   * 所以只改 `--el-table-header-bg-color` 是没用的——`!important` 会赢（实测表头仍是
+   * rgb(248,250,252)，而 th 上的 `--el-table-header-bg-color` 已经是透明黑 0.04 了）。
+   * 正确做法是在 `.studio` 作用域里把 token 本身改成暗色：既不用跟 !important 拼权重，
+   * 也不会影响后台其它模块的表格（作用域只在创作壳内）。
+   */
+  --tableHeaderBg: rgba(255, 255, 255, 0.04);
+  --tableHeaderTextColor: var(--t2);
   --el-table-bg-color: transparent;
   --el-table-tr-bg-color: transparent;
   --el-table-header-bg-color: rgba(255, 255, 255, 0.04);
@@ -28,6 +38,22 @@ html.dark .studio {
 html.dark .studio .el-table {
   color: var(--t1);
   background: transparent;
+  /*
+   * 变量必须**同时**声明在 .el-table 这一层：`_tag.scss` 在 `.el-table` 上又写了一遍
+   * `--el-table-header-bg-color: var(--tableHeaderBg)`（亮色），它比 `.studio` 更靠近表格，
+   * 会盖掉继承下来的值——第一次改就是这么失效的（实测表头仍是 rgb(248,250,252)）。
+   * `.studio .el-table` 权重 (0,2,0) 高过 `.el-table` (0,1,0)，所以这里能稳定压住。
+   */
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.04);
+  --el-table-header-text-color: var(--t2);
+  --el-table-text-color: var(--t1);
+  --el-table-border-color: var(--line);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.035);
+  --el-table-current-row-bg-color: rgba(148, 163, 184, 0.12);
+  --el-table-expanded-cell-bg-color: transparent;
+  --el-table-fixed-box-shadow: none;
 }
 
 .studio .el-table .el-table__cell,
