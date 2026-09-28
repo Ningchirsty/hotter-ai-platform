@@ -261,55 +261,53 @@
                       用「↑ / ↓」调整优先级，顺序即详情页从上到下的顺序，点一下立即保存。
                     </span>
                   </div>
-                  <el-table v-if="blocksOf(tab.value).length" :data="blocksOf(tab.value)" size="small">
-                    <el-table-column label="排序" width="126">
-                      <template #default="{ row }">
-                        <span class="muted">{{ asBlock(row).sortNo ?? '—' }}</span>
+                  <!-- 无框行列表：与「事实确认」同一套写法（发丝分隔线 + 悬停高亮），
+                       不用白色表格容器；排序号显示"第几条"而不是后端 sortNo（步长 10 看着莫名） -->
+                  <div v-if="activeCopyBlocks.length" class="copy-list">
+                    <div
+                      v-for="(row, idx) in activeCopyBlocks"
+                      :key="String(asBlock(row).id)"
+                      class="copy-row"
+                    >
+                      <div class="copy-order">
+                        <span class="ord">{{ idx + 1 }}</span>
                         <template v-if="tab.value === 'SELLING_POINT'">
-                          <el-button
-                            size="small"
-                            text
-                            type="primary"
+                          <button
+                            type="button"
+                            class="ord-btn"
+                            title="上移（提高优先级）"
                             :disabled="isFirstBlock(tab.value, asBlock(row)) || copyBusy === 'reorder'"
                             @click="moveBlock(asBlock(row), -1)"
                           >
                             ↑
-                          </el-button>
-                          <el-button
-                            size="small"
-                            text
-                            type="primary"
+                          </button>
+                          <button
+                            type="button"
+                            class="ord-btn"
+                            title="下移（降低优先级）"
                             :disabled="isLastBlock(tab.value, asBlock(row)) || copyBusy === 'reorder'"
                             @click="moveBlock(asBlock(row), 1)"
                           >
                             ↓
-                          </el-button>
+                          </button>
                         </template>
-                      </template>
-                    </el-table-column>
-                    <el-table-column label="标题" width="170" show-overflow-tooltip>
-                      <template #default="{ row }">{{ asBlock(row).title || '—' }}</template>
-                    </el-table-column>
-                    <el-table-column label="内容" min-width="240" show-overflow-tooltip>
-                      <template #default="{ row }">{{ asBlock(row).content || '—' }}</template>
-                    </el-table-column>
-                    <el-table-column label="来源" width="170">
-                      <template #default="{ row }">
-                        <el-tag size="small" effect="plain" :type="copySourceType(asBlock(row).source)">
-                          {{ copySourceLabel(asBlock(row).source) }}
-                        </el-tag>
-                        <span v-if="asBlock(row).sourceRef" class="muted">· {{ asBlock(row).sourceRef }}</span>
-                      </template>
-                    </el-table-column>
-                    <el-table-column label="状态" width="90">
-                      <template #default="{ row }">
-                        <el-tag size="small" :type="copyStatusType(asBlock(row).status)">
-                          {{ copyStatusLabel(asBlock(row).status) }}
-                        </el-tag>
-                      </template>
-                    </el-table-column>
-                    <el-table-column label="操作" width="130" fixed="right">
-                      <template #default="{ row }">
+                      </div>
+                      <div class="copy-body">
+                        <div class="copy-line1">
+                          <span class="copy-title">{{ asBlock(row).title || '—' }}</span>
+                          <span class="copy-src" :class="'is-' + copySourceType(asBlock(row).source)">
+                            {{ copySourceLabel(asBlock(row).source) }}<span
+                              v-if="asBlock(row).sourceRef"
+                              class="muted"
+                            > · {{ asBlock(row).sourceRef }}</span>
+                          </span>
+                          <span class="fact-status" :class="'is-' + copyStatusType(asBlock(row).status)">
+                            {{ copyStatusLabel(asBlock(row).status) }}
+                          </span>
+                        </div>
+                        <p class="copy-text">{{ asBlock(row).content || '—' }}</p>
+                      </div>
+                      <div class="copy-ops">
                         <el-button
                           link
                           size="small"
@@ -327,9 +325,9 @@
                         >
                           删除
                         </el-button>
-                      </template>
-                    </el-table-column>
-                  </el-table>
+                      </div>
+                    </div>
+                  </div>
                   <p v-else class="empty">这一组还没有内容。点上面的「新增」录入。</p>
                 </el-tab-pane>
               </el-tabs>
@@ -363,14 +361,22 @@
                 字段选项接口没取到，无法判断闸门必填项是否齐备——不猜，请在下方事实表里逐条确认。
               </p>
               <template v-else>
-                <ul class="fact-check">
-                  <li v-for="option in requiredFieldOptions" :key="String(option.fieldCode)" :class="{ ok: option.satisfied }">
+                <!-- 闸门必填项：紧凑状态带。原先是竖排一行一项（9 项就吃掉大半屏），
+                     信息量一样但更省高度，也与页面其它「状态条」写法一致。 -->
+                <div class="fact-gate">
+                  <span
+                    v-for="option in requiredFieldOptions"
+                    :key="String(option.fieldCode)"
+                    class="gate-chip"
+                    :class="{ ok: option.satisfied }"
+                    :title="optionLabel(option)"
+                  >
                     <span class="mark">{{ option.satisfied ? '✓' : '✗' }}</span>
-                    <span class="check-name">{{ option.fieldName || option.fieldCode }}</span>
-                    <span class="muted">{{ option.fieldCode }} · {{ option.gateLevel || '—' }}</span>
-                  </li>
-                  <li v-if="!requiredFieldOptions.length" class="muted">该交付类型没有声明必填事实项。</li>
-                </ul>
+                    {{ option.fieldName || option.fieldCode }}
+                    <em class="gate-level">{{ option.gateLevel || '—' }}</em>
+                  </span>
+                  <span v-if="!requiredFieldOptions.length" class="muted">该交付类型没有声明必填事实项。</span>
+                </div>
                 <div v-if="unsatisfiedRequiredOptions.length" class="block-actions">
                   <el-button
                     v-for="option in unsatisfiedRequiredOptions"
@@ -383,35 +389,57 @@
                 </div>
               </template>
 
-              <el-table v-if="facts.length" :data="facts" size="small" class="fact-table">
-                <el-table-column label="字段" width="150" show-overflow-tooltip>
-                  <template #default="{ row }">
-                    {{ asFact(row).fieldName || asFact(row).fieldCode }}
-                  </template>
-                </el-table-column>
-                <el-table-column label="值" width="150" show-overflow-tooltip>
-                  <template #default="{ row }">
-                    {{ asFact(row).fieldValue }}<span v-if="asFact(row).unit"> {{ asFact(row).unit }}</span>
-                  </template>
-                </el-table-column>
-                <el-table-column label="来源" min-width="200" show-overflow-tooltip>
-                  <template #default="{ row }">
-                    {{ asFact(row).sourceFileName || '—' }}
-                    <span v-if="asFact(row).sourceLocator" class="muted">· {{ asFact(row).sourceLocator }}</span>
-                  </template>
-                </el-table-column>
-                <el-table-column label="原文摘录" min-width="200" show-overflow-tooltip>
-                  <template #default="{ row }">{{ asFact(row).sourceExcerpt || '—' }}</template>
-                </el-table-column>
-                <el-table-column label="状态" width="100">
-                  <template #default="{ row }">
-                    <el-tag size="small" :type="factStatusType(asFact(row).confirmStatus)">
-                      {{ factStatusLabel(asFact(row).confirmStatus) }}
-                    </el-tag>
-                  </template>
-                </el-table-column>
-                <el-table-column label="操作" width="140" fixed="right">
-                  <template #default="{ row }">
+              <!-- 事实清单：无框行列表（发丝分隔线 + 左侧状态色条），不用白色表格容器。
+                   为什么改：白底表格在暗色工作室里是一块突兀的亮面，且列宽固定会把
+                   「值/来源/原文摘录」挤成省略号；改成两行一行之后，值与来源都能直接读。 -->
+              <div v-if="facts.length" class="fact-list">
+                <div class="fact-tools">
+                  <button
+                    v-for="item in factFilters"
+                    :key="item.value"
+                    type="button"
+                    class="fact-filter"
+                    :class="{ active: factFilter === item.value }"
+                    @click="factFilter = item.value"
+                  >
+                    {{ item.label }}<span class="count">{{ item.count }}</span>
+                  </button>
+                  <span class="muted fact-sort-note">待确认 / 冲突排在前面</span>
+                </div>
+                <div
+                  v-for="row in visibleFacts"
+                  :key="String(asFact(row).snapshotId)"
+                  class="fact-row"
+                  :class="'st-' + String(asFact(row).confirmStatus || 'PENDING').toLowerCase()"
+                >
+                  <div class="fact-main">
+                    <div class="fact-line1">
+                      <span class="fact-name">{{ asFact(row).fieldName || asFact(row).fieldCode }}</span>
+                      <span class="fact-value">
+                        {{ asFact(row).fieldValue }}<span v-if="asFact(row).unit" class="muted"> {{ asFact(row).unit }}</span>
+                      </span>
+                      <span class="fact-status" :class="'is-' + factStatusType(asFact(row).confirmStatus)">
+                        {{ factStatusLabel(asFact(row).confirmStatus) }}
+                      </span>
+                    </div>
+                    <div class="fact-line2">
+                      <span class="fact-src">
+                        {{ asFact(row).sourceFileName || '—'
+                        }}<span v-if="asFact(row).sourceLocator" class="muted"> · {{ asFact(row).sourceLocator }}</span>
+                      </span>
+                      <span
+                        v-if="asFact(row).sourceExcerpt"
+                        class="fact-excerpt"
+                        :class="{ open: !!expandedFacts[String(asFact(row).snapshotId)] }"
+                        :title="asFact(row).sourceExcerpt"
+                        @click="toggleFactExcerpt(asFact(row))"
+                      >
+                        原文：{{ asFact(row).sourceExcerpt }}
+                      </span>
+                      <span v-else class="muted">原文：—</span>
+                    </div>
+                  </div>
+                  <div class="fact-ops">
                     <el-button
                       link
                       size="small"
@@ -432,9 +460,10 @@
                     >
                       驳回
                     </el-button>
-                  </template>
-                </el-table-column>
-              </el-table>
+                  </div>
+                </div>
+                <p v-if="!visibleFacts.length" class="empty">该筛选下没有事实行。</p>
+              </div>
               <p v-else class="empty">
                 还没有事实候选。资料解析后会自动落成待确认行；也可以点「人工录入」补齐。
               </p>
@@ -1126,6 +1155,52 @@ const confirmedFacts = computed(() => facts.value.filter((f) => f.confirmStatus 
 const requiredFieldOptions = computed(() => fieldOptions.value.filter((o) => o.requiredByGate));
 const unsatisfiedRequiredOptions = computed(() => requiredFieldOptions.value.filter((o) => !o.satisfied));
 
+/**
+ * 事实清单的筛选与排序（无框列表用）。
+ *
+ * <p>为什么加筛选：一个项目的事实行会到十几条，而真正要动手的只有待确认/冲突那几条；
+ * 原先是"一整张表从头看到尾"。默认仍然是**全部**（不藏数据），只是把待确认/冲突排到前面。</p>
+ */
+type FactFilterValue = 'ALL' | 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'CONFLICT';
+const factFilter = ref<FactFilterValue>('ALL');
+
+/** 展开的原文摘录：用普通对象而不是 Set，保证 Vue 能追到变化（改用 Map/Set 得整体换新对象） */
+const expandedFacts = ref<Record<string, boolean>>({});
+
+/** 各状态下的事实条数（筛选按钮上的数字就是它，避免"点进去才发现是空的"） */
+const factFilters = computed(() => {
+  const by = (status: string) => facts.value.filter((f) => (f.confirmStatus || 'PENDING') === status).length;
+  return [
+    { value: 'ALL' as FactFilterValue, label: '全部', count: facts.value.length },
+    { value: 'PENDING' as FactFilterValue, label: '待确认', count: by('PENDING') },
+    { value: 'CONFLICT' as FactFilterValue, label: '冲突', count: by('CONFLICT') },
+    { value: 'CONFIRMED' as FactFilterValue, label: '已确认', count: by('CONFIRMED') },
+    { value: 'REJECTED' as FactFilterValue, label: '已否决', count: by('REJECTED') }
+  ].filter((item) => item.value === 'ALL' || item.count > 0);
+});
+
+/** 需要人动手的排前面；同组内保持后端返回顺序（不重排，避免"顺序莫名其妙变了"） */
+const FACT_STATUS_WEIGHT: Record<string, number> = { CONFLICT: 0, PENDING: 1, CONFIRMED: 2, REJECTED: 3 };
+
+const visibleFacts = computed(() => {
+  const list = factFilter.value === 'ALL'
+    ? facts.value.slice()
+    : facts.value.filter((f) => (f.confirmStatus || 'PENDING') === factFilter.value);
+  return list
+    .map((row, index) => ({ row, index }))
+    .toSorted((a, b) => {
+      const wa = FACT_STATUS_WEIGHT[a.row.confirmStatus || 'PENDING'] ?? 9;
+      const wb = FACT_STATUS_WEIGHT[b.row.confirmStatus || 'PENDING'] ?? 9;
+      return wa - wb || a.index - b.index;
+    })
+    .map((item) => item.row);
+});
+
+function toggleFactExcerpt(row: CpFactSnapshotVO) {
+  const key = String(row.snapshotId);
+  expandedFacts.value = { ...expandedFacts.value, [key]: !expandedFacts.value[key] };
+}
+
 function urlOf(key: string): string {
   return objectUrls.value[key] || '';
 }
@@ -1580,6 +1655,9 @@ function blocksOf(blockType: string): CopyBlockVO[] {
     .filter((block) => (block.blockType || '') === blockType)
     .toSorted((a, b) => (a.sortNo ?? 0) - (b.sortNo ?? 0) || String(a.id).localeCompare(String(b.id)));
 }
+
+/** 当前 tab 的文案块（模板里 v-for 用；避免在同一个渲染里反复 filter 同一份数据） */
+const activeCopyBlocks = computed(() => blocksOf(copyTab.value));
 
 /** el-table 插槽行类型是 DefaultRow，数据其实是我们的 VO；在模板里显式收窄，而不是把参数放宽成 any */
 function asBlock(row: unknown): CopyBlockVO {
@@ -2507,40 +2585,287 @@ button {
   gap: 8px;
   align-items: center;
 }
-.fact-check {
+
+/* 闸门必填项：紧凑状态带（chip 一行行排，代替原来的竖排清单） */
+.fact-gate {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  margin: 2px 0 12px;
+}
+.gate-chip {
+  display: inline-flex;
   gap: 6px;
-  padding: 0;
-  margin: 0 0 12px;
-  list-style: none;
-}
-.fact-check li {
-  display: flex;
-  gap: 8px;
   align-items: center;
-  font-size: 13px;
+  padding: 3px 9px;
+  font-size: 12.5px;
   color: var(--t2);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line);
+  border-radius: 999px;
 }
-.fact-check .mark {
-  color: #ef4444;
+.gate-chip .mark {
+  color: #f87171;
   font-weight: 700;
 }
-.fact-check li.ok .mark {
-  color: #10b981;
+.gate-chip.ok .mark {
+  color: #34d399;
 }
-.fact-check .check-name {
+.gate-chip .gate-level {
+  padding-left: 6px;
+  font-size: 11px;
+  font-style: normal;
+  color: var(--t3);
+  border-left: 1px solid var(--line2);
+}
+
+/* 事实清单：无框行列表。左侧 2px 状态色条代替整块白底标签，
+   行与行之间只有发丝分隔线，整块没有容器边框——这样在暗色工作室里不再是一块亮面。 */
+.fact-list {
+  display: flex;
+  flex-direction: column;
+}
+.fact-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  align-items: center;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.fact-filter {
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--t2);
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 999px;
+}
+.fact-filter:hover {
+  color: var(--t1);
+  background: rgba(255, 255, 255, 0.04);
+}
+.fact-filter.active {
+  color: var(--t1);
+  background: rgba(148, 163, 184, 0.14);
+  border-color: var(--line2);
+}
+.fact-filter .count {
+  margin-left: 5px;
+  font-size: 11.5px;
+  color: var(--t3);
+}
+.fact-filter.active .count {
+  color: var(--t2);
+}
+.fact-sort-note {
+  margin-left: auto;
+  font-size: 12px;
+}
+.fact-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 9px 4px 9px 10px;
+  border-bottom: 1px solid var(--line);
+  border-left: 2px solid transparent;
+  transition: background 0.15s ease;
+}
+.fact-row:hover {
+  background: rgba(255, 255, 255, 0.035);
+}
+.fact-row.st-pending {
+  border-left-color: #f59e0b;
+}
+.fact-row.st-conflict {
+  border-left-color: #a855f7;
+}
+.fact-row.st-confirmed {
+  border-left-color: #10b981;
+}
+.fact-row.st-rejected {
+  border-left-color: #ef4444;
+}
+.fact-main {
+  flex: 1;
+  min-width: 0;
+}
+.fact-line1 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  align-items: baseline;
+}
+.fact-name {
+  font-size: 13px;
+  font-weight: 500;
   color: var(--t1);
 }
-.fact-table {
-  margin-top: 4px;
-  background: transparent;
+.fact-value {
+  font-size: 13px;
+  color: var(--t1);
+  word-break: break-all;
+}
+.fact-status {
+  padding: 1px 7px;
+  font-size: 11.5px;
+  border-radius: 999px;
+}
+.fact-status.is-success {
+  color: #a7f3d0;
+  background: rgba(16, 185, 129, 0.16);
+}
+.fact-status.is-warning {
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.16);
+}
+.fact-status.is-danger {
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.16);
+}
+.fact-status.is-info {
+  color: var(--t2);
+  background: rgba(148, 163, 184, 0.14);
+}
+.fact-line2 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--t3);
+}
+.fact-excerpt {
+  display: -webkit-box;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--t3);
+  cursor: pointer;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+.fact-excerpt:hover {
+  color: var(--t2);
+}
+.fact-excerpt.open {
+  color: var(--t2);
+  -webkit-line-clamp: unset;
+}
+.fact-ops {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 2px;
+  align-items: center;
 }
 .fact-error {
   margin: 0 0 10px;
   font-size: 12.5px;
   line-height: 1.8;
   color: #fca5a5;
+}
+
+/* 文案与要点：与事实清单同一套无框行列表 */
+.copy-list {
+  display: flex;
+  flex-direction: column;
+}
+.copy-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 9px 4px 9px 10px;
+  border-bottom: 1px solid var(--line);
+  border-left: 2px solid transparent;
+  transition: background 0.15s ease;
+}
+.copy-row:hover {
+  background: rgba(255, 255, 255, 0.035);
+  border-left-color: var(--line2);
+}
+.copy-order {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 2px;
+  align-items: center;
+  width: 76px;
+  padding-top: 1px;
+}
+.copy-order .ord {
+  min-width: 16px;
+  font-size: 12px;
+  color: var(--t3);
+  text-align: right;
+}
+.ord-btn {
+  width: 20px;
+  height: 20px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--t2);
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+}
+.ord-btn:hover:not(:disabled) {
+  color: var(--t1);
+  background: rgba(255, 255, 255, 0.07);
+}
+.ord-btn:disabled {
+  color: #4b5563;
+  cursor: not-allowed;
+}
+.copy-body {
+  flex: 1;
+  min-width: 0;
+}
+.copy-line1 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  align-items: baseline;
+}
+.copy-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--t1);
+}
+.copy-src {
+  padding: 1px 7px;
+  font-size: 11.5px;
+  color: var(--t2);
+  background: rgba(148, 163, 184, 0.14);
+  border-radius: 999px;
+}
+.copy-src.is-success {
+  color: #a7f3d0;
+  background: rgba(16, 185, 129, 0.16);
+}
+.copy-src.is-warning {
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.16);
+}
+.copy-src.is-primary {
+  color: #c7d2fe;
+  background: rgba(99, 102, 241, 0.18);
+}
+.copy-text {
+  display: -webkit-box;
+  margin: 3px 0 0;
+  overflow: hidden;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--t2);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.copy-ops {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 2px;
+  align-items: center;
 }
 
 /* 品牌 Brief：一行一个要求，左侧标签固定宽，右侧输入 + 一句「填什么」 */
