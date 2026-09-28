@@ -1,0 +1,89 @@
+/**
+ * 创作壳（`.studio` 暗色工作室）里的表格口径：**不再出现白底表格**。
+ *
+ * 为什么单独一份：全局的 `.el-table` 口径是按"应用亮色主题"接的
+ * （`_overrides.scss:40-48` 把行背景接到 `--el-bg-color`，也就是白色），
+ * 而创作域六个页面用的是自己那套暗色工作室 token（`tokens-studio.scss`：
+ * `--bg #0a0c10` / `--surface #12151c` / `--line` / `--t1~t3`）。
+ * 两者叠在一起，就出现"暗色页面里嵌一块白色表格"——既不吻合也不好看。
+ *
+ * 这里只作用于 `.studio` 内部，所以不会影响后台其它模块的表格；
+ * 同时写 `html.dark .studio` 变体，保证在暗色主题下也压得住 `html.dark .el-table` 的优先级。
+ */
+.studio,
+html.dark .studio {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.04);
+  --el-table-header-text-color: var(--t2);
+  --el-table-text-color: var(--t1);
+  --el-table-border-color: var(--line);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.035);
+  --el-table-current-row-bg-color: rgba(148, 163, 184, 0.12);
+  --el-table-expanded-cell-bg-color: transparent;
+  --el-table-fixed-box-shadow: none;
+}
+
+.studio .el-table,
+html.dark .studio .el-table {
+  color: var(--t1);
+  background: transparent;
+}
+
+.studio .el-table .el-table__cell,
+html.dark .studio .el-table .el-table__cell {
+  background-color: transparent;
+  border-bottom-color: var(--line);
+}
+
+.studio .el-table th.el-table__cell,
+html.dark .studio .el-table th.el-table__cell {
+  font-weight: 600;
+  color: var(--t2);
+  background-color: rgba(255, 255, 255, 0.04);
+}
+
+/* 表头底线、边框拼缝：用发丝线，别用默认的实心浅色 */
+.studio .el-table__inner-wrapper::before,
+.studio .el-table--border::after,
+.studio .el-table--border .el-table__inner-wrapper::after,
+html.dark .studio .el-table__inner-wrapper::before {
+  background-color: var(--line);
+}
+
+.studio .el-table__empty-block,
+html.dark .studio .el-table__empty-block {
+  background: transparent;
+}
+.studio .el-table__empty-text {
+  color: var(--t3);
+}
+
+/* 固定列（操作列常 fixed="right"）的底必须与行一致，否则右侧会出现一块亮矩形 */
+.studio .el-table__fixed,
+.studio .el-table__fixed-right,
+.studio .el-table__fixed-header-wrapper,
+.studio .el-table__fixed-body-wrapper {
+  background: transparent;
+}
+.studio .el-table .el-table__fixed-right::before,
+.studio .el-table .el-table__fixed::before {
+  background-color: var(--line);
+}
+
+/* hover / 当前行（含固定列）保持同一口径 */
+.studio .el-table__body tr:hover > td.el-table__cell,
+.studio .el-table__body tr.hover-row > td.el-table__cell,
+.studio .el-table__body tr.current-row > td.el-table__cell,
+html.dark .studio .el-table__body tr:hover > td.el-table__cell {
+  background-color: rgba(255, 255, 255, 0.035) !important;
+}
+
+/* 表格里的文字/链接按钮沿用工作室灰阶 */
+.studio .el-table .cell {
+  line-height: 1.7;
+}
+.studio .el-table .el-button.is-link {
+  height: auto;
+  padding: 0 2px;
+}
