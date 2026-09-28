@@ -35,18 +35,23 @@ public interface ICreativeGenerationService {
     /**
      * 针对某个分镜单屏提交出图（R2 逐屏批量出图的基本动作）。
      *
+     * <p><b>R7 起多了 {@code screenText}</b>：屏文案（画面独白/正文/标题）是「这一屏的画面
+     * 自己要讲什么」，此前完全不进提示词，批量出图只能按屏类型猜。它作为画面描述
+     * 补进派生提示词，而不是替换整段提示词——否则基因（风格/配色/光线/保真句）会被挤掉。</p>
+     *
      * @param taskId         项目ID
      * @param screenId       分镜单屏ID
      * @param screenHint     画面用途（用于派生提示词，如「主图」「卖点一」）
-     * @param prompt         提示词（空则按锁定基因 + 画面用途派生）
+     * @param screenText     屏文案（画面独白优先，其次正文、标题；可空）
+     * @param prompt         提示词（空则按锁定基因 + 屏文案 + 品牌 Brief 派生；人显式写的优先）
      * @param negativePrompt 负向提示词（可空）
      * @param workflowCode   出图能力（可空＝默认已发布契约）
      * @param sizeLabel      尺寸档位（可空）
      * @param strengthLabel  重绘强度档位（可空）
      * @return 生成记录
      */
-    DpGenerationVo submitForScreen(Long taskId, Long screenId, String screenHint, String prompt,
-                                   String negativePrompt, String workflowCode,
+    DpGenerationVo submitForScreen(Long taskId, Long screenId, String screenHint, String screenText,
+                                   String prompt, String negativePrompt, String workflowCode,
                                    String sizeLabel, String strengthLabel);
 
     /**

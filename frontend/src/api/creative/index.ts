@@ -3,6 +3,10 @@ import type { CpTaskFileVO } from '@/api/content/task/types';
 import type { AxiosPromise } from '@/utils/api-types';
 import request from '@/utils/request';
 import type {
+  BrandBriefForm,
+  BrandBriefVO,
+  CopyBlockForm,
+  CopyBlockVO,
   CreativeDnaForm,
   CreativeDirectionForm,
   CreativeHeroForm,
@@ -115,6 +119,103 @@ export function listCreativeTimeline(taskId: string | number): AxiosPromise<DpSt
   return request({
     url: '/creative/projects/' + taskId + '/timeline',
     method: 'get'
+  });
+}
+
+// ------------------------------------------------------------------
+// R7：品牌 Brief（委托方的要求）
+// ------------------------------------------------------------------
+
+/** 读项目品牌 Brief（没填过时后端也返回对象：configured=false、status=DRAFT） */
+export function getBrandBrief(taskId: string | number): AxiosPromise<BrandBriefVO> {
+  return request({
+    url: `/creative/projects/${taskId}/brand-brief`,
+    method: 'get'
+  });
+}
+
+/** 保存品牌 Brief（草稿；状态由 confirm 接口推进，这里不传 status） */
+export function saveBrandBrief(taskId: string | number, data: BrandBriefForm): AxiosPromise<BrandBriefVO> {
+  return request({
+    url: `/creative/projects/${taskId}/brand-brief`,
+    method: 'put',
+    data: data
+  });
+}
+
+/** 确认品牌要求（把状态推进为已确认） */
+export function confirmBrandBrief(taskId: string | number): AxiosPromise<BrandBriefVO> {
+  return request({
+    url: `/creative/projects/${taskId}/brand-brief/confirm`,
+    method: 'post'
+  });
+}
+
+// ------------------------------------------------------------------
+// R7：文案与要点（详情页的「字」）
+// ------------------------------------------------------------------
+
+/**
+ * 文案块列表。
+ *
+ * @param blockType 只取某一类时传（SELLING_POINT / BODY_SECTION / SPEC_ROW / MUST_SHOW）；不传取全部
+ */
+export function listCopyBlocks(taskId: string | number, blockType?: string): AxiosPromise<CopyBlockVO[]> {
+  return request({
+    url: `/creative/projects/${taskId}/copy-blocks`,
+    method: 'get',
+    params: blockType ? { blockType } : undefined
+  });
+}
+
+/** 新增一条文案块（返回新ID） */
+export function addCopyBlock(taskId: string | number, data: CopyBlockForm): AxiosPromise<string | number> {
+  return request({
+    url: `/creative/projects/${taskId}/copy-blocks`,
+    method: 'post',
+    data: data
+  });
+}
+
+/** 编辑一条文案块 */
+export function updateCopyBlock(
+  taskId: string | number,
+  blockId: string | number,
+  data: CopyBlockForm
+): AxiosPromise<void> {
+  return request({
+    url: `/creative/projects/${taskId}/copy-blocks/${blockId}`,
+    method: 'put',
+    data: data
+  });
+}
+
+/** 重排某一类文案块的顺序（ids 为该类型的完整顺序，顺序即详情页从上到下） */
+export function reorderCopyBlocks(
+  taskId: string | number,
+  blockType: string,
+  ids: Array<string | number>
+): AxiosPromise<void> {
+  return request({
+    url: `/creative/projects/${taskId}/copy-blocks/reorder`,
+    method: 'post',
+    data: { blockType, ids }
+  });
+}
+
+/** 删除一条文案块 */
+export function deleteCopyBlock(taskId: string | number, blockId: string | number): AxiosPromise<void> {
+  return request({
+    url: `/creative/projects/${taskId}/copy-blocks/${blockId}`,
+    method: 'delete'
+  });
+}
+
+/** 由已确认事实派生参数行（幂等；返回本次新增条数） */
+export function seedCopyBlocksFromFacts(taskId: string | number): AxiosPromise<number> {
+  return request({
+    url: `/creative/projects/${taskId}/copy-blocks/seed-from-facts`,
+    method: 'post'
   });
 }
 

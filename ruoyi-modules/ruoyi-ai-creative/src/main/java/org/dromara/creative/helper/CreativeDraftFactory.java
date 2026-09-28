@@ -81,6 +81,18 @@ public final class CreativeDraftFactory {
                               String title, String subtitle, String bodyText, String soloStatement) {
     }
 
+    /**
+     * 文案块提示（R7：卖点块的标题与内容）。
+     *
+     * <p>用这个简单记录而不是直接依赖 VO：草稿工厂是纯函数式的文案推导器，
+     * 入参越窄，越容易在单测里复现「同样输入必然同样输出」。</p>
+     *
+     * @param title   卖点标题（进副标题）
+     * @param content 卖点说明（进正文）
+     */
+    public record CopyHint(String title, String content) {
+    }
+
     // ------------------------------------------------------------------
     // 视觉方向
     // ------------------------------------------------------------------
@@ -174,7 +186,29 @@ public final class CreativeDraftFactory {
      * @return 7 屏草稿
      */
     public static List<ScreenDraft> screens(ObjectNode dna, String productName, Map<String, String> facts) {
+        return screens(dna, productName, facts, null, List.of());
+    }
+
+    /**
+     * 生成 7 屏分镜草稿（R7：接入品牌 Brief 与卖点块）。
+     *
+     * <p><b>接入原则</b>：有数据就用数据，<b>没数据保持原有骨架</b>——
+     * 没有填品牌 Brief 的项目，分镜必须与 R7 之前完全一致，否则「没填」会变成「分镜变空」，
+     * 把可用性倒退成阻塞。卖点只取前 2 条：骨架里就是两个卖点屏，多出来的先留在文案块里等人决定。</p>
+     *
+     * @param dna              锁定基因
+     * @param productName      产品名
+     * @param facts            已确认事实
+     * @param mustShowFirstLine 品牌 Brief 必显信息的第一行（可空；进品牌收尾屏）
+     * @param sellingPoints    卖点块（按 sortNo 升序，可空）
+     * @return 7 屏草稿
+     */
+    public static List<ScreenDraft> screens(ObjectNode dna, String productName, Map<String, String> facts,
+                                            String mustShowFirstLine, List<CopyHint> sellingPoints) {
         Map<String, String> f = facts == null ? Map.of() : facts;
+        List<CopyHint> points = sellingPoints == null ? List.of() : sellingPoints;
+        CopyHint point1 = points.isEmpty() ? null : points.get(0);
+        CopyHint point2 = points.size() > 1 ? points.get(1) : null;
         String product = StringUtils.blankToDefault(
             firstNonBlank(f.get("product_name"), productName), "该产品");
         String color = blank(f.get("color"));
@@ -201,16 +235,16 @@ public final class CreativeDraftFactory {
 
         list.add(new ScreenDraft("SELLING_POINT", "卖点一", "LOOSE",
             product + " · " + sellingLabel(color, "配色", "卖点一"),
-            null,
-            null,
+            point1 == null ? null : blank(point1.title()),
+            point1 == null ? null : blank(point1.content()),
             color == null
                 ? "把第一个卖点用画面讲清楚：用「" + product + "」身上最直观的那个特征当主角，而不是写一行字"
                 : "把「" + color + "」这个已确认的配色特征拍成画面主角——让人先看到颜色，再读文字"));
 
         list.add(new ScreenDraft("SELLING_POINT", "卖点二", "LOOSE",
             product + " · " + sellingLabel(craft, "工艺", "卖点二"),
-            null,
-            null,
+            point2 == null ? null : blank(point2.title()),
+            point2 == null ? null : blank(point2.content()),
             craft == null
                 ? "第二个卖点要与第一个在画面上有区分：换机位、换景别，别让两屏看起来是同一张图"
                 : "把「" + craft + "」讲成画面：换机位与景别，与上一屏的卖点在视觉上明确区分开"));
@@ -242,8 +276,10 @@ public final class CreativeDraftFactory {
 
         list.add(new ScreenDraft("BRAND", "品牌收尾", "LOOSE",
             "品牌收尾",
-            firstNonBlank(packing, brandTone, "品牌与包装"),
-            joinNonBlank("；", packing, brandTone),
+            // R7：品牌 Brief 的必显信息第一行进副标题（它是品牌方要求必须出现的内容，
+            // 放在收尾屏最自然）；没填 Brief 时与 R7 之前完全一致
+            firstNonBlank(mustShowFirstLine, packing, brandTone, "品牌与包装"),
+            joinNonBlank("；", mustShowFirstLine, packing, brandTone),
             "留下品牌印象并收尾：画面克制、不抢产品"
                 + (brandTone == null ? "" : "，调性落在已确认的「" + brandTone + "」上")));
 

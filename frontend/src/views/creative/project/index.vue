@@ -5,7 +5,7 @@
     <div v-if="showGuide" class="guide-bar">
       <span>
         R0 接线版：项目复用「内容生产协同」的电商详情页任务，出图复用图像创作内核（已发布工作流）。
-        本轮只做「上传产品图 → 出一张 HERO 主图 → 可预览 → 全程可追溯」这条闭环，视觉基因/分镜/视觉门/排版在 R1–R3 交付。
+        本轮只做「上传参考图（可同时登记为产品图）→ 出一张 HERO 主图 → 可预览 → 全程可追溯」这条闭环，视觉基因/分镜/视觉门/排版在 R1–R3 交付。
       </span>
       <button type="button" title="关闭提示" @click="dismissGuide">✕</button>
     </div>
@@ -62,7 +62,7 @@
       <section class="panel detail-panel">
         <div v-if="!currentProject" class="placeholder">
           <p>从左侧选择一个视觉项目开始。</p>
-          <p class="hint">选好项目后：上传产品参考图 → 描述你想要的画面 → 生成 HERO 主图候选。</p>
+          <p class="hint">选好项目后：上传参考图 → 填品牌 Brief 与文案要点 → 描述你想要的画面 → 生成 HERO 主图候选。</p>
         </div>
 
         <template v-else>
@@ -91,7 +91,7 @@
             <!-- 参考图 / 产品图 -->
             <section class="block">
               <div class="block-head">
-                <h4>1. 产品参考图</h4>
+                <h4>1. 产品图与参考图</h4>
                 <div class="block-actions">
                   <span class="muted">{{ imageFiles.length }} 张</span>
                   <el-tag :type="productImage?.configured ? 'success' : 'warning'" size="small" effect="dark">
@@ -100,8 +100,14 @@
                 </div>
               </div>
               <p class="hint">
-                产品图 = 产品主数据里的那张（<b>产品保真基准</b>）；参考图 = 本次喂给模型的图。
-                质检会分别以这两张为基准比对生成图。角色徽标按后端记录的来源如实展示，不靠推测。
+                这里有两样不同的东西，别混：<b>产品图</b> = 产品主数据里唯一的那张照片，是
+                <b>产品保真基准</b>（质检拿它比对生成图里的产品有没有走形；只用提示词约束，不自动判死）；
+                <b>参考图</b> = 本次任务喂给模型的输入图，可以有好多张，是
+                <b>一致性基准</b>（质检拿它比对画面是否走样，不一致会被筛除）。
+                角色徽标按后端记录的来源如实展示，不靠推测。
+              </p>
+              <p class="hint">
+                上传参考图<b>不会改变项目阶段</b>（已完成的项目也能补图）；只有下面的勾选框会把某张图登记成产品图。
               </p>
               <p class="hint">
                 <template v-if="!canBindProductImage">
@@ -159,7 +165,7 @@
                   >
                     <div class="upload-slot">
                       <span class="plus">＋</span>
-                      <span>{{ asProductImage ? '上传并设为产品图' : '上传产品图' }}</span>
+                      <span>{{ asProductImage ? '上传并设为产品图' : '上传参考图' }}</span>
                       <span class="hint">PNG/JPG/WEBP，≤20MB</span>
                     </div>
                   </el-upload>
@@ -167,10 +173,172 @@
               </div>
             </section>
 
+            <!-- 品牌 Brief：委托方的要求 -->
+            <section class="block">
+              <div class="block-head">
+                <h4>2. 品牌 Brief</h4>
+                <div class="block-actions">
+                  <el-tag :type="briefStatusType" size="small" effect="dark">{{ briefStatusText }}</el-tag>
+                  <span v-if="briefDirty" class="brief-dirty">已修改未保存</span>
+                  <el-button size="small" plain :loading="briefBusy === 'load'" @click="onRefreshBrief">刷新</el-button>
+                  <el-button size="small" type="primary" plain :loading="briefBusy === 'save'" @click="doSaveBrandBrief">
+                    保存
+                  </el-button>
+                  <el-button size="small" type="primary" :loading="briefBusy === 'confirm'" @click="doConfirmBrandBrief">
+                    确认品牌要求
+                  </el-button>
+                </div>
+              </div>
+              <p class="hint">
+                这里填的是<b>委托方（品牌）的要求</b>——「必须怎么做」，不是产品客观事实。
+                产品事实在下面「4. 事实确认」里逐条确认。品牌调性与事实里的 brand_tone
+                <b>并存</b>：一个是品牌方自己填的要求，一个是从资料里解析确认的，两者冲突时同时展示、由人裁定，不自动合并。
+                已确认的 Brief 会被出图提示词与文案校验引用（必显信息进正向词、禁用词进负向词）。
+              </p>
+              <p v-if="brandBriefError" class="fact-error">
+                {{ brandBriefError }}（点右上「刷新」重试，页面不会用默认值糊过去）
+              </p>
+              <div class="brief-grid">
+                <div v-for="field in briefFields" :key="field.key" class="brief-row">
+                  <label :for="'brief-' + field.key">{{ field.label }}</label>
+                  <div class="brief-control">
+                    <el-input
+                      :id="'brief-' + field.key"
+                      v-model="briefForm[field.key]"
+                      type="textarea"
+                      :rows="field.rows"
+                      :maxlength="field.max"
+                      show-word-limit
+                      :placeholder="field.placeholder"
+                    />
+                    <span class="hint">{{ field.hint }}</span>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- 文案与要点：详情页的「字」 -->
+            <section class="block">
+              <div class="block-head">
+                <h4>3. 文案与要点</h4>
+                <div class="block-actions">
+                  <span class="muted">共 {{ copyBlocks.length }} 条</span>
+                  <el-button size="small" plain :loading="copyBusy === 'load'" @click="loadCopyBlocks">刷新</el-button>
+                </div>
+              </div>
+              <p class="hint">
+                这块是详情页要说的「字」。去向按后端实际接线如实写：<b>卖点 / 正文 / 参数</b>按这里的顺序进
+                <b>详情页长图</b>（卖点还会进分镜草稿的卖点屏）。
+                「必显信息」不在这里录入——它是<b>品牌方的要求</b>，统一在「2. 品牌 Brief」里填，由出图提示词与闸门引用，
+                避免同一件事有两个真相源。
+                与分镜的分工：分镜屏文案是「这一屏这张图配什么字」，<b>R7 起屏文案也会进图像提示词</b>（画面独白优先）；
+                而这里整页的文字不进出图提示词——出图提示词用的是视觉基因 + 「2. 品牌 Brief」的必显 / 主推 / 禁用词。
+              </p>
+              <p v-if="copyLoadError" class="fact-error">
+                {{ copyLoadError }}（点右上「刷新」重试，页面不会用空表糊过去）
+              </p>
+              <el-tabs v-model="copyTab">
+                <el-tab-pane v-for="tab in copyTabs" :key="tab.value" :label="tab.label" :name="tab.value">
+                  <p class="hint">{{ tab.hint }}</p>
+                  <p class="copy-usedat">{{ tab.usedAt }}</p>
+                  <div class="block-actions copy-toolbar">
+                    <el-button size="small" type="primary" plain @click="openCopyBlockDialog(tab.value)">
+                      ＋ 新增{{ tab.label }}
+                    </el-button>
+                    <el-button
+                      v-if="tab.value === 'SPEC_ROW'"
+                      size="small"
+                      plain
+                      :loading="copyBusy === 'seed'"
+                      @click="doSeedFromFacts"
+                    >
+                      从已确认事实派生
+                    </el-button>
+                    <span v-if="tab.value === 'SPEC_ROW'" class="hint">
+                      派生出来的行标为「事实派生」；改过事实后请重新派生，以免两处不一致。
+                    </span>
+                    <span v-else-if="tab.value === 'SELLING_POINT'" class="hint">
+                      用「↑ / ↓」调整优先级，顺序即详情页从上到下的顺序，点一下立即保存。
+                    </span>
+                  </div>
+                  <el-table v-if="blocksOf(tab.value).length" :data="blocksOf(tab.value)" size="small">
+                    <el-table-column label="排序" width="126">
+                      <template #default="{ row }">
+                        <span class="muted">{{ asBlock(row).sortNo ?? '—' }}</span>
+                        <template v-if="tab.value === 'SELLING_POINT'">
+                          <el-button
+                            size="small"
+                            text
+                            type="primary"
+                            :disabled="isFirstBlock(tab.value, asBlock(row)) || copyBusy === 'reorder'"
+                            @click="moveBlock(asBlock(row), -1)"
+                          >
+                            ↑
+                          </el-button>
+                          <el-button
+                            size="small"
+                            text
+                            type="primary"
+                            :disabled="isLastBlock(tab.value, asBlock(row)) || copyBusy === 'reorder'"
+                            @click="moveBlock(asBlock(row), 1)"
+                          >
+                            ↓
+                          </el-button>
+                        </template>
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="标题" width="170" show-overflow-tooltip>
+                      <template #default="{ row }">{{ asBlock(row).title || '—' }}</template>
+                    </el-table-column>
+                    <el-table-column label="内容" min-width="240" show-overflow-tooltip>
+                      <template #default="{ row }">{{ asBlock(row).content || '—' }}</template>
+                    </el-table-column>
+                    <el-table-column label="来源" width="170">
+                      <template #default="{ row }">
+                        <el-tag size="small" effect="plain" :type="copySourceType(asBlock(row).source)">
+                          {{ copySourceLabel(asBlock(row).source) }}
+                        </el-tag>
+                        <span v-if="asBlock(row).sourceRef" class="muted">· {{ asBlock(row).sourceRef }}</span>
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="状态" width="90">
+                      <template #default="{ row }">
+                        <el-tag size="small" :type="copyStatusType(asBlock(row).status)">
+                          {{ copyStatusLabel(asBlock(row).status) }}
+                        </el-tag>
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="操作" width="130" fixed="right">
+                      <template #default="{ row }">
+                        <el-button
+                          link
+                          size="small"
+                          type="primary"
+                          @click="openCopyBlockDialog(tab.value, asBlock(row))"
+                        >
+                          编辑
+                        </el-button>
+                        <el-button
+                          link
+                          size="small"
+                          type="danger"
+                          :loading="copyBusy === 'block-' + String(asBlock(row).id)"
+                          @click="doDeleteCopyBlock(asBlock(row))"
+                        >
+                          删除
+                        </el-button>
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                  <p v-else class="empty">这一组还没有内容。点上面的「新增」录入。</p>
+                </el-tab-pane>
+              </el-tabs>
+            </section>
+
             <!-- 事实确认 -->
             <section class="block">
               <div class="block-head">
-                <h4>2. 事实确认</h4>
+                <h4>4. 事实确认</h4>
                 <div class="block-actions">
                   <span class="muted">已确认 {{ confirmedFacts.length }} 条 / 共 {{ facts.length }} 行</span>
                   <el-button
@@ -275,7 +443,7 @@
             <!-- 出图 -->
             <section class="block">
               <div class="block-head">
-                <h4>3. 生成 HERO 主图</h4>
+                <h4>5. 生成 HERO 主图</h4>
                 <span class="muted">R0 每次出 1 张候选；重试=新增一次候选</span>
               </div>
               <div class="form-row">
@@ -336,14 +504,14 @@
                 >
                   {{ submitting ? '提交中…' : '生成 HERO 主图候选' }}
                 </el-button>
-                <span v-if="!imageFiles.length" class="hint">请先上传产品参考图</span>
+                <span v-if="!imageFiles.length" class="hint">请先上传参考图</span>
               </div>
             </section>
 
             <!-- 候选 -->
             <section class="block">
               <div class="block-head">
-                <h4>4. 出图候选</h4>
+                <h4>6. 出图候选</h4>
                 <span class="muted">
                   {{ generations.length }} 条
                   <template v-if="polling">· 状态跟踪中…</template>
@@ -433,6 +601,48 @@
       </template>
     </el-dialog>
 
+    <!-- 新增/编辑文案与要点块 -->
+    <el-dialog v-model="copyDialogVisible" :title="copyDialogTitle" width="560px">
+      <el-form label-width="96px">
+        <el-form-item label="类型">
+          <span>{{ COPY_BLOCK_TYPE_LABELS[copyForm.blockType] || copyForm.blockType }}</span>
+        </el-form-item>
+        <el-form-item :label="copyFieldLabels.title">
+          <el-input
+            v-model="copyForm.title"
+            maxlength="255"
+            show-word-limit
+            :placeholder="copyFieldLabels.titlePlaceholder"
+          />
+        </el-form-item>
+        <el-form-item :label="copyFieldLabels.content">
+          <el-input
+            v-model="copyForm.content"
+            type="textarea"
+            :rows="5"
+            maxlength="2000"
+            show-word-limit
+            :placeholder="copyFieldLabels.contentPlaceholder"
+          />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="copyForm.remark" maxlength="500" show-word-limit placeholder="备注（可空）" />
+        </el-form-item>
+      </el-form>
+      <p v-if="copyDialogSourceHint" class="hint">{{ copyDialogSourceHint }}</p>
+      <template #footer>
+        <el-button @click="copyDialogVisible = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="copyBusy === 'saveBlock'"
+          :disabled="!copyForm.title.trim() && !copyForm.content.trim()"
+          @click="doSaveCopyBlock"
+        >
+          {{ copyEditingId == null ? '新增' : '保存' }}
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 新建项目 -->
     <el-dialog v-model="createVisible" title="新建视觉项目" width="520px">
       <el-form label-width="90px">
@@ -514,26 +724,39 @@ import {
 import type { CpFactFieldOptionVO, CpFactSnapshotVO } from '@/api/content/fact/types';
 import type { CpTaskFileVO } from '@/api/content/task/types';
 import {
+  addCopyBlock,
   addCreativeProject,
   bindProjectProductImage,
+  confirmBrandBrief,
+  deleteCopyBlock,
   fetchCreativeFileBlobUrl,
   fetchGenerationPreviewBlobUrl,
   fetchGenerationThumbnailBlobUrl,
+  getBrandBrief,
   getCreativeProject,
   getDna,
   getDnaPrompt,
   getProjectProductImage,
+  listCopyBlocks,
   listCreativeFiles,
   listCreativeProject,
   listCreativeTimeline,
   listCreativeWorkflows,
   listDnaVersions,
   listGenerations,
+  reorderCopyBlocks,
   retryGeneration,
+  saveBrandBrief,
+  seedCopyBlocksFromFacts,
   submitHero,
+  updateCopyBlock,
   uploadCreativeReference
 } from '@/api/creative';
 import type {
+  BrandBriefForm,
+  BrandBriefVO,
+  CopyBlockForm,
+  CopyBlockVO,
   CreativeProjectVO,
   CreativeWorkflowVO,
   DpGenerationVO,
@@ -542,6 +765,13 @@ import type {
   TagType
 } from '@/api/creative/types';
 import {
+  BRAND_BRIEF_STATUS_LABELS,
+  BRAND_BRIEF_STATUS_TYPES,
+  COPY_BLOCK_SOURCE_LABELS,
+  COPY_BLOCK_SOURCE_TYPES,
+  COPY_BLOCK_STATUS_LABELS,
+  COPY_BLOCK_STATUS_TYPES,
+  COPY_BLOCK_TYPE_LABELS,
   CREATIVE_STAGE_LABELS,
   CREATIVE_STAGE_TYPES,
   FILE_SOURCE_LABELS,
@@ -587,6 +817,239 @@ const factLoadError = ref('');
 const factBusy = ref('');
 const manualFactVisible = ref(false);
 const manualForm = reactive({ fieldCode: '', value: '', remark: '' });
+
+// ------------------------------------------------------------------
+// 品牌 Brief（委托方的要求）
+// ------------------------------------------------------------------
+
+/** 一个 Brief 字段的元信息：标签、行数、长度上限（与 dp_brand_brief 列宽一致）、填什么 */
+interface BriefField {
+  key: BriefFieldKey;
+  label: string;
+  rows: number;
+  max: number;
+  placeholder: string;
+  hint: string;
+}
+
+type BriefFieldKey =
+  | 'brandTone'
+  | 'mustShow'
+  | 'forbiddenWords'
+  | 'targetAudience'
+  | 'mainPush'
+  | 'sizeSpecReq'
+  | 'styleRef'
+  | 'remark';
+
+/**
+ * 品牌 Brief 的字段定义（顺序即页面顺序）。
+ * 长度上限照抄 dp_brand_brief 的列宽，页面先挡住超长，不让人填完才被后端拒。
+ */
+const briefFields: BriefField[] = [
+  {
+    key: 'brandTone',
+    label: '品牌调性',
+    rows: 2,
+    max: 500,
+    placeholder: '如：清新、治愈、自然；克制不喧哗',
+    hint: '品牌方希望的调性。与事实里的 brand_tone 并存，冲突时以人裁定（页面不会自动合并两处）。'
+  },
+  {
+    key: 'mustShow',
+    label: '必显信息',
+    rows: 3,
+    max: 2000,
+    placeholder: '一行一条，如：\n品牌名「趣往」\n「每日一枝，治愈生活」\n有机认证标志',
+    hint: '必须出现在成品里的内容（品牌名 / logo / 口号 / 资质），一行一条；出图与文案都会校验它有没有落地。'
+  },
+  {
+    key: 'forbiddenWords',
+    label: '禁用词与红线',
+    rows: 3,
+    max: 1000,
+    placeholder: '一行一条，如：\n最\n第一\n治疗失眠',
+    hint: '合规红线与禁用词，一行一条；它同时作为出图负向词与文案校验依据。'
+  },
+  {
+    key: 'mainPush',
+    label: '主推卖点与优先级',
+    rows: 3,
+    max: 2000,
+    placeholder: '一行一条，行首写优先级，如：\n1 单枝直发，48小时新鲜到家\n2 花苞大，开瓶率高',
+    hint: '行首的 1/2/3 就是优先级（1 最高）。'
+  },
+  {
+    key: 'targetAudience',
+    label: '目标人群',
+    rows: 2,
+    max: 500,
+    placeholder: '如：25-35 岁都市女性，悦己消费',
+    hint: '卖给谁。影响文案口吻与画面调性。'
+  },
+  {
+    key: 'sizeSpecReq',
+    label: '尺寸与规范',
+    rows: 2,
+    max: 1000,
+    placeholder: '如：详情页宽 750px；主图 1:1；正文不小于 14px',
+    hint: '画布比例、留白、字号、平台规范等硬要求。'
+  },
+  {
+    key: 'styleRef',
+    label: '参考风格',
+    rows: 2,
+    max: 1000,
+    placeholder: '如：参考图 2 的柔和自然光；无印良品式的留白',
+    hint: '参考图 / 参考品牌 / 风格描述，帮助统一画面取向。'
+  },
+  {
+    key: 'remark',
+    label: '其它说明',
+    rows: 2,
+    max: 500,
+    placeholder: '其它要交代的要求（可空）',
+    hint: '上面没覆盖到的要求写这里。'
+  }
+];
+
+/** Brief 表单（全部按字符串处理：后端列都是 varchar，空串与 null 语义相同） */
+const briefForm = reactive<Record<BriefFieldKey, string>>({
+  brandTone: '',
+  mustShow: '',
+  forbiddenWords: '',
+  targetAudience: '',
+  mainPush: '',
+  sizeSpecReq: '',
+  styleRef: '',
+  remark: ''
+});
+
+/** 服务端当前的 Brief（含状态与确认人/时间）；未填写时后端也返回对象 */
+const brandBrief = ref<BrandBriefVO | null>(null);
+/** 是否成功从服务端取过：没取到就不下「未填写」的结论 */
+const briefLoaded = ref(false);
+const brandBriefError = ref('');
+const briefBusy = ref('');
+/** 上次保存/加载时的表单快照，用来判断「已修改未保存」 */
+const briefSaved = ref('');
+
+/** 表单快照：按字段定义顺序拼，保证同一内容得到同一字符串 */
+function briefSnapshot(): string {
+  return JSON.stringify(briefFields.map((field) => briefForm[field.key] ?? ''));
+}
+
+// 初始快照 = 空表单：否则刚进页面什么都没动就会显示「已修改未保存」
+briefSaved.value = briefSnapshot();
+
+/**
+ * 是否「已修改未保存」。
+ *
+ * 刻意只比内容、不看是否加载成功：读接口失败时（表单是空的）人照样可以填写，
+ * 这时也必须如实提示「未保存」，不能因为「没取到」就假装没有改动。
+ */
+const briefDirty = computed(() => briefSnapshot() !== briefSaved.value);
+
+const briefStatusText = computed(() => {
+  if (!briefLoaded.value) return '未加载';
+  if (!brandBrief.value?.configured) return '未填写';
+  if (brandBrief.value.status === 'CONFIRMED') {
+    const who = brandBrief.value.confirmedByName || brandBrief.value.confirmedBy || '—';
+    const when = formatTime(brandBrief.value.confirmedAt) || '—';
+    return `已确认（${who} · ${when}）`;
+  }
+  return BRAND_BRIEF_STATUS_LABELS[brandBrief.value.status || 'DRAFT'] || '草稿';
+});
+
+const briefStatusType = computed<TagType>(() => {
+  if (!briefLoaded.value || !brandBrief.value?.configured) return 'info';
+  return BRAND_BRIEF_STATUS_TYPES[brandBrief.value.status || 'DRAFT'] || 'warning';
+});
+
+// ------------------------------------------------------------------
+// 文案与要点（详情页的「字」）
+// ------------------------------------------------------------------
+
+/**
+ * 三个分组：标签、这块字用在哪（usedAt，照后端实际接线如实写）、字段名（标题/内容）随类型变化。
+ *
+ * <p>{@code usedAt} 不是文案装饰：它按后端 R7 的真实读取点写，写错就等于骗人。
+ * 依据（改动前请先看代码）：卖点=详情页排版 + 分镜草稿前 2 条（CreativeLayoutServiceImpl#copyBlocksNode、
+ * CreativeStoryboardServiceImpl#sellingPointHints）；正文/参数=详情页排版。
+ *
+ * <p>为什么没有「必显信息」这一组：品牌方的必显要求统一在「品牌 Brief」的 mustShow 里录入，
+ * 提示词与闸门读的也是它；文案块里再放一个同义类型会出现两个真相源（后端 MUST_SHOW 枚举值
+ * 仅为兼容保留、已无录入入口）。</p>
+ */
+const copyTabs: Array<{
+  value: string;
+  label: string;
+  hint: string;
+  usedAt: string;
+  titleField: string;
+  contentField: string;
+}> = [
+  {
+    value: 'SELLING_POINT',
+    label: COPY_BLOCK_TYPE_LABELS.SELLING_POINT,
+    hint: '卖给人的理由，顺序从上到下就是优先级顺序。',
+    usedAt: '去向：详情页长图；另外生成分镜草稿时，按顺序取前 2 条写进两个卖点屏的文案。',
+    titleField: '卖点标题',
+    contentField: '卖点说明'
+  },
+  {
+    value: 'BODY_SECTION',
+    label: COPY_BLOCK_TYPE_LABELS.BODY_SECTION,
+    hint: '详情页正文的分段，一段一块。',
+    usedAt: '去向：详情页长图（按顺序从上到下排版）。',
+    titleField: '段落小标题',
+    contentField: '段落正文'
+  },
+  {
+    value: 'SPEC_ROW',
+    label: COPY_BLOCK_TYPE_LABELS.SPEC_ROW,
+    hint: '参数表的一行，可以从已确认事实派生，避免手抄。',
+    usedAt: '去向：详情页长图的参数表。',
+    titleField: '参数名',
+    contentField: '参数值'
+  }
+];
+
+const copyTab = ref('SELLING_POINT');
+const copyBlocks = ref<CopyBlockVO[]>([]);
+const copyLoadError = ref('');
+const copyBusy = ref('');
+const copyDialogVisible = ref(false);
+/** 正在编辑的块ID；null 表示新增 */
+const copyEditingId = ref<string | number | null>(null);
+/** 正在编辑的块来源（用于在弹窗里如实说明「事实派生」的语义） */
+const copyEditingSource = ref('');
+const copyForm = reactive<CopyBlockForm>({ blockType: 'SELLING_POINT', title: '', content: '', remark: '' });
+
+const copyDialogTypeLabel = computed(() => COPY_BLOCK_TYPE_LABELS[copyForm.blockType] || copyForm.blockType);
+
+const copyDialogTitle = computed(() => (copyEditingId.value == null ? '新增' : '编辑') + copyDialogTypeLabel.value);
+
+const copyFieldLabels = computed(() => {
+  const tab = copyTabs.find((item) => item.value === copyForm.blockType) || copyTabs[0];
+  return {
+    title: tab.titleField,
+    content: tab.contentField,
+    titlePlaceholder: tab.value === 'SPEC_ROW' ? '如：主体版本' : '一句话说清（可空）',
+    contentPlaceholder:
+      tab.value === 'SPEC_ROW' ? '如：单枝 50cm' : '要出现在详情页上的文字'
+  };
+});
+
+const copyDialogSourceHint = computed(() => {
+  if (copyEditingSource.value === 'FACT') {
+    return '这条是「事实派生」的：内容来自已确认事实，人工改动只影响这一条，不会写回事实；改过事实后请重新派生，以免两处不一致。';
+  }
+  if (copyEditingSource.value === 'MODEL') {
+    return '这条是「模型起草」的：来源徽标会一直保留，方便你分得清哪些是模型写的、哪些是自己写的。';
+  }
+  return '';
+});
 
 /** 流程指引线刷新令牌：事实动作成功后 +1，指引线会重新读一次阶段 */
 const flowToken = ref(0);
@@ -740,6 +1203,15 @@ async function selectProject(project: CreativeProjectVO) {
   fieldOptions.value = [];
   fieldOptionsLoaded.value = false;
   factLoadError.value = '';
+  // 换项目就换 Brief 与文案块：另一个项目的未保存输入不能留在这一页上
+  brandBrief.value = null;
+  briefLoaded.value = false;
+  briefBusy.value = '';
+  brandBriefError.value = '';
+  applyBriefToForm(null);
+  copyBlocks.value = [];
+  copyLoadError.value = '';
+  copyBusy.value = '';
   stopPolling();
   await loadDetail();
 }
@@ -788,6 +1260,9 @@ async function loadDetail() {
     void loadGenerationThumbs();
     syncPolling();
     void loadDnaState();
+    // 品牌 Brief 与文案块跟着详情一起取：各自失败各自如实报，不影响整页
+    void loadBrandBrief();
+    void loadCopyBlocks();
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '加载项目详情失败');
   }
@@ -922,6 +1397,327 @@ function asFact(row: unknown): CpFactSnapshotVO {
   return row as CpFactSnapshotVO;
 }
 
+// ------------------------------------------------------------------
+// 品牌 Brief：读 / 存 / 确认
+// ------------------------------------------------------------------
+
+/** 把服务端的 Brief 灌进表单，并把当前内容记为「已保存」快照 */
+function applyBriefToForm(data: BrandBriefVO | null) {
+  briefFields.forEach((field) => {
+    briefForm[field.key] = (data?.[field.key] as string | undefined) ?? '';
+  });
+  briefSaved.value = briefSnapshot();
+}
+
+/**
+ * 读品牌 Brief。
+ *
+ * <p>两个刻意的行为：</p>
+ * <ol>
+ *   <li>读失败不静默：置 brandBriefError，页面照实说「没取到」，空表不代表项目里没有要求；</li>
+ *   <li>已经取到过就不再自动重取（{@code force=false}）：跟随详情刷新时绝不覆盖人正在输入的内容，
+ *       只有「刷新」按钮才会用服务端内容替换当前表单。</li>
+ * </ol>
+ */
+async function loadBrandBrief(force = false) {
+  if (!currentProjectId.value) return;
+  // 已经取到过就不再自动覆盖输入：只有「刷新」按钮（force）才会用服务端内容替换当前表单
+  if (!force && briefLoaded.value) return;
+  briefBusy.value = 'load';
+  brandBriefError.value = '';
+  try {
+    const res = await getBrandBrief(currentProjectId.value);
+    brandBrief.value = res.data ?? null;
+    applyBriefToForm(brandBrief.value);
+    briefLoaded.value = true;
+  } catch (error) {
+    brandBrief.value = null;
+    briefLoaded.value = false;
+    brandBriefError.value =
+      '品牌 Brief 没取到（' + ((await extractErrorMessage(error)) ?? '接口失败') + '），下面的空表不代表该项目没有品牌要求';
+  } finally {
+    briefBusy.value = '';
+  }
+}
+
+function onRefreshBrief() {
+  if (briefDirty.value) {
+    ElMessage.warning('有未保存的修改，刷新会用服务端内容覆盖当前输入；请先点「保存」');
+    return;
+  }
+  void loadBrandBrief(true);
+}
+
+/** 提交体：只带 8 个要求字段（状态由 confirm 接口推进，这里不传 status） */
+function briefPayload(): BrandBriefForm {
+  return {
+    brandTone: briefForm.brandTone,
+    mustShow: briefForm.mustShow,
+    forbiddenWords: briefForm.forbiddenWords,
+    targetAudience: briefForm.targetAudience,
+    mainPush: briefForm.mainPush,
+    sizeSpecReq: briefForm.sizeSpecReq,
+    styleRef: briefForm.styleRef,
+    remark: briefForm.remark
+  };
+}
+
+/** 8 项里是否至少有一项写了内容（空白不算） */
+function briefPayloadHasContent(): boolean {
+  const payload = briefPayload();
+  return briefFields.some((field) => (payload[field.key] ?? '').trim().length > 0);
+}
+
+async function doSaveBrandBrief() {
+  if (!currentProjectId.value || briefBusy.value) return;
+  briefBusy.value = 'save';
+  try {
+    const res = await saveBrandBrief(currentProjectId.value, briefPayload());
+    if (res.data) {
+      brandBrief.value = res.data;
+    }
+    applyBriefToForm(brandBrief.value);
+    briefLoaded.value = true;
+    brandBriefError.value = '';
+    // 后端规则：保存草稿不会把已确认打回草稿（确认权在品牌方，不在保存表单）。
+    // 所以「已确认」的 Brief 被改过并保存后，状态仍是已确认——这必须说清楚，不能让页面假装还是那条被确认的内容。
+    if (brandBrief.value?.status === 'CONFIRMED') {
+      ElMessage.warning('已保存；状态仍是「已确认」。内容有改动，建议重新点「确认品牌要求」，让确认动作对得上最新内容。');
+    } else {
+      ElMessage.success('品牌 Brief 已保存（状态：草稿）');
+    }
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '保存品牌 Brief 失败');
+  } finally {
+    briefBusy.value = '';
+  }
+}
+
+async function doConfirmBrandBrief() {
+  if (!currentProjectId.value || briefBusy.value) return;
+  if (briefDirty.value) {
+    ElMessage.warning('有未保存的修改，请先点「保存」再确认');
+    return;
+  }
+  if (!brandBrief.value?.configured) {
+    ElMessage.warning('品牌 Brief 还没有内容：请先填写并保存，再确认');
+    return;
+  }
+  if (!briefPayloadHasContent()) {
+    ElMessage.warning('品牌 Brief 8 项全空：至少填一项再确认（确认后的要求会被出图与文案校验引用）');
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      '确认后这条 Brief 就是「品牌方已确认的要求」，出图提示词与文案校验会引用它。是否继续？',
+      '确认品牌要求',
+      { type: 'warning' }
+    );
+  } catch {
+    return;
+  }
+  briefBusy.value = 'confirm';
+  try {
+    const res = await confirmBrandBrief(currentProjectId.value);
+    if (res.data) {
+      brandBrief.value = res.data;
+      applyBriefToForm(brandBrief.value);
+    }
+    ElMessage.success('品牌要求已确认');
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '确认品牌要求失败');
+  } finally {
+    briefBusy.value = '';
+  }
+}
+
+// ------------------------------------------------------------------
+// 文案与要点：读 / 增 / 改 / 删 / 排序 / 从事实派生
+// ------------------------------------------------------------------
+
+/**
+ * 读全部文案块（不按类型过滤：一次取回，分组在页面本地做，切 Tab 不再打请求）。
+ *
+ * <p>读失败不静默：置 copyLoadError，页面照实说「没取到」。</p>
+ */
+async function loadCopyBlocks() {
+  if (!currentProjectId.value) return;
+  if (copyDialogVisible.value) return;
+  copyBusy.value = 'load';
+  copyLoadError.value = '';
+  try {
+    const res = await listCopyBlocks(currentProjectId.value);
+    copyBlocks.value = res.data || [];
+  } catch (error) {
+    copyBlocks.value = [];
+    copyLoadError.value =
+      '文案与要点没取到（' + ((await extractErrorMessage(error)) ?? '接口失败') + '），空表不代表项目里没有内容';
+  } finally {
+    copyBusy.value = '';
+  }
+}
+
+/** 某一类文案块，按 sortNo 升序（sortNo 相同退回按ID，保证顺序稳定） */
+function blocksOf(blockType: string): CopyBlockVO[] {
+  // 用 toSorted 而不是 sort：filter 出来的虽是新数组，但就地排序的写法在读代码时无法一眼看出
+  // 「没有改动共享状态」，且前端 lint 明确禁止就地排序（unicorn/no-array-sort）。
+  return copyBlocks.value
+    .filter((block) => (block.blockType || '') === blockType)
+    .toSorted((a, b) => (a.sortNo ?? 0) - (b.sortNo ?? 0) || String(a.id).localeCompare(String(b.id)));
+}
+
+/** el-table 插槽行类型是 DefaultRow，数据其实是我们的 VO；在模板里显式收窄，而不是把参数放宽成 any */
+function asBlock(row: unknown): CopyBlockVO {
+  return row as CopyBlockVO;
+}
+
+function copySourceLabel(source?: string): string {
+  return (source && COPY_BLOCK_SOURCE_LABELS[source]) || source || '';
+}
+
+function copySourceType(source?: string): TagType {
+  return (source && COPY_BLOCK_SOURCE_TYPES[source]) || 'info';
+}
+
+function copyStatusLabel(status?: string): string {
+  return (status && COPY_BLOCK_STATUS_LABELS[status]) || status || '—';
+}
+
+function copyStatusType(status?: string): TagType {
+  return (status && COPY_BLOCK_STATUS_TYPES[status]) || 'warning';
+}
+
+function isFirstBlock(blockType: string, block: CopyBlockVO): boolean {
+  const list = blocksOf(blockType);
+  return list.length === 0 || String(list[0].id) === String(block.id);
+}
+
+function isLastBlock(blockType: string, block: CopyBlockVO): boolean {
+  const list = blocksOf(blockType);
+  return list.length === 0 || String(list[list.length - 1].id) === String(block.id);
+}
+
+/**
+ * 上移 / 下移一条（只对卖点开放）。
+ *
+ * <p>为什么用按钮而不是拖拽：拖拽要额外依赖且容易在窄屏上误操作；按钮调序后立刻调 reorder 持久化，
+ * 顺序就是详情页从上到下的顺序。提交的是该类型的<b>完整</b>顺序，后端据此重写 sort_no。</p>
+ */
+async function moveBlock(block: CopyBlockVO, delta: number) {
+  if (!currentProjectId.value || copyBusy.value) return;
+  const blockType = block.blockType || '';
+  const list = blocksOf(blockType);
+  const index = list.findIndex((item) => String(item.id) === String(block.id));
+  const target = index + delta;
+  if (index < 0 || target < 0 || target >= list.length) return;
+  const ids: Array<string | number> = list.map((item) => item.id ?? '');
+  const [moved] = ids.splice(index, 1);
+  ids.splice(target, 0, moved);
+  copyBusy.value = 'reorder';
+  try {
+    await reorderCopyBlocks(currentProjectId.value, blockType, ids);
+    // 重新读一次，页面上显示的顺序以后端落库的 sort_no 为准（不做本地猜测）
+    const res = await listCopyBlocks(currentProjectId.value);
+    copyBlocks.value = res.data || [];
+    ElMessage.success('顺序已保存');
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '调整顺序失败');
+  } finally {
+    copyBusy.value = '';
+  }
+}
+
+/** 打开新增/编辑弹窗（传 block 即编辑） */
+function openCopyBlockDialog(blockType: string, block?: CopyBlockVO) {
+  copyForm.blockType = block?.blockType || blockType;
+  copyForm.title = block?.title || '';
+  copyForm.content = block?.content || '';
+  copyForm.remark = block?.remark || '';
+  copyEditingId.value = block?.id ?? null;
+  copyEditingSource.value = block?.source || '';
+  copyDialogVisible.value = true;
+}
+
+async function doSaveCopyBlock() {
+  if (!currentProjectId.value || copyBusy.value) return;
+  const title = copyForm.title.trim();
+  const content = copyForm.content.trim();
+  if (!title && !content) {
+    ElMessage.warning('标题和内容至少填一项');
+    return;
+  }
+  copyBusy.value = 'saveBlock';
+  try {
+    if (copyEditingId.value == null) {
+      await addCopyBlock(currentProjectId.value, {
+        blockType: copyForm.blockType,
+        title,
+        content,
+        remark: copyForm.remark.trim() || undefined
+      });
+      ElMessage.success('已新增');
+    } else {
+      await updateCopyBlock(currentProjectId.value, copyEditingId.value, {
+        blockType: copyForm.blockType,
+        title,
+        content,
+        remark: copyForm.remark.trim() || undefined
+      });
+      ElMessage.success('已保存');
+    }
+    copyDialogVisible.value = false;
+    copyTab.value = copyForm.blockType;
+    await loadCopyBlocks();
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '保存失败');
+  } finally {
+    copyBusy.value = '';
+  }
+}
+
+async function doDeleteCopyBlock(block: CopyBlockVO) {
+  if (!currentProjectId.value || block.id == null) return;
+  try {
+    await ElMessageBox.confirm(
+      `删除「${block.title || block.content || '这一条'}」？删除后详情页排版不会再包含它。`,
+      '删除文案块',
+      { type: 'warning' }
+    );
+  } catch {
+    return;
+  }
+  copyBusy.value = 'block-' + String(block.id);
+  try {
+    await deleteCopyBlock(currentProjectId.value, block.id);
+    ElMessage.success('已删除');
+    await loadCopyBlocks();
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '删除失败');
+  } finally {
+    copyBusy.value = '';
+  }
+}
+
+/** 从已确认事实派生参数行（幂等：已存在的不重复新增） */
+async function doSeedFromFacts() {
+  if (!currentProjectId.value || copyBusy.value) return;
+  copyBusy.value = 'seed';
+  try {
+    const res = await seedCopyBlocksFromFacts(currentProjectId.value);
+    const added = res.data ?? 0;
+    ElMessage.success(
+      added > 0
+        ? `已从已确认事实派生 ${added} 条参数行`
+        : '没有新增：可派生的参数行都已存在（派生是幂等的）'
+    );
+    await loadCopyBlocks();
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '从事实派生失败');
+  } finally {
+    copyBusy.value = '';
+  }
+}
+
 /** 看这个项目有没有锁定基因，并决定是否预填提示词（只在用户没写过提示词时预填） */
 async function loadDnaState() {
   promptFromDna.value = false;
@@ -1002,9 +1798,18 @@ async function loadGenerationThumbs() {
 }
 
 async function doUpload(options: UploadRequestOptions) {
-  if (!currentProjectId.value) return;
+  // 这里两个早退都必须给话：静默 return 会让人以为「点了没反应」（实际踩过）
+  if (!currentProjectId.value) {
+    ElMessage.warning('还没选中项目，请先在左侧选择视觉项目');
+    return;
+  }
+  if (!options.file) {
+    ElMessage.warning('没有选中图片，请重新选择');
+    return;
+  }
   const alsoProductImage = asProductImage.value;
   try {
+    // 上传参考图本身只是「追加一张输入图」，不会改项目阶段（页面提示按此如实写）；
     // 勾选时后端会在同一次请求里上传 + 回写产品主数据（先在服务端校验可行性再落对象存储）
     await uploadCreativeReference(currentProjectId.value, options.file as File, alsoProductImage);
     ElMessage.success(alsoProductImage ? '已上传，并登记为该产品的产品图' : '参考图已上传');
@@ -1721,6 +2526,55 @@ button {
   font-size: 12.5px;
   line-height: 1.8;
   color: #fca5a5;
+}
+
+/* 品牌 Brief：一行一个要求，左侧标签固定宽，右侧输入 + 一句「填什么」 */
+.brief-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.brief-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.brief-row > label {
+  flex: 0 0 112px;
+  padding-top: 8px;
+  font-size: 13px;
+  color: var(--t2);
+}
+.brief-control {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.brief-dirty {
+  font-size: 12px;
+  color: #fbbf24;
+}
+
+/* 文案与要点：分组工具条 */
+.copy-toolbar {
+  margin-bottom: 10px;
+}
+.copy-usedat {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #a5b4fc;
+}
+.studio :deep(.el-tabs__item) {
+  color: var(--t2);
+}
+.studio :deep(.el-tabs__item.is-active) {
+  color: var(--t1);
+}
+.studio :deep(.el-tabs__nav-wrap::after) {
+  background-color: var(--line);
 }
 
 .dna-hint {

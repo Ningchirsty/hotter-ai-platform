@@ -9,3 +9,12 @@ script/image/workflows/api/*.json text eol=lf
 script/image/workflows/*.json text eol=lf
 /script/deploy/hotter-release text eol=lf
 /script/deploy/gh-deploy-hotter.sudoers text eol=lf
+# 渲染模板同理（R7 踩到过）：模板文件按**文件字节**算 SHA-256 登记在 dp_layout_template，
+# requirePublished 一旦发现"渲染服务里的实时校验和 != 登记值"就**拒绝排版**。
+# 同一份模板在 Windows 检出是 CRLF、Linux 检出是 LF，sha256 不同 →
+# 换个平台打镜像就会把已发布模板打成"文件在发布后发生变化"，线上排版直接不可用。
+# 所以行尾必须与检出平台无关，固定 LF。
+renderer/templates/** text eol=lf
+# 渲染服务的 Dockerfile / 入口脚本同理：CRLF 会让容器内 `RUN` 与 `node` 解析出多余 \r。
+renderer/Dockerfile text eol=lf
+renderer/*.mjs text eol=lf

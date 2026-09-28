@@ -57,8 +57,8 @@ export const RUNNING_STAGES = [
 
 /** 八步骨架：步骤号、键、名称、归属页面 */
 export const STEP_META: Array<{ no: number; key: string; name: string; page: string }> = [
-  { no: 1, key: 'material', name: '项目与资料', page: '/creative/project' },
-  { no: 2, key: 'fact', name: '事实确认', page: '/creative/project' },
+  { no: 1, key: 'material', name: '项目资料与品牌要求', page: '/creative/project' },
+  { no: 2, key: 'fact', name: '事实与文案要点', page: '/creative/project' },
   { no: 3, key: 'dna', name: '视觉基因', page: '/creative/dna' },
   { no: 4, key: 'direction', name: '视觉方向', page: '/creative/storyboard' },
   { no: 5, key: 'storyboard', name: '分镜', page: '/creative/storyboard' },

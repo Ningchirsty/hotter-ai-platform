@@ -82,7 +82,14 @@ async function renderOnce({ templateCode, templateVersion, mode, selector, layou
     err.statusCode = 404;
     throw err;
   }
-  const html = fs.readFileSync(file, 'utf8').replace('__LAYOUT__', JSON.stringify(layout ?? {}));
+  // 注入 payload 的两个坑，都在这里堵住：
+  //   1) `<` 必须转义：模板把 payload 内联进 <script> 里，文案里一旦出现 `</script>`
+  //      就会提前闭合脚本，整页渲染成空白（R7 的「文案与要点」是用户自由文本，可达）；
+  //      转成 \u003c 后，JS 字符串语义完全相同，但不可能再闭合标签。
+  //   2) 替换值必须用函数返回：String.replace 的字符串替换会把 `$&`/`$1` 当替换模式解释，
+  //      而 payload 里可能有用户输入的钱数或类似文本。
+  const payloadJson = JSON.stringify(layout ?? {}).replace(/</g, '\\u003c');
+  const html = fs.readFileSync(file, 'utf8').replace('__LAYOUT__', () => payloadJson);
   const checksum = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 
   const context = await browser.newContext({

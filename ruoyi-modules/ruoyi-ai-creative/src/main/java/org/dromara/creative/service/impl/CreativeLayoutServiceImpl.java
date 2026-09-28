@@ -17,9 +17,11 @@ import org.dromara.content.service.IContentTaskService;
 import org.dromara.creative.domain.DpDetailPage;
 import org.dromara.creative.domain.DpDetailPageVersion;
 import org.dromara.creative.domain.DpGeneration;
+import org.dromara.creative.domain.vo.DpCopyBlockVo;
 import org.dromara.creative.domain.vo.DpDetailPageVo;
 import org.dromara.creative.domain.vo.DpStoryboardScreenVo;
 import org.dromara.creative.domain.vo.DpStoryboardVo;
+import org.dromara.creative.enums.DpCopyBlockTypeEnum;
 import org.dromara.creative.enums.DpGenerationStatusEnum;
 import org.dromara.creative.enums.DpVisualStageEnum;
 import org.dromara.creative.helper.RendererClient;
@@ -27,6 +29,7 @@ import org.dromara.creative.helper.SimpleMultipartFile;
 import org.dromara.creative.mapper.DpDetailPageMapper;
 import org.dromara.creative.mapper.DpDetailPageVersionMapper;
 import org.dromara.creative.mapper.DpGenerationMapper;
+import org.dromara.creative.service.ICreativeCopyService;
 import org.dromara.creative.service.ICreativeDnaService;
 import org.dromara.creative.service.ICreativeGateService;
 import org.dromara.creative.service.ICreativeGenerationService;
@@ -64,7 +67,19 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
      * POC 阶段统一用长图模板；R3.2 铺开后按屏类型选模板
      */
     private static final String PAGE_TEMPLATE_CODE = "longpage";
-    private static final String PAGE_TEMPLATE_VERSION = "1.0.0";
+    /**
+     * 排版模板版本：R7 起用 1.0.1（新增卖点/正文/参数区块渲染）。
+     *
+     * <p><b>为什么不就地改 1.0.0</b>：模板走「登记 + 发布 + 校验和比对」，
+     * 就地改文件会让 {@code CreativeTemplateServiceImpl#requirePublished} 因校验和不一致
+     * <b>直接拒绝排版</b>，而且对账时还会把已发布的 1.0.0 退回草稿
+     * （见 {@code CreativeTemplateServiceImpl:82-92} 与 {@code :149-168}）。
+     * 因此 1.0.0 保持不动、留给历史项目与其已渲染版本，1.0.1 增加卖点/正文/参数区块。</p>
+     *
+     * <p><b>上线顺序依赖</b>：渲染服务必须先提供 longpage/1.0.1，再由人在「视觉模板库」对账
+     * （{@code POST /creative/templates/sync}）并发布；否则排版会直接报「模板未登记」。</p>
+     */
+    private static final String PAGE_TEMPLATE_VERSION = "1.0.1";
 
     private static final String KIND_V08 = "V08";
     private static final String KIND_FINAL = "V10_FINAL";
@@ -89,6 +104,10 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
     private final RendererClient rendererClient;
     private final IContentTaskService contentTaskService;
     private final ContentOssHelper contentOssHelper;
+    /**
+     * 文案与要点块（R7）：详情页正文/卖点/参数行的数据来源
+     */
+    private final ICreativeCopyService copyService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -156,6 +175,10 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
             }
         }
         renderLayout.set("screens", renderScreens);
+        // R7：把「文案与要点块」一并下发给渲染服务（卖点/正文分段/参数行）。
+        // 只做加法——老模板会忽略不认识的字段（1.0.0 不受影响），1.0.1 才渲染它们。
+        // MUST_SHOW 刻意不下发：它是「必须出现」的约束，由闸门与提示词负责，不是要印在页面上的字。
+        renderLayout.set("copyBlocks", copyBlocksNode(taskId));
         renderLayout.put("footerNote", "本页由 AI 视觉工厂生成 · 基因 "
             + StringUtils.blankToDefault(dna == null ? null : dna.path("schema").asText(), "-")
             + " · 分镜 " + storyboard.getStoryboardNo()
@@ -210,6 +233,43 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
         projectService.moveStage(taskId, DpVisualStageEnum.V08_READY, "LAYOUT_RENDER",
             JsonUtils.toJsonString(Map.of("version", nextVersion, "pageHeight", result.height())));
         return detail(taskId);
+    }
+
+    /**
+     * 文案与要点块的渲染载荷（R7）。
+     *
+     * <p>下发的三类是「会出现在详情页上的文字」：卖点、正文分段、参数行。
+     * 顺序按 renderer 的分组需要固定为 SELLING_POINT → BODY_SECTION → SPEC_ROW，
+     * 组内按 sortNo 升序（sortNo 就是页面从上到下的顺序）。</p>
+     *
+     * <p>无数据时下发空数组而不是 null：模板侧只需判断「有没有内容」，
+     * 不必再区分 null 与 []（少一个分支就少一类线上差异）。</p>
+     *
+     * @param taskId 项目ID
+     * @return 数组节点
+     */
+    private ArrayNode copyBlocksNode(Long taskId) {
+        ArrayNode array = MAPPER.createArrayNode();
+        List<DpCopyBlockVo> blocks = copyService.list(taskId, null);
+        for (String type : List.of(DpCopyBlockTypeEnum.SELLING_POINT.getCode(),
+            DpCopyBlockTypeEnum.BODY_SECTION.getCode(), DpCopyBlockTypeEnum.SPEC_ROW.getCode())) {
+            for (DpCopyBlockVo block : blocks) {
+                if (!type.equals(block.getBlockType())) {
+                    continue;
+                }
+                if (StringUtils.isBlank(block.getTitle()) && StringUtils.isBlank(block.getContent())) {
+                    // 空块不下发（它渲染出来就是一块空白），但也不删——由人在页面上处理
+                    continue;
+                }
+                ObjectNode row = MAPPER.createObjectNode();
+                row.put("blockType", block.getBlockType());
+                row.put("title", StringUtils.blankToDefault(block.getTitle(), ""));
+                row.put("content", StringUtils.blankToDefault(block.getContent(), ""));
+                row.put("sortNo", block.getSortNo() == null ? 0 : block.getSortNo());
+                array.add(row);
+            }
+        }
+        return array;
     }
 
     @Override

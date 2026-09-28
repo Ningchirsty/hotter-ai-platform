@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.dromara.aigov.domain.bo.AigInvokeBo;
 import org.dromara.aigov.domain.vo.AigInvokeVo;
 import org.dromara.aigov.service.IAigInvokeService;
+import org.dromara.aigov.service.invoker.ModelImagePayload;
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
@@ -445,6 +446,28 @@ public class ContentTaskServiceImpl implements IContentTaskService {
         load(taskId);
         return taskFileMapper.selectVoList(new LambdaQueryWrapper<CpTaskFile>()
             .eq(CpTaskFile::getTaskId, taskId).orderByAsc(CpTaskFile::getCreateTime));
+    }
+
+    @Override
+    public FileContent readFileContent(Long taskId, Long fileId) {
+        load(taskId);
+        CpTaskFile file = taskFileMapper.selectById(fileId);
+        if (file == null) {
+            throw new ServiceException("附件不存在：" + fileId);
+        }
+        // 附件必须属于这个任务：否则知道 fileId 就能读到别的任务的资料
+        if (!taskId.equals(file.getTaskId())) {
+            throw new ServiceException("附件不在该任务中：" + fileId);
+        }
+        if (!ContentFileKindEnum.IMAGE.getCode().equalsIgnoreCase(file.getFileKind())) {
+            throw new ServiceException("「" + StringUtils.blankToDefault(file.getFileName(), "未命名文件")
+                + "」不是图片，无法预览");
+        }
+        if (StringUtils.isBlank(file.getFileRef())) {
+            throw new ServiceException("附件没有存储引用，无法读取：" + fileId);
+        }
+        return new FileContent(ossHelper.getBytes(file.getFileRef()), file.getFileName(),
+            ModelImagePayload.mimeOfExt(file.getFileExt()));
     }
 
     @Override

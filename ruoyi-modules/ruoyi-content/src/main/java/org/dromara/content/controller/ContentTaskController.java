@@ -21,6 +21,9 @@ import org.dromara.content.domain.vo.ContentTaskDetailVo;
 import org.dromara.content.helper.ContentGateEngine;
 import org.dromara.content.service.IContentTaskService;
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -33,6 +36,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /**
@@ -154,6 +159,29 @@ public class ContentTaskController {
     @GetMapping("/{taskId}/files")
     public R<List<CpTaskFileVo>> files(@NotNull(message = "任务ID不能为空") @PathVariable("taskId") Long taskId) {
         return R.ok(taskService.listFiles(taskId));
+    }
+
+    /**
+     * 读取附件内容（图片预览用）。
+     *
+     * <p>走本接口而不是对象存储直链：内容资料在私有前缀且不登记 {@code sys_oss}，
+     * 直链会绕过内容模块的授权。只放行图片附件。</p>
+     *
+     * @param taskId 任务ID
+     * @param fileId 附件ID
+     * @return 图片字节
+     */
+    @SaCheckPermission(ContentConstants.PERM_TASK_QUERY)
+    @GetMapping("/{taskId}/files/{fileId}/content")
+    public ResponseEntity<byte[]> fileContent(@NotNull(message = "任务ID不能为空") @PathVariable("taskId") Long taskId,
+                                              @NotNull(message = "附件ID不能为空") @PathVariable("fileId") Long fileId) {
+        IContentTaskService.FileContent content = taskService.readFileContent(taskId, fileId);
+        String encoded = URLEncoder.encode(content.fileName(), StandardCharsets.UTF_8).replace("+", "%20");
+        return ResponseEntity.ok()
+            .contentType(MediaType.parseMediaType(content.mimeType()))
+            .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename*=UTF-8''" + encoded)
+            .header("X-Content-Type-Options", "nosniff")
+            .body(content.bytes());
     }
 
     /**

@@ -164,21 +164,42 @@
         </el-form-item>
 
         <el-form-item v-if="referenceMode === 'EXISTING'" label="参考图附件">
-          <el-select
-            v-model="runForm.referenceFileId"
-            placeholder="选择该任务下的图片附件"
-            clearable
-            style="width: 100%"
-            :loading="fileLoading"
-          >
-            <el-option
-              v-for="item in imageFiles"
-              :key="item.fileId"
-              :label="item.fileName"
-              :value="item.fileId!"
-            />
-          </el-select>
-          <div class="tip">仅列出该任务下已上传的图片附件；没有合适的就改用「上传新参考图」。</div>
+          <div v-loading="fileLoading" class="ref-picker">
+            <div v-if="!runForm.taskId" class="tip">请先在上方选择任务，这里会列出该任务已上传的图片附件。</div>
+            <div v-else-if="!imageFiles.length && !fileLoading" class="tip">
+              该任务下还没有图片附件；没有合适的就改用「上传新参考图」。
+            </div>
+            <div v-else class="ref-grid">
+              <div
+                v-for="item in imageFiles"
+                :key="String(item.fileId)"
+                class="ref-card"
+                :class="{ active: String(item.fileId) === String(runForm.referenceFileId) }"
+                :title="item.fileName"
+                @click="pickReferenceFile(item)"
+              >
+                <div class="ref-thumb">
+                  <img v-if="previewUrlOf(item.fileId)" :src="previewUrlOf(item.fileId)" :alt="item.fileName" />
+                  <span v-else-if="previewFailedOf(item.fileId)" class="ref-thumb-fallback">预览不可用</span>
+                  <span v-else class="ref-thumb-fallback">读取中…</span>
+                </div>
+                <div class="ref-name">{{ item.fileName }}</div>
+                <div class="ref-meta">
+                  <el-tag v-if="item.sourceType" size="small" effect="plain" :type="sourceTagType(item.sourceType)">
+                    {{ sourceLabel(item.sourceType) }}
+                  </el-tag>
+                  <span v-if="item.fileExt" class="muted">{{ String(item.fileExt).toUpperCase() }}</span>
+                  <span v-if="item.fileSize" class="muted">{{ formatFileSize(item.fileSize) }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="tip ref-picker-tip">
+            仅列出该任务下已上传的图片附件；没有合适的就改用「上传新参考图」。
+            <template v-if="previewFailedCount">
+              其中 {{ previewFailedCount }} 张预览失败，预览失败不影响选择（仍可选中该附件提交）。
+            </template>
+          </div>
         </el-form-item>
 
         <el-form-item v-else label="上传参考图">
@@ -346,7 +367,7 @@
 import { compressAccurately } from 'image-conversion';
 import type { CheckFinding, CheckMetrics, CpOutputCheckQuery, CpOutputCheckVO } from '@/api/content/check/types';
 import { delCheck, fetchCheckImageBlobUrl, getCheck, listCheck, runCheck } from '@/api/content/check';
-import { listTask, listTaskFiles } from '@/api/content/task';
+import { fetchTaskFileBlobUrl, listTask, listTaskFiles } from '@/api/content/task';
 import type { CpTaskFileVO, CpTaskVO } from '@/api/content/task/types';
 import { useLoading } from '@/hooks/async/useLoading';
 import { useSearchReset } from '@/hooks/form/useSearchReset';
@@ -444,6 +465,10 @@ const openRunDialog = async () => {
 /** 切换任务时刷新其图片附件 */
 const handleTaskChange = async (taskId: string | number) => {
   runForm.value.referenceFileId = undefined;
+  // 换任务先把上一批缩略图的 blob URL 释放掉，否则越点越占内存
+  revokePreviewUrls();
+  // 缓存键先指向新任务，再发请求：否则新图会以旧任务的键入缓存，卡片永远显示「读取中…」
+  previewTaskId.value = taskId || undefined;
   imageFiles.value = [];
   if (!taskId) {
     return;
@@ -452,11 +477,132 @@ const handleTaskChange = async (taskId: string | number) => {
   try {
     const res = await listTaskFiles(taskId);
     imageFiles.value = (res.data || []).filter((f: CpTaskFileVO) => f.fileKind === 'IMAGE');
+    // 缩略图不阻塞弹窗：卡片先出「读取中…」，取到一张显示一张
+    void loadPreviews(taskId);
   } catch {
     modal.msgError('任务附件加载失败');
   } finally {
     fileLoading.value = false;
   }
+};
+
+// ---------------- 参考图缩略图（看图选图） ----------------
+
+/**
+ * 附件来源角色 → 展示文案。
+ *
+ * `cp_task_file.source_type` 是内容/视觉工厂共用的列，视觉工厂侧的口径在
+ * `api/creative/types.ts` 的 `FILE_SOURCE_LABELS`；内容模块不反向依赖 creative 模块，
+ * 故本地登记同一份文案。遇到未登记的值原样显示，不猜测、不隐藏。
+ */
+const FILE_SOURCE_LABELS: Record<string, string> = {
+  UPLOAD: '上传图',
+  REFERENCE: '参考图',
+  PRODUCT: '产品图',
+  GENERATED: '生成图'
+};
+
+/** 附件来源角色 → Element Plus 标签类型 */
+const FILE_SOURCE_TAG_TYPES: Record<string, 'info' | 'primary' | 'success' | 'warning'> = {
+  UPLOAD: 'info',
+  REFERENCE: 'primary',
+  PRODUCT: 'success',
+  GENERATED: 'warning'
+};
+
+/** 缩略图 blob URL 缓存：键为「任务ID:附件ID」，同一附件不重复请求 */
+const previewUrls = reactive<Record<string, string>>({});
+/** 预览失败的附件（仍然可选中，只是没有缩略图） */
+const previewFailed = reactive<Record<string, boolean>>({});
+/**
+ * 预览请求代次。
+ *
+ * 换任务/关弹窗后自增：晚到的响应直接丢弃并释放，否则会把 URL 塞进已经清空的缓存里，
+ * 既没人再用也没人 revoke —— 那就是一处泄漏。
+ */
+let previewEpoch = 0;
+
+/** 缓存键：带上任务ID，避免换任务后「同 fileId」串图 */
+const previewKey = (taskId: string | number | undefined, fileId: string | number | undefined) =>
+  String(taskId) + ':' + String(fileId);
+
+/** 缩略图当前所属的任务ID：与附件ID一起组成缓存键（不依赖表单字段的事件时序） */
+const previewTaskId = ref<string | number | undefined>(undefined);
+
+/** 已就绪的缩略图 URL（空串表示还没有/不可用，模板据此显示占位） */
+const previewUrlOf = (fileId?: string | number) => previewUrls[previewKey(previewTaskId.value, fileId)] || '';
+
+/** 该附件预览是否已失败 */
+const previewFailedOf = (fileId?: string | number) =>
+  previewFailed[previewKey(previewTaskId.value, fileId)] === true;
+
+/** 预览失败的张数（用于在 tip 里如实说明，不静默） */
+const previewFailedCount = computed(() => imageFiles.value.filter(f => previewFailedOf(f.fileId)).length);
+
+/**
+ * 逐张取缩略图。
+ *
+ * 失败只标记「预览不可用」，不抛错也不阻塞选择：预览接口失败不该让用户没法提交检查。
+ */
+const loadPreviews = async (taskId: string | number) => {
+  const epoch = previewEpoch;
+  await Promise.all(
+    imageFiles.value.map(async file => {
+      const fileId = file.fileId;
+      if (fileId === undefined || fileId === null) {
+        return;
+      }
+      const key = previewKey(taskId, fileId);
+      if (previewUrls[key] || previewFailed[key]) {
+        return;
+      }
+      try {
+        const url = await fetchTaskFileBlobUrl(taskId, fileId, file.fileName);
+        if (epoch !== previewEpoch) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        previewUrls[key] = url;
+      } catch {
+        if (epoch === previewEpoch) {
+          previewFailed[key] = true;
+        }
+      }
+    })
+  );
+};
+
+/** 释放全部缩略图 blob URL，并让在途请求作废 */
+const revokePreviewUrls = () => {
+  previewEpoch += 1;
+  Object.keys(previewUrls).forEach(key => {
+    URL.revokeObjectURL(previewUrls[key]);
+    delete previewUrls[key];
+  });
+  Object.keys(previewFailed).forEach(key => delete previewFailed[key]);
+};
+
+/** 选中某张已有附件作为参考图（只写表单字段，提交逻辑不变） */
+const pickReferenceFile = (item: CpTaskFileVO) => {
+  if (item.fileId === undefined || item.fileId === null) {
+    return;
+  }
+  runForm.value.referenceFileId = item.fileId;
+};
+
+/** 来源角色文案 */
+const sourceLabel = (sourceType?: string) =>
+  sourceType ? FILE_SOURCE_LABELS[sourceType] || sourceType : '';
+
+/** 来源角色标签类型 */
+const sourceTagType = (sourceType?: string) => FILE_SOURCE_TAG_TYPES[sourceType] || 'info';
+
+/** 附件体积展示（后端给的 fileSize，不做估算：不足 1KB 就按字节显示，不四舍五入成 1KB） */
+const formatFileSize = (bytes: number) => {
+  if (bytes >= 1024 * 1024) {
+    return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+  }
+  return bytes >= 1024 ? Math.round(bytes / 1024) + ' KB' : bytes + ' B';
 };
 
 /** 选择文件（auto-upload=false，这里只抓住原始 File） */
@@ -681,6 +827,16 @@ watch(
   }
 );
 
+/** 关闭「发起检查」弹窗时释放参考图缩略图的 blob URL */
+watch(
+  () => runDialog.visible,
+  visible => {
+    if (!visible) {
+      revokePreviewUrls();
+    }
+  }
+);
+
 /** 解析后端下发的 JSON 字符串；解析失败返回兜底值而不是抛错 */
 const safeParse = <T,>(raw: string | undefined, fallback: T): T => {
   if (!raw) {
@@ -731,6 +887,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   revokeUrls();
+  revokePreviewUrls();
 });
 </script>
 
@@ -812,5 +969,105 @@ onBeforeUnmount(() => {
 
 .dialog-footer {
   text-align: right;
+}
+
+/*
+ * 参考图选择器（发起检查弹窗内）。与 .compare-grid 同理：弹窗内容 append-to-body 后
+ * 已不是 .content-check-page 的后代，嵌套选择器匹配不到，必须写在顶层。
+ */
+.ref-picker {
+  width: 100%;
+  min-height: 96px;
+}
+
+.ref-grid {
+  display: grid;
+  /* 可换行、可纵向滚动：图片多时既不横向溢出，也不会把弹窗撑高 */
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 8px;
+  max-height: 320px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.ref-card {
+  min-width: 0;
+  padding: 4px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  background: var(--el-fill-color-blank);
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+
+  &:hover {
+    border-color: var(--el-color-primary-light-5);
+  }
+
+  &.active {
+    border-color: var(--el-color-primary);
+    box-shadow: inset 0 0 0 1px var(--el-color-primary);
+  }
+}
+
+.ref-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 84px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--el-fill-color-light);
+
+  img {
+    display: block;
+    max-width: 100%;
+    max-height: 84px;
+    object-fit: contain;
+  }
+}
+
+/* 预览失败或读取中的占位：不显示破图，也不挡住选中 */
+.ref-thumb-fallback {
+  padding: 0 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--el-text-color-secondary);
+  text-align: center;
+}
+
+.ref-name {
+  display: -webkit-box;
+  margin-top: 4px;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.4;
+  word-break: break-all;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.ref-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  margin-top: 2px;
+  font-size: 12px;
+}
+
+/* .muted 原规则嵌在 .content-check-page 下，弹窗内容 teleport 后匹配不到，这里补一条 */
+.ref-meta .muted {
+  color: var(--el-text-color-secondary);
+}
+
+.ref-picker .tip,
+.ref-picker-tip {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--el-text-color-secondary);
 }
 </style>

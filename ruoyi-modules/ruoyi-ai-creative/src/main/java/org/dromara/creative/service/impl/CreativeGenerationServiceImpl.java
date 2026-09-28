@@ -27,6 +27,7 @@ import org.dromara.creative.helper.DnaPromptBuilder;
 import org.dromara.creative.helper.ReferenceImageFitter;
 import org.dromara.creative.mapper.CreativeTaskStageMapper;
 import org.dromara.creative.mapper.DpGenerationMapper;
+import org.dromara.creative.service.ICreativeBriefService;
 import org.dromara.creative.service.ICreativeDirectionService;
 import org.dromara.creative.service.ICreativeDnaService;
 import org.dromara.creative.service.ICreativeGateService;
@@ -62,6 +63,10 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
     private final ICreativeDirectionService directionService;
     private final ICreativeStoryboardService storyboardService;
     private final ICreativeGateService gateService;
+    /**
+     * 品牌 Brief（R7）：必显信息/主推卖点进正向提示词，禁用词进负向提示词
+     */
+    private final ICreativeBriefService briefService;
     private final DnaPromptBuilder dnaPromptBuilder;
     private final IContentTaskService contentTaskService;
     private final ContentOssHelper contentOssHelper;
@@ -76,17 +81,17 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
     @Override
     @Transactional(rollbackFor = Exception.class)
     public DpGenerationVo submitHero(Long taskId, CreativeHeroBo bo) {
-        return submitInternal(taskId, null, "HERO 主图", bo.getFileId(), bo.getPrompt(),
+        return submitInternal(taskId, null, "HERO 主图", null, bo.getFileId(), bo.getPrompt(),
             bo.getNegativePrompt(), bo.getWorkflowCode(), bo.getSizeLabel(), bo.getStrengthLabel(),
             "HERO_SUBMIT");
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public DpGenerationVo submitForScreen(Long taskId, Long screenId, String screenHint, String prompt,
-                                          String negativePrompt, String workflowCode,
+    public DpGenerationVo submitForScreen(Long taskId, Long screenId, String screenHint, String screenText,
+                                          String prompt, String negativePrompt, String workflowCode,
                                           String sizeLabel, String strengthLabel) {
-        return submitInternal(taskId, screenId, screenHint, null, prompt, negativePrompt,
+        return submitInternal(taskId, screenId, screenHint, screenText, null, prompt, negativePrompt,
             workflowCode, sizeLabel, strengthLabel, "SCREEN_SUBMIT");
     }
 
@@ -98,14 +103,16 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
      *
      * @param screenId      分镜单屏ID（HERO 单张为 null）
      * @param screenHint    画面用途（用于派生提示词，如「HERO 主图」「卖点一」）
+     * @param screenText    屏文案（R7：作为画面描述参与派生；HERO 单张为 null）
      * @param fileId        指定参考图附件ID（可空＝取最近一张图片附件）
-     * @param promptInput   用户提示词（空则按基因派生）
+     * @param promptInput   用户提示词（空则按基因+屏文案+品牌 Brief 派生）
      * @param eventAction   事件动作编码
      * @return 生成记录
      */
-    private DpGenerationVo submitInternal(Long taskId, Long screenId, String screenHint, Long fileId,
-                                          String promptInput, String negativeInput, String workflowInput,
-                                          String sizeLabel, String strengthLabel, String eventAction) {
+    private DpGenerationVo submitInternal(Long taskId, Long screenId, String screenHint, String screenText,
+                                          Long fileId, String promptInput, String negativeInput,
+                                          String workflowInput, String sizeLabel, String strengthLabel,
+                                          String eventAction) {
         // 视觉门前置：未过门不放行。放在最前面，避免白白生成素材、占一次 GPU。
         // 门禁在后端强制，前端按钮状态只是提示——绕过页面直接调接口同样会被拒。
         gateService.requireCanProduce(taskId);
@@ -133,17 +140,20 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
             ReferenceImageFitter.fit(bytes, reference.getFileName(), version.maxPixels());
         long assetId = submission.storeAsset(fitted.fileName(), fitted.bytes(), fitted.contentType());
 
-        // 3) 提示词：由「已锁定的视觉基因」派生（人可在页面上改，改了以人写的为准）
+        // 3) 提示词：由「已锁定的视觉基因 + 屏文案 + 品牌 Brief」派生（人可在页面上改，改了以人写的为准）
         Long dnaId = dnaService.activeDnaId(taskId);
         List<String> promptApplied = new ArrayList<>();
+        List<String> promptOmitted = new ArrayList<>();
         String prompt = promptInput;
         String negativePrompt = negativeInput;
         if (StringUtils.isBlank(prompt) || StringUtils.isBlank(negativePrompt)) {
             DnaPromptBuilder.Prompt derived = dnaPromptBuilder.build(
-                dnaService.activeDna(taskId), project.getProductName(), screenHint);
+                dnaService.activeDna(taskId), project.getProductName(), screenHint,
+                briefService.get(taskId), screenText);
             if (StringUtils.isBlank(prompt)) {
                 prompt = derived.prompt();
                 promptApplied = derived.applied();
+                promptOmitted = derived.omitted();
             }
             if (StringUtils.isBlank(negativePrompt)) {
                 negativePrompt = derived.negativePrompt();
@@ -224,6 +234,10 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
         detail.put("storyboardId", row.getStoryboardId());
         detail.put("promptFromDna", !promptApplied.isEmpty());
         detail.put("promptApplied", promptApplied);
+        // R7：因提示词长度上限未能放入的条目（必显信息/主推卖点/禁用词/屏文案截断）如实留痕，
+        // 否则「我明明填了必显信息，出图却没体现」只能靠翻代码解释
+        detail.put("promptOmitted", promptOmitted);
+        detail.put("screenTextUsed", StringUtils.isNotBlank(screenText));
         detail.put("screenId", screenId);
         detail.put("screenHint", screenHint);
         projectService.moveStage(taskId, DpVisualStageEnum.PRODUCING, eventAction,

@@ -18,15 +18,20 @@ import org.dromara.creative.domain.DpStoryboard;
 import org.dromara.creative.domain.DpStoryboardScreen;
 import org.dromara.creative.domain.bo.CreativeScreenBo;
 import org.dromara.creative.domain.vo.CreativeProjectVo;
+import org.dromara.creative.domain.vo.DpBrandBriefVo;
+import org.dromara.creative.domain.vo.DpCopyBlockVo;
 import org.dromara.creative.domain.vo.DpStoryboardScreenVo;
 import org.dromara.creative.domain.vo.DpStoryboardVo;
 import org.dromara.creative.domain.vo.DpVisualDirectionVo;
+import org.dromara.creative.enums.DpCopyBlockTypeEnum;
 import org.dromara.creative.enums.DpVisualStageEnum;
 import org.dromara.creative.helper.CreativeDraftBrain;
 import org.dromara.creative.helper.CreativeDraftFactory;
 import org.dromara.creative.helper.VisualDnaSchema;
 import org.dromara.creative.mapper.DpStoryboardMapper;
 import org.dromara.creative.mapper.DpStoryboardScreenMapper;
+import org.dromara.creative.service.ICreativeBriefService;
+import org.dromara.creative.service.ICreativeCopyService;
 import org.dromara.creative.service.ICreativeDirectionService;
 import org.dromara.creative.service.ICreativeDnaService;
 import org.dromara.creative.service.ICreativeProjectService;
@@ -66,6 +71,11 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
     private static final String STATUS_LOCKED = "LOCKED";
 
     /**
+     * 骨架里卖点屏的数量（R7：卖点块按 sortNo 取前 2 条对应这两屏，多出来的留在文案块里等人决定）
+     */
+    private static final int SELLING_POINT_SCREENS = 2;
+
+    /**
      * 屏结构骨架：屏类型、展示名与产品保真等级是稳定业务骨架（顺序 = 讲故事的节奏）。
      *
      * <p>R4 起，每屏的标题/副标题/正文/画面独白<b>不再来自这里</b>：
@@ -89,6 +99,14 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
     private final ICreativeProjectService projectService;
     private final IContentTaskService contentTaskService;
     private final CreativeDraftBrain brain;
+    /**
+     * 品牌 Brief（R7）：必显信息进品牌收尾屏，并要求模型改写时不得违背品牌方要求
+     */
+    private final ICreativeBriefService briefService;
+    /**
+     * 文案与要点块（R7）：卖点块进两个卖点屏
+     */
+    private final ICreativeCopyService copyService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -113,8 +131,12 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
         storyboard.setRhythmJson(rhythm());
 
         // 参数化草稿：每屏标题/副标题/正文/画面独白由「事实 + 基因 + 产品名 + 屏类型」推导。
+        // R7 起，「品牌 Brief 的必显信息」与「卖点块」也参与推导；两者都为空时与 R7 之前完全一致。
+        DpBrandBriefVo brief = briefService.get(taskId);
+        String mustShow = mustShowFirstLine(brief);
+        List<CreativeDraftFactory.CopyHint> sellingPoints = sellingPointHints(taskId);
         List<CreativeDraftFactory.ScreenDraft> drafts =
-            CreativeDraftFactory.screens(dna, project.getProductName(), facts);
+            CreativeDraftFactory.screens(dna, project.getProductName(), facts, mustShow, sellingPoints);
 
         // 有可用模型就用模型润色（LOCAL 优先，不出公司）；没有就如实回落参数化草稿。
         // 逐屏逐字段采纳：模型没给的屏保留草稿文案，绝不因为「模型返回了」就整段照抄。
@@ -125,7 +147,7 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
         int adopted = 0;
         CreativeDraftBrain.Suggestion suggestion = brain.suggest(CreativeConstants.CAP_STORYBOARD_DRAFT,
             project.getDataLevel(), "Y".equalsIgnoreCase(project.getAllowExternal()),
-            storyboardPrompt(project, facts, drafts), storyboardPayload(dna, facts, drafts));
+            storyboardPrompt(project, facts, drafts, brief), storyboardPayload(dna, facts, drafts, brief));
         if (suggestion.applied()) {
             modelKey = suggestion.modelKey();
             traceId = suggestion.traceId();
@@ -209,6 +231,10 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
         event.put("modelTraceId", traceId);
         event.put("modelAdoptedScreens", adopted);
         event.put("modelReason", modelReason);
+        // R7：把「草稿用了哪些外部输入」记下来，便于回答「这版分镜为什么这么写」
+        event.put("briefUsed", brief != null && Boolean.TRUE.equals(brief.getConfigured()));
+        event.put("briefMustShowUsed", StringUtils.isNotBlank(mustShow));
+        event.put("sellingPointBlocksUsed", sellingPoints.size());
         projectService.moveStage(taskId, DpVisualStageEnum.STORYBOARD_REVIEW, "STORYBOARD_GENERATE",
             JsonUtils.toJsonString(event));
         return loadVo(storyboard);
@@ -320,13 +346,18 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
     /**
      * 组提示词：把「已确认事实 + 参数化草稿」交给模型润色，并写死 JSON 契约。
      *
+     * <p>R7 起把品牌方要求一并写进去：模型改写时若不告诉它「必显什么、不能出现什么」，
+     * 它会把品牌方明确要求的内容改掉——那正是逐字段采纳最容易踩的坑。</p>
+     *
      * @param project 项目
      * @param facts   已确认事实
      * @param drafts  参数化草稿
+     * @param brief   品牌 Brief（可空）
      * @return 提示词
      */
     private static String storyboardPrompt(CreativeProjectVo project, Map<String, String> facts,
-                                           List<CreativeDraftFactory.ScreenDraft> drafts) {
+                                           List<CreativeDraftFactory.ScreenDraft> drafts,
+                                           DpBrandBriefVo brief) {
         StringBuilder sb = new StringBuilder();
         sb.append("为电商详情页项目「")
             .append(StringUtils.blankToDefault(project.getProductName(),
@@ -334,6 +365,14 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
             .append("」改写 7 屏分镜文案。\n");
         sb.append("已确认产品事实（只能用这些，不得编造）：")
             .append(facts.isEmpty() ? "暂无" : JsonUtils.toJsonString(facts)).append("\n");
+        if (brief != null && Boolean.TRUE.equals(brief.getConfigured())) {
+            // 只带与文案相关的三项，且各自截断：这段是给模型看的约束，不是全量档案
+            sb.append("品牌方要求（必须遵守，不得违背）：\n");
+            sb.append("  必显信息：").append(clip(brief.getMustShow())).append("\n");
+            sb.append("  禁用词与合规红线（不得出现）：").append(clip(brief.getForbiddenWords())).append("\n");
+            sb.append("  主推卖点（按优先级）：").append(clip(brief.getMainPush())).append("\n");
+            sb.append("  品牌调性：").append(clip(brief.getBrandTone())).append("\n");
+        }
         sb.append("屏的顺序与类型固定，不得增删改顺序：\n");
         for (CreativeDraftFactory.ScreenDraft draft : drafts) {
             sb.append("  ").append(draft.type()).append("：").append(draft.title())
@@ -344,6 +383,59 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
             + "\"soloStatement\":\"20~200 字：这一屏的画面自己要讲清什么\"}, ...共 7 项]}。"
             + "type 必须与上面给出的完全一致，只输出这个 JSON。");
         return sb.toString();
+    }
+
+    /**
+     * 多行要求折成一行并截断（进模型提示词用，避免把整份 Brief 塞进去）。
+     *
+     * @param value 多行文本
+     * @return 单行摘要；空返回「（未填）」
+     */
+    private static String clip(String value) {
+        if (StringUtils.isBlank(value)) {
+            return "（未填）";
+        }
+        String single = String.join("；", value.split("\\R")).trim();
+        return single.length() > 200 ? single.substring(0, 200) + "…" : single;
+    }
+
+    /**
+     * 品牌 Brief 必显信息的第一行（非空行）。
+     *
+     * @param brief 品牌 Brief（可空）
+     * @return 第一行；没有返回 null
+     */
+    private static String mustShowFirstLine(DpBrandBriefVo brief) {
+        if (brief == null || StringUtils.isBlank(brief.getMustShow())) {
+            return null;
+        }
+        for (String line : brief.getMustShow().split("\\R")) {
+            if (StringUtils.isNotBlank(line)) {
+                return line.trim();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 卖点块 → 草稿提示（按 sortNo 升序，取前 2 条：骨架里就是两个卖点屏）。
+     *
+     * @param taskId 项目ID
+     * @return 提示列表（可能为空）
+     */
+    private List<CreativeDraftFactory.CopyHint> sellingPointHints(Long taskId) {
+        List<CreativeDraftFactory.CopyHint> hints = new ArrayList<>();
+        List<DpCopyBlockVo> blocks = copyService.list(taskId, DpCopyBlockTypeEnum.SELLING_POINT.getCode());
+        for (DpCopyBlockVo block : blocks) {
+            if (StringUtils.isBlank(block.getTitle()) && StringUtils.isBlank(block.getContent())) {
+                continue;
+            }
+            hints.add(new CreativeDraftFactory.CopyHint(block.getTitle(), block.getContent()));
+            if (hints.size() >= SELLING_POINT_SCREENS) {
+                break;
+            }
+        }
+        return hints;
     }
 
     /**
@@ -363,15 +455,26 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
      * @param dna    基因
      * @param facts  事实
      * @param drafts 草稿
+     * @param brief  品牌 Brief（可空；只带与文案相关的摘要）
      * @return 载荷
      */
     private static Map<String, Object> storyboardPayload(ObjectNode dna, Map<String, String> facts,
-                                                        List<CreativeDraftFactory.ScreenDraft> drafts) {
+                                                        List<CreativeDraftFactory.ScreenDraft> drafts,
+                                                        DpBrandBriefVo brief) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("task", "storyboard-draft");
         payload.put("facts", facts);
         payload.put("dna", dna.toString());
         payload.put("screenTypes", drafts.stream().map(CreativeDraftFactory.ScreenDraft::type).toList());
+        if (brief != null && Boolean.TRUE.equals(brief.getConfigured())) {
+            Map<String, Object> briefSummary = new LinkedHashMap<>();
+            briefSummary.put("mustShow", clip(brief.getMustShow()));
+            briefSummary.put("forbiddenWords", clip(brief.getForbiddenWords()));
+            briefSummary.put("mainPush", clip(brief.getMainPush()));
+            briefSummary.put("brandTone", clip(brief.getBrandTone()));
+            briefSummary.put("status", brief.getStatus());
+            payload.put("brandBrief", briefSummary);
+        }
         return payload;
     }
 

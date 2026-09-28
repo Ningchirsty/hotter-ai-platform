@@ -28,6 +28,7 @@ import org.dromara.creative.helper.ReferenceImageAnalyzer;
 import org.dromara.creative.helper.VisualBrainAdapter;
 import org.dromara.creative.helper.VisualDnaSchema;
 import org.dromara.creative.mapper.DpVisualDnaMapper;
+import org.dromara.creative.service.ICreativeBriefService;
 import org.dromara.creative.service.ICreativeDnaService;
 import org.dromara.creative.service.ICreativeProjectService;
 import org.springframework.stereotype.Service;
@@ -80,6 +81,10 @@ public class CreativeDnaServiceImpl implements ICreativeDnaService {
     private final ReferenceImageAnalyzer imageAnalyzer;
     private final ContentOssHelper contentOssHelper;
     private final ICreativeProjectService projectService;
+    /**
+     * 品牌 Brief（R7）：提示词预览也要带上品牌方约束，否则预览与实际下发的内容不一致
+     */
+    private final ICreativeBriefService briefService;
     private final IContentTaskService contentTaskService;
 
     @Override
@@ -415,7 +420,9 @@ public class CreativeDnaServiceImpl implements ICreativeDnaService {
         String subject = StringUtils.isNotBlank(project.getProductName())
             ? project.getProductName()
             : node == null ? project.getTaskName() : node.path("subject").asText(project.getTaskName());
-        return promptBuilder.build(node, subject, screenHint);
+        // R7：预览与实际出图走同一个派生器与同一份输入（品牌 Brief 的必显/卖点/禁用词也在内），
+        // 否则页面上预填的提示词与真正发给模型的那一段会不一样
+        return promptBuilder.build(node, subject, screenHint, briefService.get(taskId), null);
     }
 
     // ------------------------------------------------------------------

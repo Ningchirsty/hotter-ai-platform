@@ -86,14 +86,15 @@ class CreativeProductionRetryPolicyTest {
     void retriesWhenFailedBelowCap() {
         stubStoryboard(screen(11L, "S01"));
         when(generationMapper.selectList(any())).thenReturn(List.of(failed(101L, 11L)));
-        when(generationService.submitForScreen(anyLong(), anyLong(), any(), any(), any(), any(), any(), any()))
+        when(generationService.submitForScreen(anyLong(), anyLong(), any(), any(), any(), any(), any(),
+            any(), any()))
             .thenReturn(new DpGenerationVo());
 
         int retried = service.autoRetryFailed(9L);
 
         Assertions.assertEquals(1, retried);
         verify(generationService, times(1))
-            .submitForScreen(eq(9L), eq(11L), any(), any(), any(), any(), any(), any());
+            .submitForScreen(eq(9L), eq(11L), any(), any(), any(), any(), any(), any(), any());
         verify(projectService, times(1)).appendEvent(eq(9L), eq("GENERATION"), eq("AUTO_RETRY"), any());
     }
 
@@ -107,7 +108,7 @@ class CreativeProductionRetryPolicyTest {
 
         Assertions.assertEquals(0, retried);
         verify(generationService, never())
-            .submitForScreen(anyLong(), anyLong(), any(), any(), any(), any(), any(), any());
+            .submitForScreen(anyLong(), anyLong(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -121,7 +122,7 @@ class CreativeProductionRetryPolicyTest {
 
         Assertions.assertEquals(0, retried);
         verify(generationService, never())
-            .submitForScreen(anyLong(), anyLong(), any(), any(), any(), any(), any(), any());
+            .submitForScreen(anyLong(), anyLong(), any(), any(), any(), any(), any(), any(), any());
         verify(screenMapper, times(1)).updateById(any(DpStoryboardScreen.class));
     }
 

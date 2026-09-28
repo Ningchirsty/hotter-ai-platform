@@ -166,11 +166,25 @@ public class CreativeProjectServiceImpl implements ICreativeProjectService {
         if (asProductImage) {
             productService.bindImageFromFile(productId, fileId);
         }
+        // 【R7 修复】补一张参考图**绝不改视觉阶段**，只留一条时间线事件。
+        //
+        // 为什么必须这样改（实测证据）：
+        //   1) 原先这里调 moveStage(MATERIAL_READY)。项目一旦走到「已完成(COMPLETED)」，
+        //      DpVisualStageEnum#canMoveTo 只允许退回「排版中/机排版完成/人工精修」，
+        //      MATERIAL_READY 被拒 → 本方法整体事务回滚（附件也一起回滚）→ 用户看到
+        //      「项目已处于「已完成」，不能再变为「资料就绪」」，表现就是「设置产品图后
+        //      无法上传产品参考图」。已在生产 2102948730396520450 上复现（HTTP 200 + code 500）。
+        //   2) 在「出图中(PRODUCING)」的项目上上传虽然成功，却把阶段倒退回「资料就绪」，
+        //      把已经跑完的出图进度标记抹掉（生产 2104416314929696770 时间线上可见）。
+        //
+        // 语义上：上传附图是「补充材料」，不是「回退流程」。阶段推进只由流程动作（生成基因、
+        // 锁定分镜、提交视觉门…）驱动，人的补充材料不该替流程做决定。因此这里改用 appendEvent，
+        // 保留「谁在什么时候补了哪张图」的可追溯性，同时把当前阶段原样写进事件明细备查。
         String stage = readStage(taskId);
-        moveStage(taskId, DpVisualStageEnum.MATERIAL_READY,
+        appendEvent(taskId, "REFERENCE",
             asProductImage ? "REFERENCE_UPLOADED_AS_PRODUCT_IMAGE" : "REFERENCE_UPLOADED",
             "{\"fileId\":" + fileId + ",\"asProductImage\":" + asProductImage
-                + ",\"fromStage\":" + quote(stage) + "}");
+                + ",\"stage\":" + quote(stage) + "}");
         return fileId;
     }
 

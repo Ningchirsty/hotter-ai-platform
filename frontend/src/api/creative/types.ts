@@ -618,3 +618,136 @@ export const GENERATION_STATUS_TYPES: Record<string, string> = {
   REJECTED: 'warning',
   APPROVED: 'success'
 };
+
+// ------------------------------------------------------------------
+// R7：品牌 Brief（委托方的要求）
+// ------------------------------------------------------------------
+
+/**
+ * 品牌 Brief（对齐后端 BrandBriefVo / 表 dp_brand_brief）。
+ *
+ * <p>它是「委托方的要求」，与 cp_fact_snapshot 里的品牌调性事实<b>并存而不合并</b>：
+ * 事实是「从产品资料里解析并确认」的客观信息，Brief 是「品牌方自己填的要求」，
+ * 两者冲突时页面同时展示、由人裁定。</p>
+ *
+ * <p>项目还没填过时后端也返回对象（{@code configured=false}、{@code status='DRAFT'}，其余为 null），
+ * 页面据此显示「未填写」，而不是把 null 当成"没这个功能"。</p>
+ */
+export interface BrandBriefVO {
+  taskId?: string | number;
+  /** 该项目是否已有 Brief 记录（后端在有记录时置 true） */
+  configured?: boolean;
+  /** DRAFT 草稿 / CONFIRMED 品牌方已确认 */
+  status?: string;
+  brandTone?: string;
+  /** 必显信息，一行一条（品牌名/logo/口号/资质） */
+  mustShow?: string;
+  /** 禁用词与合规红线，一行一条 */
+  forbiddenWords?: string;
+  targetAudience?: string;
+  /** 主推卖点与优先级，一行一条，行首数字即优先级 */
+  mainPush?: string;
+  sizeSpecReq?: string;
+  styleRef?: string;
+  remark?: string;
+  confirmedBy?: string | number;
+  /** 后端若一并返回确认人姓名则用它，否则退化为显示 confirmedBy 的ID（不猜名字） */
+  confirmedByName?: string;
+  confirmedAt?: string;
+  updateTime?: string;
+}
+
+/** 品牌 Brief 保存表单（保存草稿用；状态由 confirm 接口推进，这里不传） */
+export interface BrandBriefForm {
+  brandTone?: string;
+  mustShow?: string;
+  forbiddenWords?: string;
+  targetAudience?: string;
+  mainPush?: string;
+  sizeSpecReq?: string;
+  styleRef?: string;
+  remark?: string;
+}
+
+/** 品牌 Brief 状态 → 展示 */
+export const BRAND_BRIEF_STATUS_LABELS: Record<string, string> = {
+  DRAFT: '草稿',
+  CONFIRMED: '已确认'
+};
+
+/** 品牌 Brief 状态 → 标签颜色 */
+export const BRAND_BRIEF_STATUS_TYPES: Record<string, TagType> = {
+  DRAFT: 'warning',
+  CONFIRMED: 'success'
+};
+
+// ------------------------------------------------------------------
+// R7：文案与要点（详情页的「字」）
+// ------------------------------------------------------------------
+
+/** 文案块类型（对齐 dp_copy_block.block_type） */
+export type CopyBlockType = 'SELLING_POINT' | 'BODY_SECTION' | 'SPEC_ROW' | 'MUST_SHOW';
+
+/** 文案块（对齐后端 CopyBlockVo / 表 dp_copy_block） */
+export interface CopyBlockVO {
+  id?: string | number;
+  taskId?: string | number;
+  /** SELLING_POINT / BODY_SECTION / SPEC_ROW / MUST_SHOW */
+  blockType?: string;
+  /** 详情页从上到下的顺序（卖点即优先级） */
+  sortNo?: number;
+  /** 卖点标题 / 段落小标题 / 参数名 */
+  title?: string;
+  /** 卖点说明 / 段落正文 / 参数值 */
+  content?: string;
+  /** MANUAL 人工录入 / MODEL 模型起草 / FACT 由已确认事实派生 */
+  source?: string;
+  /** 来源引用（事实编码等），用于回看它从哪来 */
+  sourceRef?: string;
+  /** DRAFT 草稿 / CONFIRMED 已确认 */
+  status?: string;
+  remark?: string;
+}
+
+/** 文案块新增/编辑表单 */
+export interface CopyBlockForm {
+  blockType: string;
+  title?: string;
+  content?: string;
+  sortNo?: number;
+  remark?: string;
+}
+
+/** 文案块类型 → 展示 */
+export const COPY_BLOCK_TYPE_LABELS: Record<string, string> = {
+  SELLING_POINT: '卖点',
+  BODY_SECTION: '详情页正文分段',
+  SPEC_ROW: '参数行',
+  MUST_SHOW: '必显信息'
+};
+
+/** 文案块来源 → 展示（来源如实标注是这套系统的硬纪律） */
+export const COPY_BLOCK_SOURCE_LABELS: Record<string, string> = {
+  MANUAL: '人工录入',
+  MODEL: '模型起草',
+  FACT: '事实派生'
+};
+
+/** 文案块来源 → 标签颜色 */
+export const COPY_BLOCK_SOURCE_TYPES: Record<string, TagType> = {
+  MANUAL: 'info',
+  MODEL: 'primary',
+  FACT: 'success'
+};
+
+/** 文案块状态 → 展示 */
+export const COPY_BLOCK_STATUS_LABELS: Record<string, string> = {
+  DRAFT: '草稿',
+  CONFIRMED: '已确认'
+};
+
+/** 文案块状态 → 标签颜色 */
+export const COPY_BLOCK_STATUS_TYPES: Record<string, TagType> = {
+  DRAFT: 'warning',
+  CONFIRMED: 'success'
+};

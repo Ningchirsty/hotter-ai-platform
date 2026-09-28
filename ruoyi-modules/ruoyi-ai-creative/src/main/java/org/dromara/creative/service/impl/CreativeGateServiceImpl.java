@@ -15,12 +15,15 @@ import org.dromara.content.service.IContentTaskGateService;
 import org.dromara.content.service.IContentTaskService;
 import org.dromara.creative.domain.DpStageEvent;
 import org.dromara.creative.domain.vo.CreativeProjectVo;
+import org.dromara.creative.domain.vo.DpBrandBriefVo;
 import org.dromara.creative.domain.vo.DpStoryboardVo;
 import org.dromara.creative.domain.vo.DpVisualDirectionVo;
 import org.dromara.creative.domain.vo.DpVisualDnaVo;
+import org.dromara.creative.enums.DpBrandBriefStatusEnum;
 import org.dromara.creative.enums.DpVisualStageEnum;
 import org.dromara.creative.mapper.CreativeCardMapper;
 import org.dromara.creative.mapper.DpStageEventMapper;
+import org.dromara.creative.service.ICreativeBriefService;
 import org.dromara.creative.service.ICreativeDnaService;
 import org.dromara.creative.service.ICreativeDirectionService;
 import org.dromara.creative.service.ICreativeGateService;
@@ -61,6 +64,7 @@ public class CreativeGateServiceImpl implements ICreativeGateService {
     private static final String OPTION_BLOCK = "BLOCK";
 
     private final ICreativeProjectService projectService;
+    private final ICreativeBriefService briefService;
     private final ICreativeDnaService dnaService;
     private final ICreativeDirectionService directionService;
     private final ICreativeStoryboardService storyboardService;
@@ -111,6 +115,17 @@ public class CreativeGateServiceImpl implements ICreativeGateService {
 
         // 5) 品牌调性事实（建议，且仅当该交付类型确实声明了这条事实时才检查）
         items.add(brandToneItem(detail));
+
+        // 6) 品牌 Brief 已填写并确认（建议/R7）：
+        //    判据是 status=CONFIRMED，不是「填过就算」——闸门必须回答「品牌方确认了没有」。
+        //    等级刻意用 CONDITION 而不是 BLOCK：在跑的存量项目全都没有 Brief，
+        //    用 BLOCK 会把它们一次性卡死；品牌方要求必填时把等级改成 LEVEL_BLOCK 即可（一行）。
+        DpBrandBriefVo brief = briefService.get(taskId);
+        items.add(brandBriefItem(brief));
+
+        // 7) 已声明禁用词与合规红线（建议/R7）：没有禁用词清单，负向提示词就只能靠默认词表，
+        //    合规红线也无从校验；同样用 CONDITION，理由同上。
+        items.add(forbiddenWordsItem(brief));
 
         List<String> blocked = items.stream()
             .filter(item -> LEVEL_BLOCK.equals(item.level()) && !item.passed())
@@ -227,6 +242,61 @@ public class CreativeGateServiceImpl implements ICreativeGateService {
     // ------------------------------------------------------------------
     // 内部
     // ------------------------------------------------------------------
+
+    /**
+     * 品牌 Brief 是否已由品牌方确认（R7）。
+     *
+     * <p>判据是 {@code status=CONFIRMED}：光「填过」不算——若只判「有没有记录」，
+     * 保存一次草稿就能让这一项变绿，闸门就退化成了「有没有点过保存」。</p>
+     *
+     * @param brief 品牌 Brief 视图
+     * @return 闸门项
+     */
+    private static GateItem brandBriefItem(DpBrandBriefVo brief) {
+        boolean configured = brief != null && Boolean.TRUE.equals(brief.getConfigured());
+        boolean confirmed = configured
+            && DpBrandBriefStatusEnum.CONFIRMED.getCode().equals(brief.getStatus());
+        if (confirmed) {
+            return new GateItem("BRAND_BRIEF_CONFIRMED", "品牌 Brief 已填写并确认", LEVEL_CONDITION, true,
+                "品牌方已确认（确认时间 " + brief.getConfirmedAt() + "）");
+        }
+        return new GateItem("BRAND_BRIEF_CONFIRMED", "品牌 Brief 已填写并确认", LEVEL_CONDITION, false,
+            configured
+                ? "Brief 已填写但状态是「" + DpBrandBriefStatusEnum.descOf(brief.getStatus())
+                    + "」：请到「视觉项目 → 品牌 Brief」点「品牌方确认」"
+                : "还没有填品牌 Brief：请到「视觉项目 → 品牌 Brief」填写品牌调性/必显信息/"
+                    + "禁用词/主推卖点，然后点「品牌方确认」");
+    }
+
+    /**
+     * 是否已声明禁用词与合规红线（R7）。
+     *
+     * @param brief 品牌 Brief 视图
+     * @return 闸门项
+     */
+    private static GateItem forbiddenWordsItem(DpBrandBriefVo brief) {
+        boolean declared = brief != null && StringUtils.isNotBlank(brief.getForbiddenWords());
+        return new GateItem("FORBIDDEN_WORDS_DECLARED", "已声明禁用词与合规红线", LEVEL_CONDITION, declared,
+            declared ? "已声明 " + lineCount(brief.getForbiddenWords()) + " 条；出图负向提示词会逐条追加"
+                : "还没有声明禁用词：请到「视觉项目 → 品牌 Brief」的「禁用词与合规红线」里一行一条填上"
+                    + "（未声明时出图只能用默认禁忌词表）");
+    }
+
+    /**
+     * 多行文本的有效行数（仅用于可读说明）。
+     *
+     * @param value 多行文本
+     * @return 行数
+     */
+    private static int lineCount(String value) {
+        int count = 0;
+        for (String line : value.split("\\R")) {
+            if (StringUtils.isNotBlank(line)) {
+                count++;
+            }
+        }
+        return count;
+    }
 
     private GateItem brandToneItem(ContentTaskDetailVo detail) {
         boolean present = false;

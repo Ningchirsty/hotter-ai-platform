@@ -77,6 +77,33 @@ public interface IContentTaskService {
     List<CpTaskFileVo> listFiles(Long taskId);
 
     /**
+     * 读取任务附件的原始字节（页面预览用）。
+     *
+     * <p><b>为什么必须走这个服务端接口</b>：内容附件落在对象存储的私有前缀里、且不登记
+     * {@code sys_oss}，前端拿不到可用的直链（见 {@code ContentOssHelper} 的安全约定）。
+     * 之前内容模块只有「上传/列表」而没有「读内容」，所以「内容检查」里选参考图时
+     * 只能显示文件名——用户看到的是一个像文本的下拉框，而不是图片。</p>
+     *
+     * <p>只放行图片附件：这个接口是给「看图选图」用的，把任意文档内联返回没有业务需要，
+     * 反而多一个把非图片内容当图片渲染的风险面。</p>
+     *
+     * @param taskId 任务ID
+     * @param fileId 附件ID
+     * @return 图片字节 + 文件名 + MIME
+     */
+    FileContent readFileContent(Long taskId, Long fileId);
+
+    /**
+     * 附件内容读取结果。
+     *
+     * @param bytes    字节
+     * @param fileName 原始文件名（带扩展名）
+     * @param mimeType 图片 MIME
+     */
+    record FileContent(byte[] bytes, String fileName, String mimeType) {
+    }
+
+    /**
      * 触发解析（异步）。
      *
      * @param taskId 任务ID

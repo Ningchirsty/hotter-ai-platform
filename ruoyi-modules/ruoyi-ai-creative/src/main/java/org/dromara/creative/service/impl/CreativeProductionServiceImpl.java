@@ -212,10 +212,31 @@ public class CreativeProductionServiceImpl implements ICreativeProductionService
         // 屏类型转成「画面用途」，让提示词按屏派生（卖点屏与尺寸屏不该用同一句话）
         String hint = StringUtils.blankToDefault(screen.getScreenTypeDesc(),
             StringUtils.blankToDefault(screen.getScreenType(), "分镜屏"));
+        // R7：把这一屏的文案作为「画面描述」传进去（画面独白 → 正文 → 标题，取第一个非空的）。
+        // 屏文案说的就是「这一屏画面要讲什么」，而此前它完全不进提示词（prompt/negative 都传 null），
+        // 批量出图只能按屏类型猜——两个卖点屏是同一屏类型，猜出来的画面必然雷同。
+        // negative 仍传 null：负向词由视觉基因与品牌 Brief 的禁用词提供，不在这里重复喂。
+        String screenText = firstNonBlank(screen.getPictureSoloStatement(), screen.getBodyText(),
+            screen.getTitle());
         DpGenerationVo created = generationService.submitForScreen(
-            taskId, screen.getId(), hint, null, null, screen.getWorkflowCode(), null, null);
+            taskId, screen.getId(), hint, screenText, null, null, screen.getWorkflowCode(), null, null);
         markScreen(taskId, screen.getId(), "GENERATING");
         return created;
+    }
+
+    /**
+     * 取第一个非空值（屏文案的三个候选字段有优先级：画面独白最具体，标题最笼统）。
+     *
+     * @param values 候选值
+     * @return 第一个非空值；都没有返回 null
+     */
+    private static String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (StringUtils.isNotBlank(value)) {
+                return value;
+            }
+        }
+        return null;
     }
 
     /**
