@@ -929,6 +929,8 @@ const briefForm = reactive<Record<BriefFieldKey, string>>({
 const brandBrief = ref<BrandBriefVO | null>(null);
 /** 是否成功从服务端取过：没取到就不下「未填写」的结论 */
 const briefLoaded = ref(false);
+/** 当前这份 Brief 属于哪个项目：切项目后必须重新取，否则会拿上一个项目的结果冒充（竞态） */
+const briefTaskId = ref('');
 const brandBriefError = ref('');
 const briefBusy = ref('');
 /** 上次保存/加载时的表单快照，用来判断「已修改未保存」 */
@@ -1206,6 +1208,9 @@ async function selectProject(project: CreativeProjectVO) {
   // 换项目就换 Brief 与文案块：另一个项目的未保存输入不能留在这一页上
   brandBrief.value = null;
   briefLoaded.value = false;
+  // 关键：把「这份 Brief 属于哪个项目」也清掉。否则上一个项目迟到的响应会把
+  // briefLoaded 置成 true，新项目就再也不发请求（R7 浏览器验收复现的竞态）。
+  briefTaskId.value = '';
   briefBusy.value = '';
   brandBriefError.value = '';
   applyBriefToForm(null);
@@ -1420,23 +1425,32 @@ function applyBriefToForm(data: BrandBriefVO | null) {
  * </ol>
  */
 async function loadBrandBrief(force = false) {
-  if (!currentProjectId.value) return;
-  // 已经取到过就不再自动覆盖输入：只有「刷新」按钮（force）才会用服务端内容替换当前表单
-  if (!force && briefLoaded.value) return;
+  const taskId = String(currentProjectId.value || '');
+  if (!taskId) return;
+  // 已经取到过就不再自动覆盖输入：只有「刷新」按钮（force）才会用服务端内容替换当前表单。
+  // 但「取到过」必须**按项目**判断：briefTaskId 是这份 Brief 属于哪个项目。
+  // 只认 briefLoaded 会踩竞态——上一个项目迟到的响应把 briefLoaded 置成 true，
+  // 于是新项目一个请求都不发，表单停在「未填写」（R7 浏览器验收 3/3 复现）。
+  if (!force && briefLoaded.value && briefTaskId.value === taskId) return;
   briefBusy.value = 'load';
   brandBriefError.value = '';
   try {
-    const res = await getBrandBrief(currentProjectId.value);
+    const res = await getBrandBrief(taskId);
+    // 迟到的响应不能写进表单：期间人可能已经切到别的项目了
+    if (String(currentProjectId.value || '') !== taskId) return;
     brandBrief.value = res.data ?? null;
     applyBriefToForm(brandBrief.value);
+    briefTaskId.value = taskId;
     briefLoaded.value = true;
   } catch (error) {
+    if (String(currentProjectId.value || '') !== taskId) return;
     brandBrief.value = null;
     briefLoaded.value = false;
+    briefTaskId.value = '';
     brandBriefError.value =
       '品牌 Brief 没取到（' + ((await extractErrorMessage(error)) ?? '接口失败') + '），下面的空表不代表该项目没有品牌要求';
   } finally {
-    briefBusy.value = '';
+    if (String(currentProjectId.value || '') === taskId) briefBusy.value = '';
   }
 }
 
@@ -1477,6 +1491,7 @@ async function doSaveBrandBrief() {
       brandBrief.value = res.data;
     }
     applyBriefToForm(brandBrief.value);
+    briefTaskId.value = String(currentProjectId.value || '');
     briefLoaded.value = true;
     brandBriefError.value = '';
     // 后端规则：保存草稿不会把已确认打回草稿（确认权在品牌方，不在保存表单）。

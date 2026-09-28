@@ -154,7 +154,9 @@ public enum DpVisualStageEnum {
      *     例如已有可用基因时直接出图（R0 即 MATERIAL_READY → PRODUCING），
      *     强行要求逐步经过每个状态只会逼出「假过渡」；</li>
      *     <li><b>回退</b>：只允许退到「待确认 / 返工」态（见 {@link #isReworkTarget()}），
-     *     不允许退回某个「生成中」态——那会让页面出现永不结束的中间态；</li>
+     *     不允许退回某个「生成中」态——那会让页面出现永不结束的中间态。R7 例外：
+     *     {@link #PRODUCING} 允许作为回退目标（出图是人的动作直接驱动、内核有任务状态可查，
+     *     且「排版完成后发现图不行要重出」是正规返工路径）。</li>
      *     <li>终态 {@link #COMPLETED}：<b>允许回到「重新排版 / 人工精修」这几个返工步骤</b>。
      *     交付后修订是常态，而返工的正规方式就是产出新版本（新版本号由服务层保证），
      *     阶段自然要跟着回到工作态；但<b>不允许</b>退回更早阶段（那看起来像整条链路重跑）。</li>
@@ -179,21 +181,37 @@ public enum DpVisualStageEnum {
     /**
      * 是否为「交付后返工」可回到的步骤（交付后修订必须产出新版本，阶段回到这几步是合理的）。
      *
+     * <p><b>R7 补充 {@link #PRODUCING}</b>：交付后返工的第一步往往就是「重出图」——人补了参考图、
+     * 改了品牌要求或改了卖点，再去生成新候选。旧口径下 {@code COMPLETED → PRODUCING} 被拒，
+     * 出图提交整体失败并报「项目已处于「已完成」，不能再变为「出图中」」，
+     * 表现就是「已交付的项目改不动、重出不了图」。返工回出图中之后，
+     * 后续 {@code PRODUCING → LAYOUT_PROCESSING → V08_READY → COMPLETED} 都是向前推进，环路闭合。</p>
+     *
      * @return 是否可作为交付后返工目标
      */
     public boolean isPostDeliveryRework() {
-        return this == LAYOUT_PROCESSING || this == V08_READY || this == DESIGN_REFINING;
+        return this == PRODUCING || this == LAYOUT_PROCESSING || this == V08_READY || this == DESIGN_REFINING;
     }
 
     /**
      * 是否「待确认 / 返工」态：允许作为回退目标。
+     *
+     * <p><b>R7 补充 {@link #PRODUCING}</b>：排版完成(V08_READY)或人工精修中之后发现图不行，
+     * 正规做法就是回出图重出（分镜已锁定、视觉门已通过，提示词与基准都还在），
+     * 但旧口径里 PRODUCING 不是回退目标，于是「机排版完成」的项目连一次重出图都提交不了
+     * （实测报错：项目已处于「机排版完成」，不能再变为「出图中」）。</p>
+     *
+     * <p>为什么这次允许退回「进行中」态：出图是人的动作直接驱动、且内核有任务级状态可查
+     * （{@code image_task}），不会出现「页面停在出图中却没有任何任务在跑」的假中间态——
+     * 与当初排除「生成中」态的顾虑（页面永不结束）在这里不成立。分镜/基因/方向的「生成中」
+     * 态仍然不允许作为回退目标，保持原口径。</p>
      *
      * @return 是否可作回退目标
      */
     public boolean isReworkTarget() {
         return this == MATERIAL_READY || this == DNA_REVIEW || this == DIRECTION_REVIEW
             || this == STORYBOARD_REVIEW || this == VISUAL_GATE || this == DESIGN_REFINING
-            || this == FINAL_REVIEW;
+            || this == FINAL_REVIEW || this == PRODUCING;
     }
 
     /**

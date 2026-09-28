@@ -76,7 +76,7 @@ public class CreativeBriefController {
     @PutMapping("/brand-brief")
     public R<DpBrandBriefVo> saveBrandBrief(@NotNull(message = "项目ID不能为空")
                                             @PathVariable("taskId") Long taskId,
-                                            @RequestBody BrandBriefBo bo) {
+                                            @Validated @RequestBody BrandBriefBo bo) {
         return R.ok(briefService.save(taskId, bo));
     }
 
@@ -124,7 +124,7 @@ public class CreativeBriefController {
     @PostMapping("/copy-blocks")
     public R<Long> addCopyBlock(@NotNull(message = "项目ID不能为空")
                                 @PathVariable("taskId") Long taskId,
-                                @RequestBody CopyBlockBo bo) {
+                                @Validated @RequestBody CopyBlockBo bo) {
         return R.ok(copyService.add(taskId, bo));
     }
 
@@ -140,7 +140,7 @@ public class CreativeBriefController {
     @PostMapping("/copy-blocks/reorder")
     public R<Void> reorderCopyBlocks(@NotNull(message = "项目ID不能为空")
                                      @PathVariable("taskId") Long taskId,
-                                     @RequestBody CopyBlockReorderBo bo) {
+                                     @Validated @RequestBody CopyBlockReorderBo bo) {
         copyService.reorder(taskId, bo);
         return R.ok();
     }
@@ -175,7 +175,7 @@ public class CreativeBriefController {
                                    @PathVariable("taskId") Long taskId,
                                    @NotNull(message = "块ID不能为空")
                                    @PathVariable("blockId") Long blockId,
-                                   @RequestBody CopyBlockBo bo) {
+                                   @Validated @RequestBody CopyBlockBo bo) {
         copyService.update(taskId, blockId, bo);
         return R.ok();
     }

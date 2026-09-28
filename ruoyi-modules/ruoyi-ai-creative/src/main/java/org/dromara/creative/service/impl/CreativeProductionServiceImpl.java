@@ -527,6 +527,18 @@ public class CreativeProductionServiceImpl implements ICreativeProductionService
             .ifPresent(item -> markScreen(taskId, screenId, item.status()));
     }
 
+    /**
+     * 把屏实体转成 VO（手写映射，刻意不整表拷贝）。
+     *
+     * <p><b>R7 踩过的坑</b>：这里原来只映射了 id/屏号/类型/状态等字段，**漏掉了四个文案字段**，
+     * 而 R7 的「屏文案进提示词」正是从 {@code pictureSoloStatement/bodyText/title} 取值——
+     * 于是 {@code submitScreen} 拿到的 VO 里文案全是 null，屏文案进提示词变成静默空转
+     * （实测：单屏重出图的提示词里没有「本屏画面要讲什么」这一句）。漏字段不会报错，
+     * 只会让功能悄悄不生效，所以这里把文案字段补齐，并在下面留注释说明它们为什么必须在这里。</p>
+     *
+     * @param screen 屏实体
+     * @return 屏 VO
+     */
     private DpStoryboardScreenVo toScreenVo(DpStoryboardScreen screen) {
         DpStoryboardScreenVo vo = new DpStoryboardScreenVo();
         vo.setId(screen.getId());
@@ -538,6 +550,12 @@ public class CreativeProductionServiceImpl implements ICreativeProductionService
         vo.setWorkflowCode(screen.getWorkflowCode());
         vo.setProductLockLevel(screen.getProductLockLevel());
         vo.setStatus(screen.getStatus());
+        // 文案字段：出图提示词的「本屏画面要讲什么」就从这三列按优先级取（画面独白 → 正文 → 标题）
+        vo.setTitle(screen.getTitle());
+        vo.setSubtitle(screen.getSubtitle());
+        vo.setBodyText(screen.getBodyText());
+        vo.setPictureSoloStatement(screen.getPictureSoloStatement());
+        vo.setRemark(screen.getRemark());
         // 画面用途：类型描述优先（与分镜页面展示一致）
         vo.setScreenTypeDesc(screenTypeDesc(screen.getScreenType()));
         return vo;
