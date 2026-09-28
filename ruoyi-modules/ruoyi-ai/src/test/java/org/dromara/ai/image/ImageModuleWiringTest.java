@@ -7,6 +7,7 @@ import org.dromara.ai.image.service.ImageTaskDispatchService;
 import org.dromara.ai.image.service.ImageTaskExecutionService;
 import org.dromara.ai.image.service.ImageTaskOrchestrator;
 import org.dromara.ai.image.service.ImageTaskRepository;
+import org.dromara.ai.image.service.ImageTaskSubmissionService;
 import org.dromara.ai.image.service.ImageTemplatePreparer;
 import org.dromara.ai.image.service.ImageWorkflowContractRegistry;
 import org.junit.jupiter.api.DisplayName;
@@ -38,7 +39,12 @@ class ImageModuleWiringTest {
     private static final String CONTRACT_ROOT = Path.of("..", "..", "script").toAbsolutePath().toString();
 
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
-        .withUserConfiguration(ImageModuleConfiguration.class, ImageCreationController.class)
+        // ImageTaskSubmissionService 是 @Service（生产靠组件扫描注册），ApplicationContextRunner
+        // **不做组件扫描**，所以必须显式注册：控制器依赖它，不注册就会以
+        // "No qualifying bean of type ImageTaskSubmissionService" 失败（这是测试与生产装配方式的差异，
+        // 不是产品缺陷——生产里 image.enabled=true 时组件扫描会把它注册进来）。
+        .withUserConfiguration(ImageModuleConfiguration.class, ImageCreationController.class,
+            ImageTaskSubmissionService.class)
         .withBean(ImageTaskRepository.class, ImageModuleWiringTest::stubRepository)
         .withBean(JdbcTemplate.class, () -> mock(JdbcTemplate.class));
 

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.dromara.ai.image.config.ImageModuleConfiguration;
 import org.dromara.ai.image.controller.ImageCreationController;
 import org.dromara.ai.image.service.ImageTaskRepository;
+import org.dromara.ai.image.service.ImageTaskSubmissionService;
 import org.dromara.ai.video.config.VideoModuleConfiguration;
 import org.dromara.ai.video.controller.VideoCreationController;
 import org.dromara.ai.video.service.VideoTaskRepository;
@@ -39,8 +40,14 @@ class VideoImageCoexistenceTest {
     private static final String COMFY = "http://192.168.2.223:8188";
 
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
+        // ImageTaskSubmissionService / VideoTaskSubmissionService 是 @Service（生产靠组件扫描注册），
+        // ApplicationContextRunner **不做组件扫描**，所以这里必须显式把它们当作用户配置注册进来——
+        // 否则「创建控制器」会因为没有 ImageTaskSubmissionService 而不满足依赖，测试假失败。
+        // 视频侧没有对应的 SubmissionService（它的依赖都是 VideoModuleConfiguration 里的 @Bean），
+        // 所以只补图片侧这一个。
         .withUserConfiguration(VideoModuleConfiguration.class, VideoCreationController.class,
-            ImageModuleConfiguration.class, ImageCreationController.class)
+            ImageModuleConfiguration.class, ImageCreationController.class,
+            ImageTaskSubmissionService.class)
         .withBean(JdbcTemplate.class, () -> mock(JdbcTemplate.class))
         .withBean(VideoTaskRepository.class, () -> mock(VideoTaskRepository.class))
         .withBean(ImageTaskRepository.class, () -> mock(ImageTaskRepository.class))
