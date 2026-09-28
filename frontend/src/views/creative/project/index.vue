@@ -88,12 +88,33 @@
           </header>
 
           <div class="detail-body">
-            <!-- 参考图 -->
+            <!-- 参考图 / 产品图 -->
             <section class="block">
               <div class="block-head">
                 <h4>1. 产品参考图</h4>
-                <span class="muted">{{ imageFiles.length }} 张</span>
+                <div class="block-actions">
+                  <span class="muted">{{ imageFiles.length }} 张</span>
+                  <el-tag :type="productImage?.configured ? 'success' : 'warning'" size="small" effect="dark">
+                    产品图{{ productImage?.configured ? '：' + (productImage.fileName || '已配置') : '未配置' }}
+                  </el-tag>
+                </div>
               </div>
+              <p class="hint">
+                产品图 = 产品主数据里的那张（<b>产品保真基准</b>）；参考图 = 本次喂给模型的图。
+                质检会分别以这两张为基准比对生成图。角色徽标按后端记录的来源如实展示，不靠推测。
+              </p>
+              <p class="hint">
+                <template v-if="!canBindProductImage">
+                  <span class="fact-error">该项目没有关联产品，无法登记产品图（后端会直接拒绝）——请先在项目里选择产品。</span>
+                </template>
+                <template v-else-if="!productImage?.configured">
+                  把上传的产品照片登记为产品图：勾选下面的「同时设为该产品的产品图」，或在某张图片上点「设为产品图」。
+                </template>
+                <template v-else>
+                  {{ productImageOrigin || '产品图已配置' }}
+                  <span v-if="productImage.setAt" class="muted">· 设定于 {{ formatTime(productImage.setAt) }}</span>
+                </template>
+              </p>
               <div class="ref-row">
                 <div
                   v-for="file in imageFiles"
@@ -105,20 +126,44 @@
                   <img v-if="urlOf('file-' + file.fileId)" :src="urlOf('file-' + file.fileId)" :alt="file.fileName" />
                   <span v-else class="ref-loading">读取中…</span>
                   <span class="ref-name">{{ file.fileName }}</span>
-                  <span v-if="String(file.fileId) === String(selectedFileId)" class="ref-badge">当前参考图</span>
+                  <el-tag
+                    v-if="file.sourceType"
+                    size="small"
+                    effect="plain"
+                    :type="fileSourceType(file.sourceType)"
+                  >
+                    {{ fileSourceLabel(file.sourceType) }}
+                  </el-tag>
+                  <span v-if="isProductImageFile(file)" class="ref-badge ok">产品保真基准</span>
+                  <span v-else-if="String(file.fileId) === String(selectedFileId)" class="ref-badge">当前参考图</span>
+                  <el-button
+                    v-if="canBindProductImage && file.fileId != null && !isProductImageFile(file)"
+                    size="small"
+                    text
+                    type="primary"
+                    :loading="bindingProductImage === String(file.fileId)"
+                    @click.stop="doBindProductImage(file)"
+                  >
+                    设为产品图
+                  </el-button>
                 </div>
-                <el-upload
-                  class="ref-upload"
-                  :show-file-list="false"
-                  accept="image/png,image/jpeg,image/webp"
-                  :http-request="doUpload"
-                >
-                  <div class="upload-slot">
-                    <span class="plus">＋</span>
-                    <span>上传产品图</span>
-                    <span class="hint">PNG/JPG/WEBP，≤20MB</span>
-                  </div>
-                </el-upload>
+                <div class="ref-upload-wrap">
+                  <el-checkbox v-model="asProductImage" :disabled="!canBindProductImage" class="as-product-image">
+                    同时设为该产品的产品图
+                  </el-checkbox>
+                  <el-upload
+                    class="ref-upload"
+                    :show-file-list="false"
+                    accept="image/png,image/jpeg,image/webp"
+                    :http-request="doUpload"
+                  >
+                    <div class="upload-slot">
+                      <span class="plus">＋</span>
+                      <span>{{ asProductImage ? '上传并设为产品图' : '上传产品图' }}</span>
+                      <span class="hint">PNG/JPG/WEBP，≤20MB</span>
+                    </div>
+                  </el-upload>
+                </div>
               </div>
             </section>
 
@@ -470,12 +515,14 @@ import type { CpFactFieldOptionVO, CpFactSnapshotVO } from '@/api/content/fact/t
 import type { CpTaskFileVO } from '@/api/content/task/types';
 import {
   addCreativeProject,
+  bindProjectProductImage,
   fetchCreativeFileBlobUrl,
   fetchGenerationPreviewBlobUrl,
   fetchGenerationThumbnailBlobUrl,
   getCreativeProject,
   getDna,
   getDnaPrompt,
+  getProjectProductImage,
   listCreativeFiles,
   listCreativeProject,
   listCreativeTimeline,
@@ -491,11 +538,14 @@ import type {
   CreativeWorkflowVO,
   DpGenerationVO,
   DpStageEventVO,
+  ProjectProductImageVO,
   TagType
 } from '@/api/creative/types';
 import {
   CREATIVE_STAGE_LABELS,
   CREATIVE_STAGE_TYPES,
+  FILE_SOURCE_LABELS,
+  FILE_SOURCE_TYPES,
   GENERATION_STATUS_LABELS,
   GENERATION_STATUS_TYPES
 } from '@/api/creative/types';
@@ -515,6 +565,18 @@ const timeline = ref<DpStageEventVO[]>([]);
 const workflows = ref<CreativeWorkflowVO[]>([]);
 const products = ref<CpProductVO[]>([]);
 const selectedFileId = ref<string | number>('');
+
+/**
+ * 产品图（产品主数据里的那张）。
+ *
+ * <p>它是「产品保真基准」：出图与质检会拿产品图与生成图比对（另一个基准是本次喂给模型的参考图）。
+ * 所以这里必须让人看得见、并且能显式登记——否则产品主数据永远是空的，产品基准质检就没有基准图。</p>
+ */
+const productImage = ref<ProjectProductImageVO | null>(null);
+/** 上传参考图时是否同时登记为该产品的产品图 */
+const asProductImage = ref(false);
+/** 正在登记产品图的附件ID（按行 loading） */
+const bindingProductImage = ref('');
 
 /** 事实确认（闸门必填项 + 事实清单） */
 const facts = ref<CpFactSnapshotVO[]>([]);
@@ -563,6 +625,37 @@ const POLL_INTERVAL_MS = 5000;
 const POLL_MAX_TICKS = 120;
 
 const imageFiles = computed(() => files.value.filter((f) => (f.fileKind || '').toUpperCase() === 'IMAGE'));
+
+/** 能不能登记产品图：后端要求项目必须关联产品，否则会直接拒绝 */
+const canBindProductImage = computed(() => currentProject.value?.productId != null);
+
+/** 某张附件是不是当前的产品图（按后端返回的产品图附件ID判定，不靠猜） */
+function isProductImageFile(file: CpTaskFileVO): boolean {
+  return Boolean(
+    productImage.value?.configured &&
+      productImage.value.fileId != null &&
+      String(file.fileId) === String(productImage.value.fileId)
+  );
+}
+
+/** 图角色文案：产品图 / 参考图 / 生成图 / 上传图（后端 cp_task_file.source_type） */
+function fileSourceLabel(type?: string): string {
+  return (type && FILE_SOURCE_LABELS[type]) || type || '';
+}
+
+function fileSourceType(type?: string): TagType {
+  return (type && FILE_SOURCE_TYPES[type]) || 'info';
+}
+
+/** 产品图来源说明：来自本项目 / 来自别的项目（如实标注，不让人以为是本项目传的） */
+const productImageOrigin = computed(() => {
+  const info = productImage.value;
+  if (!info?.configured) return '';
+  if (info.sourceTaskId == null) return '';
+  return String(info.sourceTaskId) === String(currentProjectId.value)
+    ? '产品图来自本项目'
+    : `产品图来自其它项目（taskId=${info.sourceTaskId}）`;
+});
 
 const confirmedFacts = computed(() => facts.value.filter((f) => f.confirmStatus === 'CONFIRMED'));
 const requiredFieldOptions = computed(() => fieldOptions.value.filter((o) => o.requiredByGate));
@@ -656,13 +749,15 @@ async function loadDetail() {
   try {
     // 事实/字段选项跟着项目详情一起取：失败时不让整页详情跟着失败，
     // 但也不能静默——置 factLoadError，页面上照实写出「没取到」。
-    const [detail, fileRes, genRes, timelineRes, factRes, optionRes] = await Promise.all([
+    const [detail, fileRes, genRes, timelineRes, factRes, optionRes, productImageRes] = await Promise.all([
       getCreativeProject(currentProjectId.value),
       listCreativeFiles(currentProjectId.value),
       listGenerations(currentProjectId.value),
       listCreativeTimeline(currentProjectId.value),
       listFact(currentProjectId.value).catch(() => null),
-      factFieldOptions(currentProjectId.value).catch(() => null)
+      factFieldOptions(currentProjectId.value).catch(() => null),
+      // 产品图信息失败不影响整页：下面按「未配置」展示，并给出补齐入口
+      getProjectProductImage(currentProjectId.value).catch(() => null)
     ]);
     currentProject.value = detail.data;
     files.value = fileRes.data || [];
@@ -671,6 +766,17 @@ async function loadDetail() {
     facts.value = factRes?.data || [];
     fieldOptions.value = optionRes?.data || [];
     fieldOptionsLoaded.value = optionRes != null;
+    productImage.value = productImageRes?.data ?? null;
+    // 后端在读取产品图信息时会把「产品图」补登记成该项目的一张附件（复用同一对象键）。
+    // 那条登记可能发生在本次 files 请求之后，所以发现列表里还没有它时补取一次。
+    if (
+      productImage.value?.configured &&
+      productImage.value.fileId != null &&
+      !files.value.some((f) => String(f.fileId) === String(productImage.value?.fileId))
+    ) {
+      const refreshed = await listCreativeFiles(currentProjectId.value).catch(() => null);
+      if (refreshed?.data) files.value = refreshed.data;
+    }
     factLoadError.value =
       factRes == null || optionRes == null
         ? '该项目的事实数据没取到（事实清单或字段选项接口失败），下面显示的内容可能不完整'
@@ -897,12 +1003,37 @@ async function loadGenerationThumbs() {
 
 async function doUpload(options: UploadRequestOptions) {
   if (!currentProjectId.value) return;
+  const alsoProductImage = asProductImage.value;
   try {
-    await uploadCreativeReference(currentProjectId.value, options.file as File);
-    ElMessage.success('参考图已上传');
+    // 勾选时后端会在同一次请求里上传 + 回写产品主数据（先在服务端校验可行性再落对象存储）
+    await uploadCreativeReference(currentProjectId.value, options.file as File, alsoProductImage);
+    ElMessage.success(alsoProductImage ? '已上传，并登记为该产品的产品图' : '参考图已上传');
+    asProductImage.value = false;
     await loadDetail();
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '上传失败');
+  }
+}
+
+/**
+ * 把某个附件登记为该产品的产品图（写回 cp_product.product_image）。
+ *
+ * <p>后端会硬校验：附件必须是图片、且其所属任务的产品就是本项目的产品；不满足直接给可读原因。
+ * 登记成功后，这张图成为「产品保真基准」，页面上的角色徽标也会随之变成「产品图」。</p>
+ */
+async function doBindProductImage(file: CpTaskFileVO) {
+  if (!currentProjectId.value || file.fileId == null) return;
+  bindingProductImage.value = String(file.fileId);
+  try {
+    const res = await bindProjectProductImage(currentProjectId.value, file.fileId);
+    productImage.value = res.data ?? null;
+    ElMessage.success(`已把「${file.fileName}」设为该产品的产品图`);
+    flowToken.value += 1;
+    await loadDetail();
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '设为产品图失败');
+  } finally {
+    bindingProductImage.value = '';
   }
 }
 
@@ -1372,6 +1503,23 @@ button {
   color: #fff;
   background: rgba(124, 58, 237, 0.9);
   border-radius: 8px;
+}
+/* 产品图徽标与「当前参考图」区分开：它标的是产品保真基准，不是本次参考图 */
+.ref-badge.ok {
+  background: rgba(16, 185, 129, 0.92);
+}
+.ref-upload-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+}
+.as-product-image {
+  max-width: 132px;
+  height: auto;
+  white-space: normal;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .upload-slot {

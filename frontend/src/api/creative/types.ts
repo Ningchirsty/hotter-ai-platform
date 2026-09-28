@@ -244,7 +244,10 @@ export const DNA_SOURCE_TYPES: Record<string, TagType> = {
 export const DNA_SOURCE_LABELS: Record<string, string> = {
   AI: '视觉模型',
   MANUAL: '人工编辑',
-  FACTS: '事实推导'
+  FACTS: '事实推导',
+  // 后端在「按参考图生成基因」时会写 IMAGE（CreativeDnaServiceImpl 的 SOURCE_IMAGE）。
+  // 早期映射漏了这个键，页面徽标会显示成空——而来源如实标注是这套系统的硬纪律。
+  IMAGE: '参考图实测'
 };
 
 // ------------------------------------------------------------------
@@ -365,7 +368,10 @@ export interface GateEvaluationVO {
 export const DIRECTION_SOURCE_LABELS: Record<string, string> = {
   TEMPLATE: '取舍模板派生',
   AI: '模型生成',
-  MANUAL: '人工'
+  MANUAL: '人工',
+  // R4 起，方向/分镜文案会由本地模型润色，后端把来源写成 MODEL（CreativeConstants.SOURCE_MODEL）。
+  // 缺这个键，页面上「模型生成」的来源徽标就会空着。
+  MODEL: '模型生成（已逐字段验收）'
 };
 
 // ------------------------------------------------------------------
