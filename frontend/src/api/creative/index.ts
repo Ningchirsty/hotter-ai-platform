@@ -126,7 +126,34 @@ export function listCreativeTimeline(taskId: string | number): AxiosPromise<DpSt
 // 品牌部用内容协同录入与确认、平面设计部用视觉工厂只读，所以后端把接口搬到了
 // `/content/task/{taskId}/brand-brief`，创作域的这三个接口**已删除**。
 // 前端对应实现见 `@/api/content/brief`（在这里再留一份会指向 404 的老路径）。
+//
+// 唯一留在创作域的是「申请修改」：设计不能改品牌要求，但需求得能到品牌部手里。
 // ------------------------------------------------------------------
+
+/** 申请修改品牌要求的结果（后端建的是内容域的互动确认卡） */
+export interface BriefChangeRequestResult {
+  cardId?: string | number;
+  /** false＝已有待处理申请，后端复用了那张卡，没有重复建 */
+  created?: boolean;
+  title?: string;
+}
+
+/**
+ * 平面设计申请修改品牌要求（品牌部在内容任务的「互动确认卡」里处理）。
+ *
+ * @param taskId  项目ID
+ * @param message 希望品牌方修改什么（必填，≤500 字）
+ */
+export function raiseBriefChangeRequest(
+  taskId: string | number,
+  message: string
+): AxiosPromise<BriefChangeRequestResult> {
+  return request({
+    url: '/creative/projects/' + taskId + '/brief-change-request',
+    method: 'post',
+    data: { message: message }
+  });
+}
 
 // ------------------------------------------------------------------
 // R7：文案与要点（详情页的「字」）

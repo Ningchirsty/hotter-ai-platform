@@ -14,6 +14,12 @@ import java.time.LocalDateTime;
 /**
  * 品牌 Brief（委托方的要求）。表名沿用 {@code dp_brand_brief}（R7 建的表）。
  *
+ * <p><b>清空字段（写 null）由服务层负责</b>：MyBatis-Plus 默认 NOT_NULL 策略会把实体里的 null
+ * 字段从 UPDATE 里去掉，于是「把某个要求清空」永远存不进去（删掉最后一张参考风格图、清空禁用词都会静默失败）。
+ * 本项目 MP 版本（3.5.17）的 {@code FieldStrategy} 不能用作注解常量（编译报错），
+ * 所以干净的做法在 {@code ContentBrandBriefServiceImpl#save}：用显式 {@code LambdaUpdateWrapper.set(...)}
+ * 把这 9 个业务列（含参考风格图片引用）**逐个写出来**——这张表是整行编辑，"所见即所存"才是正确语义。</p>
+ *
  * <p><b>为什么归内容协同（品牌部）而不是视觉工厂（平面设计部）</b>：这张表的作者是品牌方，
  * 内容是"委托要求"（必显信息、禁用词与红线、主推卖点优先级、尺寸规范）；平面设计只是**读取并按它创作**。
  * 谁录入谁拥有——放在视觉模块里，就会出现"品牌部为了写要求必须先有视觉权限"的反向依赖。
@@ -84,6 +90,15 @@ public class CpBrandBrief extends BaseEntity implements Serializable {
      * 参考风格（可写参考图/参考品牌/风格描述）
      */
     private String styleRef;
+
+    /**
+     * 参考风格图片：cp_task_file.file_id 逗号分隔（最多 6 张）
+     *
+     * <p>品牌方常常是"照这张图的风格做"，只给文字描述描述不准，所以支持直接传图。
+     * 图片本身就是**任务附件**（走已有上传与预览通路），这里只记哪几张是品牌给的风格参考；
+     * 平面设计在视觉工厂既能看这些图，也能把它们选作出图参考图（它们是任务里的图片附件）。</p>
+     */
+    private String styleRefFiles;
 
     /**
      * 状态（DRAFT草稿/CONFIRMED品牌方已确认）

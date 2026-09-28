@@ -1,16 +1,20 @@
 package org.dromara.content.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.content.domain.CpBrandBrief;
+import org.dromara.content.domain.CpTaskFile;
 import org.dromara.content.domain.bo.BrandBriefBo;
 import org.dromara.content.domain.vo.CpBrandBriefVo;
 import org.dromara.content.enums.ContentBriefStatusEnum;
+import org.dromara.content.enums.ContentFileKindEnum;
 import org.dromara.content.mapper.CpBrandBriefMapper;
+import org.dromara.content.mapper.CpTaskFileMapper;
 import org.dromara.content.service.IContentBrandBriefService;
 import org.dromara.content.service.IContentTaskService;
 import org.dromara.system.api.UserService;
@@ -18,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -42,8 +47,17 @@ import java.util.List;
 @RequiredArgsConstructor
 public class ContentBrandBriefServiceImpl implements IContentBrandBriefService {
 
+    /**
+     * 参考风格图片最多几张：再多就说明该用一份图片资料而不是"风格参考"了
+     */
+    private static final int MAX_STYLE_IMAGES = 6;
+
     private final CpBrandBriefMapper briefMapper;
     private final IContentTaskService taskService;
+    /**
+     * 附件 Mapper：参考风格图片要逐个校验"存在、属于本任务、是图片"，读时还要解析文件名
+     */
+    private final CpTaskFileMapper taskFileMapper;
     /**
      * 用户昵称解析（{@code ruoyi-api} 的 UserService，实现由 system 模块提供）。
      *
@@ -81,13 +95,29 @@ public class ContentBrandBriefServiceImpl implements IContentBrandBriefService {
         entity.setMainPush(norm(form.getMainPush()));
         entity.setSizeSpecReq(norm(form.getSizeSpecReq()));
         entity.setStyleRef(norm(form.getStyleRef()));
+        entity.setStyleRefFiles(normalizeStyleRefFiles(taskId, form.getStyleRefFiles()));
         entity.setRemark(norm(form.getRemark()));
         // status/confirmedBy/confirmedAt 刻意不在这里赋值：保存草稿不该把已确认打回草稿，
         // 也不该替品牌方按下确认。原记录是 CONFIRMED 时保存后仍是 CONFIRMED（下面如实带回）。
         if (created) {
             briefMapper.insert(entity);
         } else {
-            briefMapper.updateById(entity);
+            // 【为什么不用 updateById】MyBatis-Plus 默认 NOT_NULL 策略会把实体里的 null 字段从 UPDATE 里去掉，
+            // 于是「把某个要求清空」永远存不进去——实测：删掉最后一张参考风格图片、清空禁用词，页面报成功、
+            // 刷新又回来了（前端实施时发现并上报）。这张表是整行编辑（表单一次提交 8 个文本字段 + 图片引用），
+            // "所见即所存"才是正确语义，所以这里把这 9 个业务列**逐个显式 set**（set 会写 NULL）。
+            // 不用 @TableField(updateStrategy = IGNORED)：本项目 MP 3.5.17 的 FieldStrategy 不能作注解常量（编译报错）。
+            briefMapper.update(entity, new LambdaUpdateWrapper<CpBrandBrief>()
+                .eq(CpBrandBrief::getId, entity.getId())
+                .set(CpBrandBrief::getBrandTone, entity.getBrandTone())
+                .set(CpBrandBrief::getMustShow, entity.getMustShow())
+                .set(CpBrandBrief::getForbiddenWords, entity.getForbiddenWords())
+                .set(CpBrandBrief::getTargetAudience, entity.getTargetAudience())
+                .set(CpBrandBrief::getMainPush, entity.getMainPush())
+                .set(CpBrandBrief::getSizeSpecReq, entity.getSizeSpecReq())
+                .set(CpBrandBrief::getStyleRef, entity.getStyleRef())
+                .set(CpBrandBrief::getStyleRefFiles, entity.getStyleRefFiles())
+                .set(CpBrandBrief::getRemark, entity.getRemark()));
         }
         log.info("品牌 Brief 已保存 taskId={} created={} status={} 必显={}条 禁用词={}条 主推={}条",
             taskId, created, entity.getStatus(), lineCount(entity.getMustShow()),
@@ -158,6 +188,8 @@ public class ContentBrandBriefServiceImpl implements IContentBrandBriefService {
         vo.setMainPush(entity.getMainPush());
         vo.setSizeSpecReq(entity.getSizeSpecReq());
         vo.setStyleRef(entity.getStyleRef());
+        vo.setStyleRefFiles(entity.getStyleRefFiles());
+        vo.setStyleRefImages(imagesOf(entity.getTaskId(), entity.getStyleRefFiles()));
         vo.setStatus(StringUtils.blankToDefault(entity.getStatus(), ContentBriefStatusEnum.DRAFT.getCode()));
         vo.setConfirmedBy(entity.getConfirmedBy());
         vo.setConfirmedByName(nicknameOf(entity.getConfirmedBy()));
@@ -165,6 +197,85 @@ public class ContentBrandBriefServiceImpl implements IContentBrandBriefService {
         vo.setRemark(entity.getRemark());
         vo.setUpdateTime(entity.getUpdateTime());
         return vo;
+    }
+
+    /**
+     * 归一 + 校验参考风格图片 id（逗号分隔）。
+     *
+     * <p>规则：去空、去重、最多 {@link #MAX_STYLE_IMAGES} 张；每个 id 必须
+     * **存在、属于本任务、且是图片附件**，否则直接拒绝并指出是哪一个——
+     * 不静默丢弃（页面显示 3 张、库里存 2 张是最难查的一类问题）。</p>
+     *
+     * @param taskId 任务ID
+     * @param raw    file_id 串（逗号/顿号/空格分隔都接受）
+     * @return 归一后的串；没有返回 null
+     */
+    private String normalizeStyleRefFiles(Long taskId, String raw) {
+        if (StringUtils.isBlank(raw)) {
+            return null;
+        }
+        List<String> ids = new ArrayList<>();
+        for (String part : raw.split("[,，、\\s]+")) {
+            String id = part.trim();
+            if (!id.isEmpty() && !ids.contains(id)) {
+                ids.add(id);
+            }
+        }
+        if (ids.isEmpty()) {
+            return null;
+        }
+        if (ids.size() > MAX_STYLE_IMAGES) {
+            throw new ServiceException("参考风格图片最多 " + MAX_STYLE_IMAGES + " 张，当前 " + ids.size() + " 张");
+        }
+        for (String id : ids) {
+            long fileId;
+            try {
+                fileId = Long.parseLong(id);
+            } catch (NumberFormatException e) {
+                throw new ServiceException("参考风格图片的附件ID不是数字：" + id);
+            }
+            CpTaskFile file = taskFileMapper.selectById(fileId);
+            if (file == null) {
+                throw new ServiceException("参考风格图片的附件不存在：" + id);
+            }
+            if (!taskId.equals(file.getTaskId())) {
+                throw new ServiceException("附件 " + id + " 不属于本任务，不能作为参考风格图片");
+            }
+            if (!ContentFileKindEnum.IMAGE.getCode().equalsIgnoreCase(file.getFileKind())) {
+                throw new ServiceException("「" + StringUtils.blankToDefault(file.getFileName(), id)
+                    + "」不是图片，不能作为参考风格图片");
+            }
+        }
+        return String.join(",", ids);
+    }
+
+    /**
+     * 把 file_id 串解析成明细（解析不到的跳过：附件被删是可能的，页面按实际能显示的渲染）。
+     *
+     * @param taskId 任务ID
+     * @param raw    file_id 串
+     * @return 明细列表（可能为空）
+     */
+    private List<CpBrandBriefVo.BriefImage> imagesOf(Long taskId, String raw) {
+        List<CpBrandBriefVo.BriefImage> list = new ArrayList<>();
+        if (StringUtils.isBlank(raw) || taskId == null) {
+            return list;
+        }
+        for (String part : raw.split("[,，、\\s]+")) {
+            String id = part.trim();
+            if (id.isEmpty()) {
+                continue;
+            }
+            try {
+                CpTaskFile file = taskFileMapper.selectById(Long.parseLong(id));
+                if (file != null && taskId.equals(file.getTaskId())) {
+                    list.add(new CpBrandBriefVo.BriefImage(file.getFileId(), file.getFileName()));
+                }
+            } catch (NumberFormatException ignored) {
+                // 脏数据里的非数字片段直接跳过：读接口不该因为一条脏记录整页失败
+            }
+        }
+        return list;
     }
 
     /**

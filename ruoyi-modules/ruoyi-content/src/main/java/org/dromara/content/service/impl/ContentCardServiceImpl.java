@@ -1,12 +1,15 @@
 package org.dromara.content.service.impl;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;import lombok.RequiredArgsConstructor;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
+import org.dromara.common.json.utils.JsonUtils;
 import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.common.satoken.utils.LoginHelper;
+import org.dromara.content.constant.ContentConstants;
 import org.dromara.content.domain.CpFactSnapshot;
 import org.dromara.content.domain.CpInteractionCard;
 import org.dromara.content.domain.CpTask;
@@ -14,6 +17,7 @@ import org.dromara.content.domain.bo.ContentCardQueryBo;
 import org.dromara.content.domain.bo.ContentCardResolveBo;
 import org.dromara.content.domain.vo.CpInteractionCardVo;
 import org.dromara.content.enums.ContentCardStatusEnum;
+import org.dromara.content.enums.ContentCardTypeEnum;
 import org.dromara.content.enums.ContentFactConfirmStatusEnum;
 import org.dromara.content.helper.ContentFieldAlias;
 import org.dromara.content.mapper.CpFactSnapshotMapper;
@@ -26,6 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 互动确认卡服务实现。
@@ -79,6 +84,73 @@ public class ContentCardServiceImpl implements IContentCardService {
      * 闸门重算服务
      */
     private final IContentTaskGateService taskGateService;
+
+    // ------------------------------------------------------------------
+    // 平面设计申请修改品牌要求
+    // ------------------------------------------------------------------
+
+    /**
+     * 申请对象的标记字段编码（brand_brief）
+     */
+    private static final String BRIEF_FIELD_CODE = "brand_brief";
+
+    /**
+     * 申请内容最长字数（超长截断：申请是给人看的摘要，不是文档）
+     */
+    private static final int MAX_REQUEST_LENGTH = 500;
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ChangeRequest raiseBriefChangeRequest(Long taskId, String message) {
+        if (taskId == null) {
+            throw new ServiceException("任务ID不能为空");
+        }
+        String text = message == null ? "" : message.trim();
+        if (text.isEmpty()) {
+            throw new ServiceException("请写清希望品牌方修改什么（例如：必显信息里请补上包装上的认证标志）");
+        }
+        if (text.length() > MAX_REQUEST_LENGTH) {
+            text = text.substring(0, MAX_REQUEST_LENGTH);
+        }
+        CpTask task = taskMapper.selectById(taskId);
+        if (task == null) {
+            throw new ServiceException("任务不存在：" + taskId);
+        }
+        // 幂等：已有待处理申请就复用，不再堆一张
+        List<CpInteractionCard> pending = cardMapper.selectList(new LambdaQueryWrapper<CpInteractionCard>()
+            .eq(CpInteractionCard::getTaskId, taskId)
+            .eq(CpInteractionCard::getCardType, ContentCardTypeEnum.SUPPLEMENT.getCode())
+            .eq(CpInteractionCard::getFieldCode, BRIEF_FIELD_CODE)
+            .eq(CpInteractionCard::getStatus, ContentCardStatusEnum.PENDING.getCode())
+            .orderByDesc(CpInteractionCard::getCardId));
+        if (!pending.isEmpty()) {
+            CpInteractionCard exist = pending.get(0);
+            log.info("品牌要求修改申请已存在，复用, taskId={}, cardId={}", taskId, exist.getCardId());
+            return new ChangeRequest(exist.getCardId(), false, exist.getTitle());
+        }
+
+        String title = "平面设计申请修改品牌要求";
+        CpInteractionCard card = new CpInteractionCard();
+        card.setTaskId(taskId);
+        card.setCardType(ContentCardTypeEnum.SUPPLEMENT.getCode());
+        card.setFieldCode(BRIEF_FIELD_CODE);
+        card.setTitle(title);
+        card.setQuestion(text);
+        card.setEvidenceJson(JsonUtils.toJsonString(List.of()));
+        card.setImpactJson(JsonUtils.toJsonString(List.of()));
+        card.setOptionsJson(JsonUtils.toJsonString(List.of(
+            Map.of("option", OPT_SUPPLEMENT, "label", "已按要求修改（关闭申请）"))));
+        // 不设闸门等级、不阻断：设计提意见不该把任务卡住（BLOCKED 会让任务停在待确认）
+        card.setGateLevel(null);
+        card.setBlocking(ContentConstants.NO);
+        card.setAssigneeId(task.getOwnerId());
+        card.setAssigneeName(task.getOwnerName());
+        card.setDueAt(task.getDeadline());
+        card.setStatus(ContentCardStatusEnum.PENDING.getCode());
+        cardMapper.insert(card);
+        log.info("品牌要求修改申请已提出, taskId={}, cardId={}", taskId, card.getCardId());
+        return new ChangeRequest(card.getCardId(), true, title);
+    }
 
     @Override
     public PageResult<CpInteractionCardVo> queryPage(ContentCardQueryBo bo, PageQuery pageQuery) {

@@ -5,6 +5,7 @@ import lombok.Data;
 import java.io.Serial;
 import java.io.Serializable;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 品牌 Brief 展示对象。
@@ -68,6 +69,31 @@ public class CpBrandBriefVo implements Serializable {
      * 参考风格
      */
     private String styleRef;
+
+    /**
+     * 参考风格图片：任务附件 file_id 逗号分隔（原样回传，便于前端判断"有没有改动"）
+     */
+    private String styleRefFiles;
+
+    /**
+     * 参考风格图片明细（读的时候把 file_id 解析成文件名，页面直接显示缩略图 + 文件名）
+     *
+     * <p>为什么要给明细：只给一串 id，页面还得再查一次附件列表才能显示；
+     * 而且附件被删掉时能在这里看出来（解析不到的会跳过，数量对不上就是线索）。</p>
+     */
+    private List<BriefImage> styleRefImages;
+
+    /**
+     * 参考风格图片明细项。
+     *
+     * @param fileId   附件ID
+     * @param fileName 文件名（带扩展名）
+     */
+    public record BriefImage(Long fileId, String fileName) implements Serializable {
+
+        @Serial
+        private static final long serialVersionUID = 1L;
+    }
 
     /**
      * 状态（DRAFT/CONFIRMED）

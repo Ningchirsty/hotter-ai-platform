@@ -325,6 +325,10 @@
                 show-word-limit
                 :placeholder="field.placeholder"
               />
+              <!-- 弹窗里不做上传：图片要挂在已存在的任务附件上，任务还没保存就没有 taskId -->
+              <div v-if="field.key === 'styleRef'" class="form-tip">
+                参考风格图片请保存任务后在<b>任务详情 →「品牌要求（Brief）」</b>里上传（那里能直接传图并即时保存）。
+              </div>
               <div class="form-tip">{{ field.hint }}</div>
             </el-form-item>
           </el-collapse-item>
@@ -564,6 +568,17 @@
                 {{ briefValueOf(field.key) || '—' }}
               </div>
             </div>
+            <!-- 参考风格图片：只读态也展示（品牌方给的图，设计要照着做） -->
+            <div class="brief-row">
+              <label>参考风格图片</label>
+              <div class="brief-control">
+                <BriefStyleImages
+                  :task-id="detailTaskId"
+                  :images="briefStyleImages"
+                  :editable="false"
+                />
+              </div>
+            </div>
           </div>
 
           <!-- 编辑态：8 个字段，长度上限与数据库列宽一致 -->
@@ -577,6 +592,17 @@
                 show-word-limit
                 :placeholder="field.placeholder"
               />
+              <!-- 参考风格：文字描述 + 直接传图（上传即保存，不用再点一次保存） -->
+              <div v-if="field.key === 'styleRef'" class="brief-style-upload">
+                <BriefStyleImages
+                  :task-id="detailTaskId"
+                  :images="briefStyleImages"
+                  :editable="checkPermi(['content:task:edit'])"
+                  :busy="briefBusy === 'style'"
+                  @upload="onStyleImagePick"
+                  @remove="removeStyleImage"
+                />
+              </div>
               <div class="form-tip">{{ field.hint }}</div>
             </el-form-item>
           </el-form>
@@ -1046,15 +1072,21 @@ import type { WorkPackageContent } from '@/api/content/workPackage/types';
 import { resolveCard } from '@/api/content/card';
 // 品牌要求（Brief）：归属内容生产协同，品牌部在这里录入与确认（AI 视觉工厂只读）
 import { confirmBrandBrief, getBrandBrief, saveBrandBrief } from '@/api/content/brief';
-import type { BrandBriefFieldKey, BrandBriefVO } from '@/api/content/brief/types';
+import type { BrandBriefFieldKey, BrandBriefImage, BrandBriefVO } from '@/api/content/brief/types';
 import {
   BRAND_BRIEF_FIELDS,
   BRAND_BRIEF_STATUS_TYPES,
+  BRAND_BRIEF_STYLE_MAX,
   briefFormHasContent,
   briefStatusText,
   emptyBrandBriefForm,
-  formToBriefPayload
+  formToBriefPayload,
+  joinStyleRefFileIds,
+  parseStyleRefFileIds
 } from '@/api/content/brief/types';
+// 参考风格图片条：与视觉项目页共用同一个组件（展示逻辑与 blob 回收只维护一处）
+import BriefStyleImages from '@/components/BriefStyleImages/index.vue';
+import { checkPermi } from '@/utils/permission';
 import { addManualFact, confirmFact, confirmUnambiguousFacts, factFieldOptions, rejectFact } from '@/api/content/fact';
 import { productOptions } from '@/api/content/product';
 import {
@@ -1132,6 +1164,23 @@ const formBriefExisted = ref(false);
 /** 弹窗里的当前状态（未填写 / 草稿 / 已确认），折叠标题上用 */
 const formBriefStatus = ref<BrandBriefVO | null>(null);
 
+/**
+ * 参考风格图片的当前状态：`briefStyleFiles` 是**页面认的真相**（保存时按它提交），
+ * `briefStyleImages` 是服务端解析出来的明细（缩略图与文件名用）。
+ *
+ * <p>为什么两份都留：保存要的是 ID 串（唯一、可比），展示要的是文件名；
+ * 只用明细会把"服务端解析不到的文件名"当成"这张图不存在"。
+ * 每次保存后用服务端返回覆盖两份，页面不做本地猜测。</p>
+ */
+const briefStyleFiles = ref<string[]>([]);
+const briefStyleImages = ref<BrandBriefImage[]>([]);
+
+/** 用服务端返回同步"参考风格图片"两份状态 */
+const applyBriefStyleFiles = (data?: BrandBriefVO | null) => {
+  briefStyleFiles.value = parseStyleRefFileIds(data?.styleRefFiles);
+  briefStyleImages.value = data?.styleRefImages || [];
+};
+
 const briefSnapshotOf = (form: Record<BrandBriefFieldKey, string>) =>
   JSON.stringify(briefFields.map(field => (form[field.key] ?? '').trim()));
 
@@ -1179,6 +1228,7 @@ const loadBrief = async (taskId?: string | number) => {
     briefLoaded.value = true;
     briefEditing.value = false;
     fillBriefForm(briefForm, brief.value);
+    applyBriefStyleFiles(brief.value);
     briefSavedSnapshot.value = briefSnapshotOf(briefForm);
   } catch (error) {
     if (String(detailTaskId.value || '') !== String(taskId)) return;
@@ -1215,11 +1265,15 @@ const saveBrief = async () => {
   const wasConfirmed = brief.value?.status === 'CONFIRMED';
   briefBusy.value = 'save';
   try {
-    const res = await saveBrandBrief(detailTaskId.value, formToBriefPayload(briefForm));
+    const res = await saveBrandBrief(
+      detailTaskId.value,
+      formToBriefPayload(briefForm, joinStyleRefFileIds(briefStyleFiles.value))
+    );
     brief.value = res.data ?? brief.value;
     briefLoaded.value = true;
     briefError.value = '';
     fillBriefForm(briefForm, brief.value);
+    applyBriefStyleFiles(brief.value);
     briefSavedSnapshot.value = briefSnapshotOf(briefForm);
     briefEditing.value = false;
     // 后端语义：保存不把「已确认」打回「草稿」。改了内容却仍是已确认，必须提醒重新确认。
@@ -1262,10 +1316,129 @@ const confirmBrief = async () => {
     brief.value = res.data ?? brief.value;
     briefLoaded.value = true;
     fillBriefForm(briefForm, brief.value);
+    applyBriefStyleFiles(brief.value);
     briefSavedSnapshot.value = briefSnapshotOf(briefForm);
     modal.msgSuccess('品牌要求已确认');
   } catch (error) {
     modal.msgError('确认品牌要求失败：' + ((await extractErrorMessage(error)) ?? '接口失败'));
+  } finally {
+    briefBusy.value = '';
+  }
+};
+
+// ---------------------------------------------------------------- 参考风格图片（Brief 的一个字段）
+
+/**
+ * 保存「参考风格图片」引用并**核对结果**。
+ *
+ * @param nextIds       目标 ID 列表（已包含本次改动）
+ * @param action        '上传' | '移除'（提示语用）
+ * @param hadTextEdits  调用前是否有未保存的文字改动（保存会把它们一起存下来，提示要说清）
+ * @return 是否完全按预期生效
+ */
+const saveStyleRefs = async (
+  nextIds: string[],
+  action: '上传' | '移除',
+  hadTextEdits: boolean
+): Promise<boolean> => {
+  if (!detailTaskId.value) return false;
+  const res = await saveBrandBrief(
+    detailTaskId.value,
+    formToBriefPayload(briefForm, joinStyleRefFileIds(nextIds))
+  );
+  brief.value = res.data ?? brief.value;
+  briefLoaded.value = true;
+  briefError.value = '';
+  fillBriefForm(briefForm, brief.value);
+  applyBriefStyleFiles(brief.value);
+  briefSavedSnapshot.value = briefSnapshotOf(briefForm);
+  const kept = joinStyleRefFileIds(briefStyleFiles.value);
+  const wanted = joinStyleRefFileIds(nextIds);
+  if (kept !== wanted) {
+    // 真实存在的一个后端边界：引用被清空时后端会把该列归一成 null，而 MyBatis-Plus 的
+    // updateById 默认**跳过 null 字段**，所以"把最后一张也移除"这一步存不下来
+    // （列表非空时都能正常保存）。必须如实说出来：不说的话用户刷新后看到图还在，会以为页面坏了。
+    briefError.value =
+      `参考风格图片的「${action}」没有完全生效：服务端仍返回「${kept || '（空）'}」。` +
+      '原因是引用清空后后端把该列当 null 跳过更新（本仓库既有的更新策略），需要后端改成对该列显式置空。' +
+      '当前状态以刷新后的列表为准。';
+    modal.msgWarning(briefError.value);
+    return false;
+  }
+  if (action === '上传') {
+    modal.msgSuccess(
+      hadTextEdits
+        ? '参考风格图片已上传并保存（同时保存了你正在编辑的文字内容）；平面设计在视觉工厂能看到这张图。'
+        : '参考风格图片已上传并保存；平面设计在视觉工厂能看到这张图。'
+    );
+  } else {
+    modal.msgSuccess('已移除该参考风格图片并保存');
+  }
+  return true;
+};
+
+/**
+ * 选了参考风格图片：先传成任务附件，再把附件ID并进品牌要求并保存。
+ *
+ * <p>分两步并且**分别报错**：上传成功但引用没存上时，必须把附件ID告诉用户
+ * （图已经在「资料附件」里，可以拿这个ID人工补救），不能笼统说"上传失败"——那会让人重复上传。</p>
+ */
+const onStyleImagePick = async (file: File) => {
+  if (!detailTaskId.value) {
+    modal.msgError('请先打开一个任务详情再上传参考风格图片');
+    return;
+  }
+  if (briefStyleFiles.value.length >= BRAND_BRIEF_STYLE_MAX) {
+    modal.msgWarning(`参考风格图片最多 ${BRAND_BRIEF_STYLE_MAX} 张，请先移除再上传`);
+    return;
+  }
+  briefBusy.value = 'style';
+  briefError.value = '';
+  const hadTextEdits = briefDirty.value;
+  let stage: '上传' | '保存引用' = '上传';
+  try {
+    const res = await uploadTaskFile({ taskId: detailTaskId.value, file: file });
+    const fileId = res.data;
+    if (!fileId) {
+      briefError.value = '参考风格图片上传没有返回附件ID，无法登记到品牌要求里；请重试，或改用「资料附件」上传';
+      modal.msgError(briefError.value);
+      return;
+    }
+    stage = '保存引用';
+    await saveStyleRefs([...briefStyleFiles.value, String(fileId)], '上传', hadTextEdits);
+    // 这张图同时也会出现在「资料附件」里（同一份文件，不复制），刷新一下让列表跟上
+    await loadDetail();
+  } catch (error) {
+    const reason = (await extractErrorMessage(error)) ?? '接口失败';
+    briefError.value =
+      stage === '上传' ? `参考风格图片上传失败：${reason}` : `图片已上传（在「资料附件」里），但引用没保存成功：${reason}`;
+    modal.msgError(briefError.value);
+  } finally {
+    briefBusy.value = '';
+  }
+};
+
+/** 移除一张参考风格图片（只解除引用；附件本身不删——它可能还被资料/参考图使用） */
+const removeStyleImage = async (image: BrandBriefImage) => {
+  const id = String(image.fileId ?? '');
+  if (!id || !detailTaskId.value) return;
+  try {
+    await modal.confirm(
+      `移除参考风格图片「${image.fileName || id}」？\n只解除品牌要求里的引用，附件本身仍留在「资料附件」里。`
+    );
+  } catch {
+    return;
+  }
+  briefBusy.value = 'style';
+  try {
+    await saveStyleRefs(
+      briefStyleFiles.value.filter((item) => item !== id),
+      '移除',
+      false
+    );
+  } catch (error) {
+    briefError.value = '移除参考风格图片失败：' + ((await extractErrorMessage(error)) ?? '接口失败');
+    modal.msgError(briefError.value);
   } finally {
     briefBusy.value = '';
   }
@@ -1630,6 +1803,7 @@ const handleDrawerClosed = () => {
   briefEditing.value = false;
   briefBusy.value = '';
   fillBriefForm(briefForm, null);
+  applyBriefStyleFiles(null);
   briefSavedSnapshot.value = briefSnapshotOf(briefForm);
   cancelOther();
   cardDialog.visible = false;
@@ -2122,6 +2296,12 @@ onBeforeUnmount(() => {
 .brief-dirty {
   font-size: 12px;
   color: #b45309;
+}
+
+/* 参考风格图片：上传位跟在「参考风格」文本框下面（同一个表单项里，就近可操作） */
+.brief-style-upload {
+  width: 100%;
+  margin-top: 6px;
 }
 
 .brief-error {

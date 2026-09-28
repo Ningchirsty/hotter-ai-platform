@@ -17,7 +17,9 @@ import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.common.redis.annotation.RepeatSubmit;
 import org.dromara.content.domain.bo.ContentTaskBo;
 import org.dromara.content.domain.vo.CpTaskFileVo;
+import org.dromara.content.service.IContentCardService;
 import org.dromara.creative.constant.CreativeConstants;
+import org.dromara.creative.domain.bo.BriefChangeRequestBo;
 import org.dromara.creative.domain.bo.CreativeProjectBo;
 import org.dromara.creative.domain.vo.CreativeProjectVo;
 import org.dromara.creative.domain.vo.DpStageEventVo;
@@ -54,6 +56,31 @@ import java.util.Map;
 public class CreativeProjectController {
 
     private final ICreativeProjectService projectService;
+    /**
+     * 互动确认卡服务（内容域）：平面设计"申请修改品牌要求"要落到品牌部的待办里
+     */
+    private final IContentCardService contentCardService;
+
+    /**
+     * 平面设计申请修改品牌要求。
+     *
+     * <p>品牌要求（Brief）的作者是品牌部、平面设计在视觉工厂只读；设计要改不能直接改，
+     * 但需求得能被品牌部看到并处理——所以落到内容域的互动确认卡上（不阻断任务）。</p>
+     *
+     * @param taskId 项目ID
+     * @param bo     申请内容
+     * @return 结果（卡片ID、是否新建、标题）
+     */
+    @SaCheckPermission(CreativeConstants.PERM_PROJECT_EDIT)
+    @RepeatSubmit
+    @Log(title = "申请修改品牌要求", businessType = BusinessType.UPDATE)
+    @PostMapping("/{taskId}/brief-change-request")
+    public R<IContentCardService.ChangeRequest> raiseBriefChangeRequest(
+        @NotNull(message = "项目ID不能为空") @PathVariable("taskId") Long taskId,
+        @Validated @RequestBody BriefChangeRequestBo bo) {
+        projectService.getProject(taskId);
+        return R.ok(contentCardService.raiseBriefChangeRequest(taskId, bo.getMessage()));
+    }
 
     /**
      * 视觉项目分页。

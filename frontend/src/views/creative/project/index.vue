@@ -179,7 +179,15 @@
                 <h4>2. 品牌要求（Brief）（由品牌部在内容任务里录入）</h4>
                 <div class="block-actions">
                   <el-tag :type="briefStatusType" size="small" effect="dark">{{ briefStatusText }}</el-tag>
-                  <el-button size="small" plain :loading="briefBusy === 'load'" @click="loadBrandBrief(true)">
+                  <el-button
+                    size="small"
+                    type="warning"
+                    plain
+                    @click="openBriefChangeDialog"
+                  >
+                    申请修改品牌要求
+                  </el-button>
+                  <el-button size="small" plain :loading="briefBusy === 'load'" @click="refreshBrief">
                     刷新
                   </el-button>
                   <el-button size="small" type="primary" plain @click="goContentTask">
@@ -189,7 +197,8 @@
               </div>
               <p class="hint">
                 <b>本页只读</b>：品牌要求由品牌部在<b>内容生产协同 → 内容任务 → 任务详情 →「品牌要求（Brief）」</b>
-                里录入与确认，平面设计按此创作（那边确认后本页即可见）。
+                里录入与确认，平面设计按此创作（那边确认后本页即可见）。要改要求请点右上「申请修改品牌要求」，
+                提交后进入品牌部的待办（互动确认卡），处理完这里会跟着更新。
                 产品事实仍在下面「4. 事实确认」里逐条确认；品牌调性与事实里的 brand_tone
                 <b>并存</b>——一个是品牌方自己提的要求，一个是从资料里解析确认的，两者冲突时同时展示、由人裁定，不自动合并。
                 这些要求的去向：<b>必显信息</b>与<b>主推卖点</b>进出图的正向提示词，<b>禁用词</b>进出图的负向提示词，
@@ -198,12 +207,32 @@
               <p v-if="brandBriefError" class="fact-error">
                 {{ brandBriefError }}（点右上「刷新」重试，页面不会用默认值糊过去）
               </p>
+              <!-- 修改申请状态：有就明说在等品牌部处理，读不到也说一句（不静默） -->
+              <p v-if="briefChangeRequest" class="brief-change-pending">
+                已提交修改申请：{{ briefChangeRequest.question || '（无说明）' }}
+                <span class="muted">（等待品牌部处理 · {{ formatTime(briefChangeRequest.createTime) || '—' }}）</span>
+              </p>
+              <p v-else-if="briefChangeError" class="muted brief-change-pending">
+                {{ briefChangeError }}
+              </p>
               <div class="brief-grid brief-grid-readonly">
                 <div v-for="field in briefFields" :key="field.key" class="brief-row">
                   <label>{{ field.label }}</label>
                   <div class="brief-control">
                     <div class="brief-value" :class="{ 'is-empty': !briefValueOf(field.key) }">
                       {{ briefValueOf(field.key) || '—' }}
+                    </div>
+                    <!-- 参考风格：品牌方给的参考图（只读展示；它们同时也是任务附件） -->
+                    <div v-if="field.key === 'styleRef'" class="brief-style-images">
+                      <BriefStyleImages
+                        :task-id="currentProjectId"
+                        :images="brandBrief?.styleRefImages || []"
+                        :editable="false"
+                        source="creative"
+                      />
+                      <span v-if="(brandBrief?.styleRefImages || []).length" class="hint">
+                        这些图也是任务附件，可以在上面「1. 产品图与参考图」里被选作出图参考图。
+                      </span>
                     </div>
                     <span class="hint">{{ field.hint }}</span>
                   </div>
@@ -624,6 +653,32 @@
       </template>
     </el-dialog>
 
+    <!-- 申请修改品牌要求：设计不能直接改（品牌要求归品牌部），但需求要能到品牌部手里 -->
+    <el-dialog v-model="briefChangeVisible" title="申请修改品牌要求" width="560px">
+      <el-form label-width="96px">
+        <el-form-item label="申请内容">
+          <el-input
+            v-model="briefChangeMessage"
+            type="textarea"
+            :rows="5"
+            maxlength="500"
+            show-word-limit
+            placeholder="希望品牌方改什么，例如：必显信息里请补上「包装上的有机认证标志」；禁用词请删掉「最好」"
+          />
+        </el-form-item>
+      </el-form>
+      <p class="hint">
+        提交后由<b>品牌部</b>在内容生产协同 → 内容任务 → 任务详情 →「品牌要求（Brief）」里处理
+        （落到互动确认卡，可在内容任务页看到）。本页只读，改完这里会自动跟着更新。
+      </p>
+      <template #footer>
+        <el-button @click="briefChangeVisible = false">取消</el-button>
+        <el-button type="primary" :loading="briefBusy === 'change'" @click="submitBriefChangeRequest">
+          提交申请
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 新增/编辑文案与要点块 -->
     <el-dialog v-model="copyDialogVisible" :title="copyDialogTitle" width="560px">
       <el-form label-width="96px">
@@ -749,7 +804,17 @@ import type { CpTaskFileVO } from '@/api/content/task/types';
 // 品牌要求（Brief）已归属内容生产协同：读的是内容域接口，本页只读展示
 import { getBrandBrief } from '@/api/content/brief';
 import type { BrandBriefFieldKey, BrandBriefVO } from '@/api/content/brief/types';
-import { BRAND_BRIEF_FIELDS, BRAND_BRIEF_STATUS_TYPES, briefStatusText as briefStatusTextOf } from '@/api/content/brief/types';
+import {
+  BRAND_BRIEF_CHANGE_FIELD_CODE,
+  BRAND_BRIEF_FIELDS,
+  BRAND_BRIEF_STATUS_TYPES,
+  briefStatusText as briefStatusTextOf
+} from '@/api/content/brief/types';
+// 待处理申请读的是内容域的互动确认卡（品牌部在那张卡上处理）
+import { listCard } from '@/api/content/card';
+import type { CpInteractionCardVO } from '@/api/content/card/types';
+// 参考风格图片条：与内容任务页共用同一个组件（blob 加载与回收只维护一处）
+import BriefStyleImages from '@/components/BriefStyleImages/index.vue';
 import {
   addCopyBlock,
   addCreativeProject,
@@ -769,6 +834,7 @@ import {
   listCreativeWorkflows,
   listDnaVersions,
   listGenerations,
+  raiseBriefChangeRequest,
   reorderCopyBlocks,
   retryGeneration,
   seedCopyBlocksFromFacts,
@@ -858,6 +924,12 @@ const briefTaskId = ref('');
 const brandBriefError = ref('');
 const briefBusy = ref('');
 
+/** 待处理的"申请修改品牌要求"（内容域的互动确认卡），有就提示在等品牌部处理 */
+const briefChangeRequest = ref<CpInteractionCardVO | null>(null);
+const briefChangeError = ref('');
+const briefChangeVisible = ref(false);
+const briefChangeMessage = ref('');
+
 /** 某个字段的展示值（空值由模板显示成 —，这里不改写数据本身） */
 function briefValueOf(key: BrandBriefFieldKey): string {
   return ((brandBrief.value?.[key] as string | undefined) ?? '').trim();
@@ -865,6 +937,81 @@ function briefValueOf(key: BrandBriefFieldKey): string {
 
 /** 状态徽标文案：与内容任务页共用同一个函数，避免两处口径不一致（谁 · 何时） */
 const briefStatusText = computed(() => briefStatusTextOf(brandBrief.value, briefLoaded.value, formatTime));
+
+/**
+ * 读"申请修改品牌要求"的待处理状态（内容域互动确认卡）。
+ *
+ * <p>读不到不阻塞只读展示，但也不能静默：显示一句说明，让人知道"没看到申请状态"
+ * 不等于"没有申请"。按 `cardType=SUPPLEMENT + fieldCode=brand_brief` 筛，
+ * 与后端 {@code ContentCardServiceImpl.BRIEF_FIELD_CODE} 一致。</p>
+ */
+async function loadBriefChangeRequest() {
+  const taskId = String(currentProjectId.value || '');
+  if (!taskId) return;
+  briefChangeError.value = '';
+  try {
+    const res = await listCard({
+      taskId: taskId,
+      cardType: 'SUPPLEMENT',
+      status: 'PENDING',
+      pageNum: 1,
+      pageSize: 10
+    });
+    if (String(currentProjectId.value || '') !== taskId) return;
+    const rows = res.data?.rows || [];
+    briefChangeRequest.value =
+      rows.find((row) => (row.fieldCode || '') === BRAND_BRIEF_CHANGE_FIELD_CODE) || null;
+  } catch (error) {
+    if (String(currentProjectId.value || '') !== taskId) return;
+    briefChangeRequest.value = null;
+    briefChangeError.value =
+      '修改申请状态没取到（' + ((await extractErrorMessage(error)) ?? '接口失败') + '），不影响上面的只读展示。';
+  }
+}
+
+/** 刷新品牌要求：内容与"修改申请状态"一起刷（两个都点一次才叫刷新） */
+function refreshBrief() {
+  void loadBrandBrief(true);
+  void loadBriefChangeRequest();
+}
+
+/** 打开"申请修改品牌要求"弹窗 */
+function openBriefChangeDialog() {
+  if (!currentProjectId.value) {
+    ElMessage.warning('还没选中项目，请先在左侧选择视觉项目');
+    return;
+  }
+  briefChangeMessage.value = '';
+  briefChangeVisible.value = true;
+}
+
+/** 提交修改申请：进品牌部待办（内容域互动确认卡），本页只读所以改完要来这边看 */
+async function submitBriefChangeRequest() {
+  if (!currentProjectId.value || briefBusy.value) return;
+  const message = briefChangeMessage.value.trim();
+  if (!message) {
+    ElMessage.warning('请写清希望品牌方修改什么');
+    return;
+  }
+  briefBusy.value = 'change';
+  try {
+    const res = await raiseBriefChangeRequest(currentProjectId.value, message);
+    const created = res.data?.created !== false;
+    if (created) {
+      ElMessage.success('已提交给品牌部（内容任务的「互动确认卡」），处理后会在这里看到最新的品牌要求');
+    } else {
+      ElMessage.warning(
+        `已有待处理的修改申请，没有重复提交（卡片ID ${res.data?.cardId ?? '—'}）；品牌部处理后这里会更新`
+      );
+    }
+    briefChangeVisible.value = false;
+    await loadBriefChangeRequest();
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '提交修改申请失败');
+  } finally {
+    briefBusy.value = '';
+  }
+}
 
 /** 去内容任务页录入：路由是从菜单表实查出来的（业务应用 → 内容生产协同 → 内容任务 = /business/content/task） */
 function goContentTask() {
@@ -1167,6 +1314,9 @@ async function selectProject(project: CreativeProjectVO) {
   briefTaskId.value = '';
   briefBusy.value = '';
   brandBriefError.value = '';
+  // 换项目也要清掉"修改申请"的状态：那是上一个项目的待办，留着会张冠李戴
+  briefChangeRequest.value = null;
+  briefChangeError.value = '';
   copyBlocks.value = [];
   copyLoadError.value = '';
   copyBusy.value = '';
@@ -1220,6 +1370,7 @@ async function loadDetail() {
     void loadDnaState();
     // 品牌要求与文案块跟着详情一起取：各自失败各自如实报，不影响整页
     void loadBrandBrief();
+    void loadBriefChangeRequest();
     void loadCopyBlocks();
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '加载项目详情失败');
@@ -2681,6 +2832,26 @@ button {
 }
 .brief-value.is-empty {
   color: var(--t3);
+}
+
+/* 参考风格图片（只读）：缩略图条 + 一句"它们也是任务附件"的说明 */
+.brief-style-images {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+/* 「申请修改品牌要求」的待处理提示：一行醒目的琥珀色，别和普通说明混在一起 */
+.brief-change-pending {
+  margin: 4px 0 8px;
+  padding: 7px 10px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.12);
+  border-left: 2px solid #f59e0b;
+  border-radius: 4px;
 }
 
 /* 文案与要点：分组工具条 */

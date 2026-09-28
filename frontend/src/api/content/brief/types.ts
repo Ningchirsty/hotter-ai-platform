@@ -15,11 +15,38 @@ export const BRAND_BRIEF_STATUS_LABELS: Record<string, string> = {
   CONFIRMED: '已确认'
 };
 
+/**
+ * 参考风格图片最多几张（与后端 `ContentBrandBriefServiceImpl.MAX_STYLE_IMAGES` 一致）。
+ * 前后端都挡一次：前端先挡是为了给可读提示，后端那道才是真正的边界。
+ */
+export const BRAND_BRIEF_STYLE_MAX = 6;
+
+/**
+ * 「申请修改品牌要求」落在互动确认卡上时用的 field_code 标记。
+ *
+ * <p>为什么要有这个常量：视觉项目页要判断"这条任务有没有待处理的修改申请"，
+ * 只能靠 {@code cardType=SUPPLEMENT + fieldCode=brand_brief} 这对取值筛；
+ * 写成魔法字符串的话，后端哪天改了标记，页面会静默查不到（看起来"没有申请"）。</p>
+ */
+export const BRAND_BRIEF_CHANGE_FIELD_CODE = 'brand_brief';
+
 /** 品牌 Brief 状态 → 标签颜色（ElTagType 的取值域） */
 export const BRAND_BRIEF_STATUS_TYPES: Record<string, 'primary' | 'success' | 'warning' | 'info' | 'danger'> = {
   DRAFT: 'warning',
   CONFIRMED: 'success'
 };
+
+/**
+ * 参考风格图片明细（后端按 `styleRefFiles` 里的 id 解析出文件名，解析不到的会跳过）。
+ *
+ * <p>预览地址不在数据里给：内容任务页与视觉项目页各有自己的"附件取字节"接口
+ * （前者 `/content/task/.../files/{id}/content`，后者走创作域的代理），
+ * 由页面各自拼，避免后端替前端决定走哪条鉴权通路。</p>
+ */
+export interface BrandBriefImage {
+  fileId?: string | number;
+  fileName?: string;
+}
 
 /**
  * 品牌要求（Brief）。
@@ -47,6 +74,10 @@ export interface BrandBriefVO {
   mainPush?: string;
   sizeSpecReq?: string;
   styleRef?: string;
+  /** 参考风格图片的附件ID串（逗号分隔）——后端原样回传，用于判断"改没改" */
+  styleRefFiles?: string;
+  /** 参考风格图片明细（缩略图展示用） */
+  styleRefImages?: BrandBriefImage[];
   remark?: string;
   confirmedBy?: string | number;
   /** 后端若一并返回确认人姓名则用它，否则退化为显示 confirmedBy 的ID（不猜名字） */
@@ -64,6 +95,8 @@ export interface BrandBriefForm {
   mainPush?: string;
   sizeSpecReq?: string;
   styleRef?: string;
+  /** 参考风格图片的附件ID串（逗号分隔，最多 6 张） */
+  styleRefFiles?: string;
   remark?: string;
 }
 
@@ -148,7 +181,7 @@ export const BRAND_BRIEF_FIELDS: BrandBriefField[] = [
     rows: 2,
     max: 1000,
     placeholder: '如：参考图 2 的自然光；无印良品式的留白',
-    hint: '参考图 / 参考品牌 / 风格描述，帮助统一画面取向。'
+    hint: '参考图 / 参考品牌 / 风格描述，帮助统一画面取向；也可以直接上传参考风格图片（下方）。'
   },
   {
     key: 'remark',
@@ -174,9 +207,21 @@ export function emptyBrandBriefForm(): Record<BrandBriefFieldKey, string> {
   };
 }
 
-/** 表单 → 提交体（只带 8 个要求字段；状态由 confirm 接口推进，这里不传 status） */
-export function formToBriefPayload(form: Record<BrandBriefFieldKey, string>): BrandBriefForm {
-  return {
+/**
+ * 表单 → 提交体（8 个要求字段 + 参考风格图片ID串；状态由 confirm 接口推进，这里不传 status）。
+ *
+ * @param form           8 个文本字段
+ * @param styleRefFiles  参考风格图片ID串（逗号分隔）。
+ *                       - **传字符串**（哪怕空串）：表示"这就是我要的完整状态"，用于上传/移除后的即时保存；
+ *                       - **不传（undefined）**：**不带这个字段**，后端保持原值不变。
+ *                         新建/编辑任务弹窗走这条路：那个表单里没有图片控件，不该因为保存文字
+ *                         而把图片引用改掉（显式不带字段，比"传空串然后指望后端跳过 null"可靠）。
+ */
+export function formToBriefPayload(
+  form: Record<BrandBriefFieldKey, string>,
+  styleRefFiles?: string
+): BrandBriefForm {
+  const payload: BrandBriefForm = {
     brandTone: form.brandTone,
     mustShow: form.mustShow,
     forbiddenWords: form.forbiddenWords,
@@ -186,6 +231,29 @@ export function formToBriefPayload(form: Record<BrandBriefFieldKey, string>): Br
     styleRef: form.styleRef,
     remark: form.remark
   };
+  if (styleRefFiles !== undefined) {
+    payload.styleRefFiles = styleRefFiles;
+  }
+  return payload;
+}
+
+/** 把后端返回的ID串拆成数组（非数字片段丢掉：脏数据不该让页面整块失败） */
+export function parseStyleRefFileIds(raw?: string): string[] {
+  if (!raw) return [];
+  return raw
+    .split(/[,，、\s]+/)
+    .map((id) => id.trim())
+    .filter((id) => id.length > 0 && !Number.isNaN(Number(id)));
+}
+
+/** 把ID数组拼成后端要的串（去重、保持顺序） */
+export function joinStyleRefFileIds(ids: Array<string | number>): string {
+  const seen: string[] = [];
+  ids.forEach((id) => {
+    const value = String(id ?? '').trim();
+    if (value && !seen.includes(value)) seen.push(value);
+  });
+  return seen.join(',');
 }
 
 /** 8 项是否至少有一项非空（确认前的最小校验：全空确认没有意义） */
