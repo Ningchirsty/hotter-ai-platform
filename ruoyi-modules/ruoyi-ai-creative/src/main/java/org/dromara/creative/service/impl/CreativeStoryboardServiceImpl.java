@@ -18,7 +18,7 @@ import org.dromara.creative.domain.DpStoryboard;
 import org.dromara.creative.domain.DpStoryboardScreen;
 import org.dromara.creative.domain.bo.CreativeScreenBo;
 import org.dromara.creative.domain.vo.CreativeProjectVo;
-import org.dromara.creative.domain.vo.DpBrandBriefVo;
+import org.dromara.content.domain.vo.CpBrandBriefVo;
 import org.dromara.creative.domain.vo.DpCopyBlockVo;
 import org.dromara.creative.domain.vo.DpStoryboardScreenVo;
 import org.dromara.creative.domain.vo.DpStoryboardVo;
@@ -30,7 +30,7 @@ import org.dromara.creative.helper.CreativeDraftFactory;
 import org.dromara.creative.helper.VisualDnaSchema;
 import org.dromara.creative.mapper.DpStoryboardMapper;
 import org.dromara.creative.mapper.DpStoryboardScreenMapper;
-import org.dromara.creative.service.ICreativeBriefService;
+import org.dromara.content.service.IContentBrandBriefService;
 import org.dromara.creative.service.ICreativeCopyService;
 import org.dromara.creative.service.ICreativeDirectionService;
 import org.dromara.creative.service.ICreativeDnaService;
@@ -102,7 +102,7 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
     /**
      * 品牌 Brief（R7）：必显信息进品牌收尾屏，并要求模型改写时不得违背品牌方要求
      */
-    private final ICreativeBriefService briefService;
+    private final IContentBrandBriefService briefService;
     /**
      * 文案与要点块（R7）：卖点块进两个卖点屏
      */
@@ -132,7 +132,7 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
 
         // 参数化草稿：每屏标题/副标题/正文/画面独白由「事实 + 基因 + 产品名 + 屏类型」推导。
         // R7 起，「品牌 Brief 的必显信息」与「卖点块」也参与推导；两者都为空时与 R7 之前完全一致。
-        DpBrandBriefVo brief = briefService.get(taskId);
+        CpBrandBriefVo brief = briefService.get(taskId);
         String mustShow = mustShowFirstLine(brief);
         List<CreativeDraftFactory.CopyHint> sellingPoints = sellingPointHints(taskId);
         List<CreativeDraftFactory.ScreenDraft> drafts =
@@ -357,7 +357,7 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
      */
     private static String storyboardPrompt(CreativeProjectVo project, Map<String, String> facts,
                                            List<CreativeDraftFactory.ScreenDraft> drafts,
-                                           DpBrandBriefVo brief) {
+                                           CpBrandBriefVo brief) {
         StringBuilder sb = new StringBuilder();
         sb.append("为电商详情页项目「")
             .append(StringUtils.blankToDefault(project.getProductName(),
@@ -405,7 +405,7 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
      * @param brief 品牌 Brief（可空）
      * @return 第一行；没有返回 null
      */
-    private static String mustShowFirstLine(DpBrandBriefVo brief) {
+    private static String mustShowFirstLine(CpBrandBriefVo brief) {
         if (brief == null || StringUtils.isBlank(brief.getMustShow())) {
             return null;
         }
@@ -460,7 +460,7 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
      */
     private static Map<String, Object> storyboardPayload(ObjectNode dna, Map<String, String> facts,
                                                         List<CreativeDraftFactory.ScreenDraft> drafts,
-                                                        DpBrandBriefVo brief) {
+                                                        CpBrandBriefVo brief) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("task", "storyboard-draft");
         payload.put("facts", facts);

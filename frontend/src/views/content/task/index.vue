@@ -302,6 +302,33 @@
         <el-form-item label="备注" prop="remark">
           <el-input v-model="form.remark" type="textarea" :rows="2" placeholder="请输入内容" />
         </el-form-item>
+
+        <!-- 品牌要求（Brief）：默认折叠，摘要显示当前状态；随任务一并保存 -->
+        <el-collapse v-model="briefCollapse" class="form-collapse">
+          <el-collapse-item name="brief">
+            <template #title>
+              <div class="collapse-title">
+                <span>品牌要求（Brief）</span>
+                <el-tag :type="formBriefStatusType" size="small" effect="plain">{{ formBriefStatusLabel }}</el-tag>
+              </div>
+            </template>
+            <p class="form-tip collapse-tip">
+              品牌方提的「必须怎么做」。必显信息与主推卖点会进 AI 视觉工厂出图的正向提示词、禁用词进负向提示词；
+              品牌调性 / 目标人群 / 尺寸规范 / 参考风格作为创作依据。此处留空则不提交品牌要求（任务仍会保存）。
+            </p>
+            <el-form-item v-for="field in briefFields" :key="field.key" :label="field.label">
+              <el-input
+                v-model="formBrief[field.key]"
+                type="textarea"
+                :rows="field.rows"
+                :maxlength="field.max"
+                show-word-limit
+                :placeholder="field.placeholder"
+              />
+              <div class="form-tip">{{ field.hint }}</div>
+            </el-form-item>
+          </el-collapse-item>
+        </el-collapse>
       </el-form>
       <template #footer>
         <div class="dialog-footer">
@@ -474,6 +501,89 @@
             </div>
             <p v-else class="muted">无非阻断提醒项。</p>
           </div>
+        </el-card>
+
+        <!-- 品牌要求（Brief）：品牌部在这里录入并确认；AI 视觉工厂那边只读 -->
+        <el-card shadow="never" class="detail-card">
+          <template #header>
+            <div class="card-head">
+              <span class="panel-kicker">Brand Brief</span>
+              <h3>品牌要求（Brief）</h3>
+              <p>
+                品牌方提的「必须怎么做」。去向：<b>必显信息</b>与<b>主推卖点</b>进 AI 视觉工厂出图的<b>正向提示词</b>，
+                <b>禁用词</b>进<b>负向提示词</b>；品牌调性 / 目标人群 / 尺寸规范 / 参考风格作为创作依据。
+                平面设计部在 AI 视觉工厂按此创作，<b>那边只读</b>，要改就在这里改。
+              </p>
+            </div>
+          </template>
+
+          <div class="brief-bar">
+            <el-tag :type="briefStatusTagType" size="small" effect="dark">{{ briefStatusLabel }}</el-tag>
+            <span v-if="briefEditing && briefDirty" class="brief-dirty">已修改未保存</span>
+            <div class="brief-bar-actions">
+              <template v-if="!briefEditing">
+                <el-button
+                  v-hasPermi="['content:task:edit']"
+                  size="small"
+                  type="primary"
+                  plain
+                  :loading="briefBusy === 'load'"
+                  @click="startEditBrief"
+                >
+                  编辑
+                </el-button>
+                <el-button
+                  v-hasPermi="['content:task:edit']"
+                  size="small"
+                  plain
+                  :loading="briefBusy === 'confirm'"
+                  @click="confirmBrief"
+                >
+                  品牌方确认
+                </el-button>
+                <el-button size="small" plain :loading="briefBusy === 'load'" @click="loadBrief(detailTaskId)">
+                  刷新
+                </el-button>
+              </template>
+              <template v-else>
+                <el-button size="small" type="primary" :loading="briefBusy === 'save'" @click="saveBrief">
+                  保存
+                </el-button>
+                <el-button size="small" @click="cancelEditBrief">取消</el-button>
+              </template>
+            </div>
+          </div>
+
+          <p v-if="briefError" class="brief-error">{{ briefError }}</p>
+
+          <!-- 只读展示：有值按多行原样显示，空值显示 —（不编造默认值） -->
+          <div v-if="!briefEditing" class="brief-grid">
+            <div v-for="field in briefFields" :key="field.key" class="brief-row">
+              <label>{{ field.label }}</label>
+              <div class="brief-value" :class="{ 'is-empty': !briefValueOf(field.key) }">
+                {{ briefValueOf(field.key) || '—' }}
+              </div>
+            </div>
+          </div>
+
+          <!-- 编辑态：8 个字段，长度上限与数据库列宽一致 -->
+          <el-form v-else label-width="120px" class="brief-form">
+            <el-form-item v-for="field in briefFields" :key="field.key" :label="field.label">
+              <el-input
+                v-model="briefForm[field.key]"
+                type="textarea"
+                :rows="field.rows"
+                :maxlength="field.max"
+                show-word-limit
+                :placeholder="field.placeholder"
+              />
+              <div class="form-tip">{{ field.hint }}</div>
+            </el-form-item>
+          </el-form>
+
+          <p v-if="!briefEditing && briefLoaded && !brief?.configured" class="muted">
+            还没有录过品牌要求。点「编辑」填写后保存；确认无误再点「品牌方确认」，确认后视觉工厂那边即可见。
+          </p>
         </el-card>
 
         <!-- 附件 -->
@@ -934,6 +1044,17 @@ import type {
 } from '@/api/content/task/types';
 import type { WorkPackageContent } from '@/api/content/workPackage/types';
 import { resolveCard } from '@/api/content/card';
+// 品牌要求（Brief）：归属内容生产协同，品牌部在这里录入与确认（AI 视觉工厂只读）
+import { confirmBrandBrief, getBrandBrief, saveBrandBrief } from '@/api/content/brief';
+import type { BrandBriefFieldKey, BrandBriefVO } from '@/api/content/brief/types';
+import {
+  BRAND_BRIEF_FIELDS,
+  BRAND_BRIEF_STATUS_TYPES,
+  briefFormHasContent,
+  briefStatusText,
+  emptyBrandBriefForm,
+  formToBriefPayload
+} from '@/api/content/brief/types';
 import { addManualFact, confirmFact, confirmUnambiguousFacts, factFieldOptions, rejectFact } from '@/api/content/fact';
 import { productOptions } from '@/api/content/product';
 import {
@@ -957,6 +1078,7 @@ import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import { useTableSelection } from '@/hooks/table/useTableSelection';
 import modal from '@/plugins/modal';
 import { useDict } from '@/utils/dict';
+import { extractErrorMessage } from '@/utils/request';
 import { parseTime } from '@/utils/ruoyi';
 
 defineOptions({ name: 'ContentTask' });
@@ -982,6 +1104,172 @@ const {
     'aig_data_level'
   )
 );
+
+// ---------------------------------------------------------------- 品牌要求（Brief）
+
+/**
+ * 品牌要求由**品牌部**在这里录入并确认，AI 视觉工厂那边只读。
+ *
+ * <p>状态语义（后端定的，页面如实照做）：保存草稿**不会**把「已确认」打回「草稿」——
+ * 确认权在品牌方，改完内容要重新点「品牌方确认」，页面必须把这句说清楚，
+ * 否则会出现"我改了但别人看到的还是已确认"的误解。</p>
+ */
+const briefFields = BRAND_BRIEF_FIELDS;
+const briefCollapse = ref<string[]>([]);
+const brief = ref<BrandBriefVO | null>(null);
+const briefLoaded = ref(false);
+const briefError = ref('');
+/** '' | 'load' | 'save' | 'confirm'：一个字符串状态位，避免多个布尔互相打架 */
+const briefBusy = ref('');
+const briefEditing = ref(false);
+const briefForm = reactive<Record<BrandBriefFieldKey, string>>(emptyBrandBriefForm());
+/** 编辑前的内容快照：用来判断「已修改未保存」（只比内容，不看是否加载成功） */
+const briefSavedSnapshot = ref('');
+/** 表单弹窗里的品牌要求（与详情抽屉各自独立，避免一处编辑影响另一处） */
+const formBrief = reactive<Record<BrandBriefFieldKey, string>>(emptyBrandBriefForm());
+/** 打开弹窗时该任务是否已存在品牌要求记录：决定"8 项全空"时是否仍然提交 */
+const formBriefExisted = ref(false);
+/** 弹窗里的当前状态（未填写 / 草稿 / 已确认），折叠标题上用 */
+const formBriefStatus = ref<BrandBriefVO | null>(null);
+
+const briefSnapshotOf = (form: Record<BrandBriefFieldKey, string>) =>
+  JSON.stringify(briefFields.map(field => (form[field.key] ?? '').trim()));
+
+const briefDirty = computed(() => briefSnapshotOf(briefForm) !== briefSavedSnapshot.value);
+
+const briefStatusLabel = computed(() => briefStatusText(brief.value, briefLoaded.value, v => parseTime(v) || ''));
+
+const briefStatusTagType = computed<ElTagType>(() => {
+  if (!briefLoaded.value || !brief.value?.configured) return 'info';
+  return BRAND_BRIEF_STATUS_TYPES[brief.value.status || 'DRAFT'] || 'warning';
+});
+
+const formBriefStatusLabel = computed(() =>
+  briefStatusText(formBriefStatus.value, true, v => parseTime(v) || '')
+);
+
+const formBriefStatusType = computed<ElTagType>(() => {
+  if (!formBriefStatus.value?.configured) return 'info';
+  return BRAND_BRIEF_STATUS_TYPES[formBriefStatus.value.status || 'DRAFT'] || 'warning';
+});
+
+/** 详情里某个字段的展示值（空值由模板显示成 —） */
+const briefValueOf = (key: BrandBriefFieldKey): string => ((brief.value?.[key] as string | undefined) ?? '').trim();
+
+const fillBriefForm = (target: Record<BrandBriefFieldKey, string>, data?: BrandBriefVO | null) => {
+  briefFields.forEach(field => {
+    target[field.key] = (data?.[field.key] as string | undefined) ?? '';
+  });
+};
+
+/**
+ * 读品牌要求（内容域接口）。
+ *
+ * <p>读失败**不静默**：置 briefError 并在卡片里显示原因——空表不代表品牌部没有提要求。</p>
+ */
+const loadBrief = async (taskId?: string | number) => {
+  if (!taskId) return;
+  briefBusy.value = 'load';
+  briefError.value = '';
+  try {
+    const res = await getBrandBrief(taskId);
+    // 切任务后迟到的响应不写进页面
+    if (String(detailTaskId.value || '') !== String(taskId)) return;
+    brief.value = res.data ?? null;
+    briefLoaded.value = true;
+    briefEditing.value = false;
+    fillBriefForm(briefForm, brief.value);
+    briefSavedSnapshot.value = briefSnapshotOf(briefForm);
+  } catch (error) {
+    if (String(detailTaskId.value || '') !== String(taskId)) return;
+    brief.value = null;
+    briefLoaded.value = false;
+    briefError.value =
+      '品牌要求没取到（' + ((await extractErrorMessage(error)) ?? '接口失败') + '），下面的空值不代表品牌部没有提要求';
+  } finally {
+    if (String(detailTaskId.value || '') === String(taskId)) briefBusy.value = '';
+  }
+};
+
+const startEditBrief = () => {
+  fillBriefForm(briefForm, brief.value);
+  briefSavedSnapshot.value = briefSnapshotOf(briefForm);
+  briefEditing.value = true;
+};
+
+const cancelEditBrief = async () => {
+  if (briefDirty.value) {
+    try {
+      await modal.confirm('有未保存的改动，取消后这些改动会丢失。是否继续？');
+    } catch {
+      return;
+    }
+  }
+  fillBriefForm(briefForm, brief.value);
+  briefSavedSnapshot.value = briefSnapshotOf(briefForm);
+  briefEditing.value = false;
+};
+
+const saveBrief = async () => {
+  if (!detailTaskId.value || briefBusy.value) return;
+  const wasConfirmed = brief.value?.status === 'CONFIRMED';
+  briefBusy.value = 'save';
+  try {
+    const res = await saveBrandBrief(detailTaskId.value, formToBriefPayload(briefForm));
+    brief.value = res.data ?? brief.value;
+    briefLoaded.value = true;
+    briefError.value = '';
+    fillBriefForm(briefForm, brief.value);
+    briefSavedSnapshot.value = briefSnapshotOf(briefForm);
+    briefEditing.value = false;
+    // 后端语义：保存不把「已确认」打回「草稿」。改了内容却仍是已确认，必须提醒重新确认。
+    if (wasConfirmed) {
+      modal.msgWarning('已保存；状态仍是「已确认」。内容有改动，建议重新点「品牌方确认」，让确认动作对得上最新内容。');
+    } else {
+      modal.msgSuccess('品牌要求已保存（状态：草稿）');
+    }
+  } catch (error) {
+    // 失败时**留在编辑态**：不能把没存上的内容当成已保存
+    briefError.value = '保存品牌要求失败：' + ((await extractErrorMessage(error)) ?? '接口失败');
+    modal.msgError(briefError.value);
+  } finally {
+    briefBusy.value = '';
+  }
+};
+
+const confirmBrief = async () => {
+  if (!detailTaskId.value || briefBusy.value) return;
+  if (briefEditing.value && briefDirty.value) {
+    modal.msgWarning('有未保存的修改，请先点「保存」再确认');
+    return;
+  }
+  if (!brief.value?.configured) {
+    modal.msgWarning('还没有品牌要求内容：请先点「编辑」填写并保存，再确认');
+    return;
+  }
+  if (!briefFields.some(field => ((brief.value?.[field.key] as string | undefined) ?? '').trim().length > 0)) {
+    modal.msgWarning('品牌要求 8 项全空：至少填一项再确认（确认后视觉工厂会按它创作）');
+    return;
+  }
+  try {
+    await modal.confirm('确认后这条品牌要求就是「品牌方已确认的要求」，AI 视觉工厂会按它出图；是否继续？');
+  } catch {
+    return;
+  }
+  briefBusy.value = 'confirm';
+  try {
+    const res = await confirmBrandBrief(detailTaskId.value);
+    brief.value = res.data ?? brief.value;
+    briefLoaded.value = true;
+    fillBriefForm(briefForm, brief.value);
+    briefSavedSnapshot.value = briefSnapshotOf(briefForm);
+    modal.msgSuccess('品牌要求已确认');
+  } catch (error) {
+    modal.msgError('确认品牌要求失败：' + ((await extractErrorMessage(error)) ?? '接口失败'));
+  } finally {
+    briefBusy.value = '';
+  }
+};
 
 // ---------------------------------------------------------------- 列表与表单
 
@@ -1069,9 +1357,18 @@ const handleQuery = () => {
 const cancel = () => {
   closeDialog();
   resetForm();
+  // 品牌要求是弹窗里的第二块表单，它不在 useFormDialog 的范围内，必须一起复位
+  fillBriefForm(formBrief, null);
+  formBriefExisted.value = false;
+  formBriefStatus.value = null;
+  briefCollapse.value = [];
 };
 
 const handleAdd = () => {
+  fillBriefForm(formBrief, null);
+  formBriefExisted.value = false;
+  formBriefStatus.value = null;
+  briefCollapse.value = [];
   openDialog('新增内容任务');
 };
 
@@ -1080,6 +1377,21 @@ const handleUpdate = async (row?: Partial<CpTaskVO>) => {
   const taskId = row?.taskId || ids.value[0];
   const res = await getTask(taskId!);
   Object.assign(form.value, res.data?.task || {});
+  // 品牌要求：读出来填进折叠区，并记下"本来就存在记录"，决定 8 项全空时是否提交
+  briefCollapse.value = [];
+  fillBriefForm(formBrief, null);
+  formBriefExisted.value = false;
+  formBriefStatus.value = null;
+  try {
+    const briefRes = await getBrandBrief(taskId!);
+    formBriefStatus.value = briefRes.data ?? null;
+    formBriefExisted.value = briefRes.data?.configured === true;
+    fillBriefForm(formBrief, briefRes.data);
+  } catch (error) {
+    // 任务本身能打开就够了：品牌要求读失败要说出来，但不能把人挡在编辑弹窗外
+    formBriefStatus.value = null;
+    modal.msgWarning('品牌要求没取到：' + ((await extractErrorMessage(error)) ?? '接口失败') + '；本次保存不会覆盖它（除非你在折叠区里填了内容）');
+  }
   showDialog('修改内容任务');
 };
 
@@ -1105,11 +1417,64 @@ const handleFormProductChange = (productId: string | number | undefined) => {
   }
 };
 
+/**
+ * 保存任务 = 两步：先任务本体，再品牌要求（Brief）。
+ *
+ * <p>为什么要分两步并分别报错：品牌要求是另一组接口（`/content/task/{id}/brand-brief`），
+ * 任一步失败都必须说清"哪一步失败了"，否则用户看到"保存失败"会以为任务也没建成，
+ * 重复提交出两条任务。所以这里逐段 try：任务失败就中止（品牌要求没意义），
+ * 品牌要求失败时明确告知"任务已保存，品牌要求没存上，去详情里补一次即可"。</p>
+ */
 const submitForm = () => {
   taskFormRef.value?.validate(async (valid: boolean) => {
-    if (valid) {
-      form.value.taskId ? await updateTask(form.value) : await addTask(form.value);
-      modal.msgSuccess('操作成功');
+    if (!valid) return;
+    const isEdit = !!form.value.taskId;
+    // 8 项全空、且本来就没有记录时跳过提交：不给每个任务都建一条空白的品牌要求
+    const shouldSaveBrief = briefFormHasContent(formBrief) || formBriefExisted.value;
+    let taskId: string | number | undefined = form.value.taskId;
+
+    // 第一步：任务本体
+    try {
+      if (isEdit) {
+        await updateTask(form.value);
+      } else {
+        const res = await addTask(form.value);
+        taskId = res.data;
+      }
+    } catch (error) {
+      const reason = (await extractErrorMessage(error)) ?? '接口失败';
+      modal.msgError(
+        (isEdit ? '任务更新失败：' : '任务创建失败：') + reason + '（品牌要求未提交，请修好后重试）'
+      );
+      return;
+    }
+
+    // 第二步：品牌要求
+    if (!shouldSaveBrief || !taskId) {
+      modal.msgSuccess('操作成功（品牌要求为空，未提交）');
+      closeDialog();
+      await getList();
+      return;
+    }
+    const wasConfirmed = formBriefStatus.value?.status === 'CONFIRMED';
+    try {
+      const briefRes = await saveBrandBrief(taskId, formToBriefPayload(formBrief));
+      formBriefStatus.value = briefRes.data ?? formBriefStatus.value;
+      formBriefExisted.value = true;
+      if (wasConfirmed) {
+        modal.msgWarning('操作成功，品牌要求已一并保存；状态仍是「已确认」，内容有改动建议到任务详情里重新点「品牌方确认」。');
+      } else {
+        modal.msgSuccess('操作成功，品牌要求已一并保存');
+      }
+      closeDialog();
+      await getList();
+    } catch (error) {
+      const reason = (await extractErrorMessage(error)) ?? '接口失败';
+      // 任务已经保存成功了：不要再让用户重填任务，只需去详情补品牌要求
+      modal.msgError(
+        (isEdit ? '任务已保存' : '任务已创建') + '，但品牌要求保存失败：' + reason +
+        '。任务不需要重填，请打开该任务详情在「品牌要求（Brief）」里补一次保存。'
+      );
       closeDialog();
       await getList();
     }
@@ -1212,6 +1577,9 @@ const loadDetail = async (taskId: string | number | undefined = detailTaskId.val
     } else {
       stopPolling();
     }
+    // 品牌要求单独取：它归内容域的另一组接口，失败不影响任务详情本身，
+    // 但必须在卡片里如实显示失败原因（loadBrief 内部处理）
+    await loadBrief(taskId);
   } finally {
     if (withLoading) detailLoading.value = false;
   }
@@ -1255,6 +1623,14 @@ const handleDrawerClosed = () => {
   detailVisible.value = false;
   detailTaskId.value = undefined;
   detail.value = {};
+  // 品牌要求的卡片状态一起清掉：下次打开的是另一个任务，不能沿用上一个的任务内容
+  brief.value = null;
+  briefLoaded.value = false;
+  briefError.value = '';
+  briefEditing.value = false;
+  briefBusy.value = '';
+  fillBriefForm(briefForm, null);
+  briefSavedSnapshot.value = briefSnapshotOf(briefForm);
   cancelOther();
   cardDialog.visible = false;
 };
@@ -1728,6 +2104,87 @@ onBeforeUnmount(() => {
   color: var(--app-text-muted);
 }
 
+/* 品牌要求（Brief）：只读值 + 编辑态表单。视觉工厂那边只读，录入与确认都在这里。 */
+.brief-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.brief-bar-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.brief-dirty {
+  font-size: 12px;
+  color: #b45309;
+}
+
+.brief-error {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: #c0392b;
+}
+
+.brief-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.brief-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.brief-row > label {
+  flex: 0 0 110px;
+  padding-top: 2px;
+  font-size: 13px;
+  color: var(--app-text-muted);
+}
+
+/* 多行原样显示（必显信息/禁用词都是一行一条），空值用 — 而不是编造默认值 */
+.brief-value {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--app-text-title);
+  white-space: pre-line;
+  word-break: break-word;
+}
+
+.brief-value.is-empty {
+  color: var(--app-text-muted);
+}
+
+.brief-form {
+  padding-top: 2px;
+}
+
+.form-collapse {
+  margin-top: 4px;
+}
+
+.collapse-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.collapse-tip {
+  margin-bottom: 8px;
+}
+
 .detail-card {
   --el-card-padding: 14px;
 }
@@ -1765,9 +2222,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   margin-top: 2px;
-}
-
-.gate-reason {
+}.gate-reason {
   font-size: 12px;
   color: #b45309;
 }

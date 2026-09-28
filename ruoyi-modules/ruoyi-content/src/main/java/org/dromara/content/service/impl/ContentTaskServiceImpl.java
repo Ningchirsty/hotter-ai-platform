@@ -449,6 +449,11 @@ public class ContentTaskServiceImpl implements IContentTaskService {
     }
 
     @Override
+    public void requireTask(Long taskId) {
+        load(taskId);
+    }
+
+    @Override
     public FileContent readFileContent(Long taskId, Long fileId) {
         load(taskId);
         CpTaskFile file = taskFileMapper.selectById(fileId);

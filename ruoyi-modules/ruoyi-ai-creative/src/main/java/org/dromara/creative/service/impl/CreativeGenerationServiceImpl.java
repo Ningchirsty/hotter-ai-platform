@@ -27,7 +27,7 @@ import org.dromara.creative.helper.DnaPromptBuilder;
 import org.dromara.creative.helper.ReferenceImageFitter;
 import org.dromara.creative.mapper.CreativeTaskStageMapper;
 import org.dromara.creative.mapper.DpGenerationMapper;
-import org.dromara.creative.service.ICreativeBriefService;
+import org.dromara.content.service.IContentBrandBriefService;
 import org.dromara.creative.service.ICreativeDirectionService;
 import org.dromara.creative.service.ICreativeDnaService;
 import org.dromara.creative.service.ICreativeGateService;
@@ -66,7 +66,7 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
     /**
      * 品牌 Brief（R7）：必显信息/主推卖点进正向提示词，禁用词进负向提示词
      */
-    private final ICreativeBriefService briefService;
+    private final IContentBrandBriefService briefService;
     private final DnaPromptBuilder dnaPromptBuilder;
     private final IContentTaskService contentTaskService;
     private final ContentOssHelper contentOssHelper;

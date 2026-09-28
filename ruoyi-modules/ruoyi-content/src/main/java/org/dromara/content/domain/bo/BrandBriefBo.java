@@ -1,4 +1,4 @@
-package org.dromara.creative.domain.bo;
+package org.dromara.content.domain.bo;
 
 import jakarta.validation.constraints.Size;
 import lombok.Data;
@@ -11,12 +11,12 @@ import java.io.Serializable;
  *
  * <p><b>刻意没有 status 字段</b>：状态只能由 {@code POST .../brand-brief/confirm} 推进。
  * 如果保存接口能收 status，前端一次误传就能把「品牌方已确认的要求」改回草稿（或反过来），
- * 而闸门项「品牌 Brief 已填写并确认」的判据正是这个值——那等于把闸门的钥匙交给了表单。</p>
+ * 而视觉门的闸门项「品牌 Brief 已填写并确认」判据正是这个值——那等于把闸门的钥匙交给了表单。</p>
  *
- * <p>多行字段（必显信息/禁用词/主推卖点）用 {@code \n} 分隔，服务端原样存字符串，
- * 不拆成数组：拆分规则（顿号？换行？分号？）只要两端各写一份就一定会不一致。</p>
+ * <p>多行字段（必显信息/禁用词/主推卖点）用 {@code \n} 分隔，服务端原样存字符串，不拆成数组：
+ * 拆分规则（顿号？换行？分号？）只要两端各写一份就一定会不一致。</p>
  *
- * @author creative
+ * @author content
  */
 @Data
 public class BrandBriefBo implements Serializable {

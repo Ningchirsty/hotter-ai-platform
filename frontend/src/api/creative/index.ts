@@ -3,8 +3,6 @@ import type { CpTaskFileVO } from '@/api/content/task/types';
 import type { AxiosPromise } from '@/utils/api-types';
 import request from '@/utils/request';
 import type {
-  BrandBriefForm,
-  BrandBriefVO,
   CopyBlockForm,
   CopyBlockVO,
   CreativeDnaForm,
@@ -123,33 +121,12 @@ export function listCreativeTimeline(taskId: string | number): AxiosPromise<DpSt
 }
 
 // ------------------------------------------------------------------
-// R7：品牌 Brief（委托方的要求）
+// 品牌要求（Brief）：已搬到内容生产协同
+//
+// 品牌部用内容协同录入与确认、平面设计部用视觉工厂只读，所以后端把接口搬到了
+// `/content/task/{taskId}/brand-brief`，创作域的这三个接口**已删除**。
+// 前端对应实现见 `@/api/content/brief`（在这里再留一份会指向 404 的老路径）。
 // ------------------------------------------------------------------
-
-/** 读项目品牌 Brief（没填过时后端也返回对象：configured=false、status=DRAFT） */
-export function getBrandBrief(taskId: string | number): AxiosPromise<BrandBriefVO> {
-  return request({
-    url: `/creative/projects/${taskId}/brand-brief`,
-    method: 'get'
-  });
-}
-
-/** 保存品牌 Brief（草稿；状态由 confirm 接口推进，这里不传 status） */
-export function saveBrandBrief(taskId: string | number, data: BrandBriefForm): AxiosPromise<BrandBriefVO> {
-  return request({
-    url: `/creative/projects/${taskId}/brand-brief`,
-    method: 'put',
-    data: data
-  });
-}
-
-/** 确认品牌要求（把状态推进为已确认） */
-export function confirmBrandBrief(taskId: string | number): AxiosPromise<BrandBriefVO> {
-  return request({
-    url: `/creative/projects/${taskId}/brand-brief/confirm`,
-    method: 'post'
-  });
-}
 
 // ------------------------------------------------------------------
 // R7：文案与要点（详情页的「字」）

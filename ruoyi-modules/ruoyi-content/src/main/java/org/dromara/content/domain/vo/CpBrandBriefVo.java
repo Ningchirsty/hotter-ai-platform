@@ -1,4 +1,4 @@
-package org.dromara.creative.domain.vo;
+package org.dromara.content.domain.vo;
 
 import lombok.Data;
 
@@ -9,23 +9,23 @@ import java.time.LocalDateTime;
 /**
  * 品牌 Brief 展示对象。
  *
- * <p><b>字段名即契约</b>：前端按这些名字取数（R7 冻结契约），
- * 因此这里不做任何改名，也不把行文本拆成数组——前端就是多行文本框，
+ * <p><b>字段名即契约</b>：前端（内容任务页与视觉项目页）都按这些名字取数，
+ * 因此不做改名，也不把行文本拆成数组——前端就是多行文本框，
  * 拆成数组会让「一行一条」这个约定在两端各存一份（迟早不一致）。</p>
  *
- * <p>{@code configured=false} 时其余业务字段全为 null，页面据此显示「还没填」并给出入口；
+ * <p>{@code configured=false} 时其余业务字段全为 null，页面据此显示「还没填」并给出录入入口；
  * 记录不存在时也不返回 null 的 data，避免前端把「没填」与「接口坏了」当成同一件事。</p>
  *
- * @author creative
+ * @author content
  */
 @Data
-public class DpBrandBriefVo implements Serializable {
+public class CpBrandBriefVo implements Serializable {
 
     @Serial
     private static final long serialVersionUID = 1L;
 
     /**
-     * 视觉项目ID
+     * 内容任务ID（= 视觉项目 taskId，两者是同一个 cp_task）
      */
     private Long taskId;
 

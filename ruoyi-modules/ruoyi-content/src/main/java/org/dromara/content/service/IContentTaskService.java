@@ -37,6 +37,16 @@ public interface IContentTaskService {
     ContentTaskDetailVo getDetail(Long taskId);
 
     /**
+     * 轻量校验任务存在（只需"这个任务在不在"时用它，不要为了校验去拉整个详情）。
+     *
+     * <p>给品牌 Brief 这类挂在任务上的附属数据用：保存/读取前确认任务存在，
+     * 否则会出现"给不存在的任务写了一条要求"这种查不出来的脏数据。</p>
+     *
+     * @param taskId 任务ID
+     */
+    void requireTask(Long taskId);
+
+    /**
      * 新建任务。
      *
      * @param bo 任务参数

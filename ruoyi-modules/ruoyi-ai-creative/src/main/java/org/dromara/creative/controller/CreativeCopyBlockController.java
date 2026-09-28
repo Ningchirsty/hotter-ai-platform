@@ -8,12 +8,9 @@ import org.dromara.common.log.annotation.Log;
 import org.dromara.common.log.enums.BusinessType;
 import org.dromara.common.redis.annotation.RepeatSubmit;
 import org.dromara.creative.constant.CreativeConstants;
-import org.dromara.creative.domain.bo.BrandBriefBo;
 import org.dromara.creative.domain.bo.CopyBlockBo;
 import org.dromara.creative.domain.bo.CopyBlockReorderBo;
-import org.dromara.creative.domain.vo.DpBrandBriefVo;
 import org.dromara.creative.domain.vo.DpCopyBlockVo;
-import org.dromara.creative.service.ICreativeBriefService;
 import org.dromara.creative.service.ICreativeCopyService;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -29,14 +26,14 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * 品牌 Brief 与文案要点 控制层。
+ * 文案与要点（整页要说的话）控制层。
  *
- * <p><b>为什么与分镜控制器分开</b>：分镜是「一屏配什么字」，这里放的是「整页要说的话」与
- * 「品牌方的要求」。两者生命周期不同（分镜会锁版，Brief 会随需求变更），
- * 混在一个控制器里以后必然出现「改 Brief 顺手改了分镜」的权限错配。</p>
+ * <p><b>R7 起品牌要求（Brief）不在这里</b>：品牌要求由品牌部在**内容生产协同**的任务里录入与确认
+ * （{@code /content/task/{taskId}/brand-brief}），因为它是"委托要求"而不是"设计产出"；
+ * 本控制器只剩平面设计自己的产出物——卖点、详情页正文分段、参数行。</p>
  *
- * <p>权限沿用既有编码（Brief＝项目权限，文案块＝分镜权限），<b>不新增权限码</b>：
- * 新权限码需要同步菜单 SQL，否则非超管角色一律 403。</p>
+ * <p>权限沿用分镜的既有编码（读 {@code creative:storyboard:list}，写 {@code creative:storyboard:edit}），
+ * 不新增权限码。</p>
  *
  * @author creative
  */
@@ -44,57 +41,9 @@ import java.util.List;
 @RequiredArgsConstructor
 @RestController
 @RequestMapping("/creative/projects/{taskId}")
-public class CreativeBriefController {
+public class CreativeCopyBlockController {
 
-    private final ICreativeBriefService briefService;
     private final ICreativeCopyService copyService;
-
-    // ---------------- 品牌 Brief ----------------
-
-    /**
-     * 读取品牌 Brief（没有记录时返回 configured=false 的空视图，不返回 null data）。
-     *
-     * @param taskId 项目ID
-     * @return Brief 视图
-     */
-    @SaCheckPermission(CreativeConstants.PERM_PROJECT_QUERY)
-    @GetMapping("/brand-brief")
-    public R<DpBrandBriefVo> brandBrief(@NotNull(message = "项目ID不能为空")
-                                        @PathVariable("taskId") Long taskId) {
-        return R.ok(briefService.get(taskId));
-    }
-
-    /**
-     * 保存品牌 Brief（upsert）。
-     *
-     * @param taskId 项目ID
-     * @param bo     表单
-     * @return 保存后的视图
-     */
-    @SaCheckPermission(CreativeConstants.PERM_PROJECT_EDIT)
-    @Log(title = "品牌Brief保存", businessType = BusinessType.UPDATE)
-    @PutMapping("/brand-brief")
-    public R<DpBrandBriefVo> saveBrandBrief(@NotNull(message = "项目ID不能为空")
-                                            @PathVariable("taskId") Long taskId,
-                                            @Validated @RequestBody BrandBriefBo bo) {
-        return R.ok(briefService.save(taskId, bo));
-    }
-
-    /**
-     * 品牌方确认（唯一能把状态推进到 CONFIRMED 的入口，闸门依据它判定）。
-     *
-     * @param taskId 项目ID
-     * @return 确认后的视图
-     */
-    @SaCheckPermission(CreativeConstants.PERM_PROJECT_EDIT)
-    @Log(title = "品牌Brief确认", businessType = BusinessType.UPDATE)
-    @PostMapping("/brand-brief/confirm")
-    public R<DpBrandBriefVo> confirmBrandBrief(@NotNull(message = "项目ID不能为空")
-                                               @PathVariable("taskId") Long taskId) {
-        return R.ok(briefService.confirm(taskId));
-    }
-
-    // ---------------- 文案与要点块 ----------------
 
     /**
      * 块列表（可按类型过滤，按类型 + 排序返回）。
@@ -153,7 +102,7 @@ public class CreativeBriefController {
      */
     @SaCheckPermission(CreativeConstants.PERM_STORYBOARD_EDIT)
     @Log(title = "文案块事实派生", businessType = BusinessType.INSERT)
-    @RepeatSubmit()
+    @RepeatSubmit
     @PostMapping("/copy-blocks/seed-from-facts")
     public R<Integer> seedCopyBlocks(@NotNull(message = "项目ID不能为空")
                                      @PathVariable("taskId") Long taskId) {

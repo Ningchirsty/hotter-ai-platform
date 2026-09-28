@@ -1,4 +1,4 @@
-package org.dromara.creative.domain;
+package org.dromara.content.domain;
 
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableLogic;
@@ -12,23 +12,29 @@ import java.io.Serializable;
 import java.time.LocalDateTime;
 
 /**
- * 品牌 Brief dp_brand_brief（委托方的要求）。
+ * 品牌 Brief（委托方的要求）。表名沿用 {@code dp_brand_brief}（R7 建的表）。
  *
- * <p><b>为什么单独一张表、而不是塞进事实快照</b>：事实是「产品客观是什么」，
- * 由资料解析并经人确认；Brief 是「品牌方要求什么」（必显、禁用词、优先级、规范）。
- * 两者的作者、证据链与判定强度都不同：事实错了是解析错，要求错了是需求变更。
- * 混在一张表里，「这条是事实还是要求」就只能在备注里解释——闸门也就没法判定。</p>
+ * <p><b>为什么归内容协同（品牌部）而不是视觉工厂（平面设计部）</b>：这张表的作者是品牌方，
+ * 内容是"委托要求"（必显信息、禁用词与红线、主推卖点优先级、尺寸规范）；平面设计只是**读取并按它创作**。
+ * 谁录入谁拥有——放在视觉模块里，就会出现"品牌部为了写要求必须先有视觉权限"的反向依赖。
+ * 因此 R7 之后：**录入/确认在内容任务里，视觉工厂只读**（读取仍由创作域通过本服务获取）。</p>
  *
- * <p><b>与 {@code brand_tone} 事实并存</b>：事实里的品牌调性是「从资料里解析确认」的，
- * 这里的 {@code brandTone} 是「品牌方自己填的要求」，冲突时页面同时展示、由人裁定，
- * 不做自动合并（自动合并等于替人做决定）。</p>
+ * <p><b>表名保留 dp_ 前缀</b>：迁移会动生产数据，而改名的收益只是好看；
+ * 这里如实记下这个例外——{@code dp_} 前缀的表通常归创作域，本表归内容域。</p>
  *
- * @author creative
+ * <p><b>为什么不塞进事实快照</b>：事实是「产品客观是什么」（由资料解析并经人确认），
+ * Brief 是「品牌方要求什么」。两者作者、证据链、判定强度都不同：事实错了是解析错，要求错了是需求变更。
+ * 混在一张表里，「这条是事实还是要求」就只能在备注里解释，闸门也就无法判定。</p>
+ *
+ * <p><b>与 {@code brand_tone} 事实并存、不自动合并</b>：事实里的品牌调性来自资料解析，
+ * 这里的 {@code brandTone} 是品牌方自己填的要求；冲突时页面同时展示、由人裁定。</p>
+ *
+ * @author content
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
 @TableName("dp_brand_brief")
-public class DpBrandBrief extends BaseEntity implements Serializable {
+public class CpBrandBrief extends BaseEntity implements Serializable {
 
     @Serial
     private static final long serialVersionUID = 1L;
@@ -40,7 +46,7 @@ public class DpBrandBrief extends BaseEntity implements Serializable {
     private Long id;
 
     /**
-     * 视觉项目（cp_task.task_id），一个项目一行
+     * 内容任务（cp_task.task_id）；一个任务一行
      */
     private Long taskId;
 

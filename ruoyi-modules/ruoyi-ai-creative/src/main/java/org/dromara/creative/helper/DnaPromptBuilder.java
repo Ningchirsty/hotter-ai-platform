@@ -3,7 +3,7 @@ package org.dromara.creative.helper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dromara.common.core.utils.StringUtils;
-import org.dromara.creative.domain.vo.DpBrandBriefVo;
+import org.dromara.content.domain.vo.CpBrandBriefVo;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -108,7 +108,7 @@ public class DnaPromptBuilder {
      * @return 派生结果
      */
     public Prompt build(ObjectNode dna, String subject, String screenHint,
-                        DpBrandBriefVo brief, String screenText) {
+                        CpBrandBriefVo brief, String screenText) {
         ObjectNode node = dna == null ? VisualDnaSchema.empty() : dna;
         List<String> applied = new ArrayList<>();
         List<String> omitted = new ArrayList<>();
@@ -224,7 +224,7 @@ public class DnaPromptBuilder {
      * @param brief   品牌 Brief
      */
     private static void appendMustShow(StringBuilder target, List<String> applied,
-                                       List<String> omitted, DpBrandBriefVo brief) {
+                                       List<String> omitted, CpBrandBriefVo brief) {
         List<String> items = lines(brief == null ? null : brief.getMustShow());
         if (items.isEmpty()) {
             return;
@@ -251,7 +251,7 @@ public class DnaPromptBuilder {
      * @param brief   品牌 Brief
      */
     private static void appendMainPush(StringBuilder target, List<String> applied,
-                                       List<String> omitted, DpBrandBriefVo brief) {
+                                       List<String> omitted, CpBrandBriefVo brief) {
         List<String> all = lines(brief == null ? null : brief.getMainPush());
         if (all.isEmpty()) {
             return;

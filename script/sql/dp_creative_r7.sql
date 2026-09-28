@@ -15,6 +15,13 @@
 --     Brief 是「品牌方自己填的要求」，两者冲突时页面同时展示、由人裁定，不自动合并。
 --   - dp_copy_block.source='FACT' 的块由已确认事实派生（只读展示），
 --     source='MANUAL' 的块由人录入，source='MODEL' 的块由模型起草。
+--
+-- 【归属变更（R7 上线后追加）】两张表的**模块归属不同**，别再按前缀猜：
+--   · dp_copy_block  → 创作域（ruoyi-ai-creative）：平面设计自己的产出（卖点/正文/参数）。
+--   · dp_brand_brief → **内容域（ruoyi-content）**：品牌方的"委托要求"，在内容任务里录入与确认
+--     （`/content/task/{taskId}/brand-brief`，服务 IContentBrandBriefService）。
+--     创作域只读它（派生提示词 + 视觉门判定）。表名保留 dp_ 前缀是为了不动生产数据；
+--     这是「dp_ 前缀但归内容域」的唯一例外，如实记在这里。
 -- ==================================================================
 
 CREATE TABLE IF NOT EXISTS dp_brand_brief (

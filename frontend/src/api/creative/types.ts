@@ -620,66 +620,13 @@ export const GENERATION_STATUS_TYPES: Record<string, string> = {
 };
 
 // ------------------------------------------------------------------
-// R7：品牌 Brief（委托方的要求）
+// 品牌要求（Brief）
+//
+// R7 后续：品牌要求改由**内容生产协同**录入与确认（品牌部用内容协同、平面设计部用视觉工厂，
+// 视觉工厂只读），类型与接口都搬到了 `@/api/content/brief`。
+// 这里不再保留定义——两处各定义一份，迟早会出现字段漂移（本文件曾长期是"唯一真相源"，
+// 现在那个位置是 `api/content/brief/types.ts`）。
 // ------------------------------------------------------------------
-
-/**
- * 品牌 Brief（对齐后端 BrandBriefVo / 表 dp_brand_brief）。
- *
- * <p>它是「委托方的要求」，与 cp_fact_snapshot 里的品牌调性事实<b>并存而不合并</b>：
- * 事实是「从产品资料里解析并确认」的客观信息，Brief 是「品牌方自己填的要求」，
- * 两者冲突时页面同时展示、由人裁定。</p>
- *
- * <p>项目还没填过时后端也返回对象（{@code configured=false}、{@code status='DRAFT'}，其余为 null），
- * 页面据此显示「未填写」，而不是把 null 当成"没这个功能"。</p>
- */
-export interface BrandBriefVO {
-  taskId?: string | number;
-  /** 该项目是否已有 Brief 记录（后端在有记录时置 true） */
-  configured?: boolean;
-  /** DRAFT 草稿 / CONFIRMED 品牌方已确认 */
-  status?: string;
-  brandTone?: string;
-  /** 必显信息，一行一条（品牌名/logo/口号/资质） */
-  mustShow?: string;
-  /** 禁用词与合规红线，一行一条 */
-  forbiddenWords?: string;
-  targetAudience?: string;
-  /** 主推卖点与优先级，一行一条，行首数字即优先级 */
-  mainPush?: string;
-  sizeSpecReq?: string;
-  styleRef?: string;
-  remark?: string;
-  confirmedBy?: string | number;
-  /** 后端若一并返回确认人姓名则用它，否则退化为显示 confirmedBy 的ID（不猜名字） */
-  confirmedByName?: string;
-  confirmedAt?: string;
-  updateTime?: string;
-}
-
-/** 品牌 Brief 保存表单（保存草稿用；状态由 confirm 接口推进，这里不传） */
-export interface BrandBriefForm {
-  brandTone?: string;
-  mustShow?: string;
-  forbiddenWords?: string;
-  targetAudience?: string;
-  mainPush?: string;
-  sizeSpecReq?: string;
-  styleRef?: string;
-  remark?: string;
-}
-
-/** 品牌 Brief 状态 → 展示 */
-export const BRAND_BRIEF_STATUS_LABELS: Record<string, string> = {
-  DRAFT: '草稿',
-  CONFIRMED: '已确认'
-};
-
-/** 品牌 Brief 状态 → 标签颜色 */
-export const BRAND_BRIEF_STATUS_TYPES: Record<string, TagType> = {
-  DRAFT: 'warning',
-  CONFIRMED: 'success'
-};
 
 // ------------------------------------------------------------------
 // R7：文案与要点（详情页的「字」）

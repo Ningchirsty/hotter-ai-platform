@@ -1,6 +1,6 @@
 package org.dromara.creative.helper;
 
-import org.dromara.creative.domain.vo.DpBrandBriefVo;
+import org.dromara.content.domain.vo.CpBrandBriefVo;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -38,7 +38,7 @@ class DnaPromptBuilderBriefTest {
     @DisplayName("Brief 的必显/卖点进正向提示词，禁用词进负向提示词，并如实列出用到的维度")
     void briefFeedsPrompt() {
         // 禁用词按逗号写也可以（负向提示词本身就是逗号分隔的词表，按词计量）
-        DpBrandBriefVo brief = brief("品牌名「鸢尾」\n官网 hottter.cn", "最便宜,国家级，纯天然",
+        CpBrandBriefVo brief = brief("品牌名「鸢尾」\n官网 hottter.cn", "最便宜,国家级，纯天然",
             "1. 手工缠花\n2. UV 喷漆");
 
         DnaPromptBuilder.Prompt prompt =
@@ -62,7 +62,7 @@ class DnaPromptBuilderBriefTest {
     @Test
     @DisplayName("主推卖点只取前 3 条（行首数字即优先级），其余如实记进 omitted")
     void mainPushTakesTopThree() {
-        DpBrandBriefVo brief = brief(null, null,
+        CpBrandBriefVo brief = brief(null, null,
             "1. 第一卖点\n2. 第二卖点\n3. 第三卖点\n4. 第四卖点\n5. 第五卖点");
 
         DnaPromptBuilder.Prompt prompt =
@@ -87,7 +87,7 @@ class DnaPromptBuilderBriefTest {
         for (int i = 1; i <= 60; i++) {
             forbidden.add("禁用词" + i + "占位数据");
         }
-        DpBrandBriefVo brief = brief(String.join("\n", mustShow), String.join(",", forbidden),
+        CpBrandBriefVo brief = brief(String.join("\n", mustShow), String.join(",", forbidden),
             "1. 卖点甲\n2. 卖点乙");
 
         DnaPromptBuilder.Prompt prompt =
@@ -139,8 +139,8 @@ class DnaPromptBuilderBriefTest {
         assertTrue(prompt.prompt().contains("现代简约"), prompt.prompt());
     }
 
-    private static DpBrandBriefVo brief(String mustShow, String forbiddenWords, String mainPush) {
-        DpBrandBriefVo vo = new DpBrandBriefVo();
+    private static CpBrandBriefVo brief(String mustShow, String forbiddenWords, String mainPush) {
+        CpBrandBriefVo vo = new CpBrandBriefVo();
         vo.setConfigured(true);
         vo.setStatus("CONFIRMED");
         vo.setMustShow(mustShow);

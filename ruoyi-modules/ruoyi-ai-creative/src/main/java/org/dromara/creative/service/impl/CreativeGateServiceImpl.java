@@ -15,15 +15,15 @@ import org.dromara.content.service.IContentTaskGateService;
 import org.dromara.content.service.IContentTaskService;
 import org.dromara.creative.domain.DpStageEvent;
 import org.dromara.creative.domain.vo.CreativeProjectVo;
-import org.dromara.creative.domain.vo.DpBrandBriefVo;
+import org.dromara.content.domain.vo.CpBrandBriefVo;
 import org.dromara.creative.domain.vo.DpStoryboardVo;
 import org.dromara.creative.domain.vo.DpVisualDirectionVo;
 import org.dromara.creative.domain.vo.DpVisualDnaVo;
-import org.dromara.creative.enums.DpBrandBriefStatusEnum;
+import org.dromara.content.enums.ContentBriefStatusEnum;
 import org.dromara.creative.enums.DpVisualStageEnum;
 import org.dromara.creative.mapper.CreativeCardMapper;
 import org.dromara.creative.mapper.DpStageEventMapper;
-import org.dromara.creative.service.ICreativeBriefService;
+import org.dromara.content.service.IContentBrandBriefService;
 import org.dromara.creative.service.ICreativeDnaService;
 import org.dromara.creative.service.ICreativeDirectionService;
 import org.dromara.creative.service.ICreativeGateService;
@@ -64,7 +64,7 @@ public class CreativeGateServiceImpl implements ICreativeGateService {
     private static final String OPTION_BLOCK = "BLOCK";
 
     private final ICreativeProjectService projectService;
-    private final ICreativeBriefService briefService;
+    private final IContentBrandBriefService briefService;
     private final ICreativeDnaService dnaService;
     private final ICreativeDirectionService directionService;
     private final ICreativeStoryboardService storyboardService;
@@ -120,7 +120,7 @@ public class CreativeGateServiceImpl implements ICreativeGateService {
         //    判据是 status=CONFIRMED，不是「填过就算」——闸门必须回答「品牌方确认了没有」。
         //    等级刻意用 CONDITION 而不是 BLOCK：在跑的存量项目全都没有 Brief，
         //    用 BLOCK 会把它们一次性卡死；品牌方要求必填时把等级改成 LEVEL_BLOCK 即可（一行）。
-        DpBrandBriefVo brief = briefService.get(taskId);
+        CpBrandBriefVo brief = briefService.get(taskId);
         items.add(brandBriefItem(brief));
 
         // 7) 已声明禁用词与合规红线（建议/R7）：没有禁用词清单，负向提示词就只能靠默认词表，
@@ -252,17 +252,17 @@ public class CreativeGateServiceImpl implements ICreativeGateService {
      * @param brief 品牌 Brief 视图
      * @return 闸门项
      */
-    private static GateItem brandBriefItem(DpBrandBriefVo brief) {
+    private static GateItem brandBriefItem(CpBrandBriefVo brief) {
         boolean configured = brief != null && Boolean.TRUE.equals(brief.getConfigured());
         boolean confirmed = configured
-            && DpBrandBriefStatusEnum.CONFIRMED.getCode().equals(brief.getStatus());
+            && ContentBriefStatusEnum.CONFIRMED.getCode().equals(brief.getStatus());
         if (confirmed) {
             return new GateItem("BRAND_BRIEF_CONFIRMED", "品牌 Brief 已填写并确认", LEVEL_CONDITION, true,
                 "品牌方已确认（确认时间 " + brief.getConfirmedAt() + "）");
         }
         return new GateItem("BRAND_BRIEF_CONFIRMED", "品牌 Brief 已填写并确认", LEVEL_CONDITION, false,
             configured
-                ? "Brief 已填写但状态是「" + DpBrandBriefStatusEnum.descOf(brief.getStatus())
+                ? "Brief 已填写但状态是「" + ContentBriefStatusEnum.descOf(brief.getStatus())
                     + "」：请到「视觉项目 → 品牌 Brief」点「品牌方确认」"
                 : "还没有填品牌 Brief：请到「视觉项目 → 品牌 Brief」填写品牌调性/必显信息/"
                     + "禁用词/主推卖点，然后点「品牌方确认」");
@@ -274,7 +274,7 @@ public class CreativeGateServiceImpl implements ICreativeGateService {
      * @param brief 品牌 Brief 视图
      * @return 闸门项
      */
-    private static GateItem forbiddenWordsItem(DpBrandBriefVo brief) {
+    private static GateItem forbiddenWordsItem(CpBrandBriefVo brief) {
         boolean declared = brief != null && StringUtils.isNotBlank(brief.getForbiddenWords());
         return new GateItem("FORBIDDEN_WORDS_DECLARED", "已声明禁用词与合规红线", LEVEL_CONDITION, declared,
             declared ? "已声明 " + lineCount(brief.getForbiddenWords()) + " 条；出图负向提示词会逐条追加"

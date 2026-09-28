@@ -62,7 +62,7 @@
       <section class="panel detail-panel">
         <div v-if="!currentProject" class="placeholder">
           <p>从左侧选择一个视觉项目开始。</p>
-          <p class="hint">选好项目后：上传参考图 → 填品牌 Brief 与文案要点 → 描述你想要的画面 → 生成 HERO 主图候选。</p>
+          <p class="hint">选好项目后：上传参考图 → 看品牌要求（品牌部在内容任务里录入）与文案要点 → 描述你想要的画面 → 生成 HERO 主图候选。</p>
         </div>
 
         <template v-else>
@@ -173,44 +173,38 @@
               </div>
             </section>
 
-            <!-- 品牌 Brief：委托方的要求 -->
+            <!-- 品牌要求（Brief）：品牌部在内容协同录入并确认，本页只读 -->
             <section class="block">
               <div class="block-head">
-                <h4>2. 品牌 Brief</h4>
+                <h4>2. 品牌要求（Brief）（由品牌部在内容任务里录入）</h4>
                 <div class="block-actions">
                   <el-tag :type="briefStatusType" size="small" effect="dark">{{ briefStatusText }}</el-tag>
-                  <span v-if="briefDirty" class="brief-dirty">已修改未保存</span>
-                  <el-button size="small" plain :loading="briefBusy === 'load'" @click="onRefreshBrief">刷新</el-button>
-                  <el-button size="small" type="primary" plain :loading="briefBusy === 'save'" @click="doSaveBrandBrief">
-                    保存
+                  <el-button size="small" plain :loading="briefBusy === 'load'" @click="loadBrandBrief(true)">
+                    刷新
                   </el-button>
-                  <el-button size="small" type="primary" :loading="briefBusy === 'confirm'" @click="doConfirmBrandBrief">
-                    确认品牌要求
+                  <el-button size="small" type="primary" plain @click="goContentTask">
+                    去内容任务里录入
                   </el-button>
                 </div>
               </div>
               <p class="hint">
-                这里填的是<b>委托方（品牌）的要求</b>——「必须怎么做」，不是产品客观事实。
-                产品事实在下面「4. 事实确认」里逐条确认。品牌调性与事实里的 brand_tone
-                <b>并存</b>：一个是品牌方自己填的要求，一个是从资料里解析确认的，两者冲突时同时展示、由人裁定，不自动合并。
-                已确认的 Brief 会被出图提示词与文案校验引用（必显信息进正向词、禁用词进负向词）。
+                <b>本页只读</b>：品牌要求由品牌部在<b>内容生产协同 → 内容任务 → 任务详情 →「品牌要求（Brief）」</b>
+                里录入与确认，平面设计按此创作（那边确认后本页即可见）。
+                产品事实仍在下面「4. 事实确认」里逐条确认；品牌调性与事实里的 brand_tone
+                <b>并存</b>——一个是品牌方自己提的要求，一个是从资料里解析确认的，两者冲突时同时展示、由人裁定，不自动合并。
+                这些要求的去向：<b>必显信息</b>与<b>主推卖点</b>进出图的正向提示词，<b>禁用词</b>进出图的负向提示词，
+                品牌调性 / 目标人群 / 尺寸规范 / 参考风格作为创作依据。
               </p>
               <p v-if="brandBriefError" class="fact-error">
                 {{ brandBriefError }}（点右上「刷新」重试，页面不会用默认值糊过去）
               </p>
-              <div class="brief-grid">
+              <div class="brief-grid brief-grid-readonly">
                 <div v-for="field in briefFields" :key="field.key" class="brief-row">
-                  <label :for="'brief-' + field.key">{{ field.label }}</label>
+                  <label>{{ field.label }}</label>
                   <div class="brief-control">
-                    <el-input
-                      :id="'brief-' + field.key"
-                      v-model="briefForm[field.key]"
-                      type="textarea"
-                      :rows="field.rows"
-                      :maxlength="field.max"
-                      show-word-limit
-                      :placeholder="field.placeholder"
-                    />
+                    <div class="brief-value" :class="{ 'is-empty': !briefValueOf(field.key) }">
+                      {{ briefValueOf(field.key) || '—' }}
+                    </div>
                     <span class="hint">{{ field.hint }}</span>
                   </div>
                 </div>
@@ -229,10 +223,10 @@
               <p class="hint">
                 这块是详情页要说的「字」。去向按后端实际接线如实写：<b>卖点 / 正文 / 参数</b>按这里的顺序进
                 <b>详情页长图</b>（卖点还会进分镜草稿的卖点屏）。
-                「必显信息」不在这里录入——它是<b>品牌方的要求</b>，统一在「2. 品牌 Brief」里填，由出图提示词与闸门引用，
+                「必显信息」不在这里录入——它是<b>品牌方的要求</b>，统一在「2. 品牌要求（Brief）」里（品牌部在内容任务里填），由出图提示词与闸门引用，
                 避免同一件事有两个真相源。
                 与分镜的分工：分镜屏文案是「这一屏这张图配什么字」，<b>R7 起屏文案也会进图像提示词</b>（画面独白优先）；
-                而这里整页的文字不进出图提示词——出图提示词用的是视觉基因 + 「2. 品牌 Brief」的必显 / 主推 / 禁用词。
+                而这里整页的文字不进出图提示词——出图提示词用的是视觉基因 + 「2. 品牌要求（Brief）」的必显 / 主推 / 禁用词。
               </p>
               <p v-if="copyLoadError" class="fact-error">
                 {{ copyLoadError }}（点右上「刷新」重试，页面不会用空表糊过去）
@@ -752,16 +746,18 @@ import {
 } from '@/api/content/fact';
 import type { CpFactFieldOptionVO, CpFactSnapshotVO } from '@/api/content/fact/types';
 import type { CpTaskFileVO } from '@/api/content/task/types';
+// 品牌要求（Brief）已归属内容生产协同：读的是内容域接口，本页只读展示
+import { getBrandBrief } from '@/api/content/brief';
+import type { BrandBriefFieldKey, BrandBriefVO } from '@/api/content/brief/types';
+import { BRAND_BRIEF_FIELDS, BRAND_BRIEF_STATUS_TYPES, briefStatusText as briefStatusTextOf } from '@/api/content/brief/types';
 import {
   addCopyBlock,
   addCreativeProject,
   bindProjectProductImage,
-  confirmBrandBrief,
   deleteCopyBlock,
   fetchCreativeFileBlobUrl,
   fetchGenerationPreviewBlobUrl,
   fetchGenerationThumbnailBlobUrl,
-  getBrandBrief,
   getCreativeProject,
   getDna,
   getDnaPrompt,
@@ -775,15 +771,12 @@ import {
   listGenerations,
   reorderCopyBlocks,
   retryGeneration,
-  saveBrandBrief,
   seedCopyBlocksFromFacts,
   submitHero,
   updateCopyBlock,
   uploadCreativeReference
 } from '@/api/creative';
 import type {
-  BrandBriefForm,
-  BrandBriefVO,
   CopyBlockForm,
   CopyBlockVO,
   CreativeProjectVO,
@@ -794,8 +787,6 @@ import type {
   TagType
 } from '@/api/creative/types';
 import {
-  BRAND_BRIEF_STATUS_LABELS,
-  BRAND_BRIEF_STATUS_TYPES,
   COPY_BLOCK_SOURCE_LABELS,
   COPY_BLOCK_SOURCE_TYPES,
   COPY_BLOCK_STATUS_LABELS,
@@ -848,149 +839,37 @@ const manualFactVisible = ref(false);
 const manualForm = reactive({ fieldCode: '', value: '', remark: '' });
 
 // ------------------------------------------------------------------
-// 品牌 Brief（委托方的要求）
+// 品牌要求（Brief）：**只读**展示（品牌部在内容任务里录入与确认）
 // ------------------------------------------------------------------
 
-/** 一个 Brief 字段的元信息：标签、行数、长度上限（与 dp_brand_brief 列宽一致）、填什么 */
-interface BriefField {
-  key: BriefFieldKey;
-  label: string;
-  rows: number;
-  max: number;
-  placeholder: string;
-  hint: string;
-}
-
-type BriefFieldKey =
-  | 'brandTone'
-  | 'mustShow'
-  | 'forbiddenWords'
-  | 'targetAudience'
-  | 'mainPush'
-  | 'sizeSpecReq'
-  | 'styleRef'
-  | 'remark';
-
 /**
- * 品牌 Brief 的字段定义（顺序即页面顺序）。
- * 长度上限照抄 dp_brand_brief 的列宽，页面先挡住超长，不让人填完才被后端拒。
+ * 字段定义直接复用 `@/api/content/brief` 的那一份（与内容任务页共用）。
+ * 为什么不在这里再定义一遍：两处各写一份字段表，迟早出现"这边有必显、那边没有"的偏差，
+ * 长度上限与列宽也只需要维护一处。
  */
-const briefFields: BriefField[] = [
-  {
-    key: 'brandTone',
-    label: '品牌调性',
-    rows: 2,
-    max: 500,
-    placeholder: '如：清新、治愈、自然；克制不喧哗',
-    hint: '品牌方希望的调性。与事实里的 brand_tone 并存，冲突时以人裁定（页面不会自动合并两处）。'
-  },
-  {
-    key: 'mustShow',
-    label: '必显信息',
-    rows: 3,
-    max: 2000,
-    placeholder: '一行一条，如：\n品牌名「趣往」\n「每日一枝，治愈生活」\n有机认证标志',
-    hint: '必须出现在成品里的内容（品牌名 / logo / 口号 / 资质），一行一条；出图与文案都会校验它有没有落地。'
-  },
-  {
-    key: 'forbiddenWords',
-    label: '禁用词与红线',
-    rows: 3,
-    max: 1000,
-    placeholder: '一行一条，如：\n最\n第一\n治疗失眠',
-    hint: '合规红线与禁用词，一行一条；它同时作为出图负向词与文案校验依据。'
-  },
-  {
-    key: 'mainPush',
-    label: '主推卖点与优先级',
-    rows: 3,
-    max: 2000,
-    placeholder: '一行一条，行首写优先级，如：\n1 单枝直发，48小时新鲜到家\n2 花苞大，开瓶率高',
-    hint: '行首的 1/2/3 就是优先级（1 最高）。'
-  },
-  {
-    key: 'targetAudience',
-    label: '目标人群',
-    rows: 2,
-    max: 500,
-    placeholder: '如：25-35 岁都市女性，悦己消费',
-    hint: '卖给谁。影响文案口吻与画面调性。'
-  },
-  {
-    key: 'sizeSpecReq',
-    label: '尺寸与规范',
-    rows: 2,
-    max: 1000,
-    placeholder: '如：详情页宽 750px；主图 1:1；正文不小于 14px',
-    hint: '画布比例、留白、字号、平台规范等硬要求。'
-  },
-  {
-    key: 'styleRef',
-    label: '参考风格',
-    rows: 2,
-    max: 1000,
-    placeholder: '如：参考图 2 的柔和自然光；无印良品式的留白',
-    hint: '参考图 / 参考品牌 / 风格描述，帮助统一画面取向。'
-  },
-  {
-    key: 'remark',
-    label: '其它说明',
-    rows: 2,
-    max: 500,
-    placeholder: '其它要交代的要求（可空）',
-    hint: '上面没覆盖到的要求写这里。'
-  }
-];
+const briefFields = BRAND_BRIEF_FIELDS;
 
-/** Brief 表单（全部按字符串处理：后端列都是 varchar，空串与 null 语义相同） */
-const briefForm = reactive<Record<BriefFieldKey, string>>({
-  brandTone: '',
-  mustShow: '',
-  forbiddenWords: '',
-  targetAudience: '',
-  mainPush: '',
-  sizeSpecReq: '',
-  styleRef: '',
-  remark: ''
-});
-
-/** 服务端当前的 Brief（含状态与确认人/时间）；未填写时后端也返回对象 */
+/** 服务端当前的品牌要求（含状态与确认人/时间）；未填写时后端也返回对象 */
 const brandBrief = ref<BrandBriefVO | null>(null);
 /** 是否成功从服务端取过：没取到就不下「未填写」的结论 */
 const briefLoaded = ref(false);
-/** 当前这份 Brief 属于哪个项目：切项目后必须重新取，否则会拿上一个项目的结果冒充（竞态） */
+/** 当前这份要求属于哪个项目：切项目后必须重新取，否则会拿上一个项目的结果冒充（竞态） */
 const briefTaskId = ref('');
 const brandBriefError = ref('');
 const briefBusy = ref('');
-/** 上次保存/加载时的表单快照，用来判断「已修改未保存」 */
-const briefSaved = ref('');
 
-/** 表单快照：按字段定义顺序拼，保证同一内容得到同一字符串 */
-function briefSnapshot(): string {
-  return JSON.stringify(briefFields.map((field) => briefForm[field.key] ?? ''));
+/** 某个字段的展示值（空值由模板显示成 —，这里不改写数据本身） */
+function briefValueOf(key: BrandBriefFieldKey): string {
+  return ((brandBrief.value?.[key] as string | undefined) ?? '').trim();
 }
 
-// 初始快照 = 空表单：否则刚进页面什么都没动就会显示「已修改未保存」
-briefSaved.value = briefSnapshot();
+/** 状态徽标文案：与内容任务页共用同一个函数，避免两处口径不一致（谁 · 何时） */
+const briefStatusText = computed(() => briefStatusTextOf(brandBrief.value, briefLoaded.value, formatTime));
 
-/**
- * 是否「已修改未保存」。
- *
- * 刻意只比内容、不看是否加载成功：读接口失败时（表单是空的）人照样可以填写，
- * 这时也必须如实提示「未保存」，不能因为「没取到」就假装没有改动。
- */
-const briefDirty = computed(() => briefSnapshot() !== briefSaved.value);
-
-const briefStatusText = computed(() => {
-  if (!briefLoaded.value) return '未加载';
-  if (!brandBrief.value?.configured) return '未填写';
-  if (brandBrief.value.status === 'CONFIRMED') {
-    const who = brandBrief.value.confirmedByName || brandBrief.value.confirmedBy || '—';
-    const when = formatTime(brandBrief.value.confirmedAt) || '—';
-    return `已确认（${who} · ${when}）`;
-  }
-  return BRAND_BRIEF_STATUS_LABELS[brandBrief.value.status || 'DRAFT'] || '草稿';
-});
+/** 去内容任务页录入：路由是从菜单表实查出来的（业务应用 → 内容生产协同 → 内容任务 = /business/content/task） */
+function goContentTask() {
+  window.open('/business/content/task', '_self');
+}
 
 const briefStatusType = computed<TagType>(() => {
   if (!briefLoaded.value || !brandBrief.value?.configured) return 'info';
@@ -1008,7 +887,7 @@ const briefStatusType = computed<TagType>(() => {
  * 依据（改动前请先看代码）：卖点=详情页排版 + 分镜草稿前 2 条（CreativeLayoutServiceImpl#copyBlocksNode、
  * CreativeStoryboardServiceImpl#sellingPointHints）；正文/参数=详情页排版。
  *
- * <p>为什么没有「必显信息」这一组：品牌方的必显要求统一在「品牌 Brief」的 mustShow 里录入，
+ * <p>为什么没有「必显信息」这一组：品牌方的必显要求统一在「品牌要求（Brief）」里（品牌部在内容任务里填），
  * 提示词与闸门读的也是它；文案块里再放一个同义类型会出现两个真相源（后端 MUST_SHOW 枚举值
  * 仅为兼容保留、已无录入入口）。</p>
  */
@@ -1280,15 +1159,14 @@ async function selectProject(project: CreativeProjectVO) {
   fieldOptions.value = [];
   fieldOptionsLoaded.value = false;
   factLoadError.value = '';
-  // 换项目就换 Brief 与文案块：另一个项目的未保存输入不能留在这一页上
+  // 换项目就换品牌要求与文案块：另一个项目的内容不能留在这一页上
   brandBrief.value = null;
   briefLoaded.value = false;
-  // 关键：把「这份 Brief 属于哪个项目」也清掉。否则上一个项目迟到的响应会把
+  // 关键：把「这份要求属于哪个项目」也清掉。否则上一个项目迟到的响应会把
   // briefLoaded 置成 true，新项目就再也不发请求（R7 浏览器验收复现的竞态）。
   briefTaskId.value = '';
   briefBusy.value = '';
   brandBriefError.value = '';
-  applyBriefToForm(null);
   copyBlocks.value = [];
   copyLoadError.value = '';
   copyBusy.value = '';
@@ -1340,7 +1218,7 @@ async function loadDetail() {
     void loadGenerationThumbs();
     syncPolling();
     void loadDnaState();
-    // 品牌 Brief 与文案块跟着详情一起取：各自失败各自如实报，不影响整页
+    // 品牌要求与文案块跟着详情一起取：各自失败各自如实报，不影响整页
     void loadBrandBrief();
     void loadCopyBlocks();
   } catch (error) {
@@ -1478,43 +1356,32 @@ function asFact(row: unknown): CpFactSnapshotVO {
 }
 
 // ------------------------------------------------------------------
-// 品牌 Brief：读 / 存 / 确认
+// 品牌要求（Brief）：只读读取
 // ------------------------------------------------------------------
 
-/** 把服务端的 Brief 灌进表单，并把当前内容记为「已保存」快照 */
-function applyBriefToForm(data: BrandBriefVO | null) {
-  briefFields.forEach((field) => {
-    briefForm[field.key] = (data?.[field.key] as string | undefined) ?? '';
-  });
-  briefSaved.value = briefSnapshot();
-}
-
 /**
- * 读品牌 Brief。
+ * 读品牌要求（走内容域接口 `/content/task/{taskId}/brand-brief`）。
  *
- * <p>两个刻意的行为：</p>
+ * <p>三个刻意的行为：</p>
  * <ol>
- *   <li>读失败不静默：置 brandBriefError，页面照实说「没取到」，空表不代表项目里没有要求；</li>
- *   <li>已经取到过就不再自动重取（{@code force=false}）：跟随详情刷新时绝不覆盖人正在输入的内容，
- *       只有「刷新」按钮才会用服务端内容替换当前表单。</li>
+ *   <li>读失败不静默：置 brandBriefError，页面照实说「没取到」，空值不代表品牌部没有提要求；</li>
+ *   <li>已经取到过就不再自动重取（{@code force=false}）：跟随详情刷新时不重复打接口，
+ *       只有「刷新」按钮才会强制重取；</li>
+ *   <li>按项目判断"取到过"（{@code briefTaskId}），并丢弃迟到的响应——只认 briefLoaded
+ *       会踩竞态：上一个项目迟到的响应把它置成 true，新项目一个请求都不发（R7 验收复现过）。</li>
  * </ol>
  */
 async function loadBrandBrief(force = false) {
   const taskId = String(currentProjectId.value || '');
   if (!taskId) return;
-  // 已经取到过就不再自动覆盖输入：只有「刷新」按钮（force）才会用服务端内容替换当前表单。
-  // 但「取到过」必须**按项目**判断：briefTaskId 是这份 Brief 属于哪个项目。
-  // 只认 briefLoaded 会踩竞态——上一个项目迟到的响应把 briefLoaded 置成 true，
-  // 于是新项目一个请求都不发，表单停在「未填写」（R7 浏览器验收 3/3 复现）。
   if (!force && briefLoaded.value && briefTaskId.value === taskId) return;
   briefBusy.value = 'load';
   brandBriefError.value = '';
   try {
     const res = await getBrandBrief(taskId);
-    // 迟到的响应不能写进表单：期间人可能已经切到别的项目了
+    // 迟到的响应不能写进页面：期间人可能已经切到别的项目了
     if (String(currentProjectId.value || '') !== taskId) return;
     brandBrief.value = res.data ?? null;
-    applyBriefToForm(brandBrief.value);
     briefTaskId.value = taskId;
     briefLoaded.value = true;
   } catch (error) {
@@ -1523,101 +1390,9 @@ async function loadBrandBrief(force = false) {
     briefLoaded.value = false;
     briefTaskId.value = '';
     brandBriefError.value =
-      '品牌 Brief 没取到（' + ((await extractErrorMessage(error)) ?? '接口失败') + '），下面的空表不代表该项目没有品牌要求';
+      '品牌要求没取到（' + ((await extractErrorMessage(error)) ?? '接口失败') + '），上面的空值不代表品牌部没有提要求';
   } finally {
     if (String(currentProjectId.value || '') === taskId) briefBusy.value = '';
-  }
-}
-
-function onRefreshBrief() {
-  if (briefDirty.value) {
-    ElMessage.warning('有未保存的修改，刷新会用服务端内容覆盖当前输入；请先点「保存」');
-    return;
-  }
-  void loadBrandBrief(true);
-}
-
-/** 提交体：只带 8 个要求字段（状态由 confirm 接口推进，这里不传 status） */
-function briefPayload(): BrandBriefForm {
-  return {
-    brandTone: briefForm.brandTone,
-    mustShow: briefForm.mustShow,
-    forbiddenWords: briefForm.forbiddenWords,
-    targetAudience: briefForm.targetAudience,
-    mainPush: briefForm.mainPush,
-    sizeSpecReq: briefForm.sizeSpecReq,
-    styleRef: briefForm.styleRef,
-    remark: briefForm.remark
-  };
-}
-
-/** 8 项里是否至少有一项写了内容（空白不算） */
-function briefPayloadHasContent(): boolean {
-  const payload = briefPayload();
-  return briefFields.some((field) => (payload[field.key] ?? '').trim().length > 0);
-}
-
-async function doSaveBrandBrief() {
-  if (!currentProjectId.value || briefBusy.value) return;
-  briefBusy.value = 'save';
-  try {
-    const res = await saveBrandBrief(currentProjectId.value, briefPayload());
-    if (res.data) {
-      brandBrief.value = res.data;
-    }
-    applyBriefToForm(brandBrief.value);
-    briefTaskId.value = String(currentProjectId.value || '');
-    briefLoaded.value = true;
-    brandBriefError.value = '';
-    // 后端规则：保存草稿不会把已确认打回草稿（确认权在品牌方，不在保存表单）。
-    // 所以「已确认」的 Brief 被改过并保存后，状态仍是已确认——这必须说清楚，不能让页面假装还是那条被确认的内容。
-    if (brandBrief.value?.status === 'CONFIRMED') {
-      ElMessage.warning('已保存；状态仍是「已确认」。内容有改动，建议重新点「确认品牌要求」，让确认动作对得上最新内容。');
-    } else {
-      ElMessage.success('品牌 Brief 已保存（状态：草稿）');
-    }
-  } catch (error) {
-    ElMessage.error((await extractErrorMessage(error)) ?? '保存品牌 Brief 失败');
-  } finally {
-    briefBusy.value = '';
-  }
-}
-
-async function doConfirmBrandBrief() {
-  if (!currentProjectId.value || briefBusy.value) return;
-  if (briefDirty.value) {
-    ElMessage.warning('有未保存的修改，请先点「保存」再确认');
-    return;
-  }
-  if (!brandBrief.value?.configured) {
-    ElMessage.warning('品牌 Brief 还没有内容：请先填写并保存，再确认');
-    return;
-  }
-  if (!briefPayloadHasContent()) {
-    ElMessage.warning('品牌 Brief 8 项全空：至少填一项再确认（确认后的要求会被出图与文案校验引用）');
-    return;
-  }
-  try {
-    await ElMessageBox.confirm(
-      '确认后这条 Brief 就是「品牌方已确认的要求」，出图提示词与文案校验会引用它。是否继续？',
-      '确认品牌要求',
-      { type: 'warning' }
-    );
-  } catch {
-    return;
-  }
-  briefBusy.value = 'confirm';
-  try {
-    const res = await confirmBrandBrief(currentProjectId.value);
-    if (res.data) {
-      brandBrief.value = res.data;
-      applyBriefToForm(brandBrief.value);
-    }
-    ElMessage.success('品牌要求已确认');
-  } catch (error) {
-    ElMessage.error((await extractErrorMessage(error)) ?? '确认品牌要求失败');
-  } finally {
-    briefBusy.value = '';
   }
 }
 
@@ -2868,7 +2643,7 @@ button {
   align-items: center;
 }
 
-/* 品牌 Brief：一行一个要求，左侧标签固定宽，右侧输入 + 一句「填什么」 */
+/* 品牌要求（Brief）：**只读**展示——一行一个要求，左侧标签固定宽，右侧是值 */
 .brief-grid {
   display: flex;
   flex-direction: column;
@@ -2892,9 +2667,20 @@ button {
   gap: 4px;
   min-width: 0;
 }
-.brief-dirty {
-  font-size: 12px;
-  color: #fbbf24;
+/*
+ * 只读值：用普通文本而不是输入框——输入框在这个页面会暗示"可以改"，
+ * 而这份要求由品牌部在内容任务里录入并确认，视觉工厂这一侧只按它创作。
+ * white-space: pre-line 保留多行（必显信息/禁用词都是一行一条）。
+ */
+.brief-value {
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--t1);
+  white-space: pre-line;
+  word-break: break-word;
+}
+.brief-value.is-empty {
+  color: var(--t3);
 }
 
 /* 文案与要点：分组工具条 */
