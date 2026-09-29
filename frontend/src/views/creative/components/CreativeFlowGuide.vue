@@ -77,9 +77,11 @@
     </p>
     <!-- 步序对照（只读，V0.2 D 阶段第二刀第一步）：
          把「配置 N 步 ↔ 代码八步」的差异如实摆出来供人核对，**指引线一行不动**——
-         真的把导航切到配置驱动之前，先让"哪一步对哪一步、哪一步没有对应"是可见的。 -->
-    <div v-if="mappingChip" class="flow-mapping">
+         真的把导航切到配置驱动之前，先让"哪一步对哪一步、哪一步没有对应"是可见的。
+         R17 再加一枚「工作台装配」：配置声明的面板/组件 vs 代码里的真实落点。 -->
+    <div v-if="mappingChip || assemblyChip" class="flow-mapping">
       <el-popover
+        v-if="mappingChip"
         placement="top-start"
         :width="440"
         trigger="click"
@@ -107,6 +109,37 @@
           <p class="map-note">{{ mapping.verdict }}</p>
         </div>
       </el-popover>
+      <el-popover
+        v-if="assemblyChip && assembly"
+        placement="top-start"
+        :width="480"
+        trigger="click"
+        popper-class="flow-map-popover"
+      >
+        <template #reference>
+          <span class="asm-chip" :title="assembly.verdict">{{ assemblyChip }}</span>
+        </template>
+        <div class="map">
+          <div class="map-head">工作台装配 · {{ assembly.workspace || '未声明' }}（配置 → 代码落点）</div>
+          <p class="asm-sec">面板</p>
+          <ul class="map-rows">
+            <li v-for="row in assembly.panelRows" :key="row.code" :class="'kind-' + row.kind.toLowerCase()">
+              <span class="asm-code">{{ row.code }}</span>
+              <span class="asm-kind">{{ kindLabel(row.kind) }}</span>
+              <span class="asm-loc">{{ row.location }}</span>
+            </li>
+          </ul>
+          <p class="asm-sec">步骤组件</p>
+          <ul class="map-rows">
+            <li v-for="row in assembly.stepRows" :key="row.code" :class="'kind-' + row.kind.toLowerCase()">
+              <span class="asm-code">{{ row.code }} → {{ row.component || '（没给组件）' }}</span>
+              <span class="asm-kind">{{ kindLabel(row.kind) }}</span>
+              <span class="asm-loc">{{ row.location }}</span>
+            </li>
+          </ul>
+          <p class="map-note">{{ assembly.verdict }}</p>
+        </div>
+      </el-popover>
     </div>
   </div>
 </template>
@@ -116,6 +149,7 @@ import { computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { CREATIVE_STAGE_TYPES } from '@/api/creative/types';
 import { useCreativeFlow, type FlowStep } from '../composables/useCreativeFlow';
+import { ASSEMBLY_KIND_LABELS, type AssemblyKind } from '../composables/workspaceAssembly';
 
 /**
  * 流程指引线：把流程环节横排在每个环节页面的顶部，当前环节由**后端步骤状态**定位。
@@ -158,6 +192,8 @@ const {
   scenarioSteps,
   mapping,
   mappingChip,
+  assembly,
+  assemblyChip,
   ensureStep,
   stepHref,
   reload
@@ -170,6 +206,16 @@ const stageType = computed(() => CREATIVE_STAGE_TYPES[stage.value || ''] || 'inf
 const progressPct = computed(() =>
   steps.value.length ? Math.round((doneCount.value / steps.value.length) * 100) : 0
 );
+
+/**
+ * 装配分类的中文标签。
+ *
+ * @param kind 分类
+ * @returns 标签文本
+ */
+function kindLabel(kind: AssemblyKind): string {
+  return ASSEMBLY_KIND_LABELS[kind] || kind;
+}
 
 function go(step: FlowStep) {
   void router.push(stepHref(step.no));
@@ -247,7 +293,8 @@ watch(
   line-height: 1.6;
 }
 
-.map-chip {
+.map-chip,
+.asm-chip {
   display: inline-block;
   padding: 1px 8px;
   color: var(--t3);
@@ -261,6 +308,10 @@ watch(
     color: var(--t2);
     border-color: var(--t3);
   }
+}
+
+.asm-chip {
+  margin-left: 8px;
 }
 
 /* 弹层内容（这段 DOM 在本组件模板里编译，所以 scoped 属性照样生效） */
@@ -329,6 +380,49 @@ watch(
     color: var(--t3);
     font-size: 11px;
     line-height: 1.7;
+  }
+
+  /* 装配对照：面板/步骤两段，每行是「编码 → 落点 + 分类徽标」 */
+  .asm-sec {
+    margin: 8px 0 2px;
+    color: var(--t3);
+    font-size: 11px;
+  }
+
+  .asm-code {
+    flex: none;
+    color: var(--t1);
+  }
+
+  .asm-kind {
+    flex: none;
+    padding: 0 6px;
+    font-size: 10px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    color: var(--t3);
+  }
+
+  .asm-loc {
+    flex: 1;
+    text-align: right;
+    color: var(--t3);
+  }
+
+  /* 分类用颜色区分：已是组件=绿、页面内区块=蓝、未实现=橙（与"无对应"同一套观感） */
+  .kind-component .asm-kind {
+    color: #67c23a;
+    border-color: rgba(103, 194, 58, 0.35);
+  }
+
+  .kind-section .asm-kind {
+    color: #409eff;
+    border-color: rgba(64, 158, 255, 0.35);
+  }
+
+  .kind-missing .asm-kind {
+    color: #e6a23c;
+    border-color: rgba(230, 162, 60, 0.35);
   }
 }
 

@@ -695,6 +695,8 @@ export function useCreativeFlow(
     scenarioLine: scenario.line,
     mapping: scenario.mapping,
     mappingChip: scenario.mappingChip,
+    assembly: scenario.assembly,
+    assemblyChip: scenario.assemblyChip,
     ensureStep,
     refresh,
     reload,
