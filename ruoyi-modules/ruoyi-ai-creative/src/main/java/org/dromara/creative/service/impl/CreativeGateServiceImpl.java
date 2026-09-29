@@ -13,6 +13,8 @@ import org.dromara.content.domain.vo.ContentTaskDetailVo;
 import org.dromara.content.enums.ContentFactConfirmStatusEnum;
 import org.dromara.content.service.IContentTaskGateService;
 import org.dromara.content.service.IContentTaskService;
+import org.dromara.creative.domain.DpGateItem;
+import org.dromara.creative.domain.DpGateProfile;
 import org.dromara.creative.domain.DpStageEvent;
 import org.dromara.creative.domain.vo.CreativeProjectVo;
 import org.dromara.content.domain.vo.CpBrandBriefVo;
@@ -22,6 +24,8 @@ import org.dromara.creative.domain.vo.DpVisualDnaVo;
 import org.dromara.content.enums.ContentBriefStatusEnum;
 import org.dromara.creative.enums.DpVisualStageEnum;
 import org.dromara.creative.mapper.CreativeCardMapper;
+import org.dromara.creative.mapper.DpGateItemMapper;
+import org.dromara.creative.mapper.DpGateProfileMapper;
 import org.dromara.creative.mapper.DpStageEventMapper;
 import org.dromara.content.service.IContentBrandBriefService;
 import org.dromara.creative.service.ICreativeDnaService;
@@ -72,60 +76,55 @@ public class CreativeGateServiceImpl implements ICreativeGateService {
     private final IContentTaskGateService contentTaskGateService;
     private final CreativeCardMapper cardMapper;
     private final DpStageEventMapper eventMapper;
+    private final DpGateProfileMapper gateProfileMapper;
+    private final DpGateItemMapper gateItemMapper;
+
+    /**
+     * 默认闸门项清单（**逐字复现**改造前内联的那 7 项，顺序与等级一致）。
+     *
+     * <p>它是"没有配置时的回落"，也是"配置写错了"的参照物：某场景还没配 Gate Profile 时，
+     * 门禁必须与改造前完全一致——既不能失效（漏判），也不能误封（多判）。</p>
+     */
+    static final List<ItemSpec> DEFAULT_ITEMS = List.of(
+        new ItemSpec("DNA_LOCKED", "视觉基因已锁定", LEVEL_BLOCK),
+        new ItemSpec("REFERENCE_IMAGE", "产品参考图已上传", LEVEL_BLOCK),
+        new ItemSpec("DIRECTION_SELECTED", "视觉方向已选定", LEVEL_CONDITION),
+        new ItemSpec("STORYBOARD_LOCKED", "分镜已锁定", LEVEL_CONDITION),
+        new ItemSpec("BRAND_TONE_CONFIRMED", "品牌调性已确认", LEVEL_CONDITION),
+        new ItemSpec("BRAND_BRIEF_CONFIRMED", "品牌 Brief 已填写并确认", LEVEL_CONDITION),
+        new ItemSpec("FORBIDDEN_WORDS_DECLARED", "已声明禁用词与合规红线", LEVEL_CONDITION)
+    );
+
+    /**
+     * 一条闸门项的"配置侧"定义：**有哪些项、什么等级、什么顺序、叫什么名字**。
+     *
+     * <p>注意：这里没有"怎么判"——判定逻辑不可能配置化（见类注释与对照文档 D3）。</p>
+     *
+     * @param code  项编码（代码里按它找检查器）
+     * @param label 展示名
+     * @param level 等级（BLOCK/CONDITION）
+     */
+    record ItemSpec(String code, String label, String level) {
+    }
 
     @Override
     public GateEvaluation evaluate(Long taskId) {
         CreativeProjectVo project = projectService.getProject(taskId);
         ContentTaskDetailVo detail = contentTaskService.getDetail(taskId);
 
-        List<GateItem> items = new ArrayList<>();
-
-        // 1) 视觉基因已锁定（硬性）：出图的提示词与规范都从它派生，没有它就没有「统一视觉」。
-        //    判据必须是「已锁定版本」而不是「最新版本」——最新版可能是锁定后又改出来的待确认稿，
-        //    而实际出图依据仍是那一版锁定的基因。
-        DpVisualDnaVo lockedDna = dnaService.locked(taskId);
-        DpVisualDnaVo latestDna = dnaService.latest(taskId);
-        boolean dnaLocked = lockedDna != null;
-        items.add(new GateItem("DNA_LOCKED", "视觉基因已锁定", LEVEL_BLOCK, dnaLocked,
-            dnaLocked
-                ? "已锁定 " + lockedDna.getDnaNo() + "（来源：" + lockedDna.getSourceDesc() + "）"
-                : (latestDna == null ? "尚未生成视觉基因"
-                    : "尚无已锁定版本；最新版 " + latestDna.getDnaNo()
-                        + " 状态为「" + latestDna.getStatusDesc() + "」，请先锁定")));
-
-        // 2) 参考图齐备（硬性）：出图要拿它当输入
-        long images = imageCount(detail);
-        items.add(new GateItem("REFERENCE_IMAGE", "产品参考图已上传", LEVEL_BLOCK, images > 0,
-            images > 0 ? "已上传 " + images + " 张图片附件" : "项目附件里还没有图片"));
-
-        // 3) 视觉方向已选定（建议）：没有方向也能出图，但同一屏的取舍会不一致
-        DpVisualDirectionVo direction = directionService.selected(taskId);
-        items.add(new GateItem("DIRECTION_SELECTED", "视觉方向已选定", LEVEL_CONDITION, direction != null,
-            direction == null ? "尚未在 A/B/C 中选定方向"
-                : "已选定 " + direction.getDirectionCode() + " · " + direction.getDirectionName()));
-
-        // 4) 分镜已锁定（建议）
-        DpStoryboardVo storyboard = storyboardService.latest(taskId);
-        boolean storyboardLocked = storyboard != null && "LOCKED".equals(storyboard.getStatus());
-        items.add(new GateItem("STORYBOARD_LOCKED", "分镜已锁定", LEVEL_CONDITION, storyboardLocked,
-            storyboard == null ? "尚未生成分镜"
-                : (storyboardLocked ? "已锁定 " + storyboard.getStoryboardNo()
-                    + "（" + storyboard.getScreenCount() + " 屏）"
-                    : "当前 " + storyboard.getStoryboardNo() + " 还是草稿")));
-
-        // 5) 品牌调性事实（建议，且仅当该交付类型确实声明了这条事实时才检查）
-        items.add(brandToneItem(detail));
-
-        // 6) 品牌 Brief 已填写并确认（建议/R7）：
-        //    判据是 status=CONFIRMED，不是「填过就算」——闸门必须回答「品牌方确认了没有」。
-        //    等级刻意用 CONDITION 而不是 BLOCK：在跑的存量项目全都没有 Brief，
-        //    用 BLOCK 会把它们一次性卡死；品牌方要求必填时把等级改成 LEVEL_BLOCK 即可（一行）。
+        // 先把每一项"检查结果"算出来（key = 项编码）：判定逻辑仍在代码里，配置只决定取舍与顺序
+        Map<String, GateItem> checked = new LinkedHashMap<>();
+        checked.put("DNA_LOCKED", dnaLockedItem(taskId));
+        checked.put("REFERENCE_IMAGE", referenceImageItem(detail));
+        checked.put("DIRECTION_SELECTED", directionSelectedItem(taskId));
+        checked.put("STORYBOARD_LOCKED", storyboardLockedItem(taskId));
+        checked.put("BRAND_TONE_CONFIRMED", brandToneItem(detail));
         CpBrandBriefVo brief = briefService.get(taskId);
-        items.add(brandBriefItem(brief));
+        checked.put("BRAND_BRIEF_CONFIRMED", brandBriefItem(brief));
+        checked.put("FORBIDDEN_WORDS_DECLARED", forbiddenWordsItem(brief));
 
-        // 7) 已声明禁用词与合规红线（建议/R7）：没有禁用词清单，负向提示词就只能靠默认词表，
-        //    合规红线也无从校验；同样用 CONDITION，理由同上。
-        items.add(forbiddenWordsItem(brief));
+        // 再按"该交付类型的闸门配置"组装（没配就回落 DEFAULT_ITEMS）
+        List<GateItem> items = mergeItems(configuredItems(project.getDeliverableType()), checked);
 
         List<String> blocked = items.stream()
             .filter(item -> LEVEL_BLOCK.equals(item.level()) && !item.passed())
@@ -242,6 +241,131 @@ public class CreativeGateServiceImpl implements ICreativeGateService {
     // ------------------------------------------------------------------
     // 内部
     // ------------------------------------------------------------------
+
+    // ------------------------------------------------------------------
+    // 闸门项配置（V0.2 B2）：配置决定"有哪些项/顺序/等级/展示名"，代码决定"怎么判"
+    // ------------------------------------------------------------------
+
+    /**
+     * 取该交付类型的闸门项配置；没有已发布配置就回落 {@link #DEFAULT_ITEMS}。
+     *
+     * @param deliveryType 交付类型（cp_task.deliverable_type）
+     * @return 项定义列表（已按 sort_no 排序）
+     */
+    List<ItemSpec> configuredItems(String deliveryType) {
+        if (StringUtils.isBlank(deliveryType)) {
+            return DEFAULT_ITEMS;
+        }
+        List<DpGateProfile> profiles = gateProfileMapper.selectList(new LambdaQueryWrapper<DpGateProfile>()
+            .eq(DpGateProfile::getDeliveryType, deliveryType)
+            .eq(DpGateProfile::getStatus, "PUBLISHED")
+            .orderByDesc(DpGateProfile::getVersion)
+            .orderByDesc(DpGateProfile::getId));
+        if (profiles.isEmpty()) {
+            // 没配置不是错误：回落默认清单（与改造前逐字一致），并留痕便于发现"某场景还没配闸门"
+            log.info("交付类型 {} 没有已发布的闸门配置，使用默认 {} 项清单", deliveryType, DEFAULT_ITEMS.size());
+            return DEFAULT_ITEMS;
+        }
+        List<DpGateItem> rows = gateItemMapper.selectList(new LambdaQueryWrapper<DpGateItem>()
+            .eq(DpGateItem::getProfileId, profiles.get(0).getId())
+            .orderByAsc(DpGateItem::getSortNo)
+            .orderByAsc(DpGateItem::getId));
+        if (rows.isEmpty()) {
+            log.warn("交付类型 {} 的闸门档案 {} 没有任何闸门项，使用默认清单",
+                deliveryType, profiles.get(0).getProfileCode());
+            return DEFAULT_ITEMS;
+        }
+        return rows.stream()
+            .map(row -> new ItemSpec(row.getItemCode(), row.getItemLabel(), row.getLevel()))
+            .toList();
+    }
+
+    /**
+     * 按配置项定义组装最终清单：**判定结果取自代码检查器，展示名与等级取自配置**。
+     *
+     * <p>配置里出现了代码没有检查器的项时按**未通过**处理（fail-closed）：
+     * 配置说"这一项要检查"，而我们没有对应逻辑，就绝不能显示成通过——
+     * 那等于用一个看不见的假绿把门放开。</p>
+     *
+     * @param specs   配置项定义
+     * @param checked 代码给出的检查结果（key = 项编码）
+     * @return 最终清单（顺序 = 配置顺序）
+     */
+    static List<GateItem> mergeItems(List<ItemSpec> specs, Map<String, GateItem> checked) {
+        List<GateItem> items = new ArrayList<>();
+        for (ItemSpec spec : specs) {
+            GateItem result = checked.get(spec.code());
+            if (result == null) {
+                items.add(new GateItem(spec.code(), spec.label(), spec.level(), false,
+                    "该配置项在当前版本没有对应的检查逻辑，已按未通过处理（请补齐检查器或从配置里移除）"));
+                continue;
+            }
+            items.add(new GateItem(spec.code(), spec.label(), spec.level(), result.passed(), result.detail()));
+        }
+        return items;
+    }
+
+    /**
+     * 视觉基因已锁定（硬性）：出图的提示词与规范都从它派生，没有它就没有「统一视觉」。
+     *
+     * <p>判据必须是「已锁定版本」而不是「最新版本」——最新版可能是锁定后又改出来的待确认稿，
+     * 而实际出图依据仍是那一版锁定的基因。</p>
+     *
+     * @param taskId 项目ID
+     * @return 闸门项
+     */
+    private GateItem dnaLockedItem(Long taskId) {
+        DpVisualDnaVo lockedDna = dnaService.locked(taskId);
+        DpVisualDnaVo latestDna = dnaService.latest(taskId);
+        boolean dnaLocked = lockedDna != null;
+        return new GateItem("DNA_LOCKED", "视觉基因已锁定", LEVEL_BLOCK, dnaLocked,
+            dnaLocked
+                ? "已锁定 " + lockedDna.getDnaNo() + "（来源：" + lockedDna.getSourceDesc() + "）"
+                : (latestDna == null ? "尚未生成视觉基因"
+                    : "尚无已锁定版本；最新版 " + latestDna.getDnaNo()
+                        + " 状态为「" + latestDna.getStatusDesc() + "」，请先锁定"));
+    }
+
+    /**
+     * 参考图齐备（硬性）：出图要拿它当输入。
+     *
+     * @param detail 任务详情
+     * @return 闸门项
+     */
+    private GateItem referenceImageItem(ContentTaskDetailVo detail) {
+        long images = imageCount(detail);
+        return new GateItem("REFERENCE_IMAGE", "产品参考图已上传", LEVEL_BLOCK, images > 0,
+            images > 0 ? "已上传 " + images + " 张图片附件" : "项目附件里还没有图片");
+    }
+
+    /**
+     * 视觉方向已选定（建议）：没有方向也能出图，但同一屏的取舍会不一致。
+     *
+     * @param taskId 项目ID
+     * @return 闸门项
+     */
+    private GateItem directionSelectedItem(Long taskId) {
+        DpVisualDirectionVo direction = directionService.selected(taskId);
+        return new GateItem("DIRECTION_SELECTED", "视觉方向已选定", LEVEL_CONDITION, direction != null,
+            direction == null ? "尚未在 A/B/C 中选定方向"
+                : "已选定 " + direction.getDirectionCode() + " · " + direction.getDirectionName());
+    }
+
+    /**
+     * 分镜已锁定（建议）。
+     *
+     * @param taskId 项目ID
+     * @return 闸门项
+     */
+    private GateItem storyboardLockedItem(Long taskId) {
+        DpStoryboardVo storyboard = storyboardService.latest(taskId);
+        boolean storyboardLocked = storyboard != null && "LOCKED".equals(storyboard.getStatus());
+        return new GateItem("STORYBOARD_LOCKED", "分镜已锁定", LEVEL_CONDITION, storyboardLocked,
+            storyboard == null ? "尚未生成分镜"
+                : (storyboardLocked ? "已锁定 " + storyboard.getStoryboardNo()
+                    + "（" + storyboard.getScreenCount() + " 屏）"
+                    : "当前 " + storyboard.getStoryboardNo() + " 还是草稿"));
+    }
 
     /**
      * 品牌 Brief 是否已由品牌方确认（R7）。

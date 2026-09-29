@@ -16,6 +16,8 @@ import org.dromara.content.helper.ContentOssHelper;
 import org.dromara.content.service.IContentTaskService;
 import org.dromara.creative.domain.DpDetailPage;
 import org.dromara.creative.domain.DpDetailPageVersion;
+import org.dromara.creative.domain.DpOutputSpec;
+import org.dromara.creative.domain.vo.CreativeProjectVo;
 import org.dromara.creative.domain.DpGeneration;
 import org.dromara.creative.domain.vo.DpCopyBlockVo;
 import org.dromara.creative.domain.vo.DpDetailPageVo;
@@ -35,6 +37,7 @@ import org.dromara.creative.service.ICreativeGateService;
 import org.dromara.creative.service.ICreativeGenerationService;
 import org.dromara.creative.service.ICreativeLayoutService;
 import org.dromara.creative.service.ICreativeProjectService;
+import org.dromara.creative.service.ICreativeScenarioConfigService;
 import org.dromara.creative.service.ICreativeStoryboardService;
 import org.dromara.creative.service.ICreativeTemplateService;
 import org.springframework.beans.factory.annotation.Value;
@@ -117,11 +120,16 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
      * 文案与要点块（R7）：详情页正文/卖点/参数行的数据来源
      */
     private final ICreativeCopyService copyService;
+    /**
+     * 场景配置层（V0.2 B2）：页宽优先取该交付类型的默认输出规格（dp_output_spec）
+     */
+    private final ICreativeScenarioConfigService scenarioConfigService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public DpDetailPageVo render(Long taskId) {
         gateService.requireCanProduce(taskId);
+        CreativeProjectVo project = projectService.getProject(taskId);
         DpStoryboardVo storyboard = storyboardService.latest(taskId);
         if (storyboard == null || storyboard.getScreens() == null || storyboard.getScreens().isEmpty()) {
             throw new ServiceException("还没有分镜，无法排版");
@@ -194,10 +202,11 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
             + " · 渲染于 " + LocalDateTime.now().withNano(0));
 
         long started = System.currentTimeMillis();
-        // 页宽是请求级参数（V0.2 F1）：渲染服务把它作为 CSS 变量 --page-width 交给模板，
-        // 并会核对"实际渲染宽度 == 请求宽度"，不一致直接失败（避免悄悄出一张宽度不对的长图）。
+        // 页宽：优先取该交付类型"默认输出规格"（dp_output_spec.is_default），没有配置才回落到 creative.page-width。
+        // 渲染服务把宽度作为 CSS 变量 --page-width 交给模板，并会核对"实际渲染宽度 == 请求宽度"。
+        int renderWidth = resolvePageWidth(project);
         RendererClient.RenderResult result = rendererClient.render(
-            PAGE_TEMPLATE_CODE, PAGE_TEMPLATE_VERSION, "page", null, toMap(renderLayout), pageWidth);
+            PAGE_TEMPLATE_CODE, PAGE_TEMPLATE_VERSION, "page", null, toMap(renderLayout), renderWidth);
         long cost = System.currentTimeMillis() - started;
 
         // 4) 长图登记为任务附件（复用内容模块的上传通道）
@@ -259,6 +268,35 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
      * @param taskId 项目ID
      * @return 数组节点
      */
+    /**
+     * 解析本次排版用的页宽（V0.2 B2）。
+     *
+     * <p>顺序：该交付类型在 {@code dp_output_spec} 里的**默认规格**（{@code is_default='1'}，
+     * 由 {@code listOutputSpecs} 排到最前）→ 回落配置 {@code creative.page-width}。
+     * 这样"750"这个数字的权威从配置项变成了场景配置；配置层读不到时也不阻断排版（降级 + 告警）。</p>
+     *
+     * @param project 项目（取交付类型）
+     * @return 页宽（px）
+     */
+    private int resolvePageWidth(CreativeProjectVo project) {
+        try {
+            if (project != null && StringUtils.isNotBlank(project.getDeliverableType())) {
+                List<DpOutputSpec> specs = scenarioConfigService.listOutputSpecs(project.getDeliverableType());
+                if (!specs.isEmpty() && specs.get(0).getWidth() != null && specs.get(0).getWidth() > 0) {
+                    DpOutputSpec spec = specs.get(0);
+                    log.info("排版页宽取默认输出规格 {} = {}px（交付类型 {}）",
+                        spec.getSpecCode(), spec.getWidth(), project.getDeliverableType());
+                    return spec.getWidth();
+                }
+                log.info("交付类型 {} 没有可用的默认输出规格，回落 creative.page-width={}",
+                    project.getDeliverableType(), pageWidth);
+            }
+        } catch (Exception e) {
+            log.warn("读取默认输出规格失败，回落 creative.page-width={}：{}", pageWidth, e.getMessage());
+        }
+        return pageWidth;
+    }
+
     private ArrayNode copyBlocksNode(Long taskId) {
         ArrayNode array = MAPPER.createArrayNode();
         List<DpCopyBlockVo> blocks = copyService.list(taskId, null);
