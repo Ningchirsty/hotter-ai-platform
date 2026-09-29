@@ -80,7 +80,7 @@
       <span v-if="configDriven">共 {{ steps.length }} 步：{{ steps.map((s) => s.name).join(' → ') }}</span>
     </p>
     <!-- 场景配置（只读补充信息）：读不到就整行不渲染，绝不影响上面的指引线 -->
-    <p v-if="scenarioLine" class="flow-scenario" :title="scenarioSteps.join(' → ')">
+    <p v-if="scenarioLine" class="flow-scenario" :title="scenarioStepNames.join(' → ')">
       <span class="scenario-tag">场景配置</span>{{ scenarioLine }}
     </p>
     <!-- 步序对照（只读，V0.2 D 阶段第二刀第一步）：
@@ -284,6 +284,18 @@ const currentStep = computed<FlowStep | null>(
 
 /** 项目名：面板标题用它（来自已加载的项目数据，不要再让页面传一遍） */
 const projectName = computed(() => project.value?.taskName || '');
+
+/**
+ * 场景行 hover 提示用的步骤名。
+ *
+ * <p><b>为什么单独算</b>：R19 把 `scenarioSteps` 从"名字数组"（R13 时的 `stepNames`）换成了
+ * `useCreativeFlow` 透出的**原始步骤对象数组**，而模板里还是 `scenarioSteps.join(' → ')`——
+ * 于是 hover 提示变成了 `[object Object] → [object Object] → …`（R21 回归里 R13 抓到的）。
+ * 这里统一从对象里取名，别再直接 join 对象。</p>
+ */
+const scenarioStepNames = computed(() =>
+  scenarioSteps.value.map((s) => s.stepName || s.stepCode || '').filter(Boolean)
+);
 
 /** 让检查器能请求"读取当前步明细"（明细逻辑在 useCreativeFlow 里，不重复实现） */
 function loadCurrentStepDetail() {
