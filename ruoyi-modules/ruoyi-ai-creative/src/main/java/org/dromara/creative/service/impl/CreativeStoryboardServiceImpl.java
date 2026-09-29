@@ -73,17 +73,15 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
     private static final String STATUS_LOCKED = "LOCKED";
 
     /**
-     * 屏结构骨架（V0.2 C′）：类型/顺序/展示名/保真等级/取景全部来自
-     * {@code creative/screen-skeleton.json} 这份契约，代码里不再有写死的 7 屏清单。
+     * 屏骨架加载器（构造依赖）。
      *
-     * <p>为什么做成可配置：屏数属于场景配置（电商详情页是 7 屏，别的场景不是），
-     * 写死在 Java 里会让"改屏数"变成一次改代码 + 重新发版；改契约（或配
-     * {@code creative.screen-skeleton.path} 指到外部文件）即可，且启动时会校验并打日志。</p>
-     *
-     * <p>R4 起，每屏的标题/副标题/正文/画面独白<b>不再来自骨架</b>：
-     * 文案由 {@link CreativeDraftFactory#screens} 按「事实 + 基因 + 产品名」推导。</p>
+     * <p>为什么注入而不是直接调静态方法：如果把骨架读进字段初始化器，这个字段会在
+     * <b>本 Bean 构造时</b>求值，而 {@link CreativeScreenSkeletonRegistry} 的 {@code @PostConstruct}
+     * 可能还没跑，于是走静态懒加载兜底——启动日志会打印两次"契约加载完成"，
+     * 还多出一个骨架实例。把它做成构造依赖，Spring 必须先把它初始化完再注入，
+     * 加载点就只剩一处。</p>
      */
-    private final CreativeScreenSkeleton skeleton = CreativeScreenSkeletonRegistry.skeleton();
+    private final CreativeScreenSkeletonRegistry skeletonRegistry;
 
     private final DpStoryboardMapper storyboardMapper;
     private final DpStoryboardScreenMapper screenMapper;
@@ -100,6 +98,22 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
      * 文案与要点块（R7）：卖点块进两个卖点屏
      */
     private final ICreativeCopyService copyService;
+
+    /**
+     * 当前屏骨架（类型/顺序/展示名/保真等级/取景都来自 {@code creative/screen-skeleton.json}）。
+     *
+     * <p>为什么做成可配置：屏数属于场景配置（电商详情页是 7 屏，别的场景不是），
+     * 写死在 Java 里会让"改屏数"变成一次改代码 + 重新发版；改契约（或配
+     * {@code creative.screen-skeleton.path} 指到外部文件）即可，且启动时会校验并打日志。</p>
+     *
+     * <p>R4 起，每屏的标题/副标题/正文/画面独白<b>不再来自骨架</b>：
+     * 文案由 {@link CreativeDraftFactory#screens} 按「事实 + 基因 + 产品名」推导。</p>
+     *
+     * @return 骨架
+     */
+    private CreativeScreenSkeleton skeleton() {
+        return skeletonRegistry.skeleton();
+    }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -120,7 +134,7 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
         storyboard.setVersion(version);
         storyboard.setVisualDnaId(dnaId);
         storyboard.setVisualDirectionId(direction == null ? null : direction.getId());
-        storyboard.setScreenCount(skeleton.size());
+        storyboard.setScreenCount(skeleton().size());
         storyboard.setRhythmJson(rhythm());
 
         // 参数化草稿：每屏标题/副标题/正文/画面独白由「事实 + 基因 + 产品名 + 屏类型」推导。
@@ -192,14 +206,14 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
         // 【C′】骨架与草稿的数量必须一致：两者现在都由同一份骨架契约驱动，理论上不会不一致，
         // 但这个校验必须留着——一旦将来有人只改了其中一处（或外部契约在运行中被换掉），
         // 下面按下标取草稿会变成难以定位的越界异常，而这里能给出"哪边少了几屏"的可读错误。
-        if (drafts.size() != skeleton.size()) {
-            throw new ServiceException("屏骨架与文案草稿数量不一致：骨架 " + skeleton.size()
-                + " 屏（" + skeleton.brief() + "），草稿 " + drafts.size()
+        if (drafts.size() != skeleton().size()) {
+            throw new ServiceException("屏骨架与文案草稿数量不一致：骨架 " + skeleton().size()
+                + " 屏（" + skeleton().brief() + "），草稿 " + drafts.size()
                 + " 屏。这属于代码/契约不一致，请检查屏骨架契约与文案策略是否配套。");
         }
 
         int sortNo = 0;
-        for (CreativeScreenSkeleton.ScreenSpec template : skeleton.screens()) {
+        for (CreativeScreenSkeleton.ScreenSpec template : skeleton().screens()) {
             // 骨架来自契约，文案来自草稿（此刻两者数量已被上面的校验钉住）
             CreativeDraftFactory.ScreenDraft draft = drafts.get(sortNo);
             sortNo++;
@@ -223,7 +237,7 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
         Map<String, Object> event = new LinkedHashMap<>();
         event.put("storyboardId", storyboard.getId());
         event.put("version", version);
-        event.put("screenCount", skeleton.size());
+        event.put("screenCount", skeleton().size());
         event.put("dnaId", dnaId);
         event.put("directionId", storyboard.getVisualDirectionId());
         event.put("source", source);
@@ -431,7 +445,7 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
                 continue;
             }
             hints.add(new CreativeDraftFactory.CopyHint(block.getTitle(), block.getContent()));
-            if (hints.size() >= skeleton.countOf("SELLING_POINT")) {
+            if (hints.size() >= skeleton().countOf("SELLING_POINT")) {
                 break;
             }
         }
@@ -551,7 +565,7 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
             ? String.valueOf(direction.getStrategy().getOrDefault("lighting", "")) : "";
         String composition = direction != null
             ? String.valueOf(direction.getStrategy().getOrDefault("composition", "")) : "";
-        spec.put("shot", skeleton.shotOf(template, ratio(dna)));
+        spec.put("shot", skeleton().shotOf(template, ratio(dna)));
         spec.put("composition", StringUtils.blankToDefault(composition, "产品居中，四周留白均等"));
         spec.put("lighting", StringUtils.blankToDefault(lighting,
             "光线：" + dna.path("lighting").path("type").asText("SOFT")));
@@ -697,7 +711,7 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
      * @return 展示短名；契约里没有的类型原样返回（历史分镜可能有已下线的屏类型）
      */
     private String screenTypeDesc(String type) {
-        return skeleton.descOf(type);
+        return skeleton().descOf(type);
     }
 
     private String sourceDesc(String source) {
@@ -705,7 +719,7 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
             return "由屏骨架 + 参数化文案（已确认事实 + 锁定基因 + 参考图实测 + 选定方向派生，未使用模型）";
         }
         if (CreativeConstants.SOURCE_MODEL.equals(source)) {
-            return "由受管模型产出文案（经逐字段验收后才采纳；屏骨架共 " + skeleton.size() + " 屏）";
+            return "由受管模型产出文案（经逐字段验收后才采纳；屏骨架共 " + skeleton().size() + " 屏）";
         }
         return source;
     }
