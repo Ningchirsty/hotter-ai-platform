@@ -1,8 +1,15 @@
 /**
  * HOTTER AI 创作壳暗色中性 token（.studio 作用域）
  * 规格来源：hotter-adaptation-pack/SPEC.md §3 暗色中性
+ *
+ * 为什么要做成 mixin：这些变量原先只以 `.studio`（编译后是 `.studio[data-v-xxx]`）的形式存在，
+ * 于是**任何被 teleport 到 body 的东西都取不到它们**——Element Plus 的弹层就是这样：
+ * `background: var(--elevated)` 解析失败会退化成透明、文字继承近黑，
+ * 白底被顶掉而暗色没生效，看上去"浮层内容都对，就是没样式"。
+ * 抽成 mixin 后，需要暗色 token 的游离节点可以 `@include` 同一份定义，
+ * 不必去抄一遍字面量（抄了就会与这里漂移）。
  */
-.studio {
+@mixin studio-tokens {
   --bg: #0a0c10;
   --surface: #12151c;
   --elevated: #171b24;
@@ -13,4 +20,8 @@
   --t2: #9aa3b2;
   --t3: #7b8598;
   --poster: linear-gradient(135deg, #141021, #221a3d 45%, #331d4a);
+}
+
+.studio {
+  @include studio-tokens;
 }

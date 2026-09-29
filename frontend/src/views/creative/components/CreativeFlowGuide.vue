@@ -77,7 +77,7 @@
         placement="top-start"
         :width="440"
         trigger="click"
-        popper-class="studio flow-map-popover"
+        popper-class="flow-map-popover"
       >
         <template #reference>
           <span class="map-chip" :title="mapping.verdict">{{ mappingChip }}</span>
@@ -553,15 +553,20 @@ watch(
 </style>
 
 <!-- 步序对照弹层的外壳：Element Plus 默认是白底，这里换成暗色 token。
-     两个必须点（第一版就是没做第一点而静默失效的）：
-       1) `popper-class` 里带上 `studio`——`tokens-studio.scss` 的变量作用域是 `.studio`，
-          而弹层被 teleport 到 body，取不到这些变量时 `background: var(--elevated)` 会
-          **解析失败退化成透明**（实测 rgba(0,0,0,0) + 继承近黑文字：白底没了、字也看不清）。
-          带上 `.studio` 就复用了同一份 token 定义，不必在这里抄一遍字面量。
+     两个必须点（第一版就是没做这两点而静默失效的，实测底色 rgba(0,0,0,0) + 文字近黑）：
+       1) token 要**显式 include** 到弹层根节点：`tokens-studio.scss` 编译出来是
+          `.studio[data-v-xxx]`（每个页面组件各自一份），而弹层被 teleport 到 body，
+          既不是页面根节点、也不带那个 data-v → 取不到任何 token，
+          `background: var(--elevated)` 解析失败退化成透明（color 同理 → 继承近黑）。
+          所以这里 `@include studio.studio-tokens`，用的是同一份定义，没有抄字面量。
        2) 规则要放非 scoped 块：popper-class 挂在弹层根节点上，scoped 选择器匹配不到。
      （既有步骤浮层 `.flow-popover` 有同样的问题，但那是已验证过的观感，本轮不动，另行报告。） -->
 <style lang="scss">
+@use '@/assets/styles/tokens-studio.scss' as studio;
+
 .flow-map-popover.el-popover.el-popper {
+  @include studio.studio-tokens;
+
   background: var(--elevated);
   border: 1px solid var(--line);
   color: var(--t2);
