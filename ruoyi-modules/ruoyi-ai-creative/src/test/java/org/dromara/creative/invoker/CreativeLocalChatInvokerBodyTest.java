@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dromara.aigov.service.invoker.ModelImagePayload;
 import org.dromara.aigov.service.invoker.ModelInvokeRequest;
+import org.dromara.creative.constant.CreativeConstants;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -139,5 +140,27 @@ class CreativeLocalChatInvokerBodyTest {
         assertEquals("image_url", parsed.path("content").get(1).path("type").asText());
         assertEquals("data:image/jpeg;base64,QUJD",
             parsed.path("content").get(1).path("image_url").path("url").asText());
+    }
+
+    // ------------------------------------------------------------------
+    // 采样温度：看图读数必须低温
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("看图能力用低温、创意能力用中温（0.7 会把纯红说成灰）")
+    void visionCapabilityUsesLowTemperature() {
+        // 字段带 Java 初始值，所以不必启动 Spring 容器也能断言默认口径
+        CreativeLocalChatInvoker invoker = new CreativeLocalChatInvoker();
+        assertEquals(CreativeLocalChatInvoker.DEFAULT_VISION_TEMPERATURE,
+            invoker.temperatureFor(CreativeConstants.CAP_DNA_EXTRACT), 1e-9,
+            "视觉基因抽取是「读数」任务，温度必须低");
+        assertEquals(CreativeLocalChatInvoker.DEFAULT_DRAFT_TEMPERATURE,
+            invoker.temperatureFor(CreativeConstants.CAP_DIRECTION_DRAFT), 1e-9,
+            "方向草稿仍要发散，不能被这次改动顺手改冷");
+        assertEquals(CreativeLocalChatInvoker.DEFAULT_DRAFT_TEMPERATURE,
+            invoker.temperatureFor(CreativeConstants.CAP_STORYBOARD_DRAFT), 1e-9);
+        assertTrue(CreativeLocalChatInvoker.DEFAULT_VISION_TEMPERATURE
+                < CreativeLocalChatInvoker.DEFAULT_DRAFT_TEMPERATURE,
+            "低温必须真的低于中温，否则这个区分没有意义");
     }
 }

@@ -64,9 +64,42 @@ public class CreativeLocalChatInvoker implements ModelInvoker {
      * 但输出被要求是 JSON，温度过高会明显增加格式失败率，故取中间值。
      */
     @Value("${creative.llm.temperature:0.7}")
-    private double temperature;
+    private double temperature = DEFAULT_DRAFT_TEMPERATURE;
+
+    /**
+     * 看图类能力的采样温度：**必须低**。
+     *
+     * <p>R8 实测教训：qwen2.5vl:3b 在 0.7 温度下，同一张纯红色图（#DC1E1E）第一次答 {@code #FF0000}、
+     * 第二次答 {@code #C0C0C0}（灰）——「看图读数」是确定性任务，温度高了会把颜色说飘。
+     * 方向/分镜那种创作任务仍用 {@link #DEFAULT_DRAFT_TEMPERATURE}，两者不能共用一个值。</p>
+     */
+    @Value("${creative.llm.vision-temperature:0.1}")
+    private double visionTemperature = DEFAULT_VISION_TEMPERATURE;
+
+    /**
+     * 默认温度（也作为字段初始值，使单元测试不必启动 Spring 容器就能断言）。
+     */
+    static final double DEFAULT_DRAFT_TEMPERATURE = 0.7;
+
+    /**
+     * 看图类能力的默认温度。
+     */
+    static final double DEFAULT_VISION_TEMPERATURE = 0.1;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    /**
+     * 按能力选采样温度：看图读数是确定性任务，取低温；创意草稿取中温。
+     *
+     * <p>包级可见以便单测直接钉住——温度选错不会报错，只会让模型把红说成灰，
+     * 最终表现为「基因里的主色和参考图对不上」。</p>
+     *
+     * @param capabilityCode 能力编码
+     * @return 采样温度
+     */
+    double temperatureFor(String capabilityCode) {
+        return CreativeConstants.CAP_DNA_EXTRACT.equals(capabilityCode) ? visionTemperature : temperature;
+    }
 
     @Override
     public boolean supports(AigDeploymentTypeEnum deploymentType) {
@@ -151,7 +184,7 @@ public class CreativeLocalChatInvoker implements ModelInvoker {
         ObjectNode root = MAPPER.createObjectNode();
         root.put("model", StringUtils.blankToDefault(request.getModelKey(), "qwen2.5:7b-instruct"));
         root.put("stream", false);
-        root.put("temperature", temperature);
+        root.put("temperature", temperatureFor(request.getCapabilityCode()));
         // Ollama 支持 response_format=json_object，能把「只输出 JSON」从提示词升级为解码约束
         root.putObject("response_format").put("type", "json_object");
         ArrayNode messages = root.putArray("messages");
