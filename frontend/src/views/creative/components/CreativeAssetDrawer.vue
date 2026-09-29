@@ -446,14 +446,23 @@ watch(
  * 自愈：抽屉可能在 `taskId` 还没到位时就被打开（指引线挂载早于页面数据），
  * 那时 `load()` 会直接返回、界面停在"还没有图片附件"——看起来像项目真的没有附件。
  * 这里在 `taskId` 到位且**还没加载过任何数据**时补一次加载。
+ *
+ * R21 补强（`visible` 一并入参 + `immediate`）：抽屉**在已经可见的状态下被重新挂载**时
+ * （父级重渲染换掉实例），`@open` 不会再触发，新实例手上没有任何数据 → 三个段全空、
+ * 而且没有失败提示，就是一个**假的空态**。R21 回归验收里偶发过 6 项失败、单独重跑却是好的，
+ * 根因就是它。把 `visible` 纳入监听并 `immediate` 一次，重挂载当刻就会补加载。
  */
 watch(
-  () => props.taskId,
-  (id) => {
-    if (visible.value && id && !loading.value && !files.value.length && !generations.value.length) {
+  () => [visible.value, props.taskId] as const,
+  () => {
+    if (!visible.value || !props.taskId || loading.value) {
+      return;
+    }
+    if (!files.value.length && !generations.value.length) {
       void load();
     }
-  }
+  },
+  { immediate: true, flush: 'post' }
 );
 </script>
 

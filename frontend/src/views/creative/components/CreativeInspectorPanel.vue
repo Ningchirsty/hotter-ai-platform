@@ -214,14 +214,21 @@ watch(
  * 自愈：抽屉可能在 `taskId` 还没到位时就被打开（指引线挂载早于页面数据），
  * 那时 `load()` 直接返回、事件区停在"还没有阶段事件"——看起来像这个项目真的没有历史。
  * 这里在 `taskId` 到位且**还没读到过事件**时补一次。
+ *
+ * R21 补强（`visible` 一并入参 + `immediate`）：与 ASSET_DRAWER 同理——抽屉在已可见状态下
+ * 被重新挂载时 `@open` 不再触发，新实例会显示成"没有历史"的假空态。
  */
 watch(
-  () => props.taskId,
-  (id) => {
-    if (visible.value && id && !loading.value && !events.value.length) {
+  () => [visible.value, props.taskId] as const,
+  () => {
+    if (!visible.value || !props.taskId || loading.value) {
+      return;
+    }
+    if (!events.value.length) {
       void load();
     }
-  }
+  },
+  { immediate: true, flush: 'post' }
 );
 </script>
 
