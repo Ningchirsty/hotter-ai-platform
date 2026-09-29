@@ -283,9 +283,11 @@ const STEP_DETAIL_CHECKERS: Record<string, (ctx: StepDetailContext) => Promise<S
     }
     return {
       missing,
+      // 顺带说清"这一步在哪做"：已确认口径是 QA 不新增页面，质检在出图页按候选逐张执行。
+      // 放进摘要而不是 missing——它不是"缺什么"，而是这一步的位置说明。
       summary: gens.length
-        ? `已质检 ${checked.length} / ${gens.length} 张；不一致 ${inconsistent.length} 张`
-        : '还没有候选可质检'
+        ? `已质检 ${checked.length} / ${gens.length} 张；不一致 ${inconsistent.length} 张 · 在出图页按候选逐张执行`
+        : '还没有候选可质检 · 在出图页按候选逐张执行'
     };
   },
 
