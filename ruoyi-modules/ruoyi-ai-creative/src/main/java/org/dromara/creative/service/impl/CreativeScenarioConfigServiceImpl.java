@@ -4,11 +4,16 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import org.dromara.common.core.utils.StringUtils;
 import org.dromara.creative.domain.DpDeliveryType;
+import org.dromara.creative.domain.DpProjectStepState;
 import org.dromara.creative.domain.DpOutputSpec;
 import org.dromara.creative.domain.DpScenarioProfile;
 import org.dromara.creative.domain.DpScenarioStep;
 import org.dromara.creative.domain.DpWorkspaceSchema;
+import org.dromara.creative.domain.vo.ProjectStepStateVo;
+import org.dromara.creative.helper.CreativeStepProjection;
+import org.dromara.creative.mapper.CreativeTaskStageMapper;
 import org.dromara.creative.mapper.DpDeliveryTypeMapper;
+import org.dromara.creative.mapper.DpProjectStepStateMapper;
 import org.dromara.creative.mapper.DpOutputSpecMapper;
 import org.dromara.creative.mapper.DpScenarioProfileMapper;
 import org.dromara.creative.mapper.DpScenarioStepMapper;
@@ -16,7 +21,10 @@ import org.dromara.creative.mapper.DpWorkspaceSchemaMapper;
 import org.dromara.creative.service.ICreativeScenarioConfigService;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.List;
 
 /**
@@ -52,6 +60,15 @@ public class CreativeScenarioConfigServiceImpl implements ICreativeScenarioConfi
     private final DpScenarioStepMapper stepMapper;
     private final DpOutputSpecMapper outputSpecMapper;
     private final DpWorkspaceSchemaMapper workspaceSchemaMapper;
+    /**
+     * 读项目阶段与交付类型（V0.2 D2 的只读投影要用；刻意用最小专表 Mapper，
+     * 避免依赖 ICreativeProjectService 造成"项目服务 → 步骤写入者 → 本服务 → 项目服务"的循环依赖）
+     */
+    private final CreativeTaskStageMapper taskStageMapper;
+    /**
+     * 项目步骤状态（只读；写入只发生在 moveStage）
+     */
+    private final DpProjectStepStateMapper stepStateMapper;
 
     @Override
     public List<DpDeliveryType> listDeliveryTypes() {
@@ -138,6 +155,44 @@ public class CreativeScenarioConfigServiceImpl implements ICreativeScenarioConfi
         return specs.stream()
             .sorted((a, b) -> Boolean.compare("1".equals(b.getIsDefault()), "1".equals(a.getIsDefault())))
             .toList();
+    }
+
+    @Override
+    public List<ProjectStepStateVo> listProjectSteps(Long taskId) {
+        // 只读投影：不写库（写库只发生在 CreativeProjectServiceImpl#moveStage）
+        Map<String, Object> stageRow = taskStageMapper.selectStage(taskId);
+        String stage = stageRow == null ? null : String.valueOf(stageRow.get("visualStage"));
+        String deliveryType = stageRow == null ? null : taskStageMapper.selectDeliverableType(taskId);
+        List<DpScenarioStep> steps = listSteps(deliveryType);
+        if (steps.isEmpty()) {
+            return List.of();
+        }
+        Map<String, DpProjectStepState> persisted = new HashMap<>();
+        for (DpProjectStepState row : stepStateMapper.selectList(new LambdaQueryWrapper<DpProjectStepState>()
+            .eq(DpProjectStepState::getTaskId, taskId))) {
+            persisted.put(row.getStepCode(), row);
+        }
+        List<CreativeStepProjection.ConfiguredStep> configured = steps.stream()
+            .map(s -> new CreativeStepProjection.ConfiguredStep(
+                s.getStepCode(), s.getStepName(), s.getStageCodes(), s.getSortNo()))
+            .toList();
+        List<ProjectStepStateVo> out = new ArrayList<>();
+        for (CreativeStepProjection.StepState state : CreativeStepProjection.project(configured, stage)) {
+            DpProjectStepState row = persisted.get(state.stepCode());
+            if (row == null) {
+                // 没有持久化行：按当前阶段推导，并在 source 里标明这是推导值而不是落库值
+                out.add(new ProjectStepStateVo(state.stepCode(), state.stepName(), state.sortNo(),
+                    state.status(), stage, null, null, "DERIVED"));
+            } else {
+                // 名称与顺序一律取**当前配置**（改名/改顺序要立刻在界面上生效），
+                // 只有"状态 + 时间戳 + 是哪次变更推的"取自落库行。
+                // 否则同一份配置下，"有落库行的项目"显示旧名字、"没落库行的项目"显示新名字。
+                out.add(new ProjectStepStateVo(state.stepCode(), state.stepName(), state.sortNo(),
+                    row.getStatus(), row.getStageCode(), row.getStartedAt(), row.getCompletedAt(),
+                    "PERSISTED"));
+            }
+        }
+        return out;
     }
 
     /**

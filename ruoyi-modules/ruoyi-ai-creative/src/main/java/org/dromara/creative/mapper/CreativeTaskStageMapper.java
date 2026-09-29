@@ -82,4 +82,13 @@ public interface CreativeTaskStageMapper {
     @Select("SELECT task_name FROM cp_task WHERE task_id = #{taskId}")
     String selectTaskName(@Param("taskId") Long taskId);
 
+    /**
+     * 读取交付类型（V0.2 D2：步骤状态同步与投影都要按场景选步骤配置）。
+     *
+     * @param taskId 项目ID
+     * @return 交付类型编码；不存在返回 null
+     */
+    @Select("SELECT deliverable_type FROM cp_task WHERE task_id = #{taskId}")
+    String selectDeliverableType(@Param("taskId") Long taskId);
+
 }

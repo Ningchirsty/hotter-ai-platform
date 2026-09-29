@@ -6,6 +6,7 @@ import org.dromara.common.core.domain.R;
 import org.dromara.creative.constant.CreativeConstants;
 import org.dromara.creative.domain.DpDeliveryType;
 import org.dromara.creative.domain.DpOutputSpec;
+import org.dromara.creative.domain.vo.ProjectStepStateVo;
 import org.dromara.creative.domain.DpScenarioProfile;
 import org.dromara.creative.domain.DpScenarioStep;
 import org.dromara.creative.domain.DpWorkspaceSchema;
@@ -107,5 +108,19 @@ public class CreativeScenarioConfigController {
     @GetMapping("/scenarios/{deliveryType}/output-specs")
     public R<List<DpOutputSpec>> outputSpecs(@PathVariable("deliveryType") String deliveryType) {
         return R.ok(scenarioConfigService.listOutputSpecs(deliveryType));
+    }
+
+    /**
+     * 取某项目的「配置步骤 + 步骤状态」（V0.2 D2，文档 §36）。
+     *
+     * <p>只读：没有持久化行的项目按**当前阶段**推导投影，查询本身不写库。</p>
+     *
+     * @param taskId 项目ID
+     * @return 步骤状态列表
+     */
+    @SaCheckPermission(CreativeConstants.PERM_PROJECT_LIST)
+    @GetMapping("/projects/{taskId}/steps")
+    public R<List<ProjectStepStateVo>> projectSteps(@PathVariable("taskId") Long taskId) {
+        return R.ok(scenarioConfigService.listProjectSteps(taskId));
     }
 }

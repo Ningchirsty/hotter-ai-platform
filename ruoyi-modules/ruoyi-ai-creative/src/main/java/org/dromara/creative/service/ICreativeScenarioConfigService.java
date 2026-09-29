@@ -5,6 +5,7 @@ import org.dromara.creative.domain.DpOutputSpec;
 import org.dromara.creative.domain.DpScenarioProfile;
 import org.dromara.creative.domain.DpScenarioStep;
 import org.dromara.creative.domain.DpWorkspaceSchema;
+import org.dromara.creative.domain.vo.ProjectStepStateVo;
 
 import java.util.List;
 
@@ -68,4 +69,20 @@ public interface ICreativeScenarioConfigService {
      * @return 输出规格列表；没有返回空列表
      */
     List<DpOutputSpec> listOutputSpecs(String deliveryType);
+
+    /**
+     * 取某项目的「配置步骤 + 步骤状态」（V0.2 D2，文档 §36 的
+     * {@code GET /creative/v2/projects/{taskId}/steps}）。
+     *
+     * <p>状态来源分两种，并在返回里如实标注：</p>
+     * <ul>
+     *   <li>{@code PERSISTED}：步骤状态表里有行（说明该项目发生过阶段变更，行由 moveStage 写入）；</li>
+     *   <li>{@code DERIVED}：还没有行（老项目、或刚建还没动过阶段），按**当前阶段**推导投影——
+     *       这条路径**不写库**，所以查询本身没有副作用。</li>
+     * </ul>
+     *
+     * @param taskId 项目ID
+     * @return 步骤状态列表（按配置顺序）；项目或场景配置不存在时返回空列表
+     */
+    List<ProjectStepStateVo> listProjectSteps(Long taskId);
 }

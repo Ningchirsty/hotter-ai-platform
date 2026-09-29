@@ -19,6 +19,7 @@ import org.dromara.creative.domain.DpStageEvent;
 import org.dromara.creative.domain.bo.CreativeProjectBo;
 import org.dromara.creative.domain.vo.CreativeProjectVo;
 import org.dromara.creative.domain.vo.DpStageEventVo;
+import org.dromara.creative.helper.CreativeStepStateWriter;
 import org.dromara.creative.enums.DpVisualStageEnum;
 import org.dromara.creative.mapper.CreativeTaskStageMapper;
 import org.dromara.creative.mapper.DpStageEventMapper;
@@ -55,6 +56,10 @@ public class CreativeProjectServiceImpl implements ICreativeProjectService {
     private final IContentProductService productService;
     private final ContentOssHelper contentOssHelper;
     private final CreativeTaskStageMapper stageMapper;
+    /**
+     * 项目步骤状态写入者（V0.2 D2）：只在本类的 moveStage 里调用一次
+     */
+    private final CreativeStepStateWriter stepStateWriter;
     private final DpStageEventMapper eventMapper;
 
     @Override
@@ -288,6 +293,18 @@ public class CreativeProjectServiceImpl implements ICreativeProjectService {
             stageMapper.updateStage(taskId, target.getCode());
         }
         insertEvent(taskId, "STAGE", current, target.getCode(), action, detailJson);
+        // V0.2 D2：同一次调用里同步"项目步骤状态"（dp_project_step_state）。
+        //   · 单一写入点：本表只在这里写（经 CreativeStepStateWriter，查询路径永不写库）；
+        //   · visual_stage 仍是阶段与合法性的权威，本表是它的派生视图；
+        //   · 事件已在上一行写掉——本表行上的 stage_code 记录是哪次变更把它推到该状态，便于对账。
+        // 派生表写失败**不让阶段变更失败**：阶段与事件才是权威，本表可由两者重建；
+        // 但也绝不静默——失败打 ERROR，便于发现"页面步骤状态不动"的根因。
+        try {
+            stepStateWriter.sync(taskId, target.getCode(), stageMapper.selectDeliverableType(taskId));
+        } catch (Exception e) {
+            log.error("步骤状态同步失败（阶段变更本身已成功）taskId={} stage={}：{}",
+                taskId, target.getCode(), e.getMessage());
+        }
     }
 
     @Override
