@@ -127,6 +127,36 @@ async function main() {
   check('长图耗时在合理范围（< 60s）', long.ms < 60000, `renderMs=${long.ms}`);
   check('长图内存已实测（RSS < 2GB）', long.rss > 0 && long.rss < 2 * 1024 * 1024 * 1024,
     `rss=${(long.rss / 1024 / 1024).toFixed(0)}MB renderMs=${long.ms} bytes=${long.buf.length}`);
+  check('不带 width 的老模板（1.0.0）仍按默认 750 渲染（向后兼容）',
+    longPngWidth === 750, `pngWidth=${longPngWidth}`);
+
+  // ---- 3b. 请求级页宽（V0.2 F1）----
+  // 同一份模板（longpage@1.0.2，宽度用 var(--page-width, 750px)）渲两种宽度：
+  // 断言真实 PNG 宽度 == 请求宽度，且两次结果不同（说明宽度真的进了布局，不是只改了视口）。
+  const wide = await render({
+    templateCode: 'longpage', templateVersion: '1.0.2', mode: 'page', layout: pageLayout(3), width: 1080
+  });
+  const narrow = await render({
+    templateCode: 'longpage', templateVersion: '1.0.2', mode: 'page', layout: pageLayout(3), width: 750
+  });
+  const wWide = pngWidth(wide.buf);
+  const wNarrow = pngWidth(narrow.buf);
+  check('请求级页宽：真实 PNG 宽度 == 请求宽度（1080 / 750）',
+    wWide === 1080 && wNarrow === 750,
+    `1080→${wWide} 750→${wNarrow} 自报=${wide.width}/${narrow.width}`);
+  check('两种宽度的渲染结果不同（宽度确实进了布局）', wide.sha !== narrow.sha,
+    `wide=${String(wide.sha).slice(0, 12)} narrow=${String(narrow.sha).slice(0, 12)}`);
+  check('自报宽度与真实像素宽度一致（两种宽度都要核）',
+    wide.width === wWide && narrow.width === wNarrow,
+    `自报=${wide.width}/${narrow.width} 像素=${wWide}/${wNarrow}`);
+  let rejected = '';
+  try {
+    await render({ templateCode: 'longpage', templateVersion: '1.0.2', mode: 'page', layout: pageLayout(1), width: 50 });
+  } catch (e) {
+    rejected = String(e.message || e);
+  }
+  check('非法页宽（50）被拒绝而不是静默用默认值', rejected.includes('400') || rejected.includes('width 非法'),
+    rejected.slice(0, 140));
 
   // ---- 4. 单屏 == 整页中该屏 ----
   // 两边都必须截「同一个屏元素」：单屏那次只给一屏数据，整页那次给全部数据后按选择器取该屏。

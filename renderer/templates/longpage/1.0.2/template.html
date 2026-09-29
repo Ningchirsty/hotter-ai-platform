@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <style>
+    /* 详情页长图模板（宽度由请求参数决定：--page-width，默认 750）：把逐屏按类型排成一条长图。
+       约束：所有素材以 data URI 内联（渲染期零网络请求，保证可复现）；
+       每屏的 DOM 结构固定，便于「单屏渲染 == 整页中该屏」的一致性验收。 */
+    /* 1.0.1（R7）：在逐屏之后、页脚之前追加「文案与要点」（卖点 / 详情页正文 / 规格参数），
+       数据来自 LAYOUT.copyBlocks。没有 copyBlocks 时输出与 1.0.0 逐像素一致，
+       因此历史项目继续用 1.0.0、新项目切 1.0.1，都不会出现「同一版本两种结果」。 */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: var(--page-width, 750px); background: #ffffff; }
+    body { font-family: "Noto Sans CJK SC", "Noto Sans SC", sans-serif; color: #1c1c1c; }
+    .page { width: var(--page-width, 750px); }
+
+    .screen { width: var(--page-width, 750px); padding: 44px 56px 52px; background: var(--bg, #f5f5f3); }
+    .screen + .screen { margin-top: 0; }
+    .screen-type-detail, .screen-type-size { background: #ffffff; }
+
+    .kicker { font-size: 18px; letter-spacing: 2px; color: #8a8a8a; margin-bottom: 12px; }
+    .title { font-size: 38px; line-height: 1.35; font-weight: 700; }
+    .subtitle { margin-top: 12px; font-size: 22px; line-height: 1.6; color: #4a4a4a; }
+    .body { margin-top: 16px; font-size: 20px; line-height: 1.9; color: #333333; }
+    .image-block { margin-top: 28px; }
+    .image-block img { width: 100%; border-radius: 12px; display: block; background: #ffffff; }
+    .solo { margin-top: 30px; padding: 18px 22px; font-size: 17px; line-height: 1.8;
+            color: #4c3fb0; background: rgba(124, 58, 237, 0.08);
+            border-left: 3px solid rgba(124, 58, 237, 0.55); }
+    .missing { margin-top: 28px; padding: 40px 0; text-align: center; font-size: 18px;
+               color: #b04a4a; background: rgba(176, 74, 74, 0.06); border: 1px dashed rgba(176, 74, 74, 0.4); border-radius: 10px; }
+    .footer { padding: 40px 56px 56px; font-size: 16px; line-height: 1.9; color: #8a8a8a; background: #ffffff; }
+
+    /* R7「文案与要点」：详情页的文字（卖点 / 正文分段 / 规格参数）。
+       选择器全部是新类名，且这些节点只在 payload 真带了 copyBlocks 时才被创建，
+       因此历史项目（无 copyBlocks）里没有一条规则会命中——这是逐像素向后兼容的前提。 */
+    .copy-blocks { width: var(--page-width, 750px); padding: 52px 56px 56px; background: #ffffff; }
+    .copy-group + .copy-group { margin-top: 44px; }
+    .copy-group-title { font-size: 26px; line-height: 1.4; font-weight: 700; color: #1c1c1c; }
+    .copy-group-title::after { content: ""; display: block; width: 48px; height: 3px; margin-top: 12px;
+                              background: #1c1c1c; border-radius: 2px; }
+
+    .copy-list { list-style: none; margin-top: 24px; }
+    .copy-item { display: flex; align-items: flex-start; padding: 20px 22px;
+                 background: #f5f5f3; border-radius: 12px; }
+    .copy-item + .copy-item { margin-top: 14px; }
+    .copy-no { flex: 0 0 34px; width: 34px; height: 34px; line-height: 34px; text-align: center;
+               font-size: 17px; font-weight: 700; color: #ffffff; background: #1c1c1c; border-radius: 50%; }
+    .copy-main { flex: 1 1 auto; margin-left: 16px; }
+    .copy-title { font-size: 22px; line-height: 1.5; font-weight: 700; color: #1c1c1c; }
+    .copy-text { margin-top: 8px; font-size: 19px; line-height: 1.85; color: #4a4a4a; white-space: pre-line; }
+
+    .copy-sections { margin-top: 24px; }
+    .copy-section { padding: 24px 26px; background: #ffffff; border: 1px solid #ececea; border-radius: 12px; }
+    .copy-section + .copy-section { margin-top: 16px; }
+    .copy-section-title { font-size: 22px; line-height: 1.5; font-weight: 700; color: #1c1c1c; }
+    .copy-section-text { margin-top: 10px; font-size: 19px; line-height: 1.9; color: #333333; white-space: pre-line; }
+
+    .spec-table { margin-top: 24px; border: 1px solid #ececea; border-radius: 12px; overflow: hidden; }
+    .spec-row { display: flex; align-items: flex-start; font-size: 19px; line-height: 1.7; }
+    .spec-row + .spec-row { border-top: 1px solid #ececea; }
+    .spec-row:nth-child(odd) { background: #fafaf9; }
+    .spec-name { flex: 0 0 196px; padding: 16px 22px; color: #8a8a8a; }
+    .spec-value { flex: 1 1 auto; padding: 16px 22px; color: #333333; white-space: pre-line; }
+  </style>
+</head>
+<body>
+  <div class="page" id="page-root"></div>
+  <script>
+    const LAYOUT = __LAYOUT__;
+
+    function el(tag, cls, text) {
+      const node = document.createElement(tag);
+      if (cls) node.className = cls;
+      if (text !== undefined && text !== null && String(text).length) node.textContent = String(text);
+      return node;
+    }
+
+    function renderScreen(screen, dna) {
+      const typeClass = 'screen-type-' + String(screen.screenType || '').toLowerCase();
+      const section = el('section', 'screen ' + typeClass);
+      section.dataset.screenNo = screen.screenNo || '';
+      section.style.setProperty('--bg', (dna && dna.background) || '#f5f5f3');
+
+      section.appendChild(el('div', 'kicker', screen.screenNo + ' · ' + (screen.screenTypeDesc || '')));
+      section.appendChild(el('h2', 'title', screen.title));
+      section.appendChild(el('p', 'subtitle', screen.subtitle));
+
+      if (screen.image) {
+        const block = el('div', 'image-block');
+        const img = el('img');
+        img.src = screen.image;
+        block.appendChild(img);
+        section.appendChild(block);
+      } else {
+        // 缺图不糊弄：明确画出「这一屏还没有可用产出」，而不是留白让人以为渲染失败
+        section.appendChild(el('div', 'missing', '这一屏还没有已选定的产出图'));
+      }
+
+      section.appendChild(el('p', 'body', screen.body));
+      section.appendChild(el('p', 'solo', '画面独白：' + (screen.soloStatement || '')));
+      return section;
+    }
+
+    /**
+     * 取某一类文案块，按 sortNo 升序（缺失 sortNo 的排在末尾、并保持原顺序）。
+     *
+     * <p>纯函数、不碰 DOM：`title`/`content` 都先转字符串再 trim，两者皆空即视为「没这条」，
+     * 直接丢弃——空条目不能变成一个占位节点，否则历史项目的「逐像素一致」就不成立。</p>
+     */
+    function copyItemsOf(list, blockType) {
+      const picked = [];
+      list.forEach(function (item, index) {
+        if (!item || typeof item !== 'object') return;
+        if (String(item.blockType || '').trim().toUpperCase() !== blockType) return;
+        const title = String(item.title === undefined || item.title === null ? '' : item.title).trim();
+        const content = String(item.content === undefined || item.content === null ? '' : item.content).trim();
+        if (!title && !content) return;
+        const sortNo = Number(item.sortNo);
+        picked.push({
+          title: title,
+          content: content,
+          order: Number.isFinite(sortNo) ? sortNo : Number.MAX_SAFE_INTEGER,
+          index: index
+        });
+      });
+      // 稳定排序：sortNo 相同（或都缺失）时按 payload 里的先后，不靠引擎实现细节
+      picked.sort(function (a, b) {
+        return a.order === b.order ? a.index - b.index : a.order - b.order;
+      });
+      return picked;
+    }
+
+    function sellingPointGroup(items) {
+      const group = el('div', 'copy-group copy-group-selling');
+      group.appendChild(el('h3', 'copy-group-title', '卖点'));
+      const list = el('ol', 'copy-list');
+      items.forEach(function (item, i) {
+        const li = el('li', 'copy-item');
+        li.appendChild(el('span', 'copy-no', String(i + 1)));
+        const main = el('div', 'copy-main');
+        if (item.title) main.appendChild(el('p', 'copy-title', item.title));
+        if (item.content) main.appendChild(el('p', 'copy-text', item.content));
+        li.appendChild(main);
+        list.appendChild(li);
+      });
+      group.appendChild(list);
+      return group;
+    }
+
+    function bodySectionGroup(items) {
+      const group = el('div', 'copy-group copy-group-body');
+      group.appendChild(el('h3', 'copy-group-title', '详情页正文'));
+      const wrap = el('div', 'copy-sections');
+      items.forEach(function (item) {
+        const section = el('div', 'copy-section');
+        if (item.title) section.appendChild(el('p', 'copy-section-title', item.title));
+        if (item.content) section.appendChild(el('p', 'copy-section-text', item.content));
+        wrap.appendChild(section);
+      });
+      group.appendChild(wrap);
+      return group;
+    }
+
+    function specTableGroup(items) {
+      const group = el('div', 'copy-group copy-group-spec');
+      group.appendChild(el('h3', 'copy-group-title', '规格参数'));
+      const table = el('div', 'spec-table');
+      items.forEach(function (item) {
+        const row = el('div', 'spec-row');
+        if (item.title) row.appendChild(el('div', 'spec-name', item.title));
+        row.appendChild(el('div', 'spec-value', item.content));
+        table.appendChild(row);
+      });
+      group.appendChild(table);
+      return group;
+    }
+
+    /**
+     * 追加「文案与要点」区块。
+     *
+     * <p><b>向后兼容是硬要求</b>：`LAYOUT.copyBlocks` 缺失 / null / 非数组 / 空数组 /
+     * 或所有条目内容皆空时，这里返回 null，调用方一个节点都不 append——
+     * 历史项目 re-render 的 DOM 与高度必须与改造前逐像素一致。</p>
+     *
+     * @returns {HTMLElement|null} 至少有一个子块时才返回 section
+     */
+    function renderCopyBlocks() {
+      const blocks = LAYOUT.copyBlocks;
+      if (!Array.isArray(blocks) || !blocks.length) return null;
+      const selling = copyItemsOf(blocks, 'SELLING_POINT');
+      const body = copyItemsOf(blocks, 'BODY_SECTION');
+      const spec = copyItemsOf(blocks, 'SPEC_ROW');
+      if (!selling.length && !body.length && !spec.length) return null;
+      const section = el('section', 'copy-blocks');
+      if (selling.length) section.appendChild(sellingPointGroup(selling));
+      if (body.length) section.appendChild(bodySectionGroup(body));
+      if (spec.length) section.appendChild(specTableGroup(spec));
+      return section;
+    }
+
+    function render() {
+      const root = document.getElementById('page-root');
+      const dna = LAYOUT.dna || {};
+      (LAYOUT.screens || []).forEach(function (s) { root.appendChild(renderScreen(s, dna)); });
+      // 文案与要点排在所有屏之后、页脚之前；没有内容时整段不存在（不留空容器）
+      const copyBlocks = renderCopyBlocks();
+      if (copyBlocks) root.appendChild(copyBlocks);
+      const footer = el('div', 'footer', LAYOUT.footerNote);
+      root.appendChild(footer);
+      // 注意：这里**不做**高度整数化——模板脚本执行时字体与图片尚未就绪，
+      // 此时量出的高度会把屏高压错（内容被裁）。整数化由渲染服务在
+      // 「等字体与图片解码完成」之后统一执行，见 server.mjs 的 normalizeIntegerGeometry。
+    }
+
+    render();
+  </script>
+</body>
+</html>

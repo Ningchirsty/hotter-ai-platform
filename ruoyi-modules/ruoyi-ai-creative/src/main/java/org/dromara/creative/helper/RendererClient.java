@@ -93,16 +93,22 @@ public class RendererClient {
      * @param mode            screen / page / element
      * @param selector        element 模式下的选择器
      * @param layout          layout JSON（素材必须已内联为 data URI）
+     * @param width           页宽（px）；null 表示用渲染服务的默认值（向后兼容）。
+     *                        模板通过 CSS 变量 {@code --page-width} 取值；渲染服务会核对
+     *                        "实际宽度 == 请求宽度"，不一致直接失败。
      * @return 渲染结果
      */
     public RenderResult render(String templateCode, String templateVersion, String mode,
-                               String selector, Map<String, Object> layout) {
+                               String selector, Map<String, Object> layout, Integer width) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("templateCode", templateCode);
         payload.put("templateVersion", templateVersion);
         payload.put("mode", mode);
         if (selector != null) {
             payload.put("selector", selector);
+        }
+        if (width != null && width > 0) {
+            payload.put("width", width);
         }
         payload.put("layout", layout);
 

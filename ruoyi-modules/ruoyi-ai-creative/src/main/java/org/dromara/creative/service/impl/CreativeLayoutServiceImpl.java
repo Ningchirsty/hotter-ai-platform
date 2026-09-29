@@ -37,6 +37,7 @@ import org.dromara.creative.service.ICreativeLayoutService;
 import org.dromara.creative.service.ICreativeProjectService;
 import org.dromara.creative.service.ICreativeStoryboardService;
 import org.dromara.creative.service.ICreativeTemplateService;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -68,18 +69,26 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
      */
     private static final String PAGE_TEMPLATE_CODE = "longpage";
     /**
-     * 排版模板版本：R7 起用 1.0.1（新增卖点/正文/参数区块渲染）。
+     * 排版模板版本：R10（V0.2 F1）起用 1.0.2（页宽改为请求参数 {@code --page-width}）。
      *
-     * <p><b>为什么不就地改 1.0.0</b>：模板走「登记 + 发布 + 校验和比对」，
+     * <p><b>为什么不就地改旧版本</b>：模板走「登记 + 发布 + 校验和比对」，
      * 就地改文件会让 {@code CreativeTemplateServiceImpl#requirePublished} 因校验和不一致
-     * <b>直接拒绝排版</b>，而且对账时还会把已发布的 1.0.0 退回草稿
+     * <b>直接拒绝排版</b>，而且对账时还会把已发布的旧版本退回草稿
      * （见 {@code CreativeTemplateServiceImpl:82-92} 与 {@code :149-168}）。
-     * 因此 1.0.0 保持不动、留给历史项目与其已渲染版本，1.0.1 增加卖点/正文/参数区块。</p>
+     * 所以 1.0.0 / 1.0.1 保持不动、留给历史项目与其已渲染版本；1.0.2 只把
+     * {@code width: 750px} 换成 {@code width: var(--page-width, 750px)}，行为与 1.0.1 完全一致。</p>
      *
-     * <p><b>上线顺序依赖</b>：渲染服务必须先提供 longpage/1.0.1，再由人在「视觉模板库」对账
+     * <p><b>上线顺序依赖</b>：渲染服务必须先提供 longpage/1.0.2，再由人在「视觉模板库」对账
      * （{@code POST /creative/templates/sync}）并发布；否则排版会直接报「模板未登记」。</p>
      */
-    private static final String PAGE_TEMPLATE_VERSION = "1.0.1";
+    private static final String PAGE_TEMPLATE_VERSION = "1.0.2";
+
+    /**
+     * 排版页宽（px，请求级传给渲染服务）。默认 750 = 电商详情页口径；改成别的值即出别的宽度，
+     * 且每一版排版都会把实际页宽记进 {@code dp_detail_page_version.page_width}。
+     */
+    @Value("${creative.page-width:750}")
+    private int pageWidth;
 
     private static final String KIND_V08 = "V08";
     private static final String KIND_FINAL = "V10_FINAL";
@@ -185,8 +194,10 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
             + " · 渲染于 " + LocalDateTime.now().withNano(0));
 
         long started = System.currentTimeMillis();
+        // 页宽是请求级参数（V0.2 F1）：渲染服务把它作为 CSS 变量 --page-width 交给模板，
+        // 并会核对"实际渲染宽度 == 请求宽度"，不一致直接失败（避免悄悄出一张宽度不对的长图）。
         RendererClient.RenderResult result = rendererClient.render(
-            PAGE_TEMPLATE_CODE, PAGE_TEMPLATE_VERSION, "page", null, toMap(renderLayout));
+            PAGE_TEMPLATE_CODE, PAGE_TEMPLATE_VERSION, "page", null, toMap(renderLayout), pageWidth);
         long cost = System.currentTimeMillis() - started;
 
         // 4) 长图登记为任务附件（复用内容模块的上传通道）

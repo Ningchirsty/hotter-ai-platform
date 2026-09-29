@@ -28,9 +28,19 @@ import { chromium } from 'playwright';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_ROOT = path.join(__dirname, 'templates');
 const PORT = Number(process.env.PORT || 8090);
+/**
+ * 默认页宽（进程级兜底）。
+ *
+ * <p>V0.2 F1 起，页宽是**请求级参数**：/render 的 width 优先，没给才用这个默认值。
+ * 之所以保留进程级默认：老调用方（不带 width）行为完全不变，且排查问题时有个确定基准。
+ * 模板侧用 CSS 变量 `--page-width`（带 750px 兜底）取值，不再把 750 写死。</p>
+ */
 const VIEWPORT_WIDTH = Number(process.env.VIEWPORT_WIDTH || 750);
+/** 允许的页宽区间：太小的图没有意义，太大的一屏会撑爆内存 */
+const MIN_PAGE_WIDTH = 200;
+const MAX_PAGE_WIDTH = 4000;
 const MAX_BODY_BYTES = Number(process.env.MAX_BODY_BYTES || 64 * 1024 * 1024);
-const SERVICE_VERSION = '1.0.0';
+const SERVICE_VERSION = '1.1.0';
 
 /** 字体清单在启动时固化：渲染前若字体没就绪，宁可失败也不出「缺字图」 */
 const CJK_FAMILY = process.env.CJK_FAMILY || 'Noto Sans CJK SC';
@@ -75,13 +85,21 @@ async function startBrowser() {
   browserVersion = browser.version();
 }
 
-async function renderOnce({ templateCode, templateVersion, mode, selector, layout }) {
+async function renderOnce({ templateCode, templateVersion, mode, selector, layout, width }) {
   const file = templatePath(templateCode, templateVersion);
   if (!file) {
     const err = new Error(`模板不存在：${templateCode}@${templateVersion}`);
     err.statusCode = 404;
     throw err;
   }
+  // 请求级页宽：显式给了就必须是合法整数（不合法直接 400，不静默用默认值糊过去）
+  const requested = width === undefined || width === null ? null : Number(width);
+  if (requested !== null && (!Number.isFinite(requested) || requested < MIN_PAGE_WIDTH || requested > MAX_PAGE_WIDTH)) {
+    const err = new Error(`width 非法：${width}（允许 ${MIN_PAGE_WIDTH}~${MAX_PAGE_WIDTH} 的整数）`);
+    err.statusCode = 400;
+    throw err;
+  }
+  const pageWidth = requested === null ? VIEWPORT_WIDTH : Math.round(requested);
   // 注入 payload 的两个坑，都在这里堵住：
   //   1) `<` 必须转义：模板把 payload 内联进 <script> 里，文案里一旦出现 `</script>`
   //      就会提前闭合脚本，整页渲染成空白（R7 的「文案与要点」是用户自由文本，可达）；
@@ -93,7 +111,7 @@ async function renderOnce({ templateCode, templateVersion, mode, selector, layou
   const checksum = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 
   const context = await browser.newContext({
-    viewport: { width: VIEWPORT_WIDTH, height: 1200 },
+    viewport: { width: pageWidth, height: 1200 },
     deviceScaleFactor: 1,
     locale: 'zh-CN',
     timezoneId: 'Asia/Shanghai',
@@ -113,6 +131,9 @@ async function renderOnce({ templateCode, templateVersion, mode, selector, layou
     });
 
     await page.setContent(html, { waitUntil: 'load' });
+    // 把请求级页宽交给模板：模板 CSS 用 var(--page-width, 750px)，不写死 750。
+    // 必须在量高度/截图之前注入（下面那段"屏高向上取整"依赖真实布局宽度）。
+    await page.addStyleTag({ content: `:root{--page-width:${pageWidth}px}` });
     await page.evaluate(async () => {
       // 等字体与所有图片解码完成，再截图——否则第一次渲染常常少一层字
       if (document.fonts && document.fonts.ready) await document.fonts.ready;
@@ -191,11 +212,21 @@ async function renderOnce({ templateCode, templateVersion, mode, selector, layou
         })
       : { width: 0, height: 0 };
 
+    // 请求级页宽必须真的生效：调用方显式要了 N px，结果却渲成 750（模板没接变量）时，
+    // 悄悄返回一张宽度不对的图比报错危险得多——所以这里显式失败，逼模板跟上。
+    if (requested !== null && box.width !== pageWidth) {
+      const err = new Error(`模板未按请求宽度渲染：请求 ${pageWidth}px，实际 ${box.width}px`
+        + `（模板 ${templateCode}@${templateVersion} 可能仍把宽度写死）`);
+      err.statusCode = 500;
+      throw err;
+    }
+
     return {
       png,
       ms,
       width: box.width,
       height: box.height,
+      requestedWidth: requested,
       checksum,
       fontProbe,
       rssBytes: process.memoryUsage().rss
@@ -243,7 +274,9 @@ const server = http.createServer(async (req, res) => {
         node: process.version,
         chromium: browserVersion,
         cjkFamily: CJK_FAMILY,
+        defaultWidth: VIEWPORT_WIDTH,
         viewportWidth: VIEWPORT_WIDTH,
+        widthRange: [MIN_PAGE_WIDTH, MAX_PAGE_WIDTH],
         templates: listTemplates()
       });
     }
@@ -264,7 +297,8 @@ const server = http.createServer(async (req, res) => {
         templateVersion: payload.templateVersion,
         mode,
         selector: payload.selector,
-        layout: payload.layout
+        layout: payload.layout,
+        width: payload.width
       });
       const sha = crypto.createHash('sha256').update(result.png).digest('hex');
       res.writeHead(200, {
@@ -273,6 +307,7 @@ const server = http.createServer(async (req, res) => {
         'x-render-ms': String(result.ms),
         'x-page-width': String(result.width),
         'x-page-height': String(result.height),
+        'x-render-requested-width': result.requestedWidth === null ? '' : String(result.requestedWidth),
         'x-template-checksum': result.checksum,
         'x-render-sha256': sha,
         'x-font-cjk-width': String(Math.round(result.fontProbe.cjkWidth)),
