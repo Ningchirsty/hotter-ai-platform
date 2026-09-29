@@ -476,12 +476,21 @@ function specLabel(key: string): string {
 }
 
 async function loadProjects() {
-  const res = await listCreativeProject({ pageNum: 1, pageSize: 50 });
-  projects.value = res.data?.rows || [];
-  const queryTaskId = new URLSearchParams(location.search).get('taskId');
-  if (queryTaskId && projects.value.some((p) => String(p.taskId) === queryTaskId)) {
+  // 深链优先：`?taskId=` 先落地，列表慢/失败都不影响它（原先只在列表里找得到才采用，
+  // 找不到就悄悄换成第一个项目——直接开链接看起来就像"没生效"）
+  const queryTaskId = new URLSearchParams(location.search).get('taskId') || '';
+  if (queryTaskId) {
     taskId.value = queryTaskId;
-  } else if (projects.value.length) {
+  }
+  try {
+    const res = await listCreativeProject({ pageNum: 1, pageSize: 50 });
+    projects.value = res.data?.rows || [];
+  } catch (error) {
+    projects.value = [];
+    ElMessage.error('加载视觉项目列表失败（深链项目仍按 id 打开，可刷新重试）');
+    return;
+  }
+  if (!queryTaskId && projects.value.length) {
     taskId.value = String(projects.value[0].taskId);
   }
 }

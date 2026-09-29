@@ -1266,6 +1266,13 @@ function formatTime(value?: string): string {
 
 async function loadProjects() {
   loadingProjects.value = true;
+  // 深链优先：`?taskId=` 指到哪个项目就打开哪个。
+  // 原先这一页完全不看这个参数——直接开 `/creative/project?taskId=X` 总是落到列表第一个项目，
+  // 看起来就像"链接没生效/页面没变化"（R19 排查"为什么界面没变化"时量到的真问题）。
+  const queryTaskId = new URLSearchParams(location.search).get('taskId') || '';
+  if (queryTaskId && !currentProjectId.value) {
+    currentProjectId.value = queryTaskId;
+  }
   try {
     const res = await listCreativeProject({
       pageNum: 1,
@@ -1274,12 +1281,20 @@ async function loadProjects() {
     });
     projects.value = res.data?.rows || [];
     if (!projects.value.length) {
-      currentProjectId.value = '';
-      currentProject.value = null;
+      if (currentProjectId.value) {
+        // 深链项目不在这一页列表里（超出 50 条 / 被筛选掉 / 已删除）：仍按 id 打开，让页面自己如实报错
+        await selectProject({ taskId: currentProjectId.value } as CreativeProjectVO);
+      } else {
+        currentProject.value = null;
+      }
       return;
     }
-    const stillThere = projects.value.some((p) => String(p.taskId) === String(currentProjectId.value));
-    if (!stillThere) {
+    const target = projects.value.find((p) => String(p.taskId) === String(currentProjectId.value));
+    if (target) {
+      if (String(currentProject.value?.taskId ?? '') !== String(target.taskId)) {
+        await selectProject(target);
+      }
+    } else {
       await selectProject(projects.value[0]);
     }
   } catch (error) {

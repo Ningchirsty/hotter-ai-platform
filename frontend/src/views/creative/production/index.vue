@@ -464,14 +464,17 @@ function canSelect(gen: DpGenerationVO): boolean {
 }
 
 async function loadProjects() {
+  // 深链优先：`?taskId=` 先落地（原先只在列表里找得到才采用；找不到就停在"未选项目"总览，
+  // 直接开链接看起来就像这一页什么都没生效）
+  const queryTaskId = new URLSearchParams(location.search).get('taskId') || '';
+  if (queryTaskId) {
+    taskId.value = queryTaskId;
+  }
   try {
     const res = await listCreativeProject({ pageNum: 1, pageSize: 50 });
     projects.value = res.data?.rows || [];
-    const queryTaskId = new URLSearchParams(location.search).get('taskId');
-    if (queryTaskId && projects.value.some((p) => String(p.taskId) === queryTaskId)) {
-      taskId.value = queryTaskId;
-    }
   } catch (error) {
+    // 列表失败不影响深链：提示照旧，taskId 已经落地
     ElMessage.error((await extractErrorMessage(error)) ?? '加载视觉项目失败');
   }
 }
