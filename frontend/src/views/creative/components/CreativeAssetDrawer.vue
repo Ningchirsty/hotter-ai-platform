@@ -420,6 +420,13 @@ async function reload() {
 }
 
 function onOpen() {
+  // 与上面 `visible` 的自愈监听可能在同一拍各触发一次（谁先谁后取决于 watcher 队列顺序：
+  // onOpen 先跑则自愈被 `loading` 挡住，自愈先跑则这里会重复发一遍）。
+  // 生产实测（2026-09-30，1680×1000 真机）：一开抽屉 5 个接口**各被打了 2 次**。
+  // 附件是原图直读（850KB/张），重复一次就是双倍慢，所以这里也要挡。
+  if (loading.value && !files.value.length && !generations.value.length) {
+    return;
+  }
   void load();
 }
 

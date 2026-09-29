@@ -194,6 +194,11 @@ function loadStepDetail() {
 }
 
 function onOpen() {
+  // 同样要挡重复：`@open` 与 `visible` 上的自愈监听会在同一拍各触发一次
+  // （真机实测一开抽屉 timeline 等接口各被打了 2 次）。
+  if (loading.value && !events.value.length) {
+    return;
+  }
   void load();
 }
 
