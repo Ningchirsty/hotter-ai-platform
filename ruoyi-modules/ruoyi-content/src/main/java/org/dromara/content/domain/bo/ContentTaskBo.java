@@ -110,6 +110,12 @@ public class ContentTaskBo implements Serializable {
     private String queryDeliverableType;
 
     /**
+     * 交付类型集合（R21 新增，附加式）：视觉工厂的列表要同时显示"它能处理的那些交付类型"
+     * （例如详情页 + 主图），单值条件表达不了。为空时不影响原有查询。
+     */
+    private java.util.List<String> queryDeliverableTypes;
+
+    /**
      * 任务状态（精确）
      */
     @Size(max = 32, message = "任务状态长度不能超过 32", groups = {QueryGroup.class})

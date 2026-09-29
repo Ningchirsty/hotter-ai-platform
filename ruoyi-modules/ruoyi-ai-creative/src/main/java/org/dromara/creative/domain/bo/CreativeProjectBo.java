@@ -37,6 +37,12 @@ public class CreativeProjectBo implements Serializable {
     private String taskName;
 
     /**
+     * 交付类型（R21）：不传按 ECOM_DETAIL 处理（老行为不变）；
+     * 传了必须是 dp_delivery_type 里启用且已发布场景档案的类型，否则拒绝。
+     */
+    private String deliverableType;
+
+    /**
      * 产品ID
      */
     private Long productId;

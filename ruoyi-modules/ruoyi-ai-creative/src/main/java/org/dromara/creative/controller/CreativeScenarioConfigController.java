@@ -5,16 +5,20 @@ import lombok.RequiredArgsConstructor;
 import org.dromara.common.core.domain.R;
 import org.dromara.creative.constant.CreativeConstants;
 import org.dromara.creative.domain.DpDeliveryType;
+import org.dromara.creative.domain.DpModuleDefinition;
+import org.dromara.creative.domain.DpProjectModule;
 import org.dromara.creative.domain.DpOutputSpec;
 import org.dromara.creative.domain.vo.ProjectStepStateVo;
 import org.dromara.creative.domain.DpScenarioProfile;
 import org.dromara.creative.domain.DpScenarioStep;
 import org.dromara.creative.domain.DpWorkspaceSchema;
+import org.dromara.creative.service.ICreativeModuleService;
 import org.dromara.creative.service.ICreativeScenarioConfigService;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -38,6 +42,11 @@ import java.util.List;
 public class CreativeScenarioConfigController {
 
     private final ICreativeScenarioConfigService scenarioConfigService;
+
+    /**
+     * 模块引擎（R21，文档 §18/§21）：模块库与项目模块计划。
+     */
+    private final ICreativeModuleService moduleService;
 
     /**
      * 全部启用的交付类型。
@@ -122,5 +131,36 @@ public class CreativeScenarioConfigController {
     @GetMapping("/projects/{taskId}/steps")
     public R<List<ProjectStepStateVo>> projectSteps(@PathVariable("taskId") Long taskId) {
         return R.ok(scenarioConfigService.listProjectSteps(taskId));
+    }
+
+    /**
+     * 取某交付类型的模块库（V0.2 R21，文档 §18/§20）。
+     *
+     * <p>默认骨架（{@code defaultSelected=1}）排在前面，其余是可选模块库；
+     * `screenType/productLockLevel/shot` 与屏骨架契约同名字段一一对应，因此"模块 → 屏"是可核对的。</p>
+     *
+     * @param deliveryType 交付类型编码或别名
+     * @return 模块定义列表
+     */
+    @SaCheckPermission(CreativeConstants.PERM_PROJECT_LIST)
+    @GetMapping("/modules")
+    public R<List<DpModuleDefinition>> modules(
+        @RequestParam(value = "deliveryType", required = false) String deliveryType) {
+        return R.ok(moduleService.listDefinitions(deliveryType));
+    }
+
+    /**
+     * 取某项目的模块计划（V0.2 R21，文档 §21）。
+     *
+     * <p>只读：不初始化、不写库。项目还没有模块计划时返回空列表——
+     * 此时分镜按屏骨架契约文件生成（见分镜服务里的回落与日志）。</p>
+     *
+     * @param taskId 项目ID
+     * @return 模块计划（按 sortNo）
+     */
+    @SaCheckPermission(CreativeConstants.PERM_PROJECT_LIST)
+    @GetMapping("/projects/{taskId}/modules")
+    public R<List<DpProjectModule>> projectModules(@PathVariable("taskId") Long taskId) {
+        return R.ok(moduleService.listProjectModules(taskId));
     }
 }

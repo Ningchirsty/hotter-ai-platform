@@ -183,6 +183,8 @@ public class ContentTaskServiceImpl implements IContentTaskService {
             .like(StringUtils.isNotBlank(q.getQueryTaskNo()), CpTask::getTaskNo, q.getQueryTaskNo())
             .like(StringUtils.isNotBlank(q.getQueryTaskName()), CpTask::getTaskName, q.getQueryTaskName())
             .eq(StringUtils.isNotBlank(q.getQueryDeliverableType()), CpTask::getDeliverableType, q.getQueryDeliverableType())
+            .in(q.getQueryDeliverableTypes() != null && !q.getQueryDeliverableTypes().isEmpty(),
+                CpTask::getDeliverableType, q.getQueryDeliverableTypes())
             .eq(StringUtils.isNotBlank(q.getQueryStatus()), CpTask::getStatus, q.getQueryStatus())
             .eq(q.getQueryOwnerId() != null, CpTask::getOwnerId, q.getQueryOwnerId())
             .eq(q.getProductId() != null, CpTask::getProductId, q.getProductId())

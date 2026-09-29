@@ -214,6 +214,27 @@ public final class CreativeDraftFactory {
     }
 
     /**
+     * 生成分镜草稿（**按调用方给的骨架**；R21 起模块引擎的场景走这里）。
+     *
+     * <p>为什么要有这个 public 重载：R21 之前骨架只能来自 {@link CreativeScreenSkeletonRegistry}
+     * （进程级一份契约）；现在骨架可以来自**项目模块计划**（`dp_project_module`），
+     * 而分镜服务与草稿工厂不同包，拿不到包级可见的那个重载。</p>
+     *
+     * @param skeleton          屏骨架（模块计划或契约文件）
+     * @param dna               锁定基因
+     * @param productName       产品名
+     * @param facts             已确认事实
+     * @param mustShowFirstLine 品牌 Brief 必显信息的第一行（可空）
+     * @param sellingPoints     卖点块（按 sortNo 升序，可空）
+     * @return 与骨架一一对应的草稿
+     */
+    public static List<ScreenDraft> screensOf(CreativeScreenSkeleton skeleton, ObjectNode dna, String productName,
+                                              Map<String, String> facts, String mustShowFirstLine,
+                                              List<CopyHint> sellingPoints) {
+        return screens(skeleton, dna, productName, facts, mustShowFirstLine, sellingPoints);
+    }
+
+    /**
      * 生成分镜草稿（按指定骨架；包级可见，供单测验证 3 屏 / 9 屏等非默认骨架）。
      *
      * @param skeleton          屏骨架

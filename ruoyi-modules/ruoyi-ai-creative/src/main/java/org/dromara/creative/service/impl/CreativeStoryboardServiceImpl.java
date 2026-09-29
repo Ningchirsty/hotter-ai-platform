@@ -34,6 +34,7 @@ import org.dromara.creative.mapper.DpStoryboardMapper;
 import org.dromara.creative.mapper.DpStoryboardScreenMapper;
 import org.dromara.content.service.IContentBrandBriefService;
 import org.dromara.creative.service.ICreativeCopyService;
+import org.dromara.creative.service.ICreativeModuleService;
 import org.dromara.creative.service.ICreativeDirectionService;
 import org.dromara.creative.service.ICreativeDnaService;
 import org.dromara.creative.service.ICreativeProjectService;
@@ -100,6 +101,14 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
     private final ICreativeCopyService copyService;
 
     /**
+     * 模块引擎（R21）：优先用**项目模块计划**（dp_project_module）出屏。
+     *
+     * <p>分镜的"屏集合"从"一份进程级契约文件"变成"按交付类型的一套模块定义 + 每个项目一份模块计划"；
+     * 没有模块计划时回落到契约文件（见 {@link #resolveSkeleton}）。</p>
+     */
+    private final ICreativeModuleService moduleService;
+
+    /**
      * 当前屏骨架（类型/顺序/展示名/保真等级/取景都来自 {@code creative/screen-skeleton.json}）。
      *
      * <p>为什么做成可配置：屏数属于场景配置（电商详情页是 7 屏，别的场景不是），
@@ -111,6 +120,34 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
      *
      * @return 骨架
      */
+    /**
+     * 解析"本次生成用哪份骨架"（R21）。
+     *
+     * <p><b>权威顺序</b>：项目模块计划（`dp_project_module`，由交付类型的默认骨架初始化）优先；
+     * 项目还没有模块计划时**回落到契约文件**（`creative/screen-skeleton.json`）并记一条 INFO 日志——
+     * 回落是"老项目照旧可用"的保证，但必须可见，不能悄悄换掉屏集合。</p>
+     *
+     * @param taskId       项目ID
+     * @param deliveryType 交付类型（来自项目）
+     * @return 骨架（永远非空：契约文件内置且加载时已校验）
+     */
+    private CreativeScreenSkeleton resolveSkeleton(Long taskId, String deliveryType) {
+        try {
+            CreativeScreenSkeleton fromModules = moduleService.skeletonOf(taskId, deliveryType);
+            if (fromModules != null && fromModules.size() > 0) {
+                log.info("项目 {} 分镜按模块计划出屏：交付类型={} 屏数={}",
+                    taskId, deliveryType, fromModules.size());
+                return fromModules;
+            }
+        } catch (Exception e) {
+            // 模块计划坏了不该让分镜生不出来：回落契约文件，并把原因打出来（阶段与事件才是权威）
+            log.warn("按项目模块计划取屏骨架失败，回落到契约文件 taskId={}：{}", taskId, e.getMessage());
+        }
+        log.info("项目 {} 没有模块计划（交付类型 {}），分镜按契约文件 {} 生成",
+            taskId, deliveryType, CreativeScreenSkeleton.RESOURCE);
+        return skeleton();
+    }
+
     private CreativeScreenSkeleton skeleton() {
         return skeletonRegistry.skeleton();
     }
@@ -127,6 +164,10 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
         DpVisualDirectionVo direction = directionService.selected(taskId);
         Map<String, String> facts = confirmedFacts(contentTaskService.getDetail(taskId));
 
+        // R21：本次生效的骨架 = 项目模块计划（按交付类型）→ 没有就回落契约文件。
+        // 一次生成只解析一次并沿调用链传下去——不能存成实例字段：本 Bean 是单例，会串请求。
+        CreativeScreenSkeleton active = resolveSkeleton(taskId, project.getDeliverableType());
+
         int version = nextVersion(taskId);
         DpStoryboard storyboard = new DpStoryboard();
         storyboard.setTaskId(taskId);
@@ -134,16 +175,16 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
         storyboard.setVersion(version);
         storyboard.setVisualDnaId(dnaId);
         storyboard.setVisualDirectionId(direction == null ? null : direction.getId());
-        storyboard.setScreenCount(skeleton().size());
+        storyboard.setScreenCount(active.size());
         storyboard.setRhythmJson(rhythm());
 
         // 参数化草稿：每屏标题/副标题/正文/画面独白由「事实 + 基因 + 产品名 + 屏类型」推导。
         // R7 起，「品牌 Brief 的必显信息」与「卖点块」也参与推导；两者都为空时与 R7 之前完全一致。
         CpBrandBriefVo brief = briefService.get(taskId);
         String mustShow = mustShowFirstLine(brief);
-        List<CreativeDraftFactory.CopyHint> sellingPoints = sellingPointHints(taskId);
+        List<CreativeDraftFactory.CopyHint> sellingPoints = sellingPointHints(taskId, active);
         List<CreativeDraftFactory.ScreenDraft> drafts =
-            CreativeDraftFactory.screens(dna, project.getProductName(), facts, mustShow, sellingPoints);
+            CreativeDraftFactory.screensOf(active, dna, project.getProductName(), facts, mustShow, sellingPoints);
 
         // 有可用模型就用模型润色（LOCAL 优先，不出公司）；没有就如实回落参数化草稿。
         // 逐屏逐字段采纳：模型没给的屏保留草稿文案，绝不因为「模型返回了」就整段照抄。
@@ -206,14 +247,14 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
         // 【C′】骨架与草稿的数量必须一致：两者现在都由同一份骨架契约驱动，理论上不会不一致，
         // 但这个校验必须留着——一旦将来有人只改了其中一处（或外部契约在运行中被换掉），
         // 下面按下标取草稿会变成难以定位的越界异常，而这里能给出"哪边少了几屏"的可读错误。
-        if (drafts.size() != skeleton().size()) {
-            throw new ServiceException("屏骨架与文案草稿数量不一致：骨架 " + skeleton().size()
-                + " 屏（" + skeleton().brief() + "），草稿 " + drafts.size()
+        if (drafts.size() != active.size()) {
+            throw new ServiceException("屏骨架与文案草稿数量不一致：骨架 " + active.size()
+                + " 屏（" + active.brief() + "），草稿 " + drafts.size()
                 + " 屏。这属于代码/契约不一致，请检查屏骨架契约与文案策略是否配套。");
         }
 
         int sortNo = 0;
-        for (CreativeScreenSkeleton.ScreenSpec template : skeleton().screens()) {
+        for (CreativeScreenSkeleton.ScreenSpec template : active.screens()) {
             // 骨架来自契约，文案来自草稿（此刻两者数量已被上面的校验钉住）
             CreativeDraftFactory.ScreenDraft draft = drafts.get(sortNo);
             sortNo++;
@@ -227,7 +268,7 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
             screen.setSubtitle(draft.subtitle());
             screen.setBodyText(draft.bodyText());
             screen.setPictureSoloStatement(draft.soloStatement());
-            screen.setSpecJson(spec(template, dna, direction));
+            screen.setSpecJson(spec(template, dna, direction, active));
             screen.setWorkflowCode(CreativeConstants.DEFAULT_HERO_WORKFLOW);
             screen.setProductLockLevel(template.productLockLevel());
             screen.setStatus(STATUS_DRAFT);
@@ -237,7 +278,7 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
         Map<String, Object> event = new LinkedHashMap<>();
         event.put("storyboardId", storyboard.getId());
         event.put("version", version);
-        event.put("screenCount", skeleton().size());
+        event.put("screenCount", active.size());
         event.put("dnaId", dnaId);
         event.put("directionId", storyboard.getVisualDirectionId());
         event.put("source", source);
@@ -437,7 +478,7 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
      * @param taskId 项目ID
      * @return 提示列表（可能为空）
      */
-    private List<CreativeDraftFactory.CopyHint> sellingPointHints(Long taskId) {
+    private List<CreativeDraftFactory.CopyHint> sellingPointHints(Long taskId, CreativeScreenSkeleton active) {
         List<CreativeDraftFactory.CopyHint> hints = new ArrayList<>();
         List<DpCopyBlockVo> blocks = copyService.list(taskId, DpCopyBlockTypeEnum.SELLING_POINT.getCode());
         for (DpCopyBlockVo block : blocks) {
@@ -445,7 +486,7 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
                 continue;
             }
             hints.add(new CreativeDraftFactory.CopyHint(block.getTitle(), block.getContent()));
-            if (hints.size() >= skeleton().countOf("SELLING_POINT")) {
+            if (hints.size() >= active.countOf("SELLING_POINT")) {
                 break;
             }
         }
@@ -558,14 +599,15 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
      * @param direction 选定方向（可空）
      * @return 规格 JSON
      */
-    private String spec(CreativeScreenSkeleton.ScreenSpec template, ObjectNode dna, DpVisualDirectionVo direction) {
+    private String spec(CreativeScreenSkeleton.ScreenSpec template, ObjectNode dna,
+                            DpVisualDirectionVo direction, CreativeScreenSkeleton active) {
         Map<String, Object> spec = new LinkedHashMap<>();
         String scene = direction != null ? String.valueOf(direction.getStrategy().getOrDefault("scene", "")) : "";
         String lighting = direction != null
             ? String.valueOf(direction.getStrategy().getOrDefault("lighting", "")) : "";
         String composition = direction != null
             ? String.valueOf(direction.getStrategy().getOrDefault("composition", "")) : "";
-        spec.put("shot", skeleton().shotOf(template, ratio(dna)));
+        spec.put("shot", active.shotOf(template, ratio(dna)));
         spec.put("composition", StringUtils.blankToDefault(composition, "产品居中，四周留白均等"));
         spec.put("lighting", StringUtils.blankToDefault(lighting,
             "光线：" + dna.path("lighting").path("type").asText("SOFT")));

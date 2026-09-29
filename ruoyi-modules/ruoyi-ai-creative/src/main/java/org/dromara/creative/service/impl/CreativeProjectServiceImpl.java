@@ -23,7 +23,9 @@ import org.dromara.creative.helper.CreativeStepStateWriter;
 import org.dromara.creative.enums.DpVisualStageEnum;
 import org.dromara.creative.mapper.CreativeTaskStageMapper;
 import org.dromara.creative.mapper.DpStageEventMapper;
+import org.dromara.creative.domain.DpDeliveryType;
 import org.dromara.creative.service.ICreativeProjectService;
+import org.dromara.creative.service.ICreativeScenarioConfigService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -60,12 +62,25 @@ public class CreativeProjectServiceImpl implements ICreativeProjectService {
      * 项目步骤状态写入者（V0.2 D2）：只在本类的 moveStage 里调用一次
      */
     private final CreativeStepStateWriter stepStateWriter;
+
+    /**
+     * 场景配置（R21）：判断"哪些交付类型视觉工厂能处理"（dp_delivery_type 里启用且有场景档案的那些）。
+     */
+    private final ICreativeScenarioConfigService scenarioConfigService;
     private final DpStageEventMapper eventMapper;
 
     @Override
     public PageResult<CreativeProjectVo> queryPage(ContentTaskBo bo, PageQuery pageQuery) {
-        // 视觉工厂只处理电商详情页：无论前端传什么，交付类型一律强制覆盖
-        bo.setQueryDeliverableType(CreativeConstants.DELIVERABLE_ECOM_DETAIL);
+        // R21：视觉工厂处理的交付类型改为"配置里登记且启用的那些"，不再硬写 ECOM_DETAIL。
+        // 前端不传交付类型时，按配置里启用的类型集合过滤（而不是"全放进来"——那样列表会混入
+        // 视频、说明书等根本不走这套流程的任务）。
+        if (StringUtils.isBlank(bo.getQueryDeliverableType())) {
+            List<String> supported = supportedDeliverableTypes();
+            if (supported.isEmpty()) {
+                return PageResult.build(List.of(), 0L);
+            }
+            bo.setQueryDeliverableTypes(supported);
+        }
         PageResult<CpTaskVo> page = contentTaskService.queryPage(bo, pageQuery);
         List<CreativeProjectVo> rows = new ArrayList<>();
         for (CpTaskVo task : page.getRows()) {
@@ -121,9 +136,20 @@ public class CreativeProjectServiceImpl implements ICreativeProjectService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Long createProject(CreativeProjectBo bo) {
+        // R21：交付类型不再硬写 ECOM_DETAIL（不传时仍按详情页，保持老行为）；
+        // 传了就在这里校验，避免创建出"进不了流程"的任务（场景档案缺失会在 getProject 时才炸）。
+        String deliverableType = StringUtils.blankToDefault(
+            StringUtils.trimToNull(bo.getDeliverableType()), CreativeConstants.DELIVERABLE_ECOM_DETAIL);
+        DpDeliveryType type = scenarioConfigService.getDeliveryType(deliverableType);
+        if (type == null || "1".equals(type.getEnabled())) {
+            throw new ServiceException("交付类型不可用（未登记或已停用）：" + deliverableType);
+        }
+        if (scenarioConfigService.getScenario(deliverableType) == null) {
+            throw new ServiceException("交付类型 " + deliverableType + " 还没有已发布的场景档案，无法创建项目");
+        }
         ContentTaskBo taskBo = new ContentTaskBo();
         taskBo.setTaskName(bo.getTaskName());
-        taskBo.setDeliverableType(CreativeConstants.DELIVERABLE_ECOM_DETAIL);
+        taskBo.setDeliverableType(deliverableType);
         taskBo.setProductId(bo.getProductId());
         taskBo.setSkuCode(bo.getSkuCode());
         taskBo.setOwnerId(bo.getOwnerId());
@@ -363,9 +389,57 @@ public class CreativeProjectServiceImpl implements ICreativeProjectService {
         }
     }
 
+    /**
+     * 校验"这个项目属于视觉工厂能处理的交付类型"（R21 起不再是"只处理电商详情页"）。
+     *
+     * <p><b>为什么放开</b>：文档 §9 明确"不同业务必须允许不同流程"，§9.2 的商品主图是 P1 场景；
+     * 硬写 {@code ECOM_DETAIL} 会让第二个交付类型连项目页都进不去，配置层的价值就只剩一半。</p>
+     *
+     * <p><b>放开的边界（fail-closed）</b>：交付类型必须在 {@code dp_delivery_type} 里**存在且启用**，
+     * 并且要有已发布的场景档案（否则前端拿不到步骤/规格/工作台，页面会空）；
+     * 查不到就明确报错——不是"什么都放进来"。</p>
+     *
+     * @param task 内容任务
+     */
+    /**
+     * 视觉工厂支持的交付类型（R21）：配置里启用、且有已发布场景档案的那些。
+     *
+     * <p>列表页按它过滤，而不是"什么任务都显示"——视频/说明书这类不走这套流程的任务
+     * 混进视觉项目列表会让人以为它们也能做。</p>
+     *
+     * @return 交付类型编码列表；一个都没有时返回空列表（调用方返回空页）
+     */
+    private List<String> supportedDeliverableTypes() {
+        List<String> codes = new ArrayList<>();
+        for (DpDeliveryType type : scenarioConfigService.listDeliveryTypes()) {
+            String code = type.getDeliveryType();
+            if (StringUtils.isBlank(code) || "1".equals(type.getEnabled())) {
+                continue;
+            }
+            if (scenarioConfigService.getScenario(code) != null) {
+                codes.add(code);
+            }
+        }
+        return codes;
+    }
+
     private void requireEcomDetail(CpTaskVo task) {
-        if (!CreativeConstants.DELIVERABLE_ECOM_DETAIL.equalsIgnoreCase(task.getDeliverableType())) {
-            throw new ServiceException("该任务不是电商详情页项目，视觉工厂不处理：" + task.getDeliverableType());
+        String type = StringUtils.trimToNull(task.getDeliverableType());
+        if (type == null) {
+            throw new ServiceException("该任务没有交付类型，视觉工厂无法处理：" + task.getTaskName());
+        }
+        DpDeliveryType deliveryType = scenarioConfigService.getDeliveryType(type);
+        if (deliveryType == null) {
+            throw new ServiceException("交付类型不在视觉工厂的配置里（dp_delivery_type）：" + type
+                + "——请先在场景配置里登记该交付类型");
+        }
+        boolean enabled = !"1".equals(deliveryType.getEnabled());
+        if (!enabled) {
+            throw new ServiceException("交付类型已停用：" + type);
+        }
+        if (scenarioConfigService.getScenario(type) == null) {
+            throw new ServiceException("交付类型 " + type + " 还没有已发布的场景档案（dp_scenario_profile），"
+                + "视觉工厂无法确定流程与步骤");
         }
     }
 
