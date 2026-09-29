@@ -1294,6 +1294,10 @@ async function loadProjects() {
       if (String(currentProject.value?.taskId ?? '') !== String(target.taskId)) {
         await selectProject(target);
       }
+    } else if (currentProjectId.value) {
+      // 深链项目不在这一页列表里（超出 50 条 / 被筛选掉 / 已不存在）：仍按这个 id 打开，
+      // 让详情接口如实报错——**不偷偷换成列表第一个项目**（那会让人以为链接没生效）
+      await selectProject({ taskId: currentProjectId.value } as CreativeProjectVO);
     } else {
       await selectProject(projects.value[0]);
     }
