@@ -502,18 +502,20 @@ watch(
     background: var(--sunken);
     color: var(--t2);
 
+    /* 状态胶囊：底色用低透明度着色，才能在暗色弹层上既分得清状态又不刺眼
+       （原来是给白底弹层配的浅色实底 #f0f9eb 这类，放到暗底上会像贴了三块白纸） */
     &.is-done {
-      background: #f0f9eb;
+      background: rgba(103, 194, 58, 0.16);
       color: #67c23a;
     }
 
     &.is-doing {
-      background: #ecf5ff;
+      background: rgba(64, 158, 255, 0.16);
       color: #409eff;
     }
 
     &.is-blocked {
-      background: #fef0f0;
+      background: rgba(245, 108, 108, 0.16);
       color: #f56c6c;
     }
   }
@@ -552,7 +554,7 @@ watch(
 }
 </style>
 
-<!-- 步序对照弹层的外壳：Element Plus 默认是白底，这里换成暗色 token。
+<!-- 弹层外壳：Element Plus 默认是白底，这里换成暗色 token。
      两个必须点（第一版就是没做这两点而静默失效的，实测底色 rgba(0,0,0,0) + 文字近黑）：
        1) token 要**显式 include** 到弹层根节点：`tokens-studio.scss` 编译出来是
           `.studio[data-v-xxx]`（每个页面组件各自一份），而弹层被 teleport 到 body，
@@ -560,10 +562,12 @@ watch(
           `background: var(--elevated)` 解析失败退化成透明（color 同理 → 继承近黑）。
           所以这里 `@include studio.studio-tokens`，用的是同一份定义，没有抄字面量。
        2) 规则要放非 scoped 块：popper-class 挂在弹层根节点上，scoped 选择器匹配不到。
-     （既有步骤浮层 `.flow-popover` 有同样的问题，但那是已验证过的观感，本轮不动，另行报告。） -->
+     既有步骤浮层 `.flow-popover` 有同样的问题——它一直是"暗色工作台里的一块白卡"，
+     与"不要白色框架"的口径不符，本轮一并用同一份 token 修正（只有颜色变化，无结构改动）。 -->
 <style lang="scss">
 @use '@/assets/styles/tokens-studio.scss' as studio;
 
+.flow-popover.el-popover.el-popper,
 .flow-map-popover.el-popover.el-popper {
   @include studio.studio-tokens;
 
