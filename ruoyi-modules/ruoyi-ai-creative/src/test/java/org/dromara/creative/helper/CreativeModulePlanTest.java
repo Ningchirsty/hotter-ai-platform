@@ -111,7 +111,9 @@ class CreativeModulePlanTest {
         meta.put("taskName", "R22 测试项目");
         meta.put("deliveryType", "ECOM_DETAIL");
         meta.put("delFlag", "0");
-        when(stageMapper.selectTaskMeta(TASK)).thenReturn(meta);
+        // 真实读法是两个标量查询（R22 第一版用 Map 取列，取到 null → 字符串 "null" → 模块库静默 0 条）
+        when(stageMapper.selectDelFlag(TASK)).thenReturn("0");
+        when(stageMapper.selectDeliverableType(TASK)).thenReturn("ECOM_DETAIL");
         when(contentTaskService.getDetail(TASK)).thenReturn((ContentTaskDetailVo) null);
         // 默认：没锁定、没出图、没渲染、没分镜
         when(storyboardMapper.selectCount(any())).thenReturn(0L);
@@ -200,6 +202,27 @@ class CreativeModulePlanTest {
         ProjectModulePlanBo bo = new ProjectModulePlanBo();
         bo.setModules(new ArrayList<>(List.of(items)));
         return bo;
+    }
+
+    @Test
+    @DisplayName("交付类型取不到（null 或字面量 \"null\"）→ 明确报错，绝不用它去查模块库")
+    void missingDeliveryTypeIsRejectedInsteadOfQueryingNull() {
+        // 真机踩过：Map 取列拿到 null → String.valueOf 变成字符串 "null" → 模块库静默 0 条。
+        // 两种脏值都必须被挡住，而不是"照查不误、返回空"。
+        for (String dirty : new String[] {null, "null", "  "}) {
+            when(stageMapper.selectDeliverableType(TASK)).thenReturn(dirty);
+            ServiceException ex = assertThrows(ServiceException.class, () -> service.planOf(TASK),
+                "交付类型=" + dirty + " 时必须报错");
+            assertTrue(ex.getMessage().contains("交付类型"), ex.getMessage());
+        }
+    }
+
+    @Test
+    @DisplayName("已删除的项目不能规划模块")
+    void deletedTaskIsRejected() {
+        when(stageMapper.selectDelFlag(TASK)).thenReturn("1");
+        ServiceException ex = assertThrows(ServiceException.class, () -> service.planOf(TASK));
+        assertTrue(ex.getMessage().contains("已删除"), ex.getMessage());
     }
 
     @Test

@@ -92,16 +92,19 @@ public interface CreativeTaskStageMapper {
     String selectDeliverableType(@Param("taskId") Long taskId);
 
     /**
-     * 读取项目元信息（V0.2 R22 模块规划：要判"项目在不在"和"交付类型是什么"）。
+     * 读取项目是否被删除（V0.2 R22 模块规划：已删除的项目不该还能规划模块）。
      *
-     * <p>一次查回 taskId / taskName / deliverableType / delFlag，避免模块规划页
-     * 为了这三件事分别查库；`del_flag` 也一起看——已删除的项目不该还能规划模块。</p>
+     * <p><b>为什么不用 Map 一次查回多列</b>：R22 第一版写了
+     * {@code SELECT ... deliverable_type AS deliveryType ...} 返回 Map，运行时
+     * {@code meta.get("deliveryType")} 取到 null，{@code String.valueOf(null)} 变成字符串 "null"，
+     * 于是模块库按 {@code delivery_type='null'} 去查，**静默返回 0 条**——真机验收当场抓到
+     * （模块库 0 条、保存报「模块编码不在模块库里」）。教训：ResultSet→Map 的列名/别名不值得赌，
+     * 标量列各查各的，类型交给方法签名保证。</p>
      *
      * @param taskId 项目ID
-     * @return 含 taskId / taskName / deliverableType / delFlag 的行；项目不存在返回 null
+     * @return '0' 存在 / '1' 已删除；项目不存在返回 null
      */
-    @Select("SELECT task_id AS taskId, task_name AS taskName, deliverable_type AS deliverableType, "
-        + "del_flag AS delFlag FROM cp_task WHERE task_id = #{taskId}")
-    Map<String, Object> selectTaskMeta(@Param("taskId") Long taskId);
+    @Select("SELECT del_flag FROM cp_task WHERE task_id = #{taskId}")
+    String selectDelFlag(@Param("taskId") Long taskId);
 
 }

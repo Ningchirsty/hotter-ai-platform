@@ -182,17 +182,17 @@ public class CreativeModuleServiceImpl implements ICreativeModuleService {
 
     @Override
     public ProjectModulePlanVo planOf(Long taskId) {
-        CpTaskMeta meta = requireTask(taskId);
+        String deliveryType = requireTask(taskId);
         ProjectModulePlanVo vo = new ProjectModulePlanVo();
         vo.setTaskId(taskId);
-        vo.setDeliveryType(meta.deliveryType());
-        DpDeliveryType type = scenarioConfigService.getDeliveryType(meta.deliveryType());
+        vo.setDeliveryType(deliveryType);
+        DpDeliveryType type = scenarioConfigService.getDeliveryType(deliveryType);
         vo.setDeliveryName(type == null || StringUtils.isBlank(type.getDeliveryName())
-            ? meta.deliveryType() : type.getDeliveryName());
+            ? deliveryType : type.getDeliveryName());
         List<DpProjectModule> modules = listProjectModules(taskId);
         vo.setModules(modules);
-        vo.setLibrary(listDefinitions(meta.deliveryType()));
-        Map<String, DpModuleDefinition> definitions = definitionMap(meta.deliveryType());
+        vo.setLibrary(listDefinitions(deliveryType));
+        Map<String, DpModuleDefinition> definitions = definitionMap(deliveryType);
         Map<String, String> facts = confirmedFacts(taskId);
         List<ProjectModulePlanVo.ScreenPreview> preview =
             preview(enabledOnly(modules), definitions, facts);
@@ -209,7 +209,7 @@ public class CreativeModuleServiceImpl implements ICreativeModuleService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public ProjectModulePlanVo savePlan(Long taskId, ProjectModulePlanBo bo) {
-        CpTaskMeta meta = requireTask(taskId);
+        String deliveryType = requireTask(taskId);
         String blockReason = editBlockReason(taskId);
         if (blockReason != null) {
             throw new ServiceException(blockReason);
@@ -217,7 +217,7 @@ public class CreativeModuleServiceImpl implements ICreativeModuleService {
         if (bo == null || bo.getModules() == null || bo.getModules().isEmpty()) {
             throw new ServiceException("模块计划不能为空：至少保留一个启用的模块。");
         }
-        Map<String, DpModuleDefinition> definitions = definitionMap(meta.deliveryType());
+        Map<String, DpModuleDefinition> definitions = definitionMap(deliveryType);
         List<DpProjectModule> rows = new ArrayList<>();
         int sortNo = 10;
         int enabledCount = 0;
@@ -558,34 +558,46 @@ public class CreativeModuleServiceImpl implements ICreativeModuleService {
     }
 
     /**
-     * 取项目元信息（不存在/已删除直接报错——模块规划必须挂在一个真项目上）。
+     * 取项目的交付类型（不存在/已删除直接报错——模块规划必须挂在一个真项目上）。
+     *
+     * <p>刻意用两个**标量**查询，而不是一次查回 Map：R22 第一版用 Map 取列，
+     * {@code get("deliveryType")} 拿到 null 后被 {@code String.valueOf} 变成字符串 "null"，
+     * 于是模块库按 {@code delivery_type='null'} 查，**静默 0 条**。这类"看起来没坏、其实查空了"
+     * 的写法在这一轮已经吃过一次亏（真机验收抓到），所以这里连"字面量 null"也一并挡掉。</p>
+     *
+     * @param taskId 项目ID
+     * @return 交付类型
      */
-    private CpTaskMeta requireTask(Long taskId) {
+    private String requireTask(Long taskId) {
         if (taskId == null) {
             throw new ServiceException("taskId 不能为空。");
         }
-        Map<String, Object> meta = stageMapper.selectTaskMeta(taskId);
-        if (meta == null || meta.isEmpty()) {
+        String delFlag = stageMapper.selectDelFlag(taskId);
+        if (delFlag == null) {
             throw new ServiceException("项目不存在：" + taskId);
         }
-        Object delFlag = meta.get("delFlag");
-        if (delFlag != null && !"0".equals(String.valueOf(delFlag))) {
+        if (!ENABLED.equals(delFlag)) {
             throw new ServiceException("项目已删除，不能再规划模块：" + taskId);
         }
-        String type = StringUtils.trimToNull(String.valueOf(meta.get("deliveryType")));
+        String type = usableType(stageMapper.selectDeliverableType(taskId));
         if (type == null) {
             throw new ServiceException("项目没有交付类型，无法规划模块：" + taskId);
         }
-        return new CpTaskMeta(meta.get("taskName") == null ? null : String.valueOf(meta.get("taskName")), type);
+        return type;
     }
 
     /**
-     * 项目元信息（只需要两个字段，不为它单开实体）。
+     * 把可能"脏"的交付类型字符串规整成可用值。
      *
-     * @param taskName     项目名
-     * @param deliveryType 交付类型
+     * @param raw 原值（可空；也可能是字符串 "null"）
+     * @return 可用编码；不可用返回 null
      */
-    private record CpTaskMeta(String taskName, String deliveryType) {
+    private static String usableType(String raw) {
+        String value = StringUtils.trimToNull(raw);
+        if (value == null || "null".equalsIgnoreCase(value) || "undefined".equalsIgnoreCase(value)) {
+            return null;
+        }
+        return value;
     }
 
     /**
