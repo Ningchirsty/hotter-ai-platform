@@ -49,7 +49,28 @@ export interface ScenarioStep {
   gateType?: string;
   capabilityCode?: string;
   workspaceComponent?: string;
+  /** 进入条件（结构化 JSON 字符串，如 `{"requireDna":true}`）——R16 起前端据此判"被阻塞" */
+  entryConditionJson?: string;
+  /** 完成判定（结构化 JSON 字符串，如 `{"status":"LOCKED"}`） */
+  completionRuleJson?: string;
   configJson?: string;
+}
+
+/**
+ * 项目步骤状态（`GET /creative/v2/projects/{taskId}/steps`，R14/D2）。
+ *
+ * <p>它是 `cp_task.visual_stage` 的**派生投影**：有持久化行时 `source=PERSISTED`，
+ * 否则按当前阶段推导（`DERIVED`）。R16 起指引线的"已完成/进行中/待办"以它为准。</p>
+ */
+export interface ProjectStepState {
+  stepCode?: string;
+  stepName?: string;
+  sortNo?: number;
+  status?: string;
+  stageCode?: string;
+  startedAt?: string;
+  completedAt?: string;
+  source?: string;
 }
 
 /** 输出规格 */
@@ -92,4 +113,16 @@ export function listScenarioSteps(deliveryType: string): AxiosPromise<ScenarioSt
 /** 取某交付类型的输出规格（默认规格排最前） */
 export function listOutputSpecs(deliveryType: string): AxiosPromise<ScenarioOutputSpec[]> {
   return request({ url: `/creative/v2/scenarios/${deliveryType}/output-specs`, method: 'get' });
+}
+
+/**
+ * 取某项目的「配置步骤 + 步骤状态」（R14/D2 的只读接口）。
+ *
+ * <p>只读：没有持久化行的项目由后端按当前阶段推导（`source=DERIVED`），查询本身不写库。</p>
+ *
+ * @param taskId 项目ID
+ * @returns 步骤状态列表（按配置顺序）
+ */
+export function listProjectSteps(taskId: string | number): AxiosPromise<ProjectStepState[]> {
+  return request({ url: `/creative/v2/projects/${taskId}/steps`, method: 'get' });
 }

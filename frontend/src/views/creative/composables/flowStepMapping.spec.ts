@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { STEP_META } from './creativeFlowSteps';
 import {
+  CONFIG_STATUS_LABELS,
+  REQUIRE_TO_STEP,
   STEP_CODE_TO_CODE_KEY,
+  STEP_CODE_TO_PAGE,
+  buildFallbackSteps,
+  buildGuideSteps,
   formatMappingChip,
   mapFlowSteps
 } from './flowStepMapping';
-import type { ScenarioStep } from '@/api/creative/scenario';
+import type { ProjectStepState, ScenarioStep } from '@/api/creative/scenario';
 
 /**
  * 步序对照的单元测试（V0.2 D 阶段第二刀，第一步）。
@@ -133,5 +138,166 @@ describe('flowStepMapping', () => {
       const known = STEP_CODE_TO_CODE_KEY[step.stepCode!] != null || step.stepCode === 'QA';
       expect(known, `${step.stepCode} 既没有对映、也不在已知的无对应清单里`).toBe(true);
     }
+  });
+});
+
+/**
+ * R16：把指引线切成配置驱动。
+ *
+ * <p>这里钉的是"驱动"这件事本身：① 十步各占一格；② 状态以后端 `dp_project_step_state` 为准；
+ * ③ 前置条件来自配置 `entry_condition_json`。三条错了都不会报错，只会把人指到错的环节。</p>
+ */
+describe('配置驱动：指引线计划', () => {
+  /** 生产种子里的 10 步（含 entry_condition_json，与库中一致） */
+  const CONFIG: ScenarioStep[] = [
+    { stepCode: 'INPUT', stepName: '产品资料与参考图', sortNo: 10, required: '1', entryConditionJson: '{"requireProject":true}' },
+    { stepCode: 'FACT', stepName: '事实确认', sortNo: 20, required: '1', entryConditionJson: '{"requireInput":true}' },
+    { stepCode: 'DNA', stepName: '视觉基因', sortNo: 30, required: '1', entryConditionJson: '{"requireFact":true}' },
+    { stepCode: 'DIRECTION', stepName: '视觉方向', sortNo: 40, required: '1', entryConditionJson: '{"requireDna":true}' },
+    { stepCode: 'STORYBOARD', stepName: '分镜', sortNo: 50, required: '1', entryConditionJson: '{"requireDirection":true}' },
+    { stepCode: 'GATE', stepName: '视觉门', sortNo: 60, required: '1', entryConditionJson: '{"requireStoryboard":true}' },
+    { stepCode: 'GENERATION', stepName: '出图', sortNo: 70, required: '1', entryConditionJson: '{"requireGate":true}' },
+    { stepCode: 'QA', stepName: '质检', sortNo: 80, required: '0', entryConditionJson: '{"requireGeneration":true}' },
+    { stepCode: 'LAYOUT', stepName: '长图排版', sortNo: 90, required: '1', entryConditionJson: '{"requireGate":true}' },
+    { stepCode: 'FINAL', stepName: '终审交付', sortNo: 100, required: '1', entryConditionJson: '{"requireLayout":true}' }
+  ];
+
+  /**
+   * 造项目步骤状态。
+   *
+   * @param pairs [stepCode, status] 列表
+   * @returns 状态数组
+   */
+  const states = (...pairs: Array<[string, string]>): ProjectStepState[] =>
+    pairs.map(([stepCode, status]) => ({ stepCode, status }));
+
+  it('十步各占一格：顺序、名称、页面都按配置与已确认的页面口径', () => {
+    const plan = buildGuideSteps(CONFIG, states());
+    expect(plan.map((p) => p.no)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(plan.map((p) => p.key)).toEqual([
+      'INPUT', 'FACT', 'DNA', 'DIRECTION', 'STORYBOARD', 'GATE', 'GENERATION', 'QA', 'LAYOUT', 'FINAL'
+    ]);
+    expect(plan.map((p) => p.name)).toEqual([
+      '产品资料与参考图', '事实确认', '视觉基因', '视觉方向', '分镜', '视觉门', '出图', '质检', '长图排版', '终审交付'
+    ]);
+    // 已确认的口径：QA 不新增页面（复用出图页）；排版与终审都在评审页
+    expect(plan[7].page).toBe('/creative/production');
+    expect(plan[6].page).toBe('/creative/production');
+    expect(plan[8].page).toBe('/creative/review');
+    expect(plan[9].page).toBe('/creative/review');
+    expect(plan[0].page).toBe('/creative/project');
+    expect(plan[2].page).toBe('/creative/dna');
+    expect(plan[4].page).toBe('/creative/storyboard');
+    expect(plan[5].page).toBe('/creative/review');
+    expect(plan.every((p) => p.source === 'CONFIG')).toBe(true);
+  });
+
+  it('状态以后端为准：DONE→已完成、ACTIVE→进行中、PENDING→待办或前置未完成', () => {
+    const plan = buildGuideSteps(
+      CONFIG,
+      states(['INPUT', 'DONE'], ['FACT', 'DONE'], ['DNA', 'ACTIVE'])
+    );
+    expect(plan.slice(0, 3).map((p) => p.status)).toEqual(['done', 'done', 'doing']);
+    // 方向声明 requireDna，而 DNA 还没 DONE → 前置未完成；分镜同理
+    expect(plan[3].status).toBe('blocked');
+    expect(plan[3].waiting).toEqual(['视觉基因']);
+    // 同一阶段里两步同时进行中（资料与事实都覆盖 MATERIAL_READY）是配置的真实粒度
+    const both = buildGuideSteps(CONFIG, states(['INPUT', 'ACTIVE'], ['FACT', 'ACTIVE']));
+    expect(both[0].status).toBe('doing');
+    expect(both[1].status).toBe('doing');
+  });
+
+  it('进行中的步骤不会被判成"前置未完成"（它已经开始了）', () => {
+    // 配置说 DNA 需要 FACT 完成；但如果后端已把 DNA 标成 ACTIVE，就不该显示"前置未完成"
+    const plan = buildGuideSteps(CONFIG, states(['INPUT', 'DONE'], ['DNA', 'ACTIVE']));
+    const dna = plan[2];
+    expect(dna.status).toBe('doing');
+    expect(dna.waiting).toEqual(['事实确认']); // 事实仍如实列出来，只是不用它判定状态
+  });
+
+  it('全部 DONE 时十步全绿（已交付项目不该留"还差一步"）', () => {
+    const plan = buildGuideSteps(
+      CONFIG,
+      states(...CONFIG.map((s) => [s.stepCode!, 'DONE'] as [string, string]))
+    );
+    expect(plan.every((p) => p.status === 'done')).toBe(true);
+  });
+
+  it('前置条件来自配置：改配置就改阻塞（不写死在前端）', () => {
+    // 把 DNA 的进入条件从 requireFact 改成 requireProject → 不再等事实
+    const relaxed = CONFIG.map((s) =>
+      s.stepCode === 'DNA' ? { ...s, entryConditionJson: '{"requireProject":true}' } : s
+    );
+    expect(buildGuideSteps(CONFIG, states())[2].status).toBe('blocked');
+    expect(buildGuideSteps(relaxed, states())[2].status).toBe('todo');
+  });
+
+  it('不认识的进入条件如实报出来，且不拿它当阻塞理由（不猜）', () => {
+    const weird = CONFIG.map((s) =>
+      s.stepCode === 'DNA'
+        ? { ...s, entryConditionJson: '{"requireBrandGuide":true,"requireFact":true}' }
+        : s
+    );
+    const dna = buildGuideSteps(weird, states())[2];
+    expect(dna.unknownConditions).toEqual(['requireBrandGuide']);
+    expect(dna.waiting).toEqual(['事实确认']); // 只等能翻译成步骤的那一条
+  });
+
+  it('自依赖（配置里 require 自己）不算阻塞，否则那一步永远红着', () => {
+    const selfish = CONFIG.map((s) =>
+      s.stepCode === 'DNA' ? { ...s, entryConditionJson: '{"requireDna":true}' } : s
+    );
+    expect(buildGuideSteps(selfish, states())[2].status).toBe('todo');
+  });
+
+  it('坏 JSON / 空条件不编造：解析不出来就当没有前置', () => {
+    const broken = CONFIG.map((s) =>
+      s.stepCode === 'DNA' ? { ...s, entryConditionJson: '{requireFact' } : s
+    );
+    expect(buildGuideSteps(broken, states())[2].status).toBe('todo');
+    const none = CONFIG.map((s) => ({ ...s, entryConditionJson: undefined }));
+    expect(buildGuideSteps(none, states()).every((p) => p.status === 'todo')).toBe(true);
+  });
+
+  it('required=0 的步骤如实标出（QA 在配置里是可选步骤）', () => {
+    const plan = buildGuideSteps(CONFIG, states());
+    expect(plan[7].required).toBe(false);
+    expect(plan.filter((p) => !p.required).map((p) => p.key)).toEqual(['QA']);
+  });
+
+  it('配置为空 → 空计划（由调用方回落到代码八步，不是"零步完成"）', () => {
+    expect(buildGuideSteps([], states())).toEqual([]);
+    expect(buildGuideSteps(undefined, states())).toEqual([]);
+  });
+
+  it('回落计划就是代码八步（配置读不到时指引线不能消失）', () => {
+    const fallback = buildFallbackSteps();
+    expect(fallback).toHaveLength(8);
+    expect(fallback.map((p) => p.key)).toEqual(STEP_META.map((m) => m.key));
+    expect(fallback.map((p) => p.page)).toEqual(STEP_META.map((m) => m.page));
+    expect(fallback.every((p) => p.source === 'CODE' && p.status === 'todo')).toBe(true);
+  });
+
+  it('页面与前置映射表只引用种子里的步骤编码（改表时这里会红）', () => {
+    const codes = new Set(CONFIG.map((s) => s.stepCode!));
+    for (const [stepCode, page] of Object.entries(STEP_CODE_TO_PAGE)) {
+      expect(codes.has(stepCode), `${stepCode} 不在配置步骤里`).toBe(true);
+      expect(page.startsWith('/creative/'), `${stepCode} 的页面 ${page} 不像站内路径`).toBe(true);
+    }
+    for (const [condition, stepCode] of Object.entries(REQUIRE_TO_STEP)) {
+      expect(condition.startsWith('require'), `${condition} 不是 requireXxx 形式`).toBe(true);
+      expect(codes.has(stepCode), `${condition} → ${stepCode} 不是配置步骤`).toBe(true);
+    }
+    // 种子里的每个步骤都要有页面归属，否则点击会跳到项目页（默许的兜底不该被用到）
+    for (const step of CONFIG) {
+      expect(STEP_CODE_TO_PAGE[step.stepCode!], `${step.stepCode} 缺页面归属`).toBeTruthy();
+    }
+  });
+
+  it('配置驱动下的状态文案：blocked 说"前置未完成"（不是"被阻塞"）', () => {
+    expect(CONFIG_STATUS_LABELS.blocked).toBe('前置未完成');
+    expect(CONFIG_STATUS_LABELS.done).toBe('已完成');
+    expect(CONFIG_STATUS_LABELS.doing).toBe('进行中');
+    expect(CONFIG_STATUS_LABELS.todo).toBe('未开始');
   });
 });

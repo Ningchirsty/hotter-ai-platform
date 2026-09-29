@@ -9,13 +9,13 @@
         <span class="spinner" aria-hidden="true" />这一步正在执行
       </span>
       <span class="spacer" />
-      <div class="progress" :title="`已完成 ${doneCount} / 8 步`">
+      <div class="progress" :title="`已完成 ${doneCount} / ${steps.length} 步`">
         <i :style="{ width: progressPct + '%' }" />
       </div>
-      <span class="progress-text">{{ doneCount }} / 8 已完成</span>
+      <span class="progress-text">{{ doneCount }} / {{ steps.length }} 已完成</span>
     </div>
 
-    <p v-if="!taskId" class="flow-empty">选择一个视觉项目后，这里会显示它在八个环节里的位置。</p>
+    <p v-if="!taskId" class="flow-empty">选择一个视觉项目后，这里会显示它在流程里的位置。</p>
 
     <ol v-else class="flow-steps">
       <li
@@ -29,7 +29,7 @@
           :width="340"
           trigger="hover"
           popper-class="flow-popover"
-          @show="ensureStep(step.no)"
+          @show="ensureStep(step.key)"
         >
           <template #reference>
             <!-- 热区是整个步骤（圆圈 + 名称 + 状态），不是只有圆圈：
@@ -65,6 +65,11 @@
         </el-popover>
       </li>
     </ol>
+    <!-- 步骤来源（只读补充信息）：告诉人这条线是按场景配置（十步）还是按代码八步回落渲染的 -->
+    <p v-if="taskId" class="flow-source">
+      <span class="source-tag">{{ configDriven ? '按场景配置' : '按代码八步（配置未取到）' }}</span>
+      <span v-if="configDriven">共 {{ steps.length }} 步：{{ steps.map((s) => s.name).join(' → ') }}</span>
+    </p>
     <!-- 场景配置（只读补充信息）：读不到就整行不渲染，绝不影响上面的指引线 -->
     <p v-if="scenarioLine" class="flow-scenario" :title="scenarioSteps.join(' → ')">
       <span class="scenario-tag">场景配置</span>{{ scenarioLine }}
@@ -110,20 +115,18 @@ import { computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { CREATIVE_STAGE_TYPES } from '@/api/creative/types';
 import { useCreativeFlow, type FlowStep } from '../composables/useCreativeFlow';
-import { useScenarioConfig } from '../composables/useScenarioConfig';
 
 /**
- * 流程指引线：把八个环节横排在每个环节页面的顶部，当前环节由项目阶段定位。
+ * 流程指引线：把流程环节横排在每个环节页面的顶部，当前环节由**后端步骤状态**定位。
  *
- * <p>交互（按确认过的口径）：<b>悬停</b>看「为什么还不能进入下一步」（明细按需加载），
+ * <p>交互（按确认过的口径）：<b>悬停</b>看「为什么还不能进入下一步」（明细按需加载，判据按 step_code 注册），
  * <b>点击</b>跳到该步对应的页面并带上 taskId（纯导航，不写数据）。</p>
  *
- * <p>V0.2 D 阶段第一刀：底部多一行「场景配置」（交付类型 / 默认输出规格 / 配置步骤数）——
- * **只读展示，不驱动流程**；配置接口读不到时整行不显示，不影响这条指引线的任何交互。</p>
- *
- * <p>V0.2 D 阶段第二刀（第一步）：再加一枚「步序对照」胶囊，点开是配置步骤 → 代码八步的逐条映射
- * 与差异结论（哪一步没有对应、哪些阶段没被任何步骤覆盖）——**同样是只读**，
- * 为"把指引线切成配置驱动"提供核对依据；映射本身是纯函数（`flowStepMapping.ts`），有单测钉住。</p>
+ * <p>V0.2 D 阶段第一刀（R13）：底部多一行「场景配置」（交付类型 / 默认输出规格 / 配置步骤数）。
+ * V0.2 D 阶段第二刀第一步（R15）：再加一枚「步序对照」胶囊，把配置步骤与代码八步的差异摆出来。
+ * <b>第二刀（R16，本轮）</b>：指引线本身切成配置驱动——十步各占一格（QA 复用出图页），
+ * 状态取自 `GET /creative/v2/projects/{taskId}/steps`，前置条件取自配置 `entry_condition_json`；
+ * 配置读不到时静默回落到代码八步（见底部那一行"按代码八步"提示）。</p>
  */
 const props = defineProps<{
   /** 当前项目ID；为空时只显示一句引导语 */
@@ -134,24 +137,38 @@ const props = defineProps<{
    */
   refreshToken?: number;
   /**
-   * 交付类型：给了就顺带读一次场景配置并在底部显示一行；不传/读不到都不显示（老页面零影响）。
+   * 交付类型提示：**可选**。R16 起指引线自己会从项目数据里取交付类型，
+   * 五个页面因此拿到同一份配置；这个 prop 保留给"页面已经知道类型"的场景（早一拍，少一次等待）。
    */
   deliverableType?: string;
 }>();
 
 const router = useRouter();
+// 单一来源：指引线、场景行、步序对照都从 useCreativeFlow 出（它内部复用同一份场景配置缓存）
 const {
-  line: scenarioLine,
-  stepNames: scenarioSteps,
+  steps,
+  activeNo,
+  doneCount,
+  stageRunning,
+  stage,
+  stageLabel,
+  configDriven,
+  scenarioLine,
+  scenarioSteps,
   mapping,
-  mappingChip
-} = useScenarioConfig(computed(() => props.deliverableType));
-// 解构出来的 ref/computed 在模板里会自动解包；留着 flow.* 访问则必须写 .value，容易漏
-const { steps, activeNo, doneCount, stageRunning, stage, stageLabel, ensureStep, stepHref, reload } =
-  useCreativeFlow(computed(() => props.taskId));
+  mappingChip,
+  ensureStep,
+  stepHref,
+  reload
+} = useCreativeFlow(
+  computed(() => props.taskId),
+  computed(() => props.deliverableType)
+);
 
 const stageType = computed(() => CREATIVE_STAGE_TYPES[stage.value || ''] || 'info');
-const progressPct = computed(() => Math.round((doneCount.value / 8) * 100));
+const progressPct = computed(() =>
+  steps.value.length ? Math.round((doneCount.value / steps.value.length) * 100) : 0
+);
 
 function go(step: FlowStep) {
   void router.push(stepHref(step.no));
@@ -195,6 +212,26 @@ watch(
 }
 
 .scenario-tag {
+  flex: none;
+  padding: 1px 7px;
+  color: var(--t3);
+  font-size: 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+/* 步骤来源（只读）：这条线是"按场景配置"还是"按代码八步回落"渲染的，一眼可辨 */
+.flow-source {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 8px 0 0;
+  color: var(--t3);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.source-tag {
   flex: none;
   padding: 1px 7px;
   color: var(--t3);
@@ -431,13 +468,18 @@ watch(
     .dot {
       border-color: #409eff;
       color: #409eff;
-      animation: flow-pulse 1.8s infinite;
     }
 
     .lbl {
       color: #409eff;
       font-weight: 600;
     }
+  }
+
+  /* 脉冲只给"当前步"：配置驱动后同一阶段可能有两步同时进行中（如资料与事实都覆盖 MATERIAL_READY），
+     两个圆点一起闪会让人以为界面出错了——进行中的都标蓝，只有当前这一步在脉冲。 */
+  &.is-doing.active .dot {
+    animation: flow-pulse 1.8s infinite;
   }
 
   &.is-blocked {
