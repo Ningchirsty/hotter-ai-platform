@@ -109,6 +109,10 @@
       </div>
 
       <p v-if="error" class="err">{{ error }}</p>
+      <!-- 取数失败必须说出来：不然界面会显示成"这个项目没有附件/候选/版本"——假的空态（R19 验收撞到过） -->
+      <p v-if="loadErrors.length" class="err">
+        {{ loadErrors.join('、') }}读取失败，点「刷新」重试——<strong>不是「没有数据」</strong>。
+      </p>
     </div>
 
     <!-- 大图预览：与既有页面一致，用 blob URL + 本地遮罩，不引入新的查看器组件 -->
@@ -171,6 +175,14 @@ const THUMB_CONCURRENCY = 4;
 
 const loading = ref(false);
 const error = ref('');
+/**
+ * 哪几块取数失败了。
+ *
+ * <p>为什么单独记：`Promise.all` 里每项都 `.catch(() => null)`，失败与"真的没有数据"
+ * 在界面上长得一模一样（都显示"还没有…"）。R19 的批量验收就撞到过：接口明明有 11/9/1，
+ * 抽屉却显示 0——被当成"产品没数据"排查了一轮。现在失败会明确写在下面。</p>
+ */
+const loadErrors = ref<string[]>([]);
 const drawerSize = ref('46%');
 
 const project = ref<CreativeProjectVO | null>(null);
@@ -314,15 +326,29 @@ async function load() {
   }
   loading.value = true;
   error.value = '';
+  loadErrors.value = [];
   try {
     const id = props.taskId;
+    const failed: string[] = [];
     const [fileRes, genRes, sbRes, pageRes, imgRes] = await Promise.all([
-      listCreativeFiles(id).catch(() => null),
-      listGenerations(id).catch(() => null),
+      listCreativeFiles(id).catch(() => {
+        failed.push('附件');
+        return null;
+      }),
+      listGenerations(id).catch(() => {
+        failed.push('出图候选');
+        return null;
+      }),
+      // 分镜只用来把 screenId 翻成屏号，取不到不影响主数据（屏号会显示"未归属屏"）
       getStoryboard(id).catch(() => null),
-      getDetailPage(id).catch(() => null),
+      getDetailPage(id).catch(() => {
+        failed.push('排版版本');
+        return null;
+      }),
+      // 产品图元信息：取不到就按"未配置"处理（页面别的地方也一样）
       getProjectProductImage(id).catch(() => null)
     ]);
+    loadErrors.value = failed;
     files.value = fileRes?.data || [];
     generations.value = (genRes?.data || []).toSorted((a, b) =>
       String(b.createTime || '').localeCompare(String(a.createTime || ''))
