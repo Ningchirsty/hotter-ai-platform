@@ -9,11 +9,12 @@
         <span class="spinner" aria-hidden="true" />这一步正在执行
       </span>
       <span class="spacer" />
-      <!-- 装配定义里的两个面板（R18 真做）：只读，任何页面都能开 -->
-      <el-button class="panel-btn" size="small" text :disabled="!taskId" @click="inspectorVisible = true">
+      <!-- 装配定义里的两个面板（R18 真做）：只读，任何页面都能开。
+           在工作台（R19）里由宿主统一托管，这里只发事件，不再自己开抽屉。 -->
+      <el-button class="panel-btn" size="small" text :disabled="!taskId" @click="openPanel('INSPECTOR')">
         检查器
       </el-button>
-      <el-button class="panel-btn" size="small" text :disabled="!taskId" @click="assetsVisible = true">
+      <el-button class="panel-btn" size="small" text :disabled="!taskId" @click="openPanel('ASSET_DRAWER')">
         资产
       </el-button>
       <div class="progress" :title="`已完成 ${doneCount} / ${steps.length} 步`">
@@ -149,22 +150,26 @@
       </el-popover>
     </div>
 
-    <!-- 两个真面板（ASSET_DRAWER / INSPECTOR，R18）：只读，随指引线出现在每个页面 -->
-    <CreativeInspectorPanel
-      v-model:visible="inspectorVisible"
-      :task-id="taskId"
-      :project-name="projectName"
-      :stage="stage"
-      :stage-label="stageLabel"
-      :current-step="currentStep"
-      :project-steps="projectSteps"
-      :on-load-detail="loadCurrentStepDetail"
-    />
-    <CreativeAssetDrawer
-      v-model:visible="assetsVisible"
-      :task-id="taskId"
-      :project-name="projectName"
-    />
+    <!-- 两个真面板（ASSET_DRAWER / INSPECTOR，R18）：只读，随指引线出现在每个页面。
+         R19 起，如果本指引线在工作台里（hostPanels=false），面板由工作台托管，
+         这里不再渲染（否则会出现两个抽屉）。 -->
+    <template v-if="hostPanels">
+      <CreativeInspectorPanel
+        v-model:visible="inspectorVisible"
+        :task-id="taskId"
+        :project-name="projectName"
+        :stage="stage"
+        :stage-label="stageLabel"
+        :current-step="currentStep"
+        :project-steps="projectSteps"
+        :on-load-detail="loadCurrentStepDetail"
+      />
+      <CreativeAssetDrawer
+        v-model:visible="assetsVisible"
+        :task-id="taskId"
+        :project-name="projectName"
+      />
+    </template>
   </div>
 </template>
 
@@ -202,10 +207,32 @@ const props = defineProps<{
    * 五个页面因此拿到同一份配置；这个 prop 保留给"页面已经知道类型"的场景（早一拍，少一次等待）。
    */
   deliverableType?: string;
+  /**
+   * 流程状态实例（R19）：由工作台（`CreativeWorkspace`）注入，避免同一页面里两份状态各发一遍请求。
+   *
+   * <p><b>约定</b>：每个页面要么都传（工作台托管）、要么都不传（指引线自持）。
+   * 本组件不支持运行中切换（那样会多出一份实例与它的监听）。</p>
+   */
+  flow?: ReturnType<typeof useCreativeFlow>;
+  /**
+   * 是否由本组件托管两个只读面板（默认 true）。工作台里传 false：面板改由工作台装配，
+   * 这里只通过 `open-panel` 事件请求打开，避免出现两个抽屉。
+   */
+  hostPanels?: boolean;
+}>();
+
+const emit = defineEmits<{
+  /** 请求打开面板（工作台托管时用）：`INSPECTOR` / `ASSET_DRAWER` */
+  (e: 'open-panel', code: 'INSPECTOR' | 'ASSET_DRAWER'): void;
 }>();
 
 const router = useRouter();
-// 单一来源：指引线、场景行、步序对照都从 useCreativeFlow 出（它内部复用同一份场景配置缓存）
+// 单一来源：指引线、场景行、步序对照、装配对照都从 useCreativeFlow 出
+// （内部复用同一份场景配置缓存）。R19 起可被工作台注入实例。
+const localFlow = props.flow ?? useCreativeFlow(
+  computed(() => props.taskId),
+  computed(() => props.deliverableType)
+);
 const {
   steps,
   activeNo,
@@ -225,14 +252,23 @@ const {
   ensureStep,
   stepHref,
   reload
-} = useCreativeFlow(
-  computed(() => props.taskId),
-  computed(() => props.deliverableType)
-);
+} = localFlow;
 
-/** 两个只读面板的开合（R18） */
+/** 两个只读面板的开合（仅在本组件托管时使用，R18/R19） */
 const inspectorVisible = ref(false);
 const assetsVisible = ref(false);
+/** 是否自己托管面板（工作台里为 false） */
+const hostPanels = computed(() => props.hostPanels !== false);
+
+/** 面板入口：自己托管就开抽屉，否则交给工作台 */
+function openPanel(code: 'INSPECTOR' | 'ASSET_DRAWER') {
+  if (hostPanels.value) {
+    if (code === 'INSPECTOR') inspectorVisible.value = true;
+    else assetsVisible.value = true;
+    return;
+  }
+  emit('open-panel', code);
+}
 
 /** 当前步（进行中的那一步）；检查器据此展示判据与状态来源 */
 const currentStep = computed<FlowStep | null>(

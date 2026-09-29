@@ -379,3 +379,106 @@ export const ASSEMBLY_KIND_LABELS: Record<AssemblyKind, string> = {
   SECTION: '页面内区块',
   MISSING: '未实现'
 };
+
+// ---------------------------------------------------------------------------
+// R19：装配运行时——把配置里的面板清单翻成"这次要渲染哪些槽位"
+// ---------------------------------------------------------------------------
+
+/** 一个槽位要渲染成什么 */
+export type AssemblyTarget =
+  /** 步骤导航（指引线） */
+  | 'GUIDE'
+  /** 主舞台：页面自己的内容（通过 main 插槽接进来） */
+  | 'MAIN'
+  /** 从真实组件注册表里解析组件 */
+  | 'COMPONENT'
+  /** 这次不渲染（还没拆成组件 / 还没实现 / 没登记），但要如实给出原因 */
+  | 'SKIP';
+
+/** 装配计划里的一条槽位 */
+export interface AssemblySlot {
+  /** 面板编码（与配置里的名字一致） */
+  code: string;
+  /** 面板/组件分类 */
+  kind: AssemblyKind;
+  /** 渲染成什么 */
+  target: AssemblyTarget;
+  /** 为什么这样安排（SKIP 时尤其要说清） */
+  reason: string;
+}
+
+/**
+ * 把配置里的面板清单翻成装配计划（R19）。
+ *
+ * <p>规则（左侧是配置里的名字，右侧是这次渲染成什么）：</p>
+ * <ul>
+ *   <li>{@code STEP_NAVIGATOR} → {@code GUIDE}（指引线，五页共用的那个组件）；</li>
+ *   <li>{@code MAIN_STAGE} → {@code MAIN}（页面自身内容，由 main 插槽接进来）；</li>
+ *   <li>已经是独立组件的（{@code COMPONENT}）→ {@code COMPONENT}（运行时按名字解析）；</li>
+ *   <li>页面内区块（{@code SECTION}）与未实现（{@code MISSING}）→ {@code SKIP}，
+ *       并给出"还没拆成组件/还没实现"的原因——**不渲染空白，也不假装装配成功**。</li>
+ * </ul>
+ *
+ * <p>配置读不到时给一份**兜底计划**（指引线 + 主舞台）：这就是改造前四个页面的样子，
+ * 也就是说配置层挂了只是"少了配置驱动的那几块"，不会把页面弄空。</p>
+ *
+ * @param panelRows 装配对照里的面板行（`AssemblyDiff.panelRows`）；为空表示配置读不到
+ * @param registry  真实组件注册表（用于判断"能不能解析出组件"）
+ * @returns 按配置顺序的装配计划
+ */
+export function buildAssemblyPlan(
+  panelRows: AssemblyRow[] | null | undefined,
+  registry: Record<string, unknown> = CODE_COMPONENT_REGISTRY
+): AssemblySlot[] {
+  if (!panelRows || !panelRows.length) {
+    return [
+      { code: 'STEP_NAVIGATOR', kind: 'COMPONENT', target: 'GUIDE', reason: '配置读不到，按既有布局渲染指引线' },
+      { code: 'MAIN_STAGE', kind: 'SECTION', target: 'MAIN', reason: '配置读不到，按既有布局渲染页面内容' }
+    ];
+  }
+  return panelRows.map((row) => {
+    if (row.code === 'STEP_NAVIGATOR') {
+      return { code: row.code, kind: row.kind, target: 'GUIDE' as AssemblyTarget, reason: '步骤导航：五页共用的指引线组件' };
+    }
+    if (row.code === 'MAIN_STAGE') {
+      return { code: row.code, kind: row.kind, target: 'MAIN' as AssemblyTarget, reason: '主舞台：页面自身内容通过 main 插槽接入' };
+    }
+    if (row.kind === 'COMPONENT' && registry[row.component || row.code]) {
+      return { code: row.code, kind: row.kind, target: 'COMPONENT' as AssemblyTarget, reason: '已是独立组件，按名字解析' };
+    }
+    return {
+      code: row.code,
+      kind: row.kind,
+      target: 'SKIP' as AssemblyTarget,
+      reason:
+        row.kind === 'SECTION'
+          ? '还是页面内区块，没拆成组件——拆完才会参与装配'
+          : row.kind === 'MISSING'
+            ? '代码里还没实现（或在配置里声明并入某步）'
+            : '注册表里没有登记'
+    };
+  });
+}
+
+/**
+ * 装配计划里真正会渲染出来的槽位（GUIDE / MAIN / COMPONENT）。
+ *
+ * @param plan 装配计划
+ * @returns 会渲染的槽位
+ */
+export function assembledSlots(plan: AssemblySlot[]): AssemblySlot[] {
+  return plan.filter((slot) => slot.target !== 'SKIP');
+}
+
+/**
+ * 一句话说明这次装配（给界面与验收用，如 `装配 4 / 5 个槽位：STEP_NAVIGATOR、MAIN_STAGE、INSPECTOR、ASSET_DRAWER`）。
+ *
+ * @param plan 装配计划
+ * @returns 说明文本
+ */
+export function describeAssembly(plan: AssemblySlot[]): string {
+  const live = assembledSlots(plan);
+  const skipped = plan.filter((s) => s.target === 'SKIP');
+  const head = `装配 ${live.length} / ${plan.length} 个槽位：${live.map((s) => s.code).join('、')}`;
+  return skipped.length ? `${head}；未装配：${skipped.map((s) => s.code).join('、')}` : head;
+}

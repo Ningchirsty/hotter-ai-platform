@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   ASSEMBLY_KIND_LABELS,
   CODE_COMPONENT_REGISTRY,
+  assembledSlots,
+  buildAssemblyPlan,
+  describeAssembly,
   diffWorkspaceAssembly,
   formatAssemblyChip,
   layoutOfWorkspace,
@@ -216,5 +219,80 @@ describe('workspaceAssembly：对照', () => {
     expect(resolveWorkspaceComponent('QaPanel')).toBeNull();
     expect(resolveWorkspaceComponent('')).toBeNull();
     expect(resolveWorkspaceComponent(null)).toBeNull();
+  });
+});
+
+/**
+ * R19：装配运行时——把面板清单翻成槽位。
+ *
+ * <p>钉的是"渲染什么、跳过什么、为什么跳过"：跳过错了会让页面少一块（用户看不见原因），
+ * 该跳过的没跳过会渲染出空白（更糟：看起来像坏了）。</p>
+ */
+describe('装配运行时：槽位计划', () => {
+  const diff = diffWorkspaceAssembly(parseWorkspaceLayout(SEED_JSON))!;
+
+  it('按配置顺序翻槽位：指引线→GUIDE、主舞台→MAIN、已实现组件→COMPONENT、其余→SKIP', () => {
+    const plan = buildAssemblyPlan(diff.panelRows);
+    expect(plan.map((s) => [s.code, s.target])).toEqual([
+      ['PROJECT_HEADER', 'SKIP'],
+      ['STEP_NAVIGATOR', 'GUIDE'],
+      ['MAIN_STAGE', 'MAIN'],
+      ['INSPECTOR', 'COMPONENT'],
+      ['ASSET_DRAWER', 'COMPONENT']
+    ]);
+    // 跳过必须带原因（否则界面上只会"少一块"，没人知道为什么）
+    for (const slot of plan.filter((s) => s.target === 'SKIP')) {
+      expect(slot.reason, `${slot.code} 跳过却没写原因`).toBeTruthy();
+    }
+    expect(plan[0].reason).toContain('页面内区块');
+  });
+
+  it('真正渲染的槽位与说明文本', () => {
+    const plan = buildAssemblyPlan(diff.panelRows);
+    expect(assembledSlots(plan).map((s) => s.code)).toEqual([
+      'STEP_NAVIGATOR', 'MAIN_STAGE', 'INSPECTOR', 'ASSET_DRAWER'
+    ]);
+    expect(describeAssembly(plan)).toBe(
+      '装配 4 / 5 个槽位：STEP_NAVIGATOR、MAIN_STAGE、INSPECTOR、ASSET_DRAWER；未装配：PROJECT_HEADER'
+    );
+  });
+
+  it('配置读不到 → 兜底计划是"指引线 + 主舞台"（页面不会变空）', () => {
+    for (const empty of [null, undefined, []]) {
+      const plan = buildAssemblyPlan(empty as never);
+      expect(plan.map((s) => s.target)).toEqual(['GUIDE', 'MAIN']);
+      expect(assembledSlots(plan)).toHaveLength(2);
+      expect(describeAssembly(plan)).toBe('装配 2 / 2 个槽位：STEP_NAVIGATOR、MAIN_STAGE');
+    }
+  });
+
+  it('只有真注册过的组件才会被装配（配置里写了名字但没实现 → SKIP）', () => {
+    const layout = parseWorkspaceLayout(
+      '{"workspace":"W","panels":["STEP_NAVIGATOR","MAIN_STAGE","QaPanel"],"steps":[]}'
+    );
+    const d = diffWorkspaceAssembly(layout)!;
+    const plan = buildAssemblyPlan(d.panelRows);
+    expect(plan.map((s) => [s.code, s.target])).toEqual([
+      ['STEP_NAVIGATOR', 'GUIDE'], ['MAIN_STAGE', 'MAIN'], ['QaPanel', 'SKIP']
+    ]);
+    expect(plan[2].reason).toContain('还没实现');
+  });
+
+  it('注入注册表可以改变装配结果（运行时真的按注册表解析，而不是写死名单）', () => {
+    const layout = parseWorkspaceLayout(
+      '{"workspace":"W","panels":["STEP_NAVIGATOR","MAIN_STAGE","FUTURE_PANEL"],"steps":[]}'
+    );
+    const withFuture = {
+      ...CODE_COMPONENT_REGISTRY,
+      FUTURE_PANEL: { kind: 'COMPONENT' as const, location: 'components/FuturePanel.vue', note: '假设已实现' }
+    };
+    const d = diffWorkspaceAssembly(layout, { registry: withFuture })!;
+    const plan = buildAssemblyPlan(d.panelRows, withFuture);
+    expect(plan[2]).toEqual({
+      code: 'FUTURE_PANEL',
+      kind: 'COMPONENT',
+      target: 'COMPONENT',
+      reason: '已是独立组件，按名字解析'
+    });
   });
 });

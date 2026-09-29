@@ -1,7 +1,10 @@
 <template>
   <div class="studio">
-    <CreativeFlowGuide :task-id="taskId" :refresh-token="flowToken" />
-    <header class="dna-head">
+    <!-- R19 试点：本页改成由工作台容器按配置装配（指引线 / 主舞台 / 检查器 / 资产抽屉），
+         页面自身内容通过 #main 槽接入——用户可见行为与改造前一致。 -->
+    <CreativeWorkspace :task-id="taskId" :refresh-token="flowToken">
+      <template #main>
+        <header class="dna-head">
       <div>
         <h2>视觉基因 DNA</h2>
         <p class="muted">
@@ -321,6 +324,8 @@
         <el-button type="primary" @click="recommendVisible = false">知道了（已填入表单，保存后生效）</el-button>
       </template>
     </el-dialog>
+      </template>
+    </CreativeWorkspace>
   </div>
 </template>
 
@@ -344,7 +349,7 @@ import {
   DNA_SOURCE_LABELS,
   DNA_SOURCE_TYPES
 } from '@/api/creative/types';
-import CreativeFlowGuide from '../components/CreativeFlowGuide.vue';
+import CreativeWorkspace from '../components/CreativeWorkspace.vue';
 
 const projects = ref<CreativeProjectVO[]>([]);
 const taskId = ref('');
