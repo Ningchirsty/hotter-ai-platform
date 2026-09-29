@@ -3,7 +3,7 @@
  *
  *   1. 同输入两次渲染逐像素一致（sha256 相等）
  *   2. 中文字体可用（服务端缺字即失败；此处再核对探针宽度与「有字/无字」渲染确实不同）
- *   3. 750×N 长图（N ≥ 5000px）内存与耗时实测值
+ *   3. 长图（宽 × N，N ≥ 5000px）内存与耗时实测值
  *   4. 同一屏：单独渲染 == 整页中该屏（逐像素一致）
  *
  * 退出码非 0 表示验收未通过。
@@ -41,6 +41,13 @@ async function render(payload) {
     cjkWidth: Number(res.headers.get('x-font-cjk-width') || 0),
     rss: Number(res.headers.get('x-rss-bytes') || 0)
   };
+}
+
+/** 从 PNG 字节里读出真实像素宽度（IHDR 的宽，大端 4 字节；不引第三方库） */
+function pngWidth(buf) {
+  // 签名 89 50 4E 47 + IHDR 块头共 16 字节，宽度在偏移 16 处
+  if (buf.length < 24 || buf.readUInt32BE(0) !== 0x89504e47) return 0;
+  return buf.readUInt32BE(16);
 }
 
 function heroLayout(title) {
@@ -111,7 +118,12 @@ async function main() {
   // ---- 3. 长图（12 屏，≥5000px） ----
   const long = await render({ templateCode: 'longpage', templateVersion: '1.0.0', mode: 'page', layout: pageLayout(12) });
   check('长图高度 ≥ 5000px', long.height >= 5000, `height=${long.height} width=${long.width}`);
-  check('长图为 750 宽', long.width === 750, `width=${long.width}`);
+  // 宽度不再写死 750：渲染服务在 x-page-width 里自报本次页面宽度（由模板决定），
+  // 这里核对「真实 PNG 像素宽度 == 自报宽度」且 > 0——多场景/多版式上线后不用改断言。
+  const longPngWidth = pngWidth(long.buf);
+  check('长图实际 PNG 宽度与自报宽度一致且 > 0',
+    longPngWidth > 0 && longPngWidth === long.width,
+    `pngWidth=${longPngWidth} x-page-width=${long.width} bytes=${long.buf.length}`);
   check('长图耗时在合理范围（< 60s）', long.ms < 60000, `renderMs=${long.ms}`);
   check('长图内存已实测（RSS < 2GB）', long.rss > 0 && long.rss < 2 * 1024 * 1024 * 1024,
     `rss=${(long.rss / 1024 / 1024).toFixed(0)}MB renderMs=${long.ms} bytes=${long.buf.length}`);
