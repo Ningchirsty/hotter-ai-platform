@@ -426,10 +426,24 @@ export function useCreativeFlow(
   /** 是否配置驱动（读不到就回落，保证指引线永远能用） */
   const configDriven = computed(() => plan.value.length > 0);
 
-  /** 计划（配置或回落）——状态在下面按模式填 */
-  const plans = computed<GuideStepPlan[]>(() =>
-    configDriven.value ? plan.value : buildFallbackSteps()
+  /**
+   * 配置是否还在读取中（已发请求、还没结果）。
+   *
+   * <p>有它才能既不闪、也不假：读配置期间**不渲染代码八步回落**，否则页面上会先出现 8 步、
+   * 配置到了再跳成 10 步（实测在基因页/分镜页能看到这一下，项目页因为传了 prop 通常快到看不见）。
+   * 回落只留给"确实拿不到配置"（交付类型为空或请求失败），那时 `loading` 已经归 false。</p>
+   */
+  const configPending = computed(
+    () => scenario.loading.value && scenario.scenarioSteps.value.length === 0
   );
+
+  /** 计划（配置或回落）——状态在下面按模式填 */
+  const plans = computed<GuideStepPlan[]>(() => {
+    if (configPending.value) {
+      return [];
+    }
+    return configDriven.value ? plan.value : buildFallbackSteps();
+  });
 
   /** 当前步（计划里的序号）：配置驱动时取"第一个进行中"，回落时按阶段+本地判据 */
   const activeNo = computed(() => {
@@ -671,6 +685,7 @@ export function useCreativeFlow(
     doneCount,
     progressTotal,
     configDriven,
+    configPending,
     stepsLoaded,
     projectSteps,
     deliveryType,

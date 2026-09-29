@@ -16,6 +16,7 @@
     </div>
 
     <p v-if="!taskId" class="flow-empty">选择一个视觉项目后，这里会显示它在流程里的位置。</p>
+    <p v-else-if="!steps.length" class="flow-empty">正在读取流程配置…</p>
 
     <ol v-else class="flow-steps">
       <li
@@ -66,7 +67,7 @@
       </li>
     </ol>
     <!-- 步骤来源（只读补充信息）：告诉人这条线是按场景配置（十步）还是按代码八步回落渲染的 -->
-    <p v-if="taskId" class="flow-source">
+    <p v-if="taskId && steps.length" class="flow-source">
       <span class="source-tag">{{ configDriven ? '按场景配置' : '按代码八步（配置未取到）' }}</span>
       <span v-if="configDriven">共 {{ steps.length }} 步：{{ steps.map((s) => s.name).join(' → ') }}</span>
     </p>
