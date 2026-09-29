@@ -20,29 +20,36 @@
 
       <p class="drawer-note">
         只读：这里只把项目里已有的资产（参考图/产品图、出图候选、排版版本）集中列出来，不做任何修改。
+        附件缩略图是**原图直读**（附件目前没有缩略图接口），首次打开会慢一点，所以自动加载有上限。
       </p>
 
       <!-- 参考图与产品图 -->
       <div class="section">
         <div class="sec-head">
           <span>参考图与产品图</span>
-          <span class="sec-count">{{ imageFiles.length }} 张附件{{ productImage ? ' · 产品图 1 张' : '' }}</span>
+          <span class="sec-count">
+            {{ imageFiles.length }} 张附件{{ productImage ? ' · 产品图 1 张' : '' }}
+            <template v-if="thumbPending"> · 缩略图 {{ thumbDone }}/{{ thumbTotal }} 读取中…</template>
+          </span>
         </div>
         <p v-if="!imageFiles.length && !productImage" class="empty">项目里还没有图片附件（在项目页上传参考图/产品图）</p>
         <div v-else class="thumbs">
           <div v-if="productImage" class="thumb">
             <img v-if="productThumb" :src="productThumb" alt="产品图" />
-            <div v-else class="thumb-ph">产品图</div>
+            <div v-else class="thumb-ph">{{ productThumbFailed ? '读取失败' : '读取中…' }}</div>
             <span class="thumb-name">{{ productImage.fileName || '产品图' }}</span>
             <span class="thumb-tag is-product">产品图</span>
           </div>
           <div v-for="img in shownImages" :key="String(img.fileId)" class="thumb">
             <img v-if="thumbs[thumbKey(img)]" :src="thumbs[thumbKey(img)]" alt="参考图" />
-            <div v-else class="thumb-ph">读取中…</div>
+            <div v-else class="thumb-ph">{{ failedThumbs[thumbKey(img)] ? '读取失败' : '读取中…' }}</div>
             <span class="thumb-name">{{ img.fileName || img.fileId }}</span>
             <span class="thumb-tag">参考图</span>
           </div>
         </div>
+        <p v-if="failedCount" class="hint">
+          有 {{ failedCount }} 张缩略图读取失败（原图仍在对象存储里，可在项目页重试）——没有用占位图假装成功。
+        </p>
         <el-button
           v-if="imageFiles.length > THUMB_LIMIT"
           size="small"
@@ -159,6 +166,8 @@ const visible = defineModel<boolean>('visible', { required: true });
 
 /** 自动加载缩略图的上限 */
 const THUMB_LIMIT = 12;
+/** 缩略图并发路数（原图直读，串行太慢；并发太高会打满带宽） */
+const THUMB_CONCURRENCY = 4;
 
 const loading = ref(false);
 const error = ref('');
@@ -173,7 +182,15 @@ const productImage = ref<{ fileName?: string; configured?: boolean } | null>(nul
 
 /** 缩略图：key → blob URL（key 用 `file-<id>` / `product`） */
 const thumbs = ref<Record<string, string>>({});
+/** 读取失败的缩略图（如实标"读取失败"，不永远停在"读取中"） */
+const failedThumbs = ref<Record<string, boolean>>({});
 const productThumb = ref('');
+const productThumbFailed = ref(false);
+/** 缩略图进度（给标题栏显示"8/12 读取中…"） */
+const thumbTotal = ref(0);
+const thumbDone = ref(0);
+const thumbPending = computed(() => thumbTotal.value > 0 && thumbDone.value < thumbTotal.value);
+const failedCount = computed(() => Object.keys(failedThumbs.value).length + (productThumbFailed.value ? 1 : 0));
 const thumbLimit = ref(THUMB_LIMIT);
 const preview = ref<{ url: string; title: string }>({ url: '', title: '' });
 
@@ -236,10 +253,14 @@ function putUrl(key: string, url: string) {
 function releaseAll() {
   Object.values(thumbs.value).forEach((u) => URL.revokeObjectURL(u));
   thumbs.value = {};
+  failedThumbs.value = {};
+  thumbTotal.value = 0;
+  thumbDone.value = 0;
   if (productThumb.value) {
     URL.revokeObjectURL(productThumb.value);
     productThumb.value = '';
   }
+  productThumbFailed.value = false;
   closePreview();
 }
 
@@ -251,18 +272,39 @@ function closePreview() {
   preview.value = { url: '', title: '' };
 }
 
-/** 加载指定附件的缩略图（失败只记一条错误，不编造占位图） */
+/**
+ * 加载缩略图：**有界并发**（默认 4 路）。
+ *
+ * <p>为什么不是串行 <code>for await</code>：附件缩略图是原图直读，单张可能 1~3MB，
+ * 串行 12 张在慢网下要十几秒（实测"打开抽屉后一直显示读取中"，看着像坏了）。
+ * 4 路并发能把等待压到 1/3 左右，同时不至于把带宽打满。</p>
+ *
+ * <p>失败的格子标"读取失败"，**不会永远停在"读取中…"**——那是假状态。</p>
+ *
+ * @param list 要加载的附件
+ */
 async function loadThumbs(list: CpTaskFileVO[]) {
-  for (const file of list) {
-    const key = thumbKey(file);
-    if (thumbs.value[key]) continue;
-    try {
-      const url = await fetchCreativeFileBlobUrl(props.taskId as string | number, file.fileId as string | number);
-      putUrl(key, url);
-    } catch (e) {
-      error.value = '有图片缩略图读取失败（其余照常显示）';
+  const queue = list.filter((f) => !thumbs.value[thumbKey(f)] && !failedThumbs.value[thumbKey(f)]);
+  thumbTotal.value = list.length;
+  thumbDone.value = list.length - queue.length;
+  const workers = Array.from({ length: Math.min(THUMB_CONCURRENCY, queue.length) }, async () => {
+    for (;;) {
+      const file = queue.shift();
+      if (!file) {
+        return;
+      }
+      const key = thumbKey(file);
+      try {
+        const url = await fetchCreativeFileBlobUrl(props.taskId as string | number, file.fileId as string | number);
+        putUrl(key, url);
+      } catch (e) {
+        failedThumbs.value = { ...failedThumbs.value, [key]: true };
+      } finally {
+        thumbDone.value += 1;
+      }
     }
-  }
+  });
+  await Promise.all(workers);
 }
 
 /** 加载数据（打开抽屉时调用；也可手动刷新） */
@@ -298,6 +340,7 @@ async function load() {
         productThumb.value = await fetchProductImageBlobUrl(id);
       } catch (e) {
         productThumb.value = '';
+        productThumbFailed.value = true;
       }
     }
     await loadThumbs(shownImages.value);
@@ -540,6 +583,13 @@ watch(
   margin: 12px 0 0;
   color: #e6a23c;
   font-size: 12px;
+}
+
+.hint {
+  margin: 6px 0 0;
+  color: #e6a23c;
+  font-size: 11px;
+  line-height: 1.7;
 }
 
 .preview-mask {
