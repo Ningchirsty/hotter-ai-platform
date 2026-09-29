@@ -3,24 +3,44 @@ package org.dromara.creative.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
+import org.dromara.content.domain.vo.ContentTaskDetailVo;
+import org.dromara.content.service.IContentTaskService;
+import org.dromara.creative.domain.DpDetailPageVersion;
+import org.dromara.creative.domain.DpDeliveryType;
+import org.dromara.creative.domain.DpGeneration;
 import org.dromara.creative.domain.DpModuleDefinition;
 import org.dromara.creative.domain.DpProjectModule;
 import org.dromara.creative.domain.DpScenarioProfile;
+import org.dromara.creative.domain.DpStoryboard;
+import org.dromara.creative.domain.DpStoryboardScreen;
+import org.dromara.creative.domain.bo.ProjectModulePlanBo;
+import org.dromara.creative.domain.vo.ProjectModulePlanVo;
+import org.dromara.creative.helper.CreativeFacts;
 import org.dromara.creative.helper.CreativeScreenSkeleton;
+import org.dromara.creative.mapper.CreativeTaskStageMapper;
+import org.dromara.creative.mapper.DpDetailPageVersionMapper;
+import org.dromara.creative.mapper.DpGenerationMapper;
 import org.dromara.creative.mapper.DpModuleDefinitionMapper;
 import org.dromara.creative.mapper.DpProjectModuleMapper;
+import org.dromara.creative.mapper.DpStoryboardMapper;
+import org.dromara.creative.mapper.DpStoryboardScreenMapper;
 import org.dromara.creative.service.ICreativeModuleService;
 import org.dromara.creative.service.ICreativeScenarioConfigService;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
- * 模块引擎实现（V0.2 R21，文档 §18/§20/§21）。
+ * 模块引擎实现（V0.2 R21/R22，文档 §18/§20/§21/§24）。
  *
  * @author creative
  */
@@ -35,9 +55,30 @@ public class CreativeModuleServiceImpl implements ICreativeModuleService {
     /** 启用的取值（本项目约定：0=启用 1=停用） */
     private static final String ENABLED = "0";
 
+    /** 停用 */
+    private static final String DISABLED = "1";
+
+    /** 单模块屏数上限（护栏：防止一次拖成 99 屏把分镜生成拖垮；模块定义更严时以定义为准） */
+    private static final int MAX_SCREENS_HARD_LIMIT = 10;
+
+    /** 各文本字段的长度上限（与建表长度一致；超了直接拒绝，不静默截断） */
+    private static final int LEN_NAME = 128;
+    private static final int LEN_CODE = 64;
+    private static final int LEN_TYPE = 32;
+    private static final int LEN_OBJECTIVE = 500;
+    private static final int LEN_CODES = 500;
+    private static final int LEN_COPY = 1000;
+    private static final int LEN_REMARK = 500;
+
     private final DpModuleDefinitionMapper definitionMapper;
     private final DpProjectModuleMapper projectModuleMapper;
     private final ICreativeScenarioConfigService scenarioConfigService;
+    private final CreativeTaskStageMapper stageMapper;
+    private final IContentTaskService contentTaskService;
+    private final DpStoryboardMapper storyboardMapper;
+    private final DpStoryboardScreenMapper screenMapper;
+    private final DpGenerationMapper generationMapper;
+    private final DpDetailPageVersionMapper detailPageVersionMapper;
 
     @Override
     public List<DpModuleDefinition> listDefinitions(String deliveryType) {
@@ -75,16 +116,12 @@ public class CreativeModuleServiceImpl implements ICreativeModuleService {
         if (type == null) {
             return existing;
         }
-        List<DpModuleDefinition> defaults = definitionMapper.selectList(new LambdaQueryWrapper<DpModuleDefinition>()
-            .eq(DpModuleDefinition::getDeliveryType, type)
-            .eq(DpModuleDefinition::getEnabled, ENABLED)
-            .eq(DpModuleDefinition::getDefaultSelected, "1")
-            .orderByAsc(DpModuleDefinition::getDefaultSortNo)
-            .orderByAsc(DpModuleDefinition::getId));
+        List<DpModuleDefinition> defaults = defaultDefinitions(type);
         if (defaults.isEmpty()) {
             log.warn("交付类型 {} 没有默认模块骨架，项目 {} 的模块计划无法初始化（分镜将回落契约文件）", type, taskId);
             return existing;
         }
+        int sortNo = 10;
         for (DpModuleDefinition definition : defaults) {
             DpProjectModule row = new DpProjectModule();
             row.setTaskId(taskId);
@@ -93,59 +130,472 @@ public class CreativeModuleServiceImpl implements ICreativeModuleService {
             row.setScreenType(definition.getScreenType());
             // 默认屏数取 min_screens：种子把"卖点"写成 min=2/max=2，于是默认就是今天的"卖点一/卖点二"
             row.setScreenCount(definition.getMinScreens() == null ? 1 : definition.getMinScreens());
-            row.setSortNo(definition.getDefaultSortNo());
+            row.setSortNo(sortNo);
+            sortNo += 10;
             row.setStatus("PLANNED");
             row.setSource("DEFAULT");
+            row.setEnabled(ENABLED);
+            // 右栏字段从模块定义带一份初值：规划页一打开就能看到"这个模块原本要什么"
+            row.setObjective(definition.getObjective());
+            row.setRequiredFactCodes(definition.getRequiredFacts());
+            row.setWorkflowCodes(definition.getAllowedWorkflows());
+            row.setTemplateCodes(definition.getAllowedTemplates());
+            row.setVisualRulesJson(definition.getVisualRulesJson());
             row.setRemark("按交付类型 " + type + " 的默认骨架初始化（R21）");
             projectModuleMapper.insert(row);
         }
         List<DpProjectModule> created = listProjectModules(taskId);
         log.info("项目 {} 按交付类型 {} 初始化模块计划：{} 个模块 / {} 屏",
-            taskId, type, created.size(), countScreens(created));
+            taskId, type, created.size(), countScreens(enabledOnly(created)));
         return created;
     }
 
     @Override
-    public CreativeScreenSkeleton skeletonOf(Long taskId, String deliveryType) {
+    public ActiveScreens activeScreens(Long taskId, String deliveryType) {
         String type = canonical(deliveryType);
         List<DpProjectModule> modules = ensureProjectModules(taskId, deliveryType);
         if (modules.isEmpty()) {
-            return null;
+            return new ActiveScreens(null, List.of());
         }
-        // 一次把该交付类型的定义读进来做成 map：保真等级与取景以**定义**为准（计划只是快照）。
-        // 别在循环里逐个查库（N+1），也避免"定义缺失时只能猜"。
-        Map<String, DpModuleDefinition> definitions = new LinkedHashMap<>();
-        for (DpModuleDefinition definition : listDefinitions(type)) {
-            definitions.putIfAbsent(definition.getModuleCode(), definition);
+        List<DpProjectModule> usable = enabledOnly(modules);
+        if (usable.isEmpty()) {
+            // 有计划但一个模块都没启用：**不能回落契约文件**——那会凭空出现 7 屏，
+            // 用户看到的分镜与自己刚保存的计划完全无关。这里明确报错。
+            throw new ServiceException("模块计划里没有启用的模块，无法出屏；请在「模块规划」里至少启用一个模块。");
         }
-        List<CreativeScreenSkeleton.ScreenSpec> specs = new ArrayList<>();
+        Map<String, DpModuleDefinition> definitions = definitionMap(type);
+        Expansion expansion = expand(usable, definitions);
         Map<String, String> typeDesc = new LinkedHashMap<>();
-        for (DpProjectModule module : modules) {
-            DpModuleDefinition definition = definitions.get(module.getModuleCode());
-            int count = module.getScreenCount() == null ? 1 : Math.max(1, module.getScreenCount());
-            for (int i = 0; i < count; i++) {
-                String label = count == 1 ? module.getModuleName() : module.getModuleName() + cn(i);
-                specs.add(new CreativeScreenSkeleton.ScreenSpec(
-                    module.getScreenType(), label, lockLevelOf(definition), shotOf(module, definition)));
-            }
+        for (DpProjectModule module : usable) {
             typeDesc.putIfAbsent(module.getScreenType(), module.getModuleName());
         }
-        try {
-            return CreativeScreenSkeleton.of(specs, typeDesc);
-        } catch (Exception e) {
-            // 模块计划本身坏了（展示名重复/缺取景等）：不静默改成空骨架，交给调用方回落契约文件
-            log.warn("项目 {} 的模块计划无法构成屏骨架（{}），将回落到契约文件", taskId, e.getMessage());
-            return null;
+        // 展开后仍可能坏（例如两个不同模块名撞成同一个展示名）：让它抛出去。
+        // 以前这里 catch 后返回 null，调用方会静默回落契约文件——对"人工编辑过的计划"来说那是假象。
+        CreativeScreenSkeleton skeleton = CreativeScreenSkeleton.of(expansion.specs(), typeDesc);
+        return new ActiveScreens(skeleton, expansion.owners());
+    }
+
+    @Override
+    public CreativeScreenSkeleton skeletonOf(Long taskId, String deliveryType) {
+        return activeScreens(taskId, deliveryType).skeleton();
+    }
+
+    @Override
+    public ProjectModulePlanVo planOf(Long taskId) {
+        CpTaskMeta meta = requireTask(taskId);
+        ProjectModulePlanVo vo = new ProjectModulePlanVo();
+        vo.setTaskId(taskId);
+        vo.setDeliveryType(meta.deliveryType());
+        DpDeliveryType type = scenarioConfigService.getDeliveryType(meta.deliveryType());
+        vo.setDeliveryName(type == null || StringUtils.isBlank(type.getDeliveryName())
+            ? meta.deliveryType() : type.getDeliveryName());
+        List<DpProjectModule> modules = listProjectModules(taskId);
+        vo.setModules(modules);
+        vo.setLibrary(listDefinitions(meta.deliveryType()));
+        Map<String, DpModuleDefinition> definitions = definitionMap(meta.deliveryType());
+        Map<String, String> facts = confirmedFacts(taskId);
+        List<ProjectModulePlanVo.ScreenPreview> preview =
+            preview(enabledOnly(modules), definitions, facts);
+        vo.setScreens(preview);
+        vo.setScreenCount(preview.size());
+
+        String blockReason = editBlockReason(taskId);
+        vo.setEditable(blockReason == null);
+        vo.setEditBlockReason(blockReason);
+        vo.setStoryboard(storyboardRef(taskId, preview));
+        return vo;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ProjectModulePlanVo savePlan(Long taskId, ProjectModulePlanBo bo) {
+        CpTaskMeta meta = requireTask(taskId);
+        String blockReason = editBlockReason(taskId);
+        if (blockReason != null) {
+            throw new ServiceException(blockReason);
         }
+        if (bo == null || bo.getModules() == null || bo.getModules().isEmpty()) {
+            throw new ServiceException("模块计划不能为空：至少保留一个启用的模块。");
+        }
+        Map<String, DpModuleDefinition> definitions = definitionMap(meta.deliveryType());
+        List<DpProjectModule> rows = new ArrayList<>();
+        int sortNo = 10;
+        int enabledCount = 0;
+        for (ProjectModulePlanBo.Item item : bo.getModules()) {
+            DpProjectModule row = toRow(taskId, item, definitions);
+            row.setSortNo(sortNo);
+            sortNo += 10;
+            if (ENABLED.equals(row.getEnabled())) {
+                enabledCount++;
+            }
+            rows.add(row);
+        }
+        if (enabledCount == 0) {
+            throw new ServiceException("至少要启用一个模块，否则分镜没有任何屏可出。");
+        }
+        // 先用同一段展开逻辑校验一遍：坏计划不该写进库（写进去以后分镜才报错，定位成本高得多）。
+        // 展开/校验抛的是 IllegalArgumentException（骨架契约那层的语言），这里翻译成用户能看懂的业务错误。
+        try {
+            CreativeScreenSkeleton.of(expand(rows.stream()
+                .filter(r -> ENABLED.equals(r.getEnabled())).toList(), definitions).specs(), Map.of());
+        } catch (IllegalArgumentException e) {
+            throw new ServiceException("模块计划无法构成屏骨架：" + e.getMessage());
+        }
+
+        List<DpProjectModule> before = listProjectModules(taskId);
+        // 留痕：软删旧行（del_flag=1，@TableLogic 自动过滤），再按新顺序写入。
+        // 不做物理删除：模块计划的每次修改都该留下一行可追溯的历史。
+        for (DpProjectModule old : before) {
+            projectModuleMapper.deleteById(old.getId());
+        }
+        for (DpProjectModule row : rows) {
+            projectModuleMapper.insert(row);
+        }
+        log.info("项目 {} 保存模块计划：{} 行（启用 {}）→ {} 屏；旧计划 {} 行已软删",
+            taskId, rows.size(), enabledCount, countScreens(rows.stream()
+                .filter(r -> ENABLED.equals(r.getEnabled())).toList()), before.size());
+        return planOf(taskId);
+    }
+
+    // ------------------------------------------------------------------
+    // 计划 → 屏（Module Plan → Screen Plan，文档 §21）
+    // ------------------------------------------------------------------
+
+    /**
+     * 展开结果：屏定义 + "第几屏来自哪一行"（预览要用模块名，且必须与骨架逐屏对齐）。
+     */
+    private record Expansion(List<CreativeScreenSkeleton.ScreenSpec> specs, List<DpProjectModule> owners) {
     }
 
     /**
-     * 取模块的保真等级：以模块定义为准（项目模块只是快照）。
+     * 把模块计划展开成屏（**分镜生成与规划页预览共用这一份逻辑**，避免"预览说 5 屏、生成出 7 屏"）。
      *
-     * @param definition 模块定义（可空：人工加的模块可能没有定义）
-     * @return STRICT/LOOSE；定义缺失或写错时给 LOOSE（宽松，不误伤）
+     * <p>展示名规则：同一个模块编码在计划里只出现一次、且只占一屏 → 直接用模块名；
+     * 否则按该模块编码下的屏顺序加中文序号（卖点一/卖点二；复制两份主图时是主图一/主图二）。
+     * 这条规则保证展示名**唯一**——契约校验要求唯一，重名会直接抛错。</p>
+     *
+     * @param modules     启用的模块行（已按 sortNo 排好）
+     * @param definitions 模块库（编码 → 定义，保真等级与取景以定义为准）
+     * @return 展开结果
      */
-    private String lockLevelOf(DpModuleDefinition definition) {
+    private Expansion expand(List<DpProjectModule> modules, Map<String, DpModuleDefinition> definitions) {
+        Map<String, Integer> groupSize = new LinkedHashMap<>();
+        for (DpProjectModule module : modules) {
+            groupSize.merge(module.getModuleCode(), 1, Integer::sum);
+        }
+        Map<String, Integer> cursor = new LinkedHashMap<>();
+        List<CreativeScreenSkeleton.ScreenSpec> specs = new ArrayList<>();
+        List<DpProjectModule> owners = new ArrayList<>();
+        for (DpProjectModule module : modules) {
+            DpModuleDefinition definition = definitions.get(module.getModuleCode());
+            int count = module.getScreenCount() == null ? 1 : Math.max(1, module.getScreenCount());
+            int size = groupSize.getOrDefault(module.getModuleCode(), 1);
+            boolean multi = size > 1 || count > 1;
+            for (int i = 0; i < count; i++) {
+                int seq = cursor.merge(module.getModuleCode(), 1, Integer::sum);
+                String name = StringUtils.blankToDefault(module.getModuleName(),
+                    definition == null ? module.getModuleCode() : definition.getModuleName());
+                String label = multi ? name + cn(seq - 1) : name;
+                specs.add(new CreativeScreenSkeleton.ScreenSpec(
+                    module.getScreenType(), label, lockLevelOf(module, definition), shotOf(module, definition)));
+                owners.add(module);
+            }
+        }
+        return new Expansion(specs, owners);
+    }
+
+    /**
+     * 规划页的屏预览（与 {@link #expand} 同一份展开逻辑）。
+     *
+     * @param modules     启用的模块行
+     * @param definitions 模块库
+     * @param facts       已确认事实（用于标出"所需事实"里缺哪些）
+     * @return 预览列表
+     */
+    private List<ProjectModulePlanVo.ScreenPreview> preview(List<DpProjectModule> modules,
+                                                            Map<String, DpModuleDefinition> definitions,
+                                                            Map<String, String> facts) {
+        Expansion expansion = expand(modules, definitions);
+        List<ProjectModulePlanVo.ScreenPreview> list = new ArrayList<>();
+        for (int i = 0; i < expansion.specs().size(); i++) {
+            CreativeScreenSkeleton.ScreenSpec spec = expansion.specs().get(i);
+            DpProjectModule owner = expansion.owners().get(i);
+            list.add(new ProjectModulePlanVo.ScreenPreview(
+                String.format("S%02d", i + 1), owner.getModuleCode(), owner.getModuleName(),
+                spec.type(), spec.label(), spec.productLockLevel(), spec.shot(), true,
+                missingFacts(owner, facts)));
+        }
+        return list;
+    }
+
+    /**
+     * 某模块"所需事实"里还没有确认值的那些码。
+     *
+     * @param module 模块行
+     * @param facts  已确认事实
+     * @return 缺失的字段码（空列表 = 齐了）
+     */
+    private List<String> missingFacts(DpProjectModule module, Map<String, String> facts) {
+        List<String> missing = new ArrayList<>();
+        for (String code : splitCodes(module.getRequiredFactCodes())) {
+            if (!facts.containsKey(code) || StringUtils.isBlank(facts.get(code))) {
+                missing.add(code);
+            }
+        }
+        return missing;
+    }
+
+    // ------------------------------------------------------------------
+    // 不可逆状态（fail-closed）
+    // ------------------------------------------------------------------
+
+    /**
+     * 现在能不能改模块计划；不能改时返回**可读原因**。
+     *
+     * <p>三类状态一改就不可逆，因此直接拒绝（而不是"改了再提示"）：
+     * 分镜已锁定（屏集合是锁定时的约定）、已经出过图（候选与屏对不上）、已经渲染过详情页版本。</p>
+     *
+     * @param taskId 项目ID
+     * @return null = 可改；否则是不能改的原因
+     */
+    private String editBlockReason(Long taskId) {
+        Long locked = storyboardMapper.selectCount(new LambdaQueryWrapper<DpStoryboard>()
+            .eq(DpStoryboard::getTaskId, taskId)
+            .eq(DpStoryboard::getStatus, "LOCKED"));
+        if (locked != null && locked > 0) {
+            return "分镜已锁定，模块计划不能再改：屏集合是锁定那一刻的约定。"
+                + "如需调整，请回到分镜环节重新拆分（会生成新版本的分镜）。";
+        }
+        Long generations = generationMapper.selectCount(new LambdaQueryWrapper<DpGeneration>()
+            .eq(DpGeneration::getTaskId, taskId));
+        if (generations != null && generations > 0) {
+            return "项目已经出过图（" + generations + " 条出图记录），改模块计划会让已有候选与屏对不上。"
+                + "如需调整，请先按新计划重新走一遍分镜与出图。";
+        }
+        Long versions = detailPageVersionMapper.selectCount(new LambdaQueryWrapper<DpDetailPageVersion>()
+            .eq(DpDetailPageVersion::getTaskId, taskId));
+        if (versions != null && versions > 0) {
+            return "项目已经渲染过详情页版本（" + versions + " 个），改模块计划与已渲染的排版不再对应。";
+        }
+        return null;
+    }
+
+    /**
+     * 最近一次分镜与当前计划的对照（只读时算，不写库）。
+     *
+     * @param taskId  项目ID
+     * @param preview 当前计划的屏预览
+     * @return 对照；没有分镜时返回 null
+     */
+    private ProjectModulePlanVo.StoryboardRef storyboardRef(
+        Long taskId, List<ProjectModulePlanVo.ScreenPreview> preview) {
+        List<DpStoryboard> rows = storyboardMapper.selectList(new LambdaQueryWrapper<DpStoryboard>()
+            .eq(DpStoryboard::getTaskId, taskId)
+            .orderByDesc(DpStoryboard::getVersion)
+            .last("limit 1"));
+        if (rows.isEmpty()) {
+            return new ProjectModulePlanVo.StoryboardRef(
+                null, null, null, 0, List.of(), !preview.isEmpty(),
+                "还没有分镜：保存计划后去分镜环节拆分镜，出的就是上面这些屏。");
+        }
+        DpStoryboard storyboard = rows.get(0);
+        List<DpStoryboardScreen> screens = screenMapper.selectList(new LambdaQueryWrapper<DpStoryboardScreen>()
+            .eq(DpStoryboardScreen::getStoryboardId, storyboard.getId())
+            .orderByAsc(DpStoryboardScreen::getSortNo));
+        List<String> storyboardTypes = new ArrayList<>();
+        for (DpStoryboardScreen screen : screens) {
+            storyboardTypes.add(screen.getScreenType());
+        }
+        List<String> planTypes = preview.stream()
+            .map(ProjectModulePlanVo.ScreenPreview::screenType).toList();
+        boolean stale = !storyboardTypes.equals(planTypes);
+        String note = stale
+            ? "最近的分镜（v" + storyboard.getVersion() + "）与当前计划不是同一套屏"
+                + "（分镜 " + storyboardTypes.size() + " 屏 / 计划 " + planTypes.size() + " 屏）："
+                + "要重新拆分镜才会用上新计划。"
+            : "最近的分镜与当前计划一致（" + planTypes.size() + " 屏）。";
+        return new ProjectModulePlanVo.StoryboardRef(storyboard.getId(), storyboard.getVersion(),
+            storyboard.getStatus(), storyboard.getScreenCount(), storyboardTypes, stale, note);
+    }
+
+    // ------------------------------------------------------------------
+    // 其它
+    // ------------------------------------------------------------------
+
+    private List<DpModuleDefinition> defaultDefinitions(String type) {
+        return definitionMapper.selectList(new LambdaQueryWrapper<DpModuleDefinition>()
+            .eq(DpModuleDefinition::getDeliveryType, type)
+            .eq(DpModuleDefinition::getEnabled, ENABLED)
+            .eq(DpModuleDefinition::getDefaultSelected, "1")
+            .orderByAsc(DpModuleDefinition::getDefaultSortNo)
+            .orderByAsc(DpModuleDefinition::getId));
+    }
+
+    /**
+     * 交付类型的模块库（编码 → 定义）。
+     */
+    private Map<String, DpModuleDefinition> definitionMap(String type) {
+        Map<String, DpModuleDefinition> map = new LinkedHashMap<>();
+        for (DpModuleDefinition definition : listDefinitions(type)) {
+            map.putIfAbsent(definition.getModuleCode(), definition);
+        }
+        return map;
+    }
+
+    private static List<DpProjectModule> enabledOnly(List<DpProjectModule> modules) {
+        List<DpProjectModule> list = new ArrayList<>();
+        for (DpProjectModule module : modules) {
+            if (!DISABLED.equals(module.getEnabled())) {
+                list.add(module);
+            }
+        }
+        return list;
+    }
+
+    private DpProjectModule toRow(Long taskId, ProjectModulePlanBo.Item item,
+                                 Map<String, DpModuleDefinition> definitions) {
+        if (item == null) {
+            throw new ServiceException("模块行不能为空。");
+        }
+        String code = StringUtils.trimToNull(item.getModuleCode());
+        DpModuleDefinition definition = code == null ? null : definitions.get(code);
+        if (definition == null) {
+            throw new ServiceException("模块编码不在该交付类型的模块库里：" + (code == null ? "(空)" : code)
+                + "。请从左侧模块库添加。");
+        }
+        String name = StringUtils.blankToDefault(StringUtils.trimToNull(item.getModuleName()),
+            definition.getModuleName());
+        String screenType = StringUtils.blankToDefault(StringUtils.trimToNull(item.getScreenType()),
+            definition.getScreenType());
+        checkLength("模块名", name, LEN_NAME);
+        checkLength("模块编码", code, LEN_CODE);
+        checkLength("屏类型", screenType, LEN_TYPE);
+        checkLength("模块目标", item.getObjective(), LEN_OBJECTIVE);
+        checkLength("对应卖点", item.getSellingPointCodes(), LEN_CODES);
+        checkLength("文案", item.getCopyText(), LEN_COPY);
+        checkLength("所需事实", item.getRequiredFactCodes(), LEN_CODES);
+        checkLength("参考图", item.getReferenceCodes(), LEN_CODES);
+        checkLength("Workflow", item.getWorkflowCodes(), LEN_CODES);
+        checkLength("模板", item.getTemplateCodes(), LEN_CODES);
+        checkLength("备注", item.getRemark(), LEN_REMARK);
+
+        int count = item.getScreenCount() == null ? 1 : item.getScreenCount();
+        if (count < 1) {
+            throw new ServiceException("模块「" + name + "」的屏数至少为 1。");
+        }
+        int max = definition.getMaxScreens() == null ? MAX_SCREENS_HARD_LIMIT
+            : Math.min(MAX_SCREENS_HARD_LIMIT, definition.getMaxScreens());
+        if (count > max) {
+            throw new ServiceException("模块「" + name + "」最多 " + max + " 屏（模块库定义），当前填了 " + count + "。");
+        }
+        String enabled = DISABLED.equals(StringUtils.trimToNull(item.getEnabled())) ? DISABLED : ENABLED;
+
+        DpProjectModule row = new DpProjectModule();
+        row.setTaskId(taskId);
+        row.setModuleCode(code);
+        row.setModuleName(name);
+        row.setScreenType(screenType);
+        row.setScreenCount(count);
+        row.setStatus("PLANNED");
+        row.setSource("MANUAL");
+        row.setEnabled(enabled);
+        row.setObjective(StringUtils.trimToNull(item.getObjective()));
+        row.setSellingPointCodes(normalizeCodes(item.getSellingPointCodes()));
+        row.setCopyText(StringUtils.trimToNull(item.getCopyText()));
+        row.setRequiredFactCodes(normalizeCodes(item.getRequiredFactCodes()));
+        row.setVisualRulesJson(StringUtils.trimToNull(item.getVisualRulesJson()));
+        row.setReferenceCodes(normalizeCodes(item.getReferenceCodes()));
+        row.setWorkflowCodes(normalizeCodes(item.getWorkflowCodes()));
+        row.setTemplateCodes(normalizeCodes(item.getTemplateCodes()));
+        row.setRemark(StringUtils.trimToNull(item.getRemark()));
+        return row;
+    }
+
+    /**
+     * 逗号分隔的编码串：去空白、去空项、去重（保留顺序），再拼回去。
+     *
+     * <p>为什么在这里规整：右栏这些字段是人手填的，"a, b"、"a,b"、"a,,b" 都该等价；
+     * 落库前统一，后面的解析（取第一个 workflow、比事实码）才不会各写一套容错。</p>
+     *
+     * @param raw 原始文本
+     * @return 规整后的编码串；空返回 null
+     */
+    private static String normalizeCodes(String raw) {
+        List<String> codes = splitCodes(raw);
+        return codes.isEmpty() ? null : String.join(",", codes);
+    }
+
+    /**
+     * 解析逗号分隔的编码串（去空白/空项/重复，保留出现顺序）。
+     *
+     * @param raw 原始文本
+     * @return 编码列表（可能为空）
+     */
+    public static List<String> splitCodes(String raw) {
+        List<String> list = new ArrayList<>();
+        if (StringUtils.isBlank(raw)) {
+            return list;
+        }
+        Set<String> seen = new LinkedHashSet<>();
+        for (String part : Arrays.asList(raw.split(","))) {
+            String code = StringUtils.trimToNull(part);
+            if (code != null && seen.add(code)) {
+                list.add(code);
+            }
+        }
+        return list;
+    }
+
+    private static void checkLength(String label, String value, int max) {
+        if (value != null && value.length() > max) {
+            throw new ServiceException(label + "太长（最多 " + max + " 字，当前 " + value.length() + " 字）。");
+        }
+    }
+
+    private Map<String, String> confirmedFacts(Long taskId) {
+        ContentTaskDetailVo detail = contentTaskService.getDetail(taskId);
+        return CreativeFacts.confirmed(detail);
+    }
+
+    /**
+     * 取项目元信息（不存在/已删除直接报错——模块规划必须挂在一个真项目上）。
+     */
+    private CpTaskMeta requireTask(Long taskId) {
+        if (taskId == null) {
+            throw new ServiceException("taskId 不能为空。");
+        }
+        Map<String, Object> meta = stageMapper.selectTaskMeta(taskId);
+        if (meta == null || meta.isEmpty()) {
+            throw new ServiceException("项目不存在：" + taskId);
+        }
+        Object delFlag = meta.get("delFlag");
+        if (delFlag != null && !"0".equals(String.valueOf(delFlag))) {
+            throw new ServiceException("项目已删除，不能再规划模块：" + taskId);
+        }
+        String type = StringUtils.trimToNull(String.valueOf(meta.get("deliveryType")));
+        if (type == null) {
+            throw new ServiceException("项目没有交付类型，无法规划模块：" + taskId);
+        }
+        return new CpTaskMeta(meta.get("taskName") == null ? null : String.valueOf(meta.get("taskName")), type);
+    }
+
+    /**
+     * 项目元信息（只需要两个字段，不为它单开实体）。
+     *
+     * @param taskName     项目名
+     * @param deliveryType 交付类型
+     */
+    private record CpTaskMeta(String taskName, String deliveryType) {
+    }
+
+    /**
+     * 取模块的保真等级：**以模块定义为准**（计划行只是快照；定义缺失时给 LOOSE，不误伤）。
+     *
+     * @param module     项目模块
+     * @param definition 模块定义（可空）
+     * @return STRICT/LOOSE
+     */
+    private String lockLevelOf(DpProjectModule module, DpModuleDefinition definition) {
         String level = definition == null ? null : definition.getProductLockLevel();
         return CreativeScreenSkeleton.LEVEL_STRICT.equals(level)
             ? CreativeScreenSkeleton.LEVEL_STRICT : CreativeScreenSkeleton.LEVEL_LOOSE;

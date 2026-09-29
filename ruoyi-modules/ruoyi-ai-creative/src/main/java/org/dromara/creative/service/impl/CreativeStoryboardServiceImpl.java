@@ -14,6 +14,7 @@ import org.dromara.content.domain.vo.ContentTaskDetailVo;
 import org.dromara.content.enums.ContentFactConfirmStatusEnum;
 import org.dromara.content.service.IContentTaskService;
 import org.dromara.creative.constant.CreativeConstants;
+import org.dromara.creative.domain.DpProjectModule;
 import org.dromara.creative.domain.DpStoryboard;
 import org.dromara.creative.domain.DpStoryboardScreen;
 import org.dromara.creative.domain.bo.CreativeScreenBo;
@@ -49,6 +50,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 分镜服务实现。
@@ -132,20 +134,41 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
      * @return 骨架（永远非空：契约文件内置且加载时已校验）
      */
     private CreativeScreenSkeleton resolveSkeleton(Long taskId, String deliveryType) {
+        return resolveActive(taskId, deliveryType).skeleton();
+    }
+
+    /**
+     * 解析"本次生成用哪份屏 + 每屏来自哪个模块"（R21 起按模块计划，R22 起带上逐屏归属）。
+     *
+     * <p><b>权威顺序</b>：项目模块计划（`dp_project_module`，由交付类型的默认骨架初始化）优先；
+     * 项目还没有模块计划时**回落到契约文件**（`creative/screen-skeleton.json`）并记一条 INFO 日志——
+     * 回落是"老项目照旧可用"的保证，但必须可见，不能悄悄换掉屏集合。</p>
+     *
+     * <p><b>业务错误不吞</b>：模块计划"存在但不可用"（一个模块都没启用、展示名撞车等）抛的是
+     * {@link ServiceException}，这里**原样抛出**——用户刚在模块规划页保存了计划，却看到契约文件的 7 屏，
+     * 那是最坏的一种"看起来正常"。只有取计划时的基础设施异常才回落到契约文件并告警。</p>
+     *
+     * @param taskId       项目ID
+     * @param deliveryType 交付类型（来自项目）
+     * @return 生效的屏（骨架永远非空）+ 逐屏模块行（回落时为空）
+     */
+    private ICreativeModuleService.ActiveScreens resolveActive(Long taskId, String deliveryType) {
         try {
-            CreativeScreenSkeleton fromModules = moduleService.skeletonOf(taskId, deliveryType);
-            if (fromModules != null && fromModules.size() > 0) {
-                log.info("项目 {} 分镜按模块计划出屏：交付类型={} 屏数={}",
-                    taskId, deliveryType, fromModules.size());
-                return fromModules;
+            ICreativeModuleService.ActiveScreens active = moduleService.activeScreens(taskId, deliveryType);
+            if (active != null && active.skeleton() != null && active.skeleton().size() > 0) {
+                log.info("项目 {} 分镜按模块计划出屏：交付类型={} 屏数={}（含人工文案/Workflow 覆盖 {} 行）",
+                    taskId, deliveryType, active.skeleton().size(), active.owners().size());
+                return active;
             }
+        } catch (ServiceException e) {
+            // 计划本身不可用：让用户看到原因（而不是悄悄换回契约文件的 7 屏）
+            throw e;
         } catch (Exception e) {
-            // 模块计划坏了不该让分镜生不出来：回落契约文件，并把原因打出来（阶段与事件才是权威）
             log.warn("按项目模块计划取屏骨架失败，回落到契约文件 taskId={}：{}", taskId, e.getMessage());
         }
         log.info("项目 {} 没有模块计划（交付类型 {}），分镜按契约文件 {} 生成",
             taskId, deliveryType, CreativeScreenSkeleton.RESOURCE);
-        return skeleton();
+        return new ICreativeModuleService.ActiveScreens(skeleton(), List.of());
     }
 
     private CreativeScreenSkeleton skeleton() {
@@ -164,9 +187,12 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
         DpVisualDirectionVo direction = directionService.selected(taskId);
         Map<String, String> facts = confirmedFacts(contentTaskService.getDetail(taskId));
 
-        // R21：本次生效的骨架 = 项目模块计划（按交付类型）→ 没有就回落契约文件。
+        // R21/R22：本次生效的屏 = 项目模块计划（按交付类型）→ 没有就回落契约文件。
+        // 一起带回来的还有"逐屏来自哪个模块行"：人工文案、Workflow、对应卖点都挂在模块行上。
         // 一次生成只解析一次并沿调用链传下去——不能存成实例字段：本 Bean 是单例，会串请求。
-        CreativeScreenSkeleton active = resolveSkeleton(taskId, project.getDeliverableType());
+        ICreativeModuleService.ActiveScreens activePlan = resolveActive(taskId, project.getDeliverableType());
+        CreativeScreenSkeleton active = activePlan.skeleton();
+        List<DpProjectModule> owners = activePlan.owners();
 
         int version = nextVersion(taskId);
         DpStoryboard storyboard = new DpStoryboard();
@@ -180,9 +206,10 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
 
         // 参数化草稿：每屏标题/副标题/正文/画面独白由「事实 + 基因 + 产品名 + 屏类型」推导。
         // R7 起，「品牌 Brief 的必显信息」与「卖点块」也参与推导；两者都为空时与 R7 之前完全一致。
+        // R22 起，模块行上配了「对应卖点」的屏按配置取块（没配的仍按顺序兜底）。
         CpBrandBriefVo brief = briefService.get(taskId);
         String mustShow = mustShowFirstLine(brief);
-        List<CreativeDraftFactory.CopyHint> sellingPoints = sellingPointHints(taskId, active);
+        List<CreativeDraftFactory.CopyHint> sellingPoints = sellingPointHints(taskId, active, owners);
         List<CreativeDraftFactory.ScreenDraft> drafts =
             CreativeDraftFactory.screensOf(active, dna, project.getProductName(), facts, mustShow, sellingPoints);
 
@@ -240,6 +267,29 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
         } else {
             modelReason = suggestion.reason();
         }
+        // R22：模块规划里写了「文案」的模块，它的屏用**人工文案**覆盖正文。
+        // 放在模型润色之后是刻意的：人写的是最新意图，模型不该盖掉它；但标题/副标题保留推导结果——
+        // 人只写了正文时，把标题也清空只会让页面更空。覆盖了几屏会写进说明，页面看得见。
+        int copyOverrides = 0;
+        if (!owners.isEmpty()) {
+            for (int i = 0; i < drafts.size() && i < owners.size(); i++) {
+                String copy = owners.get(i) == null ? null : StringUtils.trimToNull(owners.get(i).getCopyText());
+                if (copy == null) {
+                    continue;
+                }
+                CreativeDraftFactory.ScreenDraft draft = drafts.get(i);
+                if (copy.equals(draft.bodyText())) {
+                    continue;
+                }
+                drafts.set(i, new CreativeDraftFactory.ScreenDraft(draft.type(), draft.label(),
+                    draft.productLockLevel(), draft.title(), draft.subtitle(), copy, draft.soloStatement()));
+                copyOverrides++;
+            }
+            if (copyOverrides > 0) {
+                modelReason = appendReason(modelReason,
+                    "第 " + copyOverrides + " 屏用了模块规划里的人工文案（人工优先于模型与模板）");
+            }
+        }
         storyboard.setSource(source);
         storyboard.setStatus(STATUS_DRAFT);
         storyboardMapper.insert(storyboard);
@@ -269,7 +319,7 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
             screen.setBodyText(draft.bodyText());
             screen.setPictureSoloStatement(draft.soloStatement());
             screen.setSpecJson(spec(template, dna, direction, active));
-            screen.setWorkflowCode(CreativeConstants.DEFAULT_HERO_WORKFLOW);
+            screen.setWorkflowCode(workflowOf(owners, sortNo - 1));
             screen.setProductLockLevel(template.productLockLevel());
             screen.setStatus(STATUS_DRAFT);
             screenMapper.insert(screen);
@@ -473,22 +523,57 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
     }
 
     /**
-     * 卖点块 → 草稿提示（按 sortNo 升序，取前 2 条：骨架里就是两个卖点屏）。
+     * 卖点块 → 草稿提示（R22：模块行配了「对应卖点」就按配置取，没配的按顺序兜底）。
+     *
+     * <p>返回值与"第几个卖点屏"**按下标对齐**（草稿工厂就是按下标取的），因此取不到块时
+     * 也要放一个占位（{@code CopyHint(null, null)}），否则后面的卖点屏会整体前移一位、
+     * 拿到别人的文案。</p>
      *
      * @param taskId 项目ID
-     * @return 提示列表（可能为空）
+     * @param active 本次生效的骨架
+     * @param owners 逐屏所属的模块行（可空：回落契约文件时没有模块）
+     * @return 提示列表（长度 = 卖点屏数）
      */
-    private List<CreativeDraftFactory.CopyHint> sellingPointHints(Long taskId, CreativeScreenSkeleton active) {
-        List<CreativeDraftFactory.CopyHint> hints = new ArrayList<>();
-        List<DpCopyBlockVo> blocks = copyService.list(taskId, DpCopyBlockTypeEnum.SELLING_POINT.getCode());
-        for (DpCopyBlockVo block : blocks) {
+    private List<CreativeDraftFactory.CopyHint> sellingPointHints(Long taskId, CreativeScreenSkeleton active,
+                                                                  List<DpProjectModule> owners) {
+        List<DpCopyBlockVo> blocks = new ArrayList<>();
+        for (DpCopyBlockVo block : copyService.list(taskId, DpCopyBlockTypeEnum.SELLING_POINT.getCode())) {
             if (StringUtils.isBlank(block.getTitle()) && StringUtils.isBlank(block.getContent())) {
                 continue;
             }
-            hints.add(new CreativeDraftFactory.CopyHint(block.getTitle(), block.getContent()));
-            if (hints.size() >= active.countOf("SELLING_POINT")) {
-                break;
+            blocks.add(block);
+        }
+        Map<String, DpCopyBlockVo> byId = new LinkedHashMap<>();
+        for (DpCopyBlockVo block : blocks) {
+            byId.put(String.valueOf(block.getId()), block);
+        }
+        List<CreativeDraftFactory.CopyHint> hints = new ArrayList<>();
+        Set<Long> used = new java.util.HashSet<>();
+        int fallback = 0;
+        for (int i = 0; i < active.screens().size(); i++) {
+            if (!"SELLING_POINT".equals(active.screens().get(i).type())) {
+                continue;
             }
+            DpProjectModule owner = owners != null && i < owners.size() ? owners.get(i) : null;
+            DpCopyBlockVo chosen = null;
+            if (owner != null) {
+                for (String code : CreativeModuleServiceImpl.splitCodes(owner.getSellingPointCodes())) {
+                    DpCopyBlockVo block = byId.get(code);
+                    if (block != null && used.add(block.getId())) {
+                        chosen = block;
+                        break;
+                    }
+                }
+            }
+            while (chosen == null && fallback < blocks.size()) {
+                DpCopyBlockVo block = blocks.get(fallback++);
+                if (used.add(block.getId())) {
+                    chosen = block;
+                }
+            }
+            hints.add(chosen == null
+                ? new CreativeDraftFactory.CopyHint(null, null)
+                : new CreativeDraftFactory.CopyHint(chosen.getTitle(), chosen.getContent()));
         }
         return hints;
     }
@@ -502,6 +587,25 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
      */
     private static String appendReason(String current, String extra) {
         return StringUtils.isBlank(current) ? extra : current + "；" + extra;
+    }
+
+    /**
+     * 这一屏用哪个工作流出图（V0.2 R22）。
+     *
+     * <p>模块规划里给模块配了 Workflow 就用**第一个**（右栏是逗号分隔的候选清单，第一个是选中项）；
+     * 没配就沿用默认图生图工作流。这里**不校验编码是否已发布**：真正的把关在出图入口
+     * （提交时会按已发布契约校验并明确报错），在这里拦会让"配置尚未部署"变成保存不了的假故障。</p>
+     *
+     * @param owners 逐屏所属模块行（可空）
+     * @param index  屏下标
+     * @return 工作流编码
+     */
+    private String workflowOf(List<DpProjectModule> owners, int index) {
+        if (owners == null || index < 0 || index >= owners.size() || owners.get(index) == null) {
+            return CreativeConstants.DEFAULT_HERO_WORKFLOW;
+        }
+        List<String> codes = CreativeModuleServiceImpl.splitCodes(owners.get(index).getWorkflowCodes());
+        return codes.isEmpty() ? CreativeConstants.DEFAULT_HERO_WORKFLOW : codes.get(0);
     }
 
     /**

@@ -158,3 +158,125 @@ export function listOutputSpecs(deliveryType: string): AxiosPromise<ScenarioOutp
 export function listProjectSteps(taskId: string | number): AxiosPromise<ProjectStepState[]> {
   return request({ url: `/creative/v2/projects/${taskId}/steps`, method: 'get' });
 }
+
+/**
+ * 模块规划（V0.2 R22，文档 §24）。
+ *
+ * 与上面那批"只读配置"不同，这一组**有写**：`saveProjectModulePlan` 是模块计划的唯一写入点。
+ * 后端写前会检查不可逆状态（分镜已锁定 / 已出图 / 已渲染）并拒绝，前端只负责把原因显示出来——
+ * 不在前端重算一遍"能不能改"，两边各算一次必然会有一天对不上。
+ */
+
+/** 模块库里的一个模块定义 */
+export interface ModuleDefinition {
+  id?: string | number;
+  deliveryType?: string;
+  moduleCode?: string;
+  moduleName?: string;
+  objective?: string;
+  screenType?: string;
+  productLockLevel?: string;
+  shot?: string;
+  required?: string;
+  minScreens?: number;
+  maxScreens?: number;
+  defaultSelected?: string;
+  defaultSortNo?: number;
+  allowedTemplates?: string;
+  allowedWorkflows?: string;
+  requiredFacts?: string;
+  visualRulesJson?: string;
+  qaRulesJson?: string;
+  enabled?: string;
+  remark?: string;
+}
+
+/** 项目模块计划里的一行（字段名与后端 DpProjectModule 一致） */
+export interface ProjectModule {
+  id?: string | number;
+  taskId?: string | number;
+  moduleCode?: string;
+  moduleName?: string;
+  screenType?: string;
+  screenCount?: number;
+  sortNo?: number;
+  status?: string;
+  source?: string;
+  enabled?: string;
+  objective?: string;
+  sellingPointCodes?: string;
+  copyText?: string;
+  requiredFactCodes?: string;
+  visualRulesJson?: string;
+  referenceCodes?: string;
+  workflowCodes?: string;
+  templateCodes?: string;
+  remark?: string;
+}
+
+/** 屏预览：这份计划会长成哪些屏 */
+export interface ModuleScreenPreview {
+  screenNo?: string;
+  moduleCode?: string;
+  moduleName?: string;
+  screenType?: string;
+  label?: string;
+  productLockLevel?: string;
+  shot?: string;
+  enabled?: boolean;
+  missingFacts?: string[];
+}
+
+/** 最近一次分镜与当前计划的对照 */
+export interface ModulePlanStoryboardRef {
+  storyboardId?: string | number;
+  version?: number;
+  status?: string;
+  screenCount?: number;
+  screenTypes?: string[];
+  stale?: boolean;
+  note?: string;
+}
+
+/** 模块规划视图 */
+export interface ProjectModulePlan {
+  taskId?: string | number;
+  deliveryType?: string;
+  deliveryName?: string;
+  editable?: boolean;
+  editBlockReason?: string;
+  modules?: ProjectModule[];
+  library?: ModuleDefinition[];
+  screens?: ModuleScreenPreview[];
+  screenCount?: number;
+  storyboard?: ModulePlanStoryboardRef;
+}
+
+/**
+ * 取某项目的模块规划视图（只读：不初始化计划、不写库）。
+ *
+ * @param taskId 项目ID
+ * @returns 模块规划视图（含模块库、当前计划、屏预览、分镜对照、能否编辑）
+ */
+export function getProjectModulePlan(taskId: string | number): AxiosPromise<ProjectModulePlan> {
+  return request({ url: `/creative/v2/projects/${taskId}/module-plan`, method: 'get' });
+}
+
+/**
+ * 保存模块计划（整份覆盖：顺序即出屏顺序）。
+ *
+ * @param taskId  项目ID
+ * @param modules 模块列表（按页面上的顺序）
+ * @returns 保存后的规划视图
+ */
+export function saveProjectModulePlan(
+  taskId: string | number,
+  modules: ProjectModule[]
+): AxiosPromise<ProjectModulePlan> {
+  return request({
+    url: `/creative/v2/projects/${taskId}/module-plan`,
+    method: 'put',
+    data: { modules }
+  });
+}
+

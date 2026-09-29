@@ -91,4 +91,17 @@ public interface CreativeTaskStageMapper {
     @Select("SELECT deliverable_type FROM cp_task WHERE task_id = #{taskId}")
     String selectDeliverableType(@Param("taskId") Long taskId);
 
+    /**
+     * 读取项目元信息（V0.2 R22 模块规划：要判"项目在不在"和"交付类型是什么"）。
+     *
+     * <p>一次查回 taskId / taskName / deliverableType / delFlag，避免模块规划页
+     * 为了这三件事分别查库；`del_flag` 也一起看——已删除的项目不该还能规划模块。</p>
+     *
+     * @param taskId 项目ID
+     * @return 含 taskId / taskName / deliverableType / delFlag 的行；项目不存在返回 null
+     */
+    @Select("SELECT task_id AS taskId, task_name AS taskName, deliverable_type AS deliverableType, "
+        + "del_flag AS delFlag FROM cp_task WHERE task_id = #{taskId}")
+    Map<String, Object> selectTaskMeta(@Param("taskId") Long taskId);
+
 }

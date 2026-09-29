@@ -3,11 +3,15 @@ package org.dromara.creative.controller;
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import lombok.RequiredArgsConstructor;
 import org.dromara.common.core.domain.R;
+import org.dromara.common.log.annotation.Log;
+import org.dromara.common.log.enums.BusinessType;
 import org.dromara.creative.constant.CreativeConstants;
 import org.dromara.creative.domain.DpDeliveryType;
 import org.dromara.creative.domain.DpModuleDefinition;
 import org.dromara.creative.domain.DpProjectModule;
 import org.dromara.creative.domain.DpOutputSpec;
+import org.dromara.creative.domain.bo.ProjectModulePlanBo;
+import org.dromara.creative.domain.vo.ProjectModulePlanVo;
 import org.dromara.creative.domain.vo.ProjectStepStateVo;
 import org.dromara.creative.domain.DpScenarioProfile;
 import org.dromara.creative.domain.DpScenarioStep;
@@ -17,6 +21,8 @@ import org.dromara.creative.service.ICreativeScenarioConfigService;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -162,5 +168,38 @@ public class CreativeScenarioConfigController {
     @GetMapping("/projects/{taskId}/modules")
     public R<List<DpProjectModule>> projectModules(@PathVariable("taskId") Long taskId) {
         return R.ok(moduleService.listProjectModules(taskId));
+    }
+
+    /**
+     * 模块规划视图（V0.2 R22，文档 §24）：左栏模块库 + 中栏当前计划 + 右栏字段 + 屏预览 + 分镜对照。
+     *
+     * <p>只读：不初始化计划、不写库。项目还没有计划时 {@code modules} 为空，
+     * 但 {@code screens} 给的是"按交付类型默认骨架初始化后会长成什么样"，用户点保存才落库。</p>
+     *
+     * @param taskId 项目ID
+     * @return 模块规划视图
+     */
+    @SaCheckPermission(CreativeConstants.PERM_PROJECT_LIST)
+    @GetMapping("/projects/{taskId}/module-plan")
+    public R<ProjectModulePlanVo> modulePlan(@PathVariable("taskId") Long taskId) {
+        return R.ok(moduleService.planOf(taskId));
+    }
+
+    /**
+     * 保存模块计划（V0.2 R22，文档 §24）——模块计划的**唯一写入点**。
+     *
+     * <p>权限用 {@code creative:project:edit}：这是改项目内容，不是"看看"。
+     * 写前会 fail-closed 检查不可逆状态（分镜已锁定 / 已出图 / 已渲染），命中直接报错并说明原因。</p>
+     *
+     * @param taskId 项目ID
+     * @param bo     模块列表（顺序即出屏顺序）
+     * @return 保存后的规划视图
+     */
+    @SaCheckPermission(CreativeConstants.PERM_PROJECT_EDIT)
+    @Log(title = "模块规划", businessType = BusinessType.UPDATE)
+    @PutMapping("/projects/{taskId}/module-plan")
+    public R<ProjectModulePlanVo> saveModulePlan(@PathVariable("taskId") Long taskId,
+                                                 @RequestBody ProjectModulePlanBo bo) {
+        return R.ok(moduleService.savePlan(taskId, bo));
     }
 }

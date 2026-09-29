@@ -17,6 +17,11 @@
       <el-button class="panel-btn" size="small" text :disabled="!taskId" @click="openPanel('ASSET_DRAWER')">
         资产
       </el-button>
+      <!-- 模块规划（R22，文档 §24）：屏集合的唯一人工入口。
+           放这里而不是塞进某个页面，是因为它跟"当前在哪一步"无关——任何页面都能进去改计划。 -->
+      <el-button class="panel-btn" size="small" text :disabled="!taskId" @click="openModulePlan">
+        模块规划
+      </el-button>
       <div class="progress" :title="`已完成 ${doneCount} / ${steps.length} 步`">
         <i :style="{ width: progressPct + '%' }" />
       </div>
@@ -321,6 +326,19 @@ function kindLabel(kind: AssemblyKind): string {
 
 function go(step: FlowStep) {
   void router.push(stepHref(step.no));
+}
+
+/**
+ * 打开「模块规划」页（V0.2 R22，文档 §24）。
+ *
+ * <p>带 `taskId` 深链过去：模块计划是挂在项目上的，不带 ID 进去只能看到一个空页面。
+ * 用 `push` 而不是 `replace`，这样用户改完能按返回回到刚才那一步。</p>
+ */
+function openModulePlan() {
+  if (!props.taskId) {
+    return;
+  }
+  void router.push({ path: '/creative/module-plan', query: { taskId: String(props.taskId) } });
 }
 
 watch(

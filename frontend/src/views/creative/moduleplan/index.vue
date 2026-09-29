@@ -1,0 +1,660 @@
+<template>
+  <div class="studio">
+    <header class="page-head">
+      <div>
+        <h2>模块规划</h2>
+        <p class="muted">
+          这一页决定<b>这个项目的分镜有哪些屏</b>：左边是模块库，中间是顺序（一个模块可以占多屏，
+          也可以停用而不删除），右边是单个模块的目标/卖点/文案/事实/视觉/参考图/Workflow/模板。
+          顺序、屏数、启停就是屏集合本身——保存后要<b>重新拆分镜</b>才会用上新计划。
+        </p>
+      </div>
+      <div class="head-actions">
+        <el-select
+          v-if="!taskId"
+          v-model="pickedTaskId"
+          filterable
+          remote
+          placeholder="选择视觉项目"
+          :remote-method="searchProjects"
+          :loading="projectLoading"
+          class="project-picker"
+          @change="onPickProject"
+        >
+          <el-option
+            v-for="p in projects"
+            :key="String(p.taskId)"
+            :label="`${p.taskName}（${p.deliverableType || 'ECOM_DETAIL'}）`"
+            :value="String(p.taskId)"
+          />
+        </el-select>
+        <el-tag v-if="plan" effect="dark" type="info">{{ plan.deliveryName || plan.deliveryType }}</el-tag>
+        <el-tag v-if="plan" effect="dark" :type="plan.editable ? 'success' : 'warning'">
+          {{ plan.editable ? '可编辑' : '已锁定状态' }}
+        </el-tag>
+        <el-button plain :loading="loading" @click="load">刷新</el-button>
+        <el-button
+          type="primary"
+          :loading="saving"
+          :disabled="!plan || !plan.editable || !dirty"
+          @click="save"
+        >
+          保存计划
+        </el-button>
+      </div>
+    </header>
+
+    <el-alert v-if="!taskId" type="info" :closable="false" class="notice" show-icon
+      title="先选一个视觉项目：模块计划是挂在项目上的。">
+      <span class="muted">也可以从项目页顶部的「模块规划」按钮直接进来（会带上 taskId）。</span>
+    </el-alert>
+
+    <el-alert v-else-if="loadError" type="error" :closable="false" class="notice" show-icon :title="loadError">
+      <span class="muted">加载失败时页面不会显示"没有模块"这种假空态——请先解决上面的原因再刷新。</span>
+    </el-alert>
+
+    <el-alert v-else-if="plan && !plan.editable" type="warning" :closable="false" class="notice" show-icon
+      title="现在不能改模块计划">
+      <span class="muted">{{ plan.editBlockReason }}</span>
+    </el-alert>
+
+    <template v-if="plan">
+      <div class="cols">
+        <!-- 左：模块库 -->
+        <section class="panel col-library">
+          <div class="block-head">
+            <h3>可用模块库</h3>
+            <span class="muted">{{ library.length }} 个</span>
+          </div>
+          <p class="muted small">
+            来自交付类型「{{ plan.deliveryType }}」的模块库。点「添加」放到中间的计划里；
+            同一个模块可以添加多次（复制）。
+          </p>
+          <ul class="library">
+            <li v-for="d in library" :key="String(d.moduleCode)" class="lib-item">
+              <div class="lib-main">
+                <div class="lib-name">
+                  {{ d.moduleName }}
+                  <el-tag v-if="d.defaultSelected === '1'" size="small" effect="plain">默认骨架</el-tag>
+                </div>
+                <div class="muted small">
+                  {{ d.moduleCode }} · 屏类型 {{ d.screenType }} · {{ screenRangeText(d) }}
+                </div>
+                <div v-if="d.objective" class="muted small">{{ d.objective }}</div>
+              </div>
+              <el-button size="small" text :disabled="!plan.editable" @click="addModule(d)">添加</el-button>
+            </li>
+          </ul>
+        </section>
+
+        <!-- 中：当前顺序 -->
+        <section class="panel col-order">
+          <div class="block-head">
+            <h3>当前顺序</h3>
+            <span class="muted">
+              {{ modules.length }} 个模块 → {{ plan.screenCount }} 屏
+            </span>
+          </div>
+          <p class="muted small">
+            拖动或用 ↑↓ 调顺序；「屏数」决定这个模块占几屏；关掉开关是<b>停用</b>（留在计划里、不出屏）。
+          </p>
+          <ul class="modules">
+            <li
+              v-for="(m, index) in modules"
+              :key="m.uid"
+              class="module-item"
+              :class="{ 'is-current': index === currentIndex, 'is-off': m.enabled === '1' }"
+              draggable="true"
+              @dragstart="onDragStart(index)"
+              @dragover.prevent
+              @drop="onDrop(index)"
+              @click="currentIndex = index"
+            >
+              <span class="drag-handle" title="按住拖动排序">⠿</span>
+              <div class="module-main">
+                <div class="module-name">
+                  {{ m.moduleName || m.moduleCode }}
+                  <el-tag v-if="m.enabled === '1'" size="small" type="info" effect="dark">已停用</el-tag>
+                  <el-tag v-if="m.copyText" size="small" type="success" effect="plain">有人工文案</el-tag>
+                </div>
+                <div class="muted small">
+                  {{ m.moduleCode }} · {{ m.screenType }} · 计划第 {{ index + 1 }} 位
+                </div>
+              </div>
+              <el-input-number
+                v-model="m.screenCount"
+                size="small"
+                :min="1"
+                :max="maxScreensOf(m)"
+                :disabled="!plan.editable"
+                class="count"
+                @change="markDirty"
+              />
+              <el-switch
+                :model-value="m.enabled !== '1'"
+                :disabled="!plan.editable"
+                inline-prompt
+                active-text="启"
+                inactive-text="停"
+                @update:model-value="(v: string | number | boolean) => toggleEnabled(m, Boolean(v))"
+              />
+              <el-button size="small" text :disabled="!plan.editable" @click.stop="move(index, -1)">↑</el-button>
+              <el-button size="small" text :disabled="!plan.editable" @click.stop="move(index, 1)">↓</el-button>
+              <el-button size="small" text :disabled="!plan.editable" @click.stop="duplicate(index)">复制</el-button>
+              <el-button size="small" text type="danger" :disabled="!plan.editable" @click.stop="remove(index)">
+                删除
+              </el-button>
+            </li>
+          </ul>
+          <p v-if="!modules.length" class="muted small">
+            计划是空的：从左边「添加」至少一个模块，否则分镜没有任何屏可出。
+          </p>
+
+          <div class="block-head sub">
+            <h3>屏预览</h3>
+            <span class="muted">{{ plan.screenCount }} 屏（保存前的预览，与真正出屏用同一段逻辑）</span>
+          </div>
+          <ol class="screens">
+            <li v-for="s in plan.screens" :key="String(s.screenNo)" class="screen-item">
+              <span class="screen-no mono">{{ s.screenNo }}</span>
+              <span class="screen-label">{{ s.label }}</span>
+              <span class="muted small">{{ s.screenType }} · {{ s.productLockLevel }}</span>
+              <el-tag v-if="s.missingFacts && s.missingFacts.length" size="small" type="warning" effect="dark">
+                缺事实：{{ s.missingFacts.join('、') }}
+              </el-tag>
+            </li>
+          </ol>
+          <p v-if="plan.storyboard" class="muted small storyboard-note" :class="{ warn: plan.storyboard.stale }">
+            {{ plan.storyboard.note }}
+          </p>
+        </section>
+
+        <!-- 右：当前模块的字段 -->
+        <section class="panel col-fields">
+          <div class="block-head">
+            <h3>模块字段</h3>
+            <span class="muted">{{ current ? current.moduleName || current.moduleCode : '未选中' }}</span>
+          </div>
+          <template v-if="current">
+            <label class="field">
+              <span>模块目标</span>
+              <el-input v-model="current.objective" :disabled="!plan.editable" placeholder="这一屏要达成什么"
+                @input="markDirty" />
+            </label>
+            <label class="field">
+              <span>对应卖点</span>
+              <el-select
+                v-model="currentSellingPointIds"
+                multiple
+                filterable
+                :disabled="!plan.editable"
+                placeholder="从项目卖点块里选（不选则按顺序兜底）"
+                @change="onSellingPointsChange"
+              >
+                <el-option
+                  v-for="b in sellingPoints"
+                  :key="String(b.id)"
+                  :label="b.title || b.content || String(b.id)"
+                  :value="String(b.id)"
+                />
+              </el-select>
+            </label>
+            <label class="field">
+              <span>文案</span>
+              <el-input
+                v-model="current.copyText"
+                type="textarea"
+                :rows="3"
+                :disabled="!plan.editable"
+                placeholder="写了就用它（人工优先于模型与模板）"
+                @input="markDirty"
+              />
+            </label>
+            <label class="field">
+              <span>所需事实</span>
+              <el-input v-model="current.requiredFactCodes" :disabled="!plan.editable"
+                placeholder="事实字段码，逗号分隔（缺哪个会在屏预览里标出来）" @input="markDirty" />
+            </label>
+            <label class="field">
+              <span>视觉表达</span>
+              <el-input v-model="current.visualRulesJson" type="textarea" :rows="2" :disabled="!plan.editable"
+                placeholder='JSON 文本，例如 {"tone":"暖光","props":["木桌"]}' @input="markDirty" />
+            </label>
+            <label class="field">
+              <span>参考图</span>
+              <el-input v-model="current.referenceCodes" :disabled="!plan.editable"
+                placeholder="附件文件ID，逗号分隔" @input="markDirty" />
+            </label>
+            <label class="field">
+              <span>Workflow</span>
+              <el-input v-model="current.workflowCodes" :disabled="!plan.editable"
+                placeholder="逗号分隔，第一个用于该模块出图" @input="markDirty" />
+            </label>
+            <label class="field">
+              <span>模板</span>
+              <el-input v-model="current.templateCodes" :disabled="!plan.editable"
+                placeholder="模板码，逗号分隔" @input="markDirty" />
+            </label>
+            <label class="field">
+              <span>备注</span>
+              <el-input v-model="current.remark" :disabled="!plan.editable" @input="markDirty" />
+            </label>
+            <p class="muted small">
+              已生效：顺序 / 屏数 / 启停（决定屏集合）、<b>文案</b>（覆盖该屏正文）、
+              <b>Workflow</b>（该模块出图用第一个）、<b>对应卖点</b>（该屏取哪个卖点块）。
+              其余字段（视觉表达 / 参考图 / 模板）本轮只落库并展示，尚未参与生成——不假装它们已经在起作用。
+            </p>
+          </template>
+          <p v-else class="muted small">在中间点一行模块，这里编辑它的字段。</p>
+        </section>
+      </div>
+    </template>
+  </div>
+</template>
+
+<script setup lang="ts">
+  import { computed, onMounted, ref } from 'vue';
+  import { useRoute, useRouter } from 'vue-router';
+  import { ElMessage } from 'element-plus';
+  import {
+    getProjectModulePlan,
+    saveProjectModulePlan,
+    type ModuleDefinition,
+    type ProjectModule,
+    type ProjectModulePlan
+  } from '@/api/creative/scenario';
+  import { listCopyBlocks, listCreativeProject } from '@/api/creative';
+  import type { CopyBlockVO } from '@/api/creative/types';
+  import { extractErrorMessage } from '@/utils/request';
+
+  /**
+   * 模块规划页（V0.2 R22，文档 §24）。
+   *
+   * 三栏：左模块库 / 中顺序 / 右字段。为什么把"屏预览"放在中间栏底部而不是右边：
+   * 用户改的是顺序与屏数，预览要跟改动**同屏可见**，改一下就看到"现在会出几屏"。
+   *
+   * 页面不自己判断"能不能改"：后端 `editable/editBlockReason` 说了算（分镜锁定、已出图、已渲染都不可逆）。
+   * 前端重算一遍"能不能改"，迟早会与后端不一致，那时的表现就是"按钮能点、保存被拒"。
+   */
+
+  /** 带本地 uid 的模块行（复制的两份 module_code 相同，必须靠 uid 做 key 与选中） */
+  interface EditableModule extends ProjectModule {
+    uid: string;
+  }
+
+  const route = useRoute();
+  const router = useRouter();
+
+  const taskId = ref<string>(String(route.query.taskId || ''));
+  const pickedTaskId = ref<string>('');
+  const projects = ref<{ taskId?: string | number; taskName?: string; deliverableType?: string }[]>([]);
+  const projectLoading = ref(false);
+
+  const plan = ref<ProjectModulePlan | null>(null);
+  const modules = ref<EditableModule[]>([]);
+  const sellingPoints = ref<CopyBlockVO[]>([]);
+  const currentIndex = ref(0);
+  const loading = ref(false);
+  const saving = ref(false);
+  const dirty = ref(false);
+  const loadError = ref('');
+  let uidSeed = 0;
+  let dragFrom = -1;
+
+  const library = computed<ModuleDefinition[]>(() => plan.value?.library || []);
+  const current = computed<EditableModule | null>(() => modules.value[currentIndex.value] || null);
+  const currentSellingPointIds = computed<string[]>(() =>
+    (current.value?.sellingPointCodes || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+  );
+
+  function nextUid(): string {
+    uidSeed += 1;
+    return `m${uidSeed}`;
+  }
+
+  function toEditable(rows: ProjectModule[]): EditableModule[] {
+    return rows.map((row) => ({ ...row, uid: nextUid() }));
+  }
+
+  function definitionOf(code?: string): ModuleDefinition | undefined {
+    return library.value.find((d) => d.moduleCode === code);
+  }
+
+  function maxScreensOf(m: EditableModule): number {
+    const max = definitionOf(m.moduleCode)?.maxScreens;
+    return max && max > 0 ? Math.min(10, max) : 10;
+  }
+
+  function screenRangeText(d: ModuleDefinition): string {
+    const min = d.minScreens ?? 1;
+    const max = d.maxScreens ?? 1;
+    return min === max ? `${min} 屏` : `${min}~${max} 屏`;
+  }
+
+  function markDirty() {
+    dirty.value = true;
+  }
+
+  async function load() {
+    if (!taskId.value) {
+      return;
+    }
+    loading.value = true;
+    loadError.value = '';
+    try {
+      const res = await getProjectModulePlan(taskId.value);
+      const data = res.data || null;
+      plan.value = data;
+      modules.value = toEditable(data?.modules || []);
+      currentIndex.value = 0;
+      dirty.value = false;
+      // 卖点块用于「对应卖点」选择器：取不到只是这个下拉是空的，不影响其余编辑
+      try {
+        const blocks = await listCopyBlocks(taskId.value, 'SELLING_POINT');
+        sellingPoints.value = blocks.data || [];
+      } catch {
+        sellingPoints.value = [];
+      }
+    } catch (error) {
+      plan.value = null;
+      modules.value = [];
+      loadError.value = (await extractErrorMessage(error)) ?? '加载模块规划失败';
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function save() {
+    saving.value = true;
+    try {
+      const res = await saveProjectModulePlan(
+        taskId.value,
+        modules.value.map(({ uid: _uid, ...rest }) => rest)
+      );
+      plan.value = res.data || null;
+      modules.value = toEditable(res.data?.modules || []);
+      currentIndex.value = 0;
+      dirty.value = false;
+      ElMessage.success('模块计划已保存');
+    } catch (error) {
+      ElMessage.error((await extractErrorMessage(error)) ?? '保存失败');
+    } finally {
+      saving.value = false;
+    }
+  }
+
+  function addModule(d: ModuleDefinition) {
+    const count = d.minScreens && d.minScreens > 0 ? d.minScreens : 1;
+    modules.value.push({
+      uid: nextUid(),
+      moduleCode: d.moduleCode,
+      moduleName: d.moduleName,
+      screenType: d.screenType,
+      screenCount: count,
+      enabled: '0',
+      objective: d.objective,
+      requiredFactCodes: d.requiredFacts,
+      workflowCodes: d.allowedWorkflows,
+      templateCodes: d.allowedTemplates,
+      visualRulesJson: d.visualRulesJson
+    });
+    currentIndex.value = modules.value.length - 1;
+    markDirty();
+  }
+
+  function duplicate(index: number) {
+    const source = modules.value[index];
+    if (!source) {
+      return;
+    }
+    modules.value.splice(index + 1, 0, { ...source, uid: nextUid() });
+    currentIndex.value = index + 1;
+    markDirty();
+  }
+
+  function remove(index: number) {
+    modules.value.splice(index, 1);
+    currentIndex.value = Math.min(currentIndex.value, Math.max(0, modules.value.length - 1));
+    markDirty();
+  }
+
+  function move(index: number, delta: number) {
+    const target = index + delta;
+    if (target < 0 || target >= modules.value.length) {
+      return;
+    }
+    const [row] = modules.value.splice(index, 1);
+    modules.value.splice(target, 0, row);
+    currentIndex.value = target;
+    markDirty();
+  }
+
+  function toggleEnabled(m: EditableModule, on: boolean) {
+    m.enabled = on ? '0' : '1';
+    markDirty();
+  }
+
+  function onSellingPointsChange(ids: string[]) {
+    if (current.value) {
+      current.value.sellingPointCodes = ids.join(',');
+    }
+    markDirty();
+  }
+
+  function onDragStart(index: number) {
+    dragFrom = index;
+  }
+
+  function onDrop(index: number) {
+    if (dragFrom < 0 || dragFrom === index) {
+      return;
+    }
+    const [row] = modules.value.splice(dragFrom, 1);
+    modules.value.splice(index, 0, row);
+    currentIndex.value = index;
+    dragFrom = -1;
+    markDirty();
+  }
+
+  function onPickProject(value: string) {
+    taskId.value = value;
+    void router.replace({ path: route.path, query: { taskId: value } });
+    void load();
+  }
+
+  async function searchProjects(keyword: string) {
+    projectLoading.value = true;
+    try {
+      const res = await listCreativeProject({ pageNum: 1, pageSize: 20, queryTaskName: keyword });
+      projects.value = res.data?.rows || [];
+    } catch {
+      projects.value = [];
+    } finally {
+      projectLoading.value = false;
+    }
+  }
+
+  onMounted(() => {
+    if (taskId.value) {
+      void load();
+    } else {
+      void searchProjects('');
+    }
+  });
+</script>
+
+<style scoped lang="scss">
+  @use '@/assets/styles/tokens-studio.scss';
+
+  .studio {
+    min-height: calc(100vh - 135px);
+    padding: 24px;
+    color: var(--t1);
+    background: var(--bg);
+    background-image: radial-gradient(900px 460px at 84% -10%, rgba(148, 163, 184, 0.16), transparent 68%);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+
+  .page-head {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding-bottom: 16px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  .page-head h2 {
+    margin: 0 0 6px;
+    font-size: 18px;
+  }
+  .head-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  .project-picker {
+    width: 260px;
+  }
+  .notice {
+    margin-bottom: 14px;
+  }
+  .muted {
+    color: var(--t2);
+  }
+  .small {
+    font-size: 12px;
+  }
+
+  .cols {
+    display: grid;
+    grid-template-columns: 300px minmax(420px, 1fr) 380px;
+    gap: 14px;
+  }
+  @media (max-width: 1500px) {
+    .cols {
+      grid-template-columns: 260px minmax(320px, 1fr) 320px;
+    }
+  }
+
+  .panel {
+    padding: 16px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+  .block-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .block-head.sub {
+    margin-top: 18px;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+  }
+  .block-head h3 {
+    margin: 0;
+    font-size: 14px;
+  }
+
+  ul.library,
+  ul.modules,
+  ol.screens {
+    padding: 0;
+    margin: 10px 0 0;
+    list-style: none;
+  }
+  .lib-item {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 8px;
+    margin-bottom: 6px;
+    background: var(--elevated, #171b24);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+  }
+  .lib-name {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    font-weight: 600;
+  }
+
+  .module-item {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 8px;
+    margin-bottom: 6px;
+    cursor: pointer;
+    background: var(--elevated, #171b24);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+  }
+  .module-item.is-current {
+    border-color: var(--accent, rgba(103, 194, 58, 0.6));
+  }
+  .module-item.is-off {
+    opacity: 0.55;
+  }
+  .drag-handle {
+    color: var(--t2);
+    cursor: grab;
+    user-select: none;
+  }
+  .module-main {
+    flex: 1;
+    min-width: 0;
+  }
+  .module-name {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    font-weight: 600;
+  }
+  .count {
+    width: 96px;
+  }
+
+  .screen-item {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding: 6px 8px;
+    margin-bottom: 4px;
+    background: var(--elevated, #171b24);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+  }
+  .screen-no {
+    color: var(--t2);
+  }
+  .screen-label {
+    font-weight: 600;
+  }
+  .mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .storyboard-note.warn {
+    color: rgb(230, 162, 60);
+  }
+
+  .field {
+    display: block;
+    margin-bottom: 10px;
+  }
+  .field > span {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 12px;
+    color: var(--t2);
+  }
+</style>
