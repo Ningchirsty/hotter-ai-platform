@@ -102,6 +102,16 @@ public interface CreativeConstants {
     String CAP_STORYBOARD_DRAFT = "creative_storyboard_draft";
 
     /**
+     * 能力编码：视觉基因抽取（**看图**，不是文本润色）。
+     *
+     * <p>{@code VisualBrainAdapter} 的默认值就是它（可用 {@code creative.dna.capability-code} 覆盖）。
+     * 它与上面两个能力的区别很关键：载荷里带参考图 base64，因此**只能绑视觉模型**——
+     * 绑文本模型会得到一份"没看过图"的基因，却以模型结论的样子出现，比诚实回落更糟。
+     * 部署视觉模型后绑定即可（治理种子见 {@code script/sql/dp_creative_r8_dna_gov.sql}）。</p>
+     */
+    String CAP_DNA_EXTRACT = "visual_dna_extract";
+
+    /**
      * 来源：AI 模型产出（有可用模型且逐字段验收通过时才用）
      */
     String SOURCE_MODEL = "MODEL";

@@ -233,6 +233,14 @@ public class CreativeDirectionServiceImpl implements ICreativeDirectionService {
         if (entity == null || !taskId.equals(entity.getTaskId())) {
             throw new ServiceException("方向不属于该项目：" + bo.getId());
         }
+        // 【FIX-004】已选定的方向禁止**原地修改**：它是后面 DNA 派生提示词、分镜、排版一路引用的基准，
+        // 原地改文案会让"已认定的方向"与"已经按它产出的东西"对不上，且没有任何留痕能看出改过。
+        // 要改就走「重新生成方向」得到新版本、再重新选定——与分镜锁定的口径一致
+        // （CreativeStoryboardServiceImpl#updateScreen 对 LOCKED 分镜同样拒绝）。
+        if (STATUS_SELECTED.equals(entity.getStatus())) {
+            throw new ServiceException("该方向已选定，不能原地修改；请「重新生成方向」得到新版本后再改并重新选定"
+                + "（方向：" + StringUtils.blankToDefault(entity.getDirectionName(), entity.getDirectionCode()) + "）");
+        }
         if (bo.getDirectionName() != null) {
             entity.setDirectionName(bo.getDirectionName());
         }

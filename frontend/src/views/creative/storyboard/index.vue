@@ -70,7 +70,24 @@
               >
                 {{ item.status === 'SELECTED' ? '当前方向' : '选定这个方向' }}
               </el-button>
-              <el-button size="small" text @click="openDirectionEdit(item)">编辑文案</el-button>
+              <!-- FIX-004：已选定的方向是后续 DNA/分镜/排版的基准，不允许原地改文案；
+                   要改就「重新生成方向」得到新版本再重新选定（后端也会拒绝，这里只是提前说明） -->
+              <el-tooltip
+                :disabled="item.status !== 'SELECTED'"
+                content="已选定的方向不能原地修改：它是后续分镜与排版的基准。要改请点上方「重新生成方向」得到新版本"
+                placement="top"
+              >
+                <span>
+                  <el-button
+                    size="small"
+                    text
+                    :disabled="item.status === 'SELECTED'"
+                    @click="openDirectionEdit(item)"
+                  >
+                    编辑文案
+                  </el-button>
+                </span>
+              </el-tooltip>
             </div>
           </div>
         </div>

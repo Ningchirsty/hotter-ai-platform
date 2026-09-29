@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.aigov.enums.AigDeploymentTypeEnum;
+import org.dromara.aigov.service.invoker.ModelImagePayload;
 import org.dromara.aigov.service.invoker.ModelInvokeRequest;
 import org.dromara.aigov.service.invoker.ModelInvokeResult;
 import org.dromara.aigov.service.invoker.ModelInvoker;
@@ -74,8 +75,11 @@ public class CreativeLocalChatInvoker implements ModelInvoker {
 
     @Override
     public boolean supportsCapability(String capabilityCode) {
+        // 认领视觉工厂自己的三个能力：方向/分镜是文本润色，基因抽取是**看图**
+        // （payload 里带参考图；buildBody 会在带图时改发 OpenAI 视觉格式的多模态消息）。
         return CreativeConstants.CAP_DIRECTION_DRAFT.equals(capabilityCode)
-            || CreativeConstants.CAP_STORYBOARD_DRAFT.equals(capabilityCode);
+            || CreativeConstants.CAP_STORYBOARD_DRAFT.equals(capabilityCode)
+            || CreativeConstants.CAP_DNA_EXTRACT.equals(capabilityCode);
     }
 
     @Override
@@ -153,13 +157,94 @@ public class CreativeLocalChatInvoker implements ModelInvoker {
         ArrayNode messages = root.putArray("messages");
         ObjectNode system = messages.addObject();
         system.put("role", "system");
-        system.put("content", "你是电商详情页视觉方案助手。只输出一个 JSON 对象，不要输出任何解释文字，"
-            + "不要使用 Markdown 代码块。字段名必须与要求完全一致；不确定的内容不要编造，宁可省略该字段。"
-            + schemaHint(request.getOutputSchema()));
+        system.put("content", systemPrompt(request.getCapabilityCode(), request.getOutputSchema()));
         ObjectNode user = messages.addObject();
         user.put("role", "user");
-        user.put("content", StringUtils.blankToDefault(request.getPrompt(), ""));
+        // 带图时改发多模态消息：文本 + image_url(data URI)。
+        // 为什么必须显式转换：治理层传下来的 images 是「label/mimeType/base64」三段结构
+        // （见 ModelImagePayload），OpenAI 兼容端点认的是 content 数组里的 image_url。
+        // 不带图的文本能力走原来的纯字符串，行为不变。
+        ArrayNode images = imagesOf(request.getPayload());
+        if (images == null || images.isEmpty()) {
+            user.put("content", StringUtils.blankToDefault(request.getPrompt(), ""));
+        } else {
+            ArrayNode content = user.putArray("content");
+            content.addObject().put("type", "text")
+                .put("text", StringUtils.blankToDefault(request.getPrompt(), ""));
+            for (JsonNode image : images) {
+                String base64 = image.path("base64").asText("");
+                if (StringUtils.isBlank(base64)) {
+                    continue;
+                }
+                String mime = StringUtils.blankToDefault(image.path("mimeType").asText(null), "image/png");
+                content.addObject().put("type", "image_url")
+                    .putObject("image_url").put("url", "data:" + mime + ";base64," + base64);
+            }
+        }
         return root;
+    }
+
+    /**
+     * 从治理层载荷里取图片列表（{@code ModelImagePayload.KEY} 指向的数组）。
+     *
+     * <p>包级可见（不是 private）：这是"图有没有真的发出去"的唯一判定点，必须能被单测直接钉住——
+     * 视觉能力（视觉基因抽取）如果漏发图，模型会返回一份"没看过图"的结论，
+     * 而调用链上一切正常（HTTP 200、JSON 合法），只有断言载荷才看得出来。</p>
+     *
+     * @param payload 治理层载荷（可空）
+     * @return 图片数组；没有返回 null
+     */
+    static ArrayNode imagesOf(java.util.Map<String, Object> payload) {
+        if (payload == null || payload.isEmpty()) {
+            return null;
+        }
+        Object raw = payload.get(ModelImagePayload.KEY);
+        if (!(raw instanceof java.util.List<?> list) || list.isEmpty()) {
+            return null;
+        }
+        ArrayNode array = MAPPER.createArrayNode();
+        for (Object item : list) {
+            if (item instanceof java.util.Map<?, ?> map) {
+                ObjectNode node = array.addObject();
+                Object label = map.get("label");
+                Object mime = map.get("mimeType");
+                Object base64 = map.get("base64");
+                if (label != null) {
+                    node.put("label", String.valueOf(label));
+                }
+                if (mime != null) {
+                    node.put("mimeType", String.valueOf(mime));
+                }
+                if (base64 != null) {
+                    node.put("base64", String.valueOf(base64));
+                }
+            }
+        }
+        return array;
+    }
+
+    /**
+     * 系统提示词：按能力区分。
+     *
+     * <p>原来只有一句"你是电商详情页视觉方案助手"，对文本润色合适；但对**看图抽基因**的任务
+     * 会给出错误暗示（模型会以为自己在写文案）。这里按能力分开，并保留共同的"只输出 JSON"约束。</p>
+     *
+     * @param capabilityCode 能力编码
+     * @return 系统提示词
+     */
+    static String systemPrompt(String capabilityCode, String outputSchema) {
+        String common = "只输出一个 JSON 对象，不要输出任何解释文字，不要使用 Markdown 代码块。"
+            + "字段名必须与要求完全一致；不确定的内容不要编造，宁可省略该字段。";
+        String head;
+        if (CreativeConstants.CAP_DNA_EXTRACT.equals(capabilityCode)) {
+            head = "你是视觉规范分析助手。你会收到一张产品参考图，请**只根据画面本身**给出视觉特征判断"
+                + "（风格、配色、光线、留白、产品占比、场景），不要输出营销文案，也不要凭常识补图里没有的东西。";
+        } else {
+            head = "你是电商详情页视觉方案助手。";
+        }
+        // schemaHint 只在能力真的声明了输出字段时才注入（R4 踩过的坑：把 {"fields":[]} 当模板注入，
+        // 本地小模型会照着它输出，业务字段一个都不产出）。
+        return head + common + schemaHint(outputSchema);
     }
 
     /**

@@ -140,15 +140,23 @@ class CreativeDraftFactoryTest {
         String withoutFacts = flattenScreens(CreativeDraftFactory.screens(dna, "鸢尾花", Map.of()));
         assertNotEquals(withFacts, withoutFacts, "有没有已确认事实，分镜文案必须不同");
 
-        // 画面独白必须逐屏不同：7 屏 7 句（R3 之前是同一句反复出现）
+        // 画面独白必须逐屏不同（R3 之前是同一句反复出现）
+        // 断言的是「结构不变量」而不是「7 屏」这个具体数字：屏数属于可配置项（V0.2 多场景），
+        // 写死 7 会在去掉 7 屏硬编码后变成假失败，而真正要守住的是下面这几条。
         List<CreativeDraftFactory.ScreenDraft> drafts = CreativeDraftFactory.screens(dna, "鸢尾花", Map.of());
         List<String> solos = new ArrayList<>();
         for (CreativeDraftFactory.ScreenDraft draft : drafts) {
             solos.add(draft.soloStatement());
         }
-        assertEquals(7, solos.size(), "分镜固定 7 屏（业务骨架不变）");
-        assertEquals(7, solos.stream().distinct().count(),
-            "7 屏的画面独白必须两两不同，这正是「70 行只有 7 句」问题的修复点");
+        assertTrue(solos.size() >= 3, "业务骨架至少要有 开篇/内容/收尾 三类屏，实际 " + solos.size());
+        assertEquals(solos.size(), solos.stream().distinct().count(),
+            "每一屏的画面独白必须两两不同，这正是「70 行只有 7 句」问题的修复点");
+        assertEquals("HERO", drafts.get(0).type(), "第一屏必须是主图屏");
+        assertEquals("BRAND", drafts.get(drafts.size() - 1).type(), "最后一屏必须是品牌收尾屏");
+        for (CreativeDraftFactory.ScreenDraft draft : drafts) {
+            assertTrue(draft.type() != null && !draft.type().isBlank(), "屏类型不能为空");
+            assertTrue(draft.label() != null && !draft.label().isBlank(), "屏名称不能为空");
+        }
     }
 
     @Test

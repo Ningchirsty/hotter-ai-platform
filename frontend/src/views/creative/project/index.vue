@@ -2,14 +2,6 @@
   <div class="studio">
     <CreativeFlowGuide :task-id="currentProjectId" :refresh-token="flowToken" />
 
-    <div v-if="showGuide" class="guide-bar">
-      <span>
-        R0 接线版：项目复用「内容生产协同」的电商详情页任务，出图复用图像创作内核（已发布工作流）。
-        本轮只做「上传参考图（可同时登记为产品图）→ 出一张 HERO 主图 → 可预览 → 全程可追溯」这条闭环，视觉基因/分镜/视觉门/排版在 R1–R3 交付。
-      </span>
-      <button type="button" title="关闭提示" @click="dismissGuide">✕</button>
-    </div>
-
     <div class="workbench">
       <!-- 左：项目列表 -->
       <aside class="panel project-panel">
@@ -496,7 +488,7 @@
             <section class="block">
               <div class="block-head">
                 <h4>5. 生成 HERO 主图</h4>
-                <span class="muted">R0 每次出 1 张候选；重试=新增一次候选</span>
+                <span class="muted">每次出 1 张候选；重试=新增一次候选</span>
               </div>
               <div class="form-row">
                 <label>出图工作流</label>
@@ -867,9 +859,9 @@ import {
 } from '@/api/creative/types';
 import CreativeFlowGuide from '../components/CreativeFlowGuide.vue';
 
-const GUIDE_KEY = 'hotter.creative.guide.dismissed';
+// R0 期的"接线版"说明横幅已在 V0.2 FIX-005 删除：它写的是"视觉基因/分镜/视觉门/排版在 R1–R3 交付"，
+// 而这四块早已上线，留着只会误导使用的人（连同 GUIDE_KEY/showGuide/dismissGuide 一起清理）。
 
-const showGuide = ref(localStorage.getItem(GUIDE_KEY) !== '1');
 const projects = ref<CreativeProjectVO[]>([]);
 const loadingProjects = ref(false);
 const queryTaskName = ref('');
@@ -1266,11 +1258,6 @@ function genStatusType(status?: string): string {
 function formatTime(value?: string): string {
   if (!value) return '';
   return value.replace('T', ' ').slice(0, 19);
-}
-
-function dismissGuide() {
-  showGuide.value = false;
-  localStorage.setItem(GUIDE_KEY, '1');
 }
 
 async function loadProjects() {
@@ -2053,33 +2040,6 @@ onBeforeUnmount(() => {
 
 button {
   font: inherit;
-}
-
-.guide-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 11px 14px;
-  margin-bottom: 22px;
-  color: #ddd6fe;
-  font-size: 13px;
-  line-height: 1.7;
-  background: rgba(148, 163, 184, 0.1);
-  border: 1px solid rgba(186, 197, 209, 0.24);
-  border-radius: 6px;
-}
-.guide-bar > span {
-  flex: 1;
-}
-.guide-bar button {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  color: var(--t2);
-  cursor: pointer;
-  background: transparent;
-  border: 0;
 }
 
 .workbench {
