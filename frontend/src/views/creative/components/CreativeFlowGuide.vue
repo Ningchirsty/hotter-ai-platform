@@ -69,6 +69,39 @@
     <p v-if="scenarioLine" class="flow-scenario" :title="scenarioSteps.join(' → ')">
       <span class="scenario-tag">场景配置</span>{{ scenarioLine }}
     </p>
+    <!-- 步序对照（只读，V0.2 D 阶段第二刀第一步）：
+         把「配置 N 步 ↔ 代码八步」的差异如实摆出来供人核对，**指引线一行不动**——
+         真的把导航切到配置驱动之前，先让"哪一步对哪一步、哪一步没有对应"是可见的。 -->
+    <div v-if="mappingChip" class="flow-mapping">
+      <el-popover
+        placement="top-start"
+        :width="440"
+        trigger="click"
+        popper-class="flow-map-popover"
+      >
+        <template #reference>
+          <span class="map-chip" :title="mapping.verdict">{{ mappingChip }}</span>
+        </template>
+        <div class="map">
+          <div class="map-head">步序对照 · 配置步骤 → 代码八步</div>
+          <ul class="map-rows">
+            <li
+              v-for="row in mapping.rows"
+              :key="row.stepCode || row.sortNo"
+              :class="{ 'is-unmapped': !row.codeNo }"
+            >
+              <span class="map-code">{{ row.stepCode || '未命名' }}</span>
+              <span class="map-name">{{ row.stepName }}</span>
+              <span class="map-arrow">→</span>
+              <span class="map-target">
+                {{ row.codeNo ? `第 ${row.codeNo} 步 · ${row.codeName}` : '代码八步里没有对应' }}
+              </span>
+            </li>
+          </ul>
+          <p class="map-note">{{ mapping.verdict }}</p>
+        </div>
+      </el-popover>
+    </div>
   </div>
 </template>
 
@@ -87,6 +120,10 @@ import { useScenarioConfig } from '../composables/useScenarioConfig';
  *
  * <p>V0.2 D 阶段第一刀：底部多一行「场景配置」（交付类型 / 默认输出规格 / 配置步骤数）——
  * **只读展示，不驱动流程**；配置接口读不到时整行不显示，不影响这条指引线的任何交互。</p>
+ *
+ * <p>V0.2 D 阶段第二刀（第一步）：再加一枚「步序对照」胶囊，点开是配置步骤 → 代码八步的逐条映射
+ * 与差异结论（哪一步没有对应、哪些阶段没被任何步骤覆盖）——**同样是只读**，
+ * 为"把指引线切成配置驱动"提供核对依据；映射本身是纯函数（`flowStepMapping.ts`），有单测钉住。</p>
  */
 const props = defineProps<{
   /** 当前项目ID；为空时只显示一句引导语 */
@@ -103,9 +140,12 @@ const props = defineProps<{
 }>();
 
 const router = useRouter();
-const { line: scenarioLine, stepNames: scenarioSteps } = useScenarioConfig(
-  computed(() => props.deliverableType)
-);
+const {
+  line: scenarioLine,
+  stepNames: scenarioSteps,
+  mapping,
+  mappingChip
+} = useScenarioConfig(computed(() => props.deliverableType));
 // 解构出来的 ref/computed 在模板里会自动解包；留着 flow.* 访问则必须写 .value，容易漏
 const { steps, activeNo, doneCount, stageRunning, stage, stageLabel, ensureStep, stepHref, reload } =
   useCreativeFlow(computed(() => props.taskId));
@@ -161,6 +201,97 @@ watch(
   font-size: 11px;
   border: 1px solid var(--line);
   border-radius: 999px;
+}
+
+/* 步序对照（只读）：一枚小胶囊，点开才是明细——默认不占地方，也不改变指引线观感 */
+.flow-mapping {
+  margin-top: 6px;
+  line-height: 1.6;
+}
+
+.map-chip {
+  display: inline-block;
+  padding: 1px 8px;
+  color: var(--t3);
+  font-size: 11px;
+  border: 1px dashed var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 0.2s ease, border-color 0.2s ease;
+
+  &:hover {
+    color: var(--t2);
+    border-color: var(--t3);
+  }
+}
+
+/* 弹层内容（这段 DOM 在本组件模板里编译，所以 scoped 属性照样生效） */
+.map {
+  .map-head {
+    margin-bottom: 6px;
+    color: var(--t1);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .map-rows {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    max-height: 320px;
+    overflow-y: auto;
+
+    li {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      padding: 3px 0;
+      border-bottom: 1px dashed var(--line);
+      font-size: 12px;
+      color: var(--t2);
+
+      &:last-child {
+        border-bottom: none;
+      }
+
+      /* 配置里有、代码八步里没有对应的那一条：一眼能认出来，而不是混在列表里 */
+      &.is-unmapped {
+        .map-target {
+          color: #e6a23c;
+        }
+      }
+    }
+  }
+
+  .map-code {
+    flex: none;
+    min-width: 74px;
+    color: var(--t1);
+  }
+
+  .map-name {
+    flex: none;
+    color: var(--t3);
+  }
+
+  .map-arrow {
+    flex: none;
+    color: var(--t3);
+  }
+
+  .map-target {
+    flex: 1;
+    text-align: right;
+  }
+
+  .map-note {
+    margin: 8px 0 0;
+    padding-top: 7px;
+    border-top: 1px solid var(--line);
+    color: var(--t3);
+    font-size: 11px;
+    line-height: 1.7;
+  }
 }
 
 .flow-head {
@@ -417,6 +548,25 @@ watch(
   .pop-actions {
     margin-top: 8px;
     text-align: right;
+  }
+}
+</style>
+
+<!-- 步序对照弹层的外壳：Element Plus 默认是白底，这里换成暗色 token。
+     必须放在非 scoped 块里——弹层被 teleport 到 body，且 popper-class 挂在弹层根节点上，
+     scoped 选择器匹配不到它。（既有步骤浮层保持原样，本轮不动已验证过的观感。） -->
+<style lang="scss">
+@use '@/assets/styles/tokens-studio.scss';
+
+.flow-map-popover.el-popover.el-popper {
+  background: var(--elevated);
+  border: 1px solid var(--line);
+  color: var(--t2);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+
+  .el-popper__arrow::before {
+    background: var(--elevated);
+    border-color: var(--line);
   }
 }
 </style>
