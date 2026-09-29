@@ -390,12 +390,26 @@ watch(thumbLimit, () => {
   void loadThumbs(shownImages.value);
 });
 
-// 切项目：先把上一个项目的资源全回收，避免串图
+// 切项目：先把上一个项目的资源全回收，避免串图；已打开时重新加载
 watch(
   () => props.taskId,
   () => {
     if (visible.value) {
       void reload();
+    }
+  }
+);
+
+/**
+ * 自愈：抽屉可能在 `taskId` 还没到位时就被打开（指引线挂载早于页面数据），
+ * 那时 `load()` 会直接返回、界面停在"还没有图片附件"——看起来像项目真的没有附件。
+ * 这里在 `taskId` 到位且**还没加载过任何数据**时补一次加载。
+ */
+watch(
+  () => props.taskId,
+  (id) => {
+    if (visible.value && id && !loading.value && !files.value.length && !generations.value.length) {
+      void load();
     }
   }
 );

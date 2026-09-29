@@ -209,6 +209,20 @@ watch(
     }
   }
 );
+
+/**
+ * 自愈：抽屉可能在 `taskId` 还没到位时就被打开（指引线挂载早于页面数据），
+ * 那时 `load()` 直接返回、事件区停在"还没有阶段事件"——看起来像这个项目真的没有历史。
+ * 这里在 `taskId` 到位且**还没读到过事件**时补一次。
+ */
+watch(
+  () => props.taskId,
+  (id) => {
+    if (visible.value && id && !loading.value && !events.value.length) {
+      void load();
+    }
+  }
+);
 </script>
 
 <style scoped lang="scss">
