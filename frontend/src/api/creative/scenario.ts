@@ -249,6 +249,9 @@ export interface ProjectModulePlan {
   library?: ModuleDefinition[];
   screens?: ModuleScreenPreview[];
   screenCount?: number;
+  /** 屏预览来源：PLAN=已保存的计划；DEFAULT_SKELETON=还没计划，给的是默认骨架的长相 */
+  previewSource?: 'PLAN' | 'DEFAULT_SKELETON' | string;
+  previewNote?: string;
   storyboard?: ModulePlanStoryboardRef;
 }
 

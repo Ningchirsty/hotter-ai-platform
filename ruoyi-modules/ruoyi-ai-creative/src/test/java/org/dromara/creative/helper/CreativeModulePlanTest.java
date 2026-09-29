@@ -105,6 +105,7 @@ class CreativeModulePlanTest {
         type.setDeliveryType("ECOM_DETAIL");
         type.setDeliveryName("商品详情页");
         when(scenarioConfigService.getDeliveryType(any())).thenReturn(type);
+        // 模块库只有一种查询形状（默认骨架是在 Java 里从库里过滤出来的），所以这里直接返回整库
         when(definitionMapper.selectList(any())).thenReturn(ecomLibrary());
         Map<String, Object> meta = new HashMap<>();
         meta.put("taskId", TASK);
@@ -223,6 +224,23 @@ class CreativeModulePlanTest {
         when(stageMapper.selectDelFlag(TASK)).thenReturn("1");
         ServiceException ex = assertThrows(ServiceException.class, () -> service.planOf(TASK));
         assertTrue(ex.getMessage().contains("已删除"), ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("还没有计划时：预览给的是默认骨架的长相（7 屏）且标明来源，仍然不写库")
+    void previewFallsBackToDefaultSkeletonWithoutWriting() {
+        ProjectModulePlanVo vo = service.planOf(TASK);
+
+        assertEquals("DEFAULT_SKELETON", vo.getPreviewSource());
+        assertTrue(vo.getPreviewNote().contains("还没有模块计划"), vo.getPreviewNote());
+        assertEquals(0, vo.getModules().size(), "读接口不该初始化计划");
+        assertEquals(0, table.size(), "读接口不该写库");
+        // 默认骨架 = 种子里的 6 个模块 → 7 屏（卖点占 2 屏），与契约文件逐屏一致
+        assertEquals(7, vo.getScreenCount());
+        assertEquals(List.of("HERO", "SELLING_POINT", "SELLING_POINT", "SCENE", "DETAIL", "SIZE", "BRAND"),
+            vo.getScreens().stream().map(ProjectModulePlanVo.ScreenPreview::screenType).toList());
+        assertEquals(List.of("主图", "卖点一", "卖点二", "使用场景", "细节工艺", "尺寸参数", "品牌收尾"),
+            vo.getScreens().stream().map(ProjectModulePlanVo.ScreenPreview::label).toList());
     }
 
     @Test

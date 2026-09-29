@@ -194,10 +194,20 @@ public class CreativeModuleServiceImpl implements ICreativeModuleService {
         vo.setLibrary(listDefinitions(deliveryType));
         Map<String, DpModuleDefinition> definitions = definitionMap(deliveryType);
         Map<String, String> facts = confirmedFacts(taskId);
-        List<ProjectModulePlanVo.ScreenPreview> preview =
-            preview(enabledOnly(modules), definitions, facts);
+        // 还没有计划时，预览给的是"按交付类型默认骨架初始化后会长成什么样"，并**明确标出来源**
+        // （previewSource=DEFAULT_SKELETON）。不标的话用户会以为这个项目已经有计划了——
+        // 这是 R22 真机验收抓到的一处"页面说的是默认骨架、接口却给了空预览"。
+        boolean fromDefault = modules.isEmpty();
+        List<DpProjectModule> previewRows = fromDefault
+            ? defaultRows(taskId, deliveryType) : enabledOnly(modules);
+        List<ProjectModulePlanVo.ScreenPreview> preview = preview(previewRows, definitions, facts);
         vo.setScreens(preview);
         vo.setScreenCount(preview.size());
+        vo.setPreviewSource(fromDefault ? "DEFAULT_SKELETON" : "PLAN");
+        vo.setPreviewNote(fromDefault
+            ? "这个项目还没有模块计划：下面是按交付类型「" + deliveryType
+                + "」的默认骨架算出来的预览，保存后才成为本项目的计划。"
+            : "预览来自本项目的模块计划（保存前的实时预览）。");
 
         String blockReason = editBlockReason(taskId);
         vo.setEditable(blockReason == null);
@@ -422,13 +432,58 @@ public class CreativeModuleServiceImpl implements ICreativeModuleService {
     // 其它
     // ------------------------------------------------------------------
 
+    /**
+     * 交付类型的**默认骨架**（{@code default_selected=1}），顺序与模块库一致。
+     *
+     * <p>刻意在 Java 里从 {@link #listDefinitions(String)} 过滤，而不是再发一条带
+     * {@code default_selected='1'} 的 SQL：两条几乎一样的查询会让"库里那份"和"接口那份"
+     * 慢慢长歪（R22 单测第一版就因为 Mockito 不区分 wrapper 而多算出一条可选模块，
+     * 7 屏变 8 屏）。一处查询、一处过滤，顺序与展示也天然一致。</p>
+     *
+     * @param type 规范交付类型
+     * @return 默认骨架的定义列表（可能为空）
+     */
     private List<DpModuleDefinition> defaultDefinitions(String type) {
-        return definitionMapper.selectList(new LambdaQueryWrapper<DpModuleDefinition>()
-            .eq(DpModuleDefinition::getDeliveryType, type)
-            .eq(DpModuleDefinition::getEnabled, ENABLED)
-            .eq(DpModuleDefinition::getDefaultSelected, "1")
-            .orderByAsc(DpModuleDefinition::getDefaultSortNo)
-            .orderByAsc(DpModuleDefinition::getId));
+        List<DpModuleDefinition> defaults = new ArrayList<>();
+        for (DpModuleDefinition definition : listDefinitions(type)) {
+            if ("1".equals(definition.getDefaultSelected())) {
+                defaults.add(definition);
+            }
+        }
+        return defaults;
+    }
+
+    /**
+     * 按交付类型的默认骨架造一份"还没保存的预览行"（只为预览，**不写库**）。
+     *
+     * <p>和 {@code ensureProjectModules} 的初始化规则保持一致（屏数取 minScreens、顺序取 defaultSortNo），
+     * 否则会出现"预览 7 屏、保存/生成后却是 6 屏"这种对不上的情况。</p>
+     *
+     * @param taskId       项目ID
+     * @param deliveryType 交付类型
+     * @return 预览用的模块行（未落库）
+     */
+    private List<DpProjectModule> defaultRows(Long taskId, String deliveryType) {
+        String type = canonical(deliveryType);
+        if (type == null) {
+            return List.of();
+        }
+        List<DpProjectModule> rows = new ArrayList<>();
+        int sortNo = 10;
+        for (DpModuleDefinition definition : defaultDefinitions(type)) {
+            DpProjectModule row = new DpProjectModule();
+            row.setTaskId(taskId);
+            row.setModuleCode(definition.getModuleCode());
+            row.setModuleName(definition.getModuleName());
+            row.setScreenType(definition.getScreenType());
+            row.setScreenCount(definition.getMinScreens() == null ? 1 : definition.getMinScreens());
+            row.setSortNo(sortNo);
+            sortNo += 10;
+            row.setEnabled(ENABLED);
+            row.setRequiredFactCodes(definition.getRequiredFacts());
+            rows.add(row);
+        }
+        return rows;
     }
 
     /**

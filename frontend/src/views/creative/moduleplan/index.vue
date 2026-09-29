@@ -154,6 +154,14 @@
             <h3>屏预览</h3>
             <span class="muted">{{ plan.screenCount }} 屏（保存前的预览，与真正出屏用同一段逻辑）</span>
           </div>
+          <el-alert
+            v-if="plan.previewSource && plan.previewSource !== 'PLAN'"
+            type="info"
+            :closable="false"
+            class="preview-note"
+            show-icon
+            :title="plan.previewNote || '预览来自默认骨架（尚未保存）'"
+          />
           <ol class="screens">
             <li v-for="s in plan.screens" :key="String(s.screenNo)" class="screen-item">
               <span class="screen-no mono">{{ s.screenNo }}</span>
@@ -645,6 +653,9 @@
   }
   .storyboard-note.warn {
     color: rgb(230, 162, 60);
+  }
+  .preview-note {
+    margin: 8px 0;
   }
 
   .field {

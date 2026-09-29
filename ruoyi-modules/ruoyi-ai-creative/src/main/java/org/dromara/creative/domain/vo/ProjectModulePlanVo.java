@@ -75,6 +75,20 @@ public class ProjectModulePlanVo implements Serializable {
     private Integer screenCount = 0;
 
     /**
+     * 屏预览的来源：{@code PLAN}=本项目已保存的模块计划；{@code DEFAULT_SKELETON}=项目还没有计划，
+     * 给的是"按交付类型默认骨架初始化后会长成什么样"（**尚未落库**）。
+     *
+     * <p>为什么必须标出来：两种情况在页面上长得一模一样，但一个是"这个项目的事实"，
+     * 另一个是"你还没保存的默认值"。不标的话用户会以为项目已经有计划了。</p>
+     */
+    private String previewSource;
+
+    /**
+     * 屏预览的一句人话说明（页面直接显示）
+     */
+    private String previewNote;
+
+    /**
      * 最近一次分镜与当前计划的对照（没有分镜时为 null）
      */
     private StoryboardRef storyboard;
