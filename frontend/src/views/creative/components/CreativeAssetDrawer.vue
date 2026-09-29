@@ -1,0 +1,589 @@
+<template>
+  <el-drawer
+    v-model="visible"
+    direction="rtl"
+    :size="drawerSize"
+    :with-header="false"
+    append-to-body
+    class="studio-drawer"
+    @open="onOpen"
+    @closed="onClosed"
+  >
+    <div class="drawer">
+      <div class="drawer-head">
+        <span class="drawer-title">资产抽屉</span>
+        <span class="drawer-sub">{{ projectName || '当前项目' }}</span>
+        <span class="spacer" />
+        <el-button size="small" text @click="reload" :loading="loading">刷新</el-button>
+        <el-button size="small" text @click="visible = false">关闭</el-button>
+      </div>
+
+      <p class="drawer-note">
+        只读：这里只把项目里已有的资产（参考图/产品图、出图候选、排版版本）集中列出来，不做任何修改。
+      </p>
+
+      <!-- 参考图与产品图 -->
+      <div class="section">
+        <div class="sec-head">
+          <span>参考图与产品图</span>
+          <span class="sec-count">{{ imageFiles.length }} 张附件{{ productImage ? ' · 产品图 1 张' : '' }}</span>
+        </div>
+        <p v-if="!imageFiles.length && !productImage" class="empty">项目里还没有图片附件（在项目页上传参考图/产品图）</p>
+        <div v-else class="thumbs">
+          <div v-if="productImage" class="thumb">
+            <img v-if="productThumb" :src="productThumb" alt="产品图" />
+            <div v-else class="thumb-ph">产品图</div>
+            <span class="thumb-name">{{ productImage.fileName || '产品图' }}</span>
+            <span class="thumb-tag is-product">产品图</span>
+          </div>
+          <div v-for="img in shownImages" :key="String(img.fileId)" class="thumb">
+            <img v-if="thumbs[thumbKey(img)]" :src="thumbs[thumbKey(img)]" alt="参考图" />
+            <div v-else class="thumb-ph">读取中…</div>
+            <span class="thumb-name">{{ img.fileName || img.fileId }}</span>
+            <span class="thumb-tag">参考图</span>
+          </div>
+        </div>
+        <el-button
+          v-if="imageFiles.length > THUMB_LIMIT"
+          size="small"
+          text
+          class="more"
+          @click="thumbLimit = imageFiles.length"
+        >
+          加载其余 {{ imageFiles.length - thumbLimit }} 张缩略图
+        </el-button>
+      </div>
+
+      <!-- 出图候选 -->
+      <div class="section">
+        <div class="sec-head">
+          <span>出图候选</span>
+          <span class="sec-count">{{ generations.length }} 张</span>
+        </div>
+        <p v-if="!generations.length" class="empty">还没有候选图（在出图页发起出图）</p>
+        <ul v-else class="rows">
+          <li v-for="gen in generations" :key="String(gen.id)" class="row">
+            <span class="row-main">
+              {{ screenLabel(gen.screenId) }} · 候选 {{ gen.candidateNo ?? '-' }}
+            </span>
+            <span class="badge" :class="statusClass(gen.status)">{{ gen.statusDesc || gen.status }}</span>
+            <span class="badge" :class="qaClass(gen.qaVerdict)">质检 {{ qaText(gen.qaVerdict) }}</span>
+            <span class="spacer" />
+            <span class="row-time">{{ gen.createTime || '' }}</span>
+            <el-button
+              v-if="gen.previewable"
+              size="small"
+              text
+              type="primary"
+              @click="openGeneration(gen)"
+            >
+              看大图
+            </el-button>
+          </li>
+        </ul>
+      </div>
+
+      <!-- 排版版本 -->
+      <div class="section">
+        <div class="sec-head">
+          <span>排版版本</span>
+          <span class="sec-count">{{ versions.length }} 个</span>
+        </div>
+        <p v-if="!versions.length" class="empty">还没有渲染过机排版版本（在评审页渲染）</p>
+        <ul v-else class="rows">
+          <li v-for="ver in versions" :key="String(ver.id)" class="row">
+            <span class="row-main">v{{ ver.version ?? '-' }} · {{ ver.kind || '版本' }}</span>
+            <span class="badge">{{ versionStatusText(ver.status) }}</span>
+            <span class="spacer" />
+            <span class="row-time">{{ ver.createTime || '' }}</span>
+            <el-button size="small" text type="primary" @click="openVersion(ver)">看长图</el-button>
+          </li>
+        </ul>
+      </div>
+
+      <p v-if="error" class="err">{{ error }}</p>
+    </div>
+
+    <!-- 大图预览：与既有页面一致，用 blob URL + 本地遮罩，不引入新的查看器组件 -->
+    <div v-if="preview.url" class="preview-mask" @click="closePreview">
+      <img :src="preview.url" :alt="preview.title" />
+      <p class="preview-title">{{ preview.title }}</p>
+    </div>
+  </el-drawer>
+</template>
+
+<script setup lang="ts">
+import { computed, ref, watch } from 'vue';
+import {
+  fetchCreativeFileBlobUrl,
+  fetchDetailPreviewBlobUrl,
+  fetchGenerationPreviewBlobUrl,
+  fetchProductImageBlobUrl,
+  getDetailPage,
+  getStoryboard,
+  listCreativeFiles,
+  listGenerations
+} from '@/api/creative';
+import { getProjectProductImage } from '@/api/creative';
+import type {
+  CreativeProjectVO,
+  DpDetailPageVersionVO,
+  DpDetailPageVO,
+  DpGenerationVO,
+  DpStoryboardVO
+} from '@/api/creative/types';
+import type { CpTaskFileVO } from '@/api/content/task/types';
+
+/**
+ * 资产抽屉（ASSET_DRAWER，R18 真做）。
+ *
+ * <p><b>为什么需要它</b>：资产现在散在三处——参考图在项目页、候选在生产页、排版版本在评审页。
+ * 做精修或对账时要来回跳页；装配定义（`dp_workspace_schema`）里本来就把它列为一个面板。</p>
+ *
+ * <p><b>只读</b>：只列与预览，不写任何数据。图片一律走既有 blob 通道
+ * （`fetchCreativeFileBlobUrl` 等），URL 生命周期由本组件管：关抽屉、切项目时统一 revoke，
+ * 避免"图片还在渲染就被回收"或"越攒越多不回收"。</p>
+ *
+ * <p><b>缩略图是有上限的</b>：附件可能有几十张（生产上有过 34 张的项目），一次性拉几十个 blob
+ * 会把慢网拖死。所以默认只自动加载前 {@link THUMB_LIMIT} 张，其余的由人点一下再加载——
+ * 不做"悄悄只显示 12 张"那种假完整。</p>
+ */
+const props = defineProps<{
+  /** 当前项目ID */
+  taskId?: string | number;
+  /** 项目名（仅用于标题展示） */
+  projectName?: string;
+}>();
+
+const visible = defineModel<boolean>('visible', { required: true });
+
+/** 自动加载缩略图的上限 */
+const THUMB_LIMIT = 12;
+
+const loading = ref(false);
+const error = ref('');
+const drawerSize = ref('46%');
+
+const project = ref<CreativeProjectVO | null>(null);
+const files = ref<CpTaskFileVO[]>([]);
+const generations = ref<DpGenerationVO[]>([]);
+const storyboard = ref<DpStoryboardVO | null>(null);
+const versions = ref<DpDetailPageVersionVO[]>([]);
+const productImage = ref<{ fileName?: string; configured?: boolean } | null>(null);
+
+/** 缩略图：key → blob URL（key 用 `file-<id>` / `product`） */
+const thumbs = ref<Record<string, string>>({});
+const productThumb = ref('');
+const thumbLimit = ref(THUMB_LIMIT);
+const preview = ref<{ url: string; title: string }>({ url: '', title: '' });
+
+const imageFiles = computed(() =>
+  files.value.filter((f) => (f.fileKind || '').toUpperCase() === 'IMAGE')
+);
+const shownImages = computed(() => imageFiles.value.slice(0, thumbLimit.value));
+
+/** 缩略图的 key */
+function thumbKey(file: CpTaskFileVO): string {
+  return 'file-' + String(file.fileId);
+}
+
+/** 屏号显示：storyboard 里的 screenId → screenNo */
+function screenLabel(screenId?: string | number): string {
+  const screens = storyboard.value?.screens || [];
+  const hit = screens.find((s) => String(s.id) === String(screenId));
+  return hit?.screenNo ? '屏 ' + hit.screenNo : '未归属屏';
+}
+
+/** 候选状态 → 样式类 */
+function statusClass(status?: string): string {
+  if (status === 'APPROVED') return 'is-ok';
+  if (status === 'REJECTED') return 'is-bad';
+  return '';
+}
+
+/** 质检结论 → 样式类（只筛除不放行：INCONSISTENT 是"已被筛除"） */
+function qaClass(verdict?: string): string {
+  if (verdict === 'CONSISTENT') return 'is-ok';
+  if (verdict === 'INCONSISTENT') return 'is-bad';
+  if (verdict === 'UNCERTAIN') return 'is-warn';
+  return '';
+}
+
+/** 质检结论 → 文本（没有结论就说"未质检"，不当成通过） */
+function qaText(verdict?: string): string {
+  if (verdict === 'CONSISTENT') return '一致';
+  if (verdict === 'INCONSISTENT') return '不一致（已筛除）';
+  if (verdict === 'UNCERTAIN') return '无结论';
+  return '未质检';
+}
+
+/** 版本状态 → 文本 */
+function versionStatusText(status?: string): string {
+  if (status === 'RENDERED') return '渲染待终审';
+  if (status === 'APPROVED') return '已通过';
+  if (status === 'REJECTED') return '已打回';
+  return status || '未知';
+}
+
+/** 记一个 blob URL（同 key 旧的先回收，避免泄漏） */
+function putUrl(key: string, url: string) {
+  const old = thumbs.value[key];
+  if (old) URL.revokeObjectURL(old);
+  thumbs.value = { ...thumbs.value, [key]: url };
+}
+
+/** 回收全部 blob URL */
+function releaseAll() {
+  Object.values(thumbs.value).forEach((u) => URL.revokeObjectURL(u));
+  thumbs.value = {};
+  if (productThumb.value) {
+    URL.revokeObjectURL(productThumb.value);
+    productThumb.value = '';
+  }
+  closePreview();
+}
+
+/** 关闭大图预览并回收它的 URL */
+function closePreview() {
+  if (preview.value.url) {
+    URL.revokeObjectURL(preview.value.url);
+  }
+  preview.value = { url: '', title: '' };
+}
+
+/** 加载指定附件的缩略图（失败只记一条错误，不编造占位图） */
+async function loadThumbs(list: CpTaskFileVO[]) {
+  for (const file of list) {
+    const key = thumbKey(file);
+    if (thumbs.value[key]) continue;
+    try {
+      const url = await fetchCreativeFileBlobUrl(props.taskId as string | number, file.fileId as string | number);
+      putUrl(key, url);
+    } catch (e) {
+      error.value = '有图片缩略图读取失败（其余照常显示）';
+    }
+  }
+}
+
+/** 加载数据（打开抽屉时调用；也可手动刷新） */
+async function load() {
+  if (!props.taskId) {
+    return;
+  }
+  loading.value = true;
+  error.value = '';
+  try {
+    const id = props.taskId;
+    const [fileRes, genRes, sbRes, pageRes, imgRes] = await Promise.all([
+      listCreativeFiles(id).catch(() => null),
+      listGenerations(id).catch(() => null),
+      getStoryboard(id).catch(() => null),
+      getDetailPage(id).catch(() => null),
+      getProjectProductImage(id).catch(() => null)
+    ]);
+    files.value = fileRes?.data || [];
+    generations.value = (genRes?.data || []).toSorted((a, b) =>
+      String(b.createTime || '').localeCompare(String(a.createTime || ''))
+    );
+    storyboard.value = sbRes?.data ?? null;
+    const page: DpDetailPageVO | null = pageRes?.data ?? null;
+    versions.value = page?.versions || [];
+    const img = imgRes?.data as { fileName?: string; configured?: boolean } | undefined;
+    productImage.value = img?.configured ? img : null;
+
+    // 缩略图：产品图 1 张 + 附件前 12 张（其余点按钮再加载）
+    thumbLimit.value = THUMB_LIMIT;
+    if (productImage.value) {
+      try {
+        productThumb.value = await fetchProductImageBlobUrl(id);
+      } catch (e) {
+        productThumb.value = '';
+      }
+    }
+    await loadThumbs(shownImages.value);
+  } finally {
+    loading.value = false;
+  }
+}
+
+/** 点「看大图」取候选原图 */
+async function openGeneration(gen: DpGenerationVO) {
+  closePreview();
+  try {
+    const url = await fetchGenerationPreviewBlobUrl(gen.id as string | number);
+    preview.value = { url, title: `${screenLabel(gen.screenId)} · 候选 ${gen.candidateNo ?? '-'}` };
+  } catch (e) {
+    error.value = '候选原图读取失败';
+  }
+}
+
+/** 点「看长图」取版本长图 */
+async function openVersion(ver: DpDetailPageVersionVO) {
+  closePreview();
+  try {
+    const url = await fetchDetailPreviewBlobUrl(props.taskId as string | number, ver.id as string | number);
+    preview.value = { url, title: `v${ver.version ?? '-'} · ${ver.kind || '版本'}` };
+  } catch (e) {
+    error.value = '版本长图读取失败';
+  }
+}
+
+/** 手动刷新：先清干净再拉 */
+async function reload() {
+  releaseAll();
+  await load();
+}
+
+function onOpen() {
+  void load();
+}
+
+function onClosed() {
+  releaseAll();
+}
+
+// 缩略图上限变化（点"加载其余"）时补拉
+watch(thumbLimit, () => {
+  void loadThumbs(shownImages.value);
+});
+
+// 切项目：先把上一个项目的资源全回收，避免串图
+watch(
+  () => props.taskId,
+  () => {
+    if (visible.value) {
+      void reload();
+    }
+  }
+);
+</script>
+
+<style scoped lang="scss">
+.drawer {
+  padding: 0 4px 20px;
+}
+
+.drawer-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+
+  .drawer-title {
+    color: var(--t1);
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .drawer-sub {
+    color: var(--t3);
+    font-size: 12px;
+  }
+
+  .spacer {
+    flex: 1;
+  }
+}
+
+.drawer-note {
+  margin: 8px 0 12px;
+  color: var(--t3);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.section {
+  margin-top: 14px;
+
+  .sec-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    color: var(--t1);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .sec-count {
+    color: var(--t3);
+    font-size: 11px;
+    font-weight: 400;
+  }
+
+  .empty {
+    margin: 6px 0;
+    color: var(--t3);
+    font-size: 12px;
+  }
+
+  .more {
+    margin-top: 6px;
+  }
+}
+
+.thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.thumb {
+  position: relative;
+  width: 92px;
+
+  img,
+  .thumb-ph {
+    width: 92px;
+    height: 92px;
+    object-fit: cover;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--sunken);
+  }
+
+  .thumb-ph {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--t3);
+    font-size: 11px;
+  }
+
+  .thumb-name {
+    display: block;
+    margin-top: 3px;
+    color: var(--t3);
+    font-size: 10px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .thumb-tag {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: rgba(10, 12, 16, 0.72);
+    border: 1px solid var(--line);
+    color: var(--t2);
+    font-size: 10px;
+
+    &.is-product {
+      color: #67c23a;
+      border-color: rgba(103, 194, 58, 0.4);
+    }
+  }
+}
+
+.rows {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px dashed var(--line);
+  color: var(--t2);
+  font-size: 12px;
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  .row-main {
+    color: var(--t1);
+  }
+
+  .row-time {
+    color: var(--t3);
+    font-size: 11px;
+  }
+
+  .spacer {
+    flex: 1;
+  }
+}
+
+.badge {
+  flex: none;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--t3);
+  font-size: 10px;
+
+  &.is-ok {
+    color: #67c23a;
+    border-color: rgba(103, 194, 58, 0.35);
+  }
+
+  &.is-bad {
+    color: #f56c6c;
+    border-color: rgba(245, 108, 108, 0.35);
+  }
+
+  &.is-warn {
+    color: #e6a23c;
+    border-color: rgba(230, 162, 60, 0.35);
+  }
+}
+
+.err {
+  margin: 12px 0 0;
+  color: #e6a23c;
+  font-size: 12px;
+}
+
+.preview-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(5, 6, 9, 0.88);
+  cursor: zoom-out;
+
+  img {
+    max-width: 86vw;
+    max-height: 82vh;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+
+  .preview-title {
+    margin: 0;
+    color: var(--t2);
+    font-size: 12px;
+  }
+}
+</style>
+
+<!-- 抽屉是 teleport 到 body 的，token 必须显式 include（R15 踩过的坑：.studio 只在页面组件作用域里）。
+     这里复用 tokens-studio.scss 的 mixin，不抄字面量。 -->
+<style lang="scss">
+@use '@/assets/styles/tokens-studio.scss' as studio;
+
+.studio-drawer.el-drawer {
+  @include studio.studio-tokens;
+
+  background: var(--elevated);
+  color: var(--t2);
+  border-left: 1px solid var(--line);
+
+  .el-drawer__body {
+    padding: 14px 16px;
+    overflow-y: auto;
+  }
+}
+</style>

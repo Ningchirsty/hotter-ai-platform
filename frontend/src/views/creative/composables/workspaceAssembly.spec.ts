@@ -8,6 +8,10 @@ import {
   parseWorkspaceLayout,
   referencedSchemaCode
 } from './workspaceAssembly';
+import {
+  IMPLEMENTED_COMPONENT_NAMES,
+  resolveWorkspaceComponent
+} from '../components/workspace/registry';
 
 /**
  * 工作台装配只读对照的单元测试（V0.2 D 阶段最后一块第一步，R17）。
@@ -84,23 +88,24 @@ describe('workspaceAssembly：对照', () => {
     ]);
   });
 
-  it('分类如实：只有 STEP_NAVIGATOR 是独立组件；INSPECTOR/ASSET_DRAWER/QaPanel 未实现', () => {
+  it('分类如实：R18 起 STEP_NAVIGATOR/INSPECTOR/ASSET_DRAWER 已是独立组件，只剩 QaPanel 未实现', () => {
     const byName = Object.fromEntries(
       [...diff.panelRows, ...diff.stepRows].map((r) => [r.component || r.code, r.kind])
     );
     expect(byName.STEP_NAVIGATOR).toBe('COMPONENT');
-    expect(byName.INSPECTOR).toBe('MISSING');
-    expect(byName.ASSET_DRAWER).toBe('MISSING');
+    // 【R18 起期望值有变，不是回归】这两个面板本轮真做了（此前标 MISSING）
+    expect(byName.INSPECTOR).toBe('COMPONENT');
+    expect(byName.ASSET_DRAWER).toBe('COMPONENT');
     expect(byName.QaPanel).toBe('MISSING');
     // 其余都是"写在页面里的一段"
     expect(byName.VisualDnaPanel).toBe('SECTION');
     expect(byName.LongPageCanvas).toBe('SECTION');
     expect(byName.FinalReviewPanel).toBe('SECTION');
-    expect(diff.componentCount).toBe(1);
+    expect(diff.componentCount).toBe(3);
     expect(diff.sectionCount).toBe(11);
-    expect(diff.missingCount).toBe(3);
-    expect(diff.readyText).toBe('1/15');
-    expect(formatAssemblyChip(diff)).toBe('工作台装配 1/15');
+    expect(diff.missingCount).toBe(1);
+    expect(diff.readyText).toBe('3/15');
+    expect(formatAssemblyChip(diff)).toBe('工作台装配 3/15');
   });
 
   it('每一行都带"代码里在哪"与一句补充（没有落点的对照等于没对照）', () => {
@@ -111,12 +116,18 @@ describe('workspaceAssembly：对照', () => {
     const qa = diff.stepRows.find((r) => r.code === 'QA')!;
     expect(qa.location).toBe('没有独立实现');
     expect(qa.note).toContain('没有独立面板');
+    // R18 真做之后，两个面板的落点必须指向真实文件（而不是还写着"没有实现"）
+    const inspector = diff.panelRows.find((r) => r.code === 'INSPECTOR')!;
+    expect(inspector.location).toContain('CreativeInspectorPanel.vue');
+    expect(diff.panelRows.find((r) => r.code === 'ASSET_DRAWER')!.location)
+      .toContain('CreativeAssetDrawer.vue');
   });
 
   it('结论句只用算出的事实拼（含工作台名、三类计数、共 15 项）', () => {
     expect(diff.verdict).toContain('LONG_PAGE');
     expect(diff.verdict).toContain('配置声明 5 个面板 + 10 个步骤组件');
-    expect(diff.verdict).toContain('已是独立组件 1 个');
+    expect(diff.verdict).toContain('已是独立组件 3 个');
+    expect(diff.verdict).toContain('还没实现 1 个');
     expect(diff.verdict).toContain('共对照 15 项');
   });
 
@@ -190,5 +201,20 @@ describe('workspaceAssembly：对照', () => {
       expect(CODE_COMPONENT_REGISTRY[name], `种子里的 ${name} 没在注册表登记`).toBeTruthy();
     }
     expect(Object.keys(ASSEMBLY_KIND_LABELS)).toEqual(kinds);
+  });
+
+  it('描述表与真实组件注册表必须一致（R18 起：标了 COMPONENT 就得真有实现）', () => {
+    const described = Object.entries(CODE_COMPONENT_REGISTRY)
+      .filter(([, entry]) => entry.kind === 'COMPONENT')
+      .map(([name]) => name)
+      .toSorted();
+    expect(described).toEqual([...IMPLEMENTED_COMPONENT_NAMES].toSorted());
+    // 取组件实现：有实现的拿得到，没实现的必须返回 null（不能悄悄给个空组件）
+    for (const name of IMPLEMENTED_COMPONENT_NAMES) {
+      expect(resolveWorkspaceComponent(name), `${name} 应该能解析到组件`).toBeTruthy();
+    }
+    expect(resolveWorkspaceComponent('QaPanel')).toBeNull();
+    expect(resolveWorkspaceComponent('')).toBeNull();
+    expect(resolveWorkspaceComponent(null)).toBeNull();
   });
 });

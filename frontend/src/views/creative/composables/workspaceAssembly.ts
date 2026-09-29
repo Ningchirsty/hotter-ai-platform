@@ -61,14 +61,14 @@ export const CODE_COMPONENT_REGISTRY: Record<string, RegistryEntry> = {
     note: '“主舞台”是概念上的位置，目前由各页面自己的主区承担，没有容器组件'
   },
   INSPECTOR: {
-    kind: 'MISSING',
-    location: '没有实现',
-    note: '细节检查器（选中对象后看它的属性/证据）现在用零散浮层代替，没有统一面板'
+    kind: 'COMPONENT',
+    location: 'components/CreativeInspectorPanel.vue（R18 真做）',
+    note: '细节检查器：当前环节 + 这一步的判断依据 + 最近事件（只读，随指引线出现在每页）'
   },
   ASSET_DRAWER: {
-    kind: 'MISSING',
-    location: '没有实现',
-    note: '资产抽屉（附件/成品集中取用）现在内联在项目页与各页，没有统一抽屉'
+    kind: 'COMPONENT',
+    location: 'components/CreativeAssetDrawer.vue（R18 真做）',
+    note: '资产抽屉：参考图/产品图、出图候选、排版版本集中预览（只读；缩略图自动加载上限 12 张）'
   },
 
   // ---- 十步各自的组件 ----

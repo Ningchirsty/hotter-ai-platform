@@ -9,6 +9,13 @@
         <span class="spinner" aria-hidden="true" />这一步正在执行
       </span>
       <span class="spacer" />
+      <!-- 装配定义里的两个面板（R18 真做）：只读，任何页面都能开 -->
+      <el-button class="panel-btn" size="small" text :disabled="!taskId" @click="inspectorVisible = true">
+        检查器
+      </el-button>
+      <el-button class="panel-btn" size="small" text :disabled="!taskId" @click="assetsVisible = true">
+        资产
+      </el-button>
       <div class="progress" :title="`已完成 ${doneCount} / ${steps.length} 步`">
         <i :style="{ width: progressPct + '%' }" />
       </div>
@@ -141,15 +148,34 @@
         </div>
       </el-popover>
     </div>
+
+    <!-- 两个真面板（ASSET_DRAWER / INSPECTOR，R18）：只读，随指引线出现在每个页面 -->
+    <CreativeInspectorPanel
+      v-model:visible="inspectorVisible"
+      :task-id="taskId"
+      :project-name="projectName"
+      :stage="stage"
+      :stage-label="stageLabel"
+      :current-step="currentStep"
+      :project-steps="projectSteps"
+      :on-load-detail="loadCurrentStepDetail"
+    />
+    <CreativeAssetDrawer
+      v-model:visible="assetsVisible"
+      :task-id="taskId"
+      :project-name="projectName"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { CREATIVE_STAGE_TYPES } from '@/api/creative/types';
 import { useCreativeFlow, type FlowStep } from '../composables/useCreativeFlow';
 import { ASSEMBLY_KIND_LABELS, type AssemblyKind } from '../composables/workspaceAssembly';
+import CreativeInspectorPanel from './CreativeInspectorPanel.vue';
+import CreativeAssetDrawer from './CreativeAssetDrawer.vue';
 
 /**
  * 流程指引线：把流程环节横排在每个环节页面的顶部，当前环节由**后端步骤状态**定位。
@@ -187,6 +213,8 @@ const {
   stageRunning,
   stage,
   stageLabel,
+  project,
+  projectSteps,
   configDriven,
   scenarioLine,
   scenarioSteps,
@@ -201,6 +229,25 @@ const {
   computed(() => props.taskId),
   computed(() => props.deliverableType)
 );
+
+/** 两个只读面板的开合（R18） */
+const inspectorVisible = ref(false);
+const assetsVisible = ref(false);
+
+/** 当前步（进行中的那一步）；检查器据此展示判据与状态来源 */
+const currentStep = computed<FlowStep | null>(
+  () => steps.value.find((s) => s.no === activeNo.value) || null
+);
+
+/** 项目名：面板标题用它（来自已加载的项目数据，不要再让页面传一遍） */
+const projectName = computed(() => project.value?.taskName || '');
+
+/** 让检查器能请求"读取当前步明细"（明细逻辑在 useCreativeFlow 里，不重复实现） */
+function loadCurrentStepDetail() {
+  if (currentStep.value) {
+    void ensureStep(currentStep.value.key);
+  }
+}
 
 const stageType = computed(() => CREATIVE_STAGE_TYPES[stage.value || ''] || 'info');
 const progressPct = computed(() =>
@@ -469,6 +516,22 @@ watch(
     color: var(--t2);
     min-width: 76px;
     text-align: right;
+  }
+
+  /* 面板入口：小号文字按钮，压住 Element Plus 的默认内边距，不抢"进度"的视觉重心 */
+  .panel-btn {
+    color: var(--t2);
+    font-size: 12px;
+    padding: 0 8px;
+    height: 22px;
+
+    &:hover {
+      color: var(--t1);
+    }
+
+    &.is-disabled {
+      color: var(--t3);
+    }
   }
 }
 
