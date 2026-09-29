@@ -65,6 +65,10 @@
         </el-popover>
       </li>
     </ol>
+    <!-- 场景配置（只读补充信息）：读不到就整行不渲染，绝不影响上面的指引线 -->
+    <p v-if="scenarioLine" class="flow-scenario" :title="scenarioSteps.join(' → ')">
+      <span class="scenario-tag">场景配置</span>{{ scenarioLine }}
+    </p>
   </div>
 </template>
 
@@ -73,12 +77,16 @@ import { computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { CREATIVE_STAGE_TYPES } from '@/api/creative/types';
 import { useCreativeFlow, type FlowStep } from '../composables/useCreativeFlow';
+import { useScenarioConfig } from '../composables/useScenarioConfig';
 
 /**
  * 流程指引线：把八个环节横排在每个环节页面的顶部，当前环节由项目阶段定位。
  *
  * <p>交互（按确认过的口径）：<b>悬停</b>看「为什么还不能进入下一步」（明细按需加载），
  * <b>点击</b>跳到该步对应的页面并带上 taskId（纯导航，不写数据）。</p>
+ *
+ * <p>V0.2 D 阶段第一刀：底部多一行「场景配置」（交付类型 / 默认输出规格 / 配置步骤数）——
+ * **只读展示，不驱动流程**；配置接口读不到时整行不显示，不影响这条指引线的任何交互。</p>
  */
 const props = defineProps<{
   /** 当前项目ID；为空时只显示一句引导语 */
@@ -88,9 +96,16 @@ const props = defineProps<{
    * 这样页面不必把内部的加载函数暴露出来，也不会出现「页面状态变了、指引线还停在旧步骤」。
    */
   refreshToken?: number;
+  /**
+   * 交付类型：给了就顺带读一次场景配置并在底部显示一行；不传/读不到都不显示（老页面零影响）。
+   */
+  deliverableType?: string;
 }>();
 
 const router = useRouter();
+const { line: scenarioLine, stepNames: scenarioSteps } = useScenarioConfig(
+  computed(() => props.deliverableType)
+);
 // 解构出来的 ref/computed 在模板里会自动解包；留着 flow.* 访问则必须写 .value，容易漏
 const { steps, activeNo, doneCount, stageRunning, stage, stageLabel, ensureStep, stepHref, reload } =
   useCreativeFlow(computed(() => props.taskId));
@@ -123,6 +138,29 @@ watch(
   border-radius: 10px;
   padding: 10px 14px 12px;
   margin-bottom: 14px;
+}
+
+/* 场景配置（只读补充信息，V0.2 D 阶段第一刀）：与指引线同一套暗色 token，
+   用一条细分隔线与上面的步骤隔开，不做成"白色卡片"以免破坏工作台观感 */
+.flow-scenario {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding-top: 9px;
+  border-top: 1px dashed var(--line);
+  color: var(--t2);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.scenario-tag {
+  flex: none;
+  padding: 1px 7px;
+  color: var(--t3);
+  font-size: 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
 }
 
 .flow-head {

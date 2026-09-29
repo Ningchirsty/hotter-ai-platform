@@ -1,6 +1,10 @@
 <template>
   <div class="studio">
-    <CreativeFlowGuide :task-id="currentProjectId" :refresh-token="flowToken" />
+    <CreativeFlowGuide
+      :task-id="currentProjectId"
+      :refresh-token="flowToken"
+      :deliverable-type="currentProject?.deliverableType"
+    />
 
     <div class="workbench">
       <!-- 左：项目列表 -->
