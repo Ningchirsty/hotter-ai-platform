@@ -73,6 +73,25 @@ export interface ProjectStepState {
   source?: string;
 }
 
+/** 工作台装配（`dp_workspace_schema`） */
+export interface ScenarioWorkspace {
+  id?: string | number;
+  schemaCode?: string;
+  deliveryType?: string;
+  profileId?: string | number;
+  version?: string;
+  /**
+   * 装配定义（文档 §49 口径）：`{workspace, panels[], steps:[{code, component}]}`。
+   *
+   * <p><b>注意别取错源</b>：场景档案（{@link ScenarioProfile}）里的 `workspaceSchemaJson`
+   * 只是**引用**——内容形如 `{"schemaCode":"WS_LONG_PAGE"}`；真正的装配定义在本表这一列。
+   * R17 第一版就是取错了源，对照整块静默不显示。</p>
+   */
+  layoutJson?: string;
+  status?: string;
+  remark?: string;
+}
+
 /** 输出规格 */
 export interface ScenarioOutputSpec {
   id?: string | number;
@@ -108,6 +127,19 @@ export function getScenario(deliveryType: string): AxiosPromise<ScenarioProfile>
 /** 取某交付类型的步骤 */
 export function listScenarioSteps(deliveryType: string): AxiosPromise<ScenarioStep[]> {
   return request({ url: `/creative/v2/scenarios/${deliveryType}/steps`, method: 'get' });
+}
+
+/**
+ * 取某交付类型的工作台装配（已发布优先）。
+ *
+ * <p>装配定义（panels 与 steps→component）在**这里**的 `layoutJson`，不在场景档案里
+ * ——档案里那个字段只是引用（见 {@link ScenarioWorkspace.layoutJson} 的说明）。</p>
+ *
+ * @param deliveryType 交付类型编码或别名
+ * @returns 工作台装配
+ */
+export function getWorkspace(deliveryType: string): AxiosPromise<ScenarioWorkspace> {
+  return request({ url: `/creative/v2/scenarios/${deliveryType}/workspace`, method: 'get' });
 }
 
 /** 取某交付类型的输出规格（默认规格排最前） */

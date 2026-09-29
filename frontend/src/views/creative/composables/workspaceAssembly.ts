@@ -1,4 +1,4 @@
-import type { ScenarioProfile } from '@/api/creative/scenario';
+import type { ScenarioProfile, ScenarioWorkspace } from '@/api/creative/scenario';
 
 /**
  * 工作台装配的**只读对照**（V0.2 D 阶段最后一块的第一步，R17）。
@@ -165,6 +165,8 @@ export interface AssemblyDiff {
   unknownNames: string[];
   /** 注册表里登记了、但这份配置没用到的名字 */
   unusedInConfig: string[];
+  /** 档案引用的工作台编码与实际取到的不一致时的提示（一致则为空串） */
+  schemaCodeWarning: string;
   /** 已就绪 / 总数，形如 `1/15` */
   readyText: string;
   /** 一句话结论（界面 hover 提示与单测都断言它） */
@@ -206,13 +208,39 @@ export function parseWorkspaceLayout(json?: string | null): WorkspaceLayout | nu
 }
 
 /**
- * 从场景档案里取装配定义。
+ * 从工作台装配里取装配定义。
  *
- * @param profile 场景档案（`GET /creative/v2/scenarios/{type}`）
- * @returns 装配定义；档案缺失或 layout_json 坏掉都返回 null
+ * <p><b>为什么不是从场景档案取</b>：档案里的 `workspaceSchemaJson` 只是**引用**
+ * （内容形如 `{"schemaCode":"WS_LONG_PAGE"}`），装配定义在 `dp_workspace_schema.layout_json`。
+ * R17 第一版就取错了源，结果是"对照整块静默不显示"——不报错、只是没了，最难发现的那种。</p>
+ *
+ * @param workspace 工作台装配（`GET /creative/v2/scenarios/{type}/workspace`）
+ * @returns 装配定义；缺失或 layout_json 坏掉都返回 null
  */
-export function layoutOfProfile(profile?: ScenarioProfile | null): WorkspaceLayout | null {
-  return parseWorkspaceLayout(profile?.workspaceSchemaJson);
+export function layoutOfWorkspace(workspace?: ScenarioWorkspace | null): WorkspaceLayout | null {
+  return parseWorkspaceLayout(workspace?.layoutJson);
+}
+
+/**
+ * 取场景档案里**引用**的工作台编码（形如 `WS_LONG_PAGE`）。
+ *
+ * <p>用它和实际取到的工作台装配对账：档案说引用 A、装配表里发布的是 B，就是配置不一致，
+ * 应该被看见而不是被将就。</p>
+ *
+ * @param profile 场景档案
+ * @returns 引用的 schemaCode；解析不出来返回空串
+ */
+export function referencedSchemaCode(profile?: ScenarioProfile | null): string {
+  const json = profile?.workspaceSchemaJson;
+  if (!json) {
+    return '';
+  }
+  try {
+    const parsed = JSON.parse(json) as { schemaCode?: unknown };
+    return parsed && typeof parsed.schemaCode === 'string' ? parsed.schemaCode : '';
+  } catch (e) {
+    return '';
+  }
 }
 
 /** 取注册表条目（未登记时给一个"未登记"的占位，而不是丢掉这一行） */
@@ -237,17 +265,23 @@ function rowOf(code: string, component: string, registry: Record<string, Registr
 /**
  * 逐项对照「配置声明的装配」与「代码里的真实落点」。
  *
- * @param layout      装配定义（`parseWorkspaceLayout` 的结果）
- * @param registry    代码侧注册表（默认用 {@link CODE_COMPONENT_REGISTRY}；测试可注入）
+ * @param layout        装配定义（`layoutOfWorkspace` 的结果）
+ * @param options.registry        代码侧注册表（默认 {@link CODE_COMPONENT_REGISTRY}；测试可注入）
+ * @param options.referencedCode  场景档案里引用的工作台编码（用于对账，可空）
  * @returns 对照结果；layout 为空时返回 null（调用方据此不渲染）
  */
 export function diffWorkspaceAssembly(
   layout: WorkspaceLayout | null,
-  registry: Record<string, RegistryEntry> = CODE_COMPONENT_REGISTRY
+  options: {
+    registry?: Record<string, RegistryEntry>;
+    referencedCode?: string;
+    actualCode?: string;
+  } = {}
 ): AssemblyDiff | null {
   if (!layout) {
     return null;
   }
+  const registry = options.registry ?? CODE_COMPONENT_REGISTRY;
   const panelRows = layout.panels.map((panel) => rowOf(panel, panel, registry));
   const stepRows = layout.steps.map((step) => rowOf(step.code, step.component, registry));
   const rows = [...panelRows, ...stepRows];
@@ -260,6 +294,12 @@ export function diffWorkspaceAssembly(
   const namesInConfig = new Set(rows.map((r) => r.component).filter(Boolean));
   const unknownNames = Array.from(namesInConfig).filter((name) => !registry[name]);
   const unusedInConfig = Object.keys(registry).filter((name) => !namesInConfig.has(name));
+  const referenced = (options.referencedCode || '').trim();
+  const actual = (options.actualCode || '').trim();
+  const schemaCodeWarning =
+    referenced && actual && referenced !== actual
+      ? `场景档案引用的是 ${referenced}，而发布的工作台是 ${actual}——两者不一致，先对齐再说装配`
+      : '';
 
   return {
     workspace: layout.workspace,
@@ -271,22 +311,24 @@ export function diffWorkspaceAssembly(
     stepsWithoutComponent,
     unknownNames,
     unusedInConfig,
+    schemaCodeWarning,
     readyText: rows.length ? `${componentCount}/${rows.length}` : '',
     verdict: buildAssemblyVerdict(layout, rows.length, componentCount, sectionCount, missingCount,
-      unknownNames, stepsWithoutComponent)
+      unknownNames, stepsWithoutComponent, schemaCodeWarning)
   };
 }
 
 /**
  * 组装结论句（**只用算出来的事实拼**：改配置或改注册表，结论自己会变）。
  *
- * @param layout               装配定义
- * @param total                对照总条数
- * @param componentCount       已是独立组件的条数
- * @param sectionCount         页面内区块的条数
- * @param missingCount         还没实现的条数
- * @param unknownNames         注册表里没登记的名字
+ * @param layout                装配定义
+ * @param total                 对照总条数
+ * @param componentCount        已是独立组件的条数
+ * @param sectionCount          页面内区块的条数
+ * @param missingCount          还没实现的条数
+ * @param unknownNames          注册表里没登记的名字
  * @param stepsWithoutComponent 声明了步骤但没给组件
+ * @param schemaCodeWarning     档案引用与实际工作台不一致的提示
  * @returns 结论文本
  */
 function buildAssemblyVerdict(
@@ -296,7 +338,8 @@ function buildAssemblyVerdict(
   sectionCount: number,
   missingCount: number,
   unknownNames: string[],
-  stepsWithoutComponent: string[]
+  stepsWithoutComponent: string[],
+  schemaCodeWarning: string
 ): string {
   const parts: string[] = [
     `工作台 ${layout.workspace || '(未声明)'}：配置声明 ${layout.panels.length} 个面板 + ${layout.steps.length} 个步骤组件`
@@ -310,6 +353,9 @@ function buildAssemblyVerdict(
   }
   if (stepsWithoutComponent.length) {
     parts.push(`配置里没给组件的步骤：${stepsWithoutComponent.join('、')}`);
+  }
+  if (schemaCodeWarning) {
+    parts.push(schemaCodeWarning);
   }
   return parts.join('；');
 }

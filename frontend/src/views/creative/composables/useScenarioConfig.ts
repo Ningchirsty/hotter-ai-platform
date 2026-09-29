@@ -2,6 +2,7 @@ import { computed, ref, watch, type Ref } from 'vue';
 import {
   getDeliveryType,
   getScenario,
+  getWorkspace,
   listOutputSpecs,
   listScenarioSteps
 } from '@/api/creative/scenario';
@@ -11,7 +12,8 @@ import { formatMappingChip, mapFlowSteps } from './flowStepMapping';
 import {
   diffWorkspaceAssembly,
   formatAssemblyChip,
-  layoutOfProfile,
+  layoutOfWorkspace,
+  referencedSchemaCode,
   type AssemblyDiff
 } from './workspaceAssembly';
 
@@ -86,19 +88,24 @@ export function useScenarioConfig(deliveryType: Ref<string | undefined>) {
     }
     loading.value = true;
     try {
-      const [deliveryRes, specRes, stepRes, profileRes] = await Promise.all([
+      const [deliveryRes, specRes, stepRes, profileRes, workspaceRes] = await Promise.all([
         getDeliveryType(type),
         listOutputSpecs(type),
         listScenarioSteps(type),
-        getScenario(type)
+        getScenario(type),
+        getWorkspace(type)
       ]);
       const delivery = deliveryRes.data;
       const specs = specRes.data || [];
       const steps = stepRes.data || [];
       const names = steps.map((s) => s.stepName || s.stepCode || '').filter(Boolean);
       const text = formatScenarioLine(delivery?.deliveryName, type, formatDefaultSpec(specs), names.length);
-      // 装配对照：档案里的 layout_json 解析不出来就是 null（整块不渲染，不编造一份对照）
-      const assemblyDiff = diffWorkspaceAssembly(layoutOfProfile(profileRes.data));
+      // 装配对照：定义在 dp_workspace_schema.layout_json（档案里那个字段只是引用），
+      // 顺手把"档案引用的工作台编码 vs 实际发布的编码"对一次账（不一致要看得见）
+      const assemblyDiff = diffWorkspaceAssembly(layoutOfWorkspace(workspaceRes.data), {
+        referencedCode: referencedSchemaCode(profileRes.data),
+        actualCode: workspaceRes.data?.schemaCode
+      });
       line.value = text;
       stepNames.value = names;
       scenarioSteps.value = steps;

@@ -4,8 +4,9 @@ import {
   CODE_COMPONENT_REGISTRY,
   diffWorkspaceAssembly,
   formatAssemblyChip,
-  layoutOfProfile,
-  parseWorkspaceLayout
+  layoutOfWorkspace,
+  parseWorkspaceLayout,
+  referencedSchemaCode
 } from './workspaceAssembly';
 
 /**
@@ -37,14 +38,25 @@ describe('workspaceAssembly：解析', () => {
     expect(layout!.steps[2]).toEqual({ code: 'DNA', component: 'VisualDnaPanel' });
   });
 
-  it('从场景档案取（layout_json 空 / 坏 JSON / 空对象都不编造）', () => {
-    expect(layoutOfProfile({ workspaceSchemaJson: SEED_JSON })!.workspace).toBe('LONG_PAGE');
-    expect(layoutOfProfile({ workspaceSchemaJson: '' })).toBeNull();
-    expect(layoutOfProfile({ workspaceSchemaJson: '{bad json' })).toBeNull();
-    expect(layoutOfProfile({ workspaceSchemaJson: '{}' })).toBeNull();
-    expect(layoutOfProfile({})).toBeNull();
-    expect(layoutOfProfile(null)).toBeNull();
-    expect(layoutOfProfile(undefined)).toBeNull();
+  it('从工作台装配取（layout_json 空 / 坏 JSON / 空对象都不编造）', () => {
+    expect(layoutOfWorkspace({ layoutJson: SEED_JSON })!.workspace).toBe('LONG_PAGE');
+    expect(layoutOfWorkspace({ layoutJson: '' })).toBeNull();
+    expect(layoutOfWorkspace({ layoutJson: '{bad json' })).toBeNull();
+    expect(layoutOfWorkspace({ layoutJson: '{}' })).toBeNull();
+    expect(layoutOfWorkspace({})).toBeNull();
+    expect(layoutOfWorkspace(null)).toBeNull();
+    expect(layoutOfWorkspace(undefined)).toBeNull();
+  });
+
+  it('装配定义取自工作台表，不是取场景档案那个"引用"字段（R17 第一版就取错了源）', () => {
+    // 生产上档案里存的是 {"schemaCode":"WS_LONG_PAGE"}——只有引用，没有 panels/steps
+    const profileRef = '{"schemaCode":"WS_LONG_PAGE"}';
+    expect(parseWorkspaceLayout(profileRef)).toBeNull();
+    expect(referencedSchemaCode({ workspaceSchemaJson: profileRef })).toBe('WS_LONG_PAGE');
+    // 真正能解析出装配的是工作台表的 layout_json
+    expect(layoutOfWorkspace({ layoutJson: SEED_JSON })!.panels).toHaveLength(5);
+    expect(referencedSchemaCode({ workspaceSchemaJson: '{bad' })).toBe('');
+    expect(referencedSchemaCode(null)).toBe('');
   });
 
   it('容错：缺 steps、steps 里有脏项、panel 不是字符串', () => {
@@ -144,6 +156,26 @@ describe('workspaceAssembly：对照', () => {
   it('layout 为空 → 对照为 null（调用方据此整块不渲染）', () => {
     expect(diffWorkspaceAssembly(null)).toBeNull();
     expect(formatAssemblyChip(null)).toBe('');
+  });
+
+  it('档案引用的工作台编码与实际发布的不一致 → 明确提示（不将就、不静默）', () => {
+    const layout = parseWorkspaceLayout(SEED_JSON)!;
+    const ok = diffWorkspaceAssembly(layout, {
+      referencedCode: 'WS_LONG_PAGE',
+      actualCode: 'WS_LONG_PAGE'
+    })!;
+    expect(ok.schemaCodeWarning).toBe('');
+    expect(ok.verdict).not.toContain('不一致');
+
+    const bad = diffWorkspaceAssembly(layout, {
+      referencedCode: 'WS_LONG_PAGE',
+      actualCode: 'WS_SOMETHING_ELSE'
+    })!;
+    expect(bad.schemaCodeWarning).toContain('WS_LONG_PAGE');
+    expect(bad.schemaCodeWarning).toContain('WS_SOMETHING_ELSE');
+    expect(bad.verdict).toContain('不一致');
+    // 取不到引用（老档案没写）时不算不一致——不编造冲突
+    expect(diffWorkspaceAssembly(layout, { actualCode: 'WS_X' })!.schemaCodeWarning).toBe('');
   });
 
   it('注册表自身的口径：分类合法、落点与说明都不空、种子里的名字都有登记', () => {
