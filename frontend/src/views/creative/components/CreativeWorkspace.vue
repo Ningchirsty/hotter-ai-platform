@@ -9,7 +9,7 @@
         :refresh-token="refreshToken"
         :deliverable-type="deliverableType"
         :flow="flow"
-        :host-panels="false"
+        :panels-hosted-by-parent="true"
         @open-panel="onOpenPanel"
       />
 

@@ -151,8 +151,8 @@
     </div>
 
     <!-- 两个真面板（ASSET_DRAWER / INSPECTOR，R18）：只读，随指引线出现在每个页面。
-         R19 起，如果本指引线在工作台里（hostPanels=false），面板由工作台托管，
-         这里不再渲染（否则会出现两个抽屉）。 -->
+         R19 起，如果本指引线在工作台里（由父组件托管），面板由工作台装配，这里不再渲染
+         （否则会出现两个抽屉）；入口按钮改为发事件。 -->
     <template v-if="hostPanels">
       <CreativeInspectorPanel
         v-model:visible="inspectorVisible"
@@ -215,14 +215,21 @@ const props = defineProps<{
    */
   flow?: ReturnType<typeof useCreativeFlow>;
   /**
-   * 是否由本组件托管两个只读面板（默认 true）。工作台里传 false：面板改由工作台装配，
-   * 这里只通过 `open-panel` 事件请求打开，避免出现两个抽屉。
+   * 面板是否由**父组件（工作台）**托管，默认 false（本组件自己托管）。
+   *
+   * <p><b>为什么用"反向命名"而不是 `hostPanels?: boolean` 默认 true</b>：Vue 对声明为 Boolean 的
+   * prop 会做**布尔转换**——父组件不传时它的值是 `false`（不是 `undefined`）。
+   * R19 第一版就写了 `hostPanels?: boolean` + `props.hostPanels !== false`，
+   * 结果四个不传该 prop 的页面统统被判成"由父组件托管"，抽屉因此不再渲染、
+   * 点击入口也没人接事件——**项目页/分镜页/评审页/生产页的面板全部失效**，
+   * 被 R18 那套回归在批量里抓了出来（单查 R19 的验收只点了按钮存在与否，没点开抽屉，漏了）。
+   * 反向命名（默认 false）就没有这个坑：不传 = 本组件自己托管。</p>
    */
-  hostPanels?: boolean;
+  panelsHostedByParent?: boolean;
 }>();
 
 const emit = defineEmits<{
-  /** 请求打开面板（工作台托管时用）：`INSPECTOR` / `ASSET_DRAWER` */
+  /** 请求打开面板（由父组件托管时用）：`INSPECTOR` / `ASSET_DRAWER` */
   (e: 'open-panel', code: 'INSPECTOR' | 'ASSET_DRAWER'): void;
 }>();
 
@@ -257,8 +264,8 @@ const {
 /** 两个只读面板的开合（仅在本组件托管时使用，R18/R19） */
 const inspectorVisible = ref(false);
 const assetsVisible = ref(false);
-/** 是否自己托管面板（工作台里为 false） */
-const hostPanels = computed(() => props.hostPanels !== false);
+/** 是否自己托管面板（工作台里由父组件托管时为 false） */
+const hostPanels = computed(() => !props.panelsHostedByParent);
 
 /** 面板入口：自己托管就开抽屉，否则交给工作台 */
 function openPanel(code: 'INSPECTOR' | 'ASSET_DRAWER') {
