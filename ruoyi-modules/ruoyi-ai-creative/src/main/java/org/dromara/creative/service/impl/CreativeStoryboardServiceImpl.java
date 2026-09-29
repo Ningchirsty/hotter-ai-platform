@@ -27,6 +27,8 @@ import org.dromara.creative.enums.DpCopyBlockTypeEnum;
 import org.dromara.creative.enums.DpVisualStageEnum;
 import org.dromara.creative.helper.CreativeDraftBrain;
 import org.dromara.creative.helper.CreativeDraftFactory;
+import org.dromara.creative.helper.CreativeScreenSkeleton;
+import org.dromara.creative.helper.CreativeScreenSkeletonRegistry;
 import org.dromara.creative.helper.VisualDnaSchema;
 import org.dromara.creative.mapper.DpStoryboardMapper;
 import org.dromara.creative.mapper.DpStoryboardScreenMapper;
@@ -71,26 +73,17 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
     private static final String STATUS_LOCKED = "LOCKED";
 
     /**
-     * 骨架里卖点屏的数量（R7：卖点块按 sortNo 取前 2 条对应这两屏，多出来的留在文案块里等人决定）
-     */
-    private static final int SELLING_POINT_SCREENS = 2;
-
-    /**
-     * 屏结构骨架：屏类型、展示名与产品保真等级是稳定业务骨架（顺序 = 讲故事的节奏）。
+     * 屏结构骨架（V0.2 C′）：类型/顺序/展示名/保真等级/取景全部来自
+     * {@code creative/screen-skeleton.json} 这份契约，代码里不再有写死的 7 屏清单。
      *
-     * <p>R4 起，每屏的标题/副标题/正文/画面独白<b>不再来自这里</b>：
-     * 文案由 {@link CreativeDraftFactory#screens} 按「事实 + 基因 + 产品名」推导。
-     * 之前把固定句子写在这个 record 里，正是「70 行分镜只有 7 句不同独白」的来源。</p>
+     * <p>为什么做成可配置：屏数属于场景配置（电商详情页是 7 屏，别的场景不是），
+     * 写死在 Java 里会让"改屏数"变成一次改代码 + 重新发版；改契约（或配
+     * {@code creative.screen-skeleton.path} 指到外部文件）即可，且启动时会校验并打日志。</p>
+     *
+     * <p>R4 起，每屏的标题/副标题/正文/画面独白<b>不再来自骨架</b>：
+     * 文案由 {@link CreativeDraftFactory#screens} 按「事实 + 基因 + 产品名」推导。</p>
      */
-    private static final List<ScreenTemplate> TEMPLATES = List.of(
-        new ScreenTemplate("HERO", "主图", "STRICT"),
-        new ScreenTemplate("SELLING_POINT", "卖点一", "LOOSE"),
-        new ScreenTemplate("SELLING_POINT", "卖点二", "LOOSE"),
-        new ScreenTemplate("SCENE", "使用场景", "LOOSE"),
-        new ScreenTemplate("DETAIL", "细节工艺", "STRICT"),
-        new ScreenTemplate("SIZE", "尺寸参数", "STRICT"),
-        new ScreenTemplate("BRAND", "品牌收尾", "LOOSE")
-    );
+    private final CreativeScreenSkeleton skeleton = CreativeScreenSkeletonRegistry.skeleton();
 
     private final DpStoryboardMapper storyboardMapper;
     private final DpStoryboardScreenMapper screenMapper;
@@ -127,7 +120,7 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
         storyboard.setVersion(version);
         storyboard.setVisualDnaId(dnaId);
         storyboard.setVisualDirectionId(direction == null ? null : direction.getId());
-        storyboard.setScreenCount(TEMPLATES.size());
+        storyboard.setScreenCount(skeleton.size());
         storyboard.setRhythmJson(rhythm());
 
         // 参数化草稿：每屏标题/副标题/正文/画面独白由「事实 + 基因 + 产品名 + 屏类型」推导。
@@ -160,7 +153,7 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
                     continue;
                 }
                 String title = CreativeDraftBrain.text(item, "title", 60);
-                // 标题守卫：模型偶尔把 7 屏标题都写成同一个产品名（比参数化草稿还差）。
+                // 标题守卫：模型偶尔把 N 屏标题都写成同一个产品名（比参数化草稿还差）。
                 // 标题为空或与前面某屏重复时，保留草稿标题——不是编造，是不接受「更差但合法」的产出。
                 if (title != null && !usedTitles.add(title)) {
                     modelReason = appendReason(modelReason,
@@ -196,12 +189,19 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
         storyboard.setStatus(STATUS_DRAFT);
         storyboardMapper.insert(storyboard);
 
+        // 【C′】骨架与草稿的数量必须一致：两者现在都由同一份骨架契约驱动，理论上不会不一致，
+        // 但这个校验必须留着——一旦将来有人只改了其中一处（或外部契约在运行中被换掉），
+        // 下面按下标取草稿会变成难以定位的越界异常，而这里能给出"哪边少了几屏"的可读错误。
+        if (drafts.size() != skeleton.size()) {
+            throw new ServiceException("屏骨架与文案草稿数量不一致：骨架 " + skeleton.size()
+                + " 屏（" + skeleton.brief() + "），草稿 " + drafts.size()
+                + " 屏。这属于代码/契约不一致，请检查屏骨架契约与文案策略是否配套。");
+        }
+
         int sortNo = 0;
-        for (int i = 0; i < TEMPLATES.size(); i++) {
-            ScreenTemplate template = TEMPLATES.get(i);
-            // 骨架来自 TEMPLATES，文案来自草稿；两者数量必须一致，
-            // 不一致属于编码错误，宁可当场炸掉也不要静默少一屏
-            CreativeDraftFactory.ScreenDraft draft = drafts.get(i);
+        for (CreativeScreenSkeleton.ScreenSpec template : skeleton.screens()) {
+            // 骨架来自契约，文案来自草稿（此刻两者数量已被上面的校验钉住）
+            CreativeDraftFactory.ScreenDraft draft = drafts.get(sortNo);
             sortNo++;
             DpStoryboardScreen screen = new DpStoryboardScreen();
             screen.setStoryboardId(storyboard.getId());
@@ -223,7 +223,7 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
         Map<String, Object> event = new LinkedHashMap<>();
         event.put("storyboardId", storyboard.getId());
         event.put("version", version);
-        event.put("screenCount", TEMPLATES.size());
+        event.put("screenCount", skeleton.size());
         event.put("dnaId", dnaId);
         event.put("directionId", storyboard.getVisualDirectionId());
         event.put("source", source);
@@ -362,7 +362,7 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
         sb.append("为电商详情页项目「")
             .append(StringUtils.blankToDefault(project.getProductName(),
                 StringUtils.blankToDefault(project.getTaskName(), "当前产品")))
-            .append("」改写 7 屏分镜文案。\n");
+            .append("」改写 ").append(drafts.size()).append(" 屏分镜文案。\n");
         sb.append("已确认产品事实（只能用这些，不得编造）：")
             .append(facts.isEmpty() ? "暂无" : JsonUtils.toJsonString(facts)).append("\n");
         if (brief != null && Boolean.TRUE.equals(brief.getConfigured())) {
@@ -379,8 +379,8 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
                 .append(" —— ").append(draft.soloStatement()).append("\n");
         }
         sb.append("输出 JSON：{\"screens\":[{\"type\":\"HERO\",\"title\":\"形如「产品名 · 这一屏要讲什么」，"
-            + "不超过 30 字，7 屏标题必须两两不同\",\"subtitle\":\"可省略\",\"bodyText\":\"可省略\","
-            + "\"soloStatement\":\"20~200 字：这一屏的画面自己要讲清什么\"}, ...共 7 项]}。"
+            + "不超过 30 字，" + drafts.size() + " 屏标题必须两两不同\",\"subtitle\":\"可省略\",\"bodyText\":\"可省略\","
+            + "\"soloStatement\":\"20~200 字：这一屏的画面自己要讲清什么\"}, ...共 " + drafts.size() + " 项]}。"
             + "type 必须与上面给出的完全一致，只输出这个 JSON。");
         return sb.toString();
     }
@@ -431,7 +431,7 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
                 continue;
             }
             hints.add(new CreativeDraftFactory.CopyHint(block.getTitle(), block.getContent()));
-            if (hints.size() >= SELLING_POINT_SCREENS) {
+            if (hints.size() >= skeleton.countOf("SELLING_POINT")) {
                 break;
             }
         }
@@ -534,31 +534,24 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
     }
 
     /**
-     * 屏骨架模板（R4 起只保留结构性字段，文案交给参数化草稿工厂）。
+     * 每屏的视觉规格（取景/构图/光线/背景/占比/留白）。
      *
-     * @param type             屏类型
-     * @param label            展示名
-     * @param productLockLevel 产品保真等级
+     * <p>C′：取景（shot）不再由这里的 switch 决定，而是来自屏骨架契约里的 {@code shot} 字段
+     * （可含 {@code {ratio}} 占位符，用锁定基因的占比代入）。这样"加一种屏"不需要改这段代码。</p>
+     *
+     * @param template  屏骨架定义
+     * @param dna       锁定基因
+     * @param direction 选定方向（可空）
+     * @return 规格 JSON
      */
-    private record ScreenTemplate(String type, String label, String productLockLevel) {
-    }
-
-    private String spec(ScreenTemplate template, ObjectNode dna, DpVisualDirectionVo direction) {
+    private String spec(CreativeScreenSkeleton.ScreenSpec template, ObjectNode dna, DpVisualDirectionVo direction) {
         Map<String, Object> spec = new LinkedHashMap<>();
         String scene = direction != null ? String.valueOf(direction.getStrategy().getOrDefault("scene", "")) : "";
         String lighting = direction != null
             ? String.valueOf(direction.getStrategy().getOrDefault("lighting", "")) : "";
         String composition = direction != null
             ? String.valueOf(direction.getStrategy().getOrDefault("composition", "")) : "";
-        spec.put("shot", switch (template.type()) {
-            case "HERO" -> "产品全貌，正视角（或 15° 微侧）";
-            case "SELLING_POINT" -> "功能/卖点相关的中近景";
-            case "SCENE" -> "环境全景，产品占画面 " + ratio(dna);
-            case "DETAIL" -> "局部大特写（材质/结构/接口）";
-            case "SIZE" -> "含参照物的平视构图";
-            case "BRAND" -> "产品与品牌元素的合影";
-            default -> "中景";
-        });
+        spec.put("shot", skeleton.shotOf(template, ratio(dna)));
         spec.put("composition", StringUtils.blankToDefault(composition, "产品居中，四周留白均等"));
         spec.put("lighting", StringUtils.blankToDefault(lighting,
             "光线：" + dna.path("lighting").path("type").asText("SOFT")));
@@ -697,25 +690,22 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
         }
     }
 
-    private static String screenTypeDesc(String type) {
-        return switch (StringUtils.blankToDefault(type, "")) {
-            case "HERO" -> "主图";
-            case "SELLING_POINT" -> "卖点";
-            case "SCENE" -> "场景";
-            case "DETAIL" -> "细节";
-            case "SIZE" -> "尺寸";
-            case "PACKAGE" -> "包装";
-            case "BRAND" -> "品牌";
-            default -> type;
-        };
+    /**
+     * 屏类型的展示短名（C′：收敛到屏骨架契约的 typeDesc，不再在本类里写一份 switch）。
+     *
+     * @param type 屏类型
+     * @return 展示短名；契约里没有的类型原样返回（历史分镜可能有已下线的屏类型）
+     */
+    private String screenTypeDesc(String type) {
+        return skeleton.descOf(type);
     }
 
-    private static String sourceDesc(String source) {
+    private String sourceDesc(String source) {
         if (SOURCE_TEMPLATE.equals(source)) {
             return "由屏骨架 + 参数化文案（已确认事实 + 锁定基因 + 参考图实测 + 选定方向派生，未使用模型）";
         }
         if (CreativeConstants.SOURCE_MODEL.equals(source)) {
-            return "由受管模型产出文案（经逐字段验收后才采纳；屏骨架固定 7 屏）";
+            return "由受管模型产出文案（经逐字段验收后才采纳；屏骨架共 " + skeleton.size() + " 屏）";
         }
         return source;
     }

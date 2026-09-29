@@ -196,4 +196,106 @@ class CreativeDraftFactoryTest {
             "留白档位变了，方向文案应随之变化");
     }
 
+    // ------------------------------------------------------------------
+    // C′：屏骨架可配置（去固定 7 屏）
+    // ------------------------------------------------------------------
+
+    private static CreativeScreenSkeleton.ScreenSpec spec(String type, String label, String level) {
+        return new CreativeScreenSkeleton.ScreenSpec(type, label, level, "中景");
+    }
+
+    @Test
+    @DisplayName("C′：骨架有几屏就出几屏——3 屏骨架（改造前只会出 7 屏）")
+    void threeScreenSkeletonYieldsThreeDrafts() {
+        CreativeScreenSkeleton skeleton = CreativeScreenSkeleton.of(
+            List.of(spec("HERO", "主图", "STRICT"),
+                spec("DETAIL", "细节工艺", "STRICT"),
+                spec("BRAND", "品牌收尾", "LOOSE")), Map.of());
+        ObjectNode dna = dna("#F5F5F3", "#2E6B4F", "SOFT", "FRONT", "LOW", "MEDIUM", "HIGH",
+            "纯色底", 45, 65);
+        List<CreativeDraftFactory.ScreenDraft> drafts =
+            CreativeDraftFactory.screens(skeleton, dna, "鸢尾花", facts("product_name", "鸢尾花"), null, List.of());
+
+        assertEquals(3, drafts.size(), "3 屏骨架必须只出 3 条草稿");
+        assertEquals(List.of("HERO", "DETAIL", "BRAND"),
+            drafts.stream().map(CreativeDraftFactory.ScreenDraft::type).toList());
+        assertEquals(List.of("STRICT", "STRICT", "LOOSE"),
+            drafts.stream().map(CreativeDraftFactory.ScreenDraft::productLockLevel).toList(),
+            "保真等级要跟着契约走（同一类型在不同契约里可以不同）");
+        for (CreativeDraftFactory.ScreenDraft draft : drafts) {
+            assertTrue(draft.title() != null && !draft.title().isBlank(), "每屏都要有标题");
+            assertTrue(draft.soloStatement() != null && !draft.soloStatement().isBlank(), "每屏都要有画面独白");
+        }
+    }
+
+    @Test
+    @DisplayName("C′：9 屏骨架（含 4 个卖点屏 + 一个未知类型）也能出满 9 屏且独白两两不同")
+    void nineScreenSkeletonWithUnknownTypeStillWorks() {
+        CreativeScreenSkeleton skeleton = CreativeScreenSkeleton.of(
+            List.of(spec("HERO", "主图", "STRICT"),
+                spec("SELLING_POINT", "卖点一", "LOOSE"),
+                spec("SELLING_POINT", "卖点二", "LOOSE"),
+                spec("SELLING_POINT", "卖点三", "LOOSE"),
+                spec("SELLING_POINT", "卖点四", "LOOSE"),
+                spec("SCENE", "使用场景", "LOOSE"),
+                spec("DETAIL", "细节工艺", "STRICT"),
+                spec("SIZE", "尺寸参数", "STRICT"),
+                spec("CERT", "资质认证", "STRICT")), Map.of());
+        ObjectNode dna = dna("#F5F5F3", "#2E6B4F", "SOFT", "FRONT", "LOW", "MEDIUM", "HIGH",
+            "纯色底", 45, 65);
+        List<CreativeDraftFactory.CopyHint> points = List.of(
+            new CreativeDraftFactory.CopyHint("卖点A", "A 的说明"),
+            new CreativeDraftFactory.CopyHint("卖点B", "B 的说明"),
+            new CreativeDraftFactory.CopyHint("卖点C", "C 的说明"),
+            new CreativeDraftFactory.CopyHint("卖点D", "D 的说明"));
+        List<CreativeDraftFactory.ScreenDraft> drafts = CreativeDraftFactory.screens(
+            skeleton, dna, "鸢尾花", facts("product_name", "鸢尾花", "color", "蓝紫渐变"), null, points);
+
+        assertEquals(9, drafts.size(), "契约有 9 屏就出 9 条草稿");
+        // 第 1~4 个卖点屏分别拿到第 1~4 条卖点块（这是"同类型多屏按出现顺序取"的语义）
+        assertEquals(List.of("卖点A", "卖点B", "卖点C", "卖点D"),
+            drafts.stream().filter(d -> d.type().equals("SELLING_POINT"))
+                .map(CreativeDraftFactory.ScreenDraft::subtitle).toList());
+        // 未知类型不能抛异常、不能少屏：走兜底草稿，标题/独白非空且写明它没有专用策略
+        CreativeDraftFactory.ScreenDraft cert = drafts.get(8);
+        assertEquals("CERT", cert.type());
+        assertEquals("资质认证", cert.label(), "展示名来自契约");
+        assertFalse(cert.soloStatement().isBlank());
+        assertTrue(cert.soloStatement().contains("没有专用文案策略"), cert.soloStatement());
+        // 逐屏独白两两不同
+        assertEquals(drafts.size(),
+            drafts.stream().map(CreativeDraftFactory.ScreenDraft::soloStatement).distinct().count(),
+            "9 屏的画面独白必须两两不同");
+    }
+
+    @Test
+    @DisplayName("C′：展示名与保真等级都取自契约（改契约就改文案骨架，不用改 Java）")
+    void labelsAndLockLevelsComeFromContract() {
+        CreativeScreenSkeleton skeleton = CreativeScreenSkeleton.of(
+            List.of(spec("HERO", "封面主图", "LOOSE"),
+                spec("BRAND", "品牌落版", "STRICT")), Map.of());
+        ObjectNode dna = dna("#F5F5F3", "#2E6B4F", "SOFT", "FRONT", "LOW", "MEDIUM", "HIGH",
+            "纯色底", 45, 65);
+        List<CreativeDraftFactory.ScreenDraft> drafts =
+            CreativeDraftFactory.screens(skeleton, dna, "鸢尾花", Map.of(), null, List.of());
+        assertEquals(List.of("封面主图", "品牌落版"),
+            drafts.stream().map(CreativeDraftFactory.ScreenDraft::label).toList());
+        assertEquals(List.of("LOOSE", "STRICT"),
+            drafts.stream().map(CreativeDraftFactory.ScreenDraft::productLockLevel).toList());
+    }
+
+    @Test
+    @DisplayName("C′：默认骨架（未指定）仍出 7 屏，且与改造前的屏类型序列一致")
+    void defaultSkeletonStillSevenScreens() {
+        ObjectNode dna = dna("#F5F5F3", "#2E6B4F", "SOFT", "FRONT", "LOW", "MEDIUM", "HIGH",
+            "纯色底", 45, 65);
+        List<CreativeDraftFactory.ScreenDraft> drafts =
+            CreativeDraftFactory.screens(dna, "鸢尾花", facts("product_name", "鸢尾花"));
+        assertEquals(7, drafts.size(), "默认契约仍为 7 屏（生产行为不变）");
+        assertEquals(List.of("HERO", "SELLING_POINT", "SELLING_POINT", "SCENE", "DETAIL", "SIZE", "BRAND"),
+            drafts.stream().map(CreativeDraftFactory.ScreenDraft::type).toList());
+        assertEquals(List.of("主图", "卖点一", "卖点二", "使用场景", "细节工艺", "尺寸参数", "品牌收尾"),
+            drafts.stream().map(CreativeDraftFactory.ScreenDraft::label).toList());
+    }
+
 }

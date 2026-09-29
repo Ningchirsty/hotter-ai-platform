@@ -14,6 +14,7 @@ import org.dromara.creative.domain.vo.DpStoryboardScreenVo;
 import org.dromara.creative.domain.vo.DpStoryboardVo;
 import org.dromara.creative.enums.DpGenerationStatusEnum;
 import org.dromara.creative.enums.DpVisualStageEnum;
+import org.dromara.creative.helper.CreativeScreenSkeletonRegistry;
 import org.dromara.creative.helper.SimpleMultipartFile;
 import org.dromara.creative.mapper.DpGenerationMapper;
 import org.dromara.creative.mapper.DpStoryboardMapper;
@@ -561,17 +562,14 @@ public class CreativeProductionServiceImpl implements ICreativeProductionService
         return vo;
     }
 
+    /**
+     * 屏类型的展示短名（C′：与分镜服务共用屏骨架契约的同一份映射，不再各写一份 switch）。
+     *
+     * @param type 屏类型
+     * @return 展示短名；契约里没有的类型原样返回（历史分镜可能有已下线的屏类型）
+     */
     private static String screenTypeDesc(String type) {
-        return switch (StringUtils.blankToDefault(type, "")) {
-            case "HERO" -> "主图";
-            case "SELLING_POINT" -> "卖点";
-            case "SCENE" -> "场景";
-            case "DETAIL" -> "细节";
-            case "SIZE" -> "尺寸";
-            case "PACKAGE" -> "包装";
-            case "BRAND" -> "品牌";
-            default -> type;
-        };
+        return CreativeScreenSkeletonRegistry.skeleton().descOf(type);
     }
 
     private DpGenerationVo toVo(DpGeneration row) {

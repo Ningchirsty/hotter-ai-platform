@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dromara.common.core.utils.StringUtils;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -174,41 +175,60 @@ public final class CreativeDraftFactory {
     // ------------------------------------------------------------------
 
     /**
-     * 生成 7 屏分镜草稿。
+     * 生成分镜草稿（按当前屏骨架契约）。
      *
-     * <p>屏的类型与顺序是固定的业务骨架（主图→卖点→场景→细节→尺寸→品牌），
+     * <p>屏的类型与顺序来自骨架契约（默认：主图→卖点×2→场景→细节→尺寸→品牌），
      * 但每屏的标题、副标题、正文与<b>画面独白</b>都由事实与基因推导——
-     * 这是「画面独白只有 7 句」这个问题的直接修复。</p>
+     * 这是「画面独白只有 7 句」这个问题的直接修复（当时独白是写死的句子，现在是按输入推导）。</p>
      *
      * @param dna         锁定基因
      * @param productName 产品名
      * @param facts       已确认事实
-     * @return 7 屏草稿
+     * @return 与骨架一一对应的草稿
      */
     public static List<ScreenDraft> screens(ObjectNode dna, String productName, Map<String, String> facts) {
         return screens(dna, productName, facts, null, List.of());
     }
 
     /**
-     * 生成 7 屏分镜草稿（R7：接入品牌 Brief 与卖点块）。
+     * 生成分镜草稿（R7：接入品牌 Brief 与卖点块；C′：改为按屏骨架迭代）。
      *
      * <p><b>接入原则</b>：有数据就用数据，<b>没数据保持原有骨架</b>——
      * 没有填品牌 Brief 的项目，分镜必须与 R7 之前完全一致，否则「没填」会变成「分镜变空」，
-     * 把可用性倒退成阻塞。卖点只取前 2 条：骨架里就是两个卖点屏，多出来的先留在文案块里等人决定。</p>
+     * 把可用性倒退成阻塞。卖点只取骨架里卖点屏的数量（默认 2 条）：多出来的先留在文案块里等人决定。</p>
+     *
+     * <p><b>C′ 改造点</b>：改造前这里是第二份写死的 7 屏清单（一串 {@code list.add}），
+     * 与建屏服务里的 TEMPLATES 靠"数量都是 7"的约定对齐；现在两份都改为遍历同一份骨架契约。</p>
      *
      * @param dna              锁定基因
      * @param productName      产品名
      * @param facts            已确认事实
      * @param mustShowFirstLine 品牌 Brief 必显信息的第一行（可空；进品牌收尾屏）
      * @param sellingPoints    卖点块（按 sortNo 升序，可空）
-     * @return 7 屏草稿
+     * @return 与骨架一一对应的草稿
      */
     public static List<ScreenDraft> screens(ObjectNode dna, String productName, Map<String, String> facts,
                                             String mustShowFirstLine, List<CopyHint> sellingPoints) {
+        return screens(CreativeScreenSkeletonRegistry.skeleton(), dna, productName, facts,
+            mustShowFirstLine, sellingPoints);
+    }
+
+    /**
+     * 生成分镜草稿（按指定骨架；包级可见，供单测验证 3 屏 / 9 屏等非默认骨架）。
+     *
+     * @param skeleton          屏骨架
+     * @param dna               锁定基因
+     * @param productName       产品名
+     * @param facts             已确认事实
+     * @param mustShowFirstLine 品牌 Brief 必显信息的第一行（可空；进品牌收尾屏）
+     * @param sellingPoints     卖点块（按 sortNo 升序，可空）
+     * @return 与骨架一一对应的草稿
+     */
+    static List<ScreenDraft> screens(CreativeScreenSkeleton skeleton, ObjectNode dna, String productName,
+                                     Map<String, String> facts, String mustShowFirstLine,
+                                     List<CopyHint> sellingPoints) {
         Map<String, String> f = facts == null ? Map.of() : facts;
         List<CopyHint> points = sellingPoints == null ? List.of() : sellingPoints;
-        CopyHint point1 = points.isEmpty() ? null : points.get(0);
-        CopyHint point2 = points.size() > 1 ? points.get(1) : null;
         String product = StringUtils.blankToDefault(
             firstNonBlank(f.get("product_name"), productName), "该产品");
         String color = blank(f.get("color"));
@@ -223,67 +243,132 @@ public final class CreativeDraftFactory {
         String lightingType = text(dna.path("lighting"), "type", "SOFT");
         String light = LIGHT_WORDS.getOrDefault(up(lightingType), "柔光");
 
+        ScreenContext ctx = new ScreenContext(product, color, craft, spec, quantity, packing, brandTone,
+            sceneType, ratio, background, light, f.get("product_name"), f.get("main_version"),
+            orDash(text(dna, "whitespaceLevel", null)), blank(mustShowFirstLine));
+
         List<ScreenDraft> list = new ArrayList<>();
-
-        list.add(new ScreenDraft("HERO", "主图", "STRICT",
-            product + " · 主图",
-            firstNonBlank(spec, "整体形态"),
-            joinNonBlank("，", f.get("product_name"), color, f.get("main_version")),
-            "一眼认出这是「" + product + "」：" + (color == null ? "形态、配色、材质" : "已确认的" + color + "配色")
-                + "与材质都在画面上讲清，不靠一行文案解释；留白 " + orDash(text(dna, "whitespaceLevel", null))
-                + "，产品占比 " + ratio + "。"));
-
-        list.add(new ScreenDraft("SELLING_POINT", "卖点一", "LOOSE",
-            product + " · " + sellingLabel(color, "配色", "卖点一"),
-            point1 == null ? null : blank(point1.title()),
-            point1 == null ? null : blank(point1.content()),
-            color == null
-                ? "把第一个卖点用画面讲清楚：用「" + product + "」身上最直观的那个特征当主角，而不是写一行字"
-                : "把「" + color + "」这个已确认的配色特征拍成画面主角——让人先看到颜色，再读文字"));
-
-        list.add(new ScreenDraft("SELLING_POINT", "卖点二", "LOOSE",
-            product + " · " + sellingLabel(craft, "工艺", "卖点二"),
-            point2 == null ? null : blank(point2.title()),
-            point2 == null ? null : blank(point2.content()),
-            craft == null
-                ? "第二个卖点要与第一个在画面上有区分：换机位、换景别，别让两屏看起来是同一张图"
-                : "把「" + craft + "」讲成画面：换机位与景别，与上一屏的卖点在视觉上明确区分开"));
-
-        list.add(new ScreenDraft("SCENE", "使用场景", "LOOSE",
-            product + " · " + sceneLabel(sceneType),
-            null,
-            null,
-            "展示它在真实环境里的样子："
-                + (StringUtils.isBlank(sceneType) ? "放在哪、和什么在一起、什么氛围"
-                    : "参考图实测场景为「" + sceneType + "」，本屏贴近该场景")
-                + "；光线沿用基因的" + light + "，背景色以 " + background + " 为基调"));
-
-        list.add(new ScreenDraft("DETAIL", "细节工艺", "STRICT",
-            product + " · 细节",
-            firstNonBlank(craft, "工艺与结构细节"),
-            joinNonBlank("；", craft),
-            "让人相信做工："
-                + (craft == null
-                    ? "把材质纹理、结构接缝、表面处理拍清楚（具体工艺字段尚未确认，先按画面可辨识为准）"
-                    : "把「" + craft + "」拍清楚：材质纹理、结构接缝、表面处理经得起看")));
-
-        list.add(new ScreenDraft("SIZE", "尺寸参数", "STRICT",
-            product + " · 尺寸",
-            firstNonBlank(spec, quantity, "尺寸与构成"),
-            joinNonBlank("；", spec, quantity),
-            "不靠文案也能感知大小与构成：加上可对照的参照物，比例必须真实"
-                + (spec == null ? "（尺寸字段尚未确认，请先确认规格再定这一屏）" : "，已确认规格「" + spec + "」直接上图")));
-
-        list.add(new ScreenDraft("BRAND", "品牌收尾", "LOOSE",
-            "品牌收尾",
-            // R7：品牌 Brief 的必显信息第一行进副标题（它是品牌方要求必须出现的内容，
-            // 放在收尾屏最自然）；没填 Brief 时与 R7 之前完全一致
-            firstNonBlank(mustShowFirstLine, packing, brandTone, "品牌与包装"),
-            joinNonBlank("；", mustShowFirstLine, packing, brandTone),
-            "留下品牌印象并收尾：画面克制、不抢产品"
-                + (brandTone == null ? "" : "，调性落在已确认的「" + brandTone + "」上")));
-
+        // 同类型第几次出现：两个卖点屏要拿到不同的卖点块，第 N 个卖点屏拿第 N 条
+        Map<String, Integer> occurrence = new HashMap<>();
+        Map<String, String> lastSoloByType = new HashMap<>();
+        for (CreativeScreenSkeleton.ScreenSpec screen : skeleton.screens()) {
+            int index = occurrence.merge(screen.type(), 1, Integer::sum);
+            ScreenDraft draft = screenDraft(screen, index, points, ctx);
+            // 兜底：同类型多屏的"画面独白"不许撞车。默认契约只有两个卖点屏、文案天然不同，
+            // 但契约是可配置的——一旦有人在契约里放 3 个同类型屏，通用文案就会重复，
+            // 那正是「70 行分镜只有 7 句不同独白」那个老问题的翻版。这里当场消解，且不改默认输出。
+            String previous = lastSoloByType.get(screen.type());
+            if (index > 1 && previous != null && previous.equals(draft.soloStatement())) {
+                draft = new ScreenDraft(draft.type(), draft.label(), draft.productLockLevel(), draft.title(),
+                    draft.subtitle(), draft.bodyText(),
+                    draft.soloStatement() + "（该类型第 " + index + " 屏：机位、景别或背景要与前一屏明显不同）");
+            }
+            lastSoloByType.put(screen.type(), draft.soloStatement());
+            list.add(draft);
+        }
         return list;
+    }
+
+    /**
+     * 单屏文案上下文（把 {@link #screens} 里算好的一堆取值收成一个不可变参数，避免 12 个形参）。
+     */
+    private record ScreenContext(String product, String color, String craft, String spec, String quantity,
+                                 String packing, String brandTone, String sceneType, String ratio,
+                                 String background, String light, String productNameFact, String mainVersion,
+                                 String whitespace, String mustShow) {
+    }
+
+    /**
+     * 单屏文案策略：按屏类型分派；未知类型给可用的兜底草稿。
+     *
+     * <p>兜底为什么重要：骨架契约是可配置的，运营完全可能加一个代码里没有专用策略的新屏类型。
+     * 这时宁可给一句"按这一屏的展示名把画面讲清楚"的通用草稿（保真等级照用契约里的），
+     * 也不能抛异常或少一屏——那会让整次生成失败。</p>
+     *
+     * @param screen 屏定义（类型/展示名/保真等级）
+     * @param index  同类型屏的第几次出现（从 1 开始）
+     * @param points 卖点块
+     * @param ctx    文案上下文
+     * @return 草稿
+     */
+    private static ScreenDraft screenDraft(CreativeScreenSkeleton.ScreenSpec screen, int index,
+                                           List<CopyHint> points, ScreenContext ctx) {
+        CopyHint point = index <= points.size() ? points.get(index - 1) : null;
+        return switch (screen.type()) {
+            case "HERO" -> new ScreenDraft(screen.type(), screen.label(), screen.productLockLevel(),
+                ctx.product() + " · 主图",
+                firstNonBlank(ctx.spec(), "整体形态"),
+                joinNonBlank("，", ctx.productNameFact(), ctx.color(), ctx.mainVersion()),
+                "一眼认出这是「" + ctx.product() + "」："
+                    + (ctx.color() == null ? "形态、配色、材质" : "已确认的" + ctx.color() + "配色")
+                    + "与材质都在画面上讲清，不靠一行文案解释；留白 " + ctx.whitespace()
+                    + "，产品占比 " + ctx.ratio() + "。");
+            case "SELLING_POINT" -> new ScreenDraft(screen.type(), screen.label(), screen.productLockLevel(),
+                ctx.product() + " · " + sellingLabel(index == 1 ? ctx.color() : ctx.craft(),
+                    index == 1 ? "配色" : "工艺", screen.label()),
+                point == null ? null : blank(point.title()),
+                point == null ? null : blank(point.content()),
+                index == 1
+                    ? (ctx.color() == null
+                        ? "把第一个卖点用画面讲清楚：用「" + ctx.product() + "」身上最直观的那个特征当主角，而不是写一行字"
+                        : "把「" + ctx.color() + "」这个已确认的配色特征拍成画面主角——让人先看到颜色，再读文字")
+                    : index == 2
+                        ? (ctx.craft() == null
+                            ? "第二个卖点要与第一个在画面上有区分：换机位、换景别，别让两屏看起来是同一张图"
+                            : "把「" + ctx.craft() + "」讲成画面：换机位与景别，与上一屏的卖点在视觉上明确区分开")
+                        : ("第 " + index + " 个卖点要再换一次视觉表达：机位、景别与背景都要和前面几屏明显不同"
+                            + (point == null || blank(point.content()) == null
+                                ? "" : "，把「" + blank(point.content()) + "」讲成画面")));
+            case "SCENE" -> new ScreenDraft(screen.type(), screen.label(), screen.productLockLevel(),
+                ctx.product() + " · " + sceneLabel(ctx.sceneType()),
+                null,
+                null,
+                "展示它在真实环境里的样子："
+                    + (StringUtils.isBlank(ctx.sceneType()) ? "放在哪、和什么在一起、什么氛围"
+                        : "参考图实测场景为「" + ctx.sceneType() + "」，本屏贴近该场景")
+                    + "；光线沿用基因的" + ctx.light() + "，背景色以 " + ctx.background() + " 为基调");
+            case "DETAIL" -> new ScreenDraft(screen.type(), screen.label(), screen.productLockLevel(),
+                ctx.product() + " · 细节",
+                firstNonBlank(ctx.craft(), "工艺与结构细节"),
+                joinNonBlank("；", ctx.craft()),
+                "让人相信做工："
+                    + (ctx.craft() == null
+                        ? "把材质纹理、结构接缝、表面处理拍清楚（具体工艺字段尚未确认，先按画面可辨识为准）"
+                        : "把「" + ctx.craft() + "」拍清楚：材质纹理、结构接缝、表面处理经得起看"));
+            case "SIZE" -> new ScreenDraft(screen.type(), screen.label(), screen.productLockLevel(),
+                ctx.product() + " · 尺寸",
+                firstNonBlank(ctx.spec(), ctx.quantity(), "尺寸与构成"),
+                joinNonBlank("；", ctx.spec(), ctx.quantity()),
+                "不靠文案也能感知大小与构成：加上可对照的参照物，比例必须真实"
+                    + (ctx.spec() == null ? "（尺寸字段尚未确认，请先确认规格再定这一屏）"
+                        : "，已确认规格「" + ctx.spec() + "」直接上图"));
+            case "BRAND" -> new ScreenDraft(screen.type(), screen.label(), screen.productLockLevel(),
+                "品牌收尾",
+                // R7：品牌 Brief 的必显信息第一行进副标题（它是品牌方要求必须出现的内容，
+                // 放在收尾屏最自然）；没填 Brief 时与 R7 之前完全一致
+                firstNonBlank(ctx.mustShow(), ctx.packing(), ctx.brandTone(), "品牌与包装"),
+                joinNonBlank("；", ctx.mustShow(), ctx.packing(), ctx.brandTone()),
+                "留下品牌印象并收尾：画面克制、不抢产品"
+                    + (ctx.brandTone() == null ? "" : "，调性落在已确认的「" + ctx.brandTone() + "」上"));
+            default -> genericDraft(screen, ctx, point);
+        };
+    }
+
+    /**
+     * 未知屏类型的兜底草稿：用契约里的展示名与保真等级，文案保证"这一屏讲得清"的最低可用要求。
+     *
+     * @param screen 屏定义
+     * @param ctx    文案上下文
+     * @param point  若该屏对应到某条卖点块则带上
+     * @return 草稿
+     */
+    private static ScreenDraft genericDraft(CreativeScreenSkeleton.ScreenSpec screen, ScreenContext ctx, CopyHint point) {
+        return new ScreenDraft(screen.type(), screen.label(), screen.productLockLevel(),
+            ctx.product() + " · " + screen.label(),
+            point == null ? null : blank(point.title()),
+            point == null ? null : blank(point.content()),
+            "这一屏（" + screen.label() + "）在骨架契约里没有专用文案策略，先按展示名把画面要讲的事说清楚："
+                + "「" + ctx.product() + "」在这一屏最该被看到的是什么，用画面而不是文字表达。");
     }
 
     // ------------------------------------------------------------------

@@ -1,0 +1,57 @@
+{
+  "schema": "creative-screen-skeleton/1",
+  "note": "屏结构骨架（V0.2 C′）：顺序 = 讲故事的节奏。改这份契约即可改变屏数与构成，不需要改 Java。默认 7 屏 = 电商详情页；type 相同表示同一类屏可出现多次（如两个卖点屏），业务侧按出现顺序给文案。productLockLevel：STRICT=产品必须严格保真 / LOOSE=允许场景化演绎。shot 里可用 {ratio} 占位产品占比区间（来自锁定基因）。",
+  "typeDesc": {
+    "HERO": "主图",
+    "SELLING_POINT": "卖点",
+    "SCENE": "场景",
+    "DETAIL": "细节",
+    "SIZE": "尺寸",
+    "PACKAGE": "包装",
+    "BRAND": "品牌"
+  },
+  "screens": [
+    {
+      "type": "HERO",
+      "label": "主图",
+      "productLockLevel": "STRICT",
+      "shot": "产品全貌，正视角（或 15° 微侧）"
+    },
+    {
+      "type": "SELLING_POINT",
+      "label": "卖点一",
+      "productLockLevel": "LOOSE",
+      "shot": "功能/卖点相关的中近景"
+    },
+    {
+      "type": "SELLING_POINT",
+      "label": "卖点二",
+      "productLockLevel": "LOOSE",
+      "shot": "功能/卖点相关的中近景"
+    },
+    {
+      "type": "SCENE",
+      "label": "使用场景",
+      "productLockLevel": "LOOSE",
+      "shot": "环境全景，产品占画面 {ratio}"
+    },
+    {
+      "type": "DETAIL",
+      "label": "细节工艺",
+      "productLockLevel": "STRICT",
+      "shot": "局部大特写（材质/结构/接口）"
+    },
+    {
+      "type": "SIZE",
+      "label": "尺寸参数",
+      "productLockLevel": "STRICT",
+      "shot": "含参照物的平视构图"
+    },
+    {
+      "type": "BRAND",
+      "label": "品牌收尾",
+      "productLockLevel": "LOOSE",
+      "shot": "产品与品牌元素的合影"
+    }
+  ]
+}
