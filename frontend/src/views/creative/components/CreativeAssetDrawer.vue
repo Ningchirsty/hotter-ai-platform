@@ -49,6 +49,7 @@
         </div>
         <p v-if="failedCount" class="hint">
           有 {{ failedCount }} 张缩略图读取失败（原图仍在对象存储里，可在项目页重试）——没有用占位图假装成功。
+          <template v-if="firstFailReason"><br />首个原因：{{ firstFailReason }}</template>
         </p>
         <el-button
           v-if="imageFiles.length > THUMB_LIMIT"
@@ -196,6 +197,14 @@ const productImage = ref<{ fileName?: string; configured?: boolean } | null>(nul
 const thumbs = ref<Record<string, string>>({});
 /** 读取失败的缩略图（如实标"读取失败"，不永远停在"读取中"） */
 const failedThumbs = ref<Record<string, boolean>>({});
+/**
+ * 失败原因（每个 key 一条）。
+ *
+ * <p>为什么要记：R20 排查"有些缩略图读取失败"时，服务端日志全是 200、nginx 也没有非 200，
+ * 但界面只知道"失败"——**不知道是超时、鉴权、还是响应体不是图片**，只能靠猜。
+ * 现在把原因带出来（提示里显示首条），下次一眼能定位。</p>
+ */
+const failedReasons = ref<Record<string, string>>({});
 const productThumb = ref('');
 const productThumbFailed = ref(false);
 /** 缩略图进度（给标题栏显示"8/12 读取中…"） */
@@ -203,6 +212,8 @@ const thumbTotal = ref(0);
 const thumbDone = ref(0);
 const thumbPending = computed(() => thumbTotal.value > 0 && thumbDone.value < thumbTotal.value);
 const failedCount = computed(() => Object.keys(failedThumbs.value).length + (productThumbFailed.value ? 1 : 0));
+/** 失败原因里的首条（提示里显示，便于一眼定位是超时还是响应体不对） */
+const firstFailReason = computed(() => Object.values(failedReasons.value)[0] || '');
 const thumbLimit = ref(THUMB_LIMIT);
 const preview = ref<{ url: string; title: string }>({ url: '', title: '' });
 
@@ -266,6 +277,7 @@ function releaseAll() {
   Object.values(thumbs.value).forEach((u) => URL.revokeObjectURL(u));
   thumbs.value = {};
   failedThumbs.value = {};
+  failedReasons.value = {};
   thumbTotal.value = 0;
   thumbDone.value = 0;
   if (productThumb.value) {
@@ -311,6 +323,10 @@ async function loadThumbs(list: CpTaskFileVO[]) {
         putUrl(key, url);
       } catch (e) {
         failedThumbs.value = { ...failedThumbs.value, [key]: true };
+        failedReasons.value = {
+          ...failedReasons.value,
+          [key]: e instanceof Error ? e.message : String(e)
+        };
       } finally {
         thumbDone.value += 1;
       }
