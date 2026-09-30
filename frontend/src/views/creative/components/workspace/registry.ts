@@ -1,7 +1,7 @@
 import { defineAsyncComponent, type Component } from 'vue';
 
 /**
- * 工作台组件的**真实注册表**（V0.2 D 阶段，R18）。
+ * 工作台组件的**真实注册表**（V0.2 D 阶段，R18；R31 起含 PROJECT_HEADER 与 QaPanel）。
  *
  * <p>与 `workspaceAssembly.ts` 里那张"描述用"的注册表（{@link CODE_COMPONENT_REGISTRY}）不同：
  * 这张表是**装配运行时真正要用的**——`dp_workspace_schema.layout_json` 里的组件名 → 组件实现。
@@ -13,12 +13,12 @@ import { defineAsyncComponent, type Component } from 'vue';
  *
  * @author creative
  */
-
-/** 组件名 → 异步组件 */
 export const WORKSPACE_COMPONENTS: Record<string, Component> = {
+  PROJECT_HEADER: defineAsyncComponent(() => import('../CreativeProjectHeader.vue')),
   STEP_NAVIGATOR: defineAsyncComponent(() => import('../CreativeFlowGuide.vue')),
   INSPECTOR: defineAsyncComponent(() => import('../CreativeInspectorPanel.vue')),
-  ASSET_DRAWER: defineAsyncComponent(() => import('../CreativeAssetDrawer.vue'))
+  ASSET_DRAWER: defineAsyncComponent(() => import('../CreativeAssetDrawer.vue')),
+  QaPanel: defineAsyncComponent(() => import('../CreativeQaPanel.vue'))
 };
 
 /** 已实现的组件名 */

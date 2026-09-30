@@ -1,11 +1,5 @@
 <template>
   <div class="studio">
-    <CreativeFlowGuide
-      :task-id="currentProjectId"
-      :refresh-token="flowToken"
-      :deliverable-type="currentProject?.deliverableType"
-    />
-
     <!-- 已删项目素材清单 + 批量清理（R26）：只有还留着东西的项目才会出现在这里 -->
     <el-dialog v-model="deletedMaterialsVisible" title="清理已删项目的素材" width="760px" append-to-body>
       <p class="hint">
@@ -104,47 +98,38 @@
       </aside>
 
       <!-- 右：项目工作台 -->
-      <section class="panel detail-panel">
-        <div v-if="!currentProject" class="placeholder">
-          <p>从左侧选择一个视觉项目开始。</p>
-          <p class="hint">选好项目后：上传参考图 → 看品牌要求（品牌部在内容任务里录入）与文案要点 → 描述你想要的画面 → 生成 HERO 主图候选。</p>
-        </div>
+      <!-- 右：项目工作台（R31：走 §23 的槽位装配——头部/指引线/主舞台/检查器/资产抽屉由配置决定） -->
+      <CreativeWorkspace
+        v-if="currentProject"
+        :task-id="currentProjectId"
+        :deliverable-type="currentProject.deliverableType"
+        :refresh-token="flowToken"
+        :project="currentProject"
+        :output-spec="currentOutputSpec"
+        :stage-type="stageType(currentProject.visualStage)"
+        :loading="loadingDetail"
+        @refresh="loadDetail"
+        @open-logs="timelineVisible = true"
+      >
+        <template #header-actions>
+          <el-button size="small" @click="openDna">视觉基因</el-button>
+          <!-- R25：清理素材是**显式动作**（删项目默认保留素材）。放在项目头部而不是藏进菜单里：
+               它要能被人看见，但要经过"先看代价 → 输项目名"两道确认才能生效。 -->
+          <el-button
+            v-hasPermi="['creative:project:remove']"
+            size="small"
+            type="danger"
+            plain
+            :loading="purgeBusy"
+            @click="doPurgeMaterials"
+          >
+            清理素材
+          </el-button>
+        </template>
 
-        <template v-else>
-          <header class="detail-head">
-            <div class="detail-title">
-              <h2>{{ currentProject.taskName }}</h2>
-              <div class="detail-tags">
-                <span class="stage-tag" :class="'is-' + stageType(currentProject.visualStage)">
-                  {{ stageLabel(currentProject.visualStage) }}
-                </span>
-                <span class="muted">{{ currentProject.taskNo }}</span>
-                <span class="muted">内容协同状态：{{ currentProject.status }}</span>
-                <span v-if="currentProject.productName" class="muted">
-                  产品：{{ currentProject.productName }}
-                </span>
-              </div>
-            </div>
-            <div class="detail-actions">
-              <el-button size="small" @click="openDna">视觉基因</el-button>
-              <el-button size="small" @click="loadDetail">刷新</el-button>
-              <el-button size="small" @click="timelineVisible = true">操作日志</el-button>
-              <!-- R25：清理素材是**显式动作**（删项目默认保留素材）。放在项目头部而不是藏进菜单里：
-                   它要能被人看见，但要经过"先看代价 → 输项目名"两道确认才能生效。 -->
-              <el-button
-                v-hasPermi="['creative:project:remove']"
-                size="small"
-                type="danger"
-                plain
-                :loading="purgeBusy"
-                @click="doPurgeMaterials"
-              >
-                清理素材
-              </el-button>
-            </div>
-          </header>
-
-          <div class="detail-body">
+        <template #main>
+          <section class="panel detail-panel">
+            <div class="detail-body">
             <!-- 参考图 / 产品图 -->
             <section class="block">
               <div class="block-head">
@@ -666,7 +651,16 @@
               </div>
             </section>
           </div>
+          </section>
         </template>
+      </CreativeWorkspace>
+
+      <!-- 没有选中项目时的占位（工作台只在有项目时渲染） -->
+      <section v-else class="panel detail-panel">
+        <div class="placeholder">
+          <p>从左侧选择一个视觉项目开始。</p>
+          <p class="hint">选好项目后：上传参考图 → 看品牌要求（品牌部在内容任务里录入）与文案要点 → 描述你想要的画面 → 生成 HERO 主图候选。</p>
+        </div>
       </section>
     </div>
 
@@ -927,7 +921,9 @@ import {
   GENERATION_STATUS_LABELS,
   GENERATION_STATUS_TYPES
 } from '@/api/creative/types';
-import CreativeFlowGuide from '../components/CreativeFlowGuide.vue';
+import CreativeWorkspace from '../components/CreativeWorkspace.vue';
+import { listOutputSpecs } from '@/api/creative/scenario';
+import type { ScenarioOutputSpec } from '@/api/creative/scenario';
 
 // R0 期的"接线版"说明横幅已在 V0.2 FIX-005 删除：它写的是"视觉基因/分镜/视觉门/排版在 R1–R3 交付"，
 // 而这四块早已上线，留着只会误导使用的人（连同 GUIDE_KEY/showGuide/dismissGuide 一起清理）。
@@ -1180,6 +1176,10 @@ const copyDialogSourceHint = computed(() => {
 
 /** 流程指引线刷新令牌：事实动作成功后 +1，指引线会重新读一次阶段 */
 const flowToken = ref(0);
+/** 项目详情加载中（R31：工作台头部的刷新按钮用） */
+const loadingDetail = ref(false);
+/** 该交付类型的默认输出规格（R31：工作台头部显示渠道与尺寸，取不到就如实说未配置） */
+const currentOutputSpec = ref<ScenarioOutputSpec | null>(null);
 
 const submitting = ref(false);
 const creating = ref(false);
@@ -1410,6 +1410,7 @@ async function selectProject(project: CreativeProjectVO) {
 
 async function loadDetail() {
   if (!currentProjectId.value) return;
+  loadingDetail.value = true;
   try {
     // 事实/字段选项跟着项目详情一起取：失败时不让整页详情跟着失败，
     // 但也不能静默——置 factLoadError，页面上照实写出「没取到」。
@@ -1456,8 +1457,32 @@ async function loadDetail() {
     void loadBrandBrief();
     void loadBriefChangeRequest();
     void loadCopyBlocks();
+    void loadOutputSpec();
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '加载项目详情失败');
+  } finally {
+    loadingDetail.value = false;
+  }
+}
+
+/**
+ * 取该交付类型的默认输出规格（R31）。
+ *
+ * <p>为什么放在页面而不是头部组件里：规格是**配置数据**（`dp_output_spec`），
+ * 项目页已经有一整套"取配置/取数据"的加载流程；头部只负责显示。
+ * 取不到不报错——头部会如实显示"未配置"，而不是编一个 750/800 出来。</p>
+ */
+async function loadOutputSpec() {
+  const deliveryType = currentProject.value?.deliverableType;
+  if (!deliveryType) {
+    currentOutputSpec.value = null;
+    return;
+  }
+  try {
+    const res = await listOutputSpecs(deliveryType);
+    currentOutputSpec.value = (res.data || [])[0] || null;
+  } catch (error) {
+    currentOutputSpec.value = null;
   }
 }
 

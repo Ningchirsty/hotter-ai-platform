@@ -91,24 +91,25 @@ describe('workspaceAssembly：对照', () => {
     ]);
   });
 
-  it('分类如实：R18 起 STEP_NAVIGATOR/INSPECTOR/ASSET_DRAWER 已是独立组件，只剩 QaPanel 未实现', () => {
+  it('分类如实：R31 起五个面板/步骤组件全部是独立组件，不再有"未实现"', () => {
     const byName = Object.fromEntries(
       [...diff.panelRows, ...diff.stepRows].map((r) => [r.component || r.code, r.kind])
     );
     expect(byName.STEP_NAVIGATOR).toBe('COMPONENT');
-    // 【R18 起期望值有变，不是回归】这两个面板本轮真做了（此前标 MISSING）
     expect(byName.INSPECTOR).toBe('COMPONENT');
     expect(byName.ASSET_DRAWER).toBe('COMPONENT');
-    expect(byName.QaPanel).toBe('MISSING');
-    // 其余都是"写在页面里的一段"
+    // 【R31 起期望值有变，不是回归】这两个本轮真做了（此前是 SECTION / MISSING）
+    expect(byName.PROJECT_HEADER).toBe('COMPONENT');
+    expect(byName.QaPanel).toBe('COMPONENT');
+    // 其余仍是"写在页面里的一段"（拆组件这件事一轮做不完，如实登记）
     expect(byName.VisualDnaPanel).toBe('SECTION');
     expect(byName.LongPageCanvas).toBe('SECTION');
     expect(byName.FinalReviewPanel).toBe('SECTION');
-    expect(diff.componentCount).toBe(3);
-    expect(diff.sectionCount).toBe(11);
-    expect(diff.missingCount).toBe(1);
-    expect(diff.readyText).toBe('3/15');
-    expect(formatAssemblyChip(diff)).toBe('工作台装配 3/15');
+    expect(diff.componentCount).toBe(5);
+    expect(diff.sectionCount).toBe(10);
+    expect(diff.missingCount).toBe(0);
+    expect(diff.readyText).toBe('5/15');
+    expect(formatAssemblyChip(diff)).toBe('工作台装配 5/15');
   });
 
   it('每一行都带"代码里在哪"与一句补充（没有落点的对照等于没对照）', () => {
@@ -116,21 +117,26 @@ describe('workspaceAssembly：对照', () => {
       expect(row.location, `${row.code} 缺落点`).toBeTruthy();
       expect(row.note, `${row.code} 缺补充说明`).toBeTruthy();
     }
+    // R31 真做之后，QaPanel 的落点必须指向真实文件（而不是还写着"没有实现"）
     const qa = diff.stepRows.find((r) => r.code === 'QA')!;
-    expect(qa.location).toBe('没有独立实现');
-    expect(qa.note).toContain('没有独立面板');
-    // R18 真做之后，两个面板的落点必须指向真实文件（而不是还写着"没有实现"）
+    expect(qa.location).toContain('CreativeQaPanel.vue');
+    expect(qa.location).toContain('qaVerdicts.ts');
+    expect(qa.note).toContain('四条证据线');
+    // R18 真做之后，两个面板的落点必须指向真实文件
     const inspector = diff.panelRows.find((r) => r.code === 'INSPECTOR')!;
     expect(inspector.location).toContain('CreativeInspectorPanel.vue');
     expect(diff.panelRows.find((r) => r.code === 'ASSET_DRAWER')!.location)
       .toContain('CreativeAssetDrawer.vue');
+    // R31：头部落点
+    expect(diff.panelRows.find((r) => r.code === 'PROJECT_HEADER')!.location)
+      .toContain('CreativeProjectHeader.vue');
   });
 
   it('结论句只用算出的事实拼（含工作台名、三类计数、共 15 项）', () => {
     expect(diff.verdict).toContain('LONG_PAGE');
     expect(diff.verdict).toContain('配置声明 5 个面板 + 10 个步骤组件');
-    expect(diff.verdict).toContain('已是独立组件 3 个');
-    expect(diff.verdict).toContain('还没实现 1 个');
+    expect(diff.verdict).toContain('已是独立组件 5 个');
+    expect(diff.verdict).toContain('还没实现 0 个');
     expect(diff.verdict).toContain('共对照 15 项');
   });
 
@@ -216,7 +222,12 @@ describe('workspaceAssembly：对照', () => {
     for (const name of IMPLEMENTED_COMPONENT_NAMES) {
       expect(resolveWorkspaceComponent(name), `${name} 应该能解析到组件`).toBeTruthy();
     }
-    expect(resolveWorkspaceComponent('QaPanel')).toBeNull();
+    // R31 起 QaPanel 与 PROJECT_HEADER 也是真组件了
+    expect(resolveWorkspaceComponent('QaPanel')).toBeTruthy();
+    expect(resolveWorkspaceComponent('PROJECT_HEADER')).toBeTruthy();
+    // 仍有一批步骤组件只是"页面内区块"：它们不该被解析出来（否则页面会渲染空白）
+    expect(resolveWorkspaceComponent('VisualDnaPanel')).toBeNull();
+    expect(resolveWorkspaceComponent('FuturePanel')).toBeNull();
     expect(resolveWorkspaceComponent('')).toBeNull();
     expect(resolveWorkspaceComponent(null)).toBeNull();
   });
@@ -234,26 +245,25 @@ describe('装配运行时：槽位计划', () => {
   it('按配置顺序翻槽位：指引线→GUIDE、主舞台→MAIN、已实现组件→COMPONENT、其余→SKIP', () => {
     const plan = buildAssemblyPlan(diff.panelRows);
     expect(plan.map((s) => [s.code, s.target])).toEqual([
-      ['PROJECT_HEADER', 'SKIP'],
+      ['PROJECT_HEADER', 'COMPONENT'],
       ['STEP_NAVIGATOR', 'GUIDE'],
       ['MAIN_STAGE', 'MAIN'],
       ['INSPECTOR', 'COMPONENT'],
       ['ASSET_DRAWER', 'COMPONENT']
     ]);
-    // 跳过必须带原因（否则界面上只会"少一块"，没人知道为什么）
+    // 跳过的槽位必须带原因（否则界面上只会"少一块"，没人知道为什么）
     for (const slot of plan.filter((s) => s.target === 'SKIP')) {
       expect(slot.reason, `${slot.code} 跳过却没写原因`).toBeTruthy();
     }
-    expect(plan[0].reason).toContain('页面内区块');
   });
 
   it('真正渲染的槽位与说明文本', () => {
     const plan = buildAssemblyPlan(diff.panelRows);
     expect(assembledSlots(plan).map((s) => s.code)).toEqual([
-      'STEP_NAVIGATOR', 'MAIN_STAGE', 'INSPECTOR', 'ASSET_DRAWER'
+      'PROJECT_HEADER', 'STEP_NAVIGATOR', 'MAIN_STAGE', 'INSPECTOR', 'ASSET_DRAWER'
     ]);
     expect(describeAssembly(plan)).toBe(
-      '装配 4 / 5 个槽位：STEP_NAVIGATOR、MAIN_STAGE、INSPECTOR、ASSET_DRAWER；未装配：PROJECT_HEADER'
+      '装配 5 / 5 个槽位：PROJECT_HEADER、STEP_NAVIGATOR、MAIN_STAGE、INSPECTOR、ASSET_DRAWER'
     );
   });
 
@@ -266,16 +276,25 @@ describe('装配运行时：槽位计划', () => {
     }
   });
 
-  it('只有真注册过的组件才会被装配（配置里写了名字但没实现 → SKIP）', () => {
+  it('只有真注册过的组件才会被装配（没拆成组件 / 没实现的 → SKIP）', () => {
+    // R31 起 "QaPanel" 已经是真组件，所以这里用仍是页面内区块的名字来钉同一条规则
     const layout = parseWorkspaceLayout(
-      '{"workspace":"W","panels":["STEP_NAVIGATOR","MAIN_STAGE","QaPanel"],"steps":[]}'
+      '{"workspace":"W","panels":["STEP_NAVIGATOR","MAIN_STAGE","VisualDnaPanel"],"steps":[]}'
     );
     const d = diffWorkspaceAssembly(layout)!;
     const plan = buildAssemblyPlan(d.panelRows);
     expect(plan.map((s) => [s.code, s.target])).toEqual([
-      ['STEP_NAVIGATOR', 'GUIDE'], ['MAIN_STAGE', 'MAIN'], ['QaPanel', 'SKIP']
+      ['STEP_NAVIGATOR', 'GUIDE'], ['MAIN_STAGE', 'MAIN'], ['VisualDnaPanel', 'SKIP']
     ]);
-    expect(plan[2].reason).toContain('还没实现');
+    expect(plan[2].reason).toContain('页面内区块');
+
+    // "还没实现"这条口径仍然成立：注册表里没有的名字照样只 SKIP 并说明原因
+    const missing = parseWorkspaceLayout(
+      '{"workspace":"W","panels":["STEP_NAVIGATOR","MAIN_STAGE","FuturePanel"],"steps":[]}'
+    );
+    const plan2 = buildAssemblyPlan(diffWorkspaceAssembly(missing)!.panelRows);
+    expect(plan2[2].target).toBe('SKIP');
+    expect(plan2[2].reason).toContain('没有登记');
   });
 
   it('注入注册表可以改变装配结果（运行时真的按注册表解析，而不是写死名单）', () => {

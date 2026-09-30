@@ -46,9 +46,9 @@ export interface RegistryEntry {
 export const CODE_COMPONENT_REGISTRY: Record<string, RegistryEntry> = {
   // ---- 面板（工作台骨架）----
   PROJECT_HEADER: {
-    kind: 'SECTION',
-    location: 'project/index.vue「项目工作台」头部（:57 起）',
-    note: '项目名/产品/负责人等信息目前写在项目页里，没独立成头部组件'
+    kind: 'COMPONENT',
+    location: 'components/CreativeProjectHeader.vue（R31 真做）',
+    note: '文档 §23 头部：项目/SKU/渠道/当前阶段/负责人/输出规格（渠道与规格取 dp_output_spec 配置，不写死）'
   },
   STEP_NAVIGATOR: {
     kind: 'COMPONENT',
@@ -108,9 +108,9 @@ export const CODE_COMPONENT_REGISTRY: Record<string, RegistryEntry> = {
     note: '出图入口在两处：项目页发起、生产页管理候选'
   },
   QaPanel: {
-    kind: 'MISSING',
-    location: '没有独立实现',
-    note: '质检在 production 页的候选对比里逐张体现（:161），没有独立面板；与 R16 的口径一致——本轮不为它新增页面'
+    kind: 'COMPONENT',
+    location: 'components/CreativeQaPanel.vue（R31 真做）+ composables/qaVerdicts.ts（口径，纯函数有单测）',
+    note: '质检与交付：四条证据线并排（参考图基准 / 产品基准 / 规则体检 / 交付产物），只读；口径集中在 qaVerdicts'
   },
   LongPageCanvas: {
     kind: 'SECTION',
@@ -443,7 +443,18 @@ export function buildAssemblyPlan(
     if (row.code === 'MAIN_STAGE') {
       return { code: row.code, kind: row.kind, target: 'MAIN' as AssemblyTarget, reason: '主舞台：页面自身内容通过 main 插槽接入' };
     }
-    if (row.kind === 'COMPONENT' && registry[row.component || row.code]) {
+    // R31：先把"注册表里根本没登记"与"登记了但还没实现"分开说。
+    // 两者的处置完全不同（前者要补登记或补代码，后者是排期问题），笼统写"没实现"会让人白找代码。
+    const name = row.component || row.code;
+    if (!registry[name]) {
+      return {
+        code: row.code,
+        kind: row.kind,
+        target: 'SKIP' as AssemblyTarget,
+        reason: '注册表里没有登记（要么代码还没实现，要么注册表漏登记——两者都要有人处理）'
+      };
+    }
+    if (row.kind === 'COMPONENT' && registry[name]) {
       return { code: row.code, kind: row.kind, target: 'COMPONENT' as AssemblyTarget, reason: '已是独立组件，按名字解析' };
     }
     return {
@@ -453,9 +464,7 @@ export function buildAssemblyPlan(
       reason:
         row.kind === 'SECTION'
           ? '还是页面内区块，没拆成组件——拆完才会参与装配'
-          : row.kind === 'MISSING'
-            ? '代码里还没实现（或在配置里声明并入某步）'
-            : '注册表里没有登记'
+          : '代码里还没实现（或在配置里声明并入某步）'
     };
   });
 }

@@ -18,6 +18,23 @@
         <slot name="main" />
       </main>
 
+      <!-- 项目头部（文档 §23 的 PROJECT_HEADER；R31 起它是真组件） -->
+      <component
+        :is="resolve(slot.code)"
+        v-else-if="slot.target === 'COMPONENT' && slot.code === 'PROJECT_HEADER'"
+        :project="project"
+        :spec="outputSpec"
+        :stage-label="flow.stageLabel.value"
+        :stage-type="stageType"
+        :loading="loading"
+        @refresh="$emit('refresh')"
+        @open-qa="panels.qa = true"
+        @open-assets="panels.assets = true"
+        @open-logs="$emit('open-logs')"
+      >
+        <template #actions><slot name="header-actions" /></template>
+      </component>
+
       <!-- 已是独立组件的面板：按名字从真实注册表解析（INSPECTOR / ASSET_DRAWER 等） -->
       <component
         :is="resolve(slot.code)"
@@ -46,6 +63,18 @@
       />
       <!-- SKIP 的槽位什么都不渲染：为什么跳过由装配对照胶囊说明（不在这里堆提示） -->
     </template>
+
+    <!--
+      QaPanel 是**步骤组件**（场景里的 QA 步），不在面板清单里，所以它不由上面的计划渲染；
+      工作台把它当"可开合抽屉"托管，入口在项目头部（质检与交付）。
+      这样它既是真注册表里的组件（装配对照 5/15），又能在任意工作台里被打开一次看到全部结论。
+    -->
+    <CreativeQaPanel
+      v-model:visible="panels.qa"
+      :task-id="taskId"
+      :project-name="project?.taskName || flow.project.value?.taskName || ''"
+      :project="project"
+    />
   </div>
 </template>
 
@@ -54,9 +83,12 @@ import { computed, reactive, type Component } from 'vue';
 import CreativeFlowGuide from './CreativeFlowGuide.vue';
 import CreativeInspectorPanel from './CreativeInspectorPanel.vue';
 import CreativeAssetDrawer from './CreativeAssetDrawer.vue';
+import CreativeQaPanel from './CreativeQaPanel.vue';
 import { useCreativeFlow } from '../composables/useCreativeFlow';
 import { assembledSlots, buildAssemblyPlan } from '../composables/workspaceAssembly';
 import { resolveWorkspaceComponent } from './workspace/registry';
+import type { CreativeProjectVO } from '@/api/creative/types';
+import type { ScenarioOutputSpec } from '@/api/creative/scenario';
 
 /**
  * 工作台装配运行时（V0.2 D 阶段，R19）。
@@ -85,6 +117,19 @@ const props = defineProps<{
   deliverableType?: string;
   /** 刷新令牌：页面完成某个动作后 +1，指引线重读阶段 */
   refreshToken?: number;
+  /** 当前项目（PROJECT_HEADER 与 QaPanel 要显示项目/SKU/负责人） */
+  project?: CreativeProjectVO | null;
+  /** 该交付类型的默认输出规格（头部显示渠道与尺寸；取不到就如实说未配置） */
+  outputSpec?: ScenarioOutputSpec | null;
+  /** 页面是否正在加载（头部按钮的 loading） */
+  loading?: boolean;
+  /** 阶段样式类型（页面各自的 is-* 约定） */
+  stageType?: string;
+}>();
+
+defineEmits<{
+  (e: 'refresh'): void;
+  (e: 'open-logs'): void;
 }>();
 
 /** 唯一的流程状态实例（指引线、检查器共用） */
@@ -93,8 +138,8 @@ const flow = useCreativeFlow(
   computed(() => props.deliverableType)
 );
 
-/** 面板开合（工作台统一托管） */
-const panels = reactive({ inspector: false, assets: false });
+/** 面板开合（工作台统一托管）；qa 是"步骤组件抽屉"，不在面板清单里 */
+const panels = reactive({ inspector: false, assets: false, qa: false });
 
 /** 装配计划：来自配置里的面板清单；配置读不到时是兜底计划 */
 const plan = computed(() => buildAssemblyPlan(flow.assembly.value?.panelRows));
