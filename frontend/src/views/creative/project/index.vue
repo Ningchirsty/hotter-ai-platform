@@ -212,122 +212,35 @@
               @toggle-excerpt="toggleFactExcerpt"
             />
 
-            <!-- 出图 -->
-            <section class="block">
-              <div class="block-head">
-                <h4>5. 生成 HERO 主图</h4>
-                <span class="muted">每次出 1 张候选；重试=新增一次候选</span>
-              </div>
-              <div class="form-row">
-                <label>出图工作流</label>
-                <el-select v-model="heroForm.workflowCode" placeholder="使用默认已发布工作流" style="width: 320px">
-                  <el-option
-                    v-for="wf in workflows"
-                    :key="wf.workflowCode"
-                    :label="`${wf.workflowCode}（${wf.capabilityCode} · ${wf.published ? '已发布' : wf.status}）`"
-                    :value="wf.workflowCode"
-                  />
-                </el-select>
-              </div>
-              <div class="form-row">
-                <label>画面描述</label>
-                <el-input
-                  v-model="heroForm.prompt"
-                  type="textarea"
-                  :rows="3"
-                  maxlength="1000"
-                  show-word-limit
-                  placeholder="留空则用默认主图提示词（产品居中、纯净背景、影棚光、保留原有结构与配色）"
-                />
-              </div>
-              <template v-if="dnaStateLoaded">
-                <p v-if="promptFromDna" class="dna-hint">
-                  已按<b>视觉基因</b>预填提示词（用到的维度：{{ promptApplied.join('、') }}）。可以改；改了就以你写的为准。
-                </p>
-                <p v-else-if="dnaLocked" class="dna-hint">
-                  将按<b>已锁定的视觉基因 {{ dnaLockedVersion }}</b>出图，但派生提示词尚未载入——点
-                  <el-button link type="primary" size="small" @click="prefillPromptFromDna">这里</el-button>
-                  载入。
-                </p>
-                <p v-else class="dna-hint muted">
-                  这个项目还没有锁定视觉基因，提示词按默认模板生成。建议先到
-                  <el-button link type="primary" size="small" @click="openDna">视觉基因</el-button>
-                  定义配色与光线并锁定。
-                </p>
-              </template>
-              <p v-else class="dna-hint muted">正在检查该项目的视觉基因…</p>
-              <div class="form-row">
-                <label>负向提示</label>
-                <el-input
-                  v-model="heroForm.negativePrompt"
-                  type="textarea"
-                  :rows="2"
-                  maxlength="500"
-                  show-word-limit
-                  placeholder="留空则用默认（文字、水印、产品变形、结构缺失…）"
-                />
-              </div>
-              <div class="submit-row">
-                <el-button
-                  type="primary"
-                  :loading="submitting"
-                  :disabled="!imageFiles.length"
-                  @click="doGenerate"
-                >
-                  {{ submitting ? '提交中…' : '生成 HERO 主图候选' }}
-                </el-button>
-                <span v-if="!imageFiles.length" class="hint">请先上传参考图</span>
-              </div>
-            </section>
+            <!-- 出图（R33：已拆成组件；三个输入各自 v-model，写入路径显式） -->
+            <ProjectHeroBlock
+              v-model:workflow-code="heroForm.workflowCode"
+              v-model:prompt="heroForm.prompt"
+              v-model:negative-prompt="heroForm.negativePrompt"
+              :workflows="workflows"
+              :submitting="submitting"
+              :reference-count="imageFiles.length"
+              :dna-state-loaded="dnaStateLoaded"
+              :prompt-from-dna="promptFromDna"
+              :prompt-applied="promptApplied"
+              :dna-locked="dnaLocked"
+              :dna-locked-version="dnaLockedVersion"
+              @generate="doGenerate"
+              @prefill-from-dna="prefillPromptFromDna"
+              @open-dna="openDna"
+            />
 
-            <!-- 候选 -->
-            <section class="block">
-              <div class="block-head">
-                <h4>6. 出图候选</h4>
-                <span class="muted">
-                  {{ generations.length }} 条
-                  <template v-if="polling">· 状态跟踪中…</template>
-                </span>
-              </div>
-              <p v-if="!generations.length" class="empty">还没有候选。填好描述后点上面的生成按钮。</p>
-              <div v-else class="candidate-grid">
-                <div v-for="gen in generations" :key="String(gen.id)" class="candidate-card">
-                  <div class="candidate-cover" @click="gen.previewable && openPreview(gen)">
-                    <img
-                      v-if="urlOf('gen-' + gen.id)"
-                      :src="urlOf('gen-' + gen.id)"
-                      :alt="`候选 ${gen.candidateNo}`"
-                    />
-                    <span v-else class="cover-placeholder">
-                      {{ gen.status === 'RUNNING' || gen.status === 'QUEUED' ? '出图中…' : '暂无产出' }}
-                    </span>
-                  </div>
-                  <div class="candidate-meta">
-                    <span class="gen-status" :class="'is-' + genStatusType(gen.status)">
-                      #{{ gen.candidateNo }} · {{ gen.statusDesc || genStatusLabel(gen.status) }}
-                    </span>
-                    <span v-if="gen.outputWidth" class="muted">{{ gen.outputWidth }}×{{ gen.outputHeight }}</span>
-                    <span v-if="gen.durationMs" class="muted">{{ (gen.durationMs / 1000).toFixed(1) }}s</span>
-                  </div>
-                  <p v-if="gen.errorMessage" class="gen-error" :title="gen.errorMessage">{{ gen.errorMessage }}</p>
-                  <div class="candidate-actions">
-                    <el-button v-if="gen.previewable" size="small" text type="primary" @click="openPreview(gen)">
-                      预览
-                    </el-button>
-                    <el-button
-                      v-if="gen.retryable"
-                      size="small"
-                      text
-                      type="warning"
-                      :loading="retryingId === String(gen.id)"
-                      @click="doRetry(gen)"
-                    >
-                      重试
-                    </el-button>
-                  </div>
-                </div>
-              </div>
-            </section>
+            <!-- 候选（R33：已拆成组件） -->
+            <ProjectGenerationsBlock
+              :generations="generations"
+              :polling="polling"
+              :url-of="urlOf"
+              :status-label="genStatusLabel"
+              :status-type="genStatusType"
+              :retrying-id="retryingId"
+              @preview="openPreview"
+              @retry="doRetry"
+            />
           </div>
           </section>
         </template>
@@ -605,6 +518,8 @@ import ProjectAssetsBlock from './components/ProjectAssetsBlock.vue';
 import ProjectBriefBlock from './components/ProjectBriefBlock.vue';
 import ProjectCopyBlock from './components/ProjectCopyBlock.vue';
 import ProjectFactsBlock from './components/ProjectFactsBlock.vue';
+import ProjectHeroBlock from './components/ProjectHeroBlock.vue';
+import ProjectGenerationsBlock from './components/ProjectGenerationsBlock.vue';
 // R31：项目头部要显示交付类型的渠道与输出规格——用场景配置 composable 的同一份缓存，
 // 避免页面再发一次同样的请求（两处各取一次就会出现状态不一致）。
 import { useScenarioConfig } from '../composables/useScenarioConfig';
