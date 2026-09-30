@@ -84,6 +84,15 @@ public class CreativeModuleServiceImpl implements ICreativeModuleService {
             throw new ServiceException("交付类型 " + type + " 里已经有模块编码 " + code
                 + " 了；同一个类型内模块编码必须唯一（它同时是项目计划里的关联键）。");
         }
+        // 唯一键 uk_dp_module_def(delivery_type, module_code) **不含 del_flag**：软删过的编码会永久占位。
+        // 不先查这一下的话，插入会被 MySQL 顶掉，用户看到的是「数据库中已存在该记录，请联系管理员确认」——
+        // 既不知道是谁占了，也不知道能怎么办（R29 真机验收就是这么撞上的）。
+        Long everUsed = definitionMapper.countIncludingDeleted(type, code);
+        if (everUsed != null && everUsed > 0) {
+            throw new ServiceException("交付类型 " + type + " 里曾经有过模块编码 " + code
+                + "（已删除的记录仍占用该编码，唯一键不区分软删）。请换一个编码；"
+                + "确需复用请让管理员把库里那条记录的 del_flag 改回 '0'。");
+        }
         DpModuleDefinition row = new DpModuleDefinition();
         row.setDeliveryType(type);
         row.setModuleCode(code);
@@ -112,6 +121,12 @@ public class CreativeModuleServiceImpl implements ICreativeModuleService {
             if (exists != null && exists > 0) {
                 throw new ServiceException("交付类型 " + row.getDeliveryType() + " 里已经有模块编码 "
                     + newCode + " 了。");
+            }
+            // 同上：软删的行也占着唯一键，先查出来给一句能照做的提示
+            Long everUsed = definitionMapper.countIncludingDeleted(row.getDeliveryType(), newCode);
+            if (everUsed != null && everUsed > 0) {
+                throw new ServiceException("交付类型 " + row.getDeliveryType() + " 里曾经有过模块编码 "
+                    + newCode + "（已删除的记录仍占用该编码）。请换一个编码。");
             }
             row.setModuleCode(newCode);
         }

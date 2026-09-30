@@ -750,11 +750,14 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
             if (StringUtils.isNotBlank(owner.getVisualRulesJson())) {
                 spec.put("visualRules", owner.getVisualRulesJson());
             }
-            // R29：质检规则同样冻进屏（原文 JSON 文本，读的时候交给 CreativeQaRules 解析）。
-            // 没配就不写这个键——"没配"与"配了个空对象"必须能分开，页面照实显示"未配置"。
+            // R29：质检规则同样冻进屏。**尽量存成 JSON 对象而不是字符串**——
+            // 它是结构化配置（不是人话文本），存成对象后库侧 JSON_EXTRACT 能直接查
+            // （排障与验收都靠这个），读的时候 CreativeScreenModuleConfig 两种形态都认。
+            // 规则本身写坏了就退回原样文本，不因为"格式不好"让分镜生成失败。
             String ownerQaRules = qaRules == null ? null : qaRules.get(owner.getModuleCode());
             if (StringUtils.isNotBlank(ownerQaRules)) {
-                spec.put("qaRules", ownerQaRules);
+                Object parsedRules = parseRulesObject(ownerQaRules);
+                spec.put("qaRules", parsedRules == null ? ownerQaRules : parsedRules);
             }
             List<String> templates = CreativeModuleServiceImpl.splitCodes(owner.getTemplateCodes());
             if (!templates.isEmpty()) {
@@ -770,6 +773,24 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
             }
         }
         return JsonUtils.toJsonString(spec);
+    }
+
+    /**
+     * 把模块库里的 qaRules 文本尝试解析成结构化对象（R29）。
+     *
+     * <p>解析不出就返回 null，调用方退回存原文——规则格式不好不该让分镜生成失败，
+     * 但也不该被"悄悄丢掉"（存原文，读的时候一样能解析）。</p>
+     *
+     * @param text 规则 JSON 文本
+     * @return 结构化对象（Map）；不是合法 JSON 对象时返回 null
+     */
+    private static Object parseRulesObject(String text) {
+        try {
+            Map<String, Object> parsed = JsonUtils.parseMap(text);
+            return parsed == null || parsed.isEmpty() ? null : parsed;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private static String ratio(ObjectNode dna) {
