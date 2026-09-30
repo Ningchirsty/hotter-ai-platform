@@ -93,6 +93,9 @@ class CreativeImageRuleCheckerTest {
         CreativeImageRuleChecker.Report report =
             CreativeImageRuleChecker.inspect(image(800, 800, 400, new Color(40, 90, 60), false), rules);
 
+        assertTrue((double) report.metrics().get("edgeBleedRatio") <= 1.0d,
+            "贴边率是比例，超过 100% 说明统计口径写错了：" + report.metrics().get("edgeBleedRatio"));
+
         assertEquals(CreativeImageRuleChecker.VERDICT_PASS, report.verdict(), report.findings().toString());
         assertTrue(report.passed());
         assertEquals(800, report.metrics().get("width"));
@@ -150,18 +153,20 @@ class CreativeImageRuleCheckerTest {
     }
 
     @Test
-    @DisplayName("柔和投影这类边缘非白像素不再被当成「被裁切」（度量口径修正的证据）")
-    void softShadowNearEdgeIsNotBleed() throws Exception {
-        // 造一张"主体居中、四边有一点点淡灰渐变"的图：旧口径（2% 带内主体像素占比）会判不过，
-        // 新口径（最外 0.5% 环上非背景占比）看的是画布边界有没有被主体占住。
+    @DisplayName("柔和投影/渐变暗角不再被当成「被裁切」——贴边判定用更严的距离阈值（口径修正的证据）")
+    void faintVignetteAtFrameIsNotBleed() throws Exception {
+        // 造一张"产品居中 + 最外圈是淡灰暗角（225）"的图：
+        // 淡灰与白色基准色的距离约 40~50，落在「主体占比」的 30 之上、「贴边」的 80 之下——
+        // 旧口径（都用 30）会把这一圈算成贴边，新口径（贴边用 80）不算。
         BufferedImage image = new BufferedImage(800, 800, BufferedImage.TYPE_INT_RGB);
         Graphics2D g = image.createGraphics();
         g.setColor(Color.WHITE);
         g.fillRect(0, 0, 800, 800);
-        // 底部一条很淡的投影（浅灰，不是主体）
-        g.setColor(new Color(246, 246, 246));
-        g.fillRect(20, 700, 760, 100);
-        // 居中的主体
+        g.setColor(new Color(225, 225, 225));
+        g.drawRect(0, 0, 799, 799);
+        g.drawRect(1, 1, 797, 797);
+        g.drawRect(2, 2, 795, 795);
+        g.drawRect(3, 3, 793, 793);
         g.setColor(new Color(40, 90, 60));
         g.fillRect(250, 250, 300, 300);
         g.dispose();
@@ -171,8 +176,9 @@ class CreativeImageRuleCheckerTest {
         CreativeImageRuleChecker.Report report =
             CreativeImageRuleChecker.inspect(out.toByteArray(), CreativeQaRules.parse(MAIN_RULES));
 
+        assertEquals(80, report.metrics().get("bleedDistance"), "贴边判定应使用更严的距离阈值");
         double bleed = (double) report.metrics().get("edgeBleedRatio");
-        assertTrue(bleed <= 0.05d, "淡投影不该判成贴边：" + bleed);
+        assertTrue(bleed <= 0.05d, "淡暗角不该判成贴边：" + bleed);
         assertTrue(finding(report, "EDGE_BLEED").ok(), finding(report, "EDGE_BLEED").detail());
         assertEquals(0, report.hardFailed(), report.findings().toString());
     }

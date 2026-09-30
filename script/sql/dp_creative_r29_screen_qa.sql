@@ -33,7 +33,7 @@ UPDATE dp_module_definition SET qa_rules_json = '{
   "minSide": 800,
   "alphaForbidden": true,
   "whiteBackground": {"enabled": true, "minEdgeWhiteness": 0.90},
-  "subjectRatio": {"enabled": true, "min": 0.50},
+  "subjectRatio": {"enabled": true, "min": 0.10},
   "edgeBleed": {"enabled": true, "maxRatio": 0.05},
   "levels": {"CANVAS_SQUARE": "HARD", "MIN_SIDE": "HARD", "NO_ALPHA": "HARD",
              "WHITE_BACKGROUND": "SOFT", "SUBJECT_RATIO": "SOFT", "EDGE_BLEED": "SOFT"}
@@ -47,7 +47,7 @@ UPDATE dp_module_definition SET qa_rules_json = '{
   "minSide": 800,
   "alphaForbidden": true,
   "whiteBackground": {"enabled": false},
-  "subjectRatio": {"enabled": true, "min": 0.25},
+  "subjectRatio": {"enabled": true, "min": 0.08},
   "edgeBleed": {"enabled": true, "maxRatio": 0.05},
   "levels": {"CANVAS_SQUARE": "HARD", "MIN_SIDE": "HARD", "NO_ALPHA": "HARD",
              "SUBJECT_RATIO": "SOFT", "EDGE_BLEED": "SOFT"}
@@ -61,7 +61,7 @@ UPDATE dp_module_definition SET qa_rules_json = '{
   "minSide": 800,
   "alphaForbidden": true,
   "whiteBackground": {"enabled": false},
-  "subjectRatio": {"enabled": true, "min": 0.15},
+  "subjectRatio": {"enabled": true, "min": 0.05},
   "edgeBleed": {"enabled": true, "maxRatio": 0.05},
   "levels": {"CANVAS_SQUARE": "HARD", "MIN_SIDE": "HARD", "NO_ALPHA": "HARD",
              "SUBJECT_RATIO": "SOFT", "EDGE_BLEED": "SOFT"}
@@ -75,7 +75,7 @@ UPDATE dp_module_definition SET qa_rules_json = '{
   "minSide": 800,
   "alphaForbidden": true,
   "whiteBackground": {"enabled": false},
-  "subjectRatio": {"enabled": true, "min": 0.35},
+  "subjectRatio": {"enabled": true, "min": 0.10},
   "edgeBleed": {"enabled": true, "maxRatio": 0.05},
   "levels": {"CANVAS_SQUARE": "HARD", "MIN_SIDE": "HARD", "NO_ALPHA": "HARD",
              "SUBJECT_RATIO": "SOFT", "EDGE_BLEED": "SOFT"}
@@ -89,7 +89,7 @@ UPDATE dp_module_definition SET qa_rules_json = '{
   "minSide": 800,
   "alphaForbidden": true,
   "whiteBackground": {"enabled": false},
-  "subjectRatio": {"enabled": true, "min": 0.15},
+  "subjectRatio": {"enabled": true, "min": 0.05},
   "edgeBleed": {"enabled": true, "maxRatio": 0.05},
   "levels": {"CANVAS_SQUARE": "HARD", "MIN_SIDE": "HARD", "NO_ALPHA": "HARD",
              "SUBJECT_RATIO": "SOFT", "EDGE_BLEED": "SOFT"}
@@ -104,11 +104,32 @@ UPDATE dp_module_definition SET qa_rules_json = '{
 --   新："最外 0.5% 环上非背景像素占该环的比例"（量的是"画布边界被主体占了多少"，被裁才显著升高）。
 -- 真机证据：一张 800×800 的合格白底主图，旧口径量出 3.5%（阈值 1% → 判不过），
 -- 那明显是度量本身的问题，不是图的问题。口径改了，阈值也要跟着改成 5%（仍是 SOFT 参考项）。
+-- 另外：贴边判定改用**更严的距离阈值**（80，而不是主体占比的 30）——柔和投影与渐变暗角
+-- 与背景的距离通常在 30~60，用 30 会把"边缘有点灰"当成"产品被切了"。
 UPDATE dp_module_definition
    SET qa_rules_json = JSON_SET(qa_rules_json, '$.edgeBleed.maxRatio', 0.05)
  WHERE delivery_type = 'MAIN_IMAGE'
    AND JSON_VALID(qa_rules_json)
    AND JSON_EXTRACT(qa_rules_json, '$.edgeBleed.maxRatio') = 0.01;
+
+-- 4) 按真机实测重新标定「主体占比」下限（幂等：只改老种子值，人工改过的不动）
+--
+-- 为什么标定：主体占比是**以四角均色为背景基准的非背景像素占比**（面积口径）。
+-- 真机实测：800×800 的合格白底主图量到 0.156~0.161。第一版种子按"基因里的
+-- productRatio 60%~80%"直接抄成 0.50，但那是**线性占比**（产品占画面宽度的比例），
+-- 与"像素面积占比"不是一个口径：线性 70% 对应面积约 49%，再叠加"产品自身浅色像素
+-- 与白底接近会被少算"，0.50 就成了"每张真图都不过"的坏规则。
+-- 所以下限整体下调到"只兜住'画面几乎是空的'这一种情况"（0.05~0.10），
+-- 实测值仍在 detail 里如实给出，供人对照基因目标；把它做成硬判据需要先积累标注数据（见待办）。
+UPDATE dp_module_definition SET qa_rules_json = JSON_SET(qa_rules_json, '$.subjectRatio.min', 0.10)
+ WHERE delivery_type='MAIN_IMAGE' AND JSON_VALID(qa_rules_json)
+   AND JSON_EXTRACT(qa_rules_json, '$.subjectRatio.min') IN (0.50, 0.35);
+UPDATE dp_module_definition SET qa_rules_json = JSON_SET(qa_rules_json, '$.subjectRatio.min', 0.08)
+ WHERE delivery_type='MAIN_IMAGE' AND JSON_VALID(qa_rules_json)
+   AND JSON_EXTRACT(qa_rules_json, '$.subjectRatio.min') = 0.25;
+UPDATE dp_module_definition SET qa_rules_json = JSON_SET(qa_rules_json, '$.subjectRatio.min', 0.05)
+ WHERE delivery_type='MAIN_IMAGE' AND JSON_VALID(qa_rules_json)
+   AND JSON_EXTRACT(qa_rules_json, '$.subjectRatio.min') = 0.15;
 
 SELECT 'DP_CREATIVE_R29_SCREEN_QA_DONE' AS marker;
 

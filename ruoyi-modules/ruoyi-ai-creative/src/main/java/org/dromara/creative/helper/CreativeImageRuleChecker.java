@@ -43,8 +43,18 @@ public final class CreativeImageRuleChecker {
     /** 判定为"白"的通道下限（0~255） */
     private static final int WHITE_CHANNEL = 236;
 
-    /** 与背景基准色的距离阈值（0~255 空间） */
+    /** 与背景基准色的距离阈值（0~255 空间）——用于"主体占比"这类宽口径度量 */
     private static final double SUBJECT_DISTANCE = 30d;
+
+    /**
+     * "贴边"（被画布裁切）用的**更严**距离阈值。
+     *
+     * <p>为什么贴边要用另一套阈值：柔和投影、渐变暗角与背景基准色的距离通常在 30~60 之间，
+     * 用 30 去判就会把"边缘有点灰"当成"产品被切了"——R29 真机上 800×800 的合格白底主图
+     * 因此量出 5.8%~9.8% 的贴边率。产品本身与背景的距离远大于此（实测几百），
+     * 所以贴边判定用 80：**只有明显不同于背景的东西压到画布边界上，才算被裁**。</p>
+     */
+    private static final double BLEED_DISTANCE = 80d;
 
     /** 结论：没配规则，未做体检 */
     public static final String VERDICT_NOT_CONFIGURED = "NOT_CONFIGURED";
@@ -151,6 +161,7 @@ public final class CreativeImageRuleChecker {
         metrics.put("edgeRingPx", ring);
         metrics.put("whiteChannelMin", WHITE_CHANNEL);
         metrics.put("subjectDistance", (int) SUBJECT_DISTANCE);
+        metrics.put("bleedDistance", (int) BLEED_DISTANCE);
 
         // 1) 四角基准色（背景基准）与角部白度
         double[] corners = cornerAverage(image, patch);
@@ -196,11 +207,14 @@ public final class CreativeImageRuleChecker {
                 if (onRing) {
                     ringTotal++;
                 }
-                if (distance(argb, corners) > SUBJECT_DISTANCE) {
+                double distance = distance(argb, corners);
+                if (distance > SUBJECT_DISTANCE) {
                     subjectTotal++;
-                    if (onRing) {
-                        ringSubject++;
-                    }
+                }
+                // 注意：这一句必须挂在 onRing 上——漏掉它就会把画布中间的强主体也算进"贴边"，
+                // 贴边率会算出 >100% 这种不可能的值（本轮单测当场抓住：1256.3%）。
+                if (onRing && distance > BLEED_DISTANCE) {
+                    ringSubject++;
                 }
             }
         }
@@ -252,8 +266,8 @@ public final class CreativeImageRuleChecker {
             boolean ok = bleedRatio <= rules.maxBleedRatio();
             findings.add(new Finding("EDGE_BLEED", "主体未贴边（未被画布裁切）",
                 rules.levelOf("EDGE_BLEED"), ok,
-                "实测最外 " + ring + "px 环上非背景占比 " + pct(bleedRatio)
-                    + "（要求 ≤ " + pct(rules.maxBleedRatio()) + "）"));
+                "实测最外 " + ring + "px 环上明显非背景（距离 > " + (int) BLEED_DISTANCE + "）的占比 "
+                    + pct(bleedRatio) + "（要求 ≤ " + pct(rules.maxBleedRatio()) + "）"));
         }
 
         int hardFailed = 0;
