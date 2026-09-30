@@ -114,9 +114,9 @@ export const CODE_COMPONENT_REGISTRY: Record<string, RegistryEntry> = {
     note: 'GENERATION 步：候选列表（预览 / 重试）'
   },
   VisualDnaPanel: {
-    kind: 'SECTION',
-    location: 'dna/index.vue 整页（概览 :43 / 编辑 :97 / 证据链 :224 / 版本 :238）',
-    note: '整页就是一个组件的工作量，装配时按「一步一页」的现状直接对应'
+    kind: 'SLOT',
+    location: 'dna/components/VisualDnaPanel.vue（R38 拆出；基因页以同名插槽提供）',
+    note: 'DNA 步：概览 / 规范编辑 / 派生提示词 / 证据链 / 版本历史；编辑态表单与"按参考图推荐"在组件里，落库仍由页面负责'
   },
   DirectionBoard: {
     kind: 'SECTION',
@@ -644,6 +644,16 @@ export function buildAssemblyPlan(
     }
     if (row.kind === 'COMPONENT' && registry[name]) {
       return { code: row.code, kind: row.kind, target: 'COMPONENT' as AssemblyTarget, reason: '已是独立组件，按名字解析' };
+    }
+    // R38：宿主插槽组件（SLOT）**不能**作为面板由工作台自己解析——它要宿主页面的状态，
+    // 只能由页面以同名插槽提供；配到面板清单里是配置写错了，得说清楚而不是含糊成"没实现"。
+    if (row.kind === 'SLOT') {
+      return {
+        code: row.code,
+        kind: row.kind,
+        target: 'SKIP' as AssemblyTarget,
+        reason: '宿主插槽组件：要页面状态，只能由页面以同名插槽提供，不能作为面板由工作台解析'
+      };
     }
     return {
       code: row.code,

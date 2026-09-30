@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import {
   ASSEMBLY_KIND_LABELS,
   CODE_COMPONENT_REGISTRY,
@@ -36,6 +37,25 @@ const SEED_JSON =
   '{"code":"GENERATION","components":["ProjectHeroBlock","ProjectGenerationsBlock"]},' +
   '{"code":"QA","component":"QaPanel"},' +
   '{"code":"LAYOUT","component":"LongPageCanvas"},{"code":"FINAL","component":"FinalReviewPanel"}]}';
+
+/**
+ * 递归列出某个目录下的所有 `.vue` 文件。
+ *
+ * @param dir 目录（URL，便于从 import.meta.url 推）
+ * @returns 文件路径数组
+ */
+function listVueFiles(dir: URL): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const child = new URL(entry.name + (entry.isDirectory() ? '/' : ''), dir);
+    if (entry.isDirectory()) {
+      out.push(...listVueFiles(child));
+    } else if (entry.name.endsWith('.vue')) {
+      out.push(fileURLToPath(child));
+    }
+  }
+  return out;
+}
 
 describe('workspaceAssembly：解析', () => {
   it('解析生产配置：5 个面板 + 10 个步骤（13 个步骤组件，工作台 LONG_PAGE）', () => {
@@ -118,7 +138,7 @@ describe('workspaceAssembly：对照', () => {
     ]);
   });
 
-  it('分类如实：R37 起六个项目页区块是"宿主插槽组件"，仍有一批步骤只是页面内区块', () => {
+  it('分类如实：R38 起基因页也拆出装配组件，六个项目页区块仍是"宿主插槽组件"', () => {
     const byName = Object.fromEntries(
       [...diff.panelRows, ...diff.stepRows].map((r) => [r.component || r.code, r.kind])
     );
@@ -135,17 +155,19 @@ describe('workspaceAssembly：对照', () => {
     expect(byName.ProjectCopyBlock).toBe('SLOT');
     expect(byName.ProjectHeroBlock).toBe('SLOT');
     expect(byName.ProjectGenerationsBlock).toBe('SLOT');
+    // 【R38 起期望值有变】基因页整页拆成 VisualDnaPanel（基因页的这一步内容）
+    expect(byName.VisualDnaPanel).toBe('SLOT');
     // 其余仍是"写在页面里的一段"（拆组件这件事一轮做不完，如实登记）
-    expect(byName.VisualDnaPanel).toBe('SECTION');
+    expect(byName.DirectionBoard).toBe('SECTION');
     expect(byName.LongPageCanvas).toBe('SECTION');
     expect(byName.FinalReviewPanel).toBe('SECTION');
     expect(diff.componentCount).toBe(5);
-    expect(diff.slotCount).toBe(6);
-    expect(diff.sectionCount).toBe(7);
+    expect(diff.slotCount).toBe(7);
+    expect(diff.sectionCount).toBe(6);
     expect(diff.missingCount).toBe(0);
-    // 口径：就绪 = 已是独立组件（工作台自解析 5 + 宿主插槽 6）；分母是组件行数（不是步骤数）
-    expect(diff.readyText).toBe('11/18');
-    expect(formatAssemblyChip(diff)).toBe('工作台装配 11/18');
+    // 口径：就绪 = 已是独立组件（工作台自解析 5 + 宿主插槽 7）；分母是组件行数（不是步骤数）
+    expect(diff.readyText).toBe('12/18');
+    expect(formatAssemblyChip(diff)).toBe('工作台装配 12/18');
   });
 
   it('每一行都带"代码里在哪"与一句补充（没有落点的对照等于没对照）', () => {
@@ -172,8 +194,8 @@ describe('workspaceAssembly：对照', () => {
     expect(diff.verdict).toContain('LONG_PAGE');
     expect(diff.verdict).toContain('配置声明 5 个面板 + 10 个步骤');
     expect(diff.verdict).toContain('共 13 个步骤组件');
-    expect(diff.verdict).toContain('已是独立组件 11 个');
-    expect(diff.verdict).toContain('工作台自行解析 5 个、宿主页面插槽提供 6 个');
+    expect(diff.verdict).toContain('已是独立组件 12 个');
+    expect(diff.verdict).toContain('工作台自行解析 5 个、宿主页面插槽提供 7 个');
     expect(diff.verdict).toContain('还没实现 0 个');
     expect(diff.verdict).toContain('共对照 18 项');
   });
@@ -251,19 +273,21 @@ describe('workspaceAssembly：对照', () => {
     expect(Object.keys(ASSEMBLY_KIND_LABELS)).toEqual(kinds);
   });
 
-  it('描述表里标 SLOT 的组件必须是页面真实提供的插槽（否则装配会少一块而没人发现）', () => {
-    // 静态核对：读项目页源码，检查每个 SLOT 组件都有 `<template #名字>`
-    // （R19 的教训就是"按钮存在、抽屉没人渲染"——只断言名单存在是不够的）
-    const page = readFileSync(
-      new URL('../project/index.vue', import.meta.url),
-      'utf-8'
-    );
+  it('描述表里标 SLOT 的组件必须由某个页面真实提供插槽（否则装配会少一块而没人发现）', () => {
+    // 静态核对：扫 views/creative 下的所有 .vue，检查每个 SLOT 组件都有 `<template #名字>`
+    // （R19 的教训就是"按钮存在、抽屉没人渲染"——只断言名单存在是不够的）。
+    // R38 起组件分散在不同页面（项目页六个区块、基因页 VisualDnaPanel…），所以扫整棵目录。
+    const slotFiles = new Map<string, string>();
+    for (const file of listVueFiles(new URL('../', import.meta.url))) {
+      slotFiles.set(file, readFileSync(file, 'utf-8'));
+    }
     const slotNames = Object.entries(CODE_COMPONENT_REGISTRY)
       .filter(([, entry]) => entry.kind === 'SLOT')
       .map(([name]) => name);
     expect(slotNames.length).toBeGreaterThan(0);
     for (const name of slotNames) {
-      expect(page, `项目页没有提供 #${name} 插槽`).toContain(`#${name}`);
+      const hit = [...slotFiles.entries()].find(([, text]) => text.includes(`#${name}`));
+      expect(hit?.[0], `没有任何页面提供 #${name} 插槽（注册表说有、代码里没有）`).toBeTruthy();
     }
   });
 
@@ -342,17 +366,19 @@ describe('装配运行时：槽位计划', () => {
     }
   });
 
-  it('只有真注册过的组件才会被装配（没拆成组件 / 没实现的 → SKIP）', () => {
-    // R31 起 "QaPanel" 已经是真组件，所以这里用仍是页面内区块的名字来钉同一条规则
+  it('只有真注册过的组件才会被装配（没拆成组件 / 宿主插槽 / 没实现的 → SKIP）', () => {
+    // R38 起：SLOT（宿主插槽组件）也不能作为面板被工作台解析，理由要说清是"哪一类"
     const layout = parseWorkspaceLayout(
-      '{"workspace":"W","panels":["STEP_NAVIGATOR","MAIN_STAGE","VisualDnaPanel"],"steps":[]}'
+      '{"workspace":"W","panels":["STEP_NAVIGATOR","MAIN_STAGE","DirectionBoard","VisualDnaPanel"],"steps":[]}'
     );
     const d = diffWorkspaceAssembly(layout)!;
     const plan = buildAssemblyPlan(d.panelRows);
     expect(plan.map((s) => [s.code, s.target])).toEqual([
-      ['STEP_NAVIGATOR', 'GUIDE'], ['MAIN_STAGE', 'MAIN'], ['VisualDnaPanel', 'SKIP']
+      ['STEP_NAVIGATOR', 'GUIDE'], ['MAIN_STAGE', 'MAIN'],
+      ['DirectionBoard', 'SKIP'], ['VisualDnaPanel', 'SKIP']
     ]);
     expect(plan[2].reason).toContain('页面内区块');
+    expect(plan[3].reason).toContain('宿主插槽组件');
 
     // "还没实现"这条口径仍然成立：注册表里没有的名字照样只 SKIP 并说明原因
     const missing = parseWorkspaceLayout(
@@ -452,5 +478,44 @@ describe('R37：按步骤装配', () => {
     expect(pickVisibleStep([], 'FACT')).toBeNull();
     // 边界：状态缺失按"没了结"处理（不猜成已完成）
     expect(pickVisibleStep([{ code: 'INPUT' }, { code: 'FACT', status: 'done' }], 'DNA')).toBe('INPUT');
+  });
+});
+
+/**
+ * R38：基因页这一步拆成装配组件（`VisualDnaPanel`）。
+ *
+ * <p>组件拆分最容易出的两种问题，静态就能钉住：① 动作在搬运中丢了（模板里少了 `@save`，
+ * 类型系统不会报——emit 没人接就是静默失效，R19 的"按钮在、抽屉没人渲染"是同一类）；
+ * ② 内容搬了两份（页面与组件各留一份，改一边就不生效）。</p>
+ */
+describe('R38：基因页的装配组件', () => {
+  const page = readFileSync(new URL('../dna/index.vue', import.meta.url), 'utf-8');
+  const panel = readFileSync(new URL('../dna/components/VisualDnaPanel.vue', import.meta.url), 'utf-8');
+
+  it('基因页用同名插槽把这一步交给工作台，并把每个动作都接上', () => {
+    expect(page).toContain('#VisualDnaPanel');
+    for (const binding of [
+      '@generate="doGenerate"',
+      '@save="doSave"',
+      '@lock="doLock"',
+      '@load-prompt="loadPrompt"',
+      '@view-version="viewVersion"'
+    ]) {
+      expect(page, `基因页没有把 ${binding} 接上`).toContain(binding);
+    }
+    // 组件这一侧要真的声明并发出这些事件
+    for (const name of ["'generate'", "'save'", "'lock'", "'load-prompt'", "'view-version'"]) {
+      expect(panel, `组件没有声明事件 ${name}`).toContain(name);
+    }
+  });
+
+  it('内容只留一份：页面里不再有这一步的内容（否则改一边不生效）', () => {
+    expect(page).not.toContain('data-dna-section');
+    expect(page).not.toContain('规范内容');
+    expect(page).not.toContain('版本历史');
+    // 组件里该有的分段标记齐全（验收脚本按它断言"五段都在"）
+    for (const section of ['OVERVIEW', 'FORM', 'PROMPT', 'EVIDENCE', 'VERSIONS']) {
+      expect(panel, `组件缺少 ${section} 分段标记`).toContain(`data-dna-section="${section}"`);
+    }
   });
 });

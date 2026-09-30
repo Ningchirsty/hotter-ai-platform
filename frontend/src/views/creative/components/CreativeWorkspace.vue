@@ -29,6 +29,11 @@
              六个区块全堆在一起的页面没人读得完。
         -->
         <template v-if="hosted.length">
+          <!-- 页头（R38）：这一步所属页面的框架（项目选择器 / 页面动作）。
+               它不属于"某一步的内容"，所以放在步骤条与内容区之上，由页面用 #page-head 提供；
+               没提供的页面（项目页的头部是配置里的 PROJECT_HEADER）这里就是空的。 -->
+          <slot name="page-head" />
+
           <div v-if="hosted.length > 1" class="ws-step-bar">
             <span class="bar-label">本页步骤</span>
             <button
@@ -236,12 +241,14 @@ const activeStepCode = computed(() => currentStep.value?.key || '');
 /**
  * 页面**按步骤**提供的插槽（= 组件名）。
  *
- * <p>`main` / `header-actions` 不是步骤组件，排除掉；页面没按步骤给插槽时这里是空数组，
+ * <p>`main` / `header-actions` / `page-head` 不是步骤组件，排除掉；页面没按步骤给插槽时这里是空数组，
  * 主舞台就回到 R19 的行为（渲染 `#main`）。</p>
  */
 const slots = useSlots();
 const providedComponents = computed(() =>
-  Object.keys(slots).filter((name) => name !== 'main' && name !== 'header-actions' && name !== 'default')
+  Object.keys(slots).filter(
+    (name) => !['main', 'header-actions', 'page-head', 'default'].includes(name)
+  )
 );
 const hasMainSlot = computed(() => Boolean(slots.main));
 
