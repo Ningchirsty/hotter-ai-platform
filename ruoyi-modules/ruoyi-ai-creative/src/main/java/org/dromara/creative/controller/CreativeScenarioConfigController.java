@@ -159,6 +159,22 @@ public class CreativeScenarioConfigController {
     }
 
     /**
+     * 确认模块计划（V0.2 R28，文档 §25「页面模块已确认」的第 1 步）。
+     *
+     * <p>确认不是阶段变更，只把计划行的状态置为 CONFIRMED 并留一条事件；
+     * 再次保存计划会自动回到"待确认"（改了就得重新确认）。</p>
+     *
+     * @param taskId 项目ID
+     * @return 确认后的规划视图
+     */
+    @SaCheckPermission(CreativeConstants.PERM_PROJECT_EDIT)
+    @Log(title = "模块计划确认", businessType = BusinessType.UPDATE)
+    @PostMapping("/projects/{taskId}/module-plan/confirm")
+    public R<ProjectModulePlanVo> confirmModulePlan(@PathVariable("taskId") Long taskId) {
+        return R.ok(moduleService.confirmPlan(taskId));
+    }
+
+    /**
      * 新建模块定义（V0.2 R27，文档 §24 左栏可编辑）。
      *
      * <p>权限用 {@code creative:project:edit}：模块库是"配置"，但它是创作链路的输入，

@@ -75,6 +75,17 @@ public class ProjectModulePlanVo implements Serializable {
     private Integer screenCount = 0;
 
     /**
+     * 计划是否已确认（V0.2 R28，文档 §25 第 1 步）：所有行都是 CONFIRMED 才算已确认；
+     * 保存计划会自动回到"待确认"，所以这个字段也是"有没有人确认过当前这一版"的判据。
+     */
+    private Boolean confirmed;
+
+    /**
+     * 最近一次确认时间（所有行里最晚的 update_time；未确认时为 null）
+     */
+    private java.time.LocalDateTime confirmedAt;
+
+    /**
      * 屏预览的来源：{@code PLAN}=本项目已保存的模块计划；{@code DEFAULT_SKELETON}=项目还没有计划，
      * 给的是"按交付类型默认骨架初始化后会长成什么样"（**尚未落库**）。
      *

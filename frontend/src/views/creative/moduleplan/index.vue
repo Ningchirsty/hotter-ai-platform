@@ -32,6 +32,21 @@
         <el-tag v-if="plan" effect="dark" :type="plan.editable ? 'success' : 'warning'">
           {{ plan.editable ? '可编辑' : '已锁定状态' }}
         </el-tag>
+        <!-- R28（§25 第 1 步）：计划确认状态。改了计划会自动回到"待确认"，所以这个标签
+             回答的是"当前这一版有没有人确认过"。 -->
+        <el-tag v-if="plan" effect="dark" :type="plan.confirmed ? 'success' : 'info'">
+          {{ plan.confirmed ? '计划已确认' : '计划待确认' }}
+        </el-tag>
+        <el-button
+          v-if="plan && !plan.confirmed"
+          type="primary"
+          plain
+          :disabled="!canEdit"
+          :loading="confirming"
+          @click="confirmPlan"
+        >
+          确认本计划
+        </el-button>
         <el-button plain :loading="loading" @click="load">刷新</el-button>
         <el-button
           type="primary"
@@ -188,6 +203,7 @@
           </div>
           <p class="muted small">
             拖动或用 ↑↓ 调顺序；「屏数」决定这个模块占几屏；关掉开关是<b>停用</b>（留在计划里、不出屏）。
+            <b>确认本计划</b>只表示"人看过并认可当前这一版"——<b>保存改动会自动回到待确认</b>。
           </p>
           <ul class="modules">
             <li
@@ -365,7 +381,8 @@
     updateModuleDefinition,
     setModuleDefinitionEnabled,
     deleteModuleDefinition,
-    type ModuleDefinitionForm} from '@/api/creative/scenario';
+    type ModuleDefinitionForm,
+    confirmProjectModulePlan} from '@/api/creative/scenario';
   import { listCopyBlocks, listCreativeProject } from '@/api/creative';
   import type { CopyBlockVO } from '@/api/creative/types';
   import { extractErrorMessage } from '@/utils/request';
@@ -401,6 +418,7 @@
   const loading = ref(false);
   const saving = ref(false);
   const dirty = ref(false);
+  const confirming = ref(false);
   const definitionVisible = ref(false);
   const definitionSaving = ref(false);
   const definitionForm = ref<ModuleDefinitionForm & { id?: string | number }>({});
@@ -480,6 +498,20 @@
       loadError.value = (await extractErrorMessage(error)) ?? '加载模块规划失败';
     } finally {
       loading.value = false;
+    }
+  }
+
+  /** 确认本计划（R28）：确认后若再保存任何改动，会自动回到"待确认" */
+  async function confirmPlan() {
+    confirming.value = true;
+    try {
+      const res = await confirmProjectModulePlan(taskId.value);
+      plan.value = res.data || null;
+      ElMessage.success('已确认当前模块计划（改动后需要重新确认）');
+    } catch (error) {
+      ElMessage.error((await extractErrorMessage(error)) ?? '确认失败');
+    } finally {
+      confirming.value = false;
     }
   }
 

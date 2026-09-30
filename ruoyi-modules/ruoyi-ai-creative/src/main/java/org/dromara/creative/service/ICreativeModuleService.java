@@ -142,6 +142,22 @@ public interface ICreativeModuleService {
     ProjectModulePlanVo planOf(Long taskId);
 
     /**
+     * 确认模块计划（V0.2 R28，文档 §25「页面模块已确认」的第 1 步）。
+     *
+     * <p><b>为什么先做这一步而不是直接加闸门项</b>：§25 把「页面模块已确认」列在视觉门的 BLOCK 项里，
+     * 但闸门项一加就对**所有**同类型项目立即生效，而现有项目的计划状态都是 PLANNED——
+     * 那会把在跑的项目全部卡死（R23 记录里已分析过）。所以先让"确认"这个动作存在、
+     * 能被真机验、能被人看见，再决定要不要把它做成闸门项（第 2 步做成 CONDITION，第 3 步只对新项目 BLOCK）。</p>
+     *
+     * <p>规则：至少有一个启用模块才能确认；确认后 {@code status=CONFIRMED}；
+     * **再次保存计划会自动回到 PLANNED**（改了就得重新确认），这条由 {@link #savePlan} 保证。</p>
+     *
+     * @param taskId 项目ID
+     * @return 确认后的规划视图（含 confirmed 状态）
+     */
+    ProjectModulePlanVo confirmPlan(Long taskId);
+
+    /**
      * 保存模块计划（V0.2 R22，文档 §24）——**模块计划的唯一写入点**。
      *
      * <p>整份覆盖式：软删旧行后按列表顺序重写。写前 fail-closed 检查不可逆状态

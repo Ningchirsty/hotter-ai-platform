@@ -416,7 +416,63 @@ public class CreativeModuleServiceImpl implements ICreativeModuleService {
         vo.setEditable(blockReason == null);
         vo.setEditBlockReason(blockReason);
         vo.setStoryboard(storyboardRef(taskId, preview));
+        // 确认状态（R28）：所有**启用**的行都 CONFIRMED 才算"这一版被确认过"。
+        // 只统计启用的行：停用的行不参与出屏，不该因为它没确认就显示"待确认"。
+        List<DpProjectModule> enabled = enabledOnly(modules);
+        boolean confirmed = !enabled.isEmpty()
+            && enabled.stream().allMatch(row -> "CONFIRMED".equals(row.getStatus()));
+        vo.setConfirmed(confirmed);
+        if (confirmed) {
+            vo.setConfirmedAt(enabled.stream()
+                .map(DpProjectModule::getUpdateTime)
+                .filter(java.util.Objects::nonNull)
+                .max(java.util.Comparator.naturalOrder())
+                .orElse(null));
+        }
         return vo;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ProjectModulePlanVo confirmPlan(Long taskId) {
+        requireTask(taskId);
+        String blockReason = editBlockReason(taskId);
+        if (blockReason != null) {
+            throw new ServiceException(blockReason);
+        }
+        List<DpProjectModule> modules = listProjectModules(taskId);
+        if (modules.isEmpty()) {
+            throw new ServiceException("这个项目还没有模块计划：先保存一版计划再确认。");
+        }
+        List<DpProjectModule> enabled = enabledOnly(modules);
+        if (enabled.isEmpty()) {
+            throw new ServiceException("至少要启用一个模块才能确认计划。");
+        }
+        for (DpProjectModule row : enabled) {
+            row.setStatus("CONFIRMED");
+            projectModuleMapper.updateById(row);
+        }
+        // 事件留痕：确认是人的动作，必须能在操作日志里看到（谁、什么时候、确认了几个模块）
+        appendProjectEvent(taskId, "MODULE_PLAN_CONFIRMED",
+            "{\"modules\":" + enabled.size() + ",\"screens\":" + countScreens(enabled) + "}");
+        log.info("项目 {} 的模块计划已确认：{} 个模块 / {} 屏", taskId, enabled.size(), countScreens(enabled));
+        return planOf(taskId);
+    }
+
+    /**
+     * 写一条项目事件（模块计划相关）。
+     *
+     * <p>刻意不经过阶段机：确认计划不是阶段变更，写 {@code moveStage} 会污染阶段历史。
+     * 这里直接落一条 {@code dp_stage_event}（from=to=当前阶段），与"素材清理"同一做法。</p>
+     *
+     * @param taskId    项目ID
+     * @param action    动作编码
+     * @param detailJson 明细 JSON
+     */
+    private void appendProjectEvent(Long taskId, String action, String detailJson) {
+        Map<String, Object> row = stageMapper.selectStage(taskId);
+        String stage = row == null ? null : String.valueOf(row.get("visualStage"));
+        stageMapper.insertEvent(taskId, "MODULE_PLAN", stage, stage, action, detailJson);
     }
 
     @Override

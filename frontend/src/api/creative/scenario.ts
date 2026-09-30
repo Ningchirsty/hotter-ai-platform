@@ -249,6 +249,10 @@ export interface ProjectModulePlan {
   library?: ModuleDefinition[];
   screens?: ModuleScreenPreview[];
   screenCount?: number;
+  /** 计划是否已确认（改计划会自动回到 false） */
+  confirmed?: boolean;
+  /** 最近一次确认时间 */
+  confirmedAt?: string;
   /** 屏预览来源：PLAN=已保存的计划；DEFAULT_SKELETON=还没计划，给的是默认骨架的长相 */
   previewSource?: 'PLAN' | 'DEFAULT_SKELETON' | string;
   previewNote?: string;
@@ -338,4 +342,14 @@ export function setModuleDefinitionEnabled(
 /** 删除模块定义（有项目计划在用会被拒绝并说明原因） */
 export function deleteModuleDefinition(id: string | number): AxiosPromise<string> {
   return request({ url: `/creative/v2/modules/${id}`, method: 'delete' });
+}
+
+/**
+ * 确认模块计划（V0.2 R28，文档 §25 第 1 步）。
+ *
+ * 确认只把计划行状态置为 CONFIRMED 并留一条事件；**再次保存计划会自动回到"待确认"**
+ * （改了就得重新确认），所以它同时回答"当前这一版有没有人确认过"。
+ */
+export function confirmProjectModulePlan(taskId: string | number): AxiosPromise<ProjectModulePlan> {
+  return request({ url: `/creative/v2/projects/${taskId}/module-plan/confirm`, method: 'post' });
 }
