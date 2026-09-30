@@ -107,6 +107,31 @@ export function purgeProjectMaterials(
   });
 }
 
+/**
+ * 已删项目的素材清单（V0.2 R26）：只列"还有东西可清"的项目。
+ *
+ * 批量清理入口的数据源。只读。
+ */
+export function listDeletedProjectMaterials(): AxiosPromise<ProjectMaterialsVO[]> {
+  return request({ url: '/creative/projects/deleted/materials', method: 'get' });
+}
+
+/**
+ * 批量清理已删项目的素材（V0.2 R26，不可恢复）。
+ *
+ * 服务端只处理**已软删**的项目，并要求 `confirmText` 逐字等于「清理素材」。
+ */
+export function purgeDeletedProjectMaterials(
+  confirmText: string,
+  taskIds: (string | number)[]
+): AxiosPromise<Record<string, unknown>> {
+  return request({
+    url: '/creative/projects/deleted/materials/purge',
+    method: 'post',
+    data: { confirmText, taskIds }
+  });
+}
+
 /** 项目附件列表（含参考图；sourceType 区分 上传图/参考图/产品图/生成图） */
 export function listCreativeFiles(taskId: string | number): AxiosPromise<CpTaskFileVO[]> {
   return request({

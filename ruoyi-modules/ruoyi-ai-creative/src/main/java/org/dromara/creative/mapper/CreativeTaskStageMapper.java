@@ -107,4 +107,16 @@ public interface CreativeTaskStageMapper {
     @Select("SELECT del_flag FROM cp_task WHERE task_id = #{taskId}")
     String selectDelFlag(@Param("taskId") Long taskId);
 
+    /**
+     * 已软删的项目清单（V0.2 R26：批量清理已删项目素材用）。
+     *
+     * <p>返回**具体 VO**而不是 Map：R22 踩过"Map 取列取到 null → 字符串 null"的坑，
+     * 列名交给映射器解析，字段名由类型保证。</p>
+     *
+     * @return 已删除项目（按删除时间倒序）
+     */
+    @Select("SELECT task_id AS taskId, task_name AS taskName, deliverable_type AS deliverableType, "
+        + "update_time AS updateTime FROM cp_task WHERE del_flag = '1' ORDER BY update_time DESC")
+    List<org.dromara.creative.domain.vo.DeletedTaskVo> selectDeletedTasks();
+
 }

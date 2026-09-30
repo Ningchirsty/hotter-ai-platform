@@ -153,6 +153,27 @@ public interface ICreativeProjectService {
     ProjectMaterialsVo materials(Long taskId);
 
     /**
+     * 已删项目的素材清单（V0.2 R26）：只列"还有东西可清"的项目。
+     *
+     * <p>只读。它服务于批量清理——把历史遗留一次性看清楚，而不是一个个猜。</p>
+     *
+     * @return 素材清单（附件数/字节、生成记录数、删除时间）
+     */
+    List<ProjectMaterialsVo> deletedProjectMaterials();
+
+    /**
+     * 批量清理已删项目的素材（V0.2 R26）。
+     *
+     * <p>两道保护：① 只处理**已软删**的项目（未删除的会被跳过并回报，走单个清理那条路）；
+     * ② 要输入确认口令「清理素材」（逐字）。批量入口最容易误点，所以比单个清理更强调意图。</p>
+     *
+     * @param confirmText 确认口令
+     * @param taskIds     要清理的项目ID
+     * @return 汇总（项目数/对象数/附件数/生成数/字节数/被跳过的项目）
+     */
+    java.util.Map<String, Object> purgeDeletedMaterials(String confirmText, List<Long> taskIds);
+
+    /**
      * 显式清理项目素材（V0.2 R25，按用户决定）：删对象存储里的文件 + 附件行 + 生成记录。
      *
      * <p><b>默认不清理</b>：删项目只软删项目本身，素材一律保留（见 R24 记录 §5.4 的结论）。

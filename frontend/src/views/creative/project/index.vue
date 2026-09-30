@@ -6,12 +6,61 @@
       :deliverable-type="currentProject?.deliverableType"
     />
 
+    <!-- 已删项目素材清单 + 批量清理（R26）：只有还留着东西的项目才会出现在这里 -->
+    <el-dialog v-model="deletedMaterialsVisible" title="清理已删项目的素材" width="760px" append-to-body>
+      <p class="hint">
+        删项目只软删项目本身，<b>素材按策略保留着</b>。这里列出"还留着素材的已删项目"，
+        勾选后批量清理（对象存储里的文件会真删，附件行软删留痕，生成记录与质检记录删除）。
+        <b>分镜、文案、模块计划、视觉基因与操作日志都会保留。</b>
+      </p>
+      <el-table
+        v-loading="deletedMaterialsLoading"
+        :data="deletedMaterials"
+        size="small"
+        empty-text="没有需要清理的已删项目（历史遗留已经打扫干净了）"
+        @selection-change="onDeletedSelectionChange"
+      >
+        <el-table-column type="selection" width="44" />
+        <el-table-column label="项目" min-width="220">
+          <template #default="{ row }">
+            <div>{{ row.taskName }}</div>
+            <div class="muted small">taskId {{ row.taskId }} · 删除于 {{ row.deletedAt || '—' }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column label="附件" width="120">
+          <template #default="{ row }">{{ row.fileCount }} 个 / {{ mb(row.fileBytes) }} MB</template>
+        </el-table-column>
+        <el-table-column label="生成记录" width="100">
+          <template #default="{ row }">{{ row.generationCount }}</template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <span class="muted small">已选 {{ deletedSelection.length }} 个，合计 {{ mb(deletedSelectionBytes) }} MB</span>
+        <el-button @click="deletedMaterialsVisible = false">取消</el-button>
+        <el-button type="danger" :disabled="!deletedSelection.length" :loading="purgeBusy" @click="doPurgeDeleted">
+          清理选中项目的素材
+        </el-button>
+      </template>
+    </el-dialog>
+
     <div class="workbench">
       <!-- 左：项目列表 -->
       <aside class="panel project-panel">
         <header class="panel-head">
           <h3>视觉项目</h3>
-          <button type="button" class="ghost-btn" :disabled="loadingProjects" @click="loadProjects">刷新</button>
+          <div class="panel-head-actions">
+            <!-- R26：已删项目的素材默认保留着（删项目只软删），清理是显式动作。
+                 入口放这里而不是藏进菜单：历史遗留要能被周期性打扫。 -->
+            <button
+              v-hasPermi="['creative:project:remove']"
+              type="button"
+              class="ghost-btn"
+              @click="openDeletedMaterials"
+            >
+              清理已删项目素材
+            </button>
+            <button type="button" class="ghost-btn" :disabled="loadingProjects" @click="loadProjects">刷新</button>
+          </div>
         </header>
 
         <div class="filter-row">
@@ -850,7 +899,9 @@ import {
   updateCopyBlock,
   uploadCreativeReference,
   getProjectMaterials,
-  purgeProjectMaterials
+  purgeProjectMaterials,
+  listDeletedProjectMaterials,
+  purgeDeletedProjectMaterials
 } from '@/api/creative';
 import type {
   CopyBlockForm,
@@ -1087,7 +1138,14 @@ const copyTab = ref('SELLING_POINT');
 const copyBlocks = ref<CopyBlockVO[]>([]);
 const copyLoadError = ref('');
 const copyBusy = ref('');
+const deletedSelectionBytes = computed(() =>
+  deletedSelection.value.reduce((sum, r) => sum + (r.fileBytes || 0), 0)
+);
 const purgeBusy = ref(false);
+const deletedMaterialsVisible = ref(false);
+const deletedMaterialsLoading = ref(false);
+const deletedMaterials = ref<ProjectMaterialsVO[]>([]);
+const deletedSelection = ref<ProjectMaterialsVO[]>([]);
 const copyDialogVisible = ref(false);
 /** 正在编辑的块ID；null 表示新增 */
 const copyEditingId = ref<string | number | null>(null);
@@ -1766,6 +1824,62 @@ async function doPurgeMaterials() {
     await loadDetail();
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '清理失败');
+  } finally {
+    purgeBusy.value = false;
+  }
+}
+
+/** 打开"已删项目素材清单"（R26） */
+async function openDeletedMaterials() {
+  deletedMaterialsVisible.value = true;
+  deletedMaterialsLoading.value = true;
+  deletedSelection.value = [];
+  try {
+    const res = await listDeletedProjectMaterials();
+    deletedMaterials.value = res.data || [];
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '读取已删项目素材失败');
+    deletedMaterials.value = [];
+  } finally {
+    deletedMaterialsLoading.value = false;
+  }
+}
+
+function onDeletedSelectionChange(rows: ProjectMaterialsVO[]) {
+  deletedSelection.value = rows;
+}
+
+function mb(bytes?: number) {
+  return ((bytes || 0) / 1024 / 1024).toFixed(2);
+}
+
+/** 批量清理已删项目素材（R26）：口令逐字输入，服务端还会再校验一次"只处理已删项目" */
+async function doPurgeDeleted() {
+  const ids = deletedSelection.value.map((r) => r.taskId as string | number);
+  if (!ids.length) return;
+  try {
+    await ElMessageBox.prompt(
+      `将清理 ${ids.length} 个已删项目的素材（合计约 ${mb(deletedSelectionBytes.value)} MB），不可恢复。` +
+        `请输入「清理素材」确认。`,
+      '批量清理（不可恢复）',
+      { type: 'warning', confirmButtonText: '清理', cancelButtonText: '取消', inputPlaceholder: '清理素材' }
+    );
+  } catch {
+    return;
+  }
+  purgeBusy.value = true;
+  try {
+    const res = await purgeDeletedProjectMaterials('清理素材', ids);
+    const r = (res.data || {}) as Record<string, number | string[]>;
+    ElMessage.success(
+      `已清理 ${r.projects || 0} 个项目：${r.objects || 0} 个对象 / ${r.files || 0} 条附件 / ` +
+        `${r.generations || 0} 条生成记录，释放约 ${Math.round(Number(r.bytes || 0) / 1024)} KB`
+    );
+    const skipped = (r.skipped as string[]) || [];
+    if (skipped.length) ElMessage.warning('有项目被跳过：' + skipped.join('；'));
+    await openDeletedMaterials();
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '批量清理失败');
   } finally {
     purgeBusy.value = false;
   }

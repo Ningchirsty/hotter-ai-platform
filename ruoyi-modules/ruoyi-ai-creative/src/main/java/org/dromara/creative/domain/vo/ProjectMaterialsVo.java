@@ -60,6 +60,12 @@ public class ProjectMaterialsVo implements Serializable {
     /** 已删除的字节数（按附件表的 file_size 计） */
     private Long purgedBytes = 0L;
 
+    /** 已删除的质检记录数（R26：它引用的两张图都被删了，留着就是指向不存在文件的行） */
+    private Integer purgedChecks = 0;
+
+    /** 项目删除时间（批量清单用） */
+    private java.time.LocalDateTime deletedAt;
+
     /** 提示（例如"项目仍在，需要 force"） */
     private String note;
 }

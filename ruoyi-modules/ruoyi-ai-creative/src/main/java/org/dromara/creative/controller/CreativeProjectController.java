@@ -233,6 +233,37 @@ public class CreativeProjectController {
     }
 
     /**
+     * 已删项目的素材清单（V0.2 R26）：只列"还有东西可清"的项目。
+     *
+     * <p>只读。它服务于批量清理——把历史遗留一次性看清楚，而不是一个个猜。</p>
+     *
+     * @return 清单（附件数/字节、生成记录数、删除时间）
+     */
+    @SaCheckPermission(CreativeConstants.PERM_PROJECT_QUERY)
+    @GetMapping("/deleted/materials")
+    public R<List<ProjectMaterialsVo>> deletedMaterials() {
+        return R.ok(projectService.deletedProjectMaterials());
+    }
+
+    /**
+     * 批量清理已删项目的素材（V0.2 R26）。
+     *
+     * <p>两道保护：只处理已软删的项目；要输入确认口令「清理素材」（逐字）。
+     * 权限与单个清理一致（{@code creative:project:remove}）。</p>
+     *
+     * @param bo 确认口令 + 项目ID列表
+     * @return 汇总
+     */
+    @SaCheckPermission(CreativeConstants.PERM_PROJECT_REMOVE)
+    @Log(title = "批量清理已删项目素材", businessType = BusinessType.DELETE)
+    @PostMapping("/deleted/materials/purge")
+    public R<Map<String, Object>> purgeDeletedMaterials(@RequestBody(required = false) ProjectMaterialsPurgeBo bo) {
+        String confirmText = bo == null ? null : bo.getConfirmText();
+        return R.ok(projectService.purgeDeletedMaterials(confirmText,
+            bo == null ? List.of() : bo.getTaskIds()));
+    }
+
+    /**
      * 显式清理项目素材（V0.2 R25，按用户决定：删项目默认保留素材，清理是独立动作）。
      *
      * <p>权限用 {@code creative:project:remove}（与"删项目"同一档能力：都是破坏性操作）。

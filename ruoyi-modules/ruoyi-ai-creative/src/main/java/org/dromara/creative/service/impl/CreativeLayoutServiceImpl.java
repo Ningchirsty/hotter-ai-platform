@@ -144,7 +144,12 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
             throw new ServiceException("还没有分镜，无法排版");
         }
 
-        // 0) 先把"用哪个模板"定下来（R23）：模块规划钉了模板就用它，钉了但不可用就直接报错。
+        // 0) 交付类型**有没有排版环节**（R26）：MAIN_IMAGE（商品主图）的流程里没有 LAYOUT，
+        //    它是"按张交付的多张图"，不该被渲染成一张长图——那样产出的东西没人要，
+        //    更糟的是看起来"成功"了。所以这里直接拒绝并说明，而不是照渲染。
+        requireLayoutStep(project.getDeliverableType());
+
+        // 0.1) 先把"用哪个模板"定下来（R23）：模块规划钉了模板就用它，钉了但不可用就直接报错。
         //    放在逐屏取图之前，是因为**配置错要先于做工作被发现**：否则用户要先等一遍
         //    "还没有已选定产出图"的提示，才能看到真正的模板问题。
         CreativeTemplatePin.Pinned pinned = pinnedTemplate(taskId, storyboard);
@@ -268,6 +273,27 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
         projectService.moveStage(taskId, DpVisualStageEnum.V08_READY, "LAYOUT_RENDER",
             JsonUtils.toJsonString(Map.of("version", nextVersion, "pageHeight", result.height())));
         return detail(taskId);
+    }
+
+    /**
+     * 交付类型的流程里有排版环节吗（R26）。
+     *
+     * <p>判据取**场景配置的步骤表**（`dp_scenario_step`），而不是写死"ECOM_DETAIL 才有"——
+     * 以后新增别的长图类交付类型时，只要配置里配了 LAYOUT 就能排版，不用改代码。</p>
+     *
+     * @param deliveryType 交付类型
+     * @throws ServiceException 没有排版环节时抛出（消息说明为什么不做）
+     */
+    private void requireLayoutStep(String deliveryType) {
+        List<org.dromara.creative.domain.DpScenarioStep> steps =
+            scenarioConfigService.listSteps(deliveryType);
+        boolean hasLayout = steps.stream()
+            .anyMatch(step -> "LAYOUT".equalsIgnoreCase(step.getStepCode()));
+        if (!hasLayout) {
+            throw new ServiceException("交付类型「" + deliveryType
+                + "」的流程里没有排版环节：它的产出是逐张图片（例如商品主图 800×800），"
+                + "不是一张长图。请到出图页逐屏出图与选定；长图排版只适用于配了 LAYOUT 步骤的交付类型。");
+        }
     }
 
     /**

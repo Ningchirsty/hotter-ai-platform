@@ -70,6 +70,8 @@ class CreativeProjectMaterialsPurgeTest {
     private DpDetailPageVersionMapper detailPageVersionMapper;
     @Mock
     private CpTaskFileMapper fileMapper;
+    @Mock
+    private org.dromara.content.mapper.CpOutputCheckMapper outputCheckMapper;
 
     @InjectMocks
     private CreativeProjectServiceImpl service;
@@ -164,6 +166,53 @@ class CreativeProjectMaterialsPurgeTest {
         assertEquals(List.of("k/a.png", "k/b.jpg"), deletedKeys, "对象应逐个删除");
         verify(generationMapper, times(1)).delete(any());
         verify(fileMapper, times(1)).delete(any());
+        verify(outputCheckMapper, times(1)).delete(any());
         assertTrue(vo.getNote().contains("分镜、文案、模块计划与阶段事件都保留着"), vo.getNote());
+    }
+
+    @Test
+    @DisplayName("质检记录随素材一起清（它引用的两张图都删了，留着就是指向不存在文件的行）")
+    void purgeAlsoRemovesOutputChecks() {
+        ProjectMaterialsVo vo = service.purgeMaterials(TASK, NAME, true);
+
+        verify(outputCheckMapper, times(1)).delete(any());
+        assertTrue(vo.getNote().contains("质检记录"), vo.getNote());
+    }
+
+    @Test
+    @DisplayName("批量清理：口令不对 → 拒绝；只处理已删项目")
+    void batchPurgeGuards() {
+        ServiceException wrong = assertThrows(ServiceException.class,
+            () -> service.purgeDeletedMaterials("清理", List.of(TASK)));
+        assertTrue(wrong.getMessage().contains("清理素材"), wrong.getMessage());
+
+        // 项目未删除 → 跳过（不报错，但如实回报），且一个对象都不删
+        when(stageMapper.selectDelFlag(TASK)).thenReturn("0");
+        java.util.Map<String, Object> result = service.purgeDeletedMaterials("清理素材", List.of(TASK));
+        assertEquals(0, result.get("projects"));
+        assertFalse(((java.util.List<?>) result.get("skipped")).isEmpty(), result.toString());
+        verify(contentOssHelper, never()).delete(any());
+
+        // 已删除 → 真的清
+        when(stageMapper.selectDelFlag(TASK)).thenReturn("1");
+        java.util.Map<String, Object> ok = service.purgeDeletedMaterials("清理素材", List.of(TASK));
+        assertEquals(1, ok.get("projects"));
+        assertEquals(2, ok.get("objects"));
+    }
+
+    @Test
+    @DisplayName("已删项目清单只列「还有东西可清」的项目")
+    void deletedListOnlyShowsProjectsWithResidue() {
+        org.dromara.creative.domain.vo.DeletedTaskVo task = new org.dromara.creative.domain.vo.DeletedTaskVo();
+        task.setTaskId(TASK);
+        task.setTaskName(NAME);
+        when(stageMapper.selectDeletedTasks()).thenReturn(List.of(task));
+        when(stageMapper.selectDelFlag(TASK)).thenReturn("1");
+
+        List<ProjectMaterialsVo> list = service.deletedProjectMaterials();
+
+        assertEquals(1, list.size());
+        assertEquals(NAME, list.get(0).getTaskName());
+        assertTrue(list.get(0).getProjectDeleted());
     }
 }

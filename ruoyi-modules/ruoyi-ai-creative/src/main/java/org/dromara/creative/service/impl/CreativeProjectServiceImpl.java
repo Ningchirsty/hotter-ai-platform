@@ -1,6 +1,9 @@
 package org.dromara.creative.service.impl;
 
 import lombok.RequiredArgsConstructor;
+import org.dromara.creative.domain.vo.DeletedTaskVo;
+import org.dromara.content.mapper.CpOutputCheckMapper;
+import org.dromara.content.domain.CpOutputCheck;
 import org.dromara.common.json.utils.JsonUtils;
 import org.dromara.content.mapper.CpTaskFileMapper;
 import org.dromara.content.domain.CpTaskFile;
@@ -58,6 +61,12 @@ import java.util.Map;
 public class CreativeProjectServiceImpl implements ICreativeProjectService {
 
     /**
+     * 批量清理的确认口令（逐字输入；批量最容易误点，所以口令 + 只处理已删项目两道保护）
+     */
+    private static final String PURGE_CONFIRM_TEXT = "清理素材";
+
+
+    /**
      * 单张参考图上限（字节）。与内容模块 MAX_FILE_SIZE（50MB）取齐的是「上传通道」，
      * 但出图内核把图 base64 进请求体，故这里收紧到 20MB（与图像模块上传上限一致）。
      */
@@ -105,6 +114,9 @@ public class CreativeProjectServiceImpl implements ICreativeProjectService {
 
     /** 任务附件（R25：清理素材时软删附件行） */
     private final CpTaskFileMapper fileMapper;
+
+    /** 质检记录（R26：随素材一起清，因为它引用的两张图都会消失） */
+    private final CpOutputCheckMapper outputCheckMapper;
 
     @Override
     public PageResult<CreativeProjectVo> queryPage(ContentTaskBo bo, PageQuery pageQuery) {
@@ -265,7 +277,73 @@ public class CreativeProjectServiceImpl implements ICreativeProjectService {
             throw new ServiceException("项目「" + taskName + "」还在：清理素材会让它失去全部附件与产出图。"
                 + "确认要清理请显式传 force=true（页面会二次确认）。");
         }
+        return doPurge(taskId);
+    }
 
+    @Override
+    public List<ProjectMaterialsVo> deletedProjectMaterials() {
+        List<ProjectMaterialsVo> list = new ArrayList<>();
+        for (DeletedTaskVo task : stageMapper.selectDeletedTasks()) {
+            ProjectMaterialsVo vo = materials(task.getTaskId());
+            vo.setDeletedAt(task.getUpdateTime());
+            if ((vo.getFileCount() != null && vo.getFileCount() > 0)
+                || (vo.getGenerationCount() != null && vo.getGenerationCount() > 0)) {
+                // 只列"还有东西可清"的项目：没有残留的不进清单，避免让人以为漏了什么
+                list.add(vo);
+            }
+        }
+        return list;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> purgeDeletedMaterials(String confirmText, List<Long> taskIds) {
+        if (!PURGE_CONFIRM_TEXT.equals(StringUtils.trimToNull(confirmText))) {
+            throw new ServiceException("批量清理要求输入确认口令「" + PURGE_CONFIRM_TEXT + "」（逐字）。");
+        }
+        if (taskIds == null || taskIds.isEmpty()) {
+            throw new ServiceException("没有选择要清理的项目。");
+        }
+        int projects = 0;
+        int objects = 0;
+        int files = 0;
+        int generations = 0;
+        long bytes = 0L;
+        List<String> skipped = new ArrayList<>();
+        for (Long taskId : taskIds) {
+            Map<String, Object> meta = requireProjectMeta(taskId);
+            if (!"1".equals(meta.get("delFlag"))) {
+                // 批量入口**只处理已删项目**：正在用的项目必须走单个清理（要输项目名）。
+                // 这是刻意的：批量最容易误点，而"已删除"本身就是最强的语义确认。
+                skipped.add(String.valueOf(meta.get("taskName")) + "（项目未删除，未清理）");
+                continue;
+            }
+            ProjectMaterialsVo vo = doPurge(taskId);
+            projects++;
+            objects += vo.getPurgedObjects() == null ? 0 : vo.getPurgedObjects();
+            files += vo.getPurgedFiles() == null ? 0 : vo.getPurgedFiles();
+            generations += vo.getPurgedGenerations() == null ? 0 : vo.getPurgedGenerations();
+            bytes += vo.getPurgedBytes() == null ? 0L : vo.getPurgedBytes();
+        }
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("projects", projects);
+        result.put("objects", objects);
+        result.put("files", files);
+        result.put("generations", generations);
+        result.put("bytes", bytes);
+        result.put("skipped", skipped);
+        log.info("批量清理已删项目素材：项目 {} / 对象 {} / 附件 {} / 生成 {} / {} 字节（跳过 {}）",
+            projects, objects, files, generations, bytes, skipped.size());
+        return result;
+    }
+
+    /**
+     * 真正执行素材清理（单个与批量共用）。
+     *
+     * @param taskId 项目ID
+     * @return 清理结果
+     */
+    private ProjectMaterialsVo doPurge(Long taskId) {
         ProjectMaterialsVo vo = materials(taskId);
         List<CpTaskFile> files = liveFiles(taskId);
         int objects = 0;
@@ -296,27 +374,33 @@ public class CreativeProjectServiceImpl implements ICreativeProjectService {
             // （"这些文件曾经存在、在什么时候被清理"），列表查询会自动过滤掉它们。
             fileMapper.delete(new LambdaQueryWrapper<CpTaskFile>().eq(CpTaskFile::getTaskId, taskId));
         }
+        // 质检记录：它引用的两张图都已删除，留着就是"指向不存在文件的审计行"。
+        // 按用户确认随素材一起清；**清理动作本身仍留在事件里**（MATERIALS_PURGED），
+        // 所以"什么时候清了哪个项目的多少东西"依然可查。
+        int checks = outputCheckMapper.delete(new LambdaQueryWrapper<CpOutputCheck>()
+            .eq(CpOutputCheck::getTaskId, taskId));
 
         vo.setPurged(true);
         vo.setPurgedObjects(objects);
         vo.setPurgedFiles(fileRows);
         vo.setPurgedGenerations(generations);
+        vo.setPurgedChecks(checks);
         vo.setPurgedBytes(bytes);
         if (!objectFailures.isEmpty()) {
             vo.setNote("部分对象删除失败（库行已删，可能留下孤儿对象）：" + String.join("；", objectFailures));
         } else {
             vo.setNote("已清理 " + objects + " 个对象 / " + fileRows + " 条附件 / "
-                + generations + " 条生成记录，释放约 " + (bytes / 1024) + " KB。"
+                + generations + " 条生成记录 / " + checks + " 条质检记录，释放约 " + (bytes / 1024) + " KB。"
                 + "分镜、文案、模块计划与阶段事件都保留着。");
         }
         // 明细手拼 JSON（值全是数字）：JsonUtils 的静态初始化依赖 Spring 上下文，
         // 在单测里会抛 ExceptionInInitializerError；这里不需要它的能力。
         appendEvent(taskId, "MATERIALS", "MATERIALS_PURGED",
             "{\"objects\":" + objects + ",\"files\":" + fileRows
-                + ",\"generations\":" + generations + ",\"bytes\":" + bytes
-                + ",\"objectFailures\":" + objectFailures.size() + "}");
-        log.info("项目 {} 素材已清理：对象 {} / 附件 {} / 生成 {} / {} 字节（操作人核对名：{}）",
-            taskId, objects, fileRows, generations, bytes, taskName);
+                + ",\"generations\":" + generations + ",\"checks\":" + checks
+                + ",\"bytes\":" + bytes + ",\"objectFailures\":" + objectFailures.size() + "}");
+        log.info("项目 {} 素材已清理：对象 {} / 附件 {} / 生成 {} / 质检 {} / {} 字节",
+            taskId, objects, fileRows, generations, checks, bytes);
         return vo;
     }
 
