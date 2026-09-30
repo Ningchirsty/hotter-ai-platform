@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
+import org.dromara.creative.helper.CreativeTemplatePin;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
@@ -138,7 +139,7 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
         // 0) 先把"用哪个模板"定下来（R23）：模块规划钉了模板就用它，钉了但不可用就直接报错。
         //    放在逐屏取图之前，是因为**配置错要先于做工作被发现**：否则用户要先等一遍
         //    "还没有已选定产出图"的提示，才能看到真正的模板问题。
-        PinnedTemplate pinned = pinnedTemplate(storyboard);
+        CreativeTemplatePin.Pinned pinned = pinnedTemplate(storyboard);
         var template = templateService.requirePublished(pinned.code(), pinned.version());
 
         // 1) 逐屏取「已选定」产出并内联为 data URI；没有选定的屏不编造，交给模板写明缺什么
@@ -262,66 +263,21 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
     }
 
     /**
-     * 本次排版实际用什么模板（V0.2 R23）。
+     * 从分镜各屏的 spec_json 汇总"这次排版用哪个模板"（R23）。
      *
-     * @param code      模板码
-     * @param version   模板版本
-     * @param fromPlan  是不是模块规划钉的（false=默认模板）
-     */
-    private record PinnedTemplate(String code, String version, boolean fromPlan) {
-    }
-
-    /**
-     * 从分镜各屏的 `spec_json.templateCodes` 汇总出"这次排版用哪个模板"（R23）。
-     *
-     * <p>规则（写清楚，避免"配了没用"或"悄悄换模板"）：
-     * <ol>
-     *   <li>没有任何屏钉模板 → 用默认 {@code longpage@1.0.2}；</li>
-     *   <li>所有钉了的屏都指向同一个 {@code code@version} → 用它（能不能用由发布门决定）；</li>
-     *   <li>钉得不一样 → 抛错说明冲突。**一页只能有一个模板**，随便挑一个等于把用户的配置当没看见。</li>
-     * </ol>
-     * 只认 {@code code@version} 形式；只写了 code 的按"该模板的默认版本"处理不了，因此如实报错要求写全。</p>
+     * <p>规则本体在 {@link CreativeTemplatePin}（可单测）；这里只负责把屏的 spec 收集起来。
+     * 为什么规则不写在这里：排版接口第一道是视觉门，新项目走不到模板那步，
+     * 分支只有抽出去才能被单测钉死。</p>
      *
      * @param storyboard 本次排版的分镜
      * @return 模板选择
      */
-    private PinnedTemplate pinnedTemplate(DpStoryboardVo storyboard) {
-        Map<String, Integer> votes = new LinkedHashMap<>();
+    private CreativeTemplatePin.Pinned pinnedTemplate(DpStoryboardVo storyboard) {
+        List<String> specs = new ArrayList<>();
         for (DpStoryboardScreenVo screen : storyboard.getScreens()) {
-            if (StringUtils.isBlank(screen.getSpecJson())) {
-                continue;
-            }
-            try {
-                JsonNode node = MAPPER.readTree(screen.getSpecJson());
-                JsonNode codes = node.path("templateCodes");
-                if (codes.isArray()) {
-                    for (JsonNode item : codes) {
-                        String value = StringUtils.trimToNull(item.asText());
-                        if (value != null) {
-                            votes.merge(value, 1, Integer::sum);
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                // 老分镜没有 templateCodes、或 spec_json 被手工改坏：都按"没钉"处理，
-                // 但**不能静默**——留一条告警便于排查"为什么没用我配的模板"。
-                log.warn("解析屏 spec_json 里的 templateCodes 失败 screenNo={}：{}",
-                    screen.getScreenNo(), e.getMessage());
-            }
+            specs.add(screen.getSpecJson());
         }
-        if (votes.isEmpty()) {
-            return new PinnedTemplate(PAGE_TEMPLATE_CODE, PAGE_TEMPLATE_VERSION, false);
-        }
-        if (votes.size() > 1) {
-            throw new ServiceException("模块规划里给不同模块钉了不同的排版模板（" + String.join("、", votes.keySet())
-                + "）。一个详情页只能用一个模板，请统一后再排版。");
-        }
-        String pinned = votes.keySet().iterator().next();
-        int at = pinned.indexOf('@');
-        if (at <= 0 || at == pinned.length() - 1) {
-            throw new ServiceException("模块规划里的模板要写成「模板码@版本」（例如 longpage@1.0.2），当前=" + pinned);
-        }
-        return new PinnedTemplate(pinned.substring(0, at), pinned.substring(at + 1), true);
+        return CreativeTemplatePin.resolve(specs, PAGE_TEMPLATE_CODE, PAGE_TEMPLATE_VERSION);
     }
 
     /**
@@ -336,7 +292,7 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
             return PAGE_TEMPLATE_CODE + "@" + PAGE_TEMPLATE_VERSION;
         }
         try {
-            PinnedTemplate pinned = pinnedTemplate(storyboard);
+            CreativeTemplatePin.Pinned pinned = pinnedTemplate(storyboard);
             return pinned.code() + "@" + pinned.version();
         } catch (Exception e) {
             return PAGE_TEMPLATE_CODE + "@" + PAGE_TEMPLATE_VERSION;
