@@ -520,35 +520,8 @@ onMounted(async () => {
   align-items: center;
 }
 
-/* 「逐屏出图与质检」这一块仍在页面上（页面级跨步骤视图） */
-.panel {
-  padding: 16px;
-  margin-bottom: 14px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-}
-.panel h3 {
-  margin: 0;
-  font-size: 15px;
-}
-.block-head {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-
-.good {
-  color: #a7f3d0;
-}
-.bad {
-  color: #fca5a5;
-}
-.warn {
-  color: #fde68a;
-}
+/* R43：逐屏表搬进了 GenerationBoard，「这一步」的容器样式（.panel / .block-head / 质检配色）
+   随它一起走——这里只留页头与页脚自己的样式，避免两处各留一份慢慢漂移。 */
 
 .muted {
   margin: 0 0 6px;
