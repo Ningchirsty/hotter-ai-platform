@@ -5,6 +5,7 @@ import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.content.domain.bo.ContentTaskBo;
 import org.dromara.content.domain.vo.CpTaskFileVo;
 import org.dromara.creative.domain.bo.CreativeProjectBo;
+import org.dromara.creative.domain.vo.ProjectMaterialsVo;
 import org.dromara.creative.domain.vo.CreativeProjectVo;
 import org.dromara.creative.domain.vo.DpStageEventVo;
 import org.dromara.creative.enums.DpVisualStageEnum;
@@ -140,6 +141,37 @@ public interface ICreativeProjectService {
      * @return 缩略图字节与内容类型
      */
     FileContent readFileThumbnail(Long taskId, Long fileId);
+
+    /**
+     * 项目素材概况（V0.2 R25）：将删除多少附件/生成记录/版本、共多少字节。
+     *
+     * <p>只读：不删任何东西。它是"显式清理素材"的第一步——让人在按下删除之前先看清代价。</p>
+     *
+     * @param taskId 项目ID
+     * @return 素材概况
+     */
+    ProjectMaterialsVo materials(Long taskId);
+
+    /**
+     * 显式清理项目素材（V0.2 R25，按用户决定）：删对象存储里的文件 + 附件行 + 生成记录。
+     *
+     * <p><b>默认不清理</b>：删项目只软删项目本身，素材一律保留（见 R24 记录 §5.4 的结论）。
+     * 释放空间只能通过这个显式动作，且要过三道闸：</p>
+     * <ol>
+     *   <li>{@code confirmName} 必须与项目名**逐字相同**（防手滑）；</li>
+     *   <li>项目**还没被删除**时必须显式 {@code force=true}（正在用的项目清素材等于毁掉它）；</li>
+     *   <li>先删对象、再删库行（顺序反了会留下孤儿对象，反过来则会留下断链）。</li>
+     * </ol>
+     *
+     * <p>不删的东西也写清楚：分镜、文案块、模块计划、基因、阶段事件都不动——
+     * 它们是创作成果与审计痕迹，不是"素材"。所以清理后页面仍能看到当时怎么做的。</p>
+     *
+     * @param taskId      项目ID
+     * @param confirmName 二次确认：项目名
+     * @param force       项目未删除时是否强制
+     * @return 清理结果
+     */
+    ProjectMaterialsVo purgeMaterials(Long taskId, String confirmName, boolean force);
 
     /**
      * 读取项目附件的字节内容（参考图预览走后端代理）。

@@ -1,6 +1,15 @@
 package org.dromara.creative.service.impl;
 
 import lombok.RequiredArgsConstructor;
+import org.dromara.common.json.utils.JsonUtils;
+import org.dromara.content.mapper.CpTaskFileMapper;
+import org.dromara.content.domain.CpTaskFile;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import org.dromara.creative.domain.vo.ProjectMaterialsVo;
+import org.dromara.creative.domain.DpDetailPageVersion;
+import org.dromara.creative.domain.DpGeneration;
+import org.dromara.creative.mapper.DpDetailPageVersionMapper;
+import org.dromara.creative.mapper.DpGenerationMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.core.exception.ServiceException;
@@ -87,6 +96,15 @@ public class CreativeProjectServiceImpl implements ICreativeProjectService {
      */
     private final ICreativeScenarioConfigService scenarioConfigService;
     private final DpStageEventMapper eventMapper;
+
+    /** 生成记录（R25：清理素材要连带删掉，否则会留下指向已删附件的行） */
+    private final DpGenerationMapper generationMapper;
+
+    /** 排版版本（R25：素材概况要报出「有多少个渲染版本」） */
+    private final DpDetailPageVersionMapper detailPageVersionMapper;
+
+    /** 任务附件（R25：清理素材时软删附件行） */
+    private final CpTaskFileMapper fileMapper;
 
     @Override
     public PageResult<CreativeProjectVo> queryPage(ContentTaskBo bo, PageQuery pageQuery) {
@@ -200,6 +218,126 @@ public class CreativeProjectServiceImpl implements ICreativeProjectService {
             log.warn("生成附件缩略图失败，回落到原图：{}", e.getMessage());
             return null;
         }
+    }
+
+    @Override
+    public ProjectMaterialsVo materials(Long taskId) {
+        ProjectMaterialsVo vo = new ProjectMaterialsVo();
+        vo.setTaskId(taskId);
+        Map<String, Object> meta = requireProjectMeta(taskId);
+        vo.setTaskName((String) meta.get("taskName"));
+        vo.setProjectDeleted("1".equals(meta.get("delFlag")));
+
+        List<CpTaskFileVo> files = contentTaskService.listFiles(taskId);
+        long bytes = 0L;
+        for (CpTaskFileVo file : files) {
+            bytes += file.getFileSize() == null ? 0L : file.getFileSize();
+        }
+        vo.setFileCount(files.size());
+        vo.setFileBytes(bytes);
+        vo.setGenerationCount(Math.toIntExact(generationMapper.selectCount(
+            new LambdaQueryWrapper<DpGeneration>().eq(DpGeneration::getTaskId, taskId))));
+        vo.setVersionCount(Math.toIntExact(detailPageVersionMapper.selectCount(
+            new LambdaQueryWrapper<DpDetailPageVersion>().eq(DpDetailPageVersion::getTaskId, taskId))));
+        if (Boolean.TRUE.equals(vo.getProjectDeleted())) {
+            vo.setNote("项目已删除，素材仍按策略保留着；清理后不可恢复。");
+        } else {
+            vo.setNote("项目还在：清理素材会让它失去全部附件与产出图（分镜/文案/计划会保留）。");
+        }
+        return vo;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ProjectMaterialsVo purgeMaterials(Long taskId, String confirmName, boolean force) {
+        Map<String, Object> meta = requireProjectMeta(taskId);
+        String taskName = (String) meta.get("taskName");
+        boolean deleted = "1".equals(meta.get("delFlag"));
+
+        if (StringUtils.isBlank(confirmName) || !confirmName.trim().equals(taskName)) {
+            throw new ServiceException("二次确认不一致：请输入完整项目名「" + taskName + "」。"
+                + "清理素材不可恢复，所以要求逐字确认。");
+        }
+        if (!deleted && !force) {
+            throw new ServiceException("项目「" + taskName + "」还在：清理素材会让它失去全部附件与产出图。"
+                + "确认要清理请显式传 force=true（页面会二次确认）。");
+        }
+
+        ProjectMaterialsVo vo = materials(taskId);
+        List<CpTaskFileVo> files = contentTaskService.listFiles(taskId);
+        int objects = 0;
+        long bytes = 0L;
+        // 先删对象、再删库行：顺序反了会留下"孤儿对象"（库里没引用、对象还在），
+        // 那是磁盘体检时最难解释的一类垃圾。对象删失败不阻断流程，但如实记进 note。
+        List<String> objectFailures = new ArrayList<>();
+        for (CpTaskFileVo file : files) {
+            bytes += file.getFileSize() == null ? 0L : file.getFileSize();
+            if (StringUtils.isBlank(file.getFileRef())) {
+                continue;
+            }
+            try {
+                contentOssHelper.delete(file.getFileRef());
+                objects++;
+            } catch (Exception e) {
+                objectFailures.add(file.getFileName() + "(" + e.getMessage() + ")");
+            }
+        }
+        int generations = Math.toIntExact(generationMapper.selectCount(
+            new LambdaQueryWrapper<DpGeneration>().eq(DpGeneration::getTaskId, taskId)));
+        if (generations > 0) {
+            generationMapper.delete(new LambdaQueryWrapper<DpGeneration>().eq(DpGeneration::getTaskId, taskId));
+        }
+        int fileRows = files.size();
+        if (fileRows > 0) {
+            // 附件行走**软删**（CpTaskFile 有 @TableLogic）：对象已经真的删了，行留着是审计痕迹
+            // （"这些文件曾经存在、在什么时候被清理"），列表查询会自动过滤掉它们。
+            fileMapper.delete(new LambdaQueryWrapper<CpTaskFile>().eq(CpTaskFile::getTaskId, taskId));
+        }
+
+        vo.setPurged(true);
+        vo.setPurgedObjects(objects);
+        vo.setPurgedFiles(fileRows);
+        vo.setPurgedGenerations(generations);
+        vo.setPurgedBytes(bytes);
+        if (!objectFailures.isEmpty()) {
+            vo.setNote("部分对象删除失败（库行已删，可能留下孤儿对象）：" + String.join("；", objectFailures));
+        } else {
+            vo.setNote("已清理 " + objects + " 个对象 / " + fileRows + " 条附件 / "
+                + generations + " 条生成记录，释放约 " + (bytes / 1024) + " KB。"
+                + "分镜、文案、模块计划与阶段事件都保留着。");
+        }
+        // 明细手拼 JSON（值全是数字）：JsonUtils 的静态初始化依赖 Spring 上下文，
+        // 在单测里会抛 ExceptionInInitializerError；这里不需要它的能力。
+        appendEvent(taskId, "MATERIALS", "MATERIALS_PURGED",
+            "{\"objects\":" + objects + ",\"files\":" + fileRows
+                + ",\"generations\":" + generations + ",\"bytes\":" + bytes
+                + ",\"objectFailures\":" + objectFailures.size() + "}");
+        log.info("项目 {} 素材已清理：对象 {} / 附件 {} / 生成 {} / {} 字节（操作人核对名：{}）",
+            taskId, objects, fileRows, generations, bytes, taskName);
+        return vo;
+    }
+
+    /**
+     * 读项目元信息（名称 + 删除标志）。项目不存在直接报错。
+     *
+     * <p>为什么用两条标量查询而不是一个 Map：R22 踩过"Map 取列取到 null → 字符串 null"的坑，
+     * 那条纪律在这里同样适用。</p>
+     *
+     * @param taskId 项目ID
+     * @return 含 taskName / delFlag 的 Map（值可为 null）
+     */
+    private Map<String, Object> requireProjectMeta(Long taskId) {
+        if (taskId == null) {
+            throw new ServiceException("taskId 不能为空。");
+        }
+        Map<String, Object> meta = new java.util.LinkedHashMap<>();
+        String name = stageMapper.selectTaskName(taskId);
+        if (name == null) {
+            throw new ServiceException("项目不存在：" + taskId);
+        }
+        meta.put("taskName", name);
+        meta.put("delFlag", stageMapper.selectDelFlag(taskId));
+        return meta;
     }
 
     /**

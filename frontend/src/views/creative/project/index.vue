@@ -80,6 +80,18 @@
               <el-button size="small" @click="openDna">视觉基因</el-button>
               <el-button size="small" @click="loadDetail">刷新</el-button>
               <el-button size="small" @click="timelineVisible = true">操作日志</el-button>
+              <!-- R25：清理素材是**显式动作**（删项目默认保留素材）。放在项目头部而不是藏进菜单里：
+                   它要能被人看见，但要经过"先看代价 → 输项目名"两道确认才能生效。 -->
+              <el-button
+                v-hasPermi="['creative:project:remove']"
+                size="small"
+                type="danger"
+                plain
+                :loading="purgeBusy"
+                @click="doPurgeMaterials"
+              >
+                清理素材
+              </el-button>
             </div>
           </header>
 
@@ -836,7 +848,9 @@ import {
   seedCopyBlocksFromFacts,
   submitHero,
   updateCopyBlock,
-  uploadCreativeReference
+  uploadCreativeReference,
+  getProjectMaterials,
+  purgeProjectMaterials
 } from '@/api/creative';
 import type {
   CopyBlockForm,
@@ -845,6 +859,7 @@ import type {
   CreativeWorkflowVO,
   DpGenerationVO,
   DpStageEventVO,
+  ProjectMaterialsVO,
   ProjectProductImageVO,
   TagType
 } from '@/api/creative/types';
@@ -1072,6 +1087,7 @@ const copyTab = ref('SELLING_POINT');
 const copyBlocks = ref<CopyBlockVO[]>([]);
 const copyLoadError = ref('');
 const copyBusy = ref('');
+const purgeBusy = ref(false);
 const copyDialogVisible = ref(false);
 /** 正在编辑的块ID；null 表示新增 */
 const copyEditingId = ref<string | number | null>(null);
@@ -1701,6 +1717,57 @@ async function doSaveCopyBlock() {
     ElMessage.error((await extractErrorMessage(error)) ?? '保存失败');
   } finally {
     copyBusy.value = '';
+  }
+}
+
+/**
+ * 清理项目素材（V0.2 R25）：**不可恢复**，所以两道确认。
+ *
+ * 第一道把代价摊开给用户看（多少附件、多少生成记录、多大体积），
+ * 第二道要求逐字输入项目名——服务端还会再校验一次名字，前端这道只是别让人手滑点过去。
+ * 清理完成后刷新详情：附件区会立刻变空，让人当场看到"确实删掉了什么"。
+ */
+async function doPurgeMaterials() {
+  if (!currentProjectId.value || purgeBusy.value) return;
+  let summary: ProjectMaterialsVO;
+  try {
+    const res = await getProjectMaterials(currentProjectId.value);
+    summary = res.data || {};
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '读取素材概况失败');
+    return;
+  }
+  const mb = ((summary.fileBytes || 0) / 1024 / 1024).toFixed(2);
+  try {
+    await ElMessageBox.confirm(
+      `将永久删除：**${summary.fileCount || 0} 个附件**（约 ${mb} MB）、` +
+        `**${summary.generationCount || 0} 条生成记录**，以及对象存储里的对应文件。` +
+        `\n\n会保留：分镜、文案、模块计划、视觉基因与操作日志——清理后仍能看到当时怎么做的。` +
+        `\n\n不可恢复。`,
+      '清理素材（不可恢复）',
+      { type: 'warning', dangerouslyUseHTMLString: false, confirmButtonText: '继续', cancelButtonText: '取消' }
+    );
+    await ElMessageBox.prompt(
+      `请输入项目名以确认：${summary.taskName || ''}`,
+      '二次确认',
+      { type: 'warning', confirmButtonText: '清理', cancelButtonText: '取消', inputPlaceholder: '逐字输入项目名' }
+    );
+  } catch {
+    return;
+  }
+  purgeBusy.value = true;
+  try {
+    const res = await purgeProjectMaterials(currentProjectId.value, summary.taskName || '', true);
+    const r = res.data || {};
+    ElMessage.success(
+      `已清理 ${r.purgedObjects || 0} 个对象 / ${r.purgedFiles || 0} 条附件 / ` +
+        `${r.purgedGenerations || 0} 条生成记录，释放约 ${Math.round((r.purgedBytes || 0) / 1024)} KB`
+    );
+    await loadDetail();
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '清理失败');
+  } finally {
+    purgeBusy.value = false;
   }
 }
 

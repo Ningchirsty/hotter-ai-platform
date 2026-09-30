@@ -4,6 +4,8 @@ import cn.dev33.satoken.annotation.SaCheckPermission;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.groups.Default;
 import lombok.RequiredArgsConstructor;
+import org.dromara.creative.domain.vo.ProjectMaterialsVo;
+import org.dromara.creative.domain.bo.ProjectMaterialsPurgeBo;
 import jakarta.servlet.http.HttpServletRequest;
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.core.domain.R;
@@ -214,6 +216,40 @@ public class CreativeProjectController {
     @GetMapping("/{taskId}/files")
     public R<List<CpTaskFileVo>> files(@NotNull(message = "项目ID不能为空") @PathVariable("taskId") Long taskId) {
         return R.ok(projectService.listFiles(taskId));
+    }
+
+    /**
+     * 项目素材概况（V0.2 R25）：将删除多少附件/生成记录、共多少字节。
+     *
+     * <p>只读。它是「显式清理素材」的第一步：先看清代价，再决定要不要删。</p>
+     *
+     * @param taskId 项目ID
+     * @return 素材概况
+     */
+    @SaCheckPermission(CreativeConstants.PERM_PROJECT_QUERY)
+    @GetMapping("/{taskId}/materials")
+    public R<ProjectMaterialsVo> materials(@NotNull(message = "项目ID不能为空") @PathVariable("taskId") Long taskId) {
+        return R.ok(projectService.materials(taskId));
+    }
+
+    /**
+     * 显式清理项目素材（V0.2 R25，按用户决定：删项目默认保留素材，清理是独立动作）。
+     *
+     * <p>权限用 {@code creative:project:remove}（与"删项目"同一档能力：都是破坏性操作）。
+     * 服务端要求 {@code confirmName} 与项目名逐字相同；项目还没删除时还要 {@code force=true}。</p>
+     *
+     * @param taskId 项目ID
+     * @param bo     二次确认（项目名 + force）
+     * @return 清理结果
+     */
+    @SaCheckPermission(CreativeConstants.PERM_PROJECT_REMOVE)
+    @Log(title = "清理项目素材", businessType = BusinessType.DELETE)
+    @PostMapping("/{taskId}/materials/purge")
+    public R<ProjectMaterialsVo> purgeMaterials(@NotNull(message = "项目ID不能为空") @PathVariable("taskId") Long taskId,
+                                                @RequestBody(required = false) ProjectMaterialsPurgeBo bo) {
+        String confirmName = bo == null ? null : bo.getConfirmName();
+        boolean force = bo != null && Boolean.TRUE.equals(bo.getForce());
+        return R.ok(projectService.purgeMaterials(taskId, confirmName, force));
     }
 
     /**

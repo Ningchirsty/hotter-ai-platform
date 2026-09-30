@@ -24,6 +24,7 @@ import type {
   DnaRecommendationVO,
   GateEvaluationVO,
   ProductionRunVO,
+  ProjectMaterialsVO,
   ProjectProductImageVO
 } from './types';
 
@@ -76,6 +77,33 @@ export function uploadCreativeReference(
     method: 'post',
     params: asProductImage ? { asProductImage: true } : undefined,
     data: formData
+  });
+}
+
+/**
+ * 项目素材概况（V0.2 R25）：将删除多少附件/生成记录、共多少字节。
+ *
+ * 只读。它是「清理素材」的第一步——先看清代价再决定删不删。
+ */
+export function getProjectMaterials(taskId: string | number): AxiosPromise<ProjectMaterialsVO> {
+  return request({ url: `/creative/projects/${taskId}/materials`, method: 'get' });
+}
+
+/**
+ * 显式清理项目素材（V0.2 R25，不可恢复）。
+ *
+ * <p>按用户决定：**删项目默认保留素材**，释放空间只能通过这个显式动作。
+ * 服务端要求 `confirmName` 与项目名逐字相同；项目还没删除时还要 `force=true`。</p>
+ */
+export function purgeProjectMaterials(
+  taskId: string | number,
+  confirmName: string,
+  force: boolean
+): AxiosPromise<ProjectMaterialsVO> {
+  return request({
+    url: `/creative/projects/${taskId}/materials/purge`,
+    method: 'post',
+    data: { confirmName, force }
   });
 }
 

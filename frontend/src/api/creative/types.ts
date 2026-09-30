@@ -698,3 +698,20 @@ export const COPY_BLOCK_STATUS_TYPES: Record<string, TagType> = {
   DRAFT: 'warning',
   CONFIRMED: 'success'
 };
+
+/** 项目素材概况 / 清理结果（V0.2 R25） */
+export interface ProjectMaterialsVO {
+  taskId?: string | number;
+  taskName?: string;
+  projectDeleted?: boolean;
+  fileCount?: number;
+  fileBytes?: number;
+  generationCount?: number;
+  versionCount?: number;
+  purged?: boolean;
+  purgedObjects?: number;
+  purgedFiles?: number;
+  purgedGenerations?: number;
+  purgedBytes?: number;
+  note?: string;
+}
