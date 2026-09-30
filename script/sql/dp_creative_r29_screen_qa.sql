@@ -34,7 +34,7 @@ UPDATE dp_module_definition SET qa_rules_json = '{
   "alphaForbidden": true,
   "whiteBackground": {"enabled": true, "minEdgeWhiteness": 0.90},
   "subjectRatio": {"enabled": true, "min": 0.50},
-  "edgeBleed": {"enabled": true, "maxRatio": 0.01},
+  "edgeBleed": {"enabled": true, "maxRatio": 0.05},
   "levels": {"CANVAS_SQUARE": "HARD", "MIN_SIDE": "HARD", "NO_ALPHA": "HARD",
              "WHITE_BACKGROUND": "SOFT", "SUBJECT_RATIO": "SOFT", "EDGE_BLEED": "SOFT"}
 }'
@@ -48,7 +48,7 @@ UPDATE dp_module_definition SET qa_rules_json = '{
   "alphaForbidden": true,
   "whiteBackground": {"enabled": false},
   "subjectRatio": {"enabled": true, "min": 0.25},
-  "edgeBleed": {"enabled": true, "maxRatio": 0.01},
+  "edgeBleed": {"enabled": true, "maxRatio": 0.05},
   "levels": {"CANVAS_SQUARE": "HARD", "MIN_SIDE": "HARD", "NO_ALPHA": "HARD",
              "SUBJECT_RATIO": "SOFT", "EDGE_BLEED": "SOFT"}
 }'
@@ -62,7 +62,7 @@ UPDATE dp_module_definition SET qa_rules_json = '{
   "alphaForbidden": true,
   "whiteBackground": {"enabled": false},
   "subjectRatio": {"enabled": true, "min": 0.15},
-  "edgeBleed": {"enabled": true, "maxRatio": 0.01},
+  "edgeBleed": {"enabled": true, "maxRatio": 0.05},
   "levels": {"CANVAS_SQUARE": "HARD", "MIN_SIDE": "HARD", "NO_ALPHA": "HARD",
              "SUBJECT_RATIO": "SOFT", "EDGE_BLEED": "SOFT"}
 }'
@@ -76,7 +76,7 @@ UPDATE dp_module_definition SET qa_rules_json = '{
   "alphaForbidden": true,
   "whiteBackground": {"enabled": false},
   "subjectRatio": {"enabled": true, "min": 0.35},
-  "edgeBleed": {"enabled": true, "maxRatio": 0.01},
+  "edgeBleed": {"enabled": true, "maxRatio": 0.05},
   "levels": {"CANVAS_SQUARE": "HARD", "MIN_SIDE": "HARD", "NO_ALPHA": "HARD",
              "SUBJECT_RATIO": "SOFT", "EDGE_BLEED": "SOFT"}
 }'
@@ -90,12 +90,25 @@ UPDATE dp_module_definition SET qa_rules_json = '{
   "alphaForbidden": true,
   "whiteBackground": {"enabled": false},
   "subjectRatio": {"enabled": true, "min": 0.15},
-  "edgeBleed": {"enabled": true, "maxRatio": 0.01},
+  "edgeBleed": {"enabled": true, "maxRatio": 0.05},
   "levels": {"CANVAS_SQUARE": "HARD", "MIN_SIDE": "HARD", "NO_ALPHA": "HARD",
              "SUBJECT_RATIO": "SOFT", "EDGE_BLEED": "SOFT"}
 }'
  WHERE delivery_type = 'MAIN_IMAGE' AND module_code = 'MAIN_SIZE'
    AND (qa_rules_json IS NULL OR qa_rules_json = '');
+
+-- 3) 修正已经落库的贴边率阈值（幂等：只在值还是旧的 0.01 时改成 0.05）
+--
+-- 为什么改：贴边率的**度量口径**在真机第一次验收后修正了——
+--   旧："主体像素里落在 2% 带内的比例"（量的是"边缘有没有非白像素"，柔和投影/渐变也会触发）；
+--   新："最外 0.5% 环上非背景像素占该环的比例"（量的是"画布边界被主体占了多少"，被裁才显著升高）。
+-- 真机证据：一张 800×800 的合格白底主图，旧口径量出 3.5%（阈值 1% → 判不过），
+-- 那明显是度量本身的问题，不是图的问题。口径改了，阈值也要跟着改成 5%（仍是 SOFT 参考项）。
+UPDATE dp_module_definition
+   SET qa_rules_json = JSON_SET(qa_rules_json, '$.edgeBleed.maxRatio', 0.05)
+ WHERE delivery_type = 'MAIN_IMAGE'
+   AND JSON_VALID(qa_rules_json)
+   AND JSON_EXTRACT(qa_rules_json, '$.edgeBleed.maxRatio') = 0.01;
 
 SELECT 'DP_CREATIVE_R29_SCREEN_QA_DONE' AS marker;
 

@@ -247,7 +247,19 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
                 }
                 String subtitle = CreativeDraftBrain.text(item, "subtitle", 120);
                 String body = CreativeDraftBrain.text(item, "bodyText", 400);
-                String solo = CreativeDraftBrain.text(item, "soloStatement", 400);
+                // R29：主图口径屏（MAIN_*）的画面独白是**平台硬性要求的载体**（1:1/白底/不裁不遮/
+                // 不拼版/不叠促销文字），不是创意文案——它直接进给出图的画面描述。模型可以把标题、
+                // 副标题、正文写得更好，但不能把口径改写掉：R29 真机第一次验收，模型把独白改成
+                // "展示产品真实质感…"，主图规范全丢，于是出图提示词里再也没有白底与不裁不遮的要求。
+                // 所以这几类屏只采纳模型的前三个字段，独白保留代码推导的那句，并如实记下未采纳原因。
+                String modelSolo = CreativeDraftBrain.text(item, "soloStatement", 400);
+                boolean keepSolo = CreativeDraftFactory.hasPlatformRules(draft.type());
+                if (keepSolo && modelSolo != null) {
+                    modelReason = appendReason(modelReason,
+                        "第 " + (merged.size() + 1) + " 屏（" + draft.type()
+                            + "）的画面独白是平台口径载体，由代码保证，未采纳模型改写");
+                }
+                String solo = keepSolo ? null : modelSolo;
                 if (title == null && subtitle == null && body == null && solo == null) {
                     merged.add(draft);
                     continue;

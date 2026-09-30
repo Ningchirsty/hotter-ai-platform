@@ -10,6 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 视觉方向与分镜的「参数化草稿」工厂（R4）。
@@ -54,6 +55,31 @@ public final class CreativeDraftFactory {
         "BACK", "逆光轮廓");
 
     private CreativeDraftFactory() {
+    }
+
+    /**
+     * 画面独白是**平台口径载体**的屏类型（V0.2 R29）。
+     *
+     * <p>主图（MAIN_IMAGE，文档 §9.2）的验收口径来自平台客观要求：1:1 方图、纯色白底、
+     * 产品完整不裁不遮、单图不拼版、不叠促销文字。这些要求写在**画面独白**里——它是喂给出图的
+     * 画面描述。所以这几种屏的独白不是"创意文案"，而是**生产约束**：让模型润色时把口径改掉，
+     * 等于出图提示词里完全没有主图规范（R29 真机第一次验收就是这么翻车的：
+     * 模型把独白改写成"展示产品真实质感…"，白底/不裁不遮/不叠字全丢了）。</p>
+     *
+     * <p>调用方（分镜生成）据此对这几类屏**只采纳模型给的标题/副标题/正文，独白保留代码推导的那句**，
+     * 并把未采纳的原因如实记进事件。</p>
+     */
+    private static final Set<String> PLATFORM_RULE_SCREENS = Set.of(
+        "MAIN_WHITE_BG", "MAIN_SELLING_POINT", "MAIN_SCENE", "MAIN_DETAIL", "MAIN_SIZE");
+
+    /**
+     * 这一屏的独白是不是平台口径载体（见 {@link #PLATFORM_RULE_SCREENS}）。
+     *
+     * @param screenType 屏类型（可空）
+     * @return true 表示独白由代码保证、不接受模型改写
+     */
+    public static boolean hasPlatformRules(String screenType) {
+        return screenType != null && PLATFORM_RULE_SCREENS.contains(screenType.trim().toUpperCase(Locale.ROOT));
     }
 
     /**

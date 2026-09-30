@@ -29,7 +29,11 @@ import org.dromara.common.core.utils.StringUtils;
  *   <li>主体占比：与背景基准色距离 &gt; 30（0~255 空间）的采样像素占比；
  *       <b>这是个启发式度量</b>，非白底图（场景/卖点图）上它把"背景里的变化"也算成主体，
  *       所以它只作为参考项（SOFT），不作为硬性判据；</li>
- *   <li>贴边率：主体像素里落在边缘采样带内的占比——占比高说明主体很可能被画布裁掉。</li>
+ *   <li><b>贴边率</b>：最外圈 <b>0.5%</b> 那一环上"非背景像素"占该环的比例——
+ *       直接回答"主体是不是被画布切掉了"。注意第一版写的是"主体像素里落在 2% 带内的比例"，
+ *       真机一跑就发现这个口径不对：主图底部的柔和投影/渐变也会落进 2% 带，于是 800×800 的
+ *       合格主图被判 3.5%（阈值 1%）——度量的是"边缘有没有非白像素"而不是"主体被裁"。
+ *       改成最外环占比以后，量的是"画布边界上有多少不是背景"，被裁才显著升高。</li>
  * </ul>
  *
  * @author creative
@@ -136,6 +140,7 @@ public final class CreativeImageRuleChecker {
         int height = image.getHeight();
         int step = Math.max(1, Math.min(width, height) / 512);
         int band = Math.max(2, Math.min(width, height) / 50);
+        int ring = Math.max(1, Math.min(width, height) / 200);
         int patch = Math.max(4, Math.min(width, height) / 20);
 
         Map<String, Object> metrics = new LinkedHashMap<>();
@@ -143,6 +148,7 @@ public final class CreativeImageRuleChecker {
         metrics.put("height", height);
         metrics.put("sampleStep", step);
         metrics.put("edgeBandPx", band);
+        metrics.put("edgeRingPx", ring);
         metrics.put("whiteChannelMin", WHITE_CHANNEL);
         metrics.put("subjectDistance", (int) SUBJECT_DISTANCE);
 
@@ -163,11 +169,12 @@ public final class CreativeImageRuleChecker {
         }
         double cornerWhiteness = cornerTotal == 0 ? 0d : (double) cornerWhite / cornerTotal;
 
-        // 2) 边缘带白度 / 主体占比 / 贴边率（一次遍历同时算）
+        // 2) 边缘白度 / 主体占比 / 贴边率（一次遍历同时算）
         long edgeTotal = 0;
         long edgeWhite = 0;
         long subjectTotal = 0;
-        long subjectOnEdge = 0;
+        long ringTotal = 0;
+        long ringSubject = 0;
         long sampled = 0;
         boolean alphaFound = false;
         boolean hasAlphaChannel = image.getColorModel().hasAlpha();
@@ -176,6 +183,7 @@ public final class CreativeImageRuleChecker {
                 int argb = image.getRGB(x, y);
                 sampled++;
                 boolean onEdge = x < band || y < band || x >= width - band || y >= height - band;
+                boolean onRing = x < ring || y < ring || x >= width - ring || y >= height - ring;
                 if (onEdge) {
                     edgeTotal++;
                     if (isWhite(argb)) {
@@ -185,17 +193,21 @@ public final class CreativeImageRuleChecker {
                 if (hasAlphaChannel && ((argb >>> 24) & 0xFF) < 250) {
                     alphaFound = true;
                 }
+                if (onRing) {
+                    ringTotal++;
+                }
                 if (distance(argb, corners) > SUBJECT_DISTANCE) {
                     subjectTotal++;
-                    if (onEdge) {
-                        subjectOnEdge++;
+                    if (onRing) {
+                        ringSubject++;
                     }
                 }
             }
         }
         double edgeWhiteness = edgeTotal == 0 ? 0d : (double) edgeWhite / edgeTotal;
         double subjectRatio = sampled == 0 ? 0d : (double) subjectTotal / sampled;
-        double bleedRatio = subjectTotal == 0 ? 0d : (double) subjectOnEdge / subjectTotal;
+        // 贴边率 = 最外环上非背景像素占该环的比例（"画布边界被主体占了多少"）
+        double bleedRatio = ringTotal == 0 ? 0d : (double) ringSubject / ringTotal;
 
         metrics.put("cornerRgb", String.format("#%02X%02X%02X",
             clamp((int) Math.round(corners[0])), clamp((int) Math.round(corners[1])),
@@ -240,7 +252,8 @@ public final class CreativeImageRuleChecker {
             boolean ok = bleedRatio <= rules.maxBleedRatio();
             findings.add(new Finding("EDGE_BLEED", "主体未贴边（未被画布裁切）",
                 rules.levelOf("EDGE_BLEED"), ok,
-                "实测贴边主体占比 " + pct(bleedRatio) + "（要求 ≤ " + pct(rules.maxBleedRatio()) + "）"));
+                "实测最外 " + ring + "px 环上非背景占比 " + pct(bleedRatio)
+                    + "（要求 ≤ " + pct(rules.maxBleedRatio()) + "）"));
         }
 
         int hardFailed = 0;

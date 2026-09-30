@@ -35,7 +35,7 @@ class CreativeImageRuleCheckerTest {
           "alphaForbidden": true,
           "whiteBackground": {"enabled": true, "minEdgeWhiteness": 0.90},
           "subjectRatio": {"enabled": true, "min": 0.10},
-          "edgeBleed": {"enabled": true, "maxRatio": 0.01}
+          "edgeBleed": {"enabled": true, "maxRatio": 0.05}
         }
         """;
 
@@ -136,7 +136,7 @@ class CreativeImageRuleCheckerTest {
     @Test
     @DisplayName("主体铺到画布边 → EDGE_BLEED 不过（SOFT），HARD 项仍过")
     void bleedingSubjectFailsSoft() throws Exception {
-        // 400px 高的色块横向铺满并贴住上边：贴边主体占比很高
+        // 400px 高的色块横向铺满并贴住上边：最外环（0.5%）上有大量非背景像素
         CreativeImageRuleChecker.Report report = CreativeImageRuleChecker.inspect(
             image(800, 800, 400, new Color(40, 90, 60), true), CreativeQaRules.parse(MAIN_RULES));
 
@@ -144,7 +144,37 @@ class CreativeImageRuleCheckerTest {
         assertEquals(0, report.hardFailed());
         assertTrue(report.softFailed() >= 1);
         assertFalse(finding(report, "EDGE_BLEED").ok());
-        assertTrue((double) report.metrics().get("edgeBleedRatio") > 0.01d);
+        assertTrue((double) report.metrics().get("edgeBleedRatio") > 0.05d,
+            "最外环上的非背景占比应显著高于阈值：" + report.metrics().get("edgeBleedRatio"));
+        assertEquals(4, report.metrics().get("edgeRingPx"), "800 图的最外环按 0.5% 取 4px");
+    }
+
+    @Test
+    @DisplayName("柔和投影这类边缘非白像素不再被当成「被裁切」（度量口径修正的证据）")
+    void softShadowNearEdgeIsNotBleed() throws Exception {
+        // 造一张"主体居中、四边有一点点淡灰渐变"的图：旧口径（2% 带内主体像素占比）会判不过，
+        // 新口径（最外 0.5% 环上非背景占比）看的是画布边界有没有被主体占住。
+        BufferedImage image = new BufferedImage(800, 800, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = image.createGraphics();
+        g.setColor(Color.WHITE);
+        g.fillRect(0, 0, 800, 800);
+        // 底部一条很淡的投影（浅灰，不是主体）
+        g.setColor(new Color(246, 246, 246));
+        g.fillRect(20, 700, 760, 100);
+        // 居中的主体
+        g.setColor(new Color(40, 90, 60));
+        g.fillRect(250, 250, 300, 300);
+        g.dispose();
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ImageIO.write(image, "png", out);
+
+        CreativeImageRuleChecker.Report report =
+            CreativeImageRuleChecker.inspect(out.toByteArray(), CreativeQaRules.parse(MAIN_RULES));
+
+        double bleed = (double) report.metrics().get("edgeBleedRatio");
+        assertTrue(bleed <= 0.05d, "淡投影不该判成贴边：" + bleed);
+        assertTrue(finding(report, "EDGE_BLEED").ok(), finding(report, "EDGE_BLEED").detail());
+        assertEquals(0, report.hardFailed(), report.findings().toString());
     }
 
     @Test

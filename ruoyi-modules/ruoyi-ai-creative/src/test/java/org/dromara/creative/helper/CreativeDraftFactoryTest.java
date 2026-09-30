@@ -351,6 +351,23 @@ class CreativeDraftFactoryTest {
     }
 
     @Test
+    @DisplayName("R29：主图五屏的独白是平台口径载体（模型润色不许改写它）")
+    void mainImageScreensCarryPlatformRules() {
+        for (String type : List.of("MAIN_WHITE_BG", "MAIN_SELLING_POINT", "MAIN_SCENE",
+            "MAIN_DETAIL", "MAIN_SIZE")) {
+            assertTrue(CreativeDraftFactory.hasPlatformRules(type), type + " 的独白应由代码保证");
+            assertTrue(CreativeDraftFactory.hasPlatformRules(type.toLowerCase()),
+                "大小写不该影响判断：" + type);
+        }
+        // 其它屏不是口径载体：它们的独白可以接受模型改写（创意文案）
+        for (String type : List.of("HERO", "SELLING_POINT", "SCENE", "DETAIL", "SIZE", "BRAND", "CERT")) {
+            assertFalse(CreativeDraftFactory.hasPlatformRules(type), type + " 不该被当成口径屏");
+        }
+        assertFalse(CreativeDraftFactory.hasPlatformRules(null));
+        assertFalse(CreativeDraftFactory.hasPlatformRules("  "));
+    }
+
+    @Test
     @DisplayName("R29：主图事实缺失时不编造——只说「先确认」，并且仍不落兜底")
     void mainImageCopyWithoutFactsDoesNotInvent() {
         ObjectNode dna = dna("#FFFFFF", null, "SOFT", "FRONT", "LOW", "MEDIUM", "HIGH",
