@@ -161,35 +161,140 @@ public class CreativeProjectServiceImpl implements ICreativeProjectService {
     }
 
     /**
-     * 附件缩略图（V0.2 R24）。
+     * 附件缩略图（V0.2 R24；R34 起**落对象存储**，不再每次现算）。
      *
-     * <p>三件事：① 读原图（与 content 同一条读路径，保证"看到的还是那张图"）；
-     * ② 按最长边缩到 {@link #THUMB_MAX_SIDE} 并编码成 JPEG（PNG 带透明通道时先铺白底，
-     * 否则透明区会变成黑块——这是最容易被忽略、又最容易被用户一眼看出来的坑）；
-     * ③ 按「附件ID + 原图字节数」在进程内缓存，第二次起不再读对象存储。</p>
+     * <p><b>三级取用顺序</b>（前面的命中就不做后面的活）：</p>
+     * <ol>
+     *   <li>进程内缓存（{@link #THUMB_CACHE}，按「附件ID + 原图字节数」）——同一个进程里第二次起零成本；</li>
+     *   <li><b>对象存储里的缩略图伴生对象</b>（{@code content-private/{taskId}/{fileId}/thumb.jpg}）——
+     *       换进程/重启/多实例都命中，读的是几十 KB 的小图，不再读原图、不再解码；</li>
+     *   <li>都没有才读原图 → 缩放 → 编码，并**把结果写回伴生对象**，让后面所有人省下这一步。</li>
+     * </ol>
+     *
+     * <p><b>为什么值得落盘</b>：R24 的真机结论是"首帧 0.55s 固定开销"——那是
+     * 「读原图（几百 KB~几 MB）+ ImageIO 解码 + 缩放 + JPEG 编码」的全部成本，
+     * 与图片大小和并发数成正比。参考图一屏有十几张，资产抽屉自动加载上限 12 张，
+     * 于是"打开抽屉"就变成十几倍这个开销。落盘之后这笔钱**每个文件只付一次**。</p>
+     *
+     * <p><b>写失败不影响看图</b>：伴生对象写不进去（权限/空间）只记日志，
+     * 本次仍返回算好的缩略图——缩略图是"快一点"，不该变成"看不到图"。</p>
      *
      * <p>解不开的图（不是图片、或格式不支持）**如实回落到原图字节**，不返回占位图——
      * 让页面显示"这张图确实是这样"，而不是"看起来有图但其实是假的"。</p>
      */
     @Override
     public FileContent readFileThumbnail(Long taskId, Long fileId) {
-        FileContent original = readFileContent(taskId, fileId);
-        String cacheKey = fileId + ":" + original.bytes().length;
-        byte[] cached = THUMB_CACHE.get(cacheKey);
-        if (cached != null) {
-            return new FileContent(cached, "image/jpeg", original.fileName());
+        // 1) 进程内缓存
+        String memoryKey = null;
+        FileContent original = null;
+        byte[] cached = null;
+        Long size = fileSizeOf(taskId, fileId);
+        if (size != null) {
+            memoryKey = fileId + ":" + size;
+            cached = THUMB_CACHE.get(memoryKey);
+            if (cached != null) {
+                return new FileContent(cached, "image/jpeg", "thumb.jpg");
+            }
         }
+        // 2) 对象存储里的伴生缩略图
+        String thumbKey = thumbnailKey(taskId, fileId);
+        String fileName = null;
+        byte[] persisted = readThumbnailObject(thumbKey);
+        if (persisted != null && persisted.length > 0) {
+            cacheThumbnail(fileId, size, persisted);
+            return new FileContent(persisted, "image/jpeg", "thumb.jpg");
+        }
+        // 3) 现算：读原图 → 缩放 → 编码 → 回写伴生对象
+        original = readFileContent(taskId, fileId);
+        fileName = original.fileName();
         byte[] thumb = downscale(original.bytes());
         if (thumb == null) {
             return original;
         }
+        persistThumbnail(thumbKey, thumb);
+        cacheThumbnail(fileId, (long) original.bytes().length, thumb);
+        return new FileContent(thumb, "image/jpeg", fileName);
+    }
+
+    /**
+     * 缩略图伴生对象键：与附件本体同级目录，一眼能看出它属于哪个附件。
+     *
+     * <p>为什么不登记成附件行：它不是用户上传的资料，不该出现在附件列表/素材统计里
+     * （否则"清理素材"会把它算成一份资料，页面上的张数也会多出来）。</p>
+     *
+     * @param taskId 项目ID
+     * @param fileId 附件ID
+     * @return 对象键
+     */
+    private static String thumbnailKey(Long taskId, Long fileId) {
+        return "content-private/" + taskId + "/" + fileId + "/thumb.jpg";
+    }
+
+    /**
+     * 读伴生缩略图；读不到（还没有 / 已清理 / 存储不可用）一律返回 null 由调用方现算。
+     *
+     * @param thumbKey 伴生对象键
+     * @return 字节；没有返回 null
+     */
+    private byte[] readThumbnailObject(String thumbKey) {
+        try {
+            return contentOssHelper.getBytes(thumbKey);
+        } catch (Exception e) {
+            // 首次访问时对象不存在是正常路径（不是错误），降到 debug 级别记录
+            log.debug("缩略图伴生对象未命中：{}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 把算好的缩略图写进对象存储。失败只记日志，不阻断本次返回。
+     *
+     * @param thumbKey 伴生对象键
+     * @param thumb    缩略图字节
+     */
+    private void persistThumbnail(String thumbKey, byte[] thumb) {
+        try {
+            contentOssHelper.put(thumbKey, thumb);
+            log.info("缩略图已落对象存储：{}（{}KB）", thumbKey, thumb.length / 1024);
+        } catch (Exception e) {
+            log.warn("缩略图写对象存储失败（本次仍返回算好的缩略图）：{}", e.getMessage());
+        }
+    }
+
+    /**
+     * 写进程内缓存（容量满了清空重建：缩略图重建很便宜，不值得为它引入 LRU 或外部缓存）。
+     *
+     * @param fileId 附件ID
+     * @param size   原图字节数（可空＝没查到，按未知处理，缓存键退化成只按ID）
+     * @param thumb  缩略图
+     */
+    private static void cacheThumbnail(Long fileId, Long size, byte[] thumb) {
+        if (fileId == null || thumb == null) {
+            return;
+        }
         if (THUMB_CACHE.size() >= THUMB_CACHE_MAX) {
-            // 简单的容量控制：满了就清空。缩略图重建很便宜（几十毫秒），
-            // 不值得为它引入一套 LRU 或外部缓存——那会带来新的失效问题。
             THUMB_CACHE.clear();
         }
-        THUMB_CACHE.put(cacheKey, thumb);
-        return new FileContent(thumb, "image/jpeg", original.fileName());
+        THUMB_CACHE.put(fileId + ":" + (size == null ? -1L : size), thumb);
+    }
+
+    /**
+     * 查附件字节数（只用于缓存键；查不到返回 null，不影响取图）。
+     *
+     * @param taskId 项目ID
+     * @param fileId 附件ID
+     * @return 字节数；查不到返回 null
+     */
+    private Long fileSizeOf(Long taskId, Long fileId) {
+        try {
+            CpTaskFile file = fileMapper.selectById(fileId);
+            if (file == null || !taskId.equals(file.getTaskId())) {
+                return null;
+            }
+            return file.getFileSize();
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /**
@@ -358,6 +463,10 @@ public class CreativeProjectServiceImpl implements ICreativeProjectService {
             }
             try {
                 contentOssHelper.delete(file.getFileRef());
+                // R34：缩略图伴生对象跟着一起删。不删的话"清理素材"之后对象存储里会留下一堆
+                // 没人引用的 thumb.jpg——它们不是资料、统计也看不见，是最难解释的那类垃圾。
+                contentOssHelper.delete(thumbnailKey(taskId, file.getFileId()));
+                THUMB_CACHE.remove(file.getFileId() + ":" + (file.getFileSize() == null ? -1L : file.getFileSize()));
                 objects++;
             } catch (Exception e) {
                 objectFailures.add(file.getFileName() + "(" + e.getMessage() + ")");

@@ -152,6 +152,8 @@ class CreativeProjectMaterialsPurgeTest {
         ProjectMaterialsVo vo = service.purgeMaterials(TASK, NAME, false);
 
         assertTrue(vo.getPurged());
+        // purgedObjects 数的是**附件个数**（每删一个附件算一个对象），
+        // 缩略图伴生对象是搭着删的，不额外计数——R34 这里保持 2，别被上面那条 deletedKeys 误导。
         assertEquals(2, vo.getPurgedObjects());
         assertEquals(2, vo.getPurgedFiles());
         assertEquals(3, vo.getPurgedGenerations());
@@ -159,11 +161,15 @@ class CreativeProjectMaterialsPurgeTest {
     }
 
     @Test
-    @DisplayName("允许清理时：先删对象再删行，且把「保留了什么」写清楚")
+    @DisplayName("允许清理时：先删对象再删行（含 R34 的缩略图伴生对象），且把「保留了什么」写清楚")
     void purgeRemovesObjectsThenRows() {
         ProjectMaterialsVo vo = service.purgeMaterials(TASK, NAME, true);
 
-        assertEquals(List.of("k/a.png", "k/b.jpg"), deletedKeys, "对象应逐个删除");
+        // 【R34 起期望值有变，不是回归】缩略图现在会落成伴生对象，清理时必须跟着删——
+        // 否则"清理素材"之后对象存储里会留下一堆没人引用的 thumb.jpg（统计也看不见的垃圾）。
+        assertEquals(
+            List.of("k/a.png", "content-private/888/1/thumb.jpg", "k/b.jpg", "content-private/888/2/thumb.jpg"),
+            deletedKeys, "对象与缩略图伴生对象都应逐个删除");
         verify(generationMapper, times(1)).delete(any());
         verify(fileMapper, times(1)).delete(any());
         verify(outputCheckMapper, times(1)).delete(any());
