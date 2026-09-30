@@ -75,10 +75,16 @@
         <slot v-else name="main" />
 
         <!--
-          ③ 页面按步骤给了插槽，但一个都没对上配置里的组件名（例如配置还没更新到 R37 的真名）：
-             这时既不能白屏、也不该悄悄回落到"什么都显示"——明确说清两边各是什么。
+          ③ 页面按步骤给了插槽，但配置里没有可用的装配定义（读失败 / 交付类型为空）：
+             这时既不能白屏、也不该把锅甩给"名字对不上"——配置根本没来，说清楚是哪一种。
+             注意只在配置**收工之后**才这么提示：首屏那一小段"正在读配置"不该报警。
         -->
-        <p v-if="!hosted.length && !hasMainSlot && providedComponents.length" class="ws-gap">
+        <p v-if="!hosted.length && !hasMainSlot && configMissing" class="ws-gap">
+          工作台装配配置没读到（交付类型为空或配置接口不可用），所以本页按步骤装配的内容暂时显示不出来。
+          页面顶部的流程指引线仍可用；刷新一次通常就能恢复。
+        </p>
+        <!-- 配置在、但一个组件名都没对上页面提供的插槽：两边各是什么，如实列出来 -->
+        <p v-else-if="!hosted.length && !hasMainSlot && providedComponents.length" class="ws-gap">
           配置里的步骤组件（{{ declaredComponents.join('、') || '无' }}）与页面提供的插槽
           （{{ providedComponents.join('、') }}）对不上，所以这一步没有可装配的内容。
           请在配置里改用真实组件名，或让页面提供同名插槽。
@@ -285,6 +291,8 @@ const visibleMissing = computed(() =>
 const visibleName = computed(() => visible.value?.name || '');
 const currentStepName = computed(() => currentStep.value?.name || '');
 const visibleStepIsCurrent = computed(() => !activeStepCode.value || visibleStep.value === activeStepCode.value);
+/** 装配配置**确定**没读到（不是"还在读"）：首屏竞态期间不报警，读完了还是没有才说 */
+const configMissing = computed(() => !flow.configPending.value && !flow.assembly.value);
 
 /** 点步骤条：手工选一步（下一次流程推进时自动回到跟随当前步） */
 function selectStep(code: string) {
