@@ -61,16 +61,29 @@ export interface ScenarioStep {
  *
  * <p>它是 `cp_task.visual_stage` 的**派生投影**：有持久化行时 `source=PERSISTED`，
  * 否则按当前阶段推导（`DERIVED`）。R16 起指引线的"已完成/进行中/待办"以它为准。</p>
+ *
+ * <p>R36 起还带「能不能跳过」：`status=SKIPPED` 是**人的决定**（投影永远算不出它），
+ * `skippable` 由后端按"可选 + 无闸门 + 未完成"判定，`skipReason` 是跳过时写下的原因。</p>
  */
 export interface ProjectStepState {
   stepCode?: string;
   stepName?: string;
   sortNo?: number;
+  /** DONE / ACTIVE / PENDING / SKIPPED */
   status?: string;
   stageCode?: string;
   startedAt?: string;
   completedAt?: string;
   source?: string;
+  /** 配置 `dp_scenario_step.required`（'1' 必填 / '0' 可选） */
+  required?: string;
+  /** 配置里是否有闸门（有闸门就不能跳过——跳过等于绕过门禁） */
+  gated?: boolean;
+  /** 现在能不能跳过（后端判定；前端只照做） */
+  skippable?: boolean;
+  /** 已跳过时的原因 */
+  skipReason?: string;
+  updatedAt?: string;
 }
 
 /** 工作台装配（`dp_workspace_schema`） */
@@ -157,6 +170,47 @@ export function listOutputSpecs(deliveryType: string): AxiosPromise<ScenarioOutp
  */
 export function listProjectSteps(taskId: string | number): AxiosPromise<ProjectStepState[]> {
   return request({ url: `/creative/v2/projects/${taskId}/steps`, method: 'get' });
+}
+
+/**
+ * 跳过某一步（V0.2 R36）。
+ *
+ * <p><b>原因必填</b>（后端强制，至少 2 个字）：跳过是人的决定，留痕是用来回答
+ * "为什么这一步没做"的。后端只对**可选且无闸门**的步骤放行——必填步骤会被拒，
+ * 有闸门的步骤跳过等于绕过门禁，也会被拒（拒绝原因会随错误信息返回，直接显示即可）。</p>
+ *
+ * @param taskId   项目ID
+ * @param stepCode 步骤编码（配置 `dp_scenario_step.step_code`）
+ * @param reason   跳过原因
+ * @returns 更新后的步骤状态列表（页面一次请求就能刷新指引线）
+ */
+export function skipProjectStep(
+  taskId: string | number,
+  stepCode: string,
+  reason: string
+): AxiosPromise<ProjectStepState[]> {
+  return request({
+    url: `/creative/v2/projects/${taskId}/steps/${stepCode}/skip`,
+    method: 'post',
+    data: { reason }
+  });
+}
+
+/**
+ * 取消跳过（V0.2 R36）：这一步回到"按当前阶段投影"的状态。
+ *
+ * @param taskId   项目ID
+ * @param stepCode 步骤编码
+ * @returns 更新后的步骤状态列表
+ */
+export function cancelSkipProjectStep(
+  taskId: string | number,
+  stepCode: string
+): AxiosPromise<ProjectStepState[]> {
+  return request({
+    url: `/creative/v2/projects/${taskId}/steps/${stepCode}/skip/cancel`,
+    method: 'post'
+  });
 }
 
 /**

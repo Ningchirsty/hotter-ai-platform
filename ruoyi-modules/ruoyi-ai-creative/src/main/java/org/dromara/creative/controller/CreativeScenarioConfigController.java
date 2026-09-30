@@ -1,7 +1,10 @@
 package org.dromara.creative.controller;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import jakarta.validation.constraints.NotNull;
+import lombok.Data;
 import lombok.RequiredArgsConstructor;
+import org.dromara.common.redis.annotation.RepeatSubmit;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.dromara.creative.domain.bo.ModuleDefinitionBo;
 import org.dromara.common.core.domain.R;
@@ -20,6 +23,7 @@ import org.dromara.creative.domain.DpScenarioStep;
 import org.dromara.creative.domain.DpWorkspaceSchema;
 import org.dromara.creative.service.ICreativeModuleService;
 import org.dromara.creative.service.ICreativeScenarioConfigService;
+import org.dromara.creative.service.ICreativeStepStateService;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -51,6 +55,11 @@ import java.util.List;
 public class CreativeScenarioConfigController {
 
     private final ICreativeScenarioConfigService scenarioConfigService;
+
+    /**
+     * 步骤状态的人为动作（R36：跳过 / 取消跳过）
+     */
+    private final ICreativeStepStateService stepStateService;
 
     /**
      * 模块引擎（R21，文档 §18/§21）：模块库与项目模块计划。
@@ -140,6 +149,56 @@ public class CreativeScenarioConfigController {
     @GetMapping("/projects/{taskId}/steps")
     public R<List<ProjectStepStateVo>> projectSteps(@PathVariable("taskId") Long taskId) {
         return R.ok(scenarioConfigService.listProjectSteps(taskId));
+    }
+
+    /**
+     * 跳过某一步（V0.2 R36）。
+     *
+     * <p><b>只对"可选且无闸门"的步骤开放</b>：必填步骤是流程要求，有闸门的步骤跳过等于绕过门禁。
+     * 必须给原因（留痕：写 remark + 一条 {@code STEP_SKIPPED} 事件）。</p>
+     *
+     * @param taskId   项目ID
+     * @param stepCode 步骤编码
+     * @param bo       跳过请求（原因）
+     * @return 更新后的步骤状态列表
+     */
+    @SaCheckPermission(CreativeConstants.PERM_PROJECT_EDIT)
+    @Log(title = "跳过流程步骤", businessType = BusinessType.UPDATE)
+    @RepeatSubmit()
+    @PostMapping("/projects/{taskId}/steps/{stepCode}/skip")
+    public R<List<ProjectStepStateVo>> skipStep(@NotNull(message = "项目ID不能为空")
+                                                @PathVariable("taskId") Long taskId,
+                                                @NotNull(message = "步骤编码不能为空")
+                                                @PathVariable("stepCode") String stepCode,
+                                                @RequestBody(required = false) SkipStepBo bo) {
+        return R.ok(stepStateService.skip(taskId, stepCode, bo == null ? null : bo.getReason()));
+    }
+
+    /**
+     * 取消跳过（V0.2 R36）：这一步回到"按当前阶段投影"的状态。
+     *
+     * @param taskId   项目ID
+     * @param stepCode 步骤编码
+     * @return 更新后的步骤状态列表
+     */
+    @SaCheckPermission(CreativeConstants.PERM_PROJECT_EDIT)
+    @Log(title = "取消跳过流程步骤", businessType = BusinessType.UPDATE)
+    @RepeatSubmit()
+    @PostMapping("/projects/{taskId}/steps/{stepCode}/skip/cancel")
+    public R<List<ProjectStepStateVo>> cancelSkipStep(@NotNull(message = "项目ID不能为空")
+                                                      @PathVariable("taskId") Long taskId,
+                                                      @NotNull(message = "步骤编码不能为空")
+                                                      @PathVariable("stepCode") String stepCode) {
+        return R.ok(stepStateService.cancelSkip(taskId, stepCode));
+    }
+
+    /**
+     * 跳过请求体（只有原因一个字段：其他都从路径与配置来，不由请求决定）。
+     */
+    @Data
+    public static class SkipStepBo {
+        /** 跳过原因（必填，2~200 字） */
+        private String reason;
     }
 
     /**

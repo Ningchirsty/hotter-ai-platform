@@ -24,6 +24,7 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.List;
 
@@ -178,21 +179,50 @@ public class CreativeScenarioConfigServiceImpl implements ICreativeScenarioConfi
             .toList();
         List<ProjectStepStateVo> out = new ArrayList<>();
         for (CreativeStepProjection.StepState state : CreativeStepProjection.project(configured, stage)) {
+            DpScenarioStep config = steps.stream()
+                .filter(s -> state.stepCode().equals(s.getStepCode()))
+                .findFirst().orElse(null);
             DpProjectStepState row = persisted.get(state.stepCode());
             if (row == null) {
                 // 没有持久化行：按当前阶段推导，并在 source 里标明这是推导值而不是落库值
-                out.add(new ProjectStepStateVo(state.stepCode(), state.stepName(), state.sortNo(),
-                    state.status(), stage, null, null, "DERIVED"));
+                out.add(vo(state, stage, null, null, "DERIVED", config, null, null));
             } else {
                 // 名称与顺序一律取**当前配置**（改名/改顺序要立刻在界面上生效），
                 // 只有"状态 + 时间戳 + 是哪次变更推的"取自落库行。
                 // 否则同一份配置下，"有落库行的项目"显示旧名字、"没落库行的项目"显示新名字。
-                out.add(new ProjectStepStateVo(state.stepCode(), state.stepName(), state.sortNo(),
-                    row.getStatus(), row.getStageCode(), row.getStartedAt(), row.getCompletedAt(),
-                    "PERSISTED"));
+                // R36：跳过行的 remark 就是跳过原因，如实带到视图里。
+                out.add(vo(state, row.getStageCode(), row.getStartedAt(), row.getCompletedAt(),
+                    "PERSISTED", config, row.getStatus(), row));
             }
         }
         return out;
+    }
+
+    /**
+     * 组装一行步骤状态（R36 起带上"能不能跳过 / 为什么跳过"）。
+     *
+     * @param state       投影结果（编码/名称/顺序）
+     * @param stageCode   导致该状态的阶段
+     * @param startedAt   开始时间（可空）
+     * @param completedAt 完成时间（可空）
+     * @param source      状态来源（PERSISTED/DERIVED）
+     * @param config      配置步骤（可空＝配置查不到，按"不允许跳过"处理）
+     * @param persistedStatus 落库状态（可空＝用投影状态）
+     * @param row         落库行（可空）
+     * @return 视图
+     */
+    private ProjectStepStateVo vo(CreativeStepProjection.StepState state, String stageCode,
+                                  LocalDateTime startedAt, LocalDateTime completedAt, String source,
+                                  DpScenarioStep config, String persistedStatus, DpProjectStepState row) {
+        String status = StringUtils.blankToDefault(persistedStatus, state.status());
+        String required = config == null ? null : config.getRequired();
+        String gateType = config == null ? null : config.getGateType();
+        boolean skippable = CreativeStepProjection.skippable(required, gateType, status);
+        String skipReason = CreativeStepProjection.SKIPPED.equals(status) && row != null ? row.getRemark() : null;
+        return new ProjectStepStateVo(state.stepCode(), state.stepName(), state.sortNo(), status,
+            StringUtils.blankToDefault(stageCode, stageCode), startedAt, completedAt, source,
+            required, StringUtils.isNotBlank(gateType), skippable, skipReason,
+            row == null ? null : row.getUpdateTime());
     }
 
     /**

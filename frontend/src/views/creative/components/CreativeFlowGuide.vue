@@ -22,10 +22,10 @@
       <el-button class="panel-btn" size="small" text :disabled="!taskId" @click="openModulePlan">
         模块规划
       </el-button>
-      <div class="progress" :title="`已完成 ${doneCount} / ${steps.length} 步`">
-        <i :style="{ width: progressPct + '%' }" />
+      <div class="progress" :title="progress.text">
+        <i :style="{ width: progress.pct + '%' }" />
       </div>
-      <span class="progress-text">{{ doneCount }} / {{ steps.length }} 已完成</span>
+      <span class="progress-text">{{ progress.text }}</span>
     </div>
 
     <p v-if="!taskId" class="flow-empty">选择一个视觉项目后，这里会显示它在流程里的位置。</p>
@@ -51,6 +51,8 @@
             <span class="step-inner">
               <span class="dot">
                 <span v-if="step.status === 'done'" class="tick">✓</span>
+                <!-- 已跳过用「—」而不是数字：它既不是"做完了"，也不该看起来像"还没开始" -->
+                <span v-else-if="step.status === 'skipped'" class="skip-mark">—</span>
                 <span v-else-if="step.no === activeNo && stageRunning" class="spin" />
                 <span v-else>{{ step.no }}</span>
               </span>
@@ -64,6 +66,10 @@
               <span class="pop-status" :class="'is-' + step.status">{{ step.statusLabel }}</span>
             </div>
             <p class="pop-sum">{{ step.summary }}</p>
+            <!-- 已跳过：把"谁因为什么跳过"如实摆出来（原因写在 dp_project_step_state.remark） -->
+            <p v-if="step.status === 'skipped'" class="pop-skip">
+              已跳过：{{ step.skipReason || '（没有留下原因）' }}
+            </p>
             <p v-if="!step.detailLoaded" class="pop-muted">正在读取这一步的明细…</p>
             <template v-else-if="step.missing.length">
               <p class="pop-label">为什么还不能进入下一步：</p>
@@ -73,6 +79,26 @@
             </template>
             <p v-else class="pop-ok">这一步的条件都已满足。</p>
             <div class="pop-actions">
+              <!-- 跳过 / 取消跳过（V0.2 R36）：只对后端判定"可跳过"的步骤出现。
+                   能不能跳由后端说了算（可选 + 无闸门 + 未完成），前端不重算。 -->
+              <el-button
+                v-if="step.skippable"
+                size="small"
+                text
+                v-hasPermi="['creative:project:edit']"
+                @click="askSkip(step)"
+              >
+                跳过这一步
+              </el-button>
+              <el-button
+                v-else-if="step.status === 'skipped'"
+                size="small"
+                text
+                v-hasPermi="['creative:project:edit']"
+                @click="cancelSkip(step)"
+              >
+                取消跳过
+              </el-button>
               <el-button size="small" type="primary" @click="go(step)">去这一步</el-button>
             </div>
           </div>
@@ -181,7 +207,10 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { CREATIVE_STAGE_TYPES } from '@/api/creative/types';
+import { cancelSkipProjectStep, skipProjectStep } from '@/api/creative/scenario';
+import { extractErrorMessage } from '@/utils/request';
 import { useCreativeFlow, type FlowStep } from '../composables/useCreativeFlow';
 import { ASSEMBLY_KIND_LABELS, type AssemblyKind } from '../composables/workspaceAssembly';
 import CreativeInspectorPanel from './CreativeInspectorPanel.vue';
@@ -248,7 +277,7 @@ const localFlow = props.flow ?? useCreativeFlow(
 const {
   steps,
   activeNo,
-  doneCount,
+  progress,
   stageRunning,
   stage,
   stageLabel,
@@ -310,9 +339,6 @@ function loadCurrentStepDetail() {
 }
 
 const stageType = computed(() => CREATIVE_STAGE_TYPES[stage.value || ''] || 'info');
-const progressPct = computed(() =>
-  steps.value.length ? Math.round((doneCount.value / steps.value.length) * 100) : 0
-);
 
 /**
  * 装配分类的中文标签。
@@ -326,6 +352,76 @@ function kindLabel(kind: AssemblyKind): string {
 
 function go(step: FlowStep) {
   void router.push(stepHref(step.no));
+}
+
+/**
+ * 跳过某一步（V0.2 R36）。
+ *
+ * <p>原因必填：后端强制（至少 2 个字），这里先拦一次只是省一趟往返。
+ * 「能不能跳过」只由后端判定——只有 `skippable` 的步骤才显示这个按钮，
+ * 前端不自己算一遍"可选 + 无闸门"，否则两个口径迟早对不上。</p>
+ *
+ * @param step 要跳过的步骤
+ */
+async function askSkip(step: FlowStep) {
+  const taskId = props.taskId;
+  if (!taskId) {
+    return;
+  }
+  let reason = '';
+  try {
+    const { value } = await ElMessageBox.prompt(
+      `跳过「${step.name}」后，这一步不再计入进度（进度里会写明跳过了几步），` +
+        `但它仍留在流程里、随时可以取消跳回。请写清原因——将来要靠这条记录回答「为什么这一步没做」。`,
+      '跳过这一步',
+      {
+        confirmButtonText: '确认跳过',
+        cancelButtonText: '再想想',
+        inputPlaceholder: '例如：客户确认这批不做机检',
+        inputValidator: (value: string) =>
+          value && value.trim().length >= 2 ? true : '请写清原因（至少 2 个字）'
+      }
+    );
+    reason = String(value ?? '').trim();
+  } catch {
+    // 关掉弹窗/点"再想想"不是失败，不该弹错误
+    return;
+  }
+  try {
+    await skipProjectStep(taskId, step.key, reason);
+    ElMessage.success(`已跳过「${step.name}」`);
+    await reload();
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '跳过失败');
+  }
+}
+
+/**
+ * 取消跳过（V0.2 R36）：这一步回到"按当前阶段投影"的状态。
+ *
+ * @param step 已跳过的步骤
+ */
+async function cancelSkip(step: FlowStep) {
+  const taskId = props.taskId;
+  if (!taskId) {
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      `取消后「${step.name}」回到流程里的普通一步，进度分母也跟着变回来。确定取消跳过吗？`,
+      '取消跳过',
+      { confirmButtonText: '取消跳过', cancelButtonText: '保持跳过', type: 'warning' }
+    );
+  } catch {
+    return;
+  }
+  try {
+    await cancelSkipProjectStep(taskId, step.key);
+    ElMessage.success(`已取消跳过「${step.name}」`);
+    await reload();
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '取消失败');
+  }
 }
 
 /**
@@ -724,6 +820,22 @@ watch(
     }
   }
 
+  /* 已跳过（R36）：既不是绿的（没做完），也不是红的（没被卡住），
+     用中性灰 + 虚线边框表示"人决定不做"，一眼与前后步骤区分开 */
+  &.is-skipped {
+    .dot {
+      border-color: var(--line2);
+      border-style: dashed;
+      background: transparent;
+      color: var(--t3);
+    }
+
+    .lbl,
+    .st {
+      color: var(--t3);
+    }
+  }
+
   &.active .lbl {
     font-weight: 600;
   }
@@ -791,6 +903,23 @@ watch(
       background: rgba(245, 108, 108, 0.16);
       color: #f56c6c;
     }
+
+    &.is-skipped {
+      background: rgba(144, 147, 153, 0.18);
+      color: var(--t2);
+    }
+  }
+
+  /* 跳过原因：这行是留痕的展示，别让它看起来像报错 */
+  .pop-skip {
+    margin: 4px 0;
+    padding: 5px 8px;
+    border-left: 2px solid var(--line2);
+    background: var(--sunken);
+    border-radius: 3px;
+    color: var(--t2);
+    font-size: 12px;
+    line-height: 1.6;
   }
 
   .pop-sum,

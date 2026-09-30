@@ -212,7 +212,8 @@ export const CONFIG_STATUS_LABELS: Record<FlowStatus, string> = {
   done: '已完成',
   doing: '进行中',
   todo: '未开始',
-  blocked: '前置未完成'
+  blocked: '前置未完成',
+  skipped: '已跳过'
 };
 
 /**
@@ -285,6 +286,10 @@ export interface GuideStepPlan {
   backendStatus: string | null;
   /** 配置里 required='1' */
   required: boolean;
+  /** 后端判定的"这一步现在能不能跳过"（可选 + 无闸门 + 未完成） */
+  skippable: boolean;
+  /** 已跳过时的原因（后端 `dp_project_step_state.remark`） */
+  skipReason: string | null;
   /** 未满足的前置步骤名（用于解释"被阻塞"） */
   waiting: string[];
   /** 配置里出现但前端不认识的进入条件键（如实暴露，不静默忽略） */
@@ -318,6 +323,7 @@ function parseConditionKeys(json?: string | null): string[] {
  * <ul>
  *   <li>后端 `DONE` → 已完成；后端 `ACTIVE` → 进行中；</li>
  *   <li>后端 `PENDING`（或没有该步的状态行）→ 前置满足则待办，不满足则**被阻塞**；</li>
+ *   <li>后端 `SKIPPED` → 已跳过（V0.2 R36：人的决定，既不算完成、也不算"前置未完成"）；</li>
  *   <li>进行中的步骤不会被判成"被阻塞"（它已经开始了，配置里的前置显然满足）；</li>
  *   <li>命中"进行中"的第一步记为 `current`，供界面只给它一个脉冲（避免两步一起闪）。</li>
  * </ul>
@@ -340,14 +346,24 @@ export function buildGuideSteps(
       stateByCode.set(state.stepCode, state);
     }
   }
-  const doneCodes = new Set(
-    (states || []).filter((s) => (s?.status || '').toUpperCase() === 'DONE').map((s) => s?.stepCode || '')
+  /**
+   * "这一步不用再等了"的编码集合：已完成 + 已跳过。
+   *
+   * <p>R36 把**已跳过**也算进来：跳过的意思正是"人决定不做"，若它继续算作未完成，
+   * 后面依赖它的步骤会永远红着（跳过就白跳了）。注意这只影响"前置是否满足"，
+   * 不影响状态显示与进度——跳过仍然是跳过（见 {@link stepProgress}）。</p>
+   */
+  const settledCodes = new Set(
+    (states || [])
+      .filter((s) => ['DONE', 'SKIPPED'].includes((s?.status || '').toUpperCase()))
+      .map((s) => s?.stepCode || '')
   );
   const nameByCode = new Map(rows.map((r) => [r.stepCode || '', r.stepName || r.stepCode || '']));
 
   return rows.map((row, index) => {
     const stepCode = row.stepCode || '';
-    const backendStatus = (stateByCode.get(stepCode)?.status || '').toUpperCase() || null;
+    const state = stateByCode.get(stepCode);
+    const backendStatus = (state?.status || '').toUpperCase() || null;
     const conditionKeys = parseConditionKeys(row.entryConditionJson);
     const unknownConditions = conditionKeys.filter(
       (key) => key !== 'requireProject' && !REQUIRE_TO_STEP[key]
@@ -358,12 +374,15 @@ export function buildGuideSteps(
       .map((key) => REQUIRE_TO_STEP[key])
       // 自依赖（配置里写 require 自己）不算阻塞，否则永远红着
       .filter((code): code is string => Boolean(code) && code !== stepCode)
-      .filter((code) => !doneCodes.has(code))
+      .filter((code) => !settledCodes.has(code))
       .map((code) => nameByCode.get(code) || code);
 
     let status: FlowStatus;
     if (backendStatus === 'DONE') {
       status = 'done';
+    } else if (backendStatus === 'SKIPPED') {
+      // 已跳过：人的决定，既不显示"进行中"也不显示"前置未完成"（它已经被人放过了）
+      status = 'skipped';
     } else if (backendStatus === 'ACTIVE') {
       status = 'doing';
     } else {
@@ -378,11 +397,66 @@ export function buildGuideSteps(
       status,
       backendStatus,
       required: (row.required || '1') !== '0',
+      // 能不能跳过由**后端**判定（`required`/`gateType`/状态三条都要满足）；
+      // 前端不重算一遍——两边各算一次迟早会有一天对不上。
+      skippable: Boolean(state?.skippable),
+      skipReason: status === 'skipped' ? state?.skipReason || null : null,
       waiting,
       unknownConditions,
       source: 'CONFIG' as const
     };
   });
+}
+
+/**
+ * 指引线的进度（V0.2 R36）。
+ *
+ * <p><b>口径以后端为准</b>：与 `CreativeStepProjection#progress` 是同一条规则的镜像
+ * （后端 Java 单测 `CreativeStepSkipSemanticsTest` 与这里的前端单测钉的是同一组用例）：
+ * 跳过的步骤<b>从分母里去掉、绝不算进分子</b>，且分子不越过分母。
+ * 不这么定的话，跳过要么让进度虚高（做了 3 步却显示 4/4），要么永远压着一格
+ * （"3/4 已完成"永远差一格，而那一格是人明确决定不做的）。</p>
+ */
+export interface StepProgress {
+  /** 已完成步数 */
+  done: number;
+  /** 配置步数（分母的原料） */
+  total: number;
+  /** 已跳过步数 */
+  skipped: number;
+  /** 分母 = 配置步数 − 已跳过 */
+  denominator: number;
+  /** 百分比（分母为 0 时记 0，不出现 NaN） */
+  pct: number;
+  /** 一行文案（有跳过时单独说清跳了几步） */
+  text: string;
+}
+
+/**
+ * 按步骤状态算进度。
+ *
+ * <p>入参只要求"每一项有 status"：指引线计划（{@link GuideStepPlan}）与页面渲染用的
+ * {@code FlowStep} 都能直接传进来，避免为了算个进度再造一份数据结构。</p>
+ *
+ * @param plans 步骤列表（配置驱动或回落八步）
+ * @returns 进度（空计划全为 0）
+ */
+export function stepProgress(plans?: ReadonlyArray<{ status: FlowStatus }> | null): StepProgress {
+  const rows = (plans || []).filter(Boolean);
+  const done = rows.filter((p) => p.status === 'done').length;
+  const skipped = rows.filter((p) => p.status === 'skipped').length;
+  const denominator = Math.max(0, rows.length - skipped);
+  const safeDone = Math.min(done, denominator);
+  return {
+    done,
+    total: rows.length,
+    skipped,
+    denominator,
+    pct: denominator ? Math.round((safeDone / denominator) * 100) : 0,
+    text: skipped
+      ? `${safeDone} / ${denominator} 已完成 · 已跳过 ${skipped} 步`
+      : `${safeDone} / ${denominator} 已完成`
+  };
 }
 
 /**
@@ -402,6 +476,9 @@ export function buildFallbackSteps(): GuideStepPlan[] {
     status: 'todo' as FlowStatus,
     backendStatus: null,
     required: true,
+    // 回落模式（配置读不到）不提供跳过：跳过要按配置判定可选/闸门，配置都没读到就不能放行
+    skippable: false,
+    skipReason: null,
     waiting: [],
     unknownConditions: [],
     source: 'CODE' as const

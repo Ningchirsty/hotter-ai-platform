@@ -65,6 +65,7 @@ import {
   buildFallbackSteps,
   buildGuideSteps,
   CONFIG_STATUS_LABELS,
+  stepProgress,
   type GuideStepPlan
 } from './flowStepMapping';
 import { useScenarioConfig } from './useScenarioConfig';
@@ -498,14 +499,20 @@ export function useCreativeFlow(
         summary: detail?.summary || defaultSummary(item.key),
         missing,
         reason: blockedHint + tail,
-        detailLoaded: Boolean(detail)
+        detailLoaded: Boolean(detail),
+        // R36：跳过相关的三件事都取自后端（能不能跳、为什么跳、跳了没有），前端不重算
+        skippable: item.skippable,
+        skipReason: item.skipReason
       };
     })
   );
 
   const doneCount = computed(() => steps.value.filter((s) => s.status === 'done').length);
-  /** 进度分母：配置驱动时是配置步骤数（十步），回落时是八步 */
-  const progressTotal = computed(() => steps.value.length || STEP_META.length);
+  /**
+   * 进度（R36）：口径与后端 `CreativeStepProjection#progress` 一致——
+   * 跳过的步骤从分母里去掉、不算分子（规则与用例见 `stepProgress`）。
+   */
+  const progress = computed(() => stepProgress(steps.value));
 
   /**
    * 未加载明细时的一行摘要（按 step_code 给，不再按步号）。
@@ -685,7 +692,7 @@ export function useCreativeFlow(
     steps,
     activeNo,
     doneCount,
-    progressTotal,
+    progress,
     configDriven,
     configPending,
     stepsLoaded,

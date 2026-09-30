@@ -10,8 +10,14 @@
  */
 import { CREATIVE_STAGE_LABELS } from '@/api/creative/types';
 
-/** 步骤状态：已完成 / 进行中 / 未开始 / 被阻塞 */
-export type FlowStatus = 'done' | 'doing' | 'todo' | 'blocked';
+/**
+ * 步骤状态：已完成 / 进行中 / 未开始 / 被阻塞 / 已跳过。
+ *
+ * <p>`skipped`（V0.2 R36）不是阶段投影能算出来的状态：它是**人的决定**——
+ * 后端 `dp_project_step_state.status=SKIPPED` 才会是它（跳过条件与留痕见后端
+ * `CreativeStepStateServiceImpl#skip`）。它既不算完成，也不压着进度（见 `stepProgress`）。</p>
+ */
+export type FlowStatus = 'done' | 'doing' | 'todo' | 'blocked' | 'skipped';
 
 /** 指引线上的一个步骤 */
 export interface FlowStep {
@@ -30,13 +36,18 @@ export interface FlowStep {
   reason: string;
   /** 该步明细是否已加载 */
   detailLoaded: boolean;
+  /** 后端判定的"这一步现在能不能跳过"（可选 + 无闸门 + 未完成；配置驱动才有） */
+  skippable: boolean;
+  /** 已跳过时的原因（跳过的留痕，写在 `dp_project_step_state.remark`） */
+  skipReason: string | null;
 }
 
 export const FLOW_STATUS_LABELS: Record<FlowStatus, string> = {
   done: '已完成',
   doing: '进行中',
   todo: '未开始',
-  blocked: '被阻塞'
+  blocked: '被阻塞',
+  skipped: '已跳过'
 };
 
 /**

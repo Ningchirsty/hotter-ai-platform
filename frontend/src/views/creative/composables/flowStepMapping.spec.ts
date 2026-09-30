@@ -8,7 +8,8 @@ import {
   buildFallbackSteps,
   buildGuideSteps,
   formatMappingChip,
-  mapFlowSteps
+  mapFlowSteps,
+  stepProgress
 } from './flowStepMapping';
 import type { ProjectStepState, ScenarioStep } from '@/api/creative/scenario';
 
@@ -299,5 +300,103 @@ describe('配置驱动：指引线计划', () => {
     expect(CONFIG_STATUS_LABELS.done).toBe('已完成');
     expect(CONFIG_STATUS_LABELS.doing).toBe('进行中');
     expect(CONFIG_STATUS_LABELS.todo).toBe('未开始');
+    expect(CONFIG_STATUS_LABELS.skipped).toBe('已跳过');
+  });
+});
+
+/**
+ * R36：跳过步骤的语义（前端侧）。
+ *
+ * <p>这里钉的是"跳过"在**界面上**的含义：① 已跳过就是已跳过，不显示成进行中/前置未完成；
+ * ② 跳过的步骤不再阻塞它后面的步骤（否则跳过白跳）；③ 进度口径与后端
+ * {@code CreativeStepProjection#progress} 一致——跳过从分母去掉、不算分子、分子不越过分母。</p>
+ */
+describe('R36：跳过步骤', () => {
+  const CONFIG: ScenarioStep[] = [
+    { stepCode: 'INPUT', stepName: '产品资料与参考图', sortNo: 10, required: '1', entryConditionJson: '{"requireProject":true}' },
+    { stepCode: 'FACT', stepName: '事实确认', sortNo: 20, required: '1', entryConditionJson: '{"requireInput":true}' },
+    { stepCode: 'QA', stepName: '质检', sortNo: 80, required: '0', entryConditionJson: '{"requireFact":true}' },
+    // 故意让终审也依赖 INPUT：用来验证"被跳过的前置算已了结"
+    { stepCode: 'FINAL', stepName: '终审交付', sortNo: 100, required: '1', entryConditionJson: '{"requireInput":true}' }
+  ];
+
+  it('后端 SKIPPED → 已跳过（不是"进行中"，也不是"前置未完成"）', () => {
+    const plan = buildGuideSteps(CONFIG, [
+      { stepCode: 'INPUT', status: 'SKIPPED', skippable: false, skipReason: '客户自带资料，不走这一步' }
+    ]);
+    expect(plan[0].status).toBe('skipped');
+    expect(plan[0].backendStatus).toBe('SKIPPED');
+    expect(plan[0].skipReason).toBe('客户自带资料，不走这一步');
+  });
+
+  it('跳过的步骤不再阻塞后面的步骤（否则跳过就白跳了）', () => {
+    const plan = buildGuideSteps(CONFIG, [{ stepCode: 'INPUT', status: 'SKIPPED' }]);
+    expect(plan[1].status).toBe('todo');
+    expect(plan[1].waiting).toEqual([]);
+    expect(plan[3].status).toBe('todo');
+  });
+
+  it('没有落库行的步骤不会凭空带上跳过原因', () => {
+    const plan = buildGuideSteps(CONFIG, [
+      { stepCode: 'FACT', status: 'DONE' },
+      { stepCode: 'QA', status: 'PENDING', skippable: true, skipReason: '上一次跳过的旧原因' }
+    ]);
+    expect(plan[2].status).toBe('todo');
+    expect(plan[2].skippable).toBe(true);
+    expect(plan[2].skipReason).toBeNull();
+  });
+
+  it('能不能跳过取自后端（前端不重算"可选 + 无闸门"）', () => {
+    const plan = buildGuideSteps(CONFIG, [
+      { stepCode: 'QA', status: 'PENDING', skippable: true },
+      { stepCode: 'FACT', status: 'PENDING', skippable: false }
+    ]);
+    expect(plan[2].skippable).toBe(true);
+    expect(plan[1].skippable).toBe(false);
+    // 回落模式（配置读不到）一律不给跳过：按配置判定可选/闸门的前提是配置在
+    expect(buildFallbackSteps().every((p) => !p.skippable && p.skipReason === null)).toBe(true);
+  });
+
+  it('进度：做过 2 步、跳过 1 步 → 2 / 3 已完成 · 已跳过 1 步', () => {
+    const plan = buildGuideSteps(CONFIG, [
+      { stepCode: 'INPUT', status: 'DONE' },
+      { stepCode: 'FACT', status: 'DONE' },
+      { stepCode: 'QA', status: 'SKIPPED' }
+    ]);
+    const progress = stepProgress(plan);
+    expect(progress).toMatchObject({ done: 2, total: 4, skipped: 1, denominator: 3, pct: 67 });
+    expect(progress.text).toBe('2 / 3 已完成 · 已跳过 1 步');
+  });
+
+  it('没有跳过时进度就是"已完成 / 总步数"（与 R16 之前一致）', () => {
+    const plan = buildGuideSteps(CONFIG, [{ stepCode: 'INPUT', status: 'DONE' }]);
+    expect(stepProgress(plan).text).toBe('1 / 4 已完成');
+    // 回落八步同理
+    expect(stepProgress(buildFallbackSteps()).text).toBe('0 / 8 已完成');
+    // 空计划不出现 NaN
+    expect(stepProgress([])).toMatchObject({ denominator: 0, pct: 0, text: '0 / 0 已完成' });
+  });
+
+  it('跳过把分母变小，比例不会超过 100%', () => {
+    // 4 步里做完 1 步、跳过 1 步 → 分母只剩 3
+    const progress = stepProgress(
+      buildGuideSteps(CONFIG, [
+        { stepCode: 'INPUT', status: 'DONE' },
+        { stepCode: 'FACT', status: 'SKIPPED' }
+      ])
+    );
+    expect(progress).toMatchObject({ done: 1, skipped: 1, denominator: 3, pct: 33 });
+
+    // 3 步里做完 2 步、跳过 1 步 → 分子与分母正好都是 2（恰好 100%）。
+    // 注意：前端其实算不出"分子大于分母"（done + skipped ≤ total），
+    // 真正的越界保护在后端 `CreativeStepProjection#progress` 里，这里只钉住边界。
+    const rows = buildFallbackSteps();
+    const boundary = stepProgress([
+      { ...rows[0], status: 'done' },
+      { ...rows[1], status: 'done' },
+      { ...rows[2], status: 'skipped' }
+    ]);
+    expect(boundary).toMatchObject({ done: 2, total: 3, skipped: 1, denominator: 2, pct: 100 });
+    expect(boundary.text).toBe('2 / 2 已完成 · 已跳过 1 步');
   });
 });
