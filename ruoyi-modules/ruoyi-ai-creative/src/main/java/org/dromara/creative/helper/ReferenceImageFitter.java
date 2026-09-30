@@ -125,6 +125,92 @@ public final class ReferenceImageFitter {
     }
 
     /**
+     * 把参考图适配到**指定尺寸**（V0.2 R27：主图 1:1 规格）。
+     *
+     * <p>用在"输出跟随输入图"的工作流上（`wf-i2i-qwen21` / `wf-whitebg-qwen21` 这类契约没有固定
+     * 尺寸档位）：要出 800×800，就得让送进去的图正好是 800×800。项目里的附件本身不改动——
+     * 产品图基准质检仍用原图，只有送模型的这份是适配后的。</p>
+     *
+     * <p>做法是**等比缩放到能盖住目标尺寸，再从中心裁切**（cover + center crop）：
+     * 直接用拉伸会把产品拍扁，比不缩放更糟。裁切会丢掉边缘内容，所以 note 里如实写清
+     * "缩放到 A×B 后裁切为 W×H"，让人知道这一屏的画面被裁过。</p>
+     *
+     * @param original 参考图原始字节
+     * @param fileName 原始文件名
+     * @param targetW  目标宽（>0）
+     * @param targetH  目标高（>0）
+     * @return 适配结果（失败时回落到原图并说明）
+     */
+    public static Fitted fitTo(byte[] original, String fileName, int targetW, int targetH) {
+        String name = blankToDefault(fileName, "reference.png");
+        String contentType = contentTypeOf(name);
+        if (original == null || original.length == 0 || targetW <= 0 || targetH <= 0) {
+            return new Fitted(original, name, contentType, false, null, null, null, null, 0, null);
+        }
+        int[] size = readSize(original);
+        if (size == null) {
+            log.warn("参考图尺寸读取失败，未按输出规格适配：{}", name);
+            return new Fitted(original, name, contentType, false, null, null, null, null, 0,
+                "参考图尺寸读取失败，未按输出规格 " + targetW + "×" + targetH + " 适配");
+        }
+        int fromW = size[0];
+        int fromH = size[1];
+        if (fromW == targetW && fromH == targetH) {
+            return new Fitted(original, name, contentType, false, fromW, fromH, fromW, fromH, 0, null);
+        }
+        try {
+            double cover = Math.max((double) targetW / fromW, (double) targetH / fromH);
+            int scaledW = Math.max(targetW, (int) Math.round(fromW * cover));
+            int scaledH = Math.max(targetH, (int) Math.round(fromH * cover));
+            BufferedImage scaled = scale(original, fromW, fromH, scaledW, scaledH, 0);
+            if (scaled == null) {
+                return new Fitted(original, name, contentType, false, fromW, fromH, fromW, fromH, 0,
+                    "参考图 " + fromW + "×" + fromH + " 未能适配到 " + targetW + "×" + targetH + "（解码失败）");
+            }
+            BufferedImage cropped = cropCenter(scaled, targetW, targetH);
+            boolean keepAlpha = cropped.getColorModel().hasAlpha();
+            boolean jpeg = isJpeg(name) && !keepAlpha;
+            byte[] encoded = jpeg ? writeJpeg(cropped) : writePng(cropped);
+            if (encoded == null || encoded.length == 0) {
+                return new Fitted(original, name, contentType, false, fromW, fromH, fromW, fromH, 0,
+                    "参考图 " + fromW + "×" + fromH + " 未能适配到 " + targetW + "×" + targetH + "（重编码失败）");
+            }
+            String outName = jpeg ? replaceExt(name, "jpg") : replaceExt(name, "png");
+            String outType = jpeg ? "image/jpeg" : "image/png";
+            String note = "按输出规格适配：参考图 " + fromW + "×" + fromH + " 等比缩放到 "
+                + scaledW + "×" + scaledH + " 后从中心裁切为 " + targetW + "×" + targetH
+                + " 送模型（项目里的附件未改动，产品图基准质检仍用原图）";
+            log.info("参考图已按输出规格适配：{} {}×{} → 裁切 {}×{}", name, fromW, fromH, targetW, targetH);
+            return new Fitted(encoded, outName, outType, true, fromW, fromH, targetW, targetH, 0, note);
+        } catch (Exception e) {
+            log.warn("按输出规格适配参考图失败：{} {}", name, e.toString());
+            return new Fitted(original, name, contentType, false, fromW, fromH, fromW, fromH, 0,
+                "参考图适配到 " + targetW + "×" + targetH + " 异常：" + e.getClass().getSimpleName());
+        }
+    }
+
+    /**
+     * 从中心裁切到目标尺寸（超出部分取中间，保证产品主体尽量留在画面里）。
+     *
+     * @param source 已缩放的图（尺寸不小于目标）
+     * @param w      目标宽
+     * @param h      目标高
+     * @return 裁切后的图
+     */
+    private static BufferedImage cropCenter(BufferedImage source, int w, int h) {
+        int x = Math.max(0, (source.getWidth() - w) / 2);
+        int y = Math.max(0, (source.getHeight() - h) / 2);
+        int cw = Math.min(w, source.getWidth());
+        int ch = Math.min(h, source.getHeight());
+        BufferedImage out = new BufferedImage(cw, ch,
+            source.getColorModel().hasAlpha() ? BufferedImage.TYPE_INT_ARGB : BufferedImage.TYPE_INT_RGB);
+        java.awt.Graphics2D g = out.createGraphics();
+        g.drawImage(source, 0, 0, cw, ch, x, y, x + cw, y + ch, null);
+        g.dispose();
+        return out;
+    }
+
+    /**
      * 在不超过 maxPixels 的前提下，按原比例取最大整数尺寸。
      *
      * @param w         原宽

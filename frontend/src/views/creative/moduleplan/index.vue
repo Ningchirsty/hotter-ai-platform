@@ -58,6 +58,82 @@
       <span class="muted">{{ plan.editBlockReason }}</span>
     </el-alert>
 
+    <!-- 模块定义编辑（R27）：改的是"交付类型级的模块库"，不是这个项目的计划 -->
+    <el-dialog
+      v-model="definitionVisible"
+      :title="definitionForm.id ? '编辑模块定义' : '新建模块定义'"
+      width="720px"
+      append-to-body
+    >
+      <p class="hint">
+        这是<b>交付类型级</b>的模块库（所有该类型的项目共享）。改它只影响以后生成的分镜；
+        已经生成的分镜不动。
+      </p>
+      <el-form label-width="120px" size="small">
+        <el-form-item label="模块编码">
+          <el-input v-model="definitionForm.moduleCode" :disabled="!!definitionForm.id"
+            placeholder="HERO / SELLING_POINT 这类唯一编码（项目计划按它关联）" />
+        </el-form-item>
+        <el-form-item label="模块名">
+          <el-input v-model="definitionForm.moduleName" placeholder="多屏时会作为前缀：卖点 → 卖点一/卖点二" />
+        </el-form-item>
+        <el-form-item label="屏类型">
+          <el-input v-model="definitionForm.screenType" placeholder="HERO / SELLING_POINT / SCENE …（决定文案策略）" />
+        </el-form-item>
+        <el-form-item label="保真等级">
+          <el-select v-model="definitionForm.productLockLevel" class="pick">
+            <el-option label="STRICT（产品必须一致）" value="STRICT" />
+            <el-option label="LOOSE（允许场景化演绎）" value="LOOSE" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="取景">
+          <el-input v-model="definitionForm.shot" placeholder="可用 {ratio} 占位产品占比区间" />
+        </el-form-item>
+        <el-form-item label="模块目标">
+          <el-input v-model="definitionForm.objective" placeholder="这一屏要达成什么" />
+        </el-form-item>
+        <el-form-item label="屏数区间">
+          <el-input-number v-model="definitionForm.minScreens" :min="1" :max="10" />
+          <span class="muted"> ～ </span>
+          <el-input-number v-model="definitionForm.maxScreens" :min="1" :max="10" />
+          <span class="muted small">（默认骨架取最少屏数）</span>
+        </el-form-item>
+        <el-form-item label="进默认骨架">
+          <el-switch
+            :model-value="definitionForm.defaultSelected !== '1'"
+            inline-prompt
+            active-text="进"
+            inactive-text="不进"
+            @update:model-value="(v: string | number | boolean) => (definitionForm.defaultSelected = v ? '0' : '1')"
+          />
+          <span class="muted small">（不进 = 可选模块，规划页里手动添加）</span>
+        </el-form-item>
+        <el-form-item label="默认顺序">
+          <el-input-number v-model="definitionForm.defaultSortNo" :min="0" :max="999" />
+        </el-form-item>
+        <el-form-item label="允许的 Workflow">
+          <el-input v-model="definitionForm.allowedWorkflows" placeholder="逗号分隔，例如 wf-i2i-qwen21,wf-whitebg-qwen21" />
+        </el-form-item>
+        <el-form-item label="允许的模板">
+          <el-input v-model="definitionForm.allowedTemplates" placeholder="逗号分隔，例如 longpage@1.0.2" />
+        </el-form-item>
+        <el-form-item label="所需事实">
+          <el-input v-model="definitionForm.requiredFacts" placeholder="事实字段码，逗号分隔" />
+        </el-form-item>
+        <el-form-item label="视觉表达">
+          <el-input v-model="definitionForm.visualRulesJson" type="textarea" :rows="2"
+            placeholder='JSON 或人话文本，例如 {"tone":"暖光"}' />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="definitionForm.remark" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="definitionVisible = false">取消</el-button>
+        <el-button type="primary" :loading="definitionSaving" @click="saveDefinition">保存</el-button>
+      </template>
+    </el-dialog>
+
     <template v-if="plan">
       <div class="cols">
         <!-- 左：模块库 -->
@@ -65,10 +141,14 @@
           <div class="block-head">
             <h3>可用模块库</h3>
             <span class="muted">{{ library.length }} 个</span>
+            <el-button size="small" text :disabled="!canEdit" @click="openDefinitionDialog(null)">
+              ＋ 新建模块
+            </el-button>
           </div>
           <p class="muted small">
             来自交付类型「{{ plan.deliveryType }}」的模块库。点「添加」放到中间的计划里；
             同一个模块可以添加多次（复制）。
+            <b>改模块库只影响以后生成的分镜</b>——已生成的分镜屏上冻着当时的屏类型与取景，不回溯改动。
           </p>
           <ul class="library">
             <li v-for="d in library" :key="String(d.moduleCode)" class="lib-item">
@@ -82,7 +162,18 @@
                 </div>
                 <div v-if="d.objective" class="muted small">{{ d.objective }}</div>
               </div>
-              <el-button size="small" text :disabled="!canEdit" @click="addModule(d)">添加</el-button>
+              <div class="lib-actions">
+                <el-button size="small" text :disabled="!canEdit" @click="addModule(d)">添加</el-button>
+                <el-button size="small" text :disabled="!canEdit" @click="openDefinitionDialog(d)">
+                  编辑
+                </el-button>
+                <el-button size="small" text :disabled="!canEdit" @click="toggleDefinition(d)">
+                  {{ d.enabled === '1' ? '启用' : '停用' }}
+                </el-button>
+                <el-button size="small" text type="danger" :disabled="!canEdit" @click="removeDefinition(d)">
+                  删除
+                </el-button>
+              </div>
             </li>
           </ul>
         </section>
@@ -269,8 +360,12 @@
     saveProjectModulePlan,
     type ModuleDefinition,
     type ProjectModule,
-    type ProjectModulePlan
-  } from '@/api/creative/scenario';
+    type ProjectModulePlan,
+    createModuleDefinition,
+    updateModuleDefinition,
+    setModuleDefinitionEnabled,
+    deleteModuleDefinition,
+    type ModuleDefinitionForm} from '@/api/creative/scenario';
   import { listCopyBlocks, listCreativeProject } from '@/api/creative';
   import type { CopyBlockVO } from '@/api/creative/types';
   import { extractErrorMessage } from '@/utils/request';
@@ -306,6 +401,9 @@
   const loading = ref(false);
   const saving = ref(false);
   const dirty = ref(false);
+  const definitionVisible = ref(false);
+  const definitionSaving = ref(false);
+  const definitionForm = ref<ModuleDefinitionForm & { id?: string | number }>({});
   const loadError = ref('');
   let uidSeed = 0;
   let dragFrom = -1;
@@ -401,6 +499,103 @@
       ElMessage.error((await extractErrorMessage(error)) ?? '保存失败');
     } finally {
       saving.value = false;
+    }
+  }
+
+  /** 打开模块定义编辑框（传 null = 新建） */
+  function openDefinitionDialog(d: ModuleDefinition | null) {
+    definitionForm.value = d
+      ? {
+          id: d.id,
+          deliveryType: d.deliveryType,
+          moduleCode: d.moduleCode,
+          moduleName: d.moduleName,
+          objective: d.objective,
+          screenType: d.screenType,
+          productLockLevel: d.productLockLevel || 'LOOSE',
+          shot: d.shot,
+          required: d.required || '0',
+          minScreens: d.minScreens ?? 1,
+          maxScreens: d.maxScreens ?? 1,
+          defaultSelected: d.defaultSelected || '0',
+          defaultSortNo: d.defaultSortNo ?? 0,
+          allowedTemplates: d.allowedTemplates,
+          allowedWorkflows: d.allowedWorkflows,
+          requiredFacts: d.requiredFacts,
+          visualRulesJson: d.visualRulesJson,
+          qaRulesJson: d.qaRulesJson,
+          enabled: d.enabled || '0',
+          remark: d.remark
+        }
+      : {
+          deliveryType: plan.value?.deliveryType,
+          productLockLevel: 'LOOSE',
+          required: '0',
+          minScreens: 1,
+          maxScreens: 1,
+          defaultSelected: '0',
+          defaultSortNo: 0,
+          enabled: '0'
+        };
+    definitionVisible.value = true;
+  }
+
+  /** 保存模块定义（新建 / 编辑） */
+  async function saveDefinition() {
+    const form = definitionForm.value as ModuleDefinitionForm & { id?: string | number };
+    if (!form.moduleCode || !form.moduleName || !form.screenType) {
+      ElMessage.warning('模块编码、模块名、屏类型都是必填的');
+      return;
+    }
+    definitionSaving.value = true;
+    try {
+      if (form.id) {
+        await updateModuleDefinition(form.id, form);
+      } else {
+        await createModuleDefinition({ ...form, deliveryType: plan.value?.deliveryType });
+      }
+      ElMessage.success('模块库已保存（只影响以后生成的分镜）');
+      definitionVisible.value = false;
+      await load();
+    } catch (error) {
+      ElMessage.error((await extractErrorMessage(error)) ?? '保存失败');
+    } finally {
+      definitionSaving.value = false;
+    }
+  }
+
+  /** 启用/停用模块定义 */
+  async function toggleDefinition(d: ModuleDefinition) {
+    if (!d.id) return;
+    try {
+      await setModuleDefinitionEnabled(d.id, d.enabled === '1' ? '0' : '1');
+      ElMessage.success(d.enabled === '1' ? '已启用' : '已停用（新项目默认骨架不再包含它）');
+      await load();
+    } catch (error) {
+      ElMessage.error((await extractErrorMessage(error)) ?? '操作失败');
+    }
+  }
+
+  /** 删除模块定义（有项目计划在用会被后端拒绝并说明原因） */
+  async function removeDefinition(d: ModuleDefinition) {
+    if (!d.id) return;
+    try {
+      await ElMessageBox.confirm(
+        `删除模块「${d.moduleName}」（${d.moduleCode}）？\n\n` +
+          `已在项目计划里使用它的项目会受影响，所以后端会先检查：有项目在用就直接拒绝，` +
+          `并告诉你还有几个项目在用。要下线建议先「停用」。`,
+        '删除模块定义',
+        { type: 'warning' }
+      );
+    } catch {
+      return;
+    }
+    try {
+      const res = await deleteModuleDefinition(d.id);
+      ElMessage.success(String(res.data || '已删除'));
+      await load();
+    } catch (error) {
+      ElMessage.error((await extractErrorMessage(error)) ?? '删除失败');
     }
   }
 
@@ -598,6 +793,15 @@
     background: var(--elevated, #171b24);
     border: 1px solid var(--line);
     border-radius: 6px;
+  }
+  .lib-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+  }
+  .pick {
+    width: 260px;
   }
   .lib-name {
     display: flex;

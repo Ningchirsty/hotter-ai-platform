@@ -605,7 +605,9 @@ public class ImageTaskSubmissionService {
      * @param sizeLabel 本次尺寸档位（可能为 null）
      * @return 产出尺寸是否跟随输入图
      */
-    static boolean outputFollowsInput(ImageWorkflowVersion version, String sizeLabel) {
+    // R27：创意侧要判断「这条工作流的产出是不是跟随输入图」（主图 1:1 规格要把参考图适配成目标尺寸），
+    // 所以放开为 public —— 语义只维护在这一处，不在别处抄一份（抄的那份迟早与这里不一致）。
+    public static boolean outputFollowsInput(ImageWorkflowVersion version, String sizeLabel) {
         if (version == null) {
             return false;
         }

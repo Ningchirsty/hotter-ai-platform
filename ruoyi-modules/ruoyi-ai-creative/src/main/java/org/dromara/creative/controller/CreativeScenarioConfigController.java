@@ -2,6 +2,8 @@ package org.dromara.creative.controller;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.dromara.creative.domain.bo.ModuleDefinitionBo;
 import org.dromara.common.core.domain.R;
 import org.dromara.common.log.annotation.Log;
 import org.dromara.common.log.enums.BusinessType;
@@ -21,6 +23,7 @@ import org.dromara.creative.service.ICreativeScenarioConfigService;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -153,6 +156,67 @@ public class CreativeScenarioConfigController {
     public R<List<DpModuleDefinition>> modules(
         @RequestParam(value = "deliveryType", required = false) String deliveryType) {
         return R.ok(moduleService.listDefinitions(deliveryType));
+    }
+
+    /**
+     * 新建模块定义（V0.2 R27，文档 §24 左栏可编辑）。
+     *
+     * <p>权限用 {@code creative:project:edit}：模块库是"配置"，但它是创作链路的输入，
+     * 与"改项目"同一档能力；不新造权限点，避免漏配角色导致 403。</p>
+     *
+     * @param bo 模块定义
+     * @return 保存后的定义
+     */
+    @SaCheckPermission(CreativeConstants.PERM_PROJECT_EDIT)
+    @Log(title = "模块库", businessType = BusinessType.INSERT)
+    @PostMapping("/modules")
+    public R<DpModuleDefinition> createModule(@RequestBody ModuleDefinitionBo bo) {
+        return R.ok(moduleService.createDefinition(bo));
+    }
+
+    /**
+     * 编辑模块定义（R27）。
+     *
+     * <p>只影响以后生成的分镜：已生成的分镜屏上冻着当时的屏类型/保真/取景，不回溯改动。</p>
+     *
+     * @param id 定义ID
+     * @param bo 模块定义
+     * @return 保存后的定义
+     */
+    @SaCheckPermission(CreativeConstants.PERM_PROJECT_EDIT)
+    @Log(title = "模块库", businessType = BusinessType.UPDATE)
+    @PutMapping("/modules/{id}")
+    public R<DpModuleDefinition> updateModule(@PathVariable("id") Long id,
+                                              @RequestBody ModuleDefinitionBo bo) {
+        return R.ok(moduleService.updateDefinition(id, bo));
+    }
+
+    /**
+     * 启用/停用模块定义（R27）。
+     *
+     * @param id      定义ID
+     * @param enabled '0' 启用 / '1' 停用
+     * @return 保存后的定义
+     */
+    @SaCheckPermission(CreativeConstants.PERM_PROJECT_EDIT)
+    @Log(title = "模块库", businessType = BusinessType.UPDATE)
+    @PutMapping("/modules/{id}/enabled")
+    public R<DpModuleDefinition> setModuleEnabled(@PathVariable("id") Long id,
+                                                  @RequestParam("enabled") String enabled) {
+        return R.ok(moduleService.setDefinitionEnabled(id, enabled));
+    }
+
+    /**
+     * 删除模块定义（R27，软删；有项目计划在用则拒绝）。
+     *
+     * @param id 定义ID
+     * @return 结果说明
+     */
+    @SaCheckPermission(CreativeConstants.PERM_PROJECT_EDIT)
+    @Log(title = "模块库", businessType = BusinessType.DELETE)
+    @DeleteMapping("/modules/{id}")
+    public R<String> deleteModule(@PathVariable("id") Long id) {
+        return R.ok(moduleService.deleteDefinition(id));
     }
 
     /**

@@ -15,6 +15,7 @@ import org.dromara.creative.domain.DpProjectModule;
 import org.dromara.creative.domain.DpScenarioProfile;
 import org.dromara.creative.domain.DpStoryboard;
 import org.dromara.creative.domain.DpStoryboardScreen;
+import org.dromara.creative.domain.bo.ModuleDefinitionBo;
 import org.dromara.creative.domain.bo.ProjectModulePlanBo;
 import org.dromara.creative.domain.vo.ProjectModulePlanVo;
 import org.dromara.creative.helper.CreativeFacts;
@@ -60,6 +61,208 @@ public class CreativeModuleServiceImpl implements ICreativeModuleService {
 
     /** 单模块屏数上限（护栏：防止一次拖成 99 屏把分镜生成拖垮；模块定义更严时以定义为准） */
     private static final int MAX_SCREENS_HARD_LIMIT = 10;
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public DpModuleDefinition createDefinition(ModuleDefinitionBo bo) {
+        String type = StringUtils.trimToNull(bo == null ? null : bo.getDeliveryType());
+        if (type == null) {
+            throw new ServiceException("交付类型不能为空。");
+        }
+        if (scenarioConfigService.getScenario(type) == null) {
+            throw new ServiceException("交付类型 " + type + " 还没有已发布的场景档案，不能给它加模块。");
+        }
+        String code = StringUtils.trimToNull(bo.getModuleCode());
+        if (code == null) {
+            throw new ServiceException("模块编码不能为空。");
+        }
+        Long exists = definitionMapper.selectCount(new LambdaQueryWrapper<DpModuleDefinition>()
+            .eq(DpModuleDefinition::getDeliveryType, type)
+            .eq(DpModuleDefinition::getModuleCode, code));
+        if (exists != null && exists > 0) {
+            throw new ServiceException("交付类型 " + type + " 里已经有模块编码 " + code
+                + " 了；同一个类型内模块编码必须唯一（它同时是项目计划里的关联键）。");
+        }
+        DpModuleDefinition row = new DpModuleDefinition();
+        row.setDeliveryType(type);
+        row.setModuleCode(code);
+        applyDefinition(row, bo, true);
+        definitionMapper.insert(row);
+        log.info("新建模块定义 {}/{}（{}，屏类型 {}）", type, code, row.getModuleName(), row.getScreenType());
+        return row;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public DpModuleDefinition updateDefinition(Long id, ModuleDefinitionBo bo) {
+        DpModuleDefinition row = requireDefinition(id);
+        if (StringUtils.isNotBlank(bo.getDeliveryType())
+            && !bo.getDeliveryType().trim().equals(row.getDeliveryType())) {
+            throw new ServiceException("不允许改交付类型（改类型等于换一套模块库）：当前="
+                + row.getDeliveryType());
+        }
+        // 改模块编码要保证同类型内仍然唯一（项目计划按编码关联）
+        String newCode = StringUtils.trimToNull(bo.getModuleCode());
+        if (newCode != null && !newCode.equals(row.getModuleCode())) {
+            Long exists = definitionMapper.selectCount(new LambdaQueryWrapper<DpModuleDefinition>()
+                .eq(DpModuleDefinition::getDeliveryType, row.getDeliveryType())
+                .eq(DpModuleDefinition::getModuleCode, newCode)
+                .ne(DpModuleDefinition::getId, row.getId()));
+            if (exists != null && exists > 0) {
+                throw new ServiceException("交付类型 " + row.getDeliveryType() + " 里已经有模块编码 "
+                    + newCode + " 了。");
+            }
+            row.setModuleCode(newCode);
+        }
+        applyDefinition(row, bo, false);
+        definitionMapper.updateById(row);
+        log.info("编辑模块定义 {}（{}/{}）", id, row.getDeliveryType(), row.getModuleCode());
+        return row;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public DpModuleDefinition setDefinitionEnabled(Long id, String enabled) {
+        DpModuleDefinition row = requireDefinition(id);
+        String value = DISABLED.equals(StringUtils.trimToNull(enabled)) ? DISABLED : ENABLED;
+        row.setEnabled(value);
+        definitionMapper.updateById(row);
+        log.info("模块定义 {}（{}/{}）已{}", id, row.getDeliveryType(), row.getModuleCode(),
+            ENABLED.equals(value) ? "启用" : "停用");
+        return row;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public String deleteDefinition(Long id) {
+        DpModuleDefinition row = requireDefinition(id);
+        Long used = projectModuleMapper.selectCount(new LambdaQueryWrapper<DpProjectModule>()
+            .eq(DpProjectModule::getModuleCode, row.getModuleCode()));
+        if (used != null && used > 0) {
+            throw new ServiceException("还有 " + used + " 个项目计划在用模块「" + row.getModuleName()
+                + "」（" + row.getModuleCode() + "）：删掉定义会让那些计划查不到取景与保真等级。"
+                + "要下线请先「停用」，或先把项目计划里的它删掉。");
+        }
+        definitionMapper.deleteById(id);
+        log.info("删除模块定义 {}（{}/{}）", id, row.getDeliveryType(), row.getModuleCode());
+        return "模块「" + row.getModuleName() + "」已删除（同交付类型内不再可选）";
+    }
+
+    /**
+     * 把请求里的可编辑字段写到定义上（新增与编辑共用，避免两处校验不一致）。
+     *
+     * @param row    目标行
+     * @param bo     请求
+     * @param isNew  是否新增（新增时必填项缺失要报错；编辑时只改传了的）
+     */
+    private void applyDefinition(DpModuleDefinition row, ModuleDefinitionBo bo, boolean isNew) {
+        String name = StringUtils.trimToNull(bo.getModuleName());
+        if (isNew && name == null) {
+            throw new ServiceException("模块名不能为空。");
+        }
+        if (name != null) {
+            checkLength("模块名", name, LEN_NAME);
+            row.setModuleName(name);
+        }
+        String screenType = StringUtils.trimToNull(bo.getScreenType());
+        if (isNew && screenType == null) {
+            throw new ServiceException("屏类型不能为空（它决定草稿工厂用哪套文案策略）。");
+        }
+        if (screenType != null) {
+            checkLength("屏类型", screenType, LEN_TYPE);
+            row.setScreenType(screenType);
+        }
+        if (bo.getObjective() != null) {
+            checkLength("模块目标", bo.getObjective(), LEN_OBJECTIVE);
+            row.setObjective(StringUtils.trimToNull(bo.getObjective()));
+        }
+        if (bo.getShot() != null) {
+            checkLength("取景", bo.getShot(), LEN_OBJECTIVE);
+            row.setShot(StringUtils.trimToNull(bo.getShot()));
+        }
+        if (bo.getProductLockLevel() != null) {
+            String level = StringUtils.trimToNull(bo.getProductLockLevel());
+            if (level != null && !CreativeScreenSkeleton.LEVEL_STRICT.equals(level)
+                && !CreativeScreenSkeleton.LEVEL_LOOSE.equals(level)) {
+                throw new ServiceException("产品保真等级只能是 " + CreativeScreenSkeleton.LEVEL_STRICT
+                    + " 或 " + CreativeScreenSkeleton.LEVEL_LOOSE + "。");
+            }
+            row.setProductLockLevel(level == null ? CreativeScreenSkeleton.LEVEL_LOOSE : level);
+        }
+        if (bo.getRequired() != null) {
+            row.setRequired(DISABLED.equals(StringUtils.trimToNull(bo.getRequired())) ? DISABLED : ENABLED);
+        }
+        if (bo.getDefaultSelected() != null) {
+            row.setDefaultSelected(DISABLED.equals(StringUtils.trimToNull(bo.getDefaultSelected()))
+                ? DISABLED : ENABLED);
+        }
+        if (bo.getDefaultSortNo() != null) {
+            row.setDefaultSortNo(bo.getDefaultSortNo());
+        }
+        int min = bo.getMinScreens() == null ? (row.getMinScreens() == null ? 1 : row.getMinScreens())
+            : bo.getMinScreens();
+        int max = bo.getMaxScreens() == null ? (row.getMaxScreens() == null ? 1 : row.getMaxScreens())
+            : bo.getMaxScreens();
+        if (min < 1 || max < 1) {
+            throw new ServiceException("屏数至少为 1。");
+        }
+        if (min > max) {
+            throw new ServiceException("最少屏数（" + min + "）不能大于最多屏数（" + max + "）。");
+        }
+        if (max > MAX_SCREENS_HARD_LIMIT) {
+            throw new ServiceException("最多屏数不能超过 " + MAX_SCREENS_HARD_LIMIT + "（护栏：一次拖成几十屏会把分镜生成拖垮）。");
+        }
+        row.setMinScreens(min);
+        row.setMaxScreens(max);
+        for (String[] pair : new String[][] {
+            {"模板", bo.getAllowedTemplates()}, {"工作流", bo.getAllowedWorkflows()},
+            {"所需事实", bo.getRequiredFacts()}}) {
+            if (pair[1] != null) {
+                checkLength(pair[0], pair[1], LEN_CODES);
+            }
+        }
+        if (bo.getAllowedTemplates() != null) {
+            row.setAllowedTemplates(normalizeCodes(bo.getAllowedTemplates()));
+        }
+        if (bo.getAllowedWorkflows() != null) {
+            row.setAllowedWorkflows(normalizeCodes(bo.getAllowedWorkflows()));
+        }
+        if (bo.getRequiredFacts() != null) {
+            row.setRequiredFacts(normalizeCodes(bo.getRequiredFacts()));
+        }
+        if (bo.getVisualRulesJson() != null) {
+            row.setVisualRulesJson(StringUtils.trimToNull(bo.getVisualRulesJson()));
+        }
+        if (bo.getQaRulesJson() != null) {
+            row.setQaRulesJson(StringUtils.trimToNull(bo.getQaRulesJson()));
+        }
+        if (bo.getEnabled() != null) {
+            row.setEnabled(DISABLED.equals(StringUtils.trimToNull(bo.getEnabled())) ? DISABLED : ENABLED);
+        } else if (isNew) {
+            row.setEnabled(ENABLED);
+        }
+        if (bo.getRemark() != null) {
+            checkLength("备注", bo.getRemark(), LEN_REMARK);
+            row.setRemark(StringUtils.trimToNull(bo.getRemark()));
+        }
+    }
+
+    /**
+     * 取模块定义（不存在直接报错）。
+     *
+     * @param id 定义ID
+     * @return 定义
+     */
+    private DpModuleDefinition requireDefinition(Long id) {
+        if (id == null) {
+            throw new ServiceException("模块定义ID不能为空。");
+        }
+        DpModuleDefinition row = definitionMapper.selectById(id);
+        if (row == null) {
+            throw new ServiceException("模块定义不存在：" + id);
+        }
+        return row;
+    }
 
     /** 各文本字段的长度上限（与建表长度一致；超了直接拒绝，不静默截断） */
     private static final int LEN_NAME = 128;

@@ -2,6 +2,7 @@ package org.dromara.creative.service;
 
 import org.dromara.creative.domain.DpModuleDefinition;
 import org.dromara.creative.domain.DpProjectModule;
+import org.dromara.creative.domain.bo.ModuleDefinitionBo;
 import org.dromara.creative.domain.bo.ProjectModulePlanBo;
 import org.dromara.creative.domain.vo.ProjectModulePlanVo;
 import org.dromara.creative.helper.CreativeScreenSkeleton;
@@ -51,6 +52,49 @@ public interface ICreativeModuleService {
      * @return 模块定义；没有返回空列表
      */
     List<DpModuleDefinition> listDefinitions(String deliveryType);
+
+    /**
+     * 新建模块定义（V0.2 R27，文档 §24 左栏可编辑）。
+     *
+     * <p>校验：交付类型必须有已发布场景档案；同交付类型内 {@code moduleCode} 唯一；
+     * 屏类型/模块名非空；{@code 1 <= minScreens <= maxScreens}；保真等级只能是 STRICT/LOOSE。</p>
+     *
+     * @param bo 模块定义
+     * @return 保存后的定义（含生成的ID）
+     */
+    DpModuleDefinition createDefinition(ModuleDefinitionBo bo);
+
+    /**
+     * 编辑模块定义（R27）。
+     *
+     * <p><b>影响面要说清</b>：模块库改了只影响**以后**生成的分镜——已经生成的分镜屏上冻着
+     * 当时的屏类型/保真等级/取景，不会回溯改动（这是"历史可追溯"的前提）。</p>
+     *
+     * @param id 定义ID
+     * @param bo 模块定义
+     * @return 保存后的定义
+     */
+    DpModuleDefinition updateDefinition(Long id, ModuleDefinitionBo bo);
+
+    /**
+     * 启用/停用模块定义（R27）。停用后：新项目的默认骨架不再包含它，模块规划页也选不到它。
+     *
+     * @param id      定义ID
+     * @param enabled '0' 启用 / '1' 停用
+     * @return 保存后的定义
+     */
+    DpModuleDefinition setDefinitionEnabled(Long id, String enabled);
+
+    /**
+     * 删除模块定义（R27，软删）。
+     *
+     * <p><b>有项目计划在用就拒绝</b>：删掉定义会让那些计划里的模块"查不到定义"，
+     * 从而退化成"取景未配置"的兜底文案。要下线应该先**停用**，或者先把项目计划里的它删掉。</p>
+     *
+     * @param id 定义ID
+     * @return 删除结果说明
+     */
+    String deleteDefinition(Long id);
 
     /**
      * 某项目的模块计划（按 sortNo）。

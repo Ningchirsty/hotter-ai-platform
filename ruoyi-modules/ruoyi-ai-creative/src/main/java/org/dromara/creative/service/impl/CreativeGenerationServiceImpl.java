@@ -3,6 +3,9 @@ package org.dromara.creative.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
+import org.dromara.creative.service.ICreativeScenarioConfigService;
+import org.dromara.creative.domain.DpOutputSpec;
+import org.dromara.creative.helper.CreativeOutputSpecResolver;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.ai.image.domain.ImageWorkflowVersion;
 import org.dromara.ai.image.service.ImageTaskSubmissionService;
@@ -78,6 +81,11 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
      */
     private final ObjectProvider<ImageTaskSubmissionService> submissionProvider;
 
+    /**
+     * 场景配置（R27）：出图尺寸按交付类型的默认输出规格（主图 800×800 这类固定规格）。
+     */
+    private final ICreativeScenarioConfigService scenarioConfigService;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public DpGenerationVo submitHero(Long taskId, CreativeHeroBo bo) {
@@ -150,8 +158,16 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
         if (bytes == null || bytes.length == 0) {
             throw new ServiceException("参考图内容为空，无法出图：" + reference.getFileName());
         }
-        ReferenceImageFitter.Fitted fitted =
-            ReferenceImageFitter.fit(bytes, reference.getFileName(), version.maxPixels());
+        // 2.1) 输出规格（R27）：交付类型在 dp_output_spec 里的**默认规格**如果是固定尺寸
+        //      （主图 800×800、1200×1200），就按它出图。
+        //      为什么必须在这里做：wf-i2i-qwen21 / wf-whitebg-qwen21 这类契约没有固定尺寸档位
+        //      （输出跟随输入图），所以"要出多大"只能由我们送进去的图决定——因此把参考图
+        //      等比缩放到盖住目标尺寸后从中心裁切，而不是拉伸（拉伸会把产品拍扁）。
+        CreativeOutputSpecResolver.TargetSize target = resolveTargetSize(project);
+        ReferenceImageFitter.Fitted fitted = target != null && target.usable()
+            && ImageTaskSubmissionService.outputFollowsInput(version, sizeLabel)
+            ? ReferenceImageFitter.fitTo(bytes, reference.getFileName(), target.width(), target.height())
+            : ReferenceImageFitter.fit(bytes, reference.getFileName(), version.maxPixels());
         long assetId = submission.storeAsset(fitted.fileName(), fitted.bytes(), fitted.contentType());
 
         // 3) 提示词：由「已锁定的视觉基因 + 屏文案 + 品牌 Brief」派生（人可在页面上改，改了以人写的为准）
@@ -214,6 +230,11 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
         // R23：把"这次为什么用这张参考图""用了哪个模块的视觉表达"一起留痕。
         // 出图是异步的，事后要能回答"这屏当时按什么出的"，不能只靠猜。
         snapshot.put("referenceFrom", fileId == null ? "LATEST_ATTACHMENT" : "MODULE_PLAN");
+        if (target != null && target.usable()) {
+            snapshot.put("outputSpec", target.code());
+            snapshot.put("outputSpecSize", target.width() + "x" + target.height());
+            snapshot.put("outputSpecReason", target.reason());
+        }
         if (StringUtils.isNotBlank(moduleVisualRules)) {
             snapshot.put("moduleVisualRules", singleLine(moduleVisualRules));
         }
@@ -500,6 +521,33 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
             return null;
         }
         return text.replaceAll("\\s+", " ").trim();
+    }
+
+    /**
+     * 取本项目交付类型的默认输出规格（固定尺寸才有意义）。
+     *
+     * @param project 项目（取交付类型）
+     * @return 目标尺寸；没有固定规格返回 null（照旧按工作流默认出图）
+     */
+    private CreativeOutputSpecResolver.TargetSize resolveTargetSize(CreativeProjectVo project) {
+        try {
+            if (project == null || StringUtils.isBlank(project.getDeliverableType())) {
+                return null;
+            }
+            List<DpOutputSpec> specs = scenarioConfigService.listOutputSpecs(project.getDeliverableType());
+            if (specs.isEmpty()) {
+                return null;
+            }
+            CreativeOutputSpecResolver.TargetSize size = CreativeOutputSpecResolver.fixedSizeOf(specs.get(0));
+            if (size != null) {
+                log.info("出图尺寸按输出规格 {}：{}×{}（交付类型 {}）", size.code(), size.width(),
+                    size.height(), project.getDeliverableType());
+            }
+            return size;
+        } catch (Exception e) {
+            log.warn("读取输出规格失败，出图尺寸回落工作流默认：{}", e.getMessage());
+            return null;
+        }
     }
 
     private CpTaskFileVo resolveReference(Long taskId, Long fileId, List<CpTaskFileVo> files) {

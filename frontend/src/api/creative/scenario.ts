@@ -283,3 +283,59 @@ export function saveProjectModulePlan(
   });
 }
 
+
+/**
+ * 模块库（交付类型级）的写接口（V0.2 R27，文档 §24 左栏可编辑）。
+ *
+ * 注意影响面：模块库改了只影响**以后**生成的分镜——已生成的分镜屏上冻着当时的屏类型/保真/取景，
+ * 不会回溯改动（这是"历史可追溯"的前提）。
+ */
+
+/** 模块定义的写入载荷（字段与后端 ModuleDefinitionBo 一致） */
+export interface ModuleDefinitionForm {
+  deliveryType?: string;
+  moduleCode?: string;
+  moduleName?: string;
+  objective?: string;
+  screenType?: string;
+  productLockLevel?: string;
+  shot?: string;
+  required?: string;
+  minScreens?: number;
+  maxScreens?: number;
+  defaultSelected?: string;
+  defaultSortNo?: number;
+  allowedTemplates?: string;
+  allowedWorkflows?: string;
+  requiredFacts?: string;
+  visualRulesJson?: string;
+  qaRulesJson?: string;
+  enabled?: string;
+  remark?: string;
+}
+
+/** 新建模块定义 */
+export function createModuleDefinition(data: ModuleDefinitionForm): AxiosPromise<ModuleDefinition> {
+  return request({ url: '/creative/v2/modules', method: 'post', data });
+}
+
+/** 编辑模块定义 */
+export function updateModuleDefinition(
+  id: string | number,
+  data: ModuleDefinitionForm
+): AxiosPromise<ModuleDefinition> {
+  return request({ url: `/creative/v2/modules/${id}`, method: 'put', data });
+}
+
+/** 启用/停用模块定义（'0' 启用 / '1' 停用） */
+export function setModuleDefinitionEnabled(
+  id: string | number,
+  enabled: '0' | '1'
+): AxiosPromise<ModuleDefinition> {
+  return request({ url: `/creative/v2/modules/${id}/enabled`, method: 'put', params: { enabled } });
+}
+
+/** 删除模块定义（有项目计划在用会被拒绝并说明原因） */
+export function deleteModuleDefinition(id: string | number): AxiosPromise<string> {
+  return request({ url: `/creative/v2/modules/${id}`, method: 'delete' });
+}
