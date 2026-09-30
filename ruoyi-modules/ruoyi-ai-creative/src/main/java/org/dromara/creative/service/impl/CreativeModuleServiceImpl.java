@@ -28,6 +28,7 @@ import org.dromara.creative.mapper.DpProjectModuleMapper;
 import org.dromara.creative.mapper.DpStoryboardMapper;
 import org.dromara.creative.mapper.DpStoryboardScreenMapper;
 import org.dromara.creative.service.ICreativeModuleService;
+import org.dromara.creative.service.ICreativeProjectService;
 import org.dromara.creative.service.ICreativeScenarioConfigService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -276,6 +277,9 @@ public class CreativeModuleServiceImpl implements ICreativeModuleService {
     private final DpModuleDefinitionMapper definitionMapper;
     private final DpProjectModuleMapper projectModuleMapper;
     private final ICreativeScenarioConfigService scenarioConfigService;
+
+    /** 项目服务（R28：确认计划要写一条事件，复用既有 appendEvent 而不是自写 SQL） */
+    private final ICreativeProjectService projectService;
     private final CreativeTaskStageMapper stageMapper;
     private final IContentTaskService contentTaskService;
     private final DpStoryboardMapper storyboardMapper;
@@ -470,9 +474,9 @@ public class CreativeModuleServiceImpl implements ICreativeModuleService {
      * @param detailJson 明细 JSON
      */
     private void appendProjectEvent(Long taskId, String action, String detailJson) {
-        Map<String, Object> row = stageMapper.selectStage(taskId);
-        String stage = row == null ? null : String.valueOf(row.get("visualStage"));
-        stageMapper.insertEvent(taskId, "MODULE_PLAN", stage, stage, action, detailJson);
+        // 复用项目服务既有的事件接口：它负责雪花 ID 与操作人（自己写 INSERT 会漏掉 id，
+        // dp_stage_event.id 没有默认值——R28 第一次跑就是这么 500 的，日志里写得很清楚）。
+        projectService.appendEvent(taskId, "MODULE_PLAN", action, detailJson);
     }
 
     @Override

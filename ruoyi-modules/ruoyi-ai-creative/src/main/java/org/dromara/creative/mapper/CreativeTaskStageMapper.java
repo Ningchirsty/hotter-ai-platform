@@ -120,27 +120,4 @@ public interface CreativeTaskStageMapper {
         + "update_time AS updateTime FROM cp_task WHERE del_flag = '1' ORDER BY update_time DESC")
     List<org.dromara.creative.domain.vo.DeletedTaskVo> selectDeletedTasks();
 
-    /**
-     * 写一条视觉阶段事件（V0.2 R28：模块计划确认这类"人的动作"要留痕）。
-     *
-     * <p>为什么不复用 {@code moveStage}：那不是阶段变更；写阶段机会污染阶段历史
-     * （from=to=当前阶段），所以这里只落事件行。</p>
-     *
-     * @param taskId     项目ID
-     * @param eventType  事件类型
-     * @param fromStage  原阶段（可为 null）
-     * @param toStage    目标阶段（可为 null）
-     * @param action     动作编码
-     * @param detailJson 明细 JSON
-     * @return 影响行数
-     */
-    @Insert("INSERT INTO dp_stage_event (task_id, event_type, from_stage, to_stage, action, detail_json, "
-        + "actor_id, actor_name, create_time) VALUES (#{taskId}, #{eventType}, #{fromStage}, #{toStage}, "
-        + "#{action}, #{detailJson}, "
-        + "(SELECT user_id FROM sys_user WHERE user_name = CURRENT_USER()), "
-        + "(SELECT nick_name FROM sys_user WHERE user_name = CURRENT_USER()), NOW())")
-    int insertEvent(@Param("taskId") Long taskId, @Param("eventType") String eventType,
-                    @Param("fromStage") String fromStage, @Param("toStage") String toStage,
-                    @Param("action") String action, @Param("detailJson") String detailJson);
-
 }
