@@ -17,14 +17,15 @@ import org.dromara.common.core.utils.StringUtils;
  *
  * @param referenceFileId 参考图附件ID（可空＝取最近一张图片附件）
  * @param visualRules     视觉表达（可空）
+ * @param qaRules         质检规则 JSON（可空＝这一屏没配规则，体检时如实显示"未配置"，见 {@link CreativeQaRules}）
  * @author creative
  */
-public record CreativeScreenModuleConfig(Long referenceFileId, String visualRules) {
+public record CreativeScreenModuleConfig(Long referenceFileId, String visualRules, String qaRules) {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     /** 什么都没有的配置（读不到时用） */
-    public static final CreativeScreenModuleConfig EMPTY = new CreativeScreenModuleConfig(null, null);
+    public static final CreativeScreenModuleConfig EMPTY = new CreativeScreenModuleConfig(null, null, null);
 
     /**
      * 从屏的 spec_json 解析模块配置。
@@ -38,7 +39,7 @@ public record CreativeScreenModuleConfig(Long referenceFileId, String visualRule
         }
         try {
             JsonNode node = MAPPER.readTree(specJson);
-            return new CreativeScreenModuleConfig(referenceOf(node), rulesOf(node));
+            return new CreativeScreenModuleConfig(referenceOf(node), rulesOf(node), qaRulesOf(node));
         } catch (Exception e) {
             return EMPTY;
         }
@@ -77,5 +78,22 @@ public record CreativeScreenModuleConfig(Long referenceFileId, String visualRule
      */
     private static String rulesOf(JsonNode node) {
         return StringUtils.trimToNull(node.path("visualRules").asText(null));
+    }
+
+    /**
+     * 取质检规则 JSON（R29：模块库的 qaRules 在分镜生成时被烙进屏）。
+     *
+     * @param node 规格 JSON
+     * @return 规则 JSON 文本；没有则 null
+     */
+    private static String qaRulesOf(JsonNode node) {
+        JsonNode qa = node.path("qaRules");
+        if (qa.isMissingNode() || qa.isNull()) {
+            return null;
+        }
+        // 规则既可能是对象（模块库里就是 JSON），也可能是被写成字符串的 JSON：
+        // 两者都按原样文本交给 CreativeQaRules 解析，这里不做"聪明"的转换。
+        String text = qa.isTextual() ? qa.asText() : qa.toString();
+        return StringUtils.trimToNull(text);
     }
 }

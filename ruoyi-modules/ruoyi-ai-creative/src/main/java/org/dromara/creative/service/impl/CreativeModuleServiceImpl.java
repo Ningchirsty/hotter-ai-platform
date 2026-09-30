@@ -303,6 +303,24 @@ public class CreativeModuleServiceImpl implements ICreativeModuleService {
     }
 
     @Override
+    public Map<String, String> qaRulesOfType(String deliveryType) {
+        String type = canonical(deliveryType);
+        if (type == null) {
+            return Map.of();
+        }
+        List<DpModuleDefinition> rows = definitionMapper.selectList(new LambdaQueryWrapper<DpModuleDefinition>()
+            .eq(DpModuleDefinition::getDeliveryType, type)
+            .eq(DpModuleDefinition::getEnabled, ENABLED));
+        Map<String, String> rules = new LinkedHashMap<>();
+        for (DpModuleDefinition row : rows) {
+            if (StringUtils.isNotBlank(row.getQaRulesJson())) {
+                rules.putIfAbsent(row.getModuleCode(), row.getQaRulesJson());
+            }
+        }
+        return rules;
+    }
+
+    @Override
     public List<DpProjectModule> listProjectModules(Long taskId) {
         if (taskId == null) {
             return List.of();

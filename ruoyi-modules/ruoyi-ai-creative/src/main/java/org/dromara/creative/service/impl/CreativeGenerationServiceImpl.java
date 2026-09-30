@@ -635,6 +635,8 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
         vo.setQaVerdict(row.getQaVerdict());
         vo.setProductFileId(row.getProductFileId());
         vo.setProductVerdict(row.getProductVerdict());
+        // R29：屏级规则体检结论（确定性像素度量；空 = 这一屏没配规则，页面显示「未配置规则」）
+        vo.setQaFindingsJson(row.getQaFindingsJson());
         vo.setErrorCode(row.getErrorCode());
         vo.setErrorMessage(row.getErrorMessage());
         vo.setDurationMs(row.getDurationMs());

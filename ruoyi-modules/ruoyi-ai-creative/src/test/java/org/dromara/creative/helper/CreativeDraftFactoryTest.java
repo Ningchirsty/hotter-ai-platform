@@ -298,4 +298,75 @@ class CreativeDraftFactoryTest {
             drafts.stream().map(CreativeDraftFactory.ScreenDraft::label).toList());
     }
 
+    // ------------------------------------------------------------------
+    // R29：主图（MAIN_IMAGE，文档 §9.2）五个屏的专用文案
+    //
+    // 改造前这五种屏类型都落到通用兜底（独白里写着"没有专用文案策略"），
+    // 于是喂给出图的画面描述里完全没有主图口径（1:1、白底、不叠促销文字、不拼版）。
+    // 下面的断言只钉两件事：① 走的是专用策略（不再是兜底）；② 主图口径确实写进了独白。
+    // ------------------------------------------------------------------
+
+    private static CreativeScreenSkeleton mainImageSkeleton() {
+        return CreativeScreenSkeleton.of(
+            List.of(spec("MAIN_WHITE_BG", "白底主图", "STRICT"),
+                spec("MAIN_SELLING_POINT", "卖点图", "LOOSE"),
+                spec("MAIN_SCENE", "场景图", "LOOSE"),
+                spec("MAIN_DETAIL", "细节图", "STRICT"),
+                spec("MAIN_SIZE", "尺寸图", "STRICT")), Map.of());
+    }
+
+    @Test
+    @DisplayName("R29：主图五屏各有专用文案策略（不再落通用兜底），且写明主图口径")
+    void mainImageScreensHaveDedicatedCopy() {
+        ObjectNode dna = dna("#FFFFFF", "#2E6B4F", "SOFT", "FRONT", "LOW", "MEDIUM", "HIGH",
+            "纯色底", 60, 80);
+        List<CreativeDraftFactory.CopyHint> points =
+            List.of(new CreativeDraftFactory.CopyHint("卖点A", "手工吹制、每只纹理不同"));
+        List<CreativeDraftFactory.ScreenDraft> drafts = CreativeDraftFactory.screens(
+            mainImageSkeleton(), dna, "鸢尾花",
+            facts("product_name", "鸢尾花", "color", "蓝紫渐变", "craft", "手工吹制", "spec_params", "高 28cm"),
+            null, points);
+
+        assertEquals(5, drafts.size());
+        for (CreativeDraftFactory.ScreenDraft draft : drafts) {
+            assertFalse(draft.soloStatement().contains("没有专用文案策略"),
+                draft.type() + " 应该走主图专用策略：" + draft.soloStatement());
+            assertTrue(draft.title().contains("鸢尾花"), "标题要带产品名：" + draft.title());
+        }
+
+        // 白底主图：平台首图口径（白底、不裁不遮、不叠促销文字、不拼版）
+        String white = drafts.get(0).soloStatement();
+        assertTrue(white.contains("白底") && white.contains("不裁不遮"), white);
+        assertTrue(white.contains("边框") && white.contains("水印") && white.contains("促销文字"), white);
+        // 卖点图：拿到模块配的卖点块，并要求"文案不压主体"
+        assertEquals("卖点A", drafts.get(1).subtitle());
+        assertEquals("手工吹制、每只纹理不同", drafts.get(1).bodyText());
+        assertTrue(drafts.get(1).soloStatement().contains("不压住产品主体"), drafts.get(1).soloStatement());
+        // 场景图 / 细节图 / 尺寸图：各自讲各自的事，且都提"主图口径"
+        assertTrue(drafts.get(2).soloStatement().contains("纯色底"), drafts.get(2).soloStatement());
+        assertTrue(drafts.get(3).soloStatement().contains("手工吹制"), drafts.get(3).soloStatement());
+        assertTrue(drafts.get(3).soloStatement().contains("不与其它画面拼版"), drafts.get(3).soloStatement());
+        assertTrue(drafts.get(4).soloStatement().contains("高 28cm"), drafts.get(4).soloStatement());
+        assertTrue(drafts.get(4).soloStatement().contains("不叠加促销文字"), drafts.get(4).soloStatement());
+    }
+
+    @Test
+    @DisplayName("R29：主图事实缺失时不编造——只说「先确认」，并且仍不落兜底")
+    void mainImageCopyWithoutFactsDoesNotInvent() {
+        ObjectNode dna = dna("#FFFFFF", null, "SOFT", "FRONT", "LOW", "MEDIUM", "HIGH",
+            null, 60, 80);
+        List<CreativeDraftFactory.ScreenDraft> drafts = CreativeDraftFactory.screens(
+            mainImageSkeleton(), dna, "鸢尾花", Map.of(), null, List.of());
+
+        String scene = drafts.get(2).soloStatement();
+        assertTrue(scene.contains("不猜"), "参考图没测出场景时不许编一个场景：" + scene);
+        String detail = drafts.get(3).soloStatement();
+        assertTrue(detail.contains("尚未确认"), detail);
+        String size = drafts.get(4).soloStatement();
+        assertTrue(size.contains("尚未确认"), size);
+        for (CreativeDraftFactory.ScreenDraft draft : drafts) {
+            assertFalse(draft.soloStatement().contains("没有专用文案策略"), draft.type());
+        }
+    }
+
 }

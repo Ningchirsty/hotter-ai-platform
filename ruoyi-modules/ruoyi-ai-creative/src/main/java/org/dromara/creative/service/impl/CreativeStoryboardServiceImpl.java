@@ -193,6 +193,9 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
         ICreativeModuleService.ActiveScreens activePlan = resolveActive(taskId, project.getDeliverableType());
         CreativeScreenSkeleton active = activePlan.skeleton();
         List<DpProjectModule> owners = activePlan.owners();
+        // R29：模块库的质检规则（文档 §20 qaRules）在**这一刻**被烙进屏——与 visualRules 同一语义：
+        // 屏上冻着"这一屏当时按什么规则验收"，以后改模块库不回溯已有分镜。一次生成只查一次库。
+        Map<String, String> qaRules = moduleService.qaRulesOfType(project.getDeliverableType());
 
         int version = nextVersion(taskId);
         DpStoryboard storyboard = new DpStoryboard();
@@ -319,7 +322,7 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
             screen.setBodyText(draft.bodyText());
             screen.setPictureSoloStatement(draft.soloStatement());
             screen.setSpecJson(spec(template, dna, direction, active,
-                sortNo - 1 < owners.size() ? owners.get(sortNo - 1) : null));
+                sortNo - 1 < owners.size() ? owners.get(sortNo - 1) : null, qaRules));
             screen.setWorkflowCode(workflowOf(owners, sortNo - 1));
             screen.setProductLockLevel(template.productLockLevel());
             screen.setStatus(STATUS_DRAFT);
@@ -702,11 +705,12 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
      * @param template  屏骨架定义
      * @param dna       锁定基因
      * @param direction 选定方向（可空）
+     * @param qaRules   模块编码 → 质检规则 JSON（R29；空映射表示该交付类型没有配规则）
      * @return 规格 JSON
      */
     private String spec(CreativeScreenSkeleton.ScreenSpec template, ObjectNode dna,
                             DpVisualDirectionVo direction, CreativeScreenSkeleton active,
-                            DpProjectModule owner) {
+                            DpProjectModule owner, Map<String, String> qaRules) {
         Map<String, Object> spec = new LinkedHashMap<>();
         String scene = direction != null ? String.valueOf(direction.getStrategy().getOrDefault("scene", "")) : "";
         String lighting = direction != null
@@ -733,6 +737,12 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
             }
             if (StringUtils.isNotBlank(owner.getVisualRulesJson())) {
                 spec.put("visualRules", owner.getVisualRulesJson());
+            }
+            // R29：质检规则同样冻进屏（原文 JSON 文本，读的时候交给 CreativeQaRules 解析）。
+            // 没配就不写这个键——"没配"与"配了个空对象"必须能分开，页面照实显示"未配置"。
+            String ownerQaRules = qaRules == null ? null : qaRules.get(owner.getModuleCode());
+            if (StringUtils.isNotBlank(ownerQaRules)) {
+                spec.put("qaRules", ownerQaRules);
             }
             List<String> templates = CreativeModuleServiceImpl.splitCodes(owner.getTemplateCodes());
             if (!templates.isEmpty()) {

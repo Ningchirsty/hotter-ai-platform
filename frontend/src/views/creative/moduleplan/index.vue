@@ -139,6 +139,15 @@
           <el-input v-model="definitionForm.visualRulesJson" type="textarea" :rows="2"
             placeholder='JSON 或人话文本，例如 {"tone":"暖光"}' />
         </el-form-item>
+        <el-form-item label="质检规则">
+          <el-input v-model="definitionForm.qaRulesJson" type="textarea" :rows="4"
+            placeholder='JSON，例如 {"square":true,"minSide":800,"whiteBackground":{"enabled":true,"minEdgeWhiteness":0.9}}' />
+          <span class="muted small">
+            分镜生成时<b>烙进屏</b>（改这里不回溯已有分镜）；选定交付图时按它对<b>交付图</b>做确定性像素体检：
+            是否 1:1 / 最短边 / 透明通道 / 边缘白度 / 主体占比 / 是否贴边。
+            <b>只报告不判决</b>（不会自动筛除候选）。留空 = 这一屏不体检，页面显示「未配置规则」。
+          </span>
+        </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="definitionForm.remark" />
         </el-form-item>
@@ -174,6 +183,8 @@
                 </div>
                 <div class="muted small">
                   {{ d.moduleCode }} · 屏类型 {{ d.screenType }} · {{ screenRangeText(d) }}
+                  <el-tag v-if="d.qaRulesJson" size="small" effect="plain" type="warning">有质检规则</el-tag>
+                  <span v-else>· 无质检规则（不体检）</span>
                 </div>
                 <div v-if="d.objective" class="muted small">{{ d.objective }}</div>
               </div>
@@ -357,7 +368,9 @@
             <p class="muted small">
               已生效：顺序 / 屏数 / 启停（决定屏集合）、<b>文案</b>（覆盖该屏正文）、
               <b>Workflow</b>（该模块出图用第一个）、<b>对应卖点</b>（该屏取哪个卖点块）。
-              其余字段（视觉表达 / 参考图 / 模板）本轮只落库并展示，尚未参与生成——不假装它们已经在起作用。
+              模块库里的<b>视觉表达</b>与<b>参考图</b>进提示词与出图输入，<b>模板</b>供排版取用，
+              <b>质检规则</b>在选定交付图时做确定性像素体检——三者都在<b>分镜生成那一刻</b>烙进屏，
+              改模块库不回溯已有分镜。
             </p>
           </template>
           <p v-else class="muted small">在中间点一行模块，这里编辑它的字段。</p>

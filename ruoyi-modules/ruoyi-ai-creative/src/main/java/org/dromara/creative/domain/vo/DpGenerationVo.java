@@ -116,6 +116,12 @@ public class DpGenerationVo implements Serializable {
     private String productVerdict;
 
     /**
+     * 屏级规则体检结论（R29；JSON 文本：configured/verdict/metrics/findings）。
+     * 空 = 这一屏没配规则（不是通过）。页面直接展示 verdict 与未通过项。
+     */
+    private String qaFindingsJson;
+
+    /**
      * 失败码
      */
     private String errorCode;

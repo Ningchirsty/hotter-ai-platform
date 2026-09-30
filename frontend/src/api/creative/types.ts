@@ -98,6 +98,14 @@ export interface DpGenerationVO {
    * 可能为 null（尚未质检或基准跑不起来）——页面必须如实显示「未质检」，不得当成通过。
    */
   productVerdict?: string;
+  /**
+   * 屏级规则体检结论（R29；JSON 文本：configured/verdict/metrics/findings）。
+   *
+   * 与上面两个 QA 结论的分工：qaVerdict/productVerdict 是**模型**的一致性结论（像不像）；
+   * 这里是**像素度量**的确定性结论（是不是 1:1、边够不够、边缘白不白、主体占比、有无贴边/透明）。
+   * 空 = 这一屏没配规则（不是通过）；verdict=NOT_CONFIGURED 也是同一含义，页面必须如实显示。
+   */
+  qaFindingsJson?: string;
   errorCode?: string;
   errorMessage?: string;
   durationMs?: number;

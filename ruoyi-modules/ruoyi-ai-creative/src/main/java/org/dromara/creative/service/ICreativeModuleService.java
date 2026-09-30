@@ -8,6 +8,7 @@ import org.dromara.creative.domain.vo.ProjectModulePlanVo;
 import org.dromara.creative.helper.CreativeScreenSkeleton;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 模块引擎（V0.2 R21，文档 §18/§20/§21）。
@@ -52,6 +53,22 @@ public interface ICreativeModuleService {
      * @return 模块定义；没有返回空列表
      */
     List<DpModuleDefinition> listDefinitions(String deliveryType);
+
+    /**
+     * 某交付类型下「模块编码 → 质检规则 JSON」的映射（V0.2 R29）。
+     *
+     * <p><b>为什么要有这个方法</b>：文档 §20 的 {@code qaRules} 从 R21 起就存在库里、模块库界面也能编辑，
+     * 但一直没有任何代码读它。分镜生成时需要把规则**烙进屏的 spec_json**（与 visualRules 同一时刻、
+     * 同一语义：屏上冻着"这一屏当时按什么规则验收"），于是这里给一个按交付类型批量取的入口——
+     * 一次生成只查一次库，不在逐屏循环里反复查。</p>
+     *
+     * <p>只取**启用中**的定义：停用的模块不会出屏，它的规则也就不该被烙到任何屏上。
+     * 没配规则的模块不出现在映射里（不是空串），调用方据此区分"没配"与"配了空"。</p>
+     *
+     * @param deliveryType 交付类型编码或别名
+     * @return 模块编码 → qaRules JSON 文本；没有配置返回空映射
+     */
+    Map<String, String> qaRulesOfType(String deliveryType);
 
     /**
      * 新建模块定义（V0.2 R27，文档 §24 左栏可编辑）。

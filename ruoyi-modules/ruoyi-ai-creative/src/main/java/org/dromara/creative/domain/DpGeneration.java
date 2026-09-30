@@ -190,6 +190,17 @@ public class DpGeneration extends BaseEntity implements Serializable {
     private String productVerdict;
 
     /**
+     * 屏级规则体检结论（R29；JSON：metrics + findings）
+     *
+     * <p><b>与上面两个 QA 镜像的分工</b>：{@code qaVerdict}/{@code productVerdict} 是**模型**的一致性结论
+     * （像不像、还是不是那个产品）；这里是**像素度量**的确定性结论（是不是 1:1、边够不够、
+     * 边缘白不白、主体占比多少、有没有贴边/透明）。两者互不替代，页面分别显示。</p>
+     *
+     * <p>空值表示这一屏**没配规则**（模块库 qaRules 为空），不是"检查通过"。</p>
+     */
+    private String qaFindingsJson;
+
+    /**
      * 耗时（毫秒）
      */
     private Long durationMs;

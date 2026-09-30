@@ -371,6 +371,66 @@ public final class CreativeDraftFactory {
                 joinNonBlank("；", ctx.mustShow(), ctx.packing(), ctx.brandTone()),
                 "留下品牌印象并收尾：画面克制、不抢产品"
                     + (ctx.brandTone() == null ? "" : "，调性落在已确认的「" + ctx.brandTone() + "」上"));
+            // ------------------------------------------------------------------
+            // 主图（MAIN_IMAGE，文档 §9.2）的五个屏（R29）
+            //
+            // 为什么需要专用策略：主图不是"短一点的详情页"——它的验收口径是**平台客观要求**
+            // （1:1 方图、白底、不叠促销文字、单图不拼版、主体完整不裁），而此前这五种屏都落到
+            // {@link #genericDraft} 的通用兜底文案上（"在骨架契约里没有专用文案策略"），
+            // 出图提示词里因此完全没有主图口径。这里按屏类型给出各自的画面要求，
+            // 事实字段照旧"有就用、没有就不写"，绝不编造。
+            // ------------------------------------------------------------------
+            case "MAIN_WHITE_BG" -> new ScreenDraft(screen.type(), screen.label(), screen.productLockLevel(),
+                ctx.product() + " · 白底主图",
+                firstNonBlank(ctx.spec(), "标准正视角"),
+                joinNonBlank("；", ctx.productNameFact(), ctx.color(), ctx.mainVersion()),
+                "这一屏要能直接当平台首图：纯白底、产品完整居中、不裁不遮，"
+                    + (ctx.color() == null ? "已确认的配色" : "已确认的「" + ctx.color() + "」配色")
+                    + "与材质如实呈现；画面上不出现边框、水印与促销文字（主图口径：单图不拼版、不叠字）。"
+                    + "主体占比 " + ctx.ratio() + "，四周留白 " + ctx.whitespace() + "。");
+            case "MAIN_SELLING_POINT" -> new ScreenDraft(screen.type(), screen.label(), screen.productLockLevel(),
+                ctx.product() + " · " + sellingLabel(index == 1 ? ctx.color() : ctx.craft(),
+                    index == 1 ? "配色卖点" : "工艺卖点", screen.label()),
+                point == null ? null : blank(point.title()),
+                point == null ? null : blank(point.content()),
+                index == 1
+                    ? (point != null && blank(point.content()) != null
+                        ? "把卖点「" + blank(point.content()) + "」用画面讲清楚：让产品身上对应的那个特征当主角，"
+                            + "文案只做一句话补充、不压住产品主体"
+                        : "把第一个卖点用画面讲清楚：用「" + ctx.product() + "」身上最直观的那个特征当主角，"
+                            + "文案只做一句话补充、不压住产品主体")
+                    : ("这一屏的卖点与上一屏必须在画面上明显不同：换机位、换景别、换背景，"
+                        + "别让两张主图看起来是同一张"
+                        + (point == null || blank(point.content()) == null
+                            ? "" : "；把「" + blank(point.content()) + "」讲成画面")));
+            case "MAIN_SCENE" -> new ScreenDraft(screen.type(), screen.label(), screen.productLockLevel(),
+                ctx.product() + " · " + sceneLabel(ctx.sceneType()) + "场景",
+                null,
+                null,
+                "把产品放进真实使用环境里：1:1 画幅内交代清楚空间关系与使用状态，"
+                    + (StringUtils.isBlank(ctx.sceneType())
+                        ? "场景自定（参考图未测出场景，不猜）"
+                        : "参考图实测场景为「" + ctx.sceneType() + "」，本屏贴近该场景")
+                    + "；光线沿用基因的" + ctx.light() + "，背景以 " + ctx.background() + " 为基调，"
+                    + "但产品仍必须是画面主体（占比 " + ctx.ratio() + "），不出现促销文字");
+            case "MAIN_DETAIL" -> new ScreenDraft(screen.type(), screen.label(), screen.productLockLevel(),
+                ctx.product() + " · 细节",
+                firstNonBlank(ctx.craft(), "材质与工艺细节"),
+                joinNonBlank("；", ctx.craft()),
+                "主图里的细节屏要给出可信的工艺证据："
+                    + (ctx.craft() == null
+                        ? "把材质纹理、结构接缝、表面处理拍清楚（工艺字段尚未确认，先按画面可辨识为准）"
+                        : "把「" + ctx.craft() + "」拍清楚：材质纹理、结构接缝、表面处理经得起看")
+                    + "；一张图只讲一个细节，不与其它画面拼版（主图口径）");
+            case "MAIN_SIZE" -> new ScreenDraft(screen.type(), screen.label(), screen.productLockLevel(),
+                ctx.product() + " · 尺寸",
+                firstNonBlank(ctx.spec(), ctx.quantity(), "尺寸与构成"),
+                joinNonBlank("；", ctx.spec(), ctx.quantity()),
+                "让人一眼读出大小与构成："
+                    + (ctx.spec() == null
+                        ? "放一个可对照的参照物，比例必须真实（尺寸字段尚未确认，请先确认规格再定这一屏）"
+                        : "已确认规格「" + ctx.spec() + "」直接上图，并配可对照的参照物")
+                    + "；画面上不叠加促销文字（主图口径）");
             default -> genericDraft(screen, ctx, point);
         };
     }

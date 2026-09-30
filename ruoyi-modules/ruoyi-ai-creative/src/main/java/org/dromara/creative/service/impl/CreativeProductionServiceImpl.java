@@ -10,6 +10,8 @@ import org.dromara.creative.helper.ReferenceImageFitter;
 import org.dromara.content.service.IContentTaskService;
 import org.dromara.creative.domain.vo.CreativeProjectVo;
 import org.dromara.creative.helper.CreativeOutputSpecResolver;
+import org.dromara.creative.helper.CreativeImageRuleChecker;
+import org.dromara.creative.helper.CreativeQaRules;
 import org.dromara.creative.helper.CreativeScreenModuleConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
@@ -196,6 +198,11 @@ public class CreativeProductionServiceImpl implements ICreativeProductionService
         // 做成"选定即规格化"而不是"生成时"，是因为只有选定那一下才确定"这张就是要交付的图"。
         normalizeDeliveryIfNeeded(taskId, row);
 
+        // 选定即做「屏级规则体检」（R29，文档 §20 qaRules）：对**交付图**（规格化之后那张）
+        // 做确定性像素度量——是不是 1:1、最短边够不够、有没有透明通道、边缘白度、主体占比、有没有贴边。
+        // 只报告不判决：HARD 项不自动筛除候选（是否让平台硬性项自动筛除属于产品决策，不由代码替人拍板）。
+        inspectScreenRules(taskId, row);
+
         // 选定即触发「登记 + 质检」：产出登记成任务附件，并对原图做一致性检查。
         // 这一步不改变选定结果——QA 只做减法（不一致时由 refreshQa 把候选筛掉）。
         try {
@@ -313,6 +320,79 @@ public class CreativeProductionServiceImpl implements ICreativeProductionService
             } catch (Exception ignored) {
                 // 事件也写不进去就算了，日志里有
             }
+        }
+    }
+
+    /**
+     * 屏级规则体检（V0.2 R29，文档 §20 {@code qaRules} 的落地）。
+     *
+     * <p><b>查什么</b>：这一屏的模块在模块库里配的 qaRules（分镜生成时已冻进屏的 {@code spec_json}）
+     * 对**交付图**逐项做确定性像素度量。交付图优先取规格化后的附件（{@code output_file_id}）——
+     * 那才是要交付出去的那张；没有规格化过就取原始产出。</p>
+     *
+     * <p><b>没配规则就不检查</b>：结论里写 {@code NOT_CONFIGURED}，页面照实显示"未配置"，
+     * 绝不用一套隐式默认值假装检查过（那会制造"通过"的假象）。</p>
+     *
+     * <p><b>只报告不判决</b>：不因为 HARD 项未通过就改动候选状态——是否让平台硬性项自动筛除
+     * 属于产品决策（与文档 §25 第 3 步同类），代码不替人拍板。</p>
+     *
+     * @param taskId 项目ID
+     * @param row    已选定的候选
+     */
+    private void inspectScreenRules(Long taskId, DpGeneration row) {
+        try {
+            DpStoryboardScreen screen = row.getScreenId() == null ? null : screenMapper.selectById(row.getScreenId());
+            CreativeScreenModuleConfig config = CreativeScreenModuleConfig.parse(
+                screen == null ? null : screen.getSpecJson());
+            CreativeQaRules rules = CreativeQaRules.parse(config.qaRules());
+            byte[] bytes;
+            if (row.getOutputFileId() != null) {
+                bytes = projectService.readFileContent(taskId, row.getOutputFileId()).bytes();
+            } else {
+                bytes = generationService.preview(row.getId());
+            }
+            CreativeImageRuleChecker.Report report = CreativeImageRuleChecker.inspect(bytes, rules);
+            row.setQaFindingsJson(report.toJson());
+            generationMapper.updateById(row);
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("generationId", row.getId());
+            payload.put("screenId", row.getScreenId() == null ? 0L : row.getScreenId());
+            payload.put("moduleCode", screen == null ? "" : moduleCodeOf(screen));
+            payload.put("verdict", report.verdict());
+            payload.put("hardFailed", report.hardFailed());
+            payload.put("softFailed", report.softFailed());
+            payload.put("inspectedFileId", row.getOutputFileId() == null ? "" : row.getOutputFileId());
+            projectService.appendEvent(taskId, "QA", "SCREEN_RULES_CHECKED", toJson(payload));
+            log.info("候选 {} 屏级规则体检：verdict={} HARD未过={} SOFT未过={}",
+                row.getId(), report.verdict(), report.hardFailed(), report.softFailed());
+        } catch (Exception e) {
+            // 体检失败不该让"选定"失败：留一条事件说明原因，页面显示"未做体检"而不是"通过"
+            log.warn("候选 {} 屏级规则体检失败：{}", row.getId(), e.getMessage());
+            try {
+                projectService.appendEvent(taskId, "QA", "SCREEN_RULES_CHECK_FAILED",
+                    toJson(Map.of("generationId", row.getId(), "reason", String.valueOf(e.getMessage()))));
+            } catch (Exception ignored) {
+                // 事件也写不进去就算了，日志里有
+            }
+        }
+    }
+
+    /**
+     * 从屏规格里取模块编码（事件载荷用；取不到给空串，不让它成为失败原因）。
+     *
+     * @param screen 屏
+     * @return 模块编码
+     */
+    private static String moduleCodeOf(DpStoryboardScreen screen) {
+        String spec = screen.getSpecJson();
+        if (StringUtils.isBlank(spec)) {
+            return "";
+        }
+        try {
+            JsonNode node = MAPPER.readTree(spec);
+            return StringUtils.blankToDefault(node.path("moduleCode").asText(null), "");
+        } catch (Exception e) {
+            return "";
         }
     }
 
@@ -682,6 +762,9 @@ public class CreativeProductionServiceImpl implements ICreativeProductionService
         vo.setOutputWidth(row.getOutputWidth());
         vo.setOutputHeight(row.getOutputHeight());
         vo.setQaVerdict(row.getQaVerdict());
+        vo.setProductVerdict(row.getProductVerdict());
+        // R29：屏级规则体检结论（选定那一刻算出来的，页面直接显示）
+        vo.setQaFindingsJson(row.getQaFindingsJson());
         vo.setErrorCode(row.getErrorCode());
         vo.setErrorMessage(row.getErrorMessage());
         vo.setPreviewable(row.getOutputAssetId() != null);

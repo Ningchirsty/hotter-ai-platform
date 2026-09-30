@@ -61,6 +61,14 @@
         为 null 时本页如实显示「未质检」，绝不当成通过。
       </p>
 
+      <p class="muted">
+        <b>规则体检</b>是按这一屏所属模块在模块库里配的 <code>qaRules</code> 对<b>交付图</b>做的
+        <b>确定性像素度量</b>（是否 1:1、最短边、透明通道、边缘白度、主体占比、是否贴边），
+        <b>不调用模型、可复算</b>；它只看客观度量，不看画面好不好看。
+        体检<b>只报告不判决</b>：硬性项没过也不会自动筛除候选。这一屏没配规则时显示「未配置规则」——
+        「没检查」与「检查通过」是两回事。
+      </p>
+
       <el-table v-loading="loading" :data="rows" class="prod-table" empty-text="该项目还没有出图候选">
         <el-table-column label="预览" width="90">
           <template #default="{ row }">
@@ -98,6 +106,21 @@
         </el-table-column>
         <el-table-column label="尺寸" width="110">
           <template #default="{ row }">{{ sizeText(asGen(row)) }}</template>
+        </el-table-column>
+        <el-table-column label="规则体检" min-width="200">
+          <template #default="{ row }">
+            <template v-if="ruleCheck(asGen(row))">
+              <div>
+                <span :class="ruleClass(ruleCheck(asGen(row))!.verdict)">
+                  规则：{{ ruleLabel(ruleCheck(asGen(row))!.verdict) }}
+                </span>
+              </div>
+              <div v-if="ruleCheck(asGen(row))!.failed.length" class="cell-sub">
+                {{ ruleCheck(asGen(row))!.failed.map((f) => f.label).join('、') }}
+              </div>
+            </template>
+            <span v-else class="muted small">未配置规则</span>
+          </template>
         </el-table-column>
         <el-table-column label="耗时" width="90">
           <template #default="{ row }">{{ durationText(asGen(row).durationMs) }}</template>
@@ -318,6 +341,26 @@ interface CompareTarget {
   typeDesc: string;
 }
 
+/**
+ * 屏级规则体检的解析结果（R29）。
+ *
+ * 后端存的是 JSON 文本（`DpGenerationVO.qaFindingsJson`），页面只读它、不改它；
+ * 解析失败按"没有结论"处理（不编造、也不炸页面）。
+ */
+interface RuleCheck {
+  verdict: string;
+  failed: { label: string; level: string }[];
+}
+
+/** 规则体检总结论的中文名（后端只在 UNREADABLE 时才是"真有问题"；其余按语义如实显示） */
+const RULE_VERDICT_LABELS: Record<string, string> = {
+  NOT_CONFIGURED: '未配置规则',
+  PASS: '通过',
+  HARD_FAILED: '硬性项未过',
+  SOFT_ONLY: '参考项未过',
+  UNREADABLE: '读不出图'
+};
+
 const statusOptions = Object.entries(GENERATION_STATUS_LABELS).map(([value, label]) => ({ value, label }));
 
 // 项目选择
@@ -427,6 +470,46 @@ function qaClass(verdict?: string): string {
   if (verdict === 'CONSISTENT') return 'good';
   if (verdict === 'INCONSISTENT') return 'bad';
   if (verdict === 'UNCERTAIN') return 'warn';
+  return 'muted';
+}
+
+/**
+ * 解析屏级规则体检结论。
+ *
+ * 返回 null 表示"这一屏没有体检结论"（没配规则，或这一轮还没有体检过）——
+ * 页面据此显示「未配置规则」，绝不显示成"通过"。
+ *
+ * @param gen 候选
+ * @returns 解析结果；无结论或解析失败返回 null
+ */
+function ruleCheck(gen: DpGenerationVO): RuleCheck | null {
+  const raw = gen.qaFindingsJson;
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as {
+      configured?: boolean;
+      verdict?: string;
+      findings?: { label?: string; level?: string; ok?: boolean }[];
+    };
+    if (!parsed || !parsed.verdict) return null;
+    const failed = (parsed.findings || [])
+      .filter((item) => item && item.ok === false)
+      .map((item) => ({ label: item.label || '未命名检查项', level: item.level || 'SOFT' }));
+    return { verdict: parsed.verdict, failed };
+  } catch {
+    return null;
+  }
+}
+
+function ruleLabel(verdict: string): string {
+  return RULE_VERDICT_LABELS[verdict] || verdict;
+}
+
+/** 规则体检的样式：HARD 未过才是"必须处理"，SOFT 未过是"值得看一眼"，其余中性 */
+function ruleClass(verdict: string): string {
+  if (verdict === 'HARD_FAILED' || verdict === 'UNREADABLE') return 'bad';
+  if (verdict === 'SOFT_ONLY') return 'warn';
+  if (verdict === 'PASS') return 'good';
   return 'muted';
 }
 
