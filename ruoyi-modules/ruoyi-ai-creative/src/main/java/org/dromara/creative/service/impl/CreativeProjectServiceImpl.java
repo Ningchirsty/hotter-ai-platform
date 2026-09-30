@@ -228,9 +228,12 @@ public class CreativeProjectServiceImpl implements ICreativeProjectService {
         vo.setTaskName((String) meta.get("taskName"));
         vo.setProjectDeleted("1".equals(meta.get("delFlag")));
 
-        List<CpTaskFileVo> files = contentTaskService.listFiles(taskId);
+        // 刻意**不走 contentTaskService.listFiles**：那条路会先校验"任务存在"，
+        // 而"清理已删项目的素材"恰恰是已删任务——第一次实现就因此在真机上返回"任务不存在"。
+        // 素材统计只需要附件表本身，直接读表最稳。
+        List<CpTaskFile> files = liveFiles(taskId);
         long bytes = 0L;
-        for (CpTaskFileVo file : files) {
+        for (CpTaskFile file : files) {
             bytes += file.getFileSize() == null ? 0L : file.getFileSize();
         }
         vo.setFileCount(files.size());
@@ -264,13 +267,13 @@ public class CreativeProjectServiceImpl implements ICreativeProjectService {
         }
 
         ProjectMaterialsVo vo = materials(taskId);
-        List<CpTaskFileVo> files = contentTaskService.listFiles(taskId);
+        List<CpTaskFile> files = liveFiles(taskId);
         int objects = 0;
         long bytes = 0L;
         // 先删对象、再删库行：顺序反了会留下"孤儿对象"（库里没引用、对象还在），
         // 那是磁盘体检时最难解释的一类垃圾。对象删失败不阻断流程，但如实记进 note。
         List<String> objectFailures = new ArrayList<>();
-        for (CpTaskFileVo file : files) {
+        for (CpTaskFile file : files) {
             bytes += file.getFileSize() == null ? 0L : file.getFileSize();
             if (StringUtils.isBlank(file.getFileRef())) {
                 continue;
@@ -315,6 +318,17 @@ public class CreativeProjectServiceImpl implements ICreativeProjectService {
         log.info("项目 {} 素材已清理：对象 {} / 附件 {} / 生成 {} / {} 字节（操作人核对名：{}）",
             taskId, objects, fileRows, generations, bytes, taskName);
         return vo;
+    }
+
+    /**
+     * 项目当前的附件行（直接读表，不经过内容服务的"任务必须存在"校验）。
+     *
+     * @param taskId 项目ID
+     * @return 未删除的附件行
+     */
+    private List<CpTaskFile> liveFiles(Long taskId) {
+        return fileMapper.selectList(new LambdaQueryWrapper<CpTaskFile>()
+            .eq(CpTaskFile::getTaskId, taskId));
     }
 
     /**

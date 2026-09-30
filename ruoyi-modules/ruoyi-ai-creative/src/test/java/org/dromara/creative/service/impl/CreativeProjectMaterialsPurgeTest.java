@@ -1,7 +1,7 @@
 package org.dromara.creative.service.impl;
 
 import org.dromara.common.core.exception.ServiceException;
-import org.dromara.content.domain.vo.CpTaskFileVo;
+import org.dromara.content.domain.CpTaskFile;
 import org.dromara.content.helper.ContentOssHelper;
 import org.dromara.content.mapper.CpTaskFileMapper;
 import org.dromara.content.service.IContentProductService;
@@ -83,8 +83,9 @@ class CreativeProjectMaterialsPurgeTest {
     void setUp() throws Exception {
         when(stageMapper.selectTaskName(TASK)).thenReturn(NAME);
         when(stageMapper.selectDelFlag(TASK)).thenReturn("0");
-        when(contentTaskService.listFiles(TASK)).thenReturn(List.of(file(1L, "a.png", 1000L, "k/a.png"),
-            file(2L, "b.jpg", 2000L, "k/b.jpg")));
+        // 素材统计与清理都**直接读附件表**（不走内容服务的任务校验），所以这里 mock mapper
+        when(fileMapper.selectList(any())).thenReturn(List.of(entity(1L, "a.png", 1000L, "k/a.png"),
+            entity(2L, "b.jpg", 2000L, "k/b.jpg")));
         when(generationMapper.selectCount(any())).thenReturn(3L);
         when(detailPageVersionMapper.selectCount(any())).thenReturn(1L);
         // "先删对象再删行"的**顺序**要能被断言：对象每删一个就记一笔，行删除时检查已删数
@@ -94,13 +95,14 @@ class CreativeProjectMaterialsPurgeTest {
         }).when(contentOssHelper).delete(any());
     }
 
-    private static CpTaskFileVo file(long id, String name, long size, String ref) {
-        CpTaskFileVo vo = new CpTaskFileVo();
-        vo.setFileId(id);
-        vo.setFileName(name);
-        vo.setFileSize(size);
-        vo.setFileRef(ref);
-        return vo;
+    private static CpTaskFile entity(long id, String name, long size, String ref) {
+        CpTaskFile row = new CpTaskFile();
+        row.setFileId(id);
+        row.setTaskId(TASK);
+        row.setFileName(name);
+        row.setFileSize(size);
+        row.setFileRef(ref);
+        return row;
     }
 
     @Test
