@@ -267,12 +267,16 @@ describe('装配运行时：槽位计划', () => {
     );
   });
 
-  it('配置读不到 → 兜底计划是"指引线 + 主舞台"（页面不会变空）', () => {
+  it('配置读不到 → 兜底计划仍含项目头部（页面不能连刷新按钮都没了）', () => {
     for (const empty of [null, undefined, []]) {
       const plan = buildAssemblyPlan(empty as never);
-      expect(plan.map((s) => s.target)).toEqual(['GUIDE', 'MAIN']);
-      expect(assembledSlots(plan)).toHaveLength(2);
-      expect(describeAssembly(plan)).toBe('装配 2 / 2 个槽位：STEP_NAVIGATOR、MAIN_STAGE');
+      expect(plan.map((s) => s.target)).toEqual(['COMPONENT', 'GUIDE', 'MAIN']);
+      expect(plan[0].code).toBe('PROJECT_HEADER');
+      expect(plan[0].reason).toContain('项目头部');
+      expect(assembledSlots(plan)).toHaveLength(3);
+      expect(describeAssembly(plan)).toBe(
+        '装配 3 / 3 个槽位：PROJECT_HEADER、STEP_NAVIGATOR、MAIN_STAGE'
+      );
     }
   });
 

@@ -47,6 +47,13 @@ interface ScenarioCacheEntry {
  */
 const scenarioCache = new Map<string, ScenarioCacheEntry>();
 
+/**
+ * 已经重试过的交付类型（R31）。
+ *
+ * <p>同样放模块级：配置首载失败只重试一次，避免网络抖动时把五个页面都变成重试风暴。</p>
+ */
+const retried = new Set<string>();
+
 export function useScenarioConfig(deliveryType: Ref<string | undefined>) {
   /** 展示行（空串 = 不显示） */
   const line = ref('');
@@ -113,13 +120,20 @@ export function useScenarioConfig(deliveryType: Ref<string | undefined>) {
       failed.value = false;
       scenarioCache.set(type, { line: text, names, steps, assembly: assemblyDiff });
     } catch (e) {
-      // 静默降级：只读补充信息不该影响页面；不弹提示、不阻断
+      // 静默降级：只读补充信息不该影响页面；不弹提示、不阻断。
+      // 但**首载失败要多试一次**（R31 真机验收里出现过一次：同一项目第二次打开就正常，
+      // 说明是冷启动/网络抖动）。重试仍失败就如实降级——那时页面还有兜底装配，不会变空。
       line.value = '';
       stepNames.value = [];
       scenarioSteps.value = [];
       assembly.value = null;
       failed.value = true;
       scenarioCache.delete(type);
+      if (!retried.has(type)) {
+        retried.add(type);
+        // 模块级集合：同一个交付类型在一次会话里只重试一次，避免抖动时打成重试风暴
+        setTimeout(() => void load(), 1500);
+      }
     } finally {
       loading.value = false;
     }

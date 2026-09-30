@@ -431,7 +431,12 @@ export function buildAssemblyPlan(
   registry: Record<string, unknown> = CODE_COMPONENT_REGISTRY
 ): AssemblySlot[] {
   if (!panelRows || !panelRows.length) {
+    // 兜底计划**必须包含项目头部**（R31）：
+    // 头部里放着刷新/操作日志/清理素材这些页面动作，配置读不到（或还没读到）时把它一起省掉，
+    // 页面就变成"只剩内容、连刷新都没有"——这正是"配置层挂了页面也不该变空"要防的事。
+    // 首载竞态在 R31 真机验收里出现过一次（同一项目第二次打开就正常），所以这条兜底不是理论问题。
     return [
+      { code: 'PROJECT_HEADER', kind: 'COMPONENT', target: 'COMPONENT', reason: '配置读不到，仍渲染项目头部（页面动作都在这里）' },
       { code: 'STEP_NAVIGATOR', kind: 'COMPONENT', target: 'GUIDE', reason: '配置读不到，按既有布局渲染指引线' },
       { code: 'MAIN_STAGE', kind: 'SECTION', target: 'MAIN', reason: '配置读不到，按既有布局渲染页面内容' }
     ];
