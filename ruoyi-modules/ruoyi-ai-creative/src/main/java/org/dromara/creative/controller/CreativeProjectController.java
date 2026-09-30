@@ -4,6 +4,7 @@ import cn.dev33.satoken.annotation.SaCheckPermission;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.groups.Default;
 import lombok.RequiredArgsConstructor;
+import jakarta.servlet.http.HttpServletRequest;
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.core.domain.R;
 import org.dromara.common.core.exception.ServiceException;
@@ -56,6 +57,11 @@ import java.util.Map;
 public class CreativeProjectController {
 
     private final ICreativeProjectService projectService;
+
+    /**
+     * 当前请求（用于读 If-None-Match 做 304 协商缓存）。
+     */
+    private final HttpServletRequest request;
     /**
      * 互动确认卡服务（内容域）：平面设计"申请修改品牌要求"要落到品牌部的待办里
      */
@@ -222,11 +228,52 @@ public class CreativeProjectController {
     public ResponseEntity<byte[]> fileContent(@NotNull(message = "项目ID不能为空") @PathVariable("taskId") Long taskId,
                                               @NotNull(message = "附件ID不能为空") @PathVariable("fileId") Long fileId) {
         ICreativeProjectService.FileContent content = projectService.readFileContent(taskId, fileId);
-        return ResponseEntity.ok()
+        return imageResponse(content);
+    }
+
+    /**
+     * 附件缩略图（V0.2 R24）。
+     *
+     * <p>资产抽屉的网格用这个接口，点开大图才走 `content`。实测差 200 倍以上
+     * （6.7MB 原图 vs 几十 KB 缩略图），而且缩略图在服务端有字节缓存。</p>
+     *
+     * @param taskId 项目ID
+     * @param fileId 附件ID
+     * @return 缩略图字节
+     */
+    @SaCheckPermission(CreativeConstants.PERM_PROJECT_QUERY)
+    @GetMapping("/{taskId}/files/{fileId}/thumbnail")
+    public ResponseEntity<byte[]> fileThumbnail(@NotNull(message = "项目ID不能为空") @PathVariable("taskId") Long taskId,
+                                                @NotNull(message = "附件ID不能为空") @PathVariable("fileId") Long fileId) {
+        return imageResponse(projectService.readFileThumbnail(taskId, fileId));
+    }
+
+    /**
+     * 统一的图片响应：带 ETag 与 Cache-Control，让浏览器自己决定要不要重下。
+     *
+     * <p>R24 之前这两个端点**没有任何缓存头**，于是每次打开资产抽屉都会把每一张图重新拉一遍——
+     * 缓存头是这一轮性能改善里成本最低、收益最直接的一项。</p>
+     *
+     * @param content 文件内容
+     * @return 响应（命中 If-None-Match 时 304）
+     */
+    private ResponseEntity<byte[]> imageResponse(ICreativeProjectService.FileContent content) {
+        byte[] bytes = content.bytes();
+        String etag = "\"" + Integer.toHexString(java.util.Arrays.hashCode(bytes))
+            + "-" + bytes.length + "\"";
+        var builder = ResponseEntity.ok()
             .contentType(MediaType.parseMediaType(content.contentType()))
             .header("X-Content-Type-Options", "nosniff")
-            .header("Vary", "Authorization")
-            .body(content.bytes());
+            // 私有：这些图带鉴权，不能被共享缓存留存；但浏览器本地可以缓存，
+            // 所以再次打开抽屉时是 304 或直接命中本地副本，而不是重新下载。
+            .header("Cache-Control", "private, max-age=600, must-revalidate")
+            .eTag(etag)
+            .header("Vary", "Authorization");
+        String ifNoneMatch = request.getHeader("If-None-Match");
+        if (etag.equals(ifNoneMatch)) {
+            return ResponseEntity.status(304).eTag(etag).build();
+        }
+        return builder.body(bytes);
     }
 
     /**

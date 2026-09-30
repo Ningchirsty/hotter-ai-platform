@@ -581,6 +581,26 @@ export const fetchGenerationPreviewBlobUrl = async (generationId: string | numbe
   return toMediaBlobUrl(res.data, '产出图');
 };
 
+/**
+ * 取项目附件缩略图 blob URL（V0.2 R24；调用方负责 revokeObjectURL）。
+ *
+ * <p>为什么要有它：抽屉网格原先直接取原图——实测一张 6.7MB 的附件首次 3.9s、之后每次仍要 1~2s
+ * （接口此前没有缓存头，每次打开抽屉都重新下载几 MB）。缩略图服务端按最长边 320px 压成 JPEG
+ * 并在进程内缓存，单张降到几十 KB。**点开大图仍然取原图**（`fetchCreativeFileBlobUrl`），
+ * 缩略图只用于网格——不然"看图"这件事就降级了。</p>
+ */
+export const fetchCreativeFileThumbnailBlobUrl = async (
+  taskId: string | number,
+  fileId: string | number
+): Promise<string> => {
+  const res = await request({
+    url: '/creative/projects/' + taskId + '/files/' + fileId + '/thumbnail',
+    method: 'get',
+    responseType: 'blob'
+  });
+  return toMediaBlobUrl(res.data, '参考图缩略图');
+};
+
 /** 取项目附件（参考图）原图 blob URL（调用方负责 revokeObjectURL） */
 export const fetchCreativeFileBlobUrl = async (
   taskId: string | number,

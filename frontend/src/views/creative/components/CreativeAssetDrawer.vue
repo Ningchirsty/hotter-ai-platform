@@ -128,6 +128,7 @@
 import { computed, ref, watch } from 'vue';
 import {
   fetchCreativeFileBlobUrl,
+  fetchCreativeFileThumbnailBlobUrl,
   fetchDetailPreviewBlobUrl,
   fetchGenerationPreviewBlobUrl,
   fetchProductImageBlobUrl,
@@ -319,7 +320,12 @@ async function loadThumbs(list: CpTaskFileVO[]) {
       }
       const key = thumbKey(file);
       try {
-        const url = await fetchCreativeFileBlobUrl(props.taskId as string | number, file.fileId as string | number);
+        // R24：网格用缩略图（几十 KB），点开大图才取原图。理由见 api 里的注释：
+        // 原图 6.7MB/张、且此前没有缓存头，抽屉一开就是几十 MB。
+        const url = await fetchCreativeFileThumbnailBlobUrl(
+          props.taskId as string | number,
+          file.fileId as string | number
+        );
         putUrl(key, url);
       } catch (e) {
         failedThumbs.value = { ...failedThumbs.value, [key]: true };

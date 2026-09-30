@@ -128,6 +128,20 @@ public interface ICreativeProjectService {
     List<CpTaskFileVo> listFiles(Long taskId);
 
     /**
+     * 附件缩略图（V0.2 R24）：把原图按最长边缩到 320px 的 JPEG。
+     *
+     * <p><b>为什么需要它</b>：资产抽屉此前直接读原图——实测一张 6.7MB 的附件首次 3.9s、
+     * 之后每次仍要 1.2~1.8s（接口没有缓存头，等于每次打开抽屉都重新下载几 MB）。
+     * 缩略图把单张压到几十 KB，并在进程内按「附件ID+原图大小」缓存字节，
+     * 第二次起连对象存储都不用读。</p>
+     *
+     * @param taskId 项目ID
+     * @param fileId 附件ID
+     * @return 缩略图字节与内容类型
+     */
+    FileContent readFileThumbnail(Long taskId, Long fileId);
+
+    /**
      * 读取项目附件的字节内容（参考图预览走后端代理）。
      *
      * <p>对象存储是私有桶、对浏览器不可达，内容模块也没有提供附件内容通道，
