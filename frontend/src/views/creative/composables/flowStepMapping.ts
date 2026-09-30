@@ -37,7 +37,12 @@ export const STEP_CODE_TO_CODE_KEY: Record<string, string> = {
   GATE: 'gate',
   GENERATION: 'production',
   LAYOUT: 'layout',
-  FINAL: 'layout'
+  FINAL: 'layout',
+  // R47：品牌海报四步对应到代码八步的哪一步（概念≈分镜；版式/终审/导出≈第 8 步）
+  POSTER_CONCEPT: 'storyboard',
+  POSTER_LAYOUT: 'layout',
+  REVIEW: 'layout',
+  EXPORT: 'layout'
 };
 
 /** 对照表里的一行 */
@@ -251,7 +256,13 @@ export const STEP_CODE_TO_PAGE: Record<string, string> = {
   // QA 不新增页面：质检是出图页里对候选逐张执行的动作（自动质检只筛除、不放行）
   QA: '/creative/production',
   LAYOUT: '/creative/review',
-  FINAL: '/creative/review'
+  FINAL: '/creative/review',
+  // R47：品牌海报（BRAND_POSTER）的四步——**不新增页面**（文档 §10：禁止按场景加页面），
+  // 复用既有页：概念/主视觉在分镜页（它的"屏"就登记在分镜链路上）、版式与终审/导出在评审页。
+  POSTER_CONCEPT: '/creative/storyboard',
+  POSTER_LAYOUT: '/creative/review',
+  REVIEW: '/creative/review',
+  EXPORT: '/creative/review'
 };
 
 /**

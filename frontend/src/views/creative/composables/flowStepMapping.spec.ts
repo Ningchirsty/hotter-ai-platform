@@ -279,19 +279,41 @@ describe('配置驱动：指引线计划', () => {
     expect(fallback.every((p) => p.source === 'CODE' && p.status === 'todo')).toBe(true);
   });
 
-  it('页面与前置映射表只引用种子里的步骤编码（改表时这里会红）', () => {
-    const codes = new Set(CONFIG.map((s) => s.stepCode!));
+  it('页面与前置映射表只引用配置里真实存在的步骤编码（改表时这里会红）', () => {
+    // R47 起有两份配置：ECOM_DETAIL（10 步）与 BRAND_POSTER（8 步，见 dp_creative_r46）。
+    // 映射表是**跨交付类型共用**的一张表，所以两张表的编码都算"配置里存在"。
+    const POSTER: ScenarioStep[] = [
+      { stepCode: 'INPUT', stepName: '产品资料与参考图', sortNo: 10, required: '1', entryConditionJson: '{"requireProject":true}' },
+      { stepCode: 'DNA', stepName: '视觉基因', sortNo: 20, required: '1', entryConditionJson: '{"requireInput":true}' },
+      { stepCode: 'POSTER_CONCEPT', stepName: '海报概念与主视觉', sortNo: 30, required: '1', entryConditionJson: '{"requireDna":true}' },
+      { stepCode: 'GATE', stepName: '视觉门', sortNo: 40, required: '1', entryConditionJson: '{"requireStoryboard":true}' },
+      { stepCode: 'GENERATION', stepName: '主视觉出图', sortNo: 50, required: '1', entryConditionJson: '{"requireGate":true}' },
+      { stepCode: 'POSTER_LAYOUT', stepName: '海报版式与多尺寸适配', sortNo: 60, required: '1', entryConditionJson: '{"requireGeneration":true}' },
+      { stepCode: 'REVIEW', stepName: '终审', sortNo: 70, required: '1', entryConditionJson: '{"requireLayout":true}' },
+      { stepCode: 'EXPORT', stepName: '导出交付', sortNo: 80, required: '1', entryConditionJson: '{"requireLayout":true}' }
+    ];
+    const codes = new Set([...CONFIG, ...POSTER].map((s) => s.stepCode!));
     for (const [stepCode, page] of Object.entries(STEP_CODE_TO_PAGE)) {
-      expect(codes.has(stepCode), `${stepCode} 不在配置步骤里`).toBe(true);
+      expect(codes.has(stepCode), `${stepCode} 不在任何一份配置步骤里`).toBe(true);
       expect(page.startsWith('/creative/'), `${stepCode} 的页面 ${page} 不像站内路径`).toBe(true);
     }
     for (const [condition, stepCode] of Object.entries(REQUIRE_TO_STEP)) {
       expect(condition.startsWith('require'), `${condition} 不是 requireXxx 形式`).toBe(true);
       expect(codes.has(stepCode), `${condition} → ${stepCode} 不是配置步骤`).toBe(true);
     }
-    // 种子里的每个步骤都要有页面归属，否则点击会跳到项目页（默许的兜底不该被用到）
-    for (const step of CONFIG) {
+    // 两份配置里的每个步骤都要有页面归属，否则点击会跳到项目页（默许的兜底不该被用到）
+    for (const step of [...CONFIG, ...POSTER]) {
       expect(STEP_CODE_TO_PAGE[step.stepCode!], `${step.stepCode} 缺页面归属`).toBeTruthy();
+    }
+    // 八步对映表同理（品牌海报四步也要能翻回步号；翻了不认得的编码才会回落失败）
+    const keys = new Set(STEP_META.map((m) => m.key));
+    for (const [stepCode, key] of Object.entries(STEP_CODE_TO_CODE_KEY)) {
+      expect(codes.has(stepCode), `${stepCode} 不在任何一份配置步骤里`).toBe(true);
+      expect(keys.has(key), `${stepCode} → ${key} 不是代码八步的 key`).toBe(true);
+    }
+    // 品牌海报四步真的都在表里（新交付类型接入时最容易漏的就是这一步）
+    for (const code of ['POSTER_CONCEPT', 'POSTER_LAYOUT', 'REVIEW', 'EXPORT']) {
+      expect(STEP_CODE_TO_PAGE[code], `${code} 缺页面归属`).toBeTruthy();
     }
   });
 

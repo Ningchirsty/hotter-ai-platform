@@ -342,7 +342,27 @@ const FALLBACK_KEY_OF_STEP: Record<string, string> = {
   GATE: 'gate',
   GENERATION: 'production',
   LAYOUT: 'layout',
-  FINAL: 'layout'
+  FINAL: 'layout',
+  // R47：品牌海报四步（与 flowStepMapping 的对映表同口径）
+  POSTER_CONCEPT: 'storyboard',
+  POSTER_LAYOUT: 'layout',
+  REVIEW: 'layout',
+  EXPORT: 'layout'
+};
+
+/**
+ * 品牌海报（BRAND_POSTER）四步复用哪一段判据（R47）。
+ *
+ * <p>为什么复用而不是新写：这四步在**数据与规则**上与既有步骤同源——
+ * 概念/主视觉的"屏"就登记在分镜链路上（阶段复用 STORYBOARD_*）、版式与终审导出
+ * 走的就是详情页版本那条链路。所以判据（"为什么还不能进入下一步"）也应当是同一套；
+ * 抄一份新的一定会漂移，而"同一个 null 两个叫法"这类事这个工程已经吃过亏。</p>
+ */
+const POSTER_STEP_CHECKER_ALIAS: Record<string, string> = {
+  POSTER_CONCEPT: 'STORYBOARD',
+  POSTER_LAYOUT: 'LAYOUT',
+  REVIEW: 'FINAL',
+  EXPORT: 'FINAL'
 };
 
 /**
@@ -630,7 +650,7 @@ export function useCreativeFlow(
     if (!taskId.value || details[key]) {
       return;
     }
-    const checker = STEP_DETAIL_CHECKERS[key];
+    const checker = STEP_DETAIL_CHECKERS[key] || STEP_DETAIL_CHECKERS[POSTER_STEP_CHECKER_ALIAS[key]];
     if (!checker) {
       // 不猜：配置里新增了这一步、前端还没注册判据时，如实说明
       details[key] = {
