@@ -1,4 +1,4 @@
-﻿import type { ScenarioProfile, ScenarioWorkspace } from '@/api/creative/scenario';
+import type { ScenarioProfile, ScenarioWorkspace } from '@/api/creative/scenario';
 
 /**
  * 工作台装配的**只读对照**（V0.2 D 阶段最后一块的第一步，R17）。
@@ -25,7 +25,15 @@
  */
 
 /** 代码侧的落点分类 */
-export type AssemblyKind = 'COMPONENT' | 'SECTION' | 'MISSING';
+export type AssemblyKind =
+  /** 已是独立组件，工作台能按名字自己解析出来（{@link WORKSPACE_COMPONENTS}） */
+  | 'COMPONENT'
+  /** 已是独立组件，但它要宿主页面的状态，由页面以**同名插槽**提供（R37，如项目页的六个区块） */
+  | 'SLOT'
+  /** 还是页面里的一段（没拆成组件） */
+  | 'SECTION'
+  /** 代码里还没有对应实现 */
+  | 'MISSING';
 
 /** 代码侧登记表的一行 */
 export interface RegistryEntry {
@@ -72,15 +80,38 @@ export const CODE_COMPONENT_REGISTRY: Record<string, RegistryEntry> = {
   },
 
   // ---- 十步各自的组件 ----
-  ProjectInputPanel: {
-    kind: 'SECTION',
-    location: 'project/index.vue 的「1. 产品图与参考图」→ R32 拆成 components/ProjectAssetsBlock.vue',
-    note: '已是独立组件，但入参依赖项目页状态（附件列表/产品图/blob URL 台账）；要参与装配得先给它一个数据源'
+  // R37：项目页的三个步骤（资料 / 事实 / 出图）在 R32/R33 真拆出来了，配置也改成它们的**真名**。
+  // 它们标 SLOT 而不是 COMPONENT：这些区块要页面状态（附件、事实、候选…），
+  // 由项目页以**同名插槽**提供内容，工作台只决定"当前该显示哪一步的哪几块"。
+  ProjectAssetsBlock: {
+    kind: 'SLOT',
+    location: 'project/components/ProjectAssetsBlock.vue（R32 拆出；项目页以同名插槽提供）',
+    note: 'INPUT 步：参考图 / 产品图（上传、绑定产品图）；入参是项目页的附件状态'
   },
-  FactPanel: {
-    kind: 'SECTION',
-    location: 'project/index.vue 的「4. 事实确认」→ R32 拆成 components/ProjectFactsBlock.vue',
-    note: '事实在内容域确认，创作域只读展示；组件化后仍由项目页组合（筛选与排序口径在页面一处）'
+  ProjectBriefBlock: {
+    kind: 'SLOT',
+    location: 'project/components/ProjectBriefBlock.vue（R32 拆出；项目页以同名插槽提供）',
+    note: 'INPUT 步：品牌要求（内容协同录入并确认，本页只读 + 申请修改）'
+  },
+  ProjectFactsBlock: {
+    kind: 'SLOT',
+    location: 'project/components/ProjectFactsBlock.vue（R32 拆出；项目页以同名插槽提供）',
+    note: 'FACT 步：事实确认（筛选/排序口径留在页面一处）'
+  },
+  ProjectCopyBlock: {
+    kind: 'SLOT',
+    location: 'project/components/ProjectCopyBlock.vue（R32 拆出；项目页以同名插槽提供）',
+    note: 'FACT 步：文案与要点（详情页的「字」）'
+  },
+  ProjectHeroBlock: {
+    kind: 'SLOT',
+    location: 'project/components/ProjectHeroBlock.vue（R33 拆出；项目页以同名插槽提供）',
+    note: 'GENERATION 步：发起出图（工作流 / 提示词 / DNA 预填）'
+  },
+  ProjectGenerationsBlock: {
+    kind: 'SLOT',
+    location: 'project/components/ProjectGenerationsBlock.vue（R33 拆出；项目页以同名插槽提供）',
+    note: 'GENERATION 步：候选列表（预览 / 重试）'
   },
   VisualDnaPanel: {
     kind: 'SECTION',
@@ -101,11 +132,6 @@ export const CODE_COMPONENT_REGISTRY: Record<string, RegistryEntry> = {
     kind: 'SECTION',
     location: 'review/index.vue「门禁状态 / 准入项 / 人工确认」',
     note: '闸门判定在后端，这里是展示与人工确认入口'
-  },
-  GenerationBoard: {
-    kind: 'SECTION',
-    location: 'production/index.vue 候选区（逐屏 :42 / 跨项目总览 :196）+ project/index.vue 出图区（:491）',
-    note: '出图入口在两处：项目页发起、生产页管理候选'
   },
   QaPanel: {
     kind: 'COMPONENT',
@@ -130,16 +156,23 @@ export interface WorkspaceLayout {
   workspace: string;
   /** 面板编码 */
   panels: string[];
-  /** 步骤 → 组件 */
-  steps: Array<{ code: string; component: string }>;
+  /**
+   * 步骤 → 组件（R37 起允许**一步多个组件**：项目页「资料」步就是"附件 + 品牌要求"两块）。
+   *
+   * <p>旧写法 `{"code":"X","component":"Y"}` 仍然解析（归一成 `components:["Y"]`），
+   * 这样配置改一半、或者别的工作台还没改过来时，装配不会突然空掉。</p>
+   */
+  steps: Array<{ code: string; components: string[] }>;
 }
 
 /** 对照结果的一行 */
 export interface AssemblyRow {
   /** 步骤编码或面板编码 */
   code: string;
-  /** 配置里声明的组件名；步骤没给组件时为空串 */
+  /** 配置里声明的组件名（一行的那个）；步骤没给组件时为空串 */
   component: string;
+  /** 配置里声明的全部组件名（一步多组件时不止一个） */
+  components: string[];
   kind: AssemblyKind;
   location: string;
   note: string;
@@ -153,8 +186,10 @@ export interface AssemblyDiff {
   stepRows: AssemblyRow[];
   /** 面板对照 */
   panelRows: AssemblyRow[];
-  /** 已是独立组件的数量 */
+  /** 已是独立组件、工作台能自己解析的数量 */
   componentCount: number;
+  /** 已是独立组件、由宿主页面以同名插槽提供的数量（R37） */
+  slotCount: number;
   /** 页面内区块的数量 */
   sectionCount: number;
   /** 还没有实现的数量 */
@@ -167,7 +202,13 @@ export interface AssemblyDiff {
   unusedInConfig: string[];
   /** 档案引用的工作台编码与实际取到的不一致时的提示（一致则为空串） */
   schemaCodeWarning: string;
-  /** 已就绪 / 总数，形如 `1/15` */
+  /**
+   * 已就绪 / 总数，形如 `11/18`。
+   *
+   * <p>口径（R37 起）：**就绪 = 已是独立组件**（COMPONENT + SLOT——两者都有真组件，
+   * 区别只在"谁来装配它"）；分母是**组件行数**（一步多组件就多算几行），
+   * 因为要装配的是组件，不是步骤。</p>
+   */
   readyText: string;
   /** 一句话结论（界面 hover 提示与单测都断言它） */
   verdict: string;
@@ -193,8 +234,14 @@ export function parseWorkspaceLayout(json?: string | null): WorkspaceLayout | nu
       ? parsed.steps
           .filter((s) => s && typeof s === 'object')
           .map((s) => {
-            const row = s as { code?: unknown; component?: unknown };
-            return { code: String(row.code ?? ''), component: String(row.component ?? '') };
+            const row = s as { code?: unknown; component?: unknown; components?: unknown };
+            // 新写法优先；没有就退回旧的单个 component（归一成数组），两种写法都认
+            const list = Array.isArray(row.components)
+              ? row.components.filter((c): c is string => typeof c === 'string' && c.trim() !== '')
+              : typeof row.component === 'string' && row.component.trim() !== ''
+                ? [row.component]
+                : [];
+            return { code: String(row.code ?? ''), components: list };
           })
       : [];
     if (!panels.length && !steps.length) {
@@ -259,7 +306,38 @@ function entryOf(name: string): RegistryEntry {
 /** 造一行对照 */
 function rowOf(code: string, component: string, registry: Record<string, RegistryEntry>): AssemblyRow {
   const entry = registry[component] ?? entryOf(component);
-  return { code, component, kind: entry.kind, location: entry.location, note: entry.note };
+  return {
+    code,
+    component,
+    components: component ? [component] : [],
+    kind: entry.kind,
+    location: entry.location,
+    note: entry.note
+  };
+}
+
+/**
+ * 把「步骤 → 组件数组」摊平成对照行（一步多组件就多几行，共享同一个步骤编码）。
+ *
+ * @param steps    配置里的步骤
+ * @param registry 代码侧注册表
+ * @returns 对照行；没给组件的步骤给一行空组件（这样"声明了但没给组件"是可见的）
+ */
+function stepRowsOf(
+  steps: WorkspaceLayout['steps'],
+  registry: Record<string, RegistryEntry>
+): AssemblyRow[] {
+  const out: AssemblyRow[] = [];
+  for (const step of steps) {
+    if (!step.components.length) {
+      out.push(rowOf(step.code, '', registry));
+      continue;
+    }
+    for (const component of step.components) {
+      out.push(rowOf(step.code, component, registry));
+    }
+  }
+  return out;
 }
 
 /**
@@ -283,14 +361,15 @@ export function diffWorkspaceAssembly(
   }
   const registry = options.registry ?? CODE_COMPONENT_REGISTRY;
   const panelRows = layout.panels.map((panel) => rowOf(panel, panel, registry));
-  const stepRows = layout.steps.map((step) => rowOf(step.code, step.component, registry));
+  const stepRows = stepRowsOf(layout.steps, registry);
   const rows = [...panelRows, ...stepRows];
 
   const componentCount = rows.filter((r) => r.kind === 'COMPONENT').length;
+  const slotCount = rows.filter((r) => r.kind === 'SLOT').length;
   const sectionCount = rows.filter((r) => r.kind === 'SECTION').length;
   const missingCount = rows.filter((r) => r.kind === 'MISSING').length;
 
-  const stepsWithoutComponent = layout.steps.filter((s) => !s.component).map((s) => s.code);
+  const stepsWithoutComponent = layout.steps.filter((s) => !s.components.length).map((s) => s.code);
   const namesInConfig = new Set(rows.map((r) => r.component).filter(Boolean));
   const unknownNames = Array.from(namesInConfig).filter((name) => !registry[name]);
   const unusedInConfig = Object.keys(registry).filter((name) => !namesInConfig.has(name));
@@ -306,15 +385,16 @@ export function diffWorkspaceAssembly(
     stepRows,
     panelRows,
     componentCount,
+    slotCount,
     sectionCount,
     missingCount,
     stepsWithoutComponent,
     unknownNames,
     unusedInConfig,
     schemaCodeWarning,
-    readyText: rows.length ? `${componentCount}/${rows.length}` : '',
-    verdict: buildAssemblyVerdict(layout, rows.length, componentCount, sectionCount, missingCount,
-      unknownNames, stepsWithoutComponent, schemaCodeWarning)
+    readyText: rows.length ? `${componentCount + slotCount}/${rows.length}` : '',
+    verdict: buildAssemblyVerdict(layout, rows.length, componentCount, slotCount, sectionCount,
+      missingCount, unknownNames, stepsWithoutComponent, schemaCodeWarning)
   };
 }
 
@@ -322,8 +402,9 @@ export function diffWorkspaceAssembly(
  * 组装结论句（**只用算出来的事实拼**：改配置或改注册表，结论自己会变）。
  *
  * @param layout                装配定义
- * @param total                 对照总条数
- * @param componentCount        已是独立组件的条数
+ * @param total                 对照总条数（组件行数）
+ * @param componentCount        工作台能自行解析的组件条数
+ * @param slotCount             由宿主页面以同名插槽提供的组件条数
  * @param sectionCount          页面内区块的条数
  * @param missingCount          还没实现的条数
  * @param unknownNames          注册表里没登记的名字
@@ -335,16 +416,22 @@ function buildAssemblyVerdict(
   layout: WorkspaceLayout,
   total: number,
   componentCount: number,
+  slotCount: number,
   sectionCount: number,
   missingCount: number,
   unknownNames: string[],
   stepsWithoutComponent: string[],
   schemaCodeWarning: string
 ): string {
+  const stepCount = layout.steps.length;
+  const componentTotal = layout.steps.reduce((sum, s) => sum + Math.max(1, s.components.length), 0);
   const parts: string[] = [
-    `工作台 ${layout.workspace || '(未声明)'}：配置声明 ${layout.panels.length} 个面板 + ${layout.steps.length} 个步骤组件`
+    `工作台 ${layout.workspace || '(未声明)'}：配置声明 ${layout.panels.length} 个面板 + ${stepCount} 个步骤`
+      + `（共 ${componentTotal} 个步骤组件）`
   ];
-  parts.push(`已是独立组件 ${componentCount} 个、页面内区块 ${sectionCount} 个、还没实现 ${missingCount} 个（共对照 ${total} 项）`);
+  parts.push(`已是独立组件 ${componentCount + slotCount} 个`
+    + `（工作台自行解析 ${componentCount} 个、宿主页面插槽提供 ${slotCount} 个）、`
+    + `页面内区块 ${sectionCount} 个、还没实现 ${missingCount} 个（共对照 ${total} 项）`);
   if (missingCount) {
     parts.push('未实现的要在装配前补齐或在配置里声明并入某步');
   }
@@ -376,9 +463,105 @@ export function formatAssemblyChip(diff: AssemblyDiff | null): string {
 /** 分类的中文标签（界面用） */
 export const ASSEMBLY_KIND_LABELS: Record<AssemblyKind, string> = {
   COMPONENT: '已是组件',
+  SLOT: '宿主插槽组件',
   SECTION: '页面内区块',
   MISSING: '未实现'
 };
+
+// ---------------------------------------------------------------------------
+// R37：按步骤装配——"这一步该显示哪几块"
+// ---------------------------------------------------------------------------
+
+/**
+ * 从装配对照的步骤行还原「步骤 → 组件」（R37）。
+ *
+ * <p>为什么要还原：工作台运行时要用配置里的**步骤**（一步可能多个组件）来决定"当前显示哪几块"，
+ * 而运行时的数据源是 `flow.assembly`（对照结果，逐组件一行）。同一份信息不在两处各存一份，
+ * 而是从对照行按顺序合并回来——顺序就是配置顺序（`stepRowsOf` 是先按步骤、再按组件生成的）。</p>
+ *
+ * @param rows 对照里的步骤行（`AssemblyDiff.stepRows`）
+ * @returns 步骤数组（含没给组件的步骤，`components` 为空数组）
+ */
+export function layoutStepsFromRows(
+  rows?: AssemblyRow[] | null
+): Array<{ code: string; components: string[] }> {
+  const out: Array<{ code: string; components: string[] }> = [];
+  for (const row of rows || []) {
+    const components = row.components?.length ? row.components : row.component ? [row.component] : [];
+    const last = out[out.length - 1];
+    if (last && last.code === row.code) {
+      last.components.push(...components);
+      continue;
+    }
+    out.push({ code: row.code, components: [...components] });
+  }
+  return out;
+}
+
+/**
+ * 一个步骤在本页面上**能显示出来的**组件（宿主页面提供了同名插槽的那些）。
+ *
+ * @param steps      配置里的步骤（按配置顺序）
+ * @param components 宿主页面实际提供了插槽的组件名
+ * @returns 能显示的步骤（含它能显示的组件；一步多组件时按配置顺序，缺的那个如实少一个）
+ */
+export function hostedSteps(
+  steps: WorkspaceLayout['steps'] | null | undefined,
+  components: string[]
+): Array<{ code: string; components: string[] }> {
+  const provided = new Set(components.filter(Boolean));
+  return (steps || [])
+    .map((step) => ({
+      code: step.code,
+      components: step.components.filter((component) => provided.has(component))
+    }))
+    .filter((step) => step.components.length > 0);
+}
+
+/**
+ * 这一步显示哪个步骤（R37 的唯一判据，纯函数）。
+ *
+ * <p>规则（与指引线同一套口径，只是范围收窄到"本页面托管的步骤"）：</p>
+ * <ol>
+ *   <li>全局当前步如果在托管列表里 → 就用它（用户点指引线跳过来的那一步）；</li>
+ *   <li>否则取第一个「进行中」的；</li>
+ *   <li>否则取第一个**还没了结**的（未开始 / 前置未完成）；</li>
+ *   <li>否则取最后一个（这一步之后本页没有别的活了——显示最后一步比显示第一步更接近"我做到哪了"）。</li>
+ * </ol>
+ *
+ * <p>为什么不取"第一个"：<b>本页的早期步骤做完之后，第一个往往是已经做完的那一步</b>
+ * （例如资料与事实都完成了，本页当前该看的是事实步的结果，而不是又回到资料步）。
+ * 全页都了结时才回到最后一步，是为了让"改完最后一件事"仍能看见自己刚做的事。</p>
+ *
+ * @param hosted     本页面托管的步骤（含状态；按配置顺序）
+ * @param activeCode 全局当前步编码（指引线给的；可空）
+ * @returns 该显示的步骤编码；托管列表为空时返回 null
+ */
+export function pickVisibleStep(
+  hosted: Array<{ code: string; status?: string | null }>,
+  activeCode?: string | null
+): string | null {
+  if (!hosted.length) {
+    return null;
+  }
+  const active = (activeCode || '').trim();
+  if (active) {
+    const hit = hosted.find((s) => s.code === active);
+    if (hit) {
+      return hit.code;
+    }
+  }
+  const normalized = hosted.map((s) => ({ code: s.code, status: (s.status || '').toLowerCase() }));
+  const doing = normalized.find((s) => s.status === 'doing');
+  if (doing) {
+    return doing.code;
+  }
+  const open = normalized.find((s) => s.status !== 'done' && s.status !== 'skipped');
+  if (open) {
+    return open.code;
+  }
+  return normalized[normalized.length - 1].code;
+}
 
 // ---------------------------------------------------------------------------
 // R19：装配运行时——把配置里的面板清单翻成"这次要渲染哪些槽位"

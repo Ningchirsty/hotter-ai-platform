@@ -1,5 +1,12 @@
 <template>
-  <div class="ws" :data-workspace="workspaceName" :data-panels="assembledCodes.join(',')">
+  <div
+    class="ws"
+    :data-workspace="workspaceName"
+    :data-panels="assembledCodes.join(',')"
+    :data-step-visible="visibleStep || ''"
+    :data-step-hosted="hostedCodes.join(',')"
+    :data-step-components="visibleComponents.join(',')"
+  >
     <!-- 按配置顺序装配：GUIDE / MAIN / COMPONENT / SKIP -->
     <template v-for="slot in plan" :key="slot.code">
       <!-- 步骤导航：指引线（R16 起配置驱动；这里由工作台托管面板入口） -->
@@ -15,7 +22,67 @@
 
       <!-- 主舞台：页面自身内容 -->
       <main v-else-if="slot.target === 'MAIN'" class="ws-main">
-        <slot name="main" />
+        <!--
+          ① R37：页面把**每一步**的内容以同名插槽递进来（如 `#ProjectAssetsBlock`）→
+             工作台按配置里的「步骤 → 组件」只装配**当前那一步**，其余步骤用上面的步骤条切换。
+             为什么这样定（用户已确认）：一屏只回答"这一步该做什么"，
+             六个区块全堆在一起的页面没人读得完。
+        -->
+        <template v-if="hosted.length">
+          <div v-if="hosted.length > 1" class="ws-step-bar">
+            <span class="bar-label">本页步骤</span>
+            <button
+              v-for="item in hosted"
+              :key="item.code"
+              type="button"
+              class="step-tab"
+              :class="['is-' + item.status, { active: item.code === visibleStep }]"
+              :title="item.hint"
+              @click="selectStep(item.code)"
+            >
+              {{ item.no }}. {{ item.name }}
+              <span class="tab-status">{{ item.statusLabel }}</span>
+            </button>
+          </div>
+
+          <section class="ws-stage">
+            <div class="ws-stage-body">
+              <template v-for="component in visibleComponents" :key="component">
+                <slot :name="component" />
+              </template>
+              <!-- 配置里声明了、页面却没提供插槽的组件：如实说出来（不渲染空白，也不假装装上了） -->
+              <p v-if="visibleMissing.length" class="ws-gap">
+                这一步还声明了 {{ visibleMissing.join('、') }}，但页面上没有提供对应的插槽——
+                配置与代码对不上，需要补插槽或在配置里去掉它。
+              </p>
+            </div>
+          </section>
+
+          <p class="ws-step-note">
+            只显示当前这一步（{{ visibleName }}）：{{ visibleComponents.length }} 块内容。
+            切换步骤用上面的「本页步骤」，跳整个流程用流程指引线。
+            <span v-if="!visibleStepIsCurrent" class="note-follow">
+              （这一步不是流程当前步，流程当前在「{{ currentStepName || '未知' }}」——用指引线可跳回去）
+            </span>
+          </p>
+        </template>
+
+        <!--
+          ② 页面没有按步骤提供插槽（基因 / 分镜 / 评审 / 生产四个页面还是整页一个主区）：
+             保持 R19 的行为——主舞台渲染页面自己的内容。装配是**逐步接入**的，
+             没接入的页面行为一个字不变。
+        -->
+        <slot v-else name="main" />
+
+        <!--
+          ③ 页面按步骤给了插槽，但一个都没对上配置里的组件名（例如配置还没更新到 R37 的真名）：
+             这时既不能白屏、也不该悄悄回落到"什么都显示"——明确说清两边各是什么。
+        -->
+        <p v-if="!hosted.length && !hasMainSlot && providedComponents.length" class="ws-gap">
+          配置里的步骤组件（{{ declaredComponents.join('、') || '无' }}）与页面提供的插槽
+          （{{ providedComponents.join('、') }}）对不上，所以这一步没有可装配的内容。
+          请在配置里改用真实组件名，或让页面提供同名插槽。
+        </p>
       </main>
 
       <!-- 项目头部（文档 §23 的 PROJECT_HEADER；R31 起它是真组件） -->
@@ -67,7 +134,7 @@
     <!--
       QaPanel 是**步骤组件**（场景里的 QA 步），不在面板清单里，所以它不由上面的计划渲染；
       工作台把它当"可开合抽屉"托管，入口在项目头部（质检与交付）。
-      这样它既是真注册表里的组件（装配对照 5/15），又能在任意工作台里被打开一次看到全部结论。
+      这样它既是真注册表里的组件（装配对照 11/18），又能在任意工作台里被打开一次看到全部结论。
     -->
     <CreativeQaPanel
       v-model:visible="panels.qa"
@@ -79,29 +146,37 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, type Component } from 'vue';
+import { computed, reactive, ref, watch, useSlots, type Component } from 'vue';
 import CreativeFlowGuide from './CreativeFlowGuide.vue';
 import CreativeInspectorPanel from './CreativeInspectorPanel.vue';
 import CreativeAssetDrawer from './CreativeAssetDrawer.vue';
 import CreativeQaPanel from './CreativeQaPanel.vue';
 import { useCreativeFlow } from '../composables/useCreativeFlow';
-import { assembledSlots, buildAssemblyPlan } from '../composables/workspaceAssembly';
+import {
+  assembledSlots,
+  buildAssemblyPlan,
+  hostedSteps,
+  layoutStepsFromRows,
+  pickVisibleStep
+} from '../composables/workspaceAssembly';
 import { resolveWorkspaceComponent } from './workspace/registry';
 import type { CreativeProjectVO } from '@/api/creative/types';
 import type { ScenarioOutputSpec } from '@/api/creative/scenario';
 
 /**
- * 工作台装配运行时（V0.2 D 阶段，R19）。
+ * 工作台装配运行时（V0.2 D 阶段，R19；R37 起按步骤装配）。
  *
  * <p><b>它解决什么</b>：在此之前"一个页面长什么样"是各页 `.vue` 里写死的；
- * 装配定义（`dp_workspace_schema.layout_json`）里的 5 个面板 + 十步组件只是**对照展示**。
- * 这个容器让页面按配置装配：顺序、有哪些槽位都来自配置，组件从真实注册表解析。</p>
+ * 装配定义（`dp_workspace_schema.layout_json`）里的面板 + 步骤组件只是**对照展示**。
+ * 这个容器让页面按配置装配：顺序、有哪些槽位、**当前该显示哪一步的哪几块**都来自配置。</p>
  *
- * <p><b>三件不做的事</b>：</p>
+ * <p><b>四件不做的事</b>：</p>
  * <ul>
- *   <li>不渲染空白：跳过（SKIP）的槽位不占位，原因由「工作台装配」胶囊说明；</li>
+ *   <li>不渲染空白：跳过（SKIP）的槽位不占位；步骤声明了组件而页面没给插槽时，明说对不上；</li>
  *   <li>不假装实现：只有真注册过的组件才会被解析出来；</li>
- *   <li>不因配置层挂了而变空：配置读不到时给兜底计划（指引线 + 主舞台），页面内容照常。</li>
+ *   <li>不因配置层挂了而变空：配置读不到时给兜底计划（指引线 + 主舞台），页面内容照常；</li>
+ *   <li>不一次堆六块：R37 起主舞台只装配**当前这一步**的组件，其余步骤用页面内的步骤条切换
+ *       （用户已确认的口径）。</li>
  * </ul>
  *
  * <p><b>它是一个"状态宿主"</b>：`useCreativeFlow` 只在这里创建一次，把同一个实例交给指引线
@@ -149,6 +224,72 @@ const workspaceName = computed(() => flow.assembly.value?.workspace || 'FALLBACK
 
 /** 当前步（进行中的那一步）：检查器要它 */
 const currentStep = computed(() => flow.steps.value.find((s) => s.no === flow.activeNo.value) || null);
+/** 全局当前步的编码（指引线口径）；没有就空串 */
+const activeStepCode = computed(() => currentStep.value?.key || '');
+
+/**
+ * 页面**按步骤**提供的插槽（= 组件名）。
+ *
+ * <p>`main` / `header-actions` 不是步骤组件，排除掉；页面没按步骤给插槽时这里是空数组，
+ * 主舞台就回到 R19 的行为（渲染 `#main`）。</p>
+ */
+const slots = useSlots();
+const providedComponents = computed(() =>
+  Object.keys(slots).filter((name) => name !== 'main' && name !== 'header-actions' && name !== 'default')
+);
+const hasMainSlot = computed(() => Boolean(slots.main));
+
+/** 配置里的步骤（从装配对照的步骤行还原：一行一个组件，按配置顺序） */
+const layoutSteps = computed(() => layoutStepsFromRows(flow.assembly.value?.stepRows));
+/** 配置里声明的全部组件名（用于"对不上"的提示） */
+const declaredComponents = computed(() => layoutSteps.value.flatMap((s) => s.components));
+/** 本页面托管的步骤：配置里有、且页面提供了插槽的那些 */
+const hosted = computed(() => {
+  const status = new Map(flow.steps.value.map((s) => [s.key, s]));
+  return hostedSteps(layoutSteps.value, providedComponents.value).map((step) => {
+    const hit = status.get(step.code);
+    return {
+      code: step.code,
+      components: step.components,
+      no: hit?.no ?? 0,
+      name: hit?.name || step.code,
+      status: hit?.status || 'todo',
+      statusLabel: hit?.statusLabel || '未开始',
+      hint: `只显示「${hit?.name || step.code}」这一步：${step.components.join(' + ')}`
+    };
+  });
+});
+const hostedCodes = computed(() => hosted.value.map((s) => s.code));
+
+/** 这一步显示哪一步：手工选过就先听手工的，否则按"全局当前步 → 进行中 → 没了结 → 最后一步" */
+const manualStep = ref('');
+const visibleStep = computed(() => {
+  if (manualStep.value && hostedCodes.value.includes(manualStep.value)) {
+    return manualStep.value;
+  }
+  return pickVisibleStep(hosted.value, activeStepCode.value) || '';
+});
+/** 步骤变了（流程推进 / 用户点了指引线）就回到"跟随当前步"，别把人按在旧的那一步上 */
+watch(activeStepCode, () => {
+  manualStep.value = '';
+});
+
+/** 这一步真的要渲染的组件（页面提供了插槽的）+ 声明了却没有的 */
+const visible = computed(() => hosted.value.find((s) => s.code === visibleStep.value) || null);
+const visibleComponents = computed(() => visible.value?.components || []);
+const visibleMissing = computed(() =>
+  (layoutSteps.value.find((s) => s.code === visibleStep.value)?.components || []).filter(
+    (component) => !providedComponents.value.includes(component)
+  )
+);
+const visibleName = computed(() => visible.value?.name || '');
+const currentStepName = computed(() => currentStep.value?.name || '');
+const visibleStepIsCurrent = computed(() => !activeStepCode.value || visibleStep.value === activeStepCode.value);
+
+/** 点步骤条：手工选一步（下一次流程推进时自动回到跟随当前步） */
+function selectStep(code: string) {
+  manualStep.value = code;
+}
 
 /** 按名字解析组件（没实现返回 null，模板里那一支就不会渲染） */
 function resolve(name: string): Component | null {
@@ -182,5 +323,110 @@ function loadCurrentStepDetail() {
 
 .ws-main {
   display: block;
+}
+
+/* 本页步骤条（R37）：一屏只显示一步，切步骤靠它——所以它必须在最显眼的位置，
+   但不能抢指引线的位置：指引线回答"整个流程走到哪了"，这里回答"本页有哪几步" */
+.ws-step-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+
+  .bar-label {
+    color: var(--t3);
+    font-size: 11px;
+  }
+}
+
+.step-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  color: var(--t2);
+  font-size: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+
+  &:hover {
+    color: var(--t1);
+    border-color: var(--t3);
+  }
+
+  .tab-status {
+    color: var(--t3);
+    font-size: 11px;
+  }
+
+  &.is-doing {
+    border-color: rgba(64, 158, 255, 0.45);
+
+    .tab-status {
+      color: #409eff;
+    }
+  }
+
+  &.is-done .tab-status {
+    color: #67c23a;
+  }
+
+  &.is-skipped .tab-status {
+    color: var(--t3);
+  }
+
+  &.is-blocked .tab-status {
+    color: #f56c6c;
+  }
+
+  &.active {
+    color: var(--t1);
+    background: var(--elevated);
+    border-color: var(--t3);
+    font-weight: 600;
+  }
+}
+
+/* 这一步的内容区：观感与改造前一致（原来是页面自己的 .panel + .detail-body） */
+.ws-stage {
+  min-height: 420px;
+  padding-bottom: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.ws-stage-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 16px;
+}
+
+/* "配置与页面插槽对不上"的提示：这种时候绝不能白屏——必须说清两边各是什么 */
+.ws-gap {
+  margin: 0;
+  padding: 10px 12px;
+  color: #e6a23c;
+  font-size: 12px;
+  line-height: 1.7;
+  background: rgba(230, 162, 60, 0.08);
+  border: 1px dashed rgba(230, 162, 60, 0.35);
+  border-radius: 6px;
+}
+
+.ws-step-note {
+  margin: 8px 0 0;
+  color: var(--t3);
+  font-size: 11px;
+  line-height: 1.7;
+
+  .note-follow {
+    color: var(--t3);
+  }
 }
 </style>

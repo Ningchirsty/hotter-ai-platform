@@ -127,122 +127,134 @@
           </el-button>
         </template>
 
-        <template #main>
-          <section class="panel detail-panel">
-            <div class="detail-body">
-            <!-- 参考图 / 产品图（R32：区块已拆成组件，状态仍在页面） -->
-            <ProjectAssetsBlock
-              v-model:selected-file-id="selectedFileId"
-              v-model:as-product-image="asProductImage"
-              :files="imageFiles"
-              :product-image="productImage"
-              :product-image-origin="productImageOrigin"
-              :can-bind-product-image="canBindProductImage"
-              :binding-product-image="bindingProductImage"
-              :url-of="urlOf"
-              :file-source-label="fileSourceLabel"
-              :file-source-type="fileSourceType"
-              :is-product-image-file="isProductImageFile"
-              :format-time="formatTime"
-              :do-upload="doUpload"
-              @bind-product-image="doBindProductImage"
-            />
+        <!--
+          R37：按步骤装配（用户已确认"只显示当前步骤"）。
+          每个区块以**同名插槽**交给工作台（插槽名 = 装配配置里的组件名），
+          由工作台决定"当前该显示哪一步的哪几块"——资料步两块、事实步两块、出图步两块。
+          页面不再自己堆六块：谁显示、按什么顺序显示归装配配置，页面只提供内容与数据。
+        -->
+        <template #ProjectAssetsBlock>
+          <!-- 参考图 / 产品图（R32：区块已拆成组件，状态仍在页面） -->
+          <ProjectAssetsBlock
+            v-model:selected-file-id="selectedFileId"
+            v-model:as-product-image="asProductImage"
+            :files="imageFiles"
+            :product-image="productImage"
+            :product-image-origin="productImageOrigin"
+            :can-bind-product-image="canBindProductImage"
+            :binding-product-image="bindingProductImage"
+            :url-of="urlOf"
+            :file-source-label="fileSourceLabel"
+            :file-source-type="fileSourceType"
+            :is-product-image-file="isProductImageFile"
+            :format-time="formatTime"
+            :do-upload="doUpload"
+            @bind-product-image="doBindProductImage"
+          />
+        </template>
 
-            <!-- 品牌要求（Brief）：品牌部在内容协同录入并确认，本页只读（R32：已拆成组件） -->
-            <ProjectBriefBlock
-              :task-id="currentProjectId"
-              :brief="brandBrief"
-              :brief-status-type="briefStatusType"
-              :brief-status-text="briefStatusText"
-              :brief-busy="briefBusy"
-              :error="brandBriefError"
-              :change-request="briefChangeRequest"
-              :change-error="briefChangeError"
-              :value-of="briefValueOf"
-              :format-time="formatTime"
-              @apply-change="openBriefChangeDialog"
-              @refresh="refreshBrief"
-              @go-content-task="goContentTask"
-            />
+        <template #ProjectBriefBlock>
+          <!-- 品牌要求（Brief）：品牌部在内容协同录入并确认，本页只读（R32：已拆成组件） -->
+          <ProjectBriefBlock
+            :task-id="currentProjectId"
+            :brief="brandBrief"
+            :brief-status-type="briefStatusType"
+            :brief-status-text="briefStatusText"
+            :brief-busy="briefBusy"
+            :error="brandBriefError"
+            :change-request="briefChangeRequest"
+            :change-error="briefChangeError"
+            :value-of="briefValueOf"
+            :format-time="formatTime"
+            @apply-change="openBriefChangeDialog"
+            @refresh="refreshBrief"
+            @go-content-task="goContentTask"
+          />
+        </template>
 
-            <!-- 文案与要点：详情页的「字」（R32：已拆成组件） -->
-            <ProjectCopyBlock
-              v-model:tab="copyTab"
-              :blocks="copyBlocks"
-              :active-blocks="activeCopyBlocks"
-              :tabs="copyTabs"
-              :busy="copyBusy"
-              :error="copyLoadError"
-              :as-block="asBlock"
-              :source-label="copySourceLabel"
-              :source-type="copySourceType"
-              :status-label="copyStatusLabel"
-              :status-type="copyStatusType"
-              :is-first="isFirstBlock"
-              :is-last="isLastBlock"
-              @refresh="loadCopyBlocks"
-              @add="openCopyBlockDialog"
-              @edit="openCopyBlockDialog"
-              @delete="doDeleteCopyBlock"
-              @move="moveBlock"
-              @seed-from-facts="doSeedFromFacts"
-            />
+        <template #ProjectCopyBlock>
+          <!-- 文案与要点：详情页的「字」（R32：已拆成组件） -->
+          <ProjectCopyBlock
+            v-model:tab="copyTab"
+            :blocks="copyBlocks"
+            :active-blocks="activeCopyBlocks"
+            :tabs="copyTabs"
+            :busy="copyBusy"
+            :error="copyLoadError"
+            :as-block="asBlock"
+            :source-label="copySourceLabel"
+            :source-type="copySourceType"
+            :status-label="copyStatusLabel"
+            :status-type="copyStatusType"
+            :is-first="isFirstBlock"
+            :is-last="isLastBlock"
+            @refresh="loadCopyBlocks"
+            @add="openCopyBlockDialog"
+            @edit="openCopyBlockDialog"
+            @delete="doDeleteCopyBlock"
+            @move="moveBlock"
+            @seed-from-facts="doSeedFromFacts"
+          />
+        </template>
 
-            <!-- 事实确认（R32：已拆成组件） -->
-            <ProjectFactsBlock
-              v-model:filter="factFilter"
-              :facts="facts"
-              :confirmed-facts="confirmedFacts"
-              :visible-facts="visibleFacts"
-              :filters="factFilters"
-              :required-options="requiredFieldOptions"
-              :unsatisfied-options="unsatisfiedRequiredOptions"
-              :field-options-loaded="fieldOptionsLoaded"
-              :option-label="optionLabel"
-              :busy="factBusy"
-              :error="factLoadError"
-              :as-fact="asFact"
-              :status-label="factStatusLabel"
-              :status-type="factStatusType"
-              :expanded="expandedFacts"
-              @confirm-unambiguous="doConfirmUnambiguousFacts"
-              @manual-entry="openManualFact"
-              @confirm="doConfirmFact"
-              @reject="doRejectFact"
-              @toggle-excerpt="toggleFactExcerpt"
-            />
+        <template #ProjectFactsBlock>
+          <!-- 事实确认（R32：已拆成组件） -->
+          <ProjectFactsBlock
+            v-model:filter="factFilter"
+            :facts="facts"
+            :confirmed-facts="confirmedFacts"
+            :visible-facts="visibleFacts"
+            :filters="factFilters"
+            :required-options="requiredFieldOptions"
+            :unsatisfied-options="unsatisfiedRequiredOptions"
+            :field-options-loaded="fieldOptionsLoaded"
+            :option-label="optionLabel"
+            :busy="factBusy"
+            :error="factLoadError"
+            :as-fact="asFact"
+            :status-label="factStatusLabel"
+            :status-type="factStatusType"
+            :expanded="expandedFacts"
+            @confirm-unambiguous="doConfirmUnambiguousFacts"
+            @manual-entry="openManualFact"
+            @confirm="doConfirmFact"
+            @reject="doRejectFact"
+            @toggle-excerpt="toggleFactExcerpt"
+          />
+        </template>
 
-            <!-- 出图（R33：已拆成组件；三个输入各自 v-model，写入路径显式） -->
-            <ProjectHeroBlock
-              v-model:workflow-code="heroForm.workflowCode"
-              v-model:prompt="heroForm.prompt"
-              v-model:negative-prompt="heroForm.negativePrompt"
-              :workflows="workflows"
-              :submitting="submitting"
-              :reference-count="imageFiles.length"
-              :dna-state-loaded="dnaStateLoaded"
-              :prompt-from-dna="promptFromDna"
-              :prompt-applied="promptApplied"
-              :dna-locked="dnaLocked"
-              :dna-locked-version="dnaLockedVersion"
-              @generate="doGenerate"
-              @prefill-from-dna="prefillPromptFromDna"
-              @open-dna="openDna"
-            />
+        <template #ProjectHeroBlock>
+          <!-- 出图（R33：已拆成组件；三个输入各自 v-model，写入路径显式） -->
+          <ProjectHeroBlock
+            v-model:workflow-code="heroForm.workflowCode"
+            v-model:prompt="heroForm.prompt"
+            v-model:negative-prompt="heroForm.negativePrompt"
+            :workflows="workflows"
+            :submitting="submitting"
+            :reference-count="imageFiles.length"
+            :dna-state-loaded="dnaStateLoaded"
+            :prompt-from-dna="promptFromDna"
+            :prompt-applied="promptApplied"
+            :dna-locked="dnaLocked"
+            :dna-locked-version="dnaLockedVersion"
+            @generate="doGenerate"
+            @prefill-from-dna="prefillPromptFromDna"
+            @open-dna="openDna"
+          />
+        </template>
 
-            <!-- 候选（R33：已拆成组件） -->
-            <ProjectGenerationsBlock
-              :generations="generations"
-              :polling="polling"
-              :url-of="urlOf"
-              :status-label="genStatusLabel"
-              :status-type="genStatusType"
-              :retrying-id="retryingId"
-              @preview="openPreview"
-              @retry="doRetry"
-            />
-          </div>
-          </section>
+        <template #ProjectGenerationsBlock>
+          <!-- 候选（R33：已拆成组件） -->
+          <ProjectGenerationsBlock
+            :generations="generations"
+            :polling="polling"
+            :url-of="urlOf"
+            :status-label="genStatusLabel"
+            :status-type="genStatusType"
+            :retrying-id="retryingId"
+            @preview="openPreview"
+            @retry="doRetry"
+          />
         </template>
       </CreativeWorkspace>
 
@@ -2025,12 +2037,9 @@ button {
   gap: 8px;
 }
 
-.detail-body {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  padding: 16px;
-}
+/* R37：这一步的内容容器搬进工作台（`.ws-stage` / `.ws-stage-body`，同名样式在那边的
+   scoped 样式里）——装配归工作台，页面只提供每一步的内容。原先的 `.detail-body` 因此删掉；
+   `.detail-panel` 仍被"未选中项目"的占位区使用。 */
 
 .block {
   padding: 14px;
