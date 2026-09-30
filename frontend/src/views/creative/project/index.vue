@@ -130,409 +130,87 @@
         <template #main>
           <section class="panel detail-panel">
             <div class="detail-body">
-            <!-- 参考图 / 产品图 -->
-            <section class="block">
-              <div class="block-head">
-                <h4>1. 产品图与参考图</h4>
-                <div class="block-actions">
-                  <span class="muted">{{ imageFiles.length }} 张</span>
-                  <el-tag :type="productImage?.configured ? 'success' : 'warning'" size="small" effect="dark">
-                    产品图{{ productImage?.configured ? '：' + (productImage.fileName || '已配置') : '未配置' }}
-                  </el-tag>
-                </div>
-              </div>
-              <p class="hint">
-                这里有两样不同的东西，别混：<b>产品图</b> = 产品主数据里唯一的那张照片，是
-                <b>产品保真基准</b>（质检拿它比对生成图里的产品有没有走形；只用提示词约束，不自动判死）；
-                <b>参考图</b> = 本次任务喂给模型的输入图，可以有好多张，是
-                <b>一致性基准</b>（质检拿它比对画面是否走样，不一致会被筛除）。
-                角色徽标按后端记录的来源如实展示，不靠推测。
-              </p>
-              <p class="hint">
-                上传参考图<b>不会改变项目阶段</b>（已完成的项目也能补图）；只有下面的勾选框会把某张图登记成产品图。
-              </p>
-              <p class="hint">
-                <template v-if="!canBindProductImage">
-                  <span class="fact-error">该项目没有关联产品，无法登记产品图（后端会直接拒绝）——请先在项目里选择产品。</span>
-                </template>
-                <template v-else-if="!productImage?.configured">
-                  把上传的产品照片登记为产品图：勾选下面的「同时设为该产品的产品图」，或在某张图片上点「设为产品图」。
-                </template>
-                <template v-else>
-                  {{ productImageOrigin || '产品图已配置' }}
-                  <span v-if="productImage.setAt" class="muted">· 设定于 {{ formatTime(productImage.setAt) }}</span>
-                </template>
-              </p>
-              <div class="ref-row">
-                <div
-                  v-for="file in imageFiles"
-                  :key="String(file.fileId)"
-                  class="ref-card"
-                  :class="{ active: String(file.fileId) === String(selectedFileId) }"
-                  @click="selectedFileId = file.fileId"
-                >
-                  <img v-if="urlOf('file-' + file.fileId)" :src="urlOf('file-' + file.fileId)" :alt="file.fileName" />
-                  <span v-else class="ref-loading">读取中…</span>
-                  <span class="ref-name">{{ file.fileName }}</span>
-                  <el-tag
-                    v-if="file.sourceType"
-                    size="small"
-                    effect="plain"
-                    :type="fileSourceType(file.sourceType)"
-                  >
-                    {{ fileSourceLabel(file.sourceType) }}
-                  </el-tag>
-                  <span v-if="isProductImageFile(file)" class="ref-badge ok">产品保真基准</span>
-                  <span v-else-if="String(file.fileId) === String(selectedFileId)" class="ref-badge">当前参考图</span>
-                  <el-button
-                    v-if="canBindProductImage && file.fileId != null && !isProductImageFile(file)"
-                    size="small"
-                    text
-                    type="primary"
-                    :loading="bindingProductImage === String(file.fileId)"
-                    @click.stop="doBindProductImage(file)"
-                  >
-                    设为产品图
-                  </el-button>
-                </div>
-                <div class="ref-upload-wrap">
-                  <el-checkbox v-model="asProductImage" :disabled="!canBindProductImage" class="as-product-image">
-                    同时设为该产品的产品图
-                  </el-checkbox>
-                  <el-upload
-                    class="ref-upload"
-                    :show-file-list="false"
-                    accept="image/png,image/jpeg,image/webp"
-                    :http-request="doUpload"
-                  >
-                    <div class="upload-slot">
-                      <span class="plus">＋</span>
-                      <span>{{ asProductImage ? '上传并设为产品图' : '上传参考图' }}</span>
-                      <span class="hint">PNG/JPG/WEBP，≤20MB</span>
-                    </div>
-                  </el-upload>
-                </div>
-              </div>
-            </section>
+            <!-- 参考图 / 产品图（R32：区块已拆成组件，状态仍在页面） -->
+            <ProjectAssetsBlock
+              v-model:selected-file-id="selectedFileId"
+              v-model:as-product-image="asProductImage"
+              :files="imageFiles"
+              :product-image="productImage"
+              :product-image-origin="productImageOrigin"
+              :can-bind-product-image="canBindProductImage"
+              :binding-product-image="bindingProductImage"
+              :url-of="urlOf"
+              :file-source-label="fileSourceLabel"
+              :file-source-type="fileSourceType"
+              :is-product-image-file="isProductImageFile"
+              :format-time="formatTime"
+              :do-upload="doUpload"
+              @bind-product-image="doBindProductImage"
+            />
 
-            <!-- 品牌要求（Brief）：品牌部在内容协同录入并确认，本页只读 -->
-            <section class="block">
-              <div class="block-head">
-                <h4>2. 品牌要求（Brief）（由品牌部在内容任务里录入）</h4>
-                <div class="block-actions">
-                  <el-tag :type="briefStatusType" size="small" effect="dark">{{ briefStatusText }}</el-tag>
-                  <el-button
-                    size="small"
-                    type="warning"
-                    plain
-                    @click="openBriefChangeDialog"
-                  >
-                    申请修改品牌要求
-                  </el-button>
-                  <el-button size="small" plain :loading="briefBusy === 'load'" @click="refreshBrief">
-                    刷新
-                  </el-button>
-                  <el-button size="small" type="primary" plain @click="goContentTask">
-                    去内容任务里录入
-                  </el-button>
-                </div>
-              </div>
-              <p class="hint">
-                <b>本页只读</b>：品牌要求由品牌部在<b>内容生产协同 → 内容任务 → 任务详情 →「品牌要求（Brief）」</b>
-                里录入与确认，平面设计按此创作（那边确认后本页即可见）。要改要求请点右上「申请修改品牌要求」，
-                提交后进入品牌部的待办（互动确认卡），处理完这里会跟着更新。
-                产品事实仍在下面「4. 事实确认」里逐条确认；品牌调性与事实里的 brand_tone
-                <b>并存</b>——一个是品牌方自己提的要求，一个是从资料里解析确认的，两者冲突时同时展示、由人裁定，不自动合并。
-                这些要求的去向：<b>必显信息</b>与<b>主推卖点</b>进出图的正向提示词，<b>禁用词</b>进出图的负向提示词，
-                品牌调性 / 目标人群 / 尺寸规范 / 参考风格作为创作依据。
-              </p>
-              <p v-if="brandBriefError" class="fact-error">
-                {{ brandBriefError }}（点右上「刷新」重试，页面不会用默认值糊过去）
-              </p>
-              <!-- 修改申请状态：有就明说在等品牌部处理，读不到也说一句（不静默） -->
-              <p v-if="briefChangeRequest" class="brief-change-pending">
-                已提交修改申请：{{ briefChangeRequest.question || '（无说明）' }}
-                <span class="muted">（等待品牌部处理 · {{ formatTime(briefChangeRequest.createTime) || '—' }}）</span>
-              </p>
-              <p v-else-if="briefChangeError" class="muted brief-change-pending">
-                {{ briefChangeError }}
-              </p>
-              <div class="brief-grid brief-grid-readonly">
-                <div v-for="field in briefFields" :key="field.key" class="brief-row">
-                  <label>{{ field.label }}</label>
-                  <div class="brief-control">
-                    <div class="brief-value" :class="{ 'is-empty': !briefValueOf(field.key) }">
-                      {{ briefValueOf(field.key) || '—' }}
-                    </div>
-                    <!-- 参考风格：品牌方给的参考图（只读展示；它们同时也是任务附件） -->
-                    <div v-if="field.key === 'styleRef'" class="brief-style-images">
-                      <BriefStyleImages
-                        :task-id="currentProjectId"
-                        :images="brandBrief?.styleRefImages || []"
-                        :editable="false"
-                        source="creative"
-                      />
-                      <span v-if="(brandBrief?.styleRefImages || []).length" class="hint">
-                        这些图也是任务附件，可以在上面「1. 产品图与参考图」里被选作出图参考图。
-                      </span>
-                    </div>
-                    <span class="hint">{{ field.hint }}</span>
-                  </div>
-                </div>
-              </div>
-            </section>
+            <!-- 品牌要求（Brief）：品牌部在内容协同录入并确认，本页只读（R32：已拆成组件） -->
+            <ProjectBriefBlock
+              :task-id="currentProjectId"
+              :brief="brandBrief"
+              :brief-status-type="briefStatusType"
+              :brief-status-text="briefStatusText"
+              :brief-busy="briefBusy"
+              :error="brandBriefError"
+              :change-request="briefChangeRequest"
+              :change-error="briefChangeError"
+              :value-of="briefValueOf"
+              :format-time="formatTime"
+              @apply-change="openBriefChangeDialog"
+              @refresh="refreshBrief"
+              @go-content-task="goContentTask"
+            />
 
-            <!-- 文案与要点：详情页的「字」 -->
-            <section class="block">
-              <div class="block-head">
-                <h4>3. 文案与要点</h4>
-                <div class="block-actions">
-                  <span class="muted">共 {{ copyBlocks.length }} 条</span>
-                  <el-button size="small" plain :loading="copyBusy === 'load'" @click="loadCopyBlocks">刷新</el-button>
-                </div>
-              </div>
-              <p class="hint">
-                这块是详情页要说的「字」。去向按后端实际接线如实写：<b>卖点 / 正文 / 参数</b>按这里的顺序进
-                <b>详情页长图</b>（卖点还会进分镜草稿的卖点屏）。
-                「必显信息」不在这里录入——它是<b>品牌方的要求</b>，统一在「2. 品牌要求（Brief）」里（品牌部在内容任务里填），由出图提示词与闸门引用，
-                避免同一件事有两个真相源。
-                与分镜的分工：分镜屏文案是「这一屏这张图配什么字」，<b>R7 起屏文案也会进图像提示词</b>（画面独白优先）；
-                而这里整页的文字不进出图提示词——出图提示词用的是视觉基因 + 「2. 品牌要求（Brief）」的必显 / 主推 / 禁用词。
-              </p>
-              <p v-if="copyLoadError" class="fact-error">
-                {{ copyLoadError }}（点右上「刷新」重试，页面不会用空表糊过去）
-              </p>
-              <el-tabs v-model="copyTab">
-                <el-tab-pane v-for="tab in copyTabs" :key="tab.value" :label="tab.label" :name="tab.value">
-                  <p class="hint">{{ tab.hint }}</p>
-                  <p class="copy-usedat">{{ tab.usedAt }}</p>
-                  <div class="block-actions copy-toolbar">
-                    <el-button size="small" type="primary" plain @click="openCopyBlockDialog(tab.value)">
-                      ＋ 新增{{ tab.label }}
-                    </el-button>
-                    <el-button
-                      v-if="tab.value === 'SPEC_ROW'"
-                      size="small"
-                      plain
-                      :loading="copyBusy === 'seed'"
-                      @click="doSeedFromFacts"
-                    >
-                      从已确认事实派生
-                    </el-button>
-                    <span v-if="tab.value === 'SPEC_ROW'" class="hint">
-                      派生出来的行标为「事实派生」；改过事实后请重新派生，以免两处不一致。
-                    </span>
-                    <span v-else-if="tab.value === 'SELLING_POINT'" class="hint">
-                      用「↑ / ↓」调整优先级，顺序即详情页从上到下的顺序，点一下立即保存。
-                    </span>
-                  </div>
-                  <!-- 无框行列表：与「事实确认」同一套写法（发丝分隔线 + 悬停高亮），
-                       不用白色表格容器；排序号显示"第几条"而不是后端 sortNo（步长 10 看着莫名） -->
-                  <div v-if="activeCopyBlocks.length" class="copy-list">
-                    <div
-                      v-for="(row, idx) in activeCopyBlocks"
-                      :key="String(asBlock(row).id)"
-                      class="copy-row"
-                    >
-                      <div class="copy-order">
-                        <span class="ord">{{ idx + 1 }}</span>
-                        <template v-if="tab.value === 'SELLING_POINT'">
-                          <button
-                            type="button"
-                            class="ord-btn"
-                            title="上移（提高优先级）"
-                            :disabled="isFirstBlock(tab.value, asBlock(row)) || copyBusy === 'reorder'"
-                            @click="moveBlock(asBlock(row), -1)"
-                          >
-                            ↑
-                          </button>
-                          <button
-                            type="button"
-                            class="ord-btn"
-                            title="下移（降低优先级）"
-                            :disabled="isLastBlock(tab.value, asBlock(row)) || copyBusy === 'reorder'"
-                            @click="moveBlock(asBlock(row), 1)"
-                          >
-                            ↓
-                          </button>
-                        </template>
-                      </div>
-                      <div class="copy-body">
-                        <div class="copy-line1">
-                          <span class="copy-title">{{ asBlock(row).title || '—' }}</span>
-                          <span class="copy-src" :class="'is-' + copySourceType(asBlock(row).source)">
-                            {{ copySourceLabel(asBlock(row).source) }}<span
-                              v-if="asBlock(row).sourceRef"
-                              class="muted"
-                            > · {{ asBlock(row).sourceRef }}</span>
-                          </span>
-                          <span class="fact-status" :class="'is-' + copyStatusType(asBlock(row).status)">
-                            {{ copyStatusLabel(asBlock(row).status) }}
-                          </span>
-                        </div>
-                        <p class="copy-text">{{ asBlock(row).content || '—' }}</p>
-                      </div>
-                      <div class="copy-ops">
-                        <el-button
-                          link
-                          size="small"
-                          type="primary"
-                          @click="openCopyBlockDialog(tab.value, asBlock(row))"
-                        >
-                          编辑
-                        </el-button>
-                        <el-button
-                          link
-                          size="small"
-                          type="danger"
-                          :loading="copyBusy === 'block-' + String(asBlock(row).id)"
-                          @click="doDeleteCopyBlock(asBlock(row))"
-                        >
-                          删除
-                        </el-button>
-                      </div>
-                    </div>
-                  </div>
-                  <p v-else class="empty">这一组还没有内容。点上面的「新增」录入。</p>
-                </el-tab-pane>
-              </el-tabs>
-            </section>
+            <!-- 文案与要点：详情页的「字」（R32：已拆成组件） -->
+            <ProjectCopyBlock
+              v-model:tab="copyTab"
+              :blocks="copyBlocks"
+              :active-blocks="activeCopyBlocks"
+              :tabs="copyTabs"
+              :busy="copyBusy"
+              :error="copyLoadError"
+              :as-block="asBlock"
+              :source-label="copySourceLabel"
+              :source-type="copySourceType"
+              :status-label="copyStatusLabel"
+              :status-type="copyStatusType"
+              :is-first="isFirstBlock"
+              :is-last="isLastBlock"
+              @refresh="loadCopyBlocks"
+              @add="openCopyBlockDialog"
+              @edit="openCopyBlockDialog"
+              @delete="doDeleteCopyBlock"
+              @move="moveBlock"
+              @seed-from-facts="doSeedFromFacts"
+            />
 
-            <!-- 事实确认 -->
-            <section class="block">
-              <div class="block-head">
-                <h4>4. 事实确认</h4>
-                <div class="block-actions">
-                  <span class="muted">已确认 {{ confirmedFacts.length }} 条 / 共 {{ facts.length }} 行</span>
-                  <el-button
-                    size="small"
-                    plain
-                    :loading="factBusy === 'confirmUnambiguous'"
-                    @click="doConfirmUnambiguousFacts"
-                  >
-                    一键确认无歧义项
-                  </el-button>
-                  <el-button size="small" type="primary" plain @click="openManualFact()">人工录入</el-button>
-                </div>
-              </div>
-              <p class="hint">
-                只有 <b>CONFIRMED</b> 的事实才会进入基因 / 方向 / 分镜文案的推导；PENDING 与已否决都不算。
-              </p>
-              <p v-if="factLoadError" class="fact-error">
-                {{ factLoadError }}（点右上「刷新」重试，页面不会用默认值糊过去）
-              </p>
-
-              <p v-if="!fieldOptionsLoaded && !factLoadError" class="fact-error">
-                字段选项接口没取到，无法判断闸门必填项是否齐备——不猜，请在下方事实表里逐条确认。
-              </p>
-              <template v-else>
-                <!-- 闸门必填项：紧凑状态带。原先是竖排一行一项（9 项就吃掉大半屏），
-                     信息量一样但更省高度，也与页面其它「状态条」写法一致。 -->
-                <div class="fact-gate">
-                  <span
-                    v-for="option in requiredFieldOptions"
-                    :key="String(option.fieldCode)"
-                    class="gate-chip"
-                    :class="{ ok: option.satisfied }"
-                    :title="optionLabel(option)"
-                  >
-                    <span class="mark">{{ option.satisfied ? '✓' : '✗' }}</span>
-                    {{ option.fieldName || option.fieldCode }}
-                    <em class="gate-level">{{ option.gateLevel || '—' }}</em>
-                  </span>
-                  <span v-if="!requiredFieldOptions.length" class="muted">该交付类型没有声明必填事实项。</span>
-                </div>
-                <div v-if="unsatisfiedRequiredOptions.length" class="block-actions">
-                  <el-button
-                    v-for="option in unsatisfiedRequiredOptions"
-                    :key="'fill-' + option.fieldCode"
-                    size="small"
-                    @click="openManualFact(option.fieldCode)"
-                  >
-                    ＋ 录入「{{ option.fieldName || option.fieldCode }}」
-                  </el-button>
-                </div>
-              </template>
-
-              <!-- 事实清单：无框行列表（发丝分隔线 + 左侧状态色条），不用白色表格容器。
-                   为什么改：白底表格在暗色工作室里是一块突兀的亮面，且列宽固定会把
-                   「值/来源/原文摘录」挤成省略号；改成两行一行之后，值与来源都能直接读。 -->
-              <div v-if="facts.length" class="fact-list">
-                <div class="fact-tools">
-                  <button
-                    v-for="item in factFilters"
-                    :key="item.value"
-                    type="button"
-                    class="fact-filter"
-                    :class="{ active: factFilter === item.value }"
-                    @click="factFilter = item.value"
-                  >
-                    {{ item.label }}<span class="count">{{ item.count }}</span>
-                  </button>
-                  <span class="muted fact-sort-note">待确认 / 冲突排在前面</span>
-                </div>
-                <div
-                  v-for="row in visibleFacts"
-                  :key="String(asFact(row).snapshotId)"
-                  class="fact-row"
-                  :class="'st-' + String(asFact(row).confirmStatus || 'PENDING').toLowerCase()"
-                >
-                  <div class="fact-main">
-                    <div class="fact-line1">
-                      <span class="fact-name">{{ asFact(row).fieldName || asFact(row).fieldCode }}</span>
-                      <span class="fact-value">
-                        {{ asFact(row).fieldValue }}<span v-if="asFact(row).unit" class="muted"> {{ asFact(row).unit }}</span>
-                      </span>
-                      <span class="fact-status" :class="'is-' + factStatusType(asFact(row).confirmStatus)">
-                        {{ factStatusLabel(asFact(row).confirmStatus) }}
-                      </span>
-                    </div>
-                    <div class="fact-line2">
-                      <span class="fact-src">
-                        {{ asFact(row).sourceFileName || '—'
-                        }}<span v-if="asFact(row).sourceLocator" class="muted"> · {{ asFact(row).sourceLocator }}</span>
-                      </span>
-                      <span
-                        v-if="asFact(row).sourceExcerpt"
-                        class="fact-excerpt"
-                        :class="{ open: !!expandedFacts[String(asFact(row).snapshotId)] }"
-                        :title="asFact(row).sourceExcerpt"
-                        @click="toggleFactExcerpt(asFact(row))"
-                      >
-                        原文：{{ asFact(row).sourceExcerpt }}
-                      </span>
-                      <span v-else class="muted">原文：—</span>
-                    </div>
-                  </div>
-                  <div class="fact-ops">
-                    <el-button
-                      link
-                      size="small"
-                      type="primary"
-                      :disabled="asFact(row).confirmStatus === 'CONFIRMED'"
-                      :loading="factBusy === 'fact-' + asFact(row).snapshotId"
-                      @click="doConfirmFact(asFact(row))"
-                    >
-                      确认
-                    </el-button>
-                    <el-button
-                      link
-                      size="small"
-                      type="danger"
-                      :disabled="asFact(row).confirmStatus === 'REJECTED'"
-                      :loading="factBusy === 'fact-' + asFact(row).snapshotId"
-                      @click="doRejectFact(asFact(row))"
-                    >
-                      驳回
-                    </el-button>
-                  </div>
-                </div>
-                <p v-if="!visibleFacts.length" class="empty">该筛选下没有事实行。</p>
-              </div>
-              <p v-else class="empty">
-                还没有事实候选。资料解析后会自动落成待确认行；也可以点「人工录入」补齐。
-              </p>
-            </section>
+            <!-- 事实确认（R32：已拆成组件） -->
+            <ProjectFactsBlock
+              v-model:filter="factFilter"
+              :facts="facts"
+              :confirmed-facts="confirmedFacts"
+              :visible-facts="visibleFacts"
+              :filters="factFilters"
+              :required-options="requiredFieldOptions"
+              :unsatisfied-options="unsatisfiedRequiredOptions"
+              :field-options-loaded="fieldOptionsLoaded"
+              :option-label="optionLabel"
+              :busy="factBusy"
+              :error="factLoadError"
+              :as-fact="asFact"
+              :status-label="factStatusLabel"
+              :status-type="factStatusType"
+              :expanded="expandedFacts"
+              @confirm-unambiguous="doConfirmUnambiguousFacts"
+              @manual-entry="openManualFact"
+              @confirm="doConfirmFact"
+              @reject="doRejectFact"
+              @toggle-excerpt="toggleFactExcerpt"
+            />
 
             <!-- 出图 -->
             <section class="block">
@@ -922,6 +600,11 @@ import {
   GENERATION_STATUS_TYPES
 } from '@/api/creative/types';
 import CreativeWorkspace from '../components/CreativeWorkspace.vue';
+// R32：项目页区块开始拆组件（状态仍在页面，组件只拿"显示的数据 + 触发的动作"）
+import ProjectAssetsBlock from './components/ProjectAssetsBlock.vue';
+import ProjectBriefBlock from './components/ProjectBriefBlock.vue';
+import ProjectCopyBlock from './components/ProjectCopyBlock.vue';
+import ProjectFactsBlock from './components/ProjectFactsBlock.vue';
 // R31：项目头部要显示交付类型的渠道与输出规格——用场景配置 composable 的同一份缓存，
 // 避免页面再发一次同样的请求（两处各取一次就会出现状态不一致）。
 import { useScenarioConfig } from '../composables/useScenarioConfig';

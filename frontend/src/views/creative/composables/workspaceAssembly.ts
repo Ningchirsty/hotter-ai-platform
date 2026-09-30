@@ -1,4 +1,4 @@
-import type { ScenarioProfile, ScenarioWorkspace } from '@/api/creative/scenario';
+﻿import type { ScenarioProfile, ScenarioWorkspace } from '@/api/creative/scenario';
 
 /**
  * 工作台装配的**只读对照**（V0.2 D 阶段最后一块的第一步，R17）。
@@ -74,13 +74,13 @@ export const CODE_COMPONENT_REGISTRY: Record<string, RegistryEntry> = {
   // ---- 十步各自的组件 ----
   ProjectInputPanel: {
     kind: 'SECTION',
-    location: 'project/index.vue「参考图 / 产品图」（:87）',
-    note: '含产品图绑定与附件上传，与品牌要求/文案同页'
+    location: 'project/index.vue 的「1. 产品图与参考图」→ R32 拆成 components/ProjectAssetsBlock.vue',
+    note: '已是独立组件，但入参依赖项目页状态（附件列表/产品图/blob URL 台账）；要参与装配得先给它一个数据源'
   },
   FactPanel: {
     kind: 'SECTION',
-    location: 'project/index.vue「事实确认」（:355，含闸门必填项 :383 与事实清单 :411）',
-    note: '事实在内容域确认，创作域只读展示'
+    location: 'project/index.vue 的「4. 事实确认」→ R32 拆成 components/ProjectFactsBlock.vue',
+    note: '事实在内容域确认，创作域只读展示；组件化后仍由项目页组合（筛选与排序口径在页面一处）'
   },
   VisualDnaPanel: {
     kind: 'SECTION',
@@ -99,7 +99,7 @@ export const CODE_COMPONENT_REGISTRY: Record<string, RegistryEntry> = {
   },
   GatePanel: {
     kind: 'SECTION',
-    location: 'review/index.vue「门禁状态 :28 / 准入项 :77 / 人工确认 :101」',
+    location: 'review/index.vue「门禁状态 / 准入项 / 人工确认」',
     note: '闸门判定在后端，这里是展示与人工确认入口'
   },
   GenerationBoard: {
