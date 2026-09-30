@@ -318,7 +318,8 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
             screen.setSubtitle(draft.subtitle());
             screen.setBodyText(draft.bodyText());
             screen.setPictureSoloStatement(draft.soloStatement());
-            screen.setSpecJson(spec(template, dna, direction, active));
+            screen.setSpecJson(spec(template, dna, direction, active,
+                sortNo - 1 < owners.size() ? owners.get(sortNo - 1) : null));
             screen.setWorkflowCode(workflowOf(owners, sortNo - 1));
             screen.setProductLockLevel(template.productLockLevel());
             screen.setStatus(STATUS_DRAFT);
@@ -704,7 +705,8 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
      * @return 规格 JSON
      */
     private String spec(CreativeScreenSkeleton.ScreenSpec template, ObjectNode dna,
-                            DpVisualDirectionVo direction, CreativeScreenSkeleton active) {
+                            DpVisualDirectionVo direction, CreativeScreenSkeleton active,
+                            DpProjectModule owner) {
         Map<String, Object> spec = new LinkedHashMap<>();
         String scene = direction != null ? String.valueOf(direction.getStrategy().getOrDefault("scene", "")) : "";
         String lighting = direction != null
@@ -719,6 +721,32 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
             dna.path("colors").path("background").asText("纯色底")));
         spec.put("productRatio", ratio(dna));
         spec.put("whitespace", dna.path("whitespaceLevel").asText("HIGH"));
+        // V0.2 R23：把模块规划里"这一屏专属"的配置**烙进屏**（模块目标/视觉表达/参考图/模板/卖点）。
+        // 为什么要烙：出图与排版是在**别的请求**里跑的，它们只看得到屏。不烙的话要么每次反查模块计划
+        // （多一次库依赖、且计划改了以后老分镜的语义会跟着变），要么这些字段永远只是"存着"。
+        // 烙进来以后，"这一屏当时按什么出的图"也是可追溯的（spec_json 就是证据）。
+        if (owner != null) {
+            spec.put("moduleCode", owner.getModuleCode());
+            spec.put("moduleName", owner.getModuleName());
+            if (StringUtils.isNotBlank(owner.getObjective())) {
+                spec.put("objective", owner.getObjective());
+            }
+            if (StringUtils.isNotBlank(owner.getVisualRulesJson())) {
+                spec.put("visualRules", owner.getVisualRulesJson());
+            }
+            List<String> templates = CreativeModuleServiceImpl.splitCodes(owner.getTemplateCodes());
+            if (!templates.isEmpty()) {
+                spec.put("templateCodes", templates);
+            }
+            List<String> references = CreativeModuleServiceImpl.splitCodes(owner.getReferenceCodes());
+            if (!references.isEmpty()) {
+                spec.put("referenceFileIds", references);
+            }
+            List<String> points = CreativeModuleServiceImpl.splitCodes(owner.getSellingPointCodes());
+            if (!points.isEmpty()) {
+                spec.put("sellingPointBlockIds", points);
+            }
+        }
         return JsonUtils.toJsonString(spec);
     }
 

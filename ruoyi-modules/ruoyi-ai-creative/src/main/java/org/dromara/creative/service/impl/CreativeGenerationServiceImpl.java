@@ -90,9 +90,10 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
     @Transactional(rollbackFor = Exception.class)
     public DpGenerationVo submitForScreen(Long taskId, Long screenId, String screenHint, String screenText,
                                           String prompt, String negativePrompt, String workflowCode,
-                                          String sizeLabel, String strengthLabel) {
-        return submitInternal(taskId, screenId, screenHint, screenText, null, prompt, negativePrompt,
-            workflowCode, sizeLabel, strengthLabel, "SCREEN_SUBMIT");
+                                          String sizeLabel, String strengthLabel,
+                                          Long referenceFileId, String moduleVisualRules) {
+        return submitInternal(taskId, screenId, screenHint, screenText, referenceFileId, prompt, negativePrompt,
+            workflowCode, sizeLabel, strengthLabel, "SCREEN_SUBMIT", moduleVisualRules);
     }
 
     /**
@@ -113,6 +114,19 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
                                           Long fileId, String promptInput, String negativeInput,
                                           String workflowInput, String sizeLabel, String strengthLabel,
                                           String eventAction) {
+        return submitInternal(taskId, screenId, screenHint, screenText, fileId, promptInput, negativeInput,
+            workflowInput, sizeLabel, strengthLabel, eventAction, null);
+    }
+
+    /**
+     * 出图提交的内部实现（带模块视觉表达；R23）。
+     *
+     * @param moduleVisualRules 模块规划里的「视觉表达」（可空）
+     */
+    private DpGenerationVo submitInternal(Long taskId, Long screenId, String screenHint, String screenText,
+                                          Long fileId, String promptInput, String negativeInput,
+                                          String workflowInput, String sizeLabel, String strengthLabel,
+                                          String eventAction, String moduleVisualRules) {
         // 视觉门前置：未过门不放行。放在最前面，避免白白生成素材、占一次 GPU。
         // 门禁在后端强制，前端按钮状态只是提示——绕过页面直接调接口同样会被拒。
         gateService.requireCanProduce(taskId);
@@ -149,7 +163,7 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
         if (StringUtils.isBlank(prompt) || StringUtils.isBlank(negativePrompt)) {
             DnaPromptBuilder.Prompt derived = dnaPromptBuilder.build(
                 dnaService.activeDna(taskId), project.getProductName(), screenHint,
-                briefService.get(taskId), screenText);
+                briefService.get(taskId), screenText, moduleVisualRules);
             if (StringUtils.isBlank(prompt)) {
                 prompt = derived.prompt();
                 promptApplied = derived.applied();
@@ -196,7 +210,14 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
         row.setNegativePrompt(negativePrompt);
         row.setInputFileId(reference.getFileId());
         row.setInputAssetId(assetId);
-        row.setInputJson(JsonUtils.toJsonString(inputSnapshot(reference, version, assetId, fitted)));
+        Map<String, Object> snapshot = inputSnapshot(reference, version, assetId, fitted);
+        // R23：把"这次为什么用这张参考图""用了哪个模块的视觉表达"一起留痕。
+        // 出图是异步的，事后要能回答"这屏当时按什么出的"，不能只靠猜。
+        snapshot.put("referenceFrom", fileId == null ? "LATEST_ATTACHMENT" : "MODULE_PLAN");
+        if (StringUtils.isNotBlank(moduleVisualRules)) {
+            snapshot.put("moduleVisualRules", singleLine(moduleVisualRules));
+        }
+        row.setInputJson(JsonUtils.toJsonString(snapshot));
         row.setImageTaskId(result.imageTaskId());
         row.setExecTenantId(result.tenantId());
         row.setExecUserId(result.userId());
@@ -466,6 +487,19 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
             throw new ServiceException("候选不存在：" + generationId);
         }
         return row;
+    }
+
+    /**
+     * 压成一行（提示词与快照里都不该出现换行：换行在提示词里没有语义，只会让长度统计失真）。
+     *
+     * @param text 原文本（可空）
+     * @return 单行文本；空返回 null
+     */
+    private static String singleLine(String text) {
+        if (StringUtils.isBlank(text)) {
+            return null;
+        }
+        return text.replaceAll("\\s+", " ").trim();
     }
 
     private CpTaskFileVo resolveReference(Long taskId, Long fileId, List<CpTaskFileVo> files) {

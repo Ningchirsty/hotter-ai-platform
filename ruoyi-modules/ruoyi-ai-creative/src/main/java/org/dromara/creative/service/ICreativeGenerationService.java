@@ -48,11 +48,17 @@ public interface ICreativeGenerationService {
      * @param workflowCode   出图能力（可空＝默认已发布契约）
      * @param sizeLabel      尺寸档位（可空）
      * @param strengthLabel  重绘强度档位（可空）
+     * @param referenceFileId 指定参考图附件ID（可空＝取最近一张图片附件）。
+     *                        R23：模块规划里给模块配了「参考图」时，出图就用它——同一条分镜里
+     *                        不同模块可以各自指定参考图，而不是所有屏都拿"最近上传的那张"。
+     * @param moduleVisualRules 模块规划里的「视觉表达」（可空）。R23：作为该屏的额外视觉约束
+     *                        追加进派生提示词（位置在屏文案之后、基因之前），并记进 applied 留痕。
      * @return 生成记录
      */
     DpGenerationVo submitForScreen(Long taskId, Long screenId, String screenHint, String screenText,
                                    String prompt, String negativePrompt, String workflowCode,
-                                   String sizeLabel, String strengthLabel);
+                                   String sizeLabel, String strengthLabel,
+                                   Long referenceFileId, String moduleVisualRules);
 
     /**
      * 项目的出图候选列表（先刷新状态再返回，按时间倒序）。

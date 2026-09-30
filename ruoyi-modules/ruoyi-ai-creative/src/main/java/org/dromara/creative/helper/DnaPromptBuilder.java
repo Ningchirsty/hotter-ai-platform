@@ -94,7 +94,7 @@ public class DnaPromptBuilder {
      * @return 派生结果
      */
     public Prompt build(ObjectNode dna, String subject, String screenHint) {
-        return build(dna, subject, screenHint, null, null);
+        return build(dna, subject, screenHint, null, null, null);
     }
 
     /**
@@ -109,6 +109,26 @@ public class DnaPromptBuilder {
      */
     public Prompt build(ObjectNode dna, String subject, String screenHint,
                         CpBrandBriefVo brief, String screenText) {
+        return build(dna, subject, screenHint, brief, screenText, null);
+    }
+
+    /**
+     * 派生提示词（V0.2 R23：多一个「模块视觉表达」输入）。
+     *
+     * <p>R22 的模块规划里可以给每个模块写「视觉表达」（`visual_rules_json`）。那时它只落库不生效，
+     * 属于"配了没用"；这里把它作为**该屏的额外视觉约束**接进提示词，并如实记进
+     * {@link Prompt#applied()}——页面与事件都能看到"这版提示词用到了模块视觉表达"。</p>
+     *
+     * @param dna               DNA 树（可为空树）
+     * @param subject           主体（通常是产品名）
+     * @param screenHint        画面用途提示（如「HERO 主图」「卖点图」），可空
+     * @param brief             品牌 Brief（可空＝该项目还没填）
+     * @param screenText        屏文案（画面独白/正文/标题，可空）
+     * @param moduleVisualRules 模块规划里的「视觉表达」（可空；原样是人填的文本或 JSON）
+     * @return 派生结果
+     */
+    public Prompt build(ObjectNode dna, String subject, String screenHint,
+                        CpBrandBriefVo brief, String screenText, String moduleVisualRules) {
         ObjectNode node = dna == null ? VisualDnaSchema.empty() : dna;
         List<String> applied = new ArrayList<>();
         List<String> omitted = new ArrayList<>();
@@ -129,6 +149,20 @@ public class DnaPromptBuilder {
             if (cut) {
                 omitted.add("屏文案超过 " + MAX_SCREEN_TEXT + " 字，已截断（原文 "
                     + screen.length() + " 字）；完整文案见分镜屏");
+            }
+        }
+
+        // 模块视觉表达（R23）：紧跟屏文案之后，位置比基因更靠前——它是**这个模块**的专门约束，
+        // 比全局风格更具体。整条追加，超长只截这一条并记进 omitted（不静默丢）。
+        String rules = singleLine(moduleVisualRules);
+        if (StringUtils.isNotBlank(rules)) {
+            boolean cut = rules.length() > MAX_SCREEN_TEXT;
+            sb.append("该屏的模块视觉表达：")
+                .append(cut ? rules.substring(0, MAX_SCREEN_TEXT) : rules).append("。");
+            applied.add("module.visualRules");
+            if (cut) {
+                omitted.add("模块视觉表达超过 " + MAX_SCREEN_TEXT + " 字，已截断（原文 "
+                    + rules.length() + " 字）；完整内容见模块规划");
             }
         }
 

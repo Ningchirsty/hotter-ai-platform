@@ -135,6 +135,12 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
             throw new ServiceException("还没有分镜，无法排版");
         }
 
+        // 0) 先把"用哪个模板"定下来（R23）：模块规划钉了模板就用它，钉了但不可用就直接报错。
+        //    放在逐屏取图之前，是因为**配置错要先于做工作被发现**：否则用户要先等一遍
+        //    "还没有已选定产出图"的提示，才能看到真正的模板问题。
+        PinnedTemplate pinned = pinnedTemplate(storyboard);
+        var template = templateService.requirePublished(pinned.code(), pinned.version());
+
         // 1) 逐屏取「已选定」产出并内联为 data URI；没有选定的屏不编造，交给模板写明缺什么
         ObjectNode structure = MAPPER.createObjectNode();
         ArrayNode screensNode = structure.putArray("screens");
@@ -173,8 +179,7 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
             throw new ServiceException("还没有任何「已选定」的产出图，无法排版：请先在分镜页逐屏出图并选定候选");
         }
 
-        // 2) 模板必须已发布且校验和与渲染服务一致（发布门）
-        var template = templateService.requirePublished(PAGE_TEMPLATE_CODE, PAGE_TEMPLATE_VERSION);
+        // 2) 模板已在第 0 步定下来并过了发布门（这里不再重复查）
 
         // 3) 渲染（素材已内联，渲染服务会拒绝任何外链）
         ObjectNode renderLayout = MAPPER.createObjectNode();
@@ -206,7 +211,7 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
         // 渲染服务把宽度作为 CSS 变量 --page-width 交给模板，并会核对"实际渲染宽度 == 请求宽度"。
         int renderWidth = resolvePageWidth(project);
         RendererClient.RenderResult result = rendererClient.render(
-            PAGE_TEMPLATE_CODE, PAGE_TEMPLATE_VERSION, "page", null, toMap(renderLayout), renderWidth);
+            pinned.code(), pinned.version(), "page", null, toMap(renderLayout), renderWidth);
         long cost = System.currentTimeMillis() - started;
 
         // 4) 长图登记为任务附件（复用内容模块的上传通道）
@@ -230,7 +235,8 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
         version.setStatus(VERSION_RENDERED);
         version.setRemark("渲染 " + result.width() + "×" + result.height() + "，服务端耗时 "
             + result.renderMs() + "ms（本机往返 " + cost + "ms），sha256=" + shortOf(result.sha256())
-            + "，模板 " + PAGE_TEMPLATE_CODE + "@" + PAGE_TEMPLATE_VERSION
+            + "，模板 " + pinned.code() + "@" + pinned.version()
+            + (pinned.fromPlan() ? "（模块规划指定）" : "（默认）")
             + "（校验和 " + shortOf(result.templateChecksum()) + "）");
         versionMapper.insert(version);
 
@@ -253,6 +259,88 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
         projectService.moveStage(taskId, DpVisualStageEnum.V08_READY, "LAYOUT_RENDER",
             JsonUtils.toJsonString(Map.of("version", nextVersion, "pageHeight", result.height())));
         return detail(taskId);
+    }
+
+    /**
+     * 本次排版实际用什么模板（V0.2 R23）。
+     *
+     * @param code      模板码
+     * @param version   模板版本
+     * @param fromPlan  是不是模块规划钉的（false=默认模板）
+     */
+    private record PinnedTemplate(String code, String version, boolean fromPlan) {
+    }
+
+    /**
+     * 从分镜各屏的 `spec_json.templateCodes` 汇总出"这次排版用哪个模板"（R23）。
+     *
+     * <p>规则（写清楚，避免"配了没用"或"悄悄换模板"）：
+     * <ol>
+     *   <li>没有任何屏钉模板 → 用默认 {@code longpage@1.0.2}；</li>
+     *   <li>所有钉了的屏都指向同一个 {@code code@version} → 用它（能不能用由发布门决定）；</li>
+     *   <li>钉得不一样 → 抛错说明冲突。**一页只能有一个模板**，随便挑一个等于把用户的配置当没看见。</li>
+     * </ol>
+     * 只认 {@code code@version} 形式；只写了 code 的按"该模板的默认版本"处理不了，因此如实报错要求写全。</p>
+     *
+     * @param storyboard 本次排版的分镜
+     * @return 模板选择
+     */
+    private PinnedTemplate pinnedTemplate(DpStoryboardVo storyboard) {
+        Map<String, Integer> votes = new LinkedHashMap<>();
+        for (DpStoryboardScreenVo screen : storyboard.getScreens()) {
+            if (StringUtils.isBlank(screen.getSpecJson())) {
+                continue;
+            }
+            try {
+                JsonNode node = MAPPER.readTree(screen.getSpecJson());
+                JsonNode codes = node.path("templateCodes");
+                if (codes.isArray()) {
+                    for (JsonNode item : codes) {
+                        String value = StringUtils.trimToNull(item.asText());
+                        if (value != null) {
+                            votes.merge(value, 1, Integer::sum);
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                // 老分镜没有 templateCodes、或 spec_json 被手工改坏：都按"没钉"处理，
+                // 但**不能静默**——留一条告警便于排查"为什么没用我配的模板"。
+                log.warn("解析屏 spec_json 里的 templateCodes 失败 screenNo={}：{}",
+                    screen.getScreenNo(), e.getMessage());
+            }
+        }
+        if (votes.isEmpty()) {
+            return new PinnedTemplate(PAGE_TEMPLATE_CODE, PAGE_TEMPLATE_VERSION, false);
+        }
+        if (votes.size() > 1) {
+            throw new ServiceException("模块规划里给不同模块钉了不同的排版模板（" + String.join("、", votes.keySet())
+                + "）。一个详情页只能用一个模板，请统一后再排版。");
+        }
+        String pinned = votes.keySet().iterator().next();
+        int at = pinned.indexOf('@');
+        if (at <= 0 || at == pinned.length() - 1) {
+            throw new ServiceException("模块规划里的模板要写成「模板码@版本」（例如 longpage@1.0.2），当前=" + pinned);
+        }
+        return new PinnedTemplate(pinned.substring(0, at), pinned.substring(at + 1), true);
+    }
+
+    /**
+     * 详情页当前用的模板标识（页面展示用；与排版时同一套规则，但**不抛错**——
+     * 展示接口不该因为配置冲突就 500，冲突会在真正排版时明确报出来）。
+     *
+     * @param storyboard 分镜（可空）
+     * @return 形如 longpage@1.0.2
+     */
+    private String templateKeyOf(DpStoryboardVo storyboard) {
+        if (storyboard == null || storyboard.getScreens() == null) {
+            return PAGE_TEMPLATE_CODE + "@" + PAGE_TEMPLATE_VERSION;
+        }
+        try {
+            PinnedTemplate pinned = pinnedTemplate(storyboard);
+            return pinned.code() + "@" + pinned.version();
+        } catch (Exception e) {
+            return PAGE_TEMPLATE_CODE + "@" + PAGE_TEMPLATE_VERSION;
+        }
     }
 
     /**
@@ -326,7 +414,7 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
         DpDetailPage page = findPage(taskId);
         DpDetailPageVo vo = new DpDetailPageVo();
         vo.setRendererAvailable(rendererClient.version() != null);
-        vo.setTemplateKey(PAGE_TEMPLATE_CODE + "@" + PAGE_TEMPLATE_VERSION);
+        vo.setTemplateKey(templateKeyOf(storyboardService.latest(taskId)));
         vo.setScreensWithoutSelection(missingScreens(taskId));
         if (page == null) {
             vo.setTaskId(taskId);

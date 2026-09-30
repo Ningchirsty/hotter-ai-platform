@@ -1,7 +1,10 @@
 package org.dromara.creative.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import org.dromara.creative.helper.CreativeScreenModuleConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
@@ -219,8 +222,15 @@ public class CreativeProductionServiceImpl implements ICreativeProductionService
         // negative 仍传 null：负向词由视觉基因与品牌 Brief 的禁用词提供，不在这里重复喂。
         String screenText = firstNonBlank(screen.getPictureSoloStatement(), screen.getBodyText(),
             screen.getTitle());
+        // V0.2 R23：模块规划里给这一屏配的「参考图」与「视觉表达」就在屏的 spec_json 里
+        // （分镜生成时烙进去的）。这里把它们取出来喂给出图：
+        //   * 参考图 → 用模块指定的那张，而不是"最近上传的那张"（同一分镜不同模块可以各用各的参考图）；
+        //   * 视觉表达 → 作为该屏的额外视觉约束进提示词。
+        // 取不到就照旧（回落最近一张附件 / 不加额外约束），不会因为解析失败就让出图跑不起来。
+        CreativeScreenModuleConfig moduleConfig = CreativeScreenModuleConfig.parse(screen.getSpecJson());
         DpGenerationVo created = generationService.submitForScreen(
-            taskId, screen.getId(), hint, screenText, null, null, screen.getWorkflowCode(), null, null);
+            taskId, screen.getId(), hint, screenText, null, null, screen.getWorkflowCode(), null, null,
+            moduleConfig.referenceFileId(), moduleConfig.visualRules());
         markScreen(taskId, screen.getId(), "GENERATING");
         return created;
     }
