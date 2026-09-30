@@ -36,7 +36,7 @@
         <el-button
           type="primary"
           :loading="saving"
-          :disabled="!plan || !plan.editable || !dirty"
+          :disabled="!canEdit || !dirty"
           @click="save"
         >
           保存计划
@@ -82,7 +82,7 @@
                 </div>
                 <div v-if="d.objective" class="muted small">{{ d.objective }}</div>
               </div>
-              <el-button size="small" text :disabled="!plan.editable" @click="addModule(d)">添加</el-button>
+              <el-button size="small" text :disabled="!canEdit" @click="addModule(d)">添加</el-button>
             </li>
           </ul>
         </section>
@@ -126,22 +126,22 @@
                 size="small"
                 :min="1"
                 :max="maxScreensOf(m)"
-                :disabled="!plan.editable"
+                :disabled="!canEdit"
                 class="count"
                 @change="markDirty"
               />
               <el-switch
                 :model-value="m.enabled !== '1'"
-                :disabled="!plan.editable"
+                :disabled="!canEdit"
                 inline-prompt
                 active-text="启"
                 inactive-text="停"
                 @update:model-value="(v: string | number | boolean) => toggleEnabled(m, Boolean(v))"
               />
-              <el-button size="small" text :disabled="!plan.editable" @click.stop="move(index, -1)">↑</el-button>
-              <el-button size="small" text :disabled="!plan.editable" @click.stop="move(index, 1)">↓</el-button>
-              <el-button size="small" text :disabled="!plan.editable" @click.stop="duplicate(index)">复制</el-button>
-              <el-button size="small" text type="danger" :disabled="!plan.editable" @click.stop="remove(index)">
+              <el-button size="small" text :disabled="!canEdit" @click.stop="move(index, -1)">↑</el-button>
+              <el-button size="small" text :disabled="!canEdit" @click.stop="move(index, 1)">↓</el-button>
+              <el-button size="small" text :disabled="!canEdit" @click.stop="duplicate(index)">复制</el-button>
+              <el-button size="small" text type="danger" :disabled="!canEdit" @click.stop="remove(index)">
                 删除
               </el-button>
             </li>
@@ -186,7 +186,7 @@
           <template v-if="current">
             <label class="field">
               <span>模块目标</span>
-              <el-input v-model="current.objective" :disabled="!plan.editable" placeholder="这一屏要达成什么"
+              <el-input v-model="current.objective" :disabled="!canEdit" placeholder="这一屏要达成什么"
                 @input="markDirty" />
             </label>
             <label class="field">
@@ -195,7 +195,7 @@
                 v-model="currentSellingPointIds"
                 multiple
                 filterable
-                :disabled="!plan.editable"
+                :disabled="!canEdit"
                 placeholder="从项目卖点块里选（不选则按顺序兜底）"
                 @change="onSellingPointsChange"
               >
@@ -213,39 +213,39 @@
                 v-model="current.copyText"
                 type="textarea"
                 :rows="3"
-                :disabled="!plan.editable"
+                :disabled="!canEdit"
                 placeholder="写了就用它（人工优先于模型与模板）"
                 @input="markDirty"
               />
             </label>
             <label class="field">
               <span>所需事实</span>
-              <el-input v-model="current.requiredFactCodes" :disabled="!plan.editable"
+              <el-input v-model="current.requiredFactCodes" :disabled="!canEdit"
                 placeholder="事实字段码，逗号分隔（缺哪个会在屏预览里标出来）" @input="markDirty" />
             </label>
             <label class="field">
               <span>视觉表达</span>
-              <el-input v-model="current.visualRulesJson" type="textarea" :rows="2" :disabled="!plan.editable"
+              <el-input v-model="current.visualRulesJson" type="textarea" :rows="2" :disabled="!canEdit"
                 placeholder='JSON 文本，例如 {"tone":"暖光","props":["木桌"]}' @input="markDirty" />
             </label>
             <label class="field">
               <span>参考图</span>
-              <el-input v-model="current.referenceCodes" :disabled="!plan.editable"
+              <el-input v-model="current.referenceCodes" :disabled="!canEdit"
                 placeholder="附件文件ID，逗号分隔" @input="markDirty" />
             </label>
             <label class="field">
               <span>Workflow</span>
-              <el-input v-model="current.workflowCodes" :disabled="!plan.editable"
+              <el-input v-model="current.workflowCodes" :disabled="!canEdit"
                 placeholder="逗号分隔，第一个用于该模块出图" @input="markDirty" />
             </label>
             <label class="field">
               <span>模板</span>
-              <el-input v-model="current.templateCodes" :disabled="!plan.editable"
+              <el-input v-model="current.templateCodes" :disabled="!canEdit"
                 placeholder="模板码，逗号分隔" @input="markDirty" />
             </label>
             <label class="field">
               <span>备注</span>
-              <el-input v-model="current.remark" :disabled="!plan.editable" @input="markDirty" />
+              <el-input v-model="current.remark" :disabled="!canEdit" @input="markDirty" />
             </label>
             <p class="muted small">
               已生效：顺序 / 屏数 / 启停（决定屏集合）、<b>文案</b>（覆盖该屏正文）、
@@ -274,6 +274,7 @@
   import { listCopyBlocks, listCreativeProject } from '@/api/creative';
   import type { CopyBlockVO } from '@/api/creative/types';
   import { extractErrorMessage } from '@/utils/request';
+  import { checkPermi } from '@/utils/permission';
 
   /**
    * 模块规划页（V0.2 R22，文档 §24）。
@@ -311,6 +312,15 @@
 
   const library = computed<ModuleDefinition[]>(() => plan.value?.library || []);
   const current = computed<EditableModule | null>(() => modules.value[currentIndex.value] || null);
+  /**
+   * 这个账号能不能改这份计划 = 后端说可改（不是锁定/已出图/已渲染）**且**有 `creative:project:edit`。
+   *
+   * <p>为什么两个都要：后端只回答"这个项目现在能不能改"（业务状态），不回答"你有没有权限"。
+   * R22 只用了前者，于是"能看不能改"的角色会看到一个可点的保存按钮，点下去才 403——
+   * 这是 R23 用临时只读账号真机验出来的缺口，这里补上。</p>
+   */
+  const canEdit = computed(() => Boolean(plan.value?.editable) && checkPermi(['creative:project:edit']));
+
   const currentSellingPointIds = computed<string[]>(() =>
     (current.value?.sellingPointCodes || '')
       .split(',')
