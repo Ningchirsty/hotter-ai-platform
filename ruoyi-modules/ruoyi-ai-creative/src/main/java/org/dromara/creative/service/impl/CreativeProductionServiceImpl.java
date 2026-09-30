@@ -4,6 +4,12 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import org.dromara.creative.service.ICreativeScenarioConfigService;
+import org.dromara.creative.domain.DpOutputSpec;
+import org.dromara.creative.helper.ReferenceImageFitter;
+import org.dromara.content.service.IContentTaskService;
+import org.dromara.creative.domain.vo.CreativeProjectVo;
+import org.dromara.creative.helper.CreativeOutputSpecResolver;
 import org.dromara.creative.helper.CreativeScreenModuleConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
@@ -84,6 +90,12 @@ public class CreativeProductionServiceImpl implements ICreativeProductionService
     private final ICreativeGenerationService generationService;
     private final ICreativeStoryboardService storyboardService;
     private final DpGenerationMapper generationMapper;
+
+    /** 场景配置（R27）：选定后按交付类型的输出规格规格化交付图 */
+    private final ICreativeScenarioConfigService scenarioConfigService;
+
+    /** 内容任务服务（R27：规格化后的交付图要登记成任务附件） */
+    private final IContentTaskService contentTaskService;
     private final DpStoryboardMapper storyboardMapper;
     private final DpStoryboardScreenMapper screenMapper;
     private final IContentOutputCheckService outputCheckService;
@@ -177,6 +189,13 @@ public class CreativeProductionServiceImpl implements ICreativeProductionService
         row.setStatus(DpGenerationStatusEnum.APPROVED.getCode());
         generationMapper.updateById(row);
 
+        // 选定即按输出规格规格化（R27）：主图的规格是 800×800（1:1），但现有工作流的契约是
+        // "画布由输入图与 resolution 决定"（wf-whitebg 固定 1536 档），**送模型时改输入尺寸并不能
+        // 决定产出尺寸**——真机实测送 800×800 进去，出来仍是 1536×1536。
+        // 所以规格化必须发生在**产出侧**：把选定的这张图等比适配到规格尺寸后再作为交付图。
+        // 做成"选定即规格化"而不是"生成时"，是因为只有选定那一下才确定"这张就是要交付的图"。
+        normalizeDeliveryIfNeeded(taskId, row);
+
         // 选定即触发「登记 + 质检」：产出登记成任务附件，并对原图做一致性检查。
         // 这一步不改变选定结果——QA 只做减法（不一致时由 refreshQa 把候选筛掉）。
         try {
@@ -233,6 +252,68 @@ public class CreativeProductionServiceImpl implements ICreativeProductionService
             moduleConfig.referenceFileId(), moduleConfig.visualRules());
         markScreen(taskId, screen.getId(), "GENERATING");
         return created;
+    }
+
+    /**
+     * 按输出规格规格化交付图（V0.2 R27）。
+     *
+     * <p><b>为什么在产出侧做</b>：工作流契约是"画布由输入图与 resolution 决定"
+     * （`wf-whitebg-qwen21` 固定 1536 档、`wf-i2i-qwen21` 用 1536 总像素预算），
+     * 所以把参考图裁成 800×800 送进去，产出仍是 1536×1536。要得到规格尺寸，只能在产出图上做。</p>
+     *
+     * <p>做法：等比缩放到盖住目标尺寸 → 中心裁切 → 登记为**新的任务附件**，并把该候选的
+     * `output_file_id` 指向它（交付/下载看到的就是规格尺寸那张）。原始产出仍在图像内核的素材里，
+     * 质检记录也仍指向原产出（审计不断链）。适配结果写进 `input_json.outputNormalized` 与事件。</p>
+     *
+     * @param taskId 项目ID
+     * @param row    已选定的候选
+     */
+    private void normalizeDeliveryIfNeeded(Long taskId, DpGeneration row) {
+        try {
+            if (row.getOutputAssetId() == null) {
+                return;
+            }
+            CreativeProjectVo project = projectService.getProject(taskId);
+            List<DpOutputSpec> specs = scenarioConfigService.listOutputSpecs(project.getDeliverableType());
+            if (specs.isEmpty()) {
+                return;
+            }
+            CreativeOutputSpecResolver.TargetSize target = CreativeOutputSpecResolver.fixedSizeOf(specs.get(0));
+            if (target == null || !target.usable()) {
+                return;
+            }
+            byte[] raw = generationService.preview(row.getId());
+            ReferenceImageFitter.Fitted fitted =
+                ReferenceImageFitter.fitTo(raw, "candidate-" + row.getCandidateNo() + ".png",
+                    target.width(), target.height());
+            if (!fitted.scaled()) {
+                log.info("候选 {} 已经是规格尺寸 {}×{}，无需规格化", row.getId(), target.width(), target.height());
+                return;
+            }
+            Long fileId = contentTaskService.uploadFile(taskId, null,
+                new SimpleMultipartFile("file", fitted.fileName(), fitted.contentType(), fitted.bytes()));
+            row.setOutputFileId(fileId);
+            generationMapper.updateById(row);
+            Map<String, Object> snapshot = new LinkedHashMap<>();
+            snapshot.put("outputNormalized", true);
+            snapshot.put("outputSpec", target.code());
+            snapshot.put("outputSpecSize", target.width() + "x" + target.height());
+            snapshot.put("outputNormalizedNote", fitted.note());
+            snapshot.put("outputNormalizedFileId", fileId);
+            projectService.appendEvent(taskId, "GENERATION", "OUTPUT_NORMALIZED",
+                toJson(snapshot));
+            log.info("候选 {} 已按输出规格 {} 规格化为 {}×{}（附件 {}）",
+                row.getId(), target.code(), target.width(), target.height(), fileId);
+        } catch (Exception e) {
+            // 规格化失败不该让"选定"失败：如实记一条事件，交付图就还是原始尺寸
+            log.warn("候选 {} 按输出规格规格化失败：{}", row.getId(), e.getMessage());
+            try {
+                projectService.appendEvent(taskId, "GENERATION", "OUTPUT_NORMALIZE_FAILED",
+                    toJson(Map.of("generationId", row.getId(), "reason", String.valueOf(e.getMessage()))));
+            } catch (Exception ignored) {
+                // 事件也写不进去就算了，日志里有
+            }
+        }
     }
 
     /**
