@@ -12,6 +12,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -27,6 +28,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -85,6 +87,21 @@ class CreativeStepSkipServiceTest {
     }
 
     @Test
+    @DisplayName("插入前先物理清掉软删残行（唯一键 uk_dp_project_step 不允许留软删行）")
+    void skipPurgesSoftDeletedRowBeforeInsert() {
+        givenStep(step("QA", CreativeStepProjection.PENDING, true, false));
+        when(stepStateMapper.selectList(any())).thenReturn(List.of());
+        // 1 = 真的清掉了一行历史软删残行（R36 验收里撞到的 409 就是这么来的）
+        when(stepStateMapper.hardDelete(TASK, "QA")).thenReturn(1);
+
+        service.skip(TASK, "QA", "客户确认不做机检");
+
+        InOrder order = inOrder(stepStateMapper);
+        order.verify(stepStateMapper, times(1)).hardDelete(TASK, "QA");
+        order.verify(stepStateMapper, times(1)).insert(any(DpProjectStepState.class));
+    }
+
+    @Test
     @DisplayName("已有行时改行而不是插新行（同一个步骤只能有一行状态）")
     void skipUpdatesExistingRow() {
         givenStep(step("QA", CreativeStepProjection.PENDING, true, false));
@@ -98,6 +115,7 @@ class CreativeStepSkipServiceTest {
         service.skip(TASK, "QA", "客户确认不做机检");
 
         verify(stepStateMapper, never()).insert(any(DpProjectStepState.class));
+        verify(stepStateMapper, never()).hardDelete(anyLong(), anyString());
         verify(stepStateMapper, times(1)).updateById(any(DpProjectStepState.class));
     }
 
@@ -144,7 +162,7 @@ class CreativeStepSkipServiceTest {
     }
 
     @Test
-    @DisplayName("取消跳过：删行 + 事件；不是跳过状态时拒绝")
+    @DisplayName("取消跳过：物理删行（不是逻辑删除）+ 事件；不是跳过状态时拒绝")
     void cancelSkip() {
         givenStep(step("QA", CreativeStepProjection.SKIPPED, false, false));
         DpProjectStepState skipped = new DpProjectStepState();
@@ -156,7 +174,9 @@ class CreativeStepSkipServiceTest {
         when(stepStateMapper.selectList(any())).thenReturn(List.of(skipped));
 
         service.cancelSkip(TASK, "QA");
-        verify(stepStateMapper, times(1)).deleteById(11L);
+        // 必须是物理删除：留软删行会让这一步之后任何写入都撞唯一键（含 moveStage 的同步）
+        verify(stepStateMapper, times(1)).hardDelete(TASK, "QA");
+        verify(stepStateMapper, never()).deleteById(anyLong());
         verify(projectService, times(1)).appendEvent(eq(TASK), eq("QA"), eq("STEP_SKIP_CANCELLED"), anyString());
 
         // 不是跳过状态 → 拒绝

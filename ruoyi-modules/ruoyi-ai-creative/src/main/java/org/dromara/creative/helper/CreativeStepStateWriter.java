@@ -67,6 +67,14 @@ public class CreativeStepStateWriter {
         for (CreativeStepProjection.StepState state : projected) {
             DpProjectStepState row = existing.get(state.stepCode());
             if (row == null) {
+                // 本表有唯一键 uk_dp_project_step(task_id, step_code)，而 del_flag 是逻辑删除列：
+                // 只要留下一行软删，这里 insert 就会撞唯一键 → 409 → 整个 moveStage 事务回滚
+                // （阶段推进失败）。所以插入前先物理清掉可能的软删残行（正常情况返回 0）。
+                int purged = stepStateMapper.hardDelete(taskId, state.stepCode());
+                if (purged > 0) {
+                    log.warn("项目 {} 步骤 {} 存在软删残行 {} 条，同步前已物理清理（本表不允许留软删行）",
+                        taskId, state.stepCode(), purged);
+                }
                 // 主键交给 MyBatis-Plus（全局 idType=ASSIGN_ID），与 dp_stage_event 的写法一致：
                 // 少一处「自己造 ID」的分支，也就少一处能在单测里踩到 Spring 容器的静态依赖。
                 DpProjectStepState fresh = new DpProjectStepState();

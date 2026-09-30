@@ -14,8 +14,16 @@ import java.time.LocalDateTime;
 /**
  * 项目步骤状态 dp_project_step_state（V0.2 D2）。
  *
- * <p><b>谁写它</b>：只有 {@code CreativeProjectServiceImpl#moveStage}（经 {@code CreativeStepStateWriter}）。
- * 查询路径不写库——没持久化就按当前阶段推导投影。理由见建表 SQL 里的三条纪律。</p>
+ * <p><b>谁写它</b>：阶段推进走 {@code CreativeProjectServiceImpl#moveStage}（经
+ * {@code CreativeStepStateWriter}）；人为动作走 {@code CreativeStepStateServiceImpl#skip /
+ * cancelSkip}（V0.2 R36）。查询路径不写库——没持久化就按当前阶段推导投影。</p>
+ *
+ * <p><b>本表的一条纪律（R36 补）：删除必须物理删除。</b>表上有唯一键
+ * {@code uk_dp_project_step(task_id, step_code)}，而 {@code delFlag} 是逻辑删除列——
+ * 一旦留下 {@code delFlag='1'} 的软删行，这一步之后**任何**写入都会撞唯一键：
+ * 重新跳过 409，{@code moveStage} 的步骤状态同步也 409（而它在一个事务里，
+ * 会把整次阶段推进一起回滚）。所以取消跳过用
+ * {@code DpProjectStepStateMapper#hardDelete}，历史由 {@code dp_stage_event} 承担。</p>
  *
  * @author creative
  */

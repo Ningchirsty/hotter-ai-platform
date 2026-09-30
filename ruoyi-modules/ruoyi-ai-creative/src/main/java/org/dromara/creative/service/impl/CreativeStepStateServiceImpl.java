@@ -78,6 +78,15 @@ public class CreativeStepStateServiceImpl implements ICreativeStepStateService {
 
         DpProjectStepState row = rowOf(taskId, code);
         if (row == null) {
+            // 历史软删行会挡住这次写入（本表有唯一键 uk_dp_project_step(task_id, step_code)，
+            // 而 del_flag 是逻辑删除）：R36 验收就是在这里撞到 409「数据库中已存在该记录」——
+            // 上一版取消跳过来用逻辑删除，留下 del_flag=1 的残行，下一次跳过直接失败。
+            // 先物理清掉再插，也让历史上已经被软删的残行有机会被顺手治好。
+            int purged = stepStateMapper.hardDelete(taskId, code);
+            if (purged > 0) {
+                log.warn("项目 {} 步骤 {} 存在软删残行 {} 条，已物理清理（本表不允许留软删行）",
+                    taskId, code, purged);
+            }
             row = new DpProjectStepState();
             row.setTaskId(taskId);
             row.setStepCode(code);
@@ -114,9 +123,11 @@ public class CreativeStepStateServiceImpl implements ICreativeStepStateService {
         if (row == null || !CreativeStepProjection.SKIPPED.equals(row.getStatus())) {
             throw new ServiceException("这一步当前不是跳过状态，无需取消：" + code);
         }
-        // 删行而不是改成 PENDING：删掉之后这一步回到"按当前阶段投影"，与其他没落库的步骤同一口径
-        // （留成 PENDING 会让"它是被推导出来的"这件事失真）。
-        stepStateMapper.deleteById(row.getId());
+        // **物理删除**（不是逻辑删除）：本表有唯一键 uk_dp_project_step(task_id, step_code)，
+        // 留下软删行会让这一步之后任何写入都撞唯一键（重新跳过 409、moveStage 的步骤状态同步
+        // 409 并把整次阶段推进一起回滚）。删掉之后这一步回到"按当前阶段投影"，
+        // 与其他没落库的步骤同一口径——而"曾经跳过、又被谁取消了"由上面那条事件承担。
+        stepStateMapper.hardDelete(taskId, code);
         List<ProjectStepStateVo> after = scenarioConfigService.listProjectSteps(taskId);
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("stepCode", code);
