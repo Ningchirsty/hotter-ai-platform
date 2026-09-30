@@ -105,7 +105,7 @@
         :deliverable-type="currentProject.deliverableType"
         :refresh-token="flowToken"
         :project="currentProject"
-        :output-spec="currentOutputSpec"
+        :output-spec="outputSpec"
         :stage-type="stageType(currentProject.visualStage)"
         :loading="loadingDetail"
         @refresh="loadDetail"
@@ -922,8 +922,10 @@ import {
   GENERATION_STATUS_TYPES
 } from '@/api/creative/types';
 import CreativeWorkspace from '../components/CreativeWorkspace.vue';
-import { listOutputSpecs } from '@/api/creative/scenario';
-import type { ScenarioOutputSpec } from '@/api/creative/scenario';
+// R31：项目头部要显示交付类型的渠道与输出规格——用场景配置 composable 的同一份缓存，
+// 避免页面再发一次同样的请求（两处各取一次就会出现状态不一致）。
+import { useScenarioConfig } from '../composables/useScenarioConfig';
+
 
 // R0 期的"接线版"说明横幅已在 V0.2 FIX-005 删除：它写的是"视觉基因/分镜/视觉门/排版在 R1–R3 交付"，
 // 而这四块早已上线，留着只会误导使用的人（连同 GUIDE_KEY/showGuide/dismissGuide 一起清理）。
@@ -1178,8 +1180,14 @@ const copyDialogSourceHint = computed(() => {
 const flowToken = ref(0);
 /** 项目详情加载中（R31：工作台头部的刷新按钮用） */
 const loadingDetail = ref(false);
-/** 该交付类型的默认输出规格（R31：工作台头部显示渠道与尺寸，取不到就如实说未配置） */
-const currentOutputSpec = ref<ScenarioOutputSpec | null>(null);
+/**
+ * 场景配置（R31）：项目头部要显示"渠道 / 输出规格"，这两样都在交付类型的配置里。
+ * 用同一个 composable 取，**不再自己发一次请求**——配置只该有一个来源，
+ * 两处各取一次就会出现"一边说未配置、一边说 750×自动高度"（R31 真机验收撞到过）。
+ */
+const scenarioConfig = useScenarioConfig(computed(() => currentProject.value?.deliverableType));
+/** 该交付类型的默认输出规格（工作台头部显示渠道与尺寸；取不到就如实说未配置） */
+const outputSpec = computed(() => scenarioConfig.defaultSpec.value);
 
 const submitting = ref(false);
 const creating = ref(false);
@@ -1457,32 +1465,10 @@ async function loadDetail() {
     void loadBrandBrief();
     void loadBriefChangeRequest();
     void loadCopyBlocks();
-    void loadOutputSpec();
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '加载项目详情失败');
   } finally {
     loadingDetail.value = false;
-  }
-}
-
-/**
- * 取该交付类型的默认输出规格（R31）。
- *
- * <p>为什么放在页面而不是头部组件里：规格是**配置数据**（`dp_output_spec`），
- * 项目页已经有一整套"取配置/取数据"的加载流程；头部只负责显示。
- * 取不到不报错——头部会如实显示"未配置"，而不是编一个 750/800 出来。</p>
- */
-async function loadOutputSpec() {
-  const deliveryType = currentProject.value?.deliverableType;
-  if (!deliveryType) {
-    currentOutputSpec.value = null;
-    return;
-  }
-  try {
-    const res = await listOutputSpecs(deliveryType);
-    currentOutputSpec.value = (res.data || [])[0] || null;
-  } catch (error) {
-    currentOutputSpec.value = null;
   }
 }
 

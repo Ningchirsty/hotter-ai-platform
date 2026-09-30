@@ -6,7 +6,7 @@ import {
   listOutputSpecs,
   listScenarioSteps
 } from '@/api/creative/scenario';
-import type { ScenarioStep } from '@/api/creative/scenario';
+import type { ScenarioOutputSpec, ScenarioStep } from '@/api/creative/scenario';
 import { formatDefaultSpec, formatScenarioLine } from './scenarioText';
 import { formatMappingChip, mapFlowSteps } from './flowStepMapping';
 import {
@@ -36,6 +36,8 @@ interface ScenarioCacheEntry {
   steps: ScenarioStep[];
   /** 工作台装配对照（R17） */
   assembly: AssemblyDiff | null;
+  /** 默认输出规格（R31：项目头部显示渠道/尺寸用，避免页面再发一次同样的请求） */
+  defaultSpec: ScenarioOutputSpec | null;
 }
 
 /**
@@ -63,6 +65,8 @@ export function useScenarioConfig(deliveryType: Ref<string | undefined>) {
   const scenarioSteps = ref<ScenarioStep[]>([]);
   /** 工作台装配定义（来自场景档案的 workspace_schema_json） */
   const assembly = ref<AssemblyDiff | null>(null);
+  /** 默认输出规格（R31：项目头部显示渠道与尺寸，取的是同一份缓存，不再单独发请求） */
+  const defaultSpec = ref<ScenarioOutputSpec | null>(null);
   const loading = ref(false);
   const failed = ref(false);
 
@@ -81,6 +85,7 @@ export function useScenarioConfig(deliveryType: Ref<string | undefined>) {
       stepNames.value = [];
       scenarioSteps.value = [];
       assembly.value = null;
+      defaultSpec.value = null;
       failed.value = false;
       return;
     }
@@ -90,6 +95,7 @@ export function useScenarioConfig(deliveryType: Ref<string | undefined>) {
       stepNames.value = hit.names;
       scenarioSteps.value = hit.steps;
       assembly.value = hit.assembly;
+      defaultSpec.value = hit.defaultSpec;
       failed.value = false;
       return;
     }
@@ -117,8 +123,15 @@ export function useScenarioConfig(deliveryType: Ref<string | undefined>) {
       stepNames.value = names;
       scenarioSteps.value = steps;
       assembly.value = assemblyDiff;
+      defaultSpec.value = specs.length ? specs[0] : null;
       failed.value = false;
-      scenarioCache.set(type, { line: text, names, steps, assembly: assemblyDiff });
+      scenarioCache.set(type, {
+        line: text,
+        names,
+        steps,
+        assembly: assemblyDiff,
+        defaultSpec: defaultSpec.value
+      });
     } catch (e) {
       // 静默降级：只读补充信息不该影响页面；不弹提示、不阻断。
       // 但**首载失败要多试一次**（R31 真机验收里出现过一次：同一项目第二次打开就正常，
@@ -127,6 +140,7 @@ export function useScenarioConfig(deliveryType: Ref<string | undefined>) {
       stepNames.value = [];
       scenarioSteps.value = [];
       assembly.value = null;
+      defaultSpec.value = null;
       failed.value = true;
       scenarioCache.delete(type);
       if (!retried.has(type)) {
@@ -149,6 +163,7 @@ export function useScenarioConfig(deliveryType: Ref<string | undefined>) {
     mappingChip,
     assembly,
     assemblyChip,
+    defaultSpec,
     loading,
     failed,
     reload: load
