@@ -121,7 +121,11 @@
       <el-table v-loading="loading" :data="rows" class="prod-table" empty-text="该项目还没有出图候选">
         <el-table-column label="预览" width="90">
           <template #default="{ row }">
-            <div class="thumb" @click="asGen(row).previewable && $emit('preview', asGen(row))">
+            <div
+              :ref="(el) => setThumbRef(el)"
+              class="thumb"
+              @click="asGen(row).previewable && $emit('preview', asGen(row))"
+            >
               <img v-if="thumbUrl(asGen(row))" :src="thumbUrl(asGen(row))" :alt="`候选 ${asGen(row).candidateNo}`" />
               <span v-else class="thumb-empty">—</span>
             </div>
@@ -268,6 +272,7 @@
 </template>
 
 <script setup lang="ts">
+import { onBeforeUnmount, ref, type ComponentPublicInstance } from 'vue';
 import type {
   DpGenerationVO,
   DpStoryboardScreenVO,
@@ -317,7 +322,7 @@ import {
  *
  * @author creative
  */
-withDefaults(
+const props = withDefaults(
   defineProps<{
     /**
      * 呈现模式：`SCREENS`=按屏（分镜页） / `CANDIDATES`=按候选（生产页）。
@@ -382,10 +387,90 @@ const emit = defineEmits<{
   (e: 'compare', row: DpGenerationVO): void;
   /** 关闭对比（CANDIDATES） */
   (e: 'close-compare'): void;
+  /**
+   * 这个候选行的缩略图**进入视口附近**了，请页面去取（R45）。
+   *
+   * <p>为什么由组件发：只有组件知道行在 DOM 里的位置。页面收到后决定"取哪张、怎么去重"，
+   * 组件依旧不发请求。</p>
+   */
+  (e: 'need-thumb', row: DpGenerationVO): void;
 }>();
 
 // 模板里统一用 `$emit(...)` 发事件；这个引用只是把事件类型显式声明出来
 void emit;
+
+// ---------------------------------------------------------------------------
+// R45：候选缩略图"进视口才取"（一个项目 19 行候选不再是 19 个请求一起发）
+// ---------------------------------------------------------------------------
+
+/** 缩略图单元格（用来判断可见性） */
+const thumbEls = ref<HTMLElement[]>([]);
+/** 已经通知过的行（DOM 里同一个元素只通知一次） */
+const thumbAnnounced = new WeakSet<HTMLElement>();
+let thumbObserver: IntersectionObserver | null = null;
+
+/**
+ * 收集缩略图单元格（`:ref` 回调；Vue 对每个单元格各调一次）。
+ *
+ * @param el 元素（卸载时为 null）
+ */
+function setThumbRef(el: Element | ComponentPublicInstance | null) {
+  if (!(el instanceof HTMLElement)) return;
+  if (!thumbEls.value.includes(el)) {
+    thumbEls.value.push(el);
+  }
+  observeThumb(el);
+}
+
+/**
+ * 观察一个缩略图单元格：进入视口附近就通知页面，并停止观察它。
+ *
+ * @param el 单元格元素
+ */
+function observeThumb(el: HTMLElement) {
+  if (thumbAnnounced.has(el)) return;
+  if (typeof IntersectionObserver === 'undefined') {
+    thumbAnnounced.add(el);
+    announceThumbOf(el);
+    return;
+  }
+  if (!thumbObserver) {
+    thumbObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          thumbAnnounced.add(entry.target as HTMLElement);
+          announceThumbOf(entry.target as HTMLElement);
+          thumbObserver?.unobserve(entry.target);
+        }
+      },
+      { rootMargin: '200px' }
+    );
+  }
+  thumbObserver.observe(el);
+}
+
+/**
+ * 找到这个单元格对应的候选并通知页面。
+ *
+ * <p>表格行不给我们行对象，所以从 DOM 顺序反推：单元格顺序与 `rows` 一一对应
+ * （el-table 渲染顺序即数据顺序）。对不上时不猜——直接不发（宁可少取一张，也不取错一张）。</p>
+ *
+ * @param el 单元格元素
+ */
+function announceThumbOf(el: HTMLElement) {
+  const index = thumbEls.value.indexOf(el);
+  const row = index >= 0 ? props.rows[index] : undefined;
+  if (row) {
+    emit('need-thumb', row);
+  }
+}
+
+onBeforeUnmount(() => {
+  thumbObserver?.disconnect();
+  thumbObserver = null;
+  thumbEls.value = [];
+});
 </script>
 
 <style scoped lang="scss">

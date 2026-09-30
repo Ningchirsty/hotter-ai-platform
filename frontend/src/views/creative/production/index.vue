@@ -67,6 +67,7 @@
           @regenerate="doRegenerateScreen"
           @compare="openCompare"
           @close-compare="closeCompare"
+          @need-thumb="loadThumb"
         />
       </template>
 
@@ -307,7 +308,7 @@ async function load() {
     });
     rows.value = res.data?.rows || [];
     total.value = res.data?.total || 0;
-    void loadThumbs();
+    void loadOverviewThumbs();
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '加载生产列表失败');
   } finally {
@@ -328,7 +329,7 @@ async function loadProject() {
     rows.value = genRes.data || [];
     storyboard.value = sbRes?.data ?? null;
     productImage.value = productRes?.data ?? null;
-    void loadThumbs();
+    // R45：缩略图不再一次性全取——由 GenerationBoard 在候选行进入视口时发 need-thumb
     void loadProductImageUrl();
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '加载项目候选失败');
@@ -360,19 +361,37 @@ async function reloadCurrent() {
   }
 }
 
-async function loadThumbs() {
+/**
+ * 按需取某个候选的缩略图（R45：由 GenerationBoard 在候选行进入视口时发 `need-thumb`）。
+ *
+ * <p>原先这里是把整页候选**一次性全取**（19 行就 19 个请求）；现在只取真正看得见的那几行，
+ * 行的可见性由组件用 IntersectionObserver 判断（只有组件知道行在 DOM 里的位置）。</p>
+ *
+ * @param row 候选
+ */
+async function loadThumb(row: DpGenerationVO) {
+  const key = 'gen-' + row.id;
+  if (!row.previewable) {
+    releaseUrl(key);
+    return;
+  }
+  if (objectUrls.value[key]) return;
+  try {
+    setUrl(key, await fetchGenerationThumbnailBlobUrl(row.id));
+  } catch {
+    /* 缩略图失败不阻断列表（点开预览仍可取原图） */
+  }
+}
+
+/**
+ * 跨项目总览（`#main` 里的那张表）的缩略图：分页内 20 行，一次性取即可。
+ *
+ * <p>R45 只把"项目内"那一块（候选多、一屏看不完）改成按需；总览是分页视图、每页就 20 行，
+ * 且没有复用的懒加载容器，保持原样更简单。</p>
+ */
+async function loadOverviewThumbs() {
   for (const row of rows.value) {
-    const key = 'gen-' + row.id;
-    if (!row.previewable) {
-      releaseUrl(key);
-      continue;
-    }
-    if (objectUrls.value[key]) continue;
-    try {
-      setUrl(key, await fetchGenerationThumbnailBlobUrl(row.id));
-    } catch {
-      /* 缩略图失败不阻断列表 */
-    }
+    await loadThumb(row);
   }
 }
 
