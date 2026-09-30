@@ -23,19 +23,28 @@
       <!-- 主舞台：页面自身内容 -->
       <main v-else-if="slot.target === 'MAIN'" class="ws-main">
         <!--
+          ⓪ R41：没选项目时**没有步骤可言**（指引线也显示"未选择项目"）。这时若页面提供了
+             `#main`（例如生产页的"跨项目候选总览"），就渲染它——但仍先渲染页头，
+             否则用户连"选项目"的下拉框都看不到，等于把自己关在门外。
+        -->
+        <template v-if="projectLess">
+          <slot name="page-head" />
+          <slot name="main" />
+        </template>
+
+        <!--
           ① R37：页面把**每一步**的内容以同名插槽递进来（如 `#ProjectAssetsBlock`）→
              工作台按配置里的「步骤 → 组件」只装配**当前那一步**，其余步骤用上面的步骤条切换。
              为什么这样定（用户已确认）：一屏只回答"这一步该做什么"，
              六个区块全堆在一起的页面没人读得完。
         -->
-        <template v-if="hosted.length">
+        <template v-else-if="hosted.length">
           <!-- 页头（R38）：这一步所属页面的框架（项目选择器 / 页面动作）。
                它不属于"某一步的内容"，所以放在步骤条与内容区之上，由页面用 #page-head 提供；
                没提供的页面（项目页的头部是配置里的 PROJECT_HEADER）这里就是空的。 -->
           <slot name="page-head" />
 
-          <div v-if="hosted.length > 1" class="ws-step-bar">
-            <span class="bar-label">本页步骤</span>
+          <div v-if="hosted.length > 1" class="ws-step-bar">            <span class="bar-label">本页步骤</span>
             <button
               v-for="item in hosted"
               :key="item.code"
@@ -164,6 +173,7 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch, useSlots, type Component } from 'vue';
+import { useRoute } from 'vue-router';
 import CreativeFlowGuide from './CreativeFlowGuide.vue';
 import CreativeInspectorPanel from './CreativeInspectorPanel.vue';
 import CreativeAssetDrawer from './CreativeAssetDrawer.vue';
@@ -173,8 +183,8 @@ import {
   assembledSlots,
   buildAssemblyPlan,
   hostedSteps,
-  layoutStepsFromRows,
-  pickVisibleStep
+  pickVisibleStep,
+  stepComponentsForPage
 } from '../composables/workspaceAssembly';
 import { resolveWorkspaceComponent } from './workspace/registry';
 import type { CreativeProjectVO } from '@/api/creative/types';
@@ -268,14 +278,26 @@ const providedComponents = computed(() =>
 );
 const hasMainSlot = computed(() => Boolean(slots.main));
 
-/** 配置里的步骤（从装配对照的步骤行还原：一行一个组件，按配置顺序） */
-const layoutSteps = computed(() => layoutStepsFromRows(flow.assembly.value?.stepRows));
-/** 配置里声明的全部组件名（用于"对不上"的提示） */
-const declaredComponents = computed(() => layoutSteps.value.flatMap((s) => s.components));
-/** 本页面托管的步骤：配置里有、且页面提供了插槽的那些 */
+/** 当前路由（R41：装配支持"同一个步骤在不同页面上的不同视图"，要靠它筛） */
+const route = useRoute();
+/** 没有项目就没有步骤：这时若页面提供了 #main（跨项目总览之类），就渲染它 */
+const projectLess = computed(() => !props.taskId && hasMainSlot.value);
+
+/** 配置里的步骤（R41：直接用解析出来的装配定义，不再从对照行反推） */
+const layoutSteps = computed(() => flow.workspaceLayout.value?.steps || []);
+/** 这一步在本页面上应当有的组件（页面限定的组件只在它声明的页面上算） */
+function componentsHere(stepCode: string): string[] {
+  const step = layoutSteps.value.find((s) => s.code === stepCode);
+  return step ? stepComponentsForPage(step, route.path).map((c) => c.name) : [];
+}
+/** 本页面声明到的全部组件名（用于"对不上"的提示） */
+const declaredComponents = computed(() =>
+  layoutSteps.value.flatMap((s) => stepComponentsForPage(s, route.path).map((c) => c.name))
+);
+/** 本页面托管的步骤：配置里有（且对本页生效）、页面也提供了插槽的那些 */
 const hosted = computed(() => {
   const status = new Map(flow.steps.value.map((s) => [s.key, s]));
-  return hostedSteps(layoutSteps.value, providedComponents.value).map((step) => {
+  return hostedSteps(layoutSteps.value, providedComponents.value, route.path).map((step) => {
     const hit = status.get(step.code);
     return {
       code: step.code,
@@ -307,7 +329,7 @@ watch(activeStepCode, () => {
 const visible = computed(() => hosted.value.find((s) => s.code === visibleStep.value) || null);
 const visibleComponents = computed(() => visible.value?.components || []);
 const visibleMissing = computed(() =>
-  (layoutSteps.value.find((s) => s.code === visibleStep.value)?.components || []).filter(
+  componentsHere(visibleStep.value).filter(
     (component) => !providedComponents.value.includes(component)
   )
 );

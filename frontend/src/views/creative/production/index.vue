@@ -1,224 +1,78 @@
 <template>
   <div class="studio">
-    <header class="prod-head">
-      <div>
-        <h2>AI 生产中心</h2>
-        <p class="muted">
-          选定一个视觉项目后，这里按<b>屏</b>看该项目自己的候选：预览、质检、选定、重出这一屏都在本页完成。
-          不选项目时，下面是跨项目的候选总览——未结束的候选在刷新时会向出图内核要一次真实状态，
-          因此显示的状态就是内核里的状态；重试＝新增一次候选（保留历史，不覆盖）。
-        </p>
-      </div>
-      <div class="head-actions">
-        <el-select
-          v-model="taskId"
-          placeholder="选择视觉项目"
-          filterable
-          clearable
-          style="width: 260px"
-          @change="onProjectChange"
-        >
-          <el-option
-            v-for="project in projects"
-            :key="String(project.taskId)"
-            :label="project.taskName || String(project.taskId)"
-            :value="String(project.taskId)"
-          />
-        </el-select>
-        <el-select v-if="!taskId" v-model="status" placeholder="全部状态" clearable style="width: 150px" @change="load">
-          <el-option
-            v-for="item in statusOptions"
-            :key="item.value"
-            :label="item.label"
-            :value="item.value"
-          />
-        </el-select>
-        <el-button type="primary" plain :loading="loading" @click="reloadCurrent">刷新</el-button>
-      </div>
-    </header>
-
-    <CreativeFlowGuide :task-id="taskId" :refresh-token="flowToken" />
-
-    <!-- 已选项目：项目内候选（逐屏） -->
-    <template v-if="taskId">
-      <div class="sub-head">
-        <h3>
-          项目候选
-          <span class="muted">
-            {{ rows.length }} 个候选
-            <template v-if="storyboard">· 分镜 {{ storyboard.screenCount ?? (storyboard.screens || []).length }} 屏</template>
-          </span>
-        </h3>
-        <div class="head-actions">
-          <el-button size="small" plain :loading="refreshing" @click="doRefreshProduction">刷新状态</el-button>
-        </div>
-      </div>
-
-      <p class="muted">
-        质检只做减法：<b>参考图基准不一致的候选不参与选定</b>（只筛除不放行）；产品基准不一致
-        <b>只提示、不自动筛除</b>——换背景、换景别可能正是设计意图，这个判断留给人。
-        「产品基准」比的是<b>产品图</b>，「质检」比的是本次出图喂进模型的输入图；两者都可能为 null，
-        为 null 时本页如实显示「未质检」，绝不当成通过。
-      </p>
-
-      <p class="muted">
-        <b>规则体检</b>是按这一屏所属模块在模块库里配的 <code>qaRules</code> 对<b>交付图</b>做的
-        <b>确定性像素度量</b>（是否 1:1、最短边、透明通道、边缘白度、主体占比、是否贴边），
-        <b>不调用模型、可复算</b>；它只看客观度量，不看画面好不好看。
-        体检<b>只报告不判决</b>：硬性项没过也不会自动筛除候选。这一屏没配规则时显示「未配置规则」——
-        「没检查」与「检查通过」是两回事。
-      </p>
-
-      <el-table v-loading="loading" :data="rows" class="prod-table" empty-text="该项目还没有出图候选">
-        <el-table-column label="预览" width="90">
-          <template #default="{ row }">
-            <div class="thumb" @click="asGen(row).previewable && openPreview(asGen(row))">
-              <img v-if="thumbUrl(asGen(row))" :src="thumbUrl(asGen(row))" :alt="`候选 ${asGen(row).candidateNo}`" />
-              <span v-else class="thumb-empty">—</span>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column label="屏" min-width="150">
-          <template #default="{ row }">
-            <div class="cell-main">{{ screenLabel(asGen(row)) }}</div>
-            <div class="cell-sub">{{ screenTypeDesc(asGen(row)) }}</div>
-          </template>
-        </el-table-column>
-        <el-table-column label="候选" width="80">
-          <template #default="{ row }">#{{ asGen(row).candidateNo }}</template>
-        </el-table-column>
-        <el-table-column label="状态" width="120">
-          <template #default="{ row }">
-            <span class="gen-status" :class="'is-' + statusType(asGen(row).status)">
-              {{ asGen(row).statusDesc || statusLabel(asGen(row).status) }}
-            </span>
-          </template>
-        </el-table-column>
-        <el-table-column label="质检 / 产品基准" min-width="170">
-          <template #default="{ row }">
-            <div><span :class="qaClass(asGen(row).qaVerdict)">质检：{{ qaVerdictLabel(asGen(row).qaVerdict) }}</span></div>
-            <div>
-              <span :class="qaClass(asGen(row).productVerdict)">
-                产品基准：{{ productVerdictLabel(asGen(row).productVerdict) }}
-              </span>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column label="尺寸" width="110">
-          <template #default="{ row }">{{ sizeText(asGen(row)) }}</template>
-        </el-table-column>
-        <el-table-column label="规则体检" min-width="200">
-          <template #default="{ row }">
-            <template v-if="ruleCheck(asGen(row))">
-              <div>
-                <span :class="ruleClass(ruleCheck(asGen(row))!.verdict)">
-                  规则：{{ ruleLabel(ruleCheck(asGen(row))!.verdict) }}
-                </span>
-              </div>
-              <div v-if="ruleCheck(asGen(row))!.failed.length" class="cell-sub">
-                {{ ruleCheck(asGen(row))!.failed.map((f) => f.label).join('、') }}
-              </div>
-            </template>
-            <span v-else class="muted small">未配置规则</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="耗时" width="90">
-          <template #default="{ row }">{{ durationText(asGen(row).durationMs) }}</template>
-        </el-table-column>
-        <el-table-column label="失败/提示" min-width="170">
-          <template #default="{ row }">
-            <span :class="asGen(row).errorMessage ? 'gen-error' : 'cell-sub'">{{ asGen(row).errorMessage || '—' }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="提交时间" width="170">
-          <template #default="{ row }">{{ formatTime(asGen(row).createTime) }}</template>
-        </el-table-column>
-        <el-table-column label="操作" width="320" fixed="right">
-          <template #default="{ row }">
-            <el-button v-if="asGen(row).previewable" size="small" text type="primary" @click="openPreview(asGen(row))">
-              预览
-            </el-button>
-            <el-button
-              v-if="canSelect(asGen(row))"
-              size="small"
-              text
-              type="success"
-              :loading="busy === 'select-' + asGen(row).id"
-              @click="doSelectCandidate(asGen(row))"
+    <!-- R19/R41：本页由工作台装配。R41 把"逐屏候选管理"拆成装配组件 GenerationBoard
+         （配置里 GENERATION 步用 pages 指明它只属于本页）；未选项目时的跨项目总览走 #main。 -->
+    <CreativeWorkspace
+      :task-id="taskId"
+      :refresh-token="flowToken"
+      :loading="loading"
+      @refresh="reloadCurrent"
+    >
+      <template #page-head>
+        <header class="prod-head">
+          <div>
+            <h2>AI 生产中心</h2>
+            <p class="muted">
+              选定一个视觉项目后，这里按<b>屏</b>看该项目自己的候选：预览、质检、选定、重出这一屏都在本页完成。
+              不选项目时，下面是跨项目的候选总览——未结束的候选在刷新时会向出图内核要一次真实状态，
+              因此显示的状态就是内核里的状态；重试＝新增一次候选（保留历史，不覆盖）。
+            </p>
+          </div>
+          <div class="head-actions">
+            <el-select
+              v-model="taskId"
+              placeholder="选择视觉项目"
+              filterable
+              clearable
+              style="width: 260px"
+              @change="onProjectChange"
             >
-              选定
-            </el-button>
-            <el-tag v-else-if="asGen(row).status === 'APPROVED'" size="small" type="success">已选定</el-tag>
-            <el-button
-              v-if="asGen(row).previewable"
-              size="small"
-              text
-              :loading="busy === 'qa-' + asGen(row).id"
-              @click="doRunQa(asGen(row))"
-            >
-              质检
-            </el-button>
-            <el-button
-              v-if="asGen(row).screenId != null"
-              size="small"
-              text
-              type="warning"
-              :loading="busy === 'regen-' + asGen(row).screenId"
-              @click="doRegenerateScreen(asGen(row))"
-            >
-              重出这一屏
-            </el-button>
-            <el-button
-              v-if="asGen(row).previewable"
-              size="small"
-              text
-              type="primary"
-              @click="openCompare(asGen(row))"
-            >
-              对比产品图
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+              <el-option
+                v-for="project in projects"
+                :key="String(project.taskId)"
+                :label="project.taskName || String(project.taskId)"
+                :value="String(project.taskId)"
+              />
+            </el-select>
+            <el-select v-if="!taskId" v-model="status" placeholder="全部状态" clearable style="width: 150px" @change="load">
+              <el-option
+                v-for="item in statusOptions"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
+            </el-select>
+            <el-button type="primary" plain :loading="loading" @click="reloadCurrent">刷新</el-button>
+          </div>
+        </header>
+      </template>
 
-      <!-- 产品图 | 生成图 并排对比（双基准各自如实显示，null 就是「未质检」） -->
-      <div v-if="compareGen" class="compare-box">
-        <div class="compare-head">
-          <b>产品图 | 生成图</b>
-          <span class="muted">
-            {{ compareGen.typeDesc }} 候选 #{{ compareGen.gen.candidateNo }}
-            <template v-if="compareScreenLabel">· {{ compareScreenLabel }}</template>
-            · 质检：{{ qaVerdictLabel(compareGen.gen.qaVerdict) }}
-            · 产品基准：{{ productVerdictLabel(compareGen.gen.productVerdict) }}
-          </span>
-          <span class="spacer" />
-          <el-button link size="small" @click="closeCompare">关闭对比</el-button>
-        </div>
-        <div class="compare-grid">
-          <figure>
-            <img v-if="urlOf('product')" :src="urlOf('product')" alt="产品图" />
-            <span v-else class="img-placeholder">产品图不可用（未配置或读取失败）</span>
-            <figcaption>产品图（基准）</figcaption>
-          </figure>
-          <figure>
-            <img
-              v-if="urlOf('genpreview-' + compareGen.gen.id)"
-              :src="urlOf('genpreview-' + compareGen.gen.id)"
-              alt="生成图"
-            />
-            <span v-else class="img-placeholder">生成图读取中…</span>
-            <figcaption>生成图（候选 #{{ compareGen.gen.candidateNo }}）</figcaption>
-          </figure>
-        </div>
-        <p v-if="!(productImage && productImage.configured)" class="muted">
-          该产品还没有产品图，左图没有基准可显示——请先在「视觉项目」页上传产品照片，并把它设为该产品的产品图。
-        </p>
-      </div>
-    </template>
+      <template #GenerationBoard>
+        <GenerationBoard
+          :rows="rows"
+          :storyboard="storyboard"
+          :screen-map="screenMap"
+          :loading="loading"
+          :refreshing="refreshing"
+          :busy="busy"
+          :thumb-url="thumbUrl"
+          :url-of="urlOf"
+          :product-image="productImage"
+          :compare-gen="compareGen"
+          :compare-screen-label="compareScreenLabel"
+          @refresh="doRefreshProduction"
+          @preview="openPreview"
+          @select="doSelectCandidate"
+          @qa="doRunQa"
+          @regenerate="doRegenerateScreen"
+          @compare="openCompare"
+          @close-compare="closeCompare"
+        />
+      </template>
 
-    <!-- 未选项目：跨项目候选总览（保持原样） -->
-    <template v-else>
-      <el-table v-loading="loading" :data="rows" class="prod-table" empty-text="还没有出图候选">
+      <template #main>
+        <!-- 未选项目：跨项目候选总览（保持原样） -->
+        <el-table v-loading="loading" :data="rows" class="prod-table" empty-text="还没有出图候选">
         <el-table-column label="预览" width="90">
           <template #default="{ row }">
             <div class="thumb" @click="asGen(row).previewable && openPreview(asGen(row))">
@@ -291,7 +145,8 @@
           @size-change="load"
         />
       </div>
-    </template>
+      </template>
+    </CreativeWorkspace>
 
     <el-dialog v-model="previewVisible" title="候选预览" width="720px" @closed="closePreview">
       <div class="preview-wrap">
@@ -328,38 +183,24 @@ import type {
   ProjectProductImageVO
 } from '@/api/creative/types';
 import {
-  GENERATION_STATUS_LABELS,
-  GENERATION_STATUS_TYPES,
-  PRODUCT_VERDICT_LABELS,
-  QA_VERDICT_LABELS
+  GENERATION_STATUS_LABELS
 } from '@/api/creative/types';
-import CreativeFlowGuide from '../components/CreativeFlowGuide.vue';
+import {
+  asGen,
+  formatTime,
+  screenLabel,
+  screenTypeDesc,
+  statusLabel,
+  statusType
+} from './generationText';
+import CreativeWorkspace from '../components/CreativeWorkspace.vue';
+import GenerationBoard from './components/GenerationBoard.vue';
 
 /** 并排对比的目标：候选 + 它所属屏的类型描述 */
 interface CompareTarget {
   gen: DpGenerationVO;
   typeDesc: string;
 }
-
-/**
- * 屏级规则体检的解析结果（R29）。
- *
- * 后端存的是 JSON 文本（`DpGenerationVO.qaFindingsJson`），页面只读它、不改它；
- * 解析失败按"没有结论"处理（不编造、也不炸页面）。
- */
-interface RuleCheck {
-  verdict: string;
-  failed: { label: string; level: string }[];
-}
-
-/** 规则体检总结论的中文名（后端只在 UNREADABLE 时才是"真有问题"；其余按语义如实显示） */
-const RULE_VERDICT_LABELS: Record<string, string> = {
-  NOT_CONFIGURED: '未配置规则',
-  PASS: '通过',
-  HARD_FAILED: '硬性项未过',
-  SOFT_ONLY: '参考项未过',
-  UNREADABLE: '读不出图'
-};
 
 const statusOptions = Object.entries(GENERATION_STATUS_LABELS).map(([value, label]) => ({ value, label }));
 
@@ -437,113 +278,6 @@ function releaseAll() {
 
 function thumbUrl(row: DpGenerationVO): string {
   return urlOf('gen-' + row.id);
-}
-
-/**
- * el-table 的插槽行类型是 DefaultRow（不含我们的字段），
- * 数据本身来自 DpGenerationVO，故在模板里做一次显式收窄，而不是把函数参数放宽成 any。
- */
-function asGen(row: unknown): DpGenerationVO {
-  return row as DpGenerationVO;
-}
-
-function statusType(value?: string): string {
-  return (value && GENERATION_STATUS_TYPES[value]) || 'info';
-}
-
-function statusLabel(value?: string): string {
-  return (value && GENERATION_STATUS_LABELS[value]) || value || '';
-}
-
-function qaVerdictLabel(verdict?: string): string {
-  if (!verdict) return '未质检';
-  return QA_VERDICT_LABELS[verdict] || verdict;
-}
-
-/** 产品基准结论：null/空一律显示「未质检」，绝不当成通过 */
-function productVerdictLabel(verdict?: string): string {
-  if (!verdict) return '未质检';
-  return PRODUCT_VERDICT_LABELS[verdict] || verdict;
-}
-
-function qaClass(verdict?: string): string {
-  if (verdict === 'CONSISTENT') return 'good';
-  if (verdict === 'INCONSISTENT') return 'bad';
-  if (verdict === 'UNCERTAIN') return 'warn';
-  return 'muted';
-}
-
-/**
- * 解析屏级规则体检结论。
- *
- * 返回 null 表示"这一屏没有体检结论"（没配规则，或这一轮还没有体检过）——
- * 页面据此显示「未配置规则」，绝不显示成"通过"。
- *
- * @param gen 候选
- * @returns 解析结果；无结论或解析失败返回 null
- */
-function ruleCheck(gen: DpGenerationVO): RuleCheck | null {
-  const raw = gen.qaFindingsJson;
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as {
-      configured?: boolean;
-      verdict?: string;
-      findings?: { label?: string; level?: string; ok?: boolean }[];
-    };
-    if (!parsed || !parsed.verdict) return null;
-    const failed = (parsed.findings || [])
-      .filter((item) => item && item.ok === false)
-      .map((item) => ({ label: item.label || '未命名检查项', level: item.level || 'SOFT' }));
-    return { verdict: parsed.verdict, failed };
-  } catch {
-    return null;
-  }
-}
-
-function ruleLabel(verdict: string): string {
-  return RULE_VERDICT_LABELS[verdict] || verdict;
-}
-
-/** 规则体检的样式：HARD 未过才是"必须处理"，SOFT 未过是"值得看一眼"，其余中性 */
-function ruleClass(verdict: string): string {
-  if (verdict === 'HARD_FAILED' || verdict === 'UNREADABLE') return 'bad';
-  if (verdict === 'SOFT_ONLY') return 'warn';
-  if (verdict === 'PASS') return 'good';
-  return 'muted';
-}
-
-function formatTime(value?: string): string {
-  return value ? value.replace('T', ' ').slice(0, 19) : '';
-}
-
-function sizeText(gen: DpGenerationVO): string {
-  return gen.outputWidth ? `${gen.outputWidth}×${gen.outputHeight}` : '—';
-}
-
-function durationText(ms?: number): string {
-  return ms ? `${(ms / 1000).toFixed(1)}s` : '—';
-}
-
-/** 候选所属的屏（来自 getStoryboard 的最新分镜；取不到就是 null，不编造屏号） */
-function screenOf(gen: DpGenerationVO): DpStoryboardScreenVO | null {
-  if (gen.screenId == null) return null;
-  return screenMap.value[String(gen.screenId)] || null;
-}
-
-function screenLabel(gen: DpGenerationVO): string {
-  const screen = screenOf(gen);
-  if (screen) return screen.screenNo || String(screen.id);
-  return gen.screenId != null ? `屏 ${gen.screenId}` : '未归属屏';
-}
-
-function screenTypeDesc(gen: DpGenerationVO): string {
-  return screenOf(gen)?.screenTypeDesc || '—';
-}
-
-/** 只有出图完成且还没选定的候选才需要（且能够）选定 */
-function canSelect(gen: DpGenerationVO): boolean {
-  return gen.status === 'SUCCEEDED';
 }
 
 async function loadProjects() {
@@ -720,7 +454,7 @@ async function doRegenerateScreen(gen: DpGenerationVO) {
   busy.value = 'regen-' + gen.screenId;
   try {
     await regenerateScreen(taskId.value, gen.screenId);
-    ElMessage.success(`${screenLabel(gen)} 已重新提交出图`);
+    ElMessage.success(`${screenLabel(gen, screenMap.value)} 已重新提交出图`);
     await loadProject();
     flowToken.value += 1;
   } catch (error) {
@@ -749,7 +483,7 @@ async function doRefreshProduction() {
 /** 并排对比：左=产品图（产品基准），右=生成图原图；都走 blob，不出现对象存储键 */
 async function openCompare(gen: DpGenerationVO) {
   compareScreenKey.value = gen.screenId == null ? '' : String(gen.screenId);
-  compareGen.value = { gen, typeDesc: screenTypeDesc(gen) };
+  compareGen.value = { gen, typeDesc: screenTypeDesc(gen, screenMap.value) };
   if (!productImage.value?.configured) {
     releaseUrl('product');
   } else if (!urlOf('product')) {

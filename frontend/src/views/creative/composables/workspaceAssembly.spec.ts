@@ -11,12 +11,11 @@ import {
   formatAssemblyChip,
   hostedSteps,
   layoutOfWorkspace,
-  layoutStepsFromRows,
   parseWorkspaceLayout,
   pickVisibleStep,
-  referencedSchemaCode
-} from './workspaceAssembly';
-import {
+  referencedSchemaCode,
+  stepComponentsForPage
+} from './workspaceAssembly';import {
   IMPLEMENTED_COMPONENT_NAMES,
   resolveWorkspaceComponent
 } from '../components/workspace/registry';
@@ -34,7 +33,8 @@ const SEED_JSON =
   '{"code":"FACT","components":["ProjectFactsBlock","ProjectCopyBlock"]},' +
   '{"code":"DNA","component":"VisualDnaPanel"},{"code":"DIRECTION","component":"DirectionBoard"},' +
   '{"code":"STORYBOARD","component":"StoryboardBoard"},{"code":"GATE","component":"GatePanel"},' +
-  '{"code":"GENERATION","components":["ProjectHeroBlock","ProjectGenerationsBlock"]},' +
+  '{"code":"GENERATION","components":["ProjectHeroBlock","ProjectGenerationsBlock",' +
+  '{"component":"GenerationBoard","pages":["/creative/production"]}]},' +
   '{"code":"QA","component":"QaPanel"},' +
   '{"code":"LAYOUT","component":"LongPageCanvas"},{"code":"FINAL","component":"FinalReviewPanel"}]}';
 
@@ -68,28 +68,64 @@ describe('workspaceAssembly：解析', () => {
     expect(layout!.steps.map((s) => s.code)).toEqual([
       'INPUT', 'FACT', 'DNA', 'DIRECTION', 'STORYBOARD', 'GATE', 'GENERATION', 'QA', 'LAYOUT', 'FINAL'
     ]);
-    // 一步多组件（R37）与旧写法（单 component）归一成同一个形状
+    // 一步多组件（R37）与旧写法（单 component）归一成同一个形状（R41 起还带 pages）
     expect(layout!.steps[0]).toEqual({
-      code: 'INPUT', components: ['ProjectAssetsBlock', 'ProjectBriefBlock']
+      code: 'INPUT',
+      components: [
+        { name: 'ProjectAssetsBlock', pages: [] },
+        { name: 'ProjectBriefBlock', pages: [] }
+      ]
     });
-    expect(layout!.steps[2]).toEqual({ code: 'DNA', components: ['VisualDnaPanel'] });
+    expect(layout!.steps[2]).toEqual({
+      code: 'DNA', components: [{ name: 'VisualDnaPanel', pages: [] }]
+    });
   });
 
   it('一步多组件：components 优先，旧 component 写法也认（配置改一半也不会突然空掉）', () => {
     const both = parseWorkspaceLayout(
       '{"workspace":"W","panels":[],"steps":[{"code":"X","component":"Old","components":["New1","New2"]}]}'
     )!;
-    expect(both.steps[0].components).toEqual(['New1', 'New2']);
+    expect(both.steps[0].components.map((c) => c.name)).toEqual(['New1', 'New2']);
     const legacy = parseWorkspaceLayout(
       '{"workspace":"W","panels":[],"steps":[{"code":"X","component":"Old"}]}'
     )!;
-    expect(legacy.steps[0].components).toEqual(['Old']);
+    expect(legacy.steps[0].components.map((c) => c.name)).toEqual(['Old']);
     // 空数组 / 空串 / 非字符串项都不算组件（不编造）
     const dirty = parseWorkspaceLayout(
       '{"workspace":"W","panels":[],"steps":[{"code":"X","components":["",5,null,"Y"]},{"code":"Z","components":[]}]}'
     )!;
-    expect(dirty.steps[0].components).toEqual(['Y']);
+    expect(dirty.steps[0].components.map((c) => c.name)).toEqual(['Y']);
     expect(dirty.steps[1].components).toEqual([]);
+  });
+
+  it('页面限定（R41）：{component, pages} 只在声明的页面上生效，不写 pages 则处处生效', () => {
+    const layout = parseWorkspaceLayout(
+      '{"workspace":"W","panels":[],"steps":[{"code":"GENERATION","components":[' +
+        '{"component":"GenerationBoard","pages":["/creative/production"]},"ProjectHeroBlock"]}]}'
+    )!;
+    const step = layout.steps[0];
+    expect(step.components).toEqual([
+      { name: 'GenerationBoard', pages: ['/creative/production'] },
+      { name: 'ProjectHeroBlock', pages: [] }
+    ]);
+    // 生产页：两个都算（一个限定在本页、一个不限）
+    expect(stepComponentsForPage(step, '/creative/production').map((c) => c.name))
+      .toEqual(['GenerationBoard', 'ProjectHeroBlock']);
+    // 项目页：只算不限页面的那个（限定的那一块不属于这一页，也不该报"对不上"）
+    expect(stepComponentsForPage(step, '/creative/project').map((c) => c.name))
+      .toEqual(['ProjectHeroBlock']);
+    // 不传页面 → 不筛（老调用方与单测仍可用）
+    expect(stepComponentsForPage(step, '').map((c) => c.name))
+      .toEqual(['GenerationBoard', 'ProjectHeroBlock']);
+    // 脏数据：pages 不是数组 / 里面不是字符串 → 当作不限页面
+    const dirty = parseWorkspaceLayout(
+      '{"workspace":"W","panels":[],"steps":[{"code":"X","components":[{"component":"A","pages":"/p"},' +
+        '{"component":"B","pages":[1,null]},{"pages":["/p"]}]}]}'
+    )!;
+    expect(dirty.steps[0].components).toEqual([
+      { name: 'A', pages: [] },
+      { name: 'B', pages: [] }
+    ]);
   });
 
   it('从工作台装配取（layout_json 空 / 坏 JSON / 空对象都不编造）', () => {
@@ -122,7 +158,7 @@ describe('workspaceAssembly：解析', () => {
     // 脏项不丢：code 缺就补空串、组件缺就是空数组，交给对照去报"没给组件"
     expect(layout!.steps).toEqual([
       { code: 'X', components: [] },
-      { code: '', components: ['Y'] }
+      { code: '', components: [{ name: 'Y', pages: [] }] }
     ]);
   });
 });
@@ -130,15 +166,15 @@ describe('workspaceAssembly：解析', () => {
 describe('workspaceAssembly：对照', () => {
   const diff = diffWorkspaceAssembly(parseWorkspaceLayout(SEED_JSON))!;
 
-  it('18 项全对照：5 面板 + 13 个步骤组件（10 步，其中 3 步各两块）', () => {
+  it('19 项全对照：5 面板 + 14 个步骤组件（10 步，其中 4 步多块）', () => {
     expect(diff.panelRows).toHaveLength(5);
-    expect(diff.stepRows).toHaveLength(13);
+    expect(diff.stepRows).toHaveLength(14);
     expect(diff.panelRows.map((r) => r.code)).toEqual([
       'PROJECT_HEADER', 'STEP_NAVIGATOR', 'MAIN_STAGE', 'INSPECTOR', 'ASSET_DRAWER'
     ]);
   });
 
-  it('分类如实：R40 起评审页三步也拆出装配组件，装配已就绪 17/18', () => {
+  it('分类如实：R41 起生产页也拆出装配组件（同一步在项目页/生产页各有一块），就绪 18/19', () => {
     const byName = Object.fromEntries(
       [...diff.panelRows, ...diff.stepRows].map((r) => [r.component || r.code, r.kind])
     );
@@ -164,14 +200,16 @@ describe('workspaceAssembly：对照', () => {
     expect(byName.GatePanel).toBe('SLOT');
     expect(byName.LongPageCanvas).toBe('SLOT');
     expect(byName.FinalReviewPanel).toBe('SLOT');
+    // 【R41 起期望值有变】「出图」步在生产页是另一块视图（配置用 pages 标明它只属于生产页）
+    expect(byName.GenerationBoard).toBe('SLOT');
     expect(diff.componentCount).toBe(5);
-    expect(diff.slotCount).toBe(12);
+    expect(diff.slotCount).toBe(13);
     // 只剩 MAIN_STAGE 一个"页面内区块"（它是主舞台本身，本来就不该是组件）
     expect(diff.sectionCount).toBe(1);
     expect(diff.missingCount).toBe(0);
-    // 口径：就绪 = 已是独立组件（工作台自解析 5 + 宿主插槽 12）；分母是组件行数（不是步骤数）
-    expect(diff.readyText).toBe('17/18');
-    expect(formatAssemblyChip(diff)).toBe('工作台装配 17/18');
+    // 口径：就绪 = 已是独立组件（工作台自解析 5 + 宿主插槽 13）；分母是组件行数（不是步骤数）
+    expect(diff.readyText).toBe('18/19');
+    expect(formatAssemblyChip(diff)).toBe('工作台装配 18/19');
   });
 
   it('每一行都带"代码里在哪"与一句补充（没有落点的对照等于没对照）', () => {
@@ -197,11 +235,11 @@ describe('workspaceAssembly：对照', () => {
   it('结论句只用算出的事实拼（含工作台名、各计数、共 18 项）', () => {
     expect(diff.verdict).toContain('LONG_PAGE');
     expect(diff.verdict).toContain('配置声明 5 个面板 + 10 个步骤');
-    expect(diff.verdict).toContain('共 13 个步骤组件');
-    expect(diff.verdict).toContain('已是独立组件 17 个');
-    expect(diff.verdict).toContain('工作台自行解析 5 个、宿主页面插槽提供 12 个');
+    expect(diff.verdict).toContain('共 14 个步骤组件');
+    expect(diff.verdict).toContain('已是独立组件 18 个');
+    expect(diff.verdict).toContain('工作台自行解析 5 个、宿主页面插槽提供 13 个');
     expect(diff.verdict).toContain('还没实现 0 个');
-    expect(diff.verdict).toContain('共对照 18 项');
+    expect(diff.verdict).toContain('共对照 19 项');
   });
 
   it('注册表与配置互相校验：注册表里多出来的名字要报"没用上"', () => {
@@ -270,7 +308,7 @@ describe('workspaceAssembly：对照', () => {
       expect(entry.note, `${name} 缺说明`).toBeTruthy();
     }
     const layout = parseWorkspaceLayout(SEED_JSON)!;
-    const names = [...layout.panels, ...layout.steps.flatMap((s) => s.components)];
+    const names = [...layout.panels, ...layout.steps.flatMap((s) => s.components.map((c) => c.name))];
     for (const name of names) {
       expect(CODE_COMPONENT_REGISTRY[name], `配置里的 ${name} 没在注册表登记`).toBeTruthy();
     }
@@ -425,38 +463,49 @@ describe('装配运行时：槽位计划', () => {
 describe('R37：按步骤装配', () => {
   const diff = diffWorkspaceAssembly(parseWorkspaceLayout(SEED_JSON))!;
 
-  it('从对照行还原步骤：一步多组件合并成一条，没给组件的步骤如实留着', () => {
-    const steps = layoutStepsFromRows(diff.stepRows);
+  it('配置里的步骤就是工作台运行时的数据源（一步多组件、没给组件的步骤都如实留着）', () => {
+    const steps = parseWorkspaceLayout(SEED_JSON)!.steps;
     expect(steps.map((s) => s.code)).toEqual([
       'INPUT', 'FACT', 'DNA', 'DIRECTION', 'STORYBOARD', 'GATE', 'GENERATION', 'QA', 'LAYOUT', 'FINAL'
     ]);
-    expect(steps[0].components).toEqual(['ProjectAssetsBlock', 'ProjectBriefBlock']);
-    expect(steps[6].components).toEqual(['ProjectHeroBlock', 'ProjectGenerationsBlock']);
-    expect(steps[2].components).toEqual(['VisualDnaPanel']);
-    // 没有步骤行 / 空 → 空数组（调用方据此回落到 #main，不白屏）
-    expect(layoutStepsFromRows(null)).toEqual([]);
-    expect(layoutStepsFromRows([])).toEqual([]);
+    expect(steps[0].components.map((c) => c.name)).toEqual(['ProjectAssetsBlock', 'ProjectBriefBlock']);
+    expect(steps[6].components.map((c) => c.name))
+      .toEqual(['ProjectHeroBlock', 'ProjectGenerationsBlock', 'GenerationBoard']);
+    expect(steps[2].components.map((c) => c.name)).toEqual(['VisualDnaPanel']);
     // 没给组件的步骤要留成空数组，而不是被丢掉
-    const noComponent = layoutStepsFromRows(
-      diffWorkspaceAssembly(parseWorkspaceLayout('{"workspace":"W","panels":[],"steps":[{"code":"X"}]}'))!.stepRows
-    );
+    const noComponent = parseWorkspaceLayout('{"workspace":"W","panels":[],"steps":[{"code":"X"}]}')!.steps;
     expect(noComponent).toEqual([{ code: 'X', components: [] }]);
   });
 
   it('本页面托管的步骤 = 配置里有、且页面提供了插槽的那些（按配置顺序）', () => {
-    const steps = layoutStepsFromRows(diff.stepRows);
+    const steps = parseWorkspaceLayout(SEED_JSON)!.steps;
     // 项目页只提供了六个区块的插槽 → 托管 INPUT / FACT / GENERATION 三步
     const hosted = hostedSteps(steps, [
       'ProjectAssetsBlock', 'ProjectBriefBlock', 'ProjectCopyBlock', 'ProjectFactsBlock',
       'ProjectHeroBlock', 'ProjectGenerationsBlock'
-    ]);
+    ], '/creative/project');
     expect(hosted.map((s) => s.code)).toEqual(['INPUT', 'FACT', 'GENERATION']);
     expect(hosted[0].components).toEqual(['ProjectAssetsBlock', 'ProjectBriefBlock']);
     // 一个插槽都没提供（别的页面还是整页主区）→ 本页不托管任何步骤 → 回落到 #main
-    expect(hostedSteps(steps, [])).toEqual([]);
+    expect(hostedSteps(steps, [], '/creative/storyboard')).toEqual([]);
     // 只提供了一半：那一步仍然是"托管的"，但组件如实少一个（剩下的由页面提示说明）
-    const partial = hostedSteps(steps, ['ProjectHeroBlock']);
+    const partial = hostedSteps(steps, ['ProjectHeroBlock'], '/creative/project');
     expect(partial).toEqual([{ code: 'GENERATION', components: ['ProjectHeroBlock'] }]);
+  });
+
+  it('页面限定：限定了别的页面的组件，不会在**本页**触发"配置与插槽对不上"', () => {
+    const layout = parseWorkspaceLayout(
+      '{"workspace":"W","panels":[],"steps":[{"code":"GENERATION","components":[' +
+        '{"component":"GenerationBoard","pages":["/creative/production"]},"ProjectHeroBlock"]}]}'
+    )!;
+    // 项目页只提供 ProjectHeroBlock：托管的组件就是它，GenerationBoard 不算"缺"
+    const onProject = hostedSteps(layout.steps, ['ProjectHeroBlock'], '/creative/project');
+    expect(onProject).toEqual([{ code: 'GENERATION', components: ['ProjectHeroBlock'] }]);
+    expect(stepComponentsForPage(layout.steps[0], '/creative/project').map((c) => c.name))
+      .toEqual(['ProjectHeroBlock']);
+    // 生产页只提供 GenerationBoard：同理
+    const onProduction = hostedSteps(layout.steps, ['GenerationBoard'], '/creative/production');
+    expect(onProduction).toEqual([{ code: 'GENERATION', components: ['GenerationBoard'] }]);
   });
 
   it('当前步判定：全局当前步优先，其次进行中，其次第一个没了结的，全了结时取最后一步', () => {

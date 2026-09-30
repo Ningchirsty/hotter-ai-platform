@@ -14,7 +14,8 @@ import {
   formatAssemblyChip,
   layoutOfWorkspace,
   referencedSchemaCode,
-  type AssemblyDiff
+  type AssemblyDiff,
+  type WorkspaceLayout
 } from './workspaceAssembly';
 
 /**
@@ -36,6 +37,8 @@ interface ScenarioCacheEntry {
   steps: ScenarioStep[];
   /** 工作台装配对照（R17） */
   assembly: AssemblyDiff | null;
+  /** 工作台装配定义（R41：工作台运行时要用它——步骤、组件、页面限定都在这里） */
+  layout: WorkspaceLayout | null;
   /** 默认输出规格（R31：项目头部显示渠道/尺寸用，避免页面再发一次同样的请求） */
   defaultSpec: ScenarioOutputSpec | null;
 }
@@ -65,6 +68,8 @@ export function useScenarioConfig(deliveryType: Ref<string | undefined>) {
   const scenarioSteps = ref<ScenarioStep[]>([]);
   /** 工作台装配定义（来自场景档案的 workspace_schema_json） */
   const assembly = ref<AssemblyDiff | null>(null);
+  /** 工作台装配定义（R41：工作台运行时用它，不再从对照行反推） */
+  const layout = ref<WorkspaceLayout | null>(null);
   /** 默认输出规格（R31：项目头部显示渠道与尺寸，取的是同一份缓存，不再单独发请求） */
   const defaultSpec = ref<ScenarioOutputSpec | null>(null);
   const loading = ref(false);
@@ -85,6 +90,7 @@ export function useScenarioConfig(deliveryType: Ref<string | undefined>) {
       stepNames.value = [];
       scenarioSteps.value = [];
       assembly.value = null;
+      layout.value = null;
       defaultSpec.value = null;
       failed.value = false;
       return;
@@ -95,6 +101,7 @@ export function useScenarioConfig(deliveryType: Ref<string | undefined>) {
       stepNames.value = hit.names;
       scenarioSteps.value = hit.steps;
       assembly.value = hit.assembly;
+      layout.value = hit.layout;
       defaultSpec.value = hit.defaultSpec;
       failed.value = false;
       return;
@@ -115,7 +122,8 @@ export function useScenarioConfig(deliveryType: Ref<string | undefined>) {
       const text = formatScenarioLine(delivery?.deliveryName, type, formatDefaultSpec(specs), names.length);
       // 装配对照：定义在 dp_workspace_schema.layout_json（档案里那个字段只是引用），
       // 顺手把"档案引用的工作台编码 vs 实际发布的编码"对一次账（不一致要看得见）
-      const assemblyDiff = diffWorkspaceAssembly(layoutOfWorkspace(workspaceRes.data), {
+      const parsedLayout = layoutOfWorkspace(workspaceRes.data);
+      const assemblyDiff = diffWorkspaceAssembly(parsedLayout, {
         referencedCode: referencedSchemaCode(profileRes.data),
         actualCode: workspaceRes.data?.schemaCode
       });
@@ -123,6 +131,7 @@ export function useScenarioConfig(deliveryType: Ref<string | undefined>) {
       stepNames.value = names;
       scenarioSteps.value = steps;
       assembly.value = assemblyDiff;
+      layout.value = parsedLayout;
       defaultSpec.value = specs.length ? specs[0] : null;
       failed.value = false;
       scenarioCache.set(type, {
@@ -130,6 +139,7 @@ export function useScenarioConfig(deliveryType: Ref<string | undefined>) {
         names,
         steps,
         assembly: assemblyDiff,
+        layout: parsedLayout,
         defaultSpec: defaultSpec.value
       });
     } catch (e) {
@@ -140,6 +150,7 @@ export function useScenarioConfig(deliveryType: Ref<string | undefined>) {
       stepNames.value = [];
       scenarioSteps.value = [];
       assembly.value = null;
+      layout.value = null;
       defaultSpec.value = null;
       failed.value = true;
       scenarioCache.delete(type);
@@ -162,6 +173,7 @@ export function useScenarioConfig(deliveryType: Ref<string | undefined>) {
     mapping,
     mappingChip,
     assembly,
+    layout,
     assemblyChip,
     defaultSpec,
     loading,

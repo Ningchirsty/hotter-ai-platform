@@ -111,7 +111,12 @@ export const CODE_COMPONENT_REGISTRY: Record<string, RegistryEntry> = {
   ProjectGenerationsBlock: {
     kind: 'SLOT',
     location: 'project/components/ProjectGenerationsBlock.vue（R33 拆出；项目页以同名插槽提供）',
-    note: 'GENERATION 步：候选列表（预览 / 重试）'
+    note: 'GENERATION 步（项目页视图）：候选列表（预览 / 重试）'
+  },
+  GenerationBoard: {
+    kind: 'SLOT',
+    location: 'production/components/GenerationBoard.vue（R41 拆出；生产页以同名插槽提供）',
+    note: 'GENERATION 步（生产页视图）：逐屏候选管理（质检/产品基准/规则体检、选定、重出、对比产品图）'
   },
   VisualDnaPanel: {
     kind: 'SLOT',
@@ -150,19 +155,18 @@ export const CODE_COMPONENT_REGISTRY: Record<string, RegistryEntry> = {
   }
 };
 
-/** 工作台装配定义（解析 `layout_json` 的结果） */
-export interface WorkspaceLayout {
-  /** 工作台类型（如 LONG_PAGE） */
-  workspace: string;
-  /** 面板编码 */
-  panels: string[];
-  /**
-   * 步骤 → 组件（R37 起允许**一步多个组件**：项目页「资料」步就是"附件 + 品牌要求"两块）。
-   *
-   * <p>旧写法 `{"code":"X","component":"Y"}` 仍然解析（归一成 `components:["Y"]`），
-   * 这样配置改一半、或者别的工作台还没改过来时，装配不会突然空掉。</p>
-   */
-  steps: Array<{ code: string; components: string[] }>;
+/**
+ * 一个步骤组件在配置里的声明。
+ *
+ * <p>R41 起支持**页面限定**：同一个步骤在不同页面上可能是**不同的视图**——
+ * 例如「出图」步在项目页是"发起出图 + 候选"两块，在生产页是"逐屏候选管理"。
+ * 不写 `pages` 表示"任何提供该插槽的页面都算"（绝大多数组件都是这样）。</p>
+ */
+export interface StepComponentRef {
+  /** 组件名（= 页面提供的插槽名） */
+  name: string;
+  /** 只在哪些页面（路由 path）上生效；空数组表示不限页面 */
+  pages: string[];
 }
 
 /** 对照结果的一行 */
@@ -176,6 +180,84 @@ export interface AssemblyRow {
   kind: AssemblyKind;
   location: string;
   note: string;
+}
+
+/** 工作台装配定义（解析 `layout_json` 的结果） */
+export interface WorkspaceLayout {
+  /** 工作台类型（如 LONG_PAGE） */
+  workspace: string;
+  /** 面板编码 */
+  panels: string[];
+  /**
+   * 步骤 → 组件（R37 起允许**一步多个组件**：项目页「资料」步就是"附件 + 品牌要求"两块）。
+   *
+   * <p>旧写法 `{"code":"X","component":"Y"}` 仍然解析（归一成 `components:["Y"]`），
+   * 这样配置改一半、或者别的工作台还没改过来时，装配不会突然空掉。</p>
+   */
+  steps: Array<{ code: string; components: StepComponentRef[] }>;
+}
+
+/** 把一个组件声明归一成 {@link StepComponentRef}（字符串 / 对象两种写法都认） */
+function normalizeComponentRef(raw: unknown): StepComponentRef | null {
+  if (typeof raw === 'string') {
+    const name = raw.trim();
+    return name ? { name, pages: [] } : null;
+  }
+  if (raw && typeof raw === 'object') {
+    const row = raw as { component?: unknown; pages?: unknown };
+    const name = typeof row.component === 'string' ? row.component.trim() : '';
+    if (!name) {
+      return null;
+    }
+    const pages = Array.isArray(row.pages)
+      ? row.pages.filter((p): p is string => typeof p === 'string' && p.trim() !== '').map((p) => p.trim())
+      : [];
+    return { name, pages };
+  }
+  return null;
+}
+
+/**
+ * 解析 `layout_json`（容错：不合法就返回 null，调用方据此不渲染对照）。
+ *
+ * @param json 配置里的 layout_json 字符串
+ * @returns 装配定义；解析不出来返回 null
+ */
+export function parseWorkspaceLayout(json?: string | null): WorkspaceLayout | null {
+  if (!json) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(json) as Partial<WorkspaceLayout>;
+    if (!parsed || typeof parsed !== 'object') {
+      return null;
+    }
+    const panels = Array.isArray(parsed.panels) ? parsed.panels.filter((p) => typeof p === 'string') : [];
+    const steps = Array.isArray(parsed.steps)
+      ? parsed.steps
+          .filter((s) => s && typeof s === 'object')
+          .map((s) => {
+            const row = s as { code?: unknown; component?: unknown; components?: unknown };
+            // 新写法优先；没有就退回旧的单个 component（归一成数组），三种写法都认
+            const rawList = Array.isArray(row.components)
+              ? row.components
+              : typeof row.component === 'string' && row.component.trim() !== ''
+                ? [row.component]
+                : [];
+            const components = rawList
+              .map(normalizeComponentRef)
+              .filter((c): c is StepComponentRef => c !== null);
+            return { code: String(row.code ?? ''), components };
+          })
+      : [];
+    if (!panels.length && !steps.length) {
+      return null;
+    }
+    return { workspace: String(parsed.workspace ?? ''), panels, steps };
+  } catch (e) {
+    // 配置写坏了：不猜，交给调用方当作"没有装配定义"
+    return null;
+  }
 }
 
 /** 装配对照结果 */
@@ -212,46 +294,6 @@ export interface AssemblyDiff {
   readyText: string;
   /** 一句话结论（界面 hover 提示与单测都断言它） */
   verdict: string;
-}
-
-/**
- * 解析 `layout_json`（容错：不合法就返回 null，调用方据此不渲染对照）。
- *
- * @param json 配置里的 layout_json 字符串
- * @returns 装配定义；解析不出来返回 null
- */
-export function parseWorkspaceLayout(json?: string | null): WorkspaceLayout | null {
-  if (!json) {
-    return null;
-  }
-  try {
-    const parsed = JSON.parse(json) as Partial<WorkspaceLayout>;
-    if (!parsed || typeof parsed !== 'object') {
-      return null;
-    }
-    const panels = Array.isArray(parsed.panels) ? parsed.panels.filter((p) => typeof p === 'string') : [];
-    const steps = Array.isArray(parsed.steps)
-      ? parsed.steps
-          .filter((s) => s && typeof s === 'object')
-          .map((s) => {
-            const row = s as { code?: unknown; component?: unknown; components?: unknown };
-            // 新写法优先；没有就退回旧的单个 component（归一成数组），两种写法都认
-            const list = Array.isArray(row.components)
-              ? row.components.filter((c): c is string => typeof c === 'string' && c.trim() !== '')
-              : typeof row.component === 'string' && row.component.trim() !== ''
-                ? [row.component]
-                : [];
-            return { code: String(row.code ?? ''), components: list };
-          })
-      : [];
-    if (!panels.length && !steps.length) {
-      return null;
-    }
-    return { workspace: String(parsed.workspace ?? ''), panels, steps };
-  } catch (e) {
-    // 配置写坏了：不猜，交给调用方当作"没有装配定义"
-    return null;
-  }
 }
 
 /**
@@ -334,7 +376,7 @@ function stepRowsOf(
       continue;
     }
     for (const component of step.components) {
-      out.push(rowOf(step.code, component, registry));
+      out.push(rowOf(step.code, component.name, registry));
     }
   }
   return out;
@@ -473,47 +515,47 @@ export const ASSEMBLY_KIND_LABELS: Record<AssemblyKind, string> = {
 // ---------------------------------------------------------------------------
 
 /**
- * 从装配对照的步骤行还原「步骤 → 组件」（R37）。
+ * 这一步在**某个页面**上应当有哪些组件（R41：支持页面限定）。
  *
- * <p>为什么要还原：工作台运行时要用配置里的**步骤**（一步可能多个组件）来决定"当前显示哪几块"，
- * 而运行时的数据源是 `flow.assembly`（对照结果，逐组件一行）。同一份信息不在两处各存一份，
- * 而是从对照行按顺序合并回来——顺序就是配置顺序（`stepRowsOf` 是先按步骤、再按组件生成的）。</p>
+ * <p>为什么要页面限定：同一个步骤在不同页面上的呈现不同——「出图」步在项目页是
+ * "发起出图 + 候选"两块，在生产页是"逐屏候选管理"；这是产品事实，配置必须能表达，
+ * 否则要么页面显示不出自己那一块，要么每页都收到"配置与插槽对不上"的假警报。</p>
  *
- * @param rows 对照里的步骤行（`AssemblyDiff.stepRows`）
- * @returns 步骤数组（含没给组件的步骤，`components` 为空数组）
+ * @param step 配置里的步骤
+ * @param path 当前页面路由（如 `/creative/production`；空串表示不筛）
+ * @returns 该页面上应当出现的组件（不限页面的组件在所有页面都算）
  */
-export function layoutStepsFromRows(
-  rows?: AssemblyRow[] | null
-): Array<{ code: string; components: string[] }> {
-  const out: Array<{ code: string; components: string[] }> = [];
-  for (const row of rows || []) {
-    const components = row.components?.length ? row.components : row.component ? [row.component] : [];
-    const last = out[out.length - 1];
-    if (last && last.code === row.code) {
-      last.components.push(...components);
-      continue;
-    }
-    out.push({ code: row.code, components: [...components] });
+export function stepComponentsForPage(
+  step: { code: string; components: StepComponentRef[] },
+  path?: string | null
+): StepComponentRef[] {
+  const here = (path || '').trim();
+  if (!here) {
+    return step.components;
   }
-  return out;
+  return step.components.filter((c) => !c.pages.length || c.pages.includes(here));
 }
 
 /**
- * 一个步骤在本页面上**能显示出来的**组件（宿主页面提供了同名插槽的那些）。
+ * 一个步骤在本页面上**能显示出来的**组件（配置声明 + 宿主页面提供了同名插槽）。
  *
  * @param steps      配置里的步骤（按配置顺序）
  * @param components 宿主页面实际提供了插槽的组件名
+ * @param path       当前页面路由（用于页面限定；可空 = 不筛页面）
  * @returns 能显示的步骤（含它能显示的组件；一步多组件时按配置顺序，缺的那个如实少一个）
  */
 export function hostedSteps(
   steps: WorkspaceLayout['steps'] | null | undefined,
-  components: string[]
+  components: string[],
+  path?: string | null
 ): Array<{ code: string; components: string[] }> {
   const provided = new Set(components.filter(Boolean));
   return (steps || [])
     .map((step) => ({
       code: step.code,
-      components: step.components.filter((component) => provided.has(component))
+      components: stepComponentsForPage(step, path)
+        .map((c) => c.name)
+        .filter((name) => provided.has(name))
     }))
     .filter((step) => step.components.length > 0);
 }

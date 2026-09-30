@@ -706,6 +706,8 @@ export function useCreativeFlow(
     mappingChip: scenario.mappingChip,
     assembly: scenario.assembly,
     assemblyChip: scenario.assemblyChip,
+    /** 工作台装配定义（R41：工作台运行时用它——步骤、组件、页面限定都在这里） */
+    workspaceLayout: scenario.layout,
     ensureStep,
     refresh,
     reload,
