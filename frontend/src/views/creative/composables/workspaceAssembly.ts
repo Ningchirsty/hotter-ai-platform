@@ -129,9 +129,9 @@ export const CODE_COMPONENT_REGISTRY: Record<string, RegistryEntry> = {
     note: 'STORYBOARD 步：逐屏规格卡片（屏号/类型/文案/画面独白/视觉规格）+ 生成与锁定；编辑单屏弹窗留在页面'
   },
   GatePanel: {
-    kind: 'SECTION',
-    location: 'review/index.vue「门禁状态 / 准入项 / 人工确认」',
-    note: '闸门判定在后端，这里是展示与人工确认入口'
+    kind: 'SLOT',
+    location: 'review/components/GatePanel.vue（R40 拆出；评审页以同名插槽提供）',
+    note: 'GATE 步：门禁状态 / 准入项 / 人工确认（审核意见是这一步自己的输入，随事件交回页面）'
   },
   QaPanel: {
     kind: 'COMPONENT',
@@ -139,14 +139,14 @@ export const CODE_COMPONENT_REGISTRY: Record<string, RegistryEntry> = {
     note: '质检与交付：四条证据线并排（参考图基准 / 产品基准 / 规则体检 / 交付产物），只读；口径集中在 qaVerdicts'
   },
   LongPageCanvas: {
-    kind: 'SECTION',
-    location: 'review/index.vue「机排版与终审」（:141）',
-    note: '长图画布与终审同区块'
+    kind: 'SLOT',
+    location: 'review/components/LongPageCanvas.vue（R40 拆出；评审页以同名插槽提供）',
+    note: 'LAYOUT 步：渲染机排版 + 版本表（预览 / 逐版本通过打回）；长图预览弹窗留在页面（blob URL 生命周期）'
   },
   FinalReviewPanel: {
-    kind: 'SECTION',
-    location: 'review/index.vue「机排版与终审」（:141）的终审/最终版部分',
-    note: '与 LongPageCanvas 同区块，装配时要拆开'
+    kind: 'SLOT',
+    location: 'review/components/FinalReviewPanel.vue（R40 拆出；评审页以同名插槽提供）',
+    note: 'FINAL 步：交付最终版（V1.0）上传 + 交付产物（Renderer Hub：渲染器能力 / 历史交付包 / 下载）'
   }
 };
 

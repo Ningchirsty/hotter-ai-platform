@@ -138,7 +138,7 @@ describe('workspaceAssembly：对照', () => {
     ]);
   });
 
-  it('分类如实：R39 起分镜页两步也拆出装配组件，只剩视觉门/长图/终审还是页面内区块', () => {
+  it('分类如实：R40 起评审页三步也拆出装配组件，装配已就绪 17/18', () => {
     const byName = Object.fromEntries(
       [...diff.panelRows, ...diff.stepRows].map((r) => [r.component || r.code, r.kind])
     );
@@ -160,17 +160,18 @@ describe('workspaceAssembly：对照', () => {
     // 【R39 起期望值有变】分镜页两个步骤各拆成一个组件
     expect(byName.DirectionBoard).toBe('SLOT');
     expect(byName.StoryboardBoard).toBe('SLOT');
-    // 剩下三个还在评审页里（拆组件这件事一轮做不完，如实登记）
-    expect(byName.GatePanel).toBe('SECTION');
-    expect(byName.LongPageCanvas).toBe('SECTION');
-    expect(byName.FinalReviewPanel).toBe('SECTION');
+    // 【R40 起期望值有变】评审页三个步骤各拆成一个组件
+    expect(byName.GatePanel).toBe('SLOT');
+    expect(byName.LongPageCanvas).toBe('SLOT');
+    expect(byName.FinalReviewPanel).toBe('SLOT');
     expect(diff.componentCount).toBe(5);
-    expect(diff.slotCount).toBe(9);
-    expect(diff.sectionCount).toBe(4);
+    expect(diff.slotCount).toBe(12);
+    // 只剩 MAIN_STAGE 一个"页面内区块"（它是主舞台本身，本来就不该是组件）
+    expect(diff.sectionCount).toBe(1);
     expect(diff.missingCount).toBe(0);
-    // 口径：就绪 = 已是独立组件（工作台自解析 5 + 宿主插槽 9）；分母是组件行数（不是步骤数）
-    expect(diff.readyText).toBe('14/18');
-    expect(formatAssemblyChip(diff)).toBe('工作台装配 14/18');
+    // 口径：就绪 = 已是独立组件（工作台自解析 5 + 宿主插槽 12）；分母是组件行数（不是步骤数）
+    expect(diff.readyText).toBe('17/18');
+    expect(formatAssemblyChip(diff)).toBe('工作台装配 17/18');
   });
 
   it('每一行都带"代码里在哪"与一句补充（没有落点的对照等于没对照）', () => {
@@ -197,8 +198,8 @@ describe('workspaceAssembly：对照', () => {
     expect(diff.verdict).toContain('LONG_PAGE');
     expect(diff.verdict).toContain('配置声明 5 个面板 + 10 个步骤');
     expect(diff.verdict).toContain('共 13 个步骤组件');
-    expect(diff.verdict).toContain('已是独立组件 14 个');
-    expect(diff.verdict).toContain('工作台自行解析 5 个、宿主页面插槽提供 9 个');
+    expect(diff.verdict).toContain('已是独立组件 17 个');
+    expect(diff.verdict).toContain('工作台自行解析 5 个、宿主页面插槽提供 12 个');
     expect(diff.verdict).toContain('还没实现 0 个');
     expect(diff.verdict).toContain('共对照 18 项');
   });
@@ -369,16 +370,20 @@ describe('装配运行时：槽位计划', () => {
     }
   });
 
-  it('只有真注册过的组件才会被装配（没拆成组件 / 宿主插槽 / 没实现的 → SKIP）', () => {
-    // R38 起：SLOT（宿主插槽组件）也不能作为面板被工作台解析，理由要说清是"哪一类"
+  it('只有真注册过的组件才会被装配（页面内区块 / 宿主插槽 / 没实现的 → SKIP）', () => {
+    // R40 之后注册表里已经没有"页面内区块"了，用注入的注册表来钉这条规则
     const layout = parseWorkspaceLayout(
-      '{"workspace":"W","panels":["STEP_NAVIGATOR","MAIN_STAGE","GatePanel","VisualDnaPanel"],"steps":[]}'
+      '{"workspace":"W","panels":["STEP_NAVIGATOR","MAIN_STAGE","SomeSection","VisualDnaPanel"],"steps":[]}'
     );
-    const d = diffWorkspaceAssembly(layout)!;
-    const plan = buildAssemblyPlan(d.panelRows);
+    const registry = {
+      ...CODE_COMPONENT_REGISTRY,
+      SomeSection: { kind: 'SECTION' as const, location: '某页面里的一段', note: '还没拆' }
+    };
+    const d = diffWorkspaceAssembly(layout, { registry })!;
+    const plan = buildAssemblyPlan(d.panelRows, registry);
     expect(plan.map((s) => [s.code, s.target])).toEqual([
       ['STEP_NAVIGATOR', 'GUIDE'], ['MAIN_STAGE', 'MAIN'],
-      ['GatePanel', 'SKIP'], ['VisualDnaPanel', 'SKIP']
+      ['SomeSection', 'SKIP'], ['VisualDnaPanel', 'SKIP']
     ]);
     expect(plan[2].reason).toContain('页面内区块');
     expect(plan[3].reason).toContain('宿主插槽组件');
@@ -553,5 +558,43 @@ describe('R38 / R39：页面这一步的装配组件', () => {
     for (const name of ["'generate'", "'lock'", "'edit-screen'"]) {
       expect(sbBoard, `StoryboardBoard 没有声明事件 ${name}`).toContain(name);
     }
+  });
+
+  it('评审页：三步各自的插槽与动作都接上，页面里不再有这三块内容', () => {
+    const rvPage = readFileSync(new URL('../review/index.vue', import.meta.url), 'utf-8');
+    const gatePanel = readFileSync(new URL('../review/components/GatePanel.vue', import.meta.url), 'utf-8');
+    const layoutPanel = readFileSync(new URL('../review/components/LongPageCanvas.vue', import.meta.url), 'utf-8');
+    const finalPanel = readFileSync(new URL('../review/components/FinalReviewPanel.vue', import.meta.url), 'utf-8');
+    for (const slot of ['#GatePanel', '#LongPageCanvas', '#FinalReviewPanel', '#page-head']) {
+      expect(rvPage, `评审页缺少 ${slot}`).toContain(slot);
+    }
+    for (const binding of [
+      '@submit="doSubmit"',
+      '@review="doReview"',
+      '@render="doRender"',
+      '@preview="doPreview"',
+      '@review-version="doVersionReview"',
+      '@upload-final="doUploadFinal"',
+      '@render-delivery="doRenderDelivery"',
+      '@download="doDownloadArtifact"'
+    ]) {
+      expect(rvPage, `评审页没有把 ${binding} 接上`).toContain(binding);
+    }
+    // 内容只留一份：三步的标记不该再出现在页面里
+    expect(rvPage).not.toContain('data-gate-section');
+    expect(rvPage).not.toContain('data-layout-section');
+    expect(rvPage).not.toContain('data-final-section');
+    expect(rvPage).not.toContain('准入项');
+    // 组件里的分段标记齐全（验收脚本按它断言"三步各有哪些块"）
+    for (const s of ['STATUS', 'ITEMS', 'REVIEW']) {
+      expect(gatePanel, `GatePanel 缺少 ${s}`).toContain(`data-gate-section="${s}"`);
+    }
+    expect(layoutPanel).toContain('data-layout-section="LAYOUT"');
+    for (const s of ['FINAL', 'DELIVERY']) {
+      expect(finalPanel, `FinalReviewPanel 缺少 ${s}`).toContain(`data-final-section="${s}"`);
+    }
+    // 长图预览弹窗留在页面（blob URL 生命周期）
+    expect(rvPage).toContain('previewVisible');
+    expect(layoutPanel).not.toContain('revokeObjectURL');
   });
 });

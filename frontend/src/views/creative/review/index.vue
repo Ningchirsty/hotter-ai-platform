@@ -1,379 +1,81 @@
 <template>
   <div class="studio">
-    <CreativeFlowGuide :task-id="taskId" :refresh-token="flowToken" />
-    <header class="page-head">
-      <div>
-        <h2>详情页与审核</h2>
-        <p class="muted">
-          视觉门是进入批量出图的<b>唯一入口</b>：硬性项不满足连提交都不允许；提交后由人确认或打回。
-          <b>未通过视觉门，出图接口会直接拒绝</b>——门禁在后端强制，不是前端按钮变灰。
-        </p>
-      </div>
-      <div class="head-actions">
-        <el-select v-model="taskId" placeholder="选择视觉项目" filterable style="width: 260px" @change="loadAll">
-          <el-option
-            v-for="project in projects"
-            :key="String(project.taskId)"
-            :label="project.taskName || String(project.taskId)"
-            :value="String(project.taskId)"
-          />
-        </el-select>
-        <el-button plain :loading="loading" @click="loadAll">刷新</el-button>
-      </div>
-    </header>
-
-    <p v-if="!projects.length" class="empty">还没有视觉项目。先到「视觉项目」页新建一个。</p>
-
-    <template v-else-if="gate">
-      <!-- 门禁状态 -->
-      <section class="panel">
-        <div class="gate-head">
+    <!-- R19：本页由工作台容器按配置装配。R40：三个步骤各拆成装配组件——
+         GATE → GatePanel、LAYOUT → LongPageCanvas、FINAL → FinalReviewPanel；
+         长图预览弹窗是页面级浮层（要负责 blob URL 释放），留在页面。 -->
+    <CreativeWorkspace
+      :task-id="taskId"
+      :refresh-token="flowToken"
+      :loading="loading"
+      @refresh="loadAll"
+    >
+      <template #page-head>
+        <header class="page-head">
           <div>
-            <h3>
-              视觉门
-              <el-tag v-if="gate.passed" type="success" effect="dark">已通过</el-tag>
-              <el-tag v-else-if="gate.cardStatus === 'PENDING'" type="warning" effect="dark">待人工确认</el-tag>
-              <el-tag v-else-if="gate.cardStatus === 'BLOCKED'" type="danger" effect="dark">已打回</el-tag>
-              <el-tag v-else type="info" effect="dark">未提交</el-tag>
-            </h3>
-            <p v-if="gate.cardId" class="muted">
-              确认项卡号：{{ gate.cardId }}
+            <h2>详情页与审核</h2>
+            <p class="muted">
+              视觉门是进入批量出图的<b>唯一入口</b>：硬性项不满足连提交都不允许；提交后由人确认或打回。
+              <b>未通过视觉门，出图接口会直接拒绝</b>——门禁在后端强制，不是前端按钮变灰。
             </p>
           </div>
-          <div class="gate-actions">
-            <el-button
-              type="primary"
-              :disabled="!gate.submittable"
-              :loading="submitting"
-              @click="doSubmit"
-            >
-              {{ gate.cardStatus === 'PENDING' ? '重新提交（已有待确认项）' : '提交视觉门审核' }}
-            </el-button>
-          </div>
-        </div>
-
-        <el-alert
-          v-if="!gate.submittable"
-          type="warning"
-          show-icon
-          :closable="false"
-          class="gate-alert"
-          title="硬性项未满足，暂不能提交"
-        >
-          <ul class="issue-list">
-            <li v-for="(item, index) in gate.blocked" :key="index">{{ item }}</li>
-          </ul>
-        </el-alert>
-        <el-alert
-          v-else-if="!gate.passed"
-          type="info"
-          show-icon
-          :closable="false"
-          class="gate-alert"
-          title="硬性项已满足，可提交人工确认"
-        />
-      </section>
-
-      <!-- 准入项 -->
-      <section class="panel">
-        <div class="block-head">
-          <h3>准入项</h3>
-          <span class="muted">硬性项（BLOCK）不满足时不能提交；建议项（CONDITION）只提示</span>
-        </div>
-        <el-table :data="gate.items" size="small">
-          <el-table-column label="等级" width="110">
-            <template #default="{ row }">
-              <el-tag :type="asItem(row).level === 'BLOCK' ? 'danger' : 'info'" size="small">
-                {{ asItem(row).level === 'BLOCK' ? '硬性' : '建议' }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="label" label="准入项" width="200" />
-          <el-table-column label="结果" width="90">
-            <template #default="{ row }">
-              <span :class="asItem(row).passed ? 'good' : 'bad'">{{ asItem(row).passed ? '已满足' : '未满足' }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="detail" label="依据 / 说明" min-width="360" show-overflow-tooltip />
-        </el-table>
-      </section>
-
-      <!-- 人工确认 -->
-      <section class="panel">
-        <div class="block-head">
-          <h3>人工确认</h3>
-          <span class="muted">确认后出图放行；打回会阻断内容任务流转并回到视觉门</span>
-        </div>
-        <div class="review-row">
-          <el-input
-            v-model="comment"
-            type="textarea"
-            :rows="2"
-            maxlength="500"
-            show-word-limit
-            placeholder="意见（打回时建议写明要改什么）"
-          />
-          <div class="review-actions">
-            <el-button
-              type="success"
-              :disabled="gate.cardStatus !== 'PENDING'"
-              :loading="reviewing === 'CONFIRM'"
-              @click="doReview('CONFIRM')"
-            >
-              确认方案，允许出图
-            </el-button>
-            <el-button
-              type="danger"
-              plain
-              :disabled="gate.cardStatus !== 'PENDING'"
-              :loading="reviewing === 'BLOCK'"
-              @click="doReview('BLOCK')"
-            >
-              打回
-            </el-button>
-          </div>
-        </div>
-        <p v-if="gate.cardStatus !== 'PENDING'" class="muted">
-          当前没有待确认项：{{ gate.cardStatus === 'RESOLVED' ? '已确认通过' : (gate.cardStatus === 'BLOCKED' ? '已被打回，请修改方案后重新提交' : '请先提交视觉门审核') }}
-        </p>
-      </section>
-
-      <!-- 机排版与终审（R3） -->
-      <section class="panel">
-        <div class="block-head">
-          <h3>机排版与终审</h3>
           <div class="head-actions">
-            <el-tag :type="detailPage?.rendererAvailable ? 'success' : 'danger'" size="small">
-              {{ detailPage?.rendererAvailable ? '渲染服务可达' : '渲染服务不可达' }}
-            </el-tag>
-            <span class="muted">
-              模板 {{ detailPage?.templateKey || '—' }} · 当前版本 v{{ detailPage?.currentVersion ?? 0 }}
-              （{{ detailPage?.statusDesc || '未排版' }}）
-            </span>
-            <!-- R35：按钮按权限显示。后端对这个接口强制 creative:layout:render，
-                 前端不隐藏的话，没有该权限的角色点了只会拿到 403——"看得见但点不动"是最差的提示。 -->
-            <el-button
-              v-hasPermi="['creative:layout:render']"
-              size="small"
-              plain
-              :loading="rendering"
-              @click="doRender"
-            >
-              {{ (detailPage?.currentVersion ?? 0) > 0 ? '重新渲染 V0.8' : '渲染机排版 V0.8' }}
-            </el-button>
+            <el-select v-model="taskId" placeholder="选择视觉项目" filterable style="width: 260px" @change="loadAll">
+              <el-option
+                v-for="project in projects"
+                :key="String(project.taskId)"
+                :label="project.taskName || String(project.taskId)"
+                :value="String(project.taskId)"
+              />
+            </el-select>
+            <el-button plain :loading="loading" @click="loadAll">刷新</el-button>
           </div>
-        </div>
+        </header>
+      </template>
 
-        <p class="muted">
-          渲染会把每屏<b>已选定</b>的产出与分镜文案排成 750×N 长图；没有已选定产出的屏会在图上明确画出
-          「这一屏还没有产出」，不会留白糊弄。
-        </p>
-        <el-alert
-          v-if="(detailPage?.screensWithoutSelection || []).length"
-          type="warning"
-          show-icon
-          :closable="false"
-          class="gate-alert"
-          :title="`以下屏还没有已选定的产出：${(detailPage?.screensWithoutSelection || []).join('、')}`"
+      <template #GatePanel>
+        <GatePanel
+          :gate="gate"
+          :has-projects="projects.length > 0"
+          :submitting="submitting"
+          :reviewing="reviewing"
+          @submit="doSubmit"
+          @review="doReview"
         />
-        <el-alert
-          v-if="detailPage && detailPage.rendererAvailable === false"
-          type="error"
-          show-icon
-          :closable="false"
-          class="gate-alert"
-          title="渲染服务不可达，无法排版（请确认 creative-renderer 容器已启动）"
+      </template>
+
+      <template #LongPageCanvas>
+        <LongPageCanvas
+          :detail-page="detailPage"
+          :rendering="rendering"
+          :previewing-id="previewingId"
+          :reviewing-id="reviewingId"
+          @render="doRender"
+          @preview="doPreview"
+          @review-version="doVersionReview"
         />
+      </template>
 
-        <el-table
-          v-if="(detailPage?.versions || []).length"
-          :data="detailPage?.versions || []"
-          size="small"
-          class="version-table"
-        >
-          <el-table-column label="版本" width="150">
-            <template #default="{ row }">
-              <div class="cell-main">v{{ asVersion(row).version }} · {{ asVersion(row).kindDesc }}</div>
-              <div class="muted small">{{ asVersion(row).createTime }}</div>
-            </template>
-          </el-table-column>
-          <el-table-column label="长图" width="130">
-            <template #default="{ row }">
-              {{ asVersion(row).pageWidth }}×{{ asVersion(row).pageHeight }}
-            </template>
-          </el-table-column>
-          <el-table-column label="状态" width="130">
-            <template #default="{ row }">
-              <el-tag size="small" :type="versionStatusType(asVersion(row).status)">
-                {{ LAYOUT_VERSION_STATUS_LABELS[asVersion(row).status || ''] || asVersion(row).status }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="渲染证据 / 审核意见" min-width="280">
-            <template #default="{ row }">
-              <div class="muted small">{{ asVersion(row).remark || '—' }}</div>
-              <div v-if="asVersion(row).reviewComment" class="review-line">
-                审核：{{ asVersion(row).reviewComment }}
-              </div>
-            </template>
-          </el-table-column>
-          <el-table-column label="操作" width="230" fixed="right">
-            <template #default="{ row }">
-              <el-button
-                size="small"
-                text
-                type="primary"
-                :disabled="!asVersion(row).previewable"
-                :loading="previewingId === String(asVersion(row).id)"
-                @click="doPreview(asVersion(row))"
-              >
-                预览长图
-              </el-button>
-              <el-button
-                size="small"
-                text
-                type="success"
-                :disabled="asVersion(row).status !== 'RENDERED'"
-                :loading="reviewingId === String(asVersion(row).id)"
-                @click="doVersionReview(asVersion(row), true)"
-              >
-                通过
-              </el-button>
-              <el-button
-                size="small"
-                text
-                type="danger"
-                :disabled="asVersion(row).status !== 'RENDERED'"
-                :loading="reviewingId === String(asVersion(row).id)"
-                @click="doVersionReview(asVersion(row), false)"
-              >
-                打回
-              </el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-        <p v-else class="empty">
-          还没有排版版本。先在上面通过视觉门、到「视觉方向与分镜」页逐屏出图并选定候选，再回来渲染。
-        </p>
+      <template #FinalReviewPanel>
+        <FinalReviewPanel
+          :detail-page="detailPage"
+          :delivery="delivery"
+          :uploading-final="uploadingFinal"
+          :delivering="delivering"
+          :downloading-id="downloadingId"
+          @upload-final="doUploadFinal"
+          @render-delivery="doRenderDelivery"
+          @download="doDownloadArtifact"
+        />
+      </template>
+    </CreativeWorkspace>
 
-        <div v-if="(detailPage?.currentVersion ?? 0) > 0" class="final-row">
-          <div class="final-hint">
-            <b>交付最终版（V1.0）</b>
-            <span class="muted">
-              设计师在 V0.8 基础上精修后上传长图；上传即登记为新版本并标记交付完成，历史版本全部保留。
-            </span>
-          </div>
-          <el-upload
-            :show-file-list="false"
-            accept="image/png,image/jpeg"
-            :http-request="doUploadFinal"
-          >
-            <el-button :loading="uploadingFinal">上传精修最终版</el-button>
-          </el-upload>
-        </div>
-      </section>
-
-      <!-- 交付产物（R30，文档 §26 Renderer Hub） -->
-      <section class="panel">
-        <div class="block-head">
-          <h3>交付产物</h3>
-          <div class="head-actions">
-            <span class="muted">
-              渲染器 {{ delivery?.rendererName || '—' }}（模式 {{ delivery?.renderMode || '未配置' }}）
-              · 当前版本 v{{ delivery?.currentVersion ?? 0 }}
-            </span>
-            <!-- R35：同「渲染机排版」，交付产物生成也走 creative:layout:render，按权限显示 -->
-            <el-button
-              v-hasPermi="['creative:layout:render']"
-              size="small"
-              plain
-              :loading="delivering"
-              @click="doRenderDelivery"
-            >
-              生成交付产物
-            </el-button>
-          </div>
-        </div>
-
-        <p class="muted">
-          渲染器由交付类型的<b>渲染模式</b>决定，不由页面猜：详情页（LONGPAGE）走长图排版，
-          商品主图（MULTI_IMAGE）走<b>多图打包</b>——把各屏已选定的交付图按屏序打成一个 ZIP，
-          包里第一项是 <code>manifest.json</code>（每张图是什么屏、多大、sha256 多少）。
-          交付包在下载时<b>现拼</b>，不再复制一份存储。
-        </p>
-
-        <div v-if="(delivery?.renderers || []).length" class="renderer-row">
-          <el-tag
-            v-for="r in delivery?.renderers || []"
-            :key="r.code"
-            size="small"
-            :type="r.implemented ? (r.selected ? 'success' : 'info') : 'warning'"
-            :effect="r.selected ? 'dark' : 'plain'"
-          >
-            {{ r.name }}（{{ r.code }}）{{ r.implemented ? (r.selected ? '· 本次使用' : '') : '· 未实现' }}
-          </el-tag>
-        </div>
-        <p class="muted small">
-          未实现的渲染器只登记、不执行（点了会明确报错，不会跑个空壳还报成功）。
-        </p>
-
-        <el-table
-          v-if="(delivery?.artifacts || []).length"
-          :data="delivery?.artifacts || []"
-          size="small"
-          class="version-table"
-        >
-          <el-table-column label="版本" width="170">
-            <template #default="{ row }">
-              <div class="cell-main">v{{ asArtifact(row).version }} · {{ asArtifact(row).rendererName }}</div>
-              <div class="muted small">{{ asArtifact(row).createTime }}</div>
-            </template>
-          </el-table-column>
-          <el-table-column label="产物" width="130">
-            <template #default="{ row }">
-              {{ asArtifact(row).imageCount }} 张 ·
-              {{ formatBytes(asArtifact(row).totalBytes) }}
-            </template>
-          </el-table-column>
-          <el-table-column label="清单校验和" width="160">
-            <template #default="{ row }">
-              <span class="mono small">{{ shortSha(asArtifact(row).checksum) }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="说明 / 产物明细" min-width="320">
-            <template #default="{ row }">
-              <div class="muted small">{{ asArtifact(row).remark || '—' }}</div>
-              <div class="muted small">
-                {{ (asArtifact(row).products || []).map((p) => productText(p)).join('、') }}
-              </div>
-            </template>
-          </el-table-column>
-          <el-table-column label="操作" width="120" fixed="right">
-            <template #default="{ row }">
-              <el-button
-                size="small"
-                text
-                type="primary"
-                :loading="downloadingId === String(asArtifact(row).id)"
-                @click="doDownloadArtifact(asArtifact(row))"
-              >
-                下载交付包
-              </el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-        <p v-else class="empty">
-          还没有交付产物。逐屏出图并选定候选后，点上面的「生成交付产物」。
-        </p>
-      </section>
-
-      <el-dialog v-model="previewVisible" title="详情页长图预览" width="820px" @closed="closePreview">
-        <div class="long-preview">
-          <img v-if="previewUrl" :src="previewUrl" alt="详情页长图" />
-          <p v-else class="muted">加载中…</p>
-        </div>
-      </el-dialog>
-    </template>
+    <!-- 长图预览（页面级浮层：blob URL 由页面取、由页面释放） -->
+    <el-dialog v-model="previewVisible" title="详情页长图预览" width="820px" @closed="closePreview">
+      <div class="long-preview">
+        <img v-if="previewUrl" :src="previewUrl" alt="详情页长图" />
+        <p v-else class="muted">加载中…</p>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -398,17 +100,27 @@ import {
 import type {
   CreativeProjectVO,
   DeliveryArtifactVO,
-  DeliveryProductVO,
   DeliveryVO,
   DpDetailPageVO,
   DpDetailPageVersionVO,
-  GateEvaluationVO,
-  GateItem,
-  TagType
+  GateEvaluationVO
 } from '@/api/creative/types';
-import { LAYOUT_VERSION_STATUS_LABELS } from '@/api/creative/types';
-import CreativeFlowGuide from '../components/CreativeFlowGuide.vue';
+import CreativeWorkspace from '../components/CreativeWorkspace.vue';
+import GatePanel from './components/GatePanel.vue';
+import LongPageCanvas from './components/LongPageCanvas.vue';
+import FinalReviewPanel from './components/FinalReviewPanel.vue';
 
+/**
+ * 详情页与审核页（R19 起由工作台装配；R40 起三个步骤各自是装配组件）。
+ *
+ * <p><b>页面留下什么</b>：项目选择（页头）、拉数据（视觉门 / 详情页 / 交付产物）、调接口、
+ * "成功后做什么"（提示 / 刷新 / 推进指引线），以及长图预览弹窗（blob URL 生命周期）。</p>
+ *
+ * <p><b>为什么长图预览弹窗留在页面</b>：它要取 blob URL 并在关闭时释放——这是页面级的资源生命周期，
+ * 拆进组件就会出现"组件关了、URL 没释放"的泄漏（或反过来）。</p>
+ *
+ * @author creative
+ */
 const projects = ref<CreativeProjectVO[]>([]);
 const taskId = ref('');
 // 流程指引线的刷新令牌：只在动作成功后 +1，加载函数里不动它
@@ -422,43 +134,12 @@ const downloadingId = ref('');
 const loading = ref(false);
 const submitting = ref(false);
 const reviewing = ref('');
-const comment = ref('');
 const rendering = ref(false);
 const reviewingId = ref('');
 const previewingId = ref('');
 const uploadingFinal = ref(false);
 const previewVisible = ref(false);
 const previewUrl = ref('');
-
-function asItem(row: unknown): GateItem {
-  return row as GateItem;
-}
-
-function asVersion(row: unknown): DpDetailPageVersionVO {
-  return row as DpDetailPageVersionVO;
-}
-
-function asArtifact(row: unknown): DeliveryArtifactVO {
-  return row as DeliveryArtifactVO;
-}
-
-/** 产物一行文字：屏号 + 模块 + 像素（页面表格里直接可读） */
-function productText(product: DeliveryProductVO): string {
-  const parts = [product.screenNo, product.moduleCode, `${product.width}×${product.height}`]
-    .filter((v) => v !== undefined && v !== null && String(v) !== '');
-  return parts.join(' ');
-}
-
-function formatBytes(bytes?: number): string {
-  if (!bytes) return '0B';
-  if (bytes < 1024) return `${bytes}B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)}KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
-}
-
-function shortSha(sha?: string): string {
-  return sha ? `${sha.slice(0, 12)}…` : '—';
-}
 
 async function doRenderDelivery() {
   if (!taskId.value) return;
@@ -485,13 +166,6 @@ async function doDownloadArtifact(artifact: DeliveryArtifactVO) {
   } finally {
     downloadingId.value = '';
   }
-}
-
-function versionStatusType(status?: string): TagType {
-  if (status === 'APPROVED') return 'success';
-  if (status === 'REJECTED') return 'danger';
-  if (status === 'RENDERED') return 'warning';
-  return 'info';
 }
 
 async function loadProjects() {
@@ -617,7 +291,13 @@ async function doSubmit() {
   }
 }
 
-async function doReview(option: 'CONFIRM' | 'BLOCK') {
+/**
+ * 人工确认 / 打回视觉门（意见由 GatePanel 随事件交回）。
+ *
+ * @param option CONFIRM=确认放行 / BLOCK=打回
+ * @param comment 审核意见（可空）
+ */
+async function doReview(option: 'CONFIRM' | 'BLOCK', comment?: string) {
   if (option === 'BLOCK') {
     try {
       await ElMessageBox.confirm(
@@ -631,7 +311,7 @@ async function doReview(option: 'CONFIRM' | 'BLOCK') {
   }
   reviewing.value = option;
   try {
-    const res = await reviewVisualGate(taskId.value, option, comment.value || undefined);
+    const res = await reviewVisualGate(taskId.value, option, comment || undefined);
     gate.value = res.data || null;
     ElMessage.success(option === 'CONFIRM' ? '已确认，出图已放行' : '已打回');
     flowToken.value += 1;
@@ -666,7 +346,7 @@ onMounted(async () => {
     await loadProjects();
     await loadAll();
   } catch (error) {
-    ElMessage.error((await extractErrorMessage(error)) ?? '初始化失败');
+    ElMessage.error(await extractErrorMessage(error) ?? '初始化失败');
   }
 });
 </script>
@@ -684,6 +364,7 @@ onMounted(async () => {
   border-radius: 8px;
 }
 
+/* 页头（R40）：留在页面上；三步内容的样式搬进了各自组件 */
 .page-head {
   display: flex;
   gap: 16px;
@@ -703,120 +384,6 @@ onMounted(async () => {
   align-items: center;
 }
 
-.panel {
-  padding: 16px;
-  margin-bottom: 14px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-}
-.panel h3 {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  margin: 0 0 6px;
-  font-size: 15px;
-}
-
-.gate-head {
-  display: flex;
-  gap: 16px;
-  align-items: flex-start;
-  justify-content: space-between;
-}
-.gate-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.block-head {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-
-.gate-alert {
-  margin-top: 12px;
-}
-.issue-list {
-  padding-left: 18px;
-  margin: 4px 0 0;
-  font-size: 13px;
-  line-height: 1.9;
-}
-
-.review-row {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-}
-.review-row .el-textarea {
-  flex: 1;
-}
-.review-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.good {
-  color: #a7f3d0;
-}
-.bad {
-  color: #fde68a;
-}
-
-.review-line {
-  margin-top: 4px;
-  font-size: 12px;
-  color: #a5b4fc;
-}
-
-.cell-main {
-  font-size: 13px;
-}
-.small {
-  font-size: 12px;
-}
-
-.version-table {
-  margin-top: 12px;
-}
-
-/* R30：渲染器能力行（已实现/未实现一眼看出） */
-.renderer-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 10px 0 4px;
-}
-
-.mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  letter-spacing: 0.02em;
-}
-
-.final-row {
-  display: flex;
-  gap: 16px;
-  align-items: center;
-  justify-content: space-between;
-  padding-top: 14px;
-  margin-top: 14px;
-  border-top: 1px solid var(--line);
-}
-.final-hint {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 13px;
-}
-.final-hint .muted {
-  margin: 0;
-}
-
 .long-preview {
   display: grid;
   place-items: center;
@@ -833,11 +400,6 @@ onMounted(async () => {
   margin: 0 0 6px;
   font-size: 13px;
   line-height: 1.9;
-  color: var(--t2);
-}
-.empty {
-  padding: 12px 0;
-  font-size: 13px;
   color: var(--t2);
 }
 
