@@ -15,7 +15,6 @@ import org.dromara.creative.service.ICreativeGenerationService;
 import org.dromara.creative.service.ICreativeProjectService;
 import org.dromara.creative.service.ICreativeStoryboardService;
 import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -71,15 +70,20 @@ class CreativeProductionRetryPolicyTest {
     private IContentOutputCheckService outputCheckService;
     @Mock
     private IContentProductService productService;
+    @Mock
+    private org.dromara.creative.service.ICreativeScenarioConfigService scenarioConfigService;
+    @Mock
+    private org.dromara.content.service.IContentTaskService contentTaskService;
 
+    /**
+     * 用 {@code @InjectMocks} 而不是手写 new。
+     *
+     * <p>为什么改：这个测试原先按参数顺序手写构造函数，一旦服务新增依赖就编译不过——
+     * R27 就是这样在 CI 上红的（CI 会编译**全部**测试源，而本地增量编译用了旧的 .class，
+     * 所以本地是"绿的"，其实是**过期编译产物绿**）。注入方式与依赖个数解耦，这类红不会再出现。</p>
+     */
+    @org.mockito.InjectMocks
     private CreativeProductionServiceImpl service;
-
-    @BeforeEach
-    void setUp() {
-        service = new CreativeProductionServiceImpl(projectService, gateService, generationService,
-            storyboardService, generationMapper, storyboardMapper, screenMapper, outputCheckService,
-            productService);
-    }
 
     @Test
     @DisplayName("无活动/成功候选且失败未到上限 → 自动重试一次并留痕")
