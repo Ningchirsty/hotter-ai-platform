@@ -220,7 +220,7 @@ SELECT * FROM (
   UNION ALL SELECT 1765000000000000014, 1765000000000000002, 'STORYBOARD', '分镜', 'STORYBOARD',
          'STORYBOARD_GENERATING,STORYBOARD_REVIEW,STORYBOARD_LOCKED', 50, '1', 'STORYBOARD_LOCKED',
          'creative_storyboard_draft', 'StoryboardBoard', '{"requireDirection":true}', '{"status":"LOCKED"}',
-         '{"impl":"existing","skeletonContract":"creative/screen-skeleton.json"}', 1761000000000000103, 1761100000000000001, NOW()
+         '{"impl":"existing"}', 1761000000000000103, 1761100000000000001, NOW()
   UNION ALL SELECT 1765000000000000015, 1765000000000000002, 'GATE', '视觉门', 'GATE',
          'VISUAL_GATE,VISUAL_LOCKED', 60, '1', 'VISUAL_GATE_PASS', NULL, 'GatePanel',
          '{"requireStoryboard":true}', '{"action":"VISUAL_GATE_PASS"}',
