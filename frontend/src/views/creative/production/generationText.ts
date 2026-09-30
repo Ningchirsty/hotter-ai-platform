@@ -1,9 +1,10 @@
-import type { DpGenerationVO, DpStoryboardScreenVO } from '@/api/creative/types';
+import type { DpGenerationVO, DpStoryboardScreenVO, ScreenProductionVO, TagType } from '@/api/creative/types';
 import {
   GENERATION_STATUS_LABELS,
   GENERATION_STATUS_TYPES,
   PRODUCT_VERDICT_LABELS,
-  QA_VERDICT_LABELS
+  QA_VERDICT_LABELS,
+  SCREEN_STATUS_LABELS
 } from '@/api/creative/types';
 
 /**
@@ -145,4 +146,79 @@ export function screenTypeDesc(gen: DpGenerationVO, screenMap: Record<string, Dp
 /** 只有出图完成且还没选定的候选才需要（且能够）选定 */
 export function canSelect(gen: DpGenerationVO): boolean {
   return gen.status === 'SUCCEEDED';
+}
+
+// ---------------------------------------------------------------------------
+// 「按屏」侧的口径（R43：分镜页的"逐屏出图与质检"与生产页的逐屏候选表收敛成同一个组件）
+// ---------------------------------------------------------------------------
+
+/**
+ * el-table 行收窄成"屏的生产状态"。
+ *
+ * @param row 表格行
+ * @returns 屏生产状态
+ */
+export function asScreen(row: unknown): ScreenProductionVO {
+  return row as ScreenProductionVO;
+}
+
+/**
+ * 这一屏最新候选的 id（"选定候选/质检"按它发起；没有候选时为空）。
+ *
+ * @param row 屏生产状态
+ * @returns 最新候选 id
+ */
+export function latestGenerationOf(row: ScreenProductionVO): string | number | undefined {
+  return row.latestGenerationId;
+}
+
+/**
+ * 屏生产状态的标签样式。
+ *
+ * @param status 状态码
+ * @returns Element Plus 的 tag type
+ */
+export function screenStatusType(status?: string): TagType {
+  switch (status) {
+    case 'APPROVED':
+      return 'success';
+    case 'GENERATED':
+      return 'primary';
+    case 'GENERATING':
+      return 'warning';
+    case 'REJECTED':
+      return 'danger';
+    default:
+      return 'info';
+  }
+}
+
+/**
+ * 屏生产状态的中文名。
+ *
+ * @param status 状态码
+ * @returns 文本
+ */
+export function screenStatusText(status?: string): string {
+  return (status && SCREEN_STATUS_LABELS[status]) || status || '';
+}
+
+/**
+ * 最新候选状态的中文名（空值显示破折号——"没有候选"不是"某个状态"）。
+ *
+ * @param status 状态码
+ * @returns 文本
+ */
+export function latestStatusText(status?: string): string {
+  return (status && GENERATION_STATUS_LABELS[status]) || status || '—';
+}
+
+/**
+ * 质检结论的中文名（空值一律「未质检」，绝不当成通过）。
+ *
+ * @param verdict 结论码
+ * @returns 文本
+ */
+export function qaVerdictText(verdict?: string): string {
+  return (verdict && QA_VERDICT_LABELS[verdict]) || verdict || '未质检';
 }

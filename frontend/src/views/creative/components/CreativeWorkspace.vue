@@ -89,12 +89,6 @@
         <slot v-else name="main" />
 
         <!--
-          ③ 页面级的跨步骤内容（R39）：不属于任何一步、但历史上就挂在这一页的东西
-             （例如分镜页的「逐屏出图与质检」——它其实是出图/质检步的入口，本轮先如实留在页面级）。
-        -->
-        <slot name="page-foot" />
-
-        <!--
           ③ 页面按步骤给了插槽，但配置里没有可用的装配定义（读失败 / 交付类型为空）：
              这时既不能白屏、也不该把锅甩给"名字对不上"——配置根本没来，说清楚是哪一种。
              注意只在配置**收工之后**才这么提示：首屏那一小段"正在读配置"不该报警。
@@ -267,13 +261,13 @@ const headerSpec = computed(() => props.outputSpec ?? flow.defaultSpec.value);
 /**
  * 页面**按步骤**提供的插槽（= 组件名）。
  *
- * <p>`main` / `header-actions` / `page-head` / `page-foot` 不是步骤组件，排除掉；
+ * <p>`main` / `header-actions` / `page-head` 不是步骤组件，排除掉；
  * 页面没按步骤给插槽时这里是空数组，主舞台就回到 R19 的行为（渲染 `#main`）。</p>
  */
 const slots = useSlots();
 const providedComponents = computed(() =>
   Object.keys(slots).filter(
-    (name) => !['main', 'header-actions', 'page-head', 'page-foot', 'default'].includes(name)
+    (name) => !['main', 'header-actions', 'page-head', 'default'].includes(name)
   )
 );
 const hasMainSlot = computed(() => Boolean(slots.main));

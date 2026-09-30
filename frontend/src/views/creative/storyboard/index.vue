@@ -2,7 +2,7 @@
   <div class="studio">
     <!-- R19：本页由工作台容器按配置装配。R39：两个步骤各拆成装配组件——
          DIRECTION → DirectionBoard、STORYBOARD → StoryboardBoard；
-         「逐屏出图与质检」是跨步骤的视图（属于出图/质检步），本轮如实留在页面级（#page-foot）。 -->
+         「逐屏出图与质检」是「出图」步的另一种呈现（按屏），R43 起与生产页共用同一个组件 GenerationBoard。 -->
     <CreativeWorkspace
       :task-id="taskId"
       :refresh-token="flowToken"
@@ -57,92 +57,31 @@
         />
       </template>
 
-      <template #page-foot>
-        <!-- 逐屏生产（跨步骤视图：出图与质检属于 GENERATION/QA 步，历史上就挂在本页） -->
-        <section class="panel">
-          <div class="block-head">
-            <h3>3. 逐屏出图与质检</h3>
-            <div class="head-actions">
-              <span class="muted">
-                本次提交 {{ production?.submitted ?? 0 }} 屏、跳过 {{ production?.skipped ?? 0 }} 屏
-              </span>
-              <el-button size="small" plain :loading="refreshing" @click="doRefreshProduction">刷新状态</el-button>
-              <el-button
-                size="small"
-                type="primary"
-                :disabled="!storyboard || storyboard.status !== 'LOCKED'"
-                :loading="producing"
-                @click="doStartProduction"
-              >
-                按分镜批量出图
-              </el-button>
-            </div>
-          </div>
-          <p class="muted">
-            提示词由已锁定基因按屏派生；失败候选每屏最多自动重试到 3 次尝试（到顶转人工）。
-            质检结论只用于筛选：<b>不一致的候选会被筛除，一致的也不会自动选定</b>。
-          </p>
-          <el-table v-if="production" :data="production.screens" size="small">
-            <el-table-column prop="screenNo" label="屏" width="70" />
-            <el-table-column prop="screenTypeDesc" label="类型" width="90" />
-            <el-table-column label="状态" width="120">
-              <template #default="{ row }">
-                <el-tag size="small" :type="screenStatusType(asScreen(row).status)">
-                  {{ SCREEN_STATUS_LABELS[asScreen(row).status || ''] || asScreen(row).status }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="candidateCount" label="候选数" width="80" />
-            <el-table-column label="最新候选" width="110">
-              <template #default="{ row }">
-                {{ GENERATION_STATUS_LABELS[asScreen(row).latestStatus || ''] || asScreen(row).latestStatus || '—' }}
-              </template>
-            </el-table-column>
-            <el-table-column label="质检" width="160">
-              <template #default="{ row }">
-                <span :class="qaClass(asScreen(row).qaVerdict)">
-                  {{ QA_VERDICT_LABELS[asScreen(row).qaVerdict || ''] || asScreen(row).qaVerdict || '未质检' }}
-                </span>
-              </template>
-            </el-table-column>
-            <el-table-column label="说明" min-width="150">
-              <template #default="{ row }">{{ asScreen(row).note || '—' }}</template>
-            </el-table-column>
-            <el-table-column label="操作" width="250" fixed="right">
-              <template #default="{ row }">
-                <el-button
-                  size="small"
-                  text
-                  type="primary"
-                  :loading="busyScreen === String(asScreen(row).screenId)"
-                  @click="doRegenerate(asScreen(row))"
-                >
-                  重出这一屏
-                </el-button>
-                <el-button
-                  size="small"
-                  text
-                  type="success"
-                  :disabled="!latestGenerationOf(asScreen(row))"
-                  :loading="selectingGen === String(latestGenerationOf(asScreen(row)))"
-                  @click="doSelectCandidate(asScreen(row))"
-                >
-                  选定候选
-                </el-button>
-                <el-button
-                  size="small"
-                  text
-                  :disabled="!latestGenerationOf(asScreen(row))"
-                  :loading="qaGen === String(latestGenerationOf(asScreen(row)))"
-                  @click="doQa(asScreen(row))"
-                >
-                  质检
-                </el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-          <p v-else class="empty">还没有生产记录。分镜锁定后点「按分镜批量出图」。</p>
-        </section>
+      <template #GenerationBoard>
+        <!-- 逐屏出图与质检（R43 起收敛）：与生产页共用同一个装配组件 GenerationBoard，
+             这里用 SCREENS 模式（按屏看"哪一屏还没出、哪一屏质检没过"并批量出图），
+             生产页用 CANDIDATES 模式（按候选看缩略图与质检明细）。 -->
+        <GenerationBoard
+          mode="SCREENS"
+          :rows="[]"
+          :storyboard="storyboard"
+          :screen-map="{}"
+          :production="production"
+          :loading="loading"
+          :refreshing="refreshing"
+          :producing="producing"
+          :busy="screenBusyKey"
+          :thumb-url="() => ''"
+          :url-of="() => ''"
+          :product-image="null"
+          :compare-gen="null"
+          compare-screen-label=""
+          @refresh="doRefreshProduction"
+          @produce="doStartProduction"
+          @regenerate-screen="doRegenerate"
+          @select-screen="doSelectCandidate"
+          @qa-screen="doQa"
+        />
       </template>
     </CreativeWorkspace>
 
@@ -198,7 +137,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import {
   generateDirections,
@@ -224,15 +163,11 @@ import type {
   DpStoryboardVO,
   DpVisualDirectionVO,
   ProductionRunVO,
-  ScreenProductionVO,
-  TagType
-} from '@/api/creative/types';
-import {
-  GENERATION_STATUS_LABELS,
-  QA_VERDICT_LABELS,
-  SCREEN_STATUS_LABELS
+  ScreenProductionVO
 } from '@/api/creative/types';
 import CreativeWorkspace from '../components/CreativeWorkspace.vue';
+import GenerationBoard from '../production/components/GenerationBoard.vue';
+import { latestGenerationOf } from '../production/generationText';
 import DirectionBoard from './components/DirectionBoard.vue';
 import StoryboardBoard from './components/StoryboardBoard.vue';
 
@@ -240,7 +175,7 @@ import StoryboardBoard from './components/StoryboardBoard.vue';
  * 视觉方向与分镜页（R19 起由工作台装配；R39 起两个步骤各自是装配组件）。
  *
  * <p><b>页面留下什么</b>：项目选择（页头）、拉数据、调接口、"成功后做什么"（提示 / 刷新 / 推进指引线），
- * 以及两个编辑弹窗；「逐屏出图与质检」作为**页面级跨步骤视图**留在 `#page-foot`。</p>
+ * 以及两个编辑弹窗；「逐屏出图与质检」是「出图」步的一个装配组件（SCREENS 模式），不再挂在页面级。</p>
  *
  * <p><b>为什么弹窗留在页面</b>：它同时牵动"关闭弹窗 + 刷新列表 + 推进流程指引线"三件事，
  * 拆到组件里就会出现半个状态（组件关了弹窗但页面没刷新）。方向/分镜两块内容则是纯展示。</p>
@@ -276,31 +211,20 @@ function asScreen(row: unknown): ScreenProductionVO {
   return row as ScreenProductionVO;
 }
 
-function latestGenerationOf(row: ScreenProductionVO): string | number | undefined {
-  return row.latestGenerationId;
-}
-
-function screenStatusType(status?: string): TagType {
-  switch (status) {
-    case 'APPROVED':
-      return 'success';
-    case 'GENERATED':
-      return 'primary';
-    case 'GENERATING':
-      return 'warning';
-    case 'REJECTED':
-      return 'danger';
-    default:
-      return 'info';
-  }
-}
-
-function qaClass(verdict?: string): string {
-  if (verdict === 'CONSISTENT') return 'good';
-  if (verdict === 'INCONSISTENT') return 'bad';
-  if (verdict === 'UNCERTAIN') return 'warn';
+/**
+ * 当前"正在进行的动作"（喂给 GenerationBoard 的 `busy`，决定按钮 loading）。
+ *
+ * <p>页面有三个互斥的忙碌标记（重出/选定/质检），组件的约定是一个字符串键；
+ * 这里做一次映射，避免为了一个 loading 把三个 ref 都透传进组件。</p>
+ *
+ * @returns 形如 `regen-screen-<screenId>` / `select-gen-<genId>` / `qa-gen-<genId>`；空闲为空串
+ */
+const screenBusyKey = computed(() => {
+  if (busyScreen.value) return 'regen-screen-' + busyScreen.value;
+  if (selectingGen.value) return 'select-gen-' + selectingGen.value;
+  if (qaGen.value) return 'qa-gen-' + qaGen.value;
   return '';
-}
+});
 
 async function doStartProduction() {
   producing.value = true;

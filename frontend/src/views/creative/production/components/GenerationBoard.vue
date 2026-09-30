@@ -1,7 +1,95 @@
 <template>
   <!-- 单根容器：`src/views` 下的组件会被 `vite:check-transition` 检查（外层路由用 <transition> 包裹）。 -->
   <div class="generation-board">
-    <section class="panel" data-generation-section="CANDIDATES">
+    <!--
+      模式一（分镜页）：**按屏**看这一轮生产与质检——"哪一屏还没出、哪一屏质检没过"。
+      与模式二共用同一批口径（generationText），但回答的是不同的问题，所以是两种呈现而不是两套逻辑。
+    -->
+    <section v-if="mode === 'SCREENS'" class="panel" data-generation-section="SCREENS">
+      <div class="sub-head">
+        <h3>
+          逐屏出图与质检
+          <span class="muted">
+            本次提交 {{ production?.submitted ?? 0 }} 屏、跳过 {{ production?.skipped ?? 0 }} 屏
+          </span>
+        </h3>
+        <div class="head-actions">
+          <el-button size="small" plain :loading="refreshing" @click="$emit('refresh')">刷新状态</el-button>
+          <el-button
+            size="small"
+            type="primary"
+            :disabled="!storyboard || storyboard.status !== 'LOCKED'"
+            :loading="producing"
+            @click="$emit('produce')"
+          >
+            按分镜批量出图
+          </el-button>
+        </div>
+      </div>
+      <p class="muted">
+        提示词由已锁定基因按屏派生；失败候选每屏最多自动重试到 3 次尝试（到顶转人工）。
+        质检结论只用于筛选：<b>不一致的候选会被筛除，一致的也不会自动选定</b>。
+      </p>
+      <el-table v-if="production" :data="production.screens" size="small" class="prod-table">
+        <el-table-column prop="screenNo" label="屏" width="70" />
+        <el-table-column prop="screenTypeDesc" label="类型" width="90" />
+        <el-table-column label="状态" width="120">
+          <template #default="{ row }">
+            <el-tag size="small" :type="screenStatusType(asScreen(row).status)">
+              {{ screenStatusText(asScreen(row).status) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="candidateCount" label="候选数" width="80" />
+        <el-table-column label="最新候选" width="110">
+          <template #default="{ row }">{{ latestStatusText(asScreen(row).latestStatus) }}</template>
+        </el-table-column>
+        <el-table-column label="质检" width="160">
+          <template #default="{ row }">
+            <span :class="qaClass(asScreen(row).qaVerdict)">{{ qaVerdictText(asScreen(row).qaVerdict) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="说明" min-width="150">
+          <template #default="{ row }">{{ asScreen(row).note || '—' }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="250" fixed="right">
+          <template #default="{ row }">
+            <el-button
+              size="small"
+              text
+              type="primary"
+              :loading="busy === 'regen-screen-' + asScreen(row).screenId"
+              @click="$emit('regenerate-screen', asScreen(row))"
+            >
+              重出这一屏
+            </el-button>
+            <el-button
+              size="small"
+              text
+              type="success"
+              :disabled="!latestGenerationOf(asScreen(row))"
+              :loading="busy === 'select-gen-' + latestGenerationOf(asScreen(row))"
+              @click="$emit('select-screen', asScreen(row))"
+            >
+              选定候选
+            </el-button>
+            <el-button
+              size="small"
+              text
+              :disabled="!latestGenerationOf(asScreen(row))"
+              :loading="busy === 'qa-gen-' + latestGenerationOf(asScreen(row))"
+              @click="$emit('qa-screen', asScreen(row))"
+            >
+              质检
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <p v-else class="empty">还没有生产记录。分镜锁定后点「按分镜批量出图」。</p>
+    </section>
+
+    <!-- 模式二（生产页）：**按候选**看——缩略图、质检/产品基准、规则体检、选定/重出/对比 -->
+    <section v-else class="panel" data-generation-section="CANDIDATES">
       <div class="sub-head">
         <h3>
           项目候选
@@ -180,19 +268,31 @@
 </template>
 
 <script setup lang="ts">
-import type { DpGenerationVO, DpStoryboardScreenVO, DpStoryboardVO } from '@/api/creative/types';
+import type {
+  DpGenerationVO,
+  DpStoryboardScreenVO,
+  DpStoryboardVO,
+  ProductionRunVO,
+  ScreenProductionVO
+} from '@/api/creative/types';
 import {
   asGen,
+  asScreen,
   canSelect,
   durationText,
   formatTime,
+  latestGenerationOf,
+  latestStatusText,
   productVerdictLabel,
   qaClass,
   qaVerdictLabel,
+  qaVerdictText,
   ruleCheck,
   ruleClass,
   ruleLabel,
   screenLabel,
+  screenStatusText,
+  screenStatusType,
   screenTypeDesc,
   sizeText,
   statusLabel,
@@ -200,60 +300,92 @@ import {
 } from '../generationText';
 
 /**
- * 「出图」这一步在生产页上的内容（V0.2 R41，装配组件名 `GenerationBoard`）。
+ * 「出图」这一步的内容（V0.2 R41 起装配组件名 `GenerationBoard`；R43 起**两种模式**）。
  *
- * <p><b>为什么这一步有两个组件</b>：同一个步骤在不同页面上呈现不同——
- * 项目页是"发起出图 + 候选"（`ProjectHeroBlock` + `ProjectGenerationsBlock`），
- * 生产页是"逐屏候选管理"（本组件）。装配配置用 `pages` 标明每个组件属于哪个页面，
- * 于是两个页面各自只显示自己那一份，也不会互相收到"配置与插槽对不上"的假警报。</p>
+ * <p><b>为什么一个步骤会有两种呈现</b>：同一个步骤在不同页面上回答不同的问题——</p>
+ * <ul>
+ *   <li>{@code SCREENS}（分镜页）：**按屏**看"哪一屏还没出、哪一屏质检没过"，并批量出图；</li>
+ *   <li>{@code CANDIDATES}（生产页）：**按候选**看缩略图、质检/产品基准、规则体检，选定或重出。</li>
+ * </ul>
+ * <p>两者共用同一批口径（{@code generationText.ts}：状态 / 质检 / 产品基准 / 规则体检 / 尺寸 / 耗时），
+ * 因此"同一个 null 两个叫法"这类漂移不会发生；差别只在**呈现与动作**，用一个 `mode` 表达即可。
+ * 配置侧用 `pages` 把两块分别标给分镜页与生产页（见 dp_creative_r41/r43 迁移脚本）。</p>
  *
- * <p><b>纯展示</b>：预览 / 选定 / 质检 / 重出 / 对比 / 关闭对比都发事件回页面——
+ * <p><b>纯展示</b>：所有动作（批量出图 / 刷新 / 重出 / 选定 / 质检 / 预览 / 对比）都发事件回页面——
  * 它们要刷新候选、分镜与生产状态并推进流程指引线，只有页面知道该刷什么。
  * 对比框里的图片是 blob URL（由页面按 key 管理并在切页时释放），所以这里只通过 `urlOf` 读。</p>
  *
  * @author creative
  */
-defineProps<{
-  /** 该项目的候选（逐屏） */
-  rows: DpGenerationVO[];
-  /** 最新分镜（用来显示"分镜 N 屏"） */
-  storyboard: DpStoryboardVO | null;
-  /** 屏 id → 屏（候选归属与屏号展示） */
-  screenMap: Record<string, DpStoryboardScreenVO>;
-  /** 表格 loading */
-  loading: boolean;
-  /** 刷新状态中 */
-  refreshing: boolean;
-  /** 正在进行的动作（`select-<id>` / `qa-<id>` / `regen-<screenId>`） */
-  busy: string;
-  /** 缩略图 URL（按候选取；没有就是空串） */
-  thumbUrl: (row: DpGenerationVO) => string;
-  /** blob URL 台账读取（产品图与生成图对比） */
-  urlOf: (key: string) => string;
-  /** 产品图（对比框里判断"有没有基准可显示"） */
-  productImage: { configured?: boolean } | null;
-  /** 当前展开的对比（null = 不显示） */
-  compareGen: { gen: DpGenerationVO; typeDesc: string } | null;
-  /** 对比头部显示的屏号 */
-  compareScreenLabel: string;
-}>();
+withDefaults(
+  defineProps<{
+    /**
+     * 呈现模式：`SCREENS`=按屏（分镜页） / `CANDIDATES`=按候选（生产页）。
+     *
+     * <p>默认按候选：生产页是"候选"的主场，老调用方（没传 mode）行为不变。</p>
+     */
+    mode?: 'SCREENS' | 'CANDIDATES';
+    /** 该项目的候选（逐屏）——CANDIDATES 模式用 */
+    rows: DpGenerationVO[];
+    /** 最新分镜（用来显示"分镜 N 屏"；SCREENS 模式下"按分镜批量出图"也看它的锁定状态） */
+    storyboard: DpStoryboardVO | null;
+    /** 屏 id → 屏（候选归属与屏号展示）——CANDIDATES 模式用 */
+    screenMap: Record<string, DpStoryboardScreenVO>;
+    /** 这一轮的生产状态（按屏）——SCREENS 模式用（其它模式不需要传） */
+    production?: ProductionRunVO | null;
+    /** 表格 loading */
+    loading: boolean;
+    /** 刷新状态中 */
+    refreshing: boolean;
+    /** 批量出图中——SCREENS 模式用 */
+    producing?: boolean;
+    /**
+     * 正在进行的动作（按钮 loading）：
+     * CANDIDATES 用 `select-<id>` / `qa-<id>` / `regen-<screenId>`；
+     * SCREENS 用 `regen-screen-<screenId>` / `select-gen-<id>` / `qa-gen-<id>`。
+     */
+    busy: string;
+    /** 缩略图 URL（按候选取；没有就是空串）——CANDIDATES 模式用 */
+    thumbUrl: (row: DpGenerationVO) => string;
+    /** blob URL 台账读取（产品图与生成图对比）——CANDIDATES 模式用 */
+    urlOf: (key: string) => string;
+    /** 产品图（对比框里判断"有没有基准可显示"）——CANDIDATES 模式用 */
+    productImage: { configured?: boolean } | null;
+    /** 当前展开的对比（null = 不显示）——CANDIDATES 模式用 */
+    compareGen: { gen: DpGenerationVO; typeDesc: string } | null;
+    /** 对比头部显示的屏号——CANDIDATES 模式用 */
+    compareScreenLabel: string;
+  }>(),
+  { mode: 'CANDIDATES', production: null, producing: false }
+);
 
-defineEmits<{
+const emit = defineEmits<{
   /** 刷新生产状态 */
   (e: 'refresh'): void;
-  /** 预览候选 */
+  /** 按分镜批量出图（SCREENS） */
+  (e: 'produce'): void;
+  /** 重出这一屏（SCREENS） */
+  (e: 'regenerate-screen', row: ScreenProductionVO): void;
+  /** 选定这一屏的最新候选（SCREENS） */
+  (e: 'select-screen', row: ScreenProductionVO): void;
+  /** 对这一屏的最新候选发起质检（SCREENS） */
+  (e: 'qa-screen', row: ScreenProductionVO): void;
+  /** 预览候选（CANDIDATES） */
   (e: 'preview', row: DpGenerationVO): void;
-  /** 选定候选 */
+  /** 选定候选（CANDIDATES） */
   (e: 'select', row: DpGenerationVO): void;
-  /** 对候选发起质检 */
+  /** 对候选发起质检（CANDIDATES） */
   (e: 'qa', row: DpGenerationVO): void;
-  /** 重出这一屏 */
+  /** 重出这一屏（CANDIDATES：从候选行发起） */
   (e: 'regenerate', row: DpGenerationVO): void;
-  /** 打开"产品图 | 生成图"对比 */
+  /** 打开"产品图 | 生成图"对比（CANDIDATES） */
   (e: 'compare', row: DpGenerationVO): void;
-  /** 关闭对比 */
+  /** 关闭对比（CANDIDATES） */
   (e: 'close-compare'): void;
 }>();
+
+// 模板里统一用 `$emit(...)` 发事件；这个引用只是把事件类型显式声明出来
+void emit;
 </script>
 
 <style scoped lang="scss">

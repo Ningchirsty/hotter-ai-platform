@@ -115,8 +115,8 @@ export const CODE_COMPONENT_REGISTRY: Record<string, RegistryEntry> = {
   },
   GenerationBoard: {
     kind: 'SLOT',
-    location: 'production/components/GenerationBoard.vue（R41 拆出；生产页以同名插槽提供）',
-    note: 'GENERATION 步（生产页视图）：逐屏候选管理（质检/产品基准/规则体检、选定、重出、对比产品图）'
+    location: 'production/components/GenerationBoard.vue（R41 拆出、R43 起两种模式；生产页与分镜页以同名插槽提供）',
+    note: 'GENERATION 步：SCREENS 模式（分镜页）按屏看生产与质检 + 批量出图；CANDIDATES 模式（生产页）按候选看缩略图/质检/规则体检并选定重出'
   },
   VisualDnaPanel: {
     kind: 'SLOT',

@@ -582,9 +582,16 @@ describe('R38 / R39：页面这一步的装配组件', () => {
   it('分镜页：两步各自的插槽与动作都接上，页面里不再有这两块内容', () => {
     expect(sbPage).toContain('#DirectionBoard');
     expect(sbPage).toContain('#StoryboardBoard');
-    // 页头与页面级跨步骤内容也要各就各位
+    // 页头各就各位
     expect(sbPage).toContain('#page-head');
-    expect(sbPage).toContain('#page-foot');
+    // R43：逐屏出图与质检收敛成「出图」步的 GenerationBoard（SCREENS 模式），不再是页面级 page-foot
+    expect(sbPage).toContain('#GenerationBoard');
+    expect(sbPage).toContain('mode="SCREENS"');
+    expect(sbPage).toContain('@produce="doStartProduction"');
+    expect(sbPage).toContain('@regenerate-screen="doRegenerate"');
+    expect(sbPage).toContain('@select-screen="doSelectCandidate"');
+    expect(sbPage).toContain('@qa-screen="doQa"');
+    expect(sbPage).not.toContain('page-foot');
     for (const binding of [
       '@generate="doGenerateDirections"',
       '@select="doSelect"',
@@ -595,9 +602,10 @@ describe('R38 / R39：页面这一步的装配组件', () => {
     ]) {
       expect(sbPage, `分镜页没有把 ${binding} 接上`).toContain(binding);
     }
-    // 内容只留一份：方向卡片/分镜卡片的选择器不该再出现在页面里
+    // 内容只留一份：方向卡片/分镜卡片/逐屏表的标记不该再出现在页面里
     expect(sbPage).not.toContain('direction-card');
     expect(sbPage).not.toContain('screen-card');
+    expect(sbPage).not.toContain('data-generation-section');
     expect(dirBoard).toContain('data-board-section="DIRECTIONS"');
     expect(sbBoard).toContain('data-board-section="SCREENS"');
     // 两个组件各自声明了动作
