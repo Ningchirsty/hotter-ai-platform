@@ -50,6 +50,8 @@ class CreativeModulePlanConfirmTest {
     @Mock
     private CreativeTaskStageMapper stageMapper;
     @Mock
+    private org.dromara.creative.service.ICreativeProjectService projectService;
+    @Mock
     private org.dromara.content.service.IContentTaskService contentTaskService;
     @Mock
     private org.dromara.creative.mapper.DpStoryboardMapper storyboardMapper;
@@ -81,10 +83,12 @@ class CreativeModulePlanConfirmTest {
         when(stageMapper.selectDelFlag(TASK)).thenReturn("0");
         when(stageMapper.selectDeliverableType(TASK)).thenReturn("ECOM_DETAIL");
         when(stageMapper.selectStage(TASK)).thenReturn(Map.of("visualStage", "STORYBOARD_REVIEW"));
-        when(stageMapper.insertEvent(any(), any(), any(), any(), any(), any())).thenAnswer(inv -> {
-            events.add(inv.getArgument(4));
-            return 1;
-        });
+        // 事件走项目服务的 appendEvent（R28 修正：自写 INSERT 漏了 dp_stage_event.id），
+        // 所以这里 mock 的是服务接口；用 doAnswer 记下动作名便于断言。
+        org.mockito.Mockito.doAnswer(inv -> {
+            events.add(inv.getArgument(2));
+            return null;
+        }).when(projectService).appendEvent(any(), any(), any(), any());
         // 假表要连"软删"一起模拟：savePlan 会 deleteById 旧行，不模拟的话旧行还留在表里，
         // 于是"再保存一次"会看到 3 行（第一次的 2 行 + 新 1 行）——第一次跑就是这么红的。
         when(projectModuleMapper.selectList(any())).thenAnswer(inv -> {
