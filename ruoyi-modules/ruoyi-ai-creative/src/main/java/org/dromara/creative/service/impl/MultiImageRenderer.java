@@ -14,6 +14,7 @@ import org.dromara.creative.enums.DpGenerationStatusEnum;
 import org.dromara.creative.helper.CreativeDeliveryManifest;
 import org.dromara.creative.helper.CreativeRenderer;
 import org.dromara.creative.helper.CreativeScreenModuleConfig;
+import org.dromara.creative.helper.CreativeStepTypes;
 import org.dromara.creative.mapper.DpGenerationMapper;
 import org.dromara.creative.service.ICreativeGenerationService;
 import org.dromara.creative.service.ICreativeProjectService;
@@ -155,18 +156,21 @@ public class MultiImageRenderer implements CreativeRenderer {
     }
 
     /**
-     * 交付类型不该配 LAYOUT 步骤（那属于长图渲染器）。
+     * 交付类型不该配排版类步骤（那属于会排版的渲染器：长图 / 海报）。
+     *
+     * <p><b>R52 改判据</b>：从「步骤编码 == LAYOUT」改成「步骤种类 == LAYOUT」。
+     * 按编码判时海报的 {@code POSTER_LAYOUT} 会被这里放行（编码不叫 LAYOUT），
+     * 于是"有排版环节的交付类型"被多图打包装走了——同一份配置在两个渲染器那里得出相反结论。</p>
      *
      * @param deliveryType 交付类型
      */
     private void requireNoLayoutStep(String deliveryType) {
         List<DpScenarioStep> steps = scenarioConfigService.listSteps(deliveryType);
-        boolean hasLayout = steps != null && steps.stream()
-            .anyMatch(step -> "LAYOUT".equalsIgnoreCase(step.getStepCode()));
-        if (hasLayout) {
+        if (CreativeStepTypes.hasLayout(steps)) {
             throw new ServiceException("交付类型「" + deliveryType
-                + "」的流程里有排版环节（LAYOUT），它的交付物是一张长图，应该用长图渲染器"
-                + "（POST /creative/projects/{taskId}/delivery/render 会按交付类型的渲染模式自动选）。");
+                + "」的流程里有排版环节（step_type=LAYOUT）：它的交付物要排版，应该用会排版的渲染器"
+                + "（长图 / 海报）。渲染器由交付类型的渲染模式决定，"
+                + "见 POST /creative/projects/{taskId}/delivery/render。");
         }
     }
 

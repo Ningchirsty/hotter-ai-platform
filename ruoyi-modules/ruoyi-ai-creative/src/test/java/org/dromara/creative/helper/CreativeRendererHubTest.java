@@ -16,8 +16,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 渲染器中枢（V0.2 R30，文档 §26 Renderer Hub）。
  *
  * <p>这个类的价值全在"解析得对、拒绝得清"：渲染器由 {@code dp_delivery_type.render_mode}
- * 解析（不写死交付类型），而文档 §26 里规划中但**还没实现**的 Poster/Article/Print/Video
+ * 解析（不写死交付类型），而文档 §26 里规划中但**还没实现**的 Article/Print/Video
  * 必须被明确拒绝——一个跑空壳还报"成功"的渲染器，比没有渲染器更糟。</p>
+ *
+ * <p><b>R52 的变动</b>：POSTER 从"规划中"变成实现（海报渲染器落地），因此这里不再把它
+ * 当作占位符断言，而是断言"注入实现后，POSTER 这个模式真的解析到它"。</p>
  */
 class CreativeRendererHubTest {
 
@@ -58,26 +61,34 @@ class CreativeRendererHubTest {
     @Test
     @DisplayName("能力清单：已实现的与规划中的都在，且规划中的 implemented=false")
     void listsImplementedAndPlanned() {
-        CreativeRendererHub hub = new CreativeRendererHub(List.of(fake("LONG_PAGE", true)));
+        CreativeRendererHub hub = new CreativeRendererHub(List.of(
+            fake("LONG_PAGE", true), fake("MULTI_IMAGE", true), fake("POSTER", true)));
 
         List<String> codes = hub.all().stream().map(CreativeRenderer::code).toList();
         assertTrue(codes.contains("LONG_PAGE"), codes.toString());
-        // 文档 §26 列的四类渲染器必须登记（否则页面上会"查不到"而不是"还没实现"）
-        for (String planned : List.of("POSTER", "ARTICLE", "PRINT", "VIDEO")) {
+        // R52：海报渲染器落地后，POSTER 来自注入的实现（不再挂在"规划中"占位里）
+        assertTrue(hub.require("POSTER").implemented(), "POSTER 已实现，应当能执行");
+        // 还没实现的仍需登记（否则页面上会"查不到"而不是"还没实现"），且必须如实 implemented=false
+        Map<String, CreativeRenderer> byCode = new java.util.LinkedHashMap<>();
+        hub.all().forEach(r -> byCode.put(r.code(), r));
+        for (String planned : List.of("ARTICLE", "PRINT", "VIDEO")) {
             assertTrue(codes.contains(planned), "缺少规划中的渲染器 " + planned + "：" + codes);
+            assertFalse(byCode.get(planned).implemented(), planned + " 还没实现，implemented 必须是 false");
         }
-        assertEquals("LONG_PAGE", hub.implementedCodes());
+        assertEquals("LONG_PAGE/MULTI_IMAGE/POSTER", hub.implementedCodes());
     }
 
     @Test
-    @DisplayName("按渲染模式解析：LONGPAGE→LONG_PAGE、MULTI_IMAGE→MULTI_IMAGE（大小写不敏感）")
+    @DisplayName("按渲染模式解析：LONGPAGE/MULTI_IMAGE/POSTER 各归各的渲染器（大小写不敏感）")
     void resolvesByRenderMode() {
         CreativeRendererHub hub = new CreativeRendererHub(List.of(
-            fake("LONG_PAGE", true), fake("MULTI_IMAGE", true)));
+            fake("LONG_PAGE", true), fake("MULTI_IMAGE", true), fake("POSTER", true)));
 
         assertEquals("LONG_PAGE", hub.resolveFor("LONGPAGE").code());
         assertEquals("MULTI_IMAGE", hub.resolveFor("multi_image").code());
         assertEquals("MULTI_IMAGE", hub.resolveFor(" MULTI_IMAGE ").code());
+        // R52：海报的渲染模式走海报渲染器（以前这里会报"还没有对应的渲染器"）
+        assertEquals("POSTER", hub.resolveFor("POSTER").code());
     }
 
     @Test
@@ -87,16 +98,18 @@ class CreativeRendererHubTest {
 
         ServiceException blank = assertThrows(ServiceException.class, () -> hub.resolveFor(null));
         assertTrue(blank.getMessage().contains("没有配置渲染模式"), blank.getMessage());
-        ServiceException unknown = assertThrows(ServiceException.class, () -> hub.resolveFor("POSTER"));
+        // PRINT 是"规划中"的形态：模式映射存在，但渲染器没实现，因此仍然进不来
+        ServiceException unknown = assertThrows(ServiceException.class, () -> hub.resolveFor("ARTICLE"));
         assertTrue(unknown.getMessage().contains("还没有对应的渲染器"), unknown.getMessage());
     }
 
     @Test
     @DisplayName("没实现的渲染器不能执行：报错要说清「还没实现」以及现在能跑什么")
     void plannedRendererIsRefused() {
-        CreativeRendererHub hub = new CreativeRendererHub(List.of(fake("LONG_PAGE", true)));
+        CreativeRendererHub hub = new CreativeRendererHub(List.of(
+            fake("LONG_PAGE", true), fake("POSTER", true)));
 
-        ServiceException e = assertThrows(ServiceException.class, () -> hub.require("POSTER"));
+        ServiceException e = assertThrows(ServiceException.class, () -> hub.require("ARTICLE"));
         assertTrue(e.getMessage().contains("还没有实现"), e.getMessage());
         assertTrue(e.getMessage().contains("LONG_PAGE"), "报错必须给出可用清单：" + e.getMessage());
         // 未知编码同样是拒绝，且给出已登记清单

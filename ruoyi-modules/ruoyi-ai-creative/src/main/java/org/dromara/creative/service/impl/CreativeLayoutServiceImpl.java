@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.dromara.creative.domain.DpProjectModule;
 import org.dromara.creative.service.ICreativeModuleService;
 import org.dromara.creative.helper.CreativeTemplatePin;
+import org.dromara.creative.helper.CreativeStepTypes;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
@@ -18,8 +19,10 @@ import org.dromara.content.domain.vo.CpTaskFileVo;
 import org.dromara.content.helper.ContentOssHelper;
 import org.dromara.content.service.IContentTaskService;
 import org.dromara.creative.domain.DpDetailPage;
+import org.dromara.creative.domain.DpDeliveryType;
 import org.dromara.creative.domain.DpDetailPageVersion;
 import org.dromara.creative.domain.DpOutputSpec;
+import org.dromara.creative.domain.DpScenarioStep;
 import org.dromara.creative.domain.vo.CreativeProjectVo;
 import org.dromara.creative.domain.DpGeneration;
 import org.dromara.creative.domain.vo.DpCopyBlockVo;
@@ -144,10 +147,13 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
             throw new ServiceException("还没有分镜，无法排版");
         }
 
-        // 0) 交付类型**有没有排版环节**（R26）：MAIN_IMAGE（商品主图）的流程里没有 LAYOUT，
-        //    它是"按张交付的多张图"，不该被渲染成一张长图——那样产出的东西没人要，
-        //    更糟的是看起来"成功"了。所以这里直接拒绝并说明，而不是照渲染。
+        // 0) 交付类型**有没有排版环节**（R26；R52 改按 step_type 判）：MAIN_IMAGE（商品主图）的
+        //    流程里没有排版类步骤，它是"按张交付的多张图"，不该被渲染成一张长图——那样产出的东西
+        //    没人要，更糟的是看起来"成功"了。所以这里直接拒绝并说明，而不是照渲染。
         requireLayoutStep(project.getDeliverableType());
+        // 0.0) 而且它得是"长图"这个交付形态（R52）：海报也有排版类步骤，但它有自己的渲染器，
+        //      不该被这条链路顺手渲成 750 宽的详情长图。
+        requireLongPageMode(project.getDeliverableType());
 
         // 0.1) 先把"用哪个模板"定下来（R23）：模块规划钉了模板就用它，钉了但不可用就直接报错。
         //    放在逐屏取图之前，是因为**配置错要先于做工作被发现**：否则用户要先等一遍
@@ -276,24 +282,49 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
     }
 
     /**
-     * 交付类型的流程里有排版环节吗（R26）。
+     * 交付类型的流程里有排版环节吗（R26 起；R52 改判据）。
      *
      * <p>判据取**场景配置的步骤表**（`dp_scenario_step`），而不是写死"ECOM_DETAIL 才有"——
-     * 以后新增别的长图类交付类型时，只要配置里配了 LAYOUT 就能排版，不用改代码。</p>
+     * 以后新增别的长图类交付类型时，只要配置里配了排版步骤就能排，不用改代码。</p>
+     *
+     * <p><b>R52 修正</b>：判据从「步骤编码 == LAYOUT」改成「步骤种类 == LAYOUT」。
+     * 按编码判时海报的 {@code POSTER_LAYOUT} 被误判成"流程里没有排版环节"（R50 干跑实测），
+     * 而配置里它明明白白写着 {@code step_type=LAYOUT}。判据本身见
+     * {@link org.dromara.creative.helper.CreativeStepTypes}。</p>
      *
      * @param deliveryType 交付类型
      * @throws ServiceException 没有排版环节时抛出（消息说明为什么不做）
      */
     private void requireLayoutStep(String deliveryType) {
-        List<org.dromara.creative.domain.DpScenarioStep> steps =
-            scenarioConfigService.listSteps(deliveryType);
-        boolean hasLayout = steps.stream()
-            .anyMatch(step -> "LAYOUT".equalsIgnoreCase(step.getStepCode()));
-        if (!hasLayout) {
+        List<DpScenarioStep> steps = scenarioConfigService.listSteps(deliveryType);
+        if (!CreativeStepTypes.hasLayout(steps)) {
             throw new ServiceException("交付类型「" + deliveryType
                 + "」的流程里没有排版环节：它的产出是逐张图片（例如商品主图 800×800），"
-                + "不是一张长图。请到出图页逐屏出图与选定；长图排版只适用于配了 LAYOUT 步骤的交付类型。");
+                + "不是一张长图。请到出图页逐屏出图与选定；长图排版只适用于配了排版步骤的交付类型。");
         }
+    }
+
+    /**
+     * 这个交付类型的交付物是"一张长图"吗（R52）。
+     *
+     * <p>判据取配置的 {@code dp_delivery_type.render_mode}：只有 {@code LONGPAGE} 才走长图排版。
+     * 为什么必须补这一道：R52 把排版判据改成按 {@code step_type} 判之后，海报（也有排版类步骤）
+     * 会被"有排版环节"放行到长图链路上——那就等于把海报渲成一张 750 宽的详情长图，
+     * 看起来成功、产出的东西没人要。海报有自己的渲染器（{@code POSTER}），该走它。</p>
+     *
+     * @param deliveryType 交付类型
+     * @throws ServiceException 渲染模式不是 LONGPAGE 时抛出
+     */
+    private void requireLongPageMode(String deliveryType) {
+        DpDeliveryType type = scenarioConfigService.getDeliveryType(deliveryType);
+        String mode = type == null ? null : type.getRenderMode();
+        if ("LONGPAGE".equalsIgnoreCase(StringUtils.trimToEmpty(mode))) {
+            return;
+        }
+        throw new ServiceException("交付类型「" + deliveryType + "」的交付物不是一张长图（渲染模式="
+            + StringUtils.blankToDefault(mode, "未配置")
+            + "）：长图排版只服务渲染模式为 LONGPAGE 的交付类型。"
+            + "这个交付类型的交付产物请用「生成交付产物」（按渲染模式自动选渲染器）。");
     }
 
     /**

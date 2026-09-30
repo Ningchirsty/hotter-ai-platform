@@ -49,7 +49,11 @@
           :rendering="rendering"
           :previewing-id="previewingId"
           :reviewing-id="reviewingId"
+          :mode="canvasMode"
+          :delivery="delivery"
+          :delivering="delivering"
           @render="doRender"
+          @render-delivery="doRenderDelivery"
           @preview="doPreview"
           @review-version="doVersionReview"
         />
@@ -113,6 +117,7 @@ import CreativeWorkspace from '../components/CreativeWorkspace.vue';
 import GatePanel from './components/GatePanel.vue';
 import LongPageCanvas from './components/LongPageCanvas.vue';
 import FinalReviewPanel from './components/FinalReviewPanel.vue';
+import { canConfirmDelivery as canConfirmDeliveryOf, canvasModeOf } from '../composables/deliveryActions';
 
 /**
  * 详情页与审核页（R19 起由工作台装配；R40 起三个步骤各自是装配组件）。
@@ -139,17 +144,18 @@ const downloadingId = ref('');
 const loading = ref(false);
 
 /**
- * 能不能「确认交付」（R51）：多图交付 + 已有交付产物 + 项目还没完成。
+ * 版式步的画布形态（R52）：长图走长图排版，其余形态（海报/多图包）走"生成成品图"。
+ * 判定是纯函数（composables/deliveryActions.ts，有单测）——后端对非长图调排版接口会明确拒绝。
+ */
+const canvasMode = computed(() => canvasModeOf(delivery.value));
+
+/**
+ * 能不能「确认交付」（R51 起；R52 起含海报）：形态允许 + 已有交付产物 + 项目还没完成。
  *
  * <p>为什么不问后端"能不能确认"：这三个条件在页面上都已经有数据（交付视图 + 视觉门返回的阶段），
  * 再发一次请求只会多一个可能过期的状态。真正会不会被拒由**后端**判（长图类会被明确拒绝）。</p>
  */
-const canConfirmDelivery = computed(
-  () =>
-    delivery.value?.renderMode === 'MULTI_IMAGE' &&
-    (delivery.value?.currentVersion ?? 0) > 0 &&
-    gate.value?.stage !== 'COMPLETED'
-);
+const canConfirmDelivery = computed(() => canConfirmDeliveryOf(delivery.value, gate.value?.stage));
 const submitting = ref(false);
 const reviewing = ref('');
 const rendering = ref(false);

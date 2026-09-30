@@ -32,6 +32,8 @@ public final class CreativeDeliveryManifest {
     public static final String ROLE_LONG_PAGE = "LONG_PAGE";
     /** 角色：逐屏交付图 */
     public static final String ROLE_SCREEN = "SCREEN_DELIVERY";
+    /** 角色：海报（一档规格一张，V0.2 R52） */
+    public static final String ROLE_POSTER = "POSTER";
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 

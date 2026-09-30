@@ -32,11 +32,12 @@ public class CreativeRendererHub {
     /** 渲染模式 → 渲染器编码（配置层只写模式，映射留在代码里，改映射不动配置） */
     private static final Map<String, String> MODE_TO_RENDERER = Map.of(
         "LONGPAGE", "LONG_PAGE",
-        "MULTI_IMAGE", "MULTI_IMAGE");
+        "MULTI_IMAGE", "MULTI_IMAGE",
+        // R52：品牌海报（多档尺寸各出一张）——从"规划中"变成真实现
+        "POSTER", "POSTER");
 
     /** 文档 §26 规划中、但还没有实现的渲染器（只出现在能力清单里，不能被执行） */
     private static final List<CreativeRenderer> PLANNED = List.of(
-        new PlannedRenderer("POSTER", "海报渲染器", "POSTER_LAYOUT", "文档 §9.4 / §44（Sprint F）：等海报交付类型落地后实现"),
         new PlannedRenderer("ARTICLE", "图文文章渲染器", "ARTICLE_LAYOUT", "文档 §26 列出；尚无对应交付类型"),
         new PlannedRenderer("PRINT", "印刷渲染器", "PRINT_LAYOUT", "文档 §44（Sprint F2）：需要 CMYK/出血等印刷口径"),
         new PlannedRenderer("VIDEO", "视频渲染器", "VIDEO_EXPORT", "文档 §26 列为 Future"));

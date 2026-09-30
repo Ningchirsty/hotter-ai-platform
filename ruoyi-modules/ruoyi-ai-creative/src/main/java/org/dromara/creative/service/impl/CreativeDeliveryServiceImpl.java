@@ -53,6 +53,15 @@ public class CreativeDeliveryServiceImpl implements ICreativeDeliveryService {
      */
     private static final String ACTION_DELIVERY_CONFIRMED = "DELIVERY_CONFIRMED";
 
+    /**
+     * 允许「确认交付」收尾的渲染器（V0.2 R51 起 MULTI_IMAGE，R52 加海报）。
+     *
+     * <p>白名单而不是"排除长图"：将来再出现新的交付形态时，默认**不**获得这个能力，
+     * 需要有人有意识地把它加进来——收尾动作是终态，宁可多问一句。</p>
+     */
+    private static final java.util.Set<String> CONFIRMABLE_RENDERERS =
+        java.util.Set.of(MultiImageRenderer.CODE, PosterRenderer.CODE);
+
     private final CreativeRendererHub rendererHub;
     private final DpDeliveryArtifactMapper artifactMapper;
     private final ICreativeProjectService projectService;
@@ -137,13 +146,15 @@ public class CreativeDeliveryServiceImpl implements ICreativeDeliveryService {
         DpDeliveryType type = scenarioConfigService.getDeliveryType(deliveryType);
         String renderMode = type == null ? null : type.getRenderMode();
 
-        // 判据取**配置的渲染模式**（不写死交付类型）：以后新增多图类交付类型不用改代码，
-        // 而长图类（LONGPAGE）永远走不到这里——它的交付完成是"上传精修最终版"。
-        if (!MultiImageRenderer.CODE.equalsIgnoreCase(StringUtils.trimToEmpty(renderMode))) {
-            throw new ServiceException("这个交付类型的交付物不是多图包（渲染模式="
-                + StringUtils.blankToDefault(renderMode, "未配置") + "）：长图类的「交付完成」请走"
-                + "「上传精修最终版」——两条路都会把项目置为已完成，但精修版是设计师改过的图，"
-                + "不能由一次点击代替。");
+        // 判据取**配置的渲染模式**解出来的渲染器（不写死交付类型）：以后新增"一组图/一个包"的形态，
+        // 只要往白名单里加一个渲染器即可；长图（LONG_PAGE）永远走不到这里——它的交付完成是
+        // "上传精修最终版"。刻意用白名单而不是"不等于长图"：新形态默认不开口子。
+        CreativeRenderer renderer = rendererHub.resolveFor(renderMode);
+        if (!CONFIRMABLE_RENDERERS.contains(renderer.code())) {
+            throw new ServiceException("「" + renderer.displayName() + "（" + renderer.code()
+                + "）」的交付物不是一组成品图/成组交付包，不能由「确认交付」收尾："
+                + "长图类的交付完成请走「上传精修最终版」——两条路都会把项目置为已完成，"
+                + "但精修版是设计师改过的图，不能由一次点击代替。");
         }
         String stage = StringUtils.trimToEmpty(projectService.stageOf(taskId));
         if (DpVisualStageEnum.COMPLETED.getCode().equalsIgnoreCase(stage)) {

@@ -20,9 +20,9 @@ import java.util.Map;
  * <p><b>统一入口</b>（文档 §26 的请求形状）：
  * {@code { renderer, templateCode, templateVersion, outputSpec, layout }} → 本接口的 {@link Context}。</p>
  *
- * <p><b>没实现的渲染器必须说出来</b>：文档列出的 PosterRenderer / ArticleRenderer / PrintRenderer /
- * VideoRenderer 现在都还没有实现。它们在 {@link #implemented()} 上如实返回 false，
- * 被调用时由 Hub 直接拒绝并说明——绝不允许"跑了个空壳还报成功"。</p>
+ * <p><b>没实现的渲染器必须说出来</b>：文档列出的 ArticleRenderer / PrintRenderer /
+ * VideoRenderer 现在都还没有实现（PosterRenderer 已在 V0.2 R52 落地）。它们在 {@link #implemented()}
+ * 上如实返回 false，被调用时由 Hub 直接拒绝并说明——绝不允许"跑了个空壳还报成功"。</p>
  *
  * @author creative
  */

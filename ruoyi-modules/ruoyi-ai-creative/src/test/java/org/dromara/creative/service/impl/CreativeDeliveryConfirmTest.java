@@ -59,6 +59,10 @@ class CreativeDeliveryConfirmTest {
     private ICreativeScenarioConfigService scenarioConfigService;
     @Mock
     private CreativeRenderer multiImageRenderer;
+    @Mock
+    private CreativeRenderer posterRenderer;
+    @Mock
+    private CreativeRenderer longPageRenderer;
 
     @InjectMocks
     private CreativeDeliveryServiceImpl service;
@@ -77,15 +81,30 @@ class CreativeDeliveryConfirmTest {
         when(multiImageRenderer.displayName()).thenReturn("多图交付渲染器");
         when(multiImageRenderer.targetStep()).thenReturn("FINAL");
         when(multiImageRenderer.note()).thenReturn("把各屏已选定的交付图按屏序打成一组");
-        when(rendererHub.resolveFor(any())).thenReturn(multiImageRenderer);
-        when(rendererHub.all()).thenReturn(List.of(multiImageRenderer));
+        when(posterRenderer.code()).thenReturn(PosterRenderer.CODE);
+        when(posterRenderer.displayName()).thenReturn("海报渲染器");
+        when(longPageRenderer.code()).thenReturn(LongPageRenderer.CODE);
+        when(longPageRenderer.displayName()).thenReturn("长图排版渲染器");
+        when(rendererHub.all()).thenReturn(List.of(multiImageRenderer, posterRenderer, longPageRenderer));
     }
 
+    /**
+     * 配置里的渲染模式 → 渲染器。
+     *
+     * <p>R52 起 {@code confirm} 的判据是**渲染器**（白名单）而不是模式字符串，
+     * 所以这里必须按模式分别打桩——否则"长图被拒"那条会因为所有模式都解析到多图渲染器而变绿。</p>
+     */
     private void renderMode(String mode) {
         DpDeliveryType type = new DpDeliveryType();
         type.setDeliveryType("MAIN_IMAGE");
         type.setRenderMode(mode);
         when(scenarioConfigService.getDeliveryType("MAIN_IMAGE")).thenReturn(type);
+        when(rendererHub.resolveFor(mode)).thenReturn(
+            switch (mode) {
+                case "MULTI_IMAGE" -> multiImageRenderer;
+                case "POSTER" -> posterRenderer;
+                default -> longPageRenderer;
+            });
     }
 
     private DpDeliveryArtifact artifact(long taskId, int version) {
@@ -105,7 +124,9 @@ class CreativeDeliveryConfirmTest {
     void rejectsLongPageType() {
         renderMode("LONGPAGE");
         ServiceException ex = assertThrows(ServiceException.class, () -> service.confirm(TASK, null, "终审通过"));
-        assertTrue(ex.getMessage().contains("LONGPAGE"), ex.getMessage());
+        // 消息要同时说清"是哪个渲染器"与"该走哪条路"（只说"不允许"会让人不知道下一步做什么）
+        assertTrue(ex.getMessage().contains("LONG_PAGE"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("精修"), ex.getMessage());
         verify(projectService, never()).moveStage(anyLong(), any(), anyString(), anyString());
         verify(projectService, never()).appendEvent(anyLong(), anyString(), anyString(), anyString());
     }
@@ -153,6 +174,19 @@ class CreativeDeliveryConfirmTest {
         assertEquals(3, vo.getCurrentVersion());
         // 先写事件再推阶段：两条都要有，缺任何一条都会让"谁在什么时候确认了哪一版"查不出来
         verify(projectService).appendEvent(eq(TASK), eq("DELIVERY"), eq("DELIVERY_CONFIRMED"), anyString());
+        verify(projectService).moveStage(eq(TASK), eq(org.dromara.creative.enums.DpVisualStageEnum.COMPLETED),
+            eq("DELIVERY_CONFIRMED"), anyString());
+    }
+
+    @Test
+    @DisplayName("海报（POSTER）也能用「确认交付」收尾——它的交付物是多档成品图，同样没有长图精修版")
+    void posterCanConfirm() {
+        renderMode("POSTER");
+        when(artifactMapper.selectList(any())).thenReturn(List.of(artifact(TASK, 1)));
+
+        var vo = service.confirm(TASK, null, "三档成品图确认交付");
+
+        assertEquals(1, vo.getCurrentVersion());
         verify(projectService).moveStage(eq(TASK), eq(org.dromara.creative.enums.DpVisualStageEnum.COMPLETED),
             eq("DELIVERY_CONFIRMED"), anyString());
     }

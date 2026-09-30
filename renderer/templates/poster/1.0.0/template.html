@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <style>
+    /*
+      品牌海报模板（poster@1.0.0，V0.2 R52）。
+
+      约束（与长图模板同一套，渲染服务会强制）：
+        · 素材一律 data URI 内联（渲染期零外部请求，保证可复现）；
+        · 画布尺寸**由请求与 payload 决定**：宽度取 CSS 变量 --page-width（渲染服务注入，并会核对
+          "实际渲染宽度 == 请求宽度"，对不上直接失败），高度取 payload.canvas.height；
+        · 缺图不糊弄：明确画出「还没有已选定的产出图」，而不是留白让人以为渲染失败。
+
+      这一版是"主视觉 + 品牌标识 + 主张"的三层结构，三层都可以缺：
+      缺主视觉出提示块，缺标识/主张就整块不出现（不留空容器）。
+    */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: var(--page-width, 1080px); background: #ffffff; }
+    body { font-family: "Noto Sans CJK SC", "Noto Sans SC", sans-serif; color: #16181d; }
+
+    /* 画布：宽 = 请求宽度（渲染服务核对），高 = payload 指定的规格高度 */
+    #page-root {
+      position: relative;
+      width: var(--page-width, 1080px);
+      height: 1440px;
+      overflow: hidden;
+      background: #f5f5f3;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 氛围层：有氛围图就用它铺满并压暗，否则用基因背景色 */
+    .atmosphere { position: absolute; inset: 0; z-index: 0; }
+    .atmosphere img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .atmosphere::after {
+      content: "";
+      position: absolute; inset: 0;
+      background: linear-gradient(180deg, rgba(22, 24, 29, 0.08) 0%, rgba(22, 24, 29, 0.42) 100%);
+    }
+
+    .frame { position: relative; z-index: 1; display: flex; flex-direction: column;
+             width: 100%; height: 100%; padding: 64px 72px 56px; }
+
+    /* 顶部：品牌标识（左）与规格（右） */
+    .top { display: flex; align-items: flex-start; justify-content: space-between; min-height: 96px; }
+    .lockup { max-width: 320px; max-height: 96px; }
+    .lockup img { max-width: 320px; max-height: 96px; display: block; }
+    .lockup-fallback { font-size: 26px; font-weight: 700; letter-spacing: 2px; color: #16181d; }
+    .spec-tag { font-size: 18px; letter-spacing: 1px; color: rgba(22, 24, 29, 0.55); }
+
+    /* 主视觉：居中，最多占画布中部 62% 高 */
+    .stage { flex: 1 1 auto; display: flex; align-items: center; justify-content: center;
+             min-height: 0; padding: 28px 0; }
+    .hero { max-width: 100%; max-height: 100%; }
+    .hero img { max-width: 100%; max-height: 100%; display: block; object-fit: contain;
+                border-radius: 18px; box-shadow: 0 24px 60px rgba(22, 24, 29, 0.18); }
+    .missing { width: 100%; padding: 72px 24px; text-align: center; font-size: 24px; line-height: 1.8;
+               color: #b04a4a; background: rgba(176, 74, 74, 0.06);
+               border: 2px dashed rgba(176, 74, 74, 0.4); border-radius: 16px; }
+
+    /* 文案区：主张 + 副题 */
+    .copy { flex: 0 0 auto; }
+    .headline { font-size: 64px; line-height: 1.24; font-weight: 800; letter-spacing: 1px; }
+    .headline::after { content: ""; display: block; width: 96px; height: 6px; margin-top: 22px;
+                       border-radius: 3px; background: var(--accent, #16181d); }
+    .subline { margin-top: 22px; font-size: 30px; line-height: 1.6; color: rgba(22, 24, 29, 0.72); }
+
+    /* 页脚：品牌行 + 生成说明（小字，不抢主体） */
+    .foot { flex: 0 0 auto; margin-top: 28px; display: flex; align-items: flex-end;
+            justify-content: space-between; font-size: 18px; line-height: 1.6;
+            color: rgba(22, 24, 29, 0.5); }
+    .foot .brand { font-weight: 600; letter-spacing: 1px; }
+  </style>
+</head>
+<body>
+  <div id="page-root">
+    <div class="atmosphere" id="atmosphere"></div>
+    <div class="frame">
+      <div class="top">
+        <div class="lockup" id="lockup"></div>
+        <div class="spec-tag" id="spec-tag"></div>
+      </div>
+      <div class="stage" id="stage"></div>
+      <div class="copy" id="copy"></div>
+      <div class="foot">
+        <span class="brand" id="foot-brand"></span>
+        <span id="foot-note"></span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const LAYOUT = __LAYOUT__;
+
+    function el(tag, cls, text) {
+      const node = document.createElement(tag);
+      if (cls) node.className = cls;
+      if (text !== undefined && text !== null && String(text).length) node.textContent = String(text);
+      return node;
+    }
+
+    /** 取某个模块的图片（按 moduleCode 优先，其次 screenType，最后第一张有图的） */
+    function imageOf(moduleCodes, screenTypes) {
+      const modules = Array.isArray(LAYOUT.modules) ? LAYOUT.modules : [];
+      const withImage = modules.filter(function (m) { return m && m.image; });
+      for (const code of moduleCodes) {
+        const hit = withImage.find(function (m) { return String(m.moduleCode || '').toUpperCase() === code; });
+        if (hit) return hit;
+      }
+      for (const type of screenTypes) {
+        const hit = withImage.find(function (m) { return String(m.screenType || '').toUpperCase() === type; });
+        if (hit) return hit;
+      }
+      return withImage.length ? withImage[0] : null;
+    }
+
+    function imageNode(src, cls) {
+      const box = el('div', cls);
+      const img = el('img');
+      img.src = src;
+      box.appendChild(img);
+      return box;
+    }
+
+    function render() {
+      const canvas = LAYOUT.canvas || {};
+      const root = document.getElementById('page-root');
+      const dna = LAYOUT.dna || {};
+      const copy = LAYOUT.copy || {};
+      const brand = LAYOUT.brand || {};
+
+      // 高度以 payload 为准（宽度由渲染服务注入的 --page-width 决定，两者都必须是真的）
+      if (canvas.height) root.style.height = Math.round(Number(canvas.height)) + 'px';
+      root.style.background = dna.background || '#f5f5f3';
+      if (dna.accent) root.style.setProperty('--accent', dna.accent);
+
+      // 氛围层（可选）
+      const atmosphere = imageOf(['ATMOSPHERE_SCENE', 'ATMOSPHERE'], ['SCENE']);
+      if (atmosphere && atmosphere.image && canvas.useAtmosphere !== false) {
+        const host = document.getElementById('atmosphere');
+        const img = el('img');
+        img.src = atmosphere.image;
+        host.appendChild(img);
+      }
+
+      // 品牌标识（可选）
+      const lockup = imageOf(['BRAND_LOCKUP', 'BRAND'], ['BRAND']);
+      const lockupHost = document.getElementById('lockup');
+      if (lockup && lockup.image) {
+        lockupHost.appendChild(imageNode(lockup.image, 'lockup-img'));
+      } else if (brand.lockupText) {
+        lockupHost.appendChild(el('div', 'lockup-fallback', brand.lockupText));
+      }
+
+      const specTag = [canvas.specCode, canvas.ratio].filter(Boolean).join(' · ');
+      document.getElementById('spec-tag').textContent = specTag;
+
+      // 主视觉：缺图不糊弄，明确画出来
+      const hero = imageOf(['MAIN_VISUAL', 'HERO'], ['HERO', 'MAIN_WHITE_BG']);
+      const stage = document.getElementById('stage');
+      if (hero && hero.image) {
+        stage.appendChild(imageNode(hero.image, 'hero'));
+      } else {
+        stage.appendChild(el('div', 'missing', '这张海报还没有已选定的主视觉产出图'));
+      }
+
+      // 主张与副题（都为空则整块不出现）
+      const copyHost = document.getElementById('copy');
+      if (copy.headline) copyHost.appendChild(el('h1', 'headline', copy.headline));
+      if (copy.subline) copyHost.appendChild(el('p', 'subline', copy.subline));
+
+      document.getElementById('foot-brand').textContent = brand.footerBrand || brand.productName || '';
+      document.getElementById('foot-note').textContent = LAYOUT.footerNote || '';
+    }
+
+    render();
+  </script>
+</body>
+</html>
