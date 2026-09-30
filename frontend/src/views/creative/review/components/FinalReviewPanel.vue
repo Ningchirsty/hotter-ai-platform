@@ -35,6 +35,20 @@
             渲染器 {{ delivery?.rendererName || '—' }}（模式 {{ delivery?.renderMode || '未配置' }}）
             · 当前版本 v{{ delivery?.currentVersion ?? 0 }}
           </span>
+          <!--
+            R51：多图交付类型的收尾动作。以前全平台只有「上传精修最终版」能推到「已完成」，
+            而多图类没有长图可上传——项目会卡在终审（R50 干跑实测）。
+          -->
+          <el-button
+            v-if="canConfirmDelivery"
+            v-hasPermi="['creative:final:review']"
+            size="small"
+            type="primary"
+            :loading="confirming"
+            @click="$emit('confirm-delivery')"
+          >
+            确认交付（标记已完成）
+          </el-button>
           <!-- R35：同「渲染机排版」，交付产物生成也走 creative:layout:render，按权限显示 -->
           <el-button
             v-hasPermi="['creative:layout:render']"
@@ -154,6 +168,15 @@ defineProps<{
   delivering: boolean;
   /** 正在下载的产物 id（按钮 loading） */
   downloadingId: string;
+  /**
+   * 能不能「确认交付」（R51）。
+   *
+   * <p>由页面按三件事算出：是多图交付、已经有交付产物、项目还没到「已完成」。
+   * 组件不自己判断——它拿不到阶段，也不该猜。</p>
+   */
+  canConfirmDelivery?: boolean;
+  /** 正在确认交付 */
+  confirming?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -161,6 +184,8 @@ const emit = defineEmits<{
   (e: 'upload-final', options: UploadRequestOptions): void;
   /** 生成交付产物 */
   (e: 'render-delivery'): void;
+  /** 确认交付（多图交付类型的收尾动作） */
+  (e: 'confirm-delivery'): void;
   /** 下载某个交付包 */
   (e: 'download', artifact: DeliveryArtifactVO): void;
 }>();

@@ -48,6 +48,11 @@ public class CreativeDeliveryServiceImpl implements ICreativeDeliveryService {
 
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
+    /**
+     * 确认交付的动作编码（事件 action 与阶段变更的原因都用它，便于在操作日志里搜）
+     */
+    private static final String ACTION_DELIVERY_CONFIRMED = "DELIVERY_CONFIRMED";
+
     private final CreativeRendererHub rendererHub;
     private final DpDeliveryArtifactMapper artifactMapper;
     private final ICreativeProjectService projectService;
@@ -122,6 +127,70 @@ public class CreativeDeliveryServiceImpl implements ICreativeDeliveryService {
     @Override
     public DeliveryVo view(Long taskId) {
         return view(taskId, null);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public DeliveryVo confirm(Long taskId, Long versionId, String comment) {
+        CreativeProjectVo project = projectService.getProject(taskId);
+        String deliveryType = project.getDeliverableType();
+        DpDeliveryType type = scenarioConfigService.getDeliveryType(deliveryType);
+        String renderMode = type == null ? null : type.getRenderMode();
+
+        // 判据取**配置的渲染模式**（不写死交付类型）：以后新增多图类交付类型不用改代码，
+        // 而长图类（LONGPAGE）永远走不到这里——它的交付完成是"上传精修最终版"。
+        if (!MultiImageRenderer.CODE.equalsIgnoreCase(StringUtils.trimToEmpty(renderMode))) {
+            throw new ServiceException("这个交付类型的交付物不是多图包（渲染模式="
+                + StringUtils.blankToDefault(renderMode, "未配置") + "）：长图类的「交付完成」请走"
+                + "「上传精修最终版」——两条路都会把项目置为已完成，但精修版是设计师改过的图，"
+                + "不能由一次点击代替。");
+        }
+        String stage = StringUtils.trimToEmpty(projectService.stageOf(taskId));
+        if (DpVisualStageEnum.COMPLETED.getCode().equalsIgnoreCase(stage)) {
+            throw new ServiceException("项目已经是「已完成」，不需要重复确认交付");
+        }
+        DpDeliveryArtifact row = requireArtifact(taskId, versionId);
+
+        Map<String, Object> event = new LinkedHashMap<>();
+        event.put("artifactId", row.getId());
+        event.put("renderer", row.getRenderer());
+        event.put("version", row.getVersion());
+        event.put("imageCount", row.getImageCount());
+        event.put("checksum", row.getChecksum());
+        event.put("comment", StringUtils.blankToDefault(comment, "交付产物确认"));
+        projectService.appendEvent(taskId, "DELIVERY", ACTION_DELIVERY_CONFIRMED, toJson(event));
+        projectService.moveStage(taskId, DpVisualStageEnum.COMPLETED, ACTION_DELIVERY_CONFIRMED, toJson(event));
+        log.info("交付已确认 taskId={} versionId={} version={} 产物={} 张",
+            taskId, row.getId(), row.getVersion(), row.getImageCount());
+        return view(taskId, row.getRenderer());
+    }
+
+    /**
+     * 取要确认的交付产物：指定版本优先，否则当前最新一版。
+     *
+     * <p>版本号不属于该项目时直接拒绝（交付包可能很大，绝不能"确认了别人的产物"）。</p>
+     *
+     * @param taskId    项目ID
+     * @param versionId 交付产物ID（可空）
+     * @return 交付产物行（一定非空）
+     */
+    private DpDeliveryArtifact requireArtifact(Long taskId, Long versionId) {
+        if (versionId == null) {
+            List<DpDeliveryArtifact> rows = artifactMapper.selectList(
+                new LambdaQueryWrapper<DpDeliveryArtifact>()
+                    .eq(DpDeliveryArtifact::getTaskId, taskId)
+                    .orderByDesc(DpDeliveryArtifact::getVersion)
+                    .last("limit 1"));
+            if (rows.isEmpty()) {
+                throw new ServiceException("这个项目还没有交付产物，不能确认交付：请先「生成交付产物」");
+            }
+            return rows.get(0);
+        }
+        DpDeliveryArtifact row = artifactMapper.selectById(versionId);
+        if (row == null || !taskId.equals(row.getTaskId())) {
+            throw new ServiceException("交付版本不属于该项目：" + versionId);
+        }
+        return row;
     }
 
     @Override

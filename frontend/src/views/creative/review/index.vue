@@ -62,8 +62,11 @@
           :uploading-final="uploadingFinal"
           :delivering="delivering"
           :downloading-id="downloadingId"
+          :can-confirm-delivery="canConfirmDelivery"
+          :confirming="confirming"
           @upload-final="doUploadFinal"
           @render-delivery="doRenderDelivery"
+          @confirm-delivery="doConfirmDelivery"
           @download="doDownloadArtifact"
         />
       </template>
@@ -80,10 +83,11 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import type { UploadRequestOptions } from 'element-plus';
 import {
+  confirmDelivery,
   downloadDeliveryArtifact,
   fetchDetailPreviewBlobUrl,
   getDelivery,
@@ -130,8 +134,22 @@ const detailPage = ref<DpDetailPageVO | null>(null);
 // R30：交付产物（Renderer Hub）——渲染器能力 + 历史交付版本
 const delivery = ref<DeliveryVO | null>(null);
 const delivering = ref(false);
+const confirming = ref(false);
 const downloadingId = ref('');
 const loading = ref(false);
+
+/**
+ * 能不能「确认交付」（R51）：多图交付 + 已有交付产物 + 项目还没完成。
+ *
+ * <p>为什么不问后端"能不能确认"：这三个条件在页面上都已经有数据（交付视图 + 视觉门返回的阶段），
+ * 再发一次请求只会多一个可能过期的状态。真正会不会被拒由**后端**判（长图类会被明确拒绝）。</p>
+ */
+const canConfirmDelivery = computed(
+  () =>
+    delivery.value?.renderMode === 'MULTI_IMAGE' &&
+    (delivery.value?.currentVersion ?? 0) > 0 &&
+    gate.value?.stage !== 'COMPLETED'
+);
 const submitting = ref(false);
 const reviewing = ref('');
 const rendering = ref(false);
@@ -220,6 +238,39 @@ async function doRender() {
     ElMessage.error((await extractErrorMessage(error)) ?? '渲染失败');
   } finally {
     rendering.value = false;
+  }
+}
+
+/**
+ * 确认交付（R51）：把当前这一版交付产物定为最终交付物，项目置为「已完成」。
+ *
+ * <p>不可逆（会推进到终态），所以先让人确认一次——文案里写明是哪一版、多少张，
+ * 不让人凭记忆点。</p>
+ */
+async function doConfirmDelivery() {
+  const version = delivery.value?.currentVersion ?? 0;
+  const artifact = (delivery.value?.artifacts || []).find((a) => a.version === version);
+  try {
+    await ElMessageBox.confirm(
+      `把交付产物 v${version}（${artifact?.imageCount ?? 0} 张）定为最终交付物，`
+      + '项目将置为「已完成」。这一步不可撤销，之后要改需要走返工。',
+      '确认交付',
+      { confirmButtonText: '确认交付', cancelButtonText: '再想想', type: 'warning' }
+    );
+  } catch {
+    return; // 人取消
+  }
+  confirming.value = true;
+  try {
+    const res = await confirmDelivery(taskId.value, artifact?.id, '终审通过，确认交付');
+    delivery.value = res.data || delivery.value;
+    ElMessage.success('已确认交付，项目置为「已完成」');
+    await loadAll();
+    flowToken.value += 1;
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '确认交付失败');
+  } finally {
+    confirming.value = false;
   }
 }
 

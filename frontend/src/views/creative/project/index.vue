@@ -382,6 +382,32 @@
         <el-form-item label="项目名称">
           <el-input v-model="createForm.taskName" maxlength="255" placeholder="如：趣往单枝花-详情页视觉" />
         </el-form-item>
+        <!--
+          R51：交付类型必须能选。以前这里没有这个字段，接口不传就默认落到 ECOM_DETAIL——
+          于是"配置里加了新交付类型、界面却建不出来"（R50 干跑：海报项目只能靠调接口建）。
+          选项来自配置接口（只返回启用的），**不写死**在前端。
+        -->
+        <el-form-item label="交付类型">
+          <el-select
+            v-model="createForm.deliverableType"
+            placeholder="选择这个项目要交付什么"
+            style="width: 100%"
+            :loading="deliveryTypesLoading"
+          >
+            <el-option
+              v-for="type in deliveryTypes"
+              :key="type.deliveryType"
+              :label="typeLabel(type)"
+              :value="type.deliveryType"
+            />
+          </el-select>
+          <p v-if="!deliveryTypesLoading && !deliveryTypes.length" class="create-hint">
+            读不到已启用的交付类型（配置接口不可用）——创建时按默认「商品详情页」处理。
+          </p>
+          <p v-else class="create-hint">
+            决定了这个项目走哪套流程、步骤与工作台装配；建完不可改（配置改了不影响已建项目）。
+          </p>
+        </el-form-item>
         <el-form-item label="产品">
           <el-select
             v-model="createForm.productId"
@@ -525,6 +551,9 @@ import {
   GENERATION_STATUS_LABELS,
   GENERATION_STATUS_TYPES
 } from '@/api/creative/types';
+import { listDeliveryTypes } from '@/api/creative/scenario';
+import type { ScenarioDeliveryType } from '@/api/creative/scenario';
+import { labelOfDeliveryType, pickDefaultDeliveryType } from '../composables/projectCreateForm';
 import CreativeWorkspace from '../components/CreativeWorkspace.vue';
 // R32：项目页区块开始拆组件（状态仍在页面，组件只拿"显示的数据 + 触发的动作"）
 import ProjectAssetsBlock from './components/ProjectAssetsBlock.vue';
@@ -805,11 +834,20 @@ const creating = ref(false);
 const retryingId = ref('');
 const polling = ref(false);
 const createVisible = ref(false);
+/** 已启用的交付类型（R51 新建项目要选） */
+const deliveryTypes = ref<ScenarioDeliveryType[]>([]);
+const deliveryTypesLoading = ref(false);
 const previewVisible = ref(false);
 const timelineVisible = ref(false);
 const previewUrl = ref('');
 
-const createForm = reactive({ taskName: '', productId: '' as string | number, remark: '' });
+const createForm = reactive({
+  taskName: '',
+  /** 交付类型（R51）：决定流程/步骤/装配；不选就按后端默认（商品详情页） */
+  deliverableType: '',
+  productId: '' as string | number,
+  remark: ''
+});
 const heroForm = reactive({ workflowCode: '', prompt: '', negativePrompt: '' });
 
 /** 提示词是否来自视觉基因（页面如实说明，不让人以为是自己写的） */
@@ -1750,9 +1788,43 @@ function openCreateDialog() {
   createForm.taskName = '';
   createForm.productId = '';
   createForm.remark = '';
+  // R51：默认选「商品详情页」（= 后端不传时的默认），保持老用户的手感不变；
+  // 读不到配置时留空，由后端兜底。口径在 projectCreateForm.ts（有单测钉住）。
+  createForm.deliverableType = pickDefaultDeliveryType(deliveryTypes.value);
   createVisible.value = true;
   if (!products.value.length) {
     void loadProducts();
+  }
+  if (!deliveryTypes.value.length) {
+    void loadDeliveryTypes();
+  }
+}
+
+/**
+ * 交付类型下拉的文案（形如「品牌海报（BRAND_POSTER）」）——纯函数在 composable 里，可单测。
+ *
+ * @param type 配置接口返回的交付类型
+ * @returns 展示文案
+ */
+function typeLabel(type: ScenarioDeliveryType): string {
+  return labelOfDeliveryType(type);
+}
+
+/** 读已启用的交付类型（配置接口）；失败不阻断建项目——后端有默认值 */
+async function loadDeliveryTypes() {
+  deliveryTypesLoading.value = true;
+  try {
+    const res = await listDeliveryTypes();
+    deliveryTypes.value = res.data || [];
+  } catch {
+    deliveryTypes.value = [];
+  } finally {
+    deliveryTypesLoading.value = false;
+    // 列表姗姗来迟时补上默认值：否则第一次打开弹窗会停在 placeholder 上，
+    // 用户看到"没选类型"（虽然提交时后端会兜底，但界面上不该是空的）。
+    if (createVisible.value && !createForm.deliverableType) {
+      createForm.deliverableType = pickDefaultDeliveryType(deliveryTypes.value);
+    }
   }
 }
 
@@ -1774,6 +1846,7 @@ async function doCreate() {
   try {
     const res = await addCreativeProject({
       taskName: createForm.taskName.trim(),
+      deliverableType: createForm.deliverableType || undefined,
       productId: createForm.productId || undefined,
       remark: createForm.remark || undefined
     });
@@ -1854,6 +1927,8 @@ async function extractErrorMessage(error: unknown): Promise<string | undefined> 
 
 onMounted(async () => {
   await loadProjects();
+  // 交付类型先读好：新建弹窗打开时就该有选项与默认值，不该等用户点开才去请求（R51）
+  void loadDeliveryTypes();
   try {
     const res = await listCreativeWorkflows();
     workflows.value = res.data || [];
@@ -2306,6 +2381,14 @@ button {
 }
 .hint {
   font-size: 12px;
+  color: var(--t3);
+}
+
+/* 新建弹窗里的一句话说明（R51） */
+.create-hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
   color: var(--t3);
 }
 

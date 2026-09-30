@@ -611,6 +611,27 @@ export const renderDelivery = (taskId: string | number, renderer?: string) => {
 };
 
 /**
+ * 确认交付（R51）：把某一版交付产物定为最终交付物（项目置为「已完成」）。
+ *
+ * 多图交付类型（主图、海报）没有"长图精修版"可上传，这是它们的收尾动作；
+ * 长图类会被后端拒绝（走「上传精修最终版」）。`versionId` 不传＝当前最新一版。
+ */
+export const confirmDelivery = (
+  taskId: string | number,
+  versionId?: string | number,
+  comment?: string
+) => {
+  return request({
+    url: `/creative/projects/${taskId}/delivery/confirm`,
+    method: 'post',
+    params: {
+      ...(versionId ? { versionId } : {}),
+      ...(comment ? { comment } : {})
+    }
+  });
+};
+
+/**
  * 下载交付产物并触发浏览器保存。
  *
  * 为什么不像长图预览那样直接给 blob URL：交付包是 ZIP，浏览器需要 `Content-Disposition`

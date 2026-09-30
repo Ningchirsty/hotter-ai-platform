@@ -42,6 +42,24 @@ public interface ICreativeDeliveryService {
     DeliveryVo view(Long taskId);
 
     /**
+     * 确认交付（V0.2 R51）：把某一版交付产物定为最终交付物，项目置为「已完成」。
+     *
+     * <p><b>为什么需要它</b>：多图交付类型（主图、海报）的交付物是一组图，没有"长图精修版"可上传，
+     * 于是原先唯一能推到 {@code COMPLETED} 的动作（{@code 上传精修最终版}）对它们永远不可用——
+     * 项目会卡在「终审」走不到头（R50 真机干跑实测：阶段停在 FINAL_REVIEW）。</p>
+     *
+     * <p><b>只对多图交付开放</b>（判据取配置 {@code dp_delivery_type.render_mode}，不写死交付类型）：
+     * 长图类的"交付完成"是设计师改过图之后上传精修版，不能由一次点击代替。两条路都指向
+     * {@code COMPLETED}，但含义不同，混在一起会让人以为"点一下就交了精修版"。</p>
+     *
+     * @param taskId    项目ID
+     * @param versionId 交付产物版本ID（可空＝当前最新一版）
+     * @param comment   说明（可空；进事件留痕）
+     * @return 交付视图
+     */
+    DeliveryVo confirm(Long taskId, Long versionId, String comment);
+
+    /**
      * 取某版本的交付产物字节。
      *
      * <p>单张（长图）直接返回图片；多图交付返回 ZIP（第一项是 manifest.json）。</p>

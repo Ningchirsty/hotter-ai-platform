@@ -37,6 +37,13 @@ export interface CreativeProjectVO {
 /** 新建视觉项目表单 */
 export interface CreativeProjectForm {
   taskName?: string;
+  /**
+   * 交付类型（R51）。
+   *
+   * <p>决定这个项目走哪套流程、步骤与工作台装配；不传时后端默认落到商品详情页。
+   * 选项来自 `/creative/v2/delivery-types`（只返回启用的），前端不写死。</p>
+   */
+  deliverableType?: string;
   productId?: string | number;
   skuCode?: string;
   ownerId?: string | number;

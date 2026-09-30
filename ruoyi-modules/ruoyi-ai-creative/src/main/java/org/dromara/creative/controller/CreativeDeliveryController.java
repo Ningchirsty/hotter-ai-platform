@@ -68,6 +68,28 @@ public class CreativeDeliveryController {
     }
 
     /**
+     * 确认交付（V0.2 R51）：把某一版交付产物定为最终交付物，项目置为「已完成」。
+     *
+     * <p>多图交付类型（主图、海报）没有"长图精修版"可上传，原先唯一能收尾的动作对它们不可用，
+     * 项目会卡在「终审」——这一步就是它们的收尾动作。长图类会被后端拒绝（走「上传精修最终版」）。</p>
+     *
+     * @param taskId    项目ID
+     * @param versionId 交付产物ID（可空＝当前最新一版）
+     * @param comment   说明（可空）
+     * @return 交付视图
+     */
+    @SaCheckPermission(CreativeConstants.PERM_FINAL_REVIEW)
+    @Log(title = "确认交付", businessType = BusinessType.UPDATE)
+    @RepeatSubmit()
+    @PostMapping("/confirm")
+    public R<DeliveryVo> confirm(@NotNull(message = "项目ID不能为空")
+                                 @PathVariable("taskId") Long taskId,
+                                 @RequestParam(value = "versionId", required = false) Long versionId,
+                                 @RequestParam(value = "comment", required = false) String comment) {
+        return R.ok(deliveryService.confirm(taskId, versionId, comment));
+    }
+
+    /**
      * 下载某版本的交付产物（单张长图给 PNG；多图交付给 ZIP，内含 manifest.json）。
      *
      * @param taskId    项目ID
