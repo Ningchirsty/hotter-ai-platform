@@ -168,20 +168,24 @@ public final class CreativeDeliveryManifest {
      * <p>包里第一项固定是 {@code manifest.json}（自描述：每张图是什么屏、多大、sha256 多少），
      * 这样包离开系统之后仍然能自证。</p>
      *
+     * <p><b>条目时间必须由调用方给</b>（而不是取当前时间）：{@code ZipEntry} 默认写当前时间，
+     * 同一版交付物两次下载就会得到**不同的字节**——"可复现"当场失效（R30 真机验收就是这么发现的：
+     * 两次下载都是 909544 字节，sha256 却不同）。传入交付版本的创建时间，包就与版本一一对应且可复算。</p>
+     *
      * @param products     产物清单（顺序即包内顺序）
      * @param manifestJson 清单 JSON
+     * @param timeMillis   包内条目时间（毫秒；用交付版本的创建时间）
      * @param loader       按附件ID取字节（取不到会抛异常，由调用方转成可读错误）
      * @return ZIP 字节
      */
     public static byte[] zip(List<CreativeRenderer.Product> products, String manifestJson,
-                             java.util.function.Function<Long, byte[]> loader) {
+                             long timeMillis, java.util.function.Function<Long, byte[]> loader) {
         try (java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
              java.util.zip.ZipOutputStream zip = new java.util.zip.ZipOutputStream(out)) {
             // PNG 已经是压缩格式，再花 CPU 压收益极小；用 BEST_SPEED 让下载更快
             zip.setLevel(java.util.zip.Deflater.BEST_SPEED);
-            zip.putNextEntry(new java.util.zip.ZipEntry("manifest.json"));
-            zip.write(StringUtils.blankToDefault(manifestJson, "{}").getBytes(StandardCharsets.UTF_8));
-            zip.closeEntry();
+            writeEntry(zip, "manifest.json",
+                StringUtils.blankToDefault(manifestJson, "{}").getBytes(StandardCharsets.UTF_8), timeMillis);
             for (CreativeRenderer.Product product : products) {
                 if (product.fileId() == null) {
                     continue;
@@ -191,15 +195,34 @@ public final class CreativeDeliveryManifest {
                     throw new IllegalStateException("产物取不到内容：" + entryName(product)
                         + "（附件 " + product.fileId() + " 可能已被清理）");
                 }
-                zip.putNextEntry(new java.util.zip.ZipEntry(entryName(product)));
-                zip.write(bytes);
-                zip.closeEntry();
+                writeEntry(zip, entryName(product), bytes, timeMillis);
             }
             zip.finish();
             return out.toByteArray();
         } catch (java.io.IOException e) {
             throw new IllegalStateException("拼装交付包失败：" + e.getMessage(), e);
         }
+    }
+
+    /**
+     * 写一个 ZIP 条目（时间固定，保证同一版交付物两次下载字节一致）。
+     *
+     * @param zip        输出流
+     * @param name       条目名
+     * @param bytes      内容
+     * @param timeMillis 条目时间
+     * @throws java.io.IOException 写入失败
+     */
+    private static void writeEntry(java.util.zip.ZipOutputStream zip, String name, byte[] bytes,
+                                   long timeMillis) throws java.io.IOException {
+        java.util.zip.ZipEntry entry = new java.util.zip.ZipEntry(name);
+        entry.setTime(timeMillis);
+        // 显式给大小与 CRC：让 ZIP 头部字段完全由内容决定，不依赖流式写入的顺序细节
+        entry.setSize(bytes.length);
+        entry.setCompressedSize(-1);
+        zip.putNextEntry(entry);
+        zip.write(bytes);
+        zip.closeEntry();
     }
 
     private static String toJson(Map<String, Object> root) {

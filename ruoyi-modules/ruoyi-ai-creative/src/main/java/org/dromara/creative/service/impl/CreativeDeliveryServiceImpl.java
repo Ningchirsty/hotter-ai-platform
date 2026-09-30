@@ -148,7 +148,10 @@ public class CreativeDeliveryServiceImpl implements ICreativeDeliveryService {
         }
         byte[] zip;
         try {
-            zip = CreativeDeliveryManifest.zip(list, row.getManifestJson(),
+            // 条目时间固定用交付版本的创建时间：同一版两次下载必须字节一致（可复现）
+            long timeMillis = row.getCreateTime() == null ? 0L
+                : row.getCreateTime().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
+            zip = CreativeDeliveryManifest.zip(list, row.getManifestJson(), timeMillis,
                 fileId -> readProduct(taskId, Map.of("fileId", fileId)));
         } catch (IllegalStateException e) {
             throw new ServiceException(e.getMessage());

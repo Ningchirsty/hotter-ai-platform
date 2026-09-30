@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -102,7 +103,7 @@ class CreativeDeliveryManifestTest {
 
         String manifest = CreativeDeliveryManifest.build("MULTI_IMAGE", "MAIN_IMAGE", null,
             "2026-09-30 12:00:00", products);
-        byte[] zip = CreativeDeliveryManifest.zip(products, manifest, fileId -> {
+        byte[] zip = CreativeDeliveryManifest.zip(products, manifest, 1_700_000_000_000L, fileId -> {
             asked.add(fileId);
             return store.get(fileId);
         });
@@ -124,11 +125,30 @@ class CreativeDeliveryManifestTest {
     }
 
     @Test
+    @DisplayName("交付包可复现：同一版两次拼装字节完全一致（条目时间必须由调用方固定）")
+    void zipIsByteReproducible() {
+        List<CreativeRenderer.Product> products = List.of(
+            product(1, "MAIN_WHITE_BG", 11L, "aaa"),
+            product(2, "MAIN_SCENE", 22L, "bbb"));
+        Map<Long, byte[]> store = Map.of(11L, new byte[] {1, 2, 3, 4}, 22L, new byte[] {5, 6, 7});
+        String manifest = CreativeDeliveryManifest.build("MULTI_IMAGE", "MAIN_IMAGE", null,
+            "2026-09-30 12:00:00", products);
+
+        byte[] first = CreativeDeliveryManifest.zip(products, manifest, 1_700_000_000_000L, store::get);
+        byte[] second = CreativeDeliveryManifest.zip(products, manifest, 1_700_000_000_000L, store::get);
+        assertArrayEquals(first, second, "同一版交付包必须字节一致（否则『可复现』是句空话）");
+
+        // 换一个时间戳就应该不同——说明时间确实参与进了字节（这条只是证明上面那条不是巧合）
+        byte[] other = CreativeDeliveryManifest.zip(products, manifest, 1_700_000_100_000L, store::get);
+        assertFalse(java.util.Arrays.equals(first, other));
+    }
+
+    @Test
     @DisplayName("产物取不到 → 明确失败（不许悄悄出一个少图的包）")
     void missingProductFailsLoudly() {
         List<CreativeRenderer.Product> products = List.of(product(1, "MAIN_WHITE_BG", 11L, "aaa"));
         IllegalStateException e = assertThrows(IllegalStateException.class,
-            () -> CreativeDeliveryManifest.zip(products, "{}", fileId -> null));
+            () -> CreativeDeliveryManifest.zip(products, "{}", 1_700_000_000_000L, fileId -> null));
         assertTrue(e.getMessage().contains("取不到内容"), e.getMessage());
         assertTrue(e.getMessage().contains("已被清理"), "要把可能的原因说出来：" + e.getMessage());
     }
