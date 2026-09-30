@@ -57,6 +57,27 @@ server {
         proxy_read_timeout 3600s;
     }
 
+    # AI 视觉工厂的附件内容 / 缩略图：同理让后端自己的 Cache-Control 生效（R24）。
+    #
+    # 不加这条的话会被上面的 /prod-api/ 的 no-store 覆盖：实测附件原图 6.7MB、单张二次访问
+    # 仍要 1.2~1.8 秒，而资产抽屉一次要显示十几张 —— 每开一次抽屉就是几十 MB。
+    # 后端对这两个接口发 private, max-age=600, must-revalidate（并支持 ETag 304），
+    # 前端网格改走 thumbnail（几十 KB），点开大图才取原图。
+    #
+    # 同样用正则精确限定到这两个路径，上传/列表/删除等 JSON 接口的 no-store 不受影响。
+    location ~ ^/prod-api/creative/projects/[0-9]+/files/[0-9]+/(content|thumbnail)$ {
+        rewrite ^/prod-api/(.*)$ /$1 break;
+        proxy_pass ${BACKEND_ORIGIN};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Prefix /prod-api;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+    }
+
     location / {
         try_files $uri $uri/ /index.html;
     }
