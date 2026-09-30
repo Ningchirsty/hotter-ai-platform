@@ -150,7 +150,15 @@
               模板 {{ detailPage?.templateKey || '—' }} · 当前版本 v{{ detailPage?.currentVersion ?? 0 }}
               （{{ detailPage?.statusDesc || '未排版' }}）
             </span>
-            <el-button size="small" plain :loading="rendering" @click="doRender">
+            <!-- R35：按钮按权限显示。后端对这个接口强制 creative:layout:render，
+                 前端不隐藏的话，没有该权限的角色点了只会拿到 403——"看得见但点不动"是最差的提示。 -->
+            <el-button
+              v-hasPermi="['creative:layout:render']"
+              size="small"
+              plain
+              :loading="rendering"
+              @click="doRender"
+            >
               {{ (detailPage?.currentVersion ?? 0) > 0 ? '重新渲染 V0.8' : '渲染机排版 V0.8' }}
             </el-button>
           </div>
@@ -274,7 +282,14 @@
               渲染器 {{ delivery?.rendererName || '—' }}（模式 {{ delivery?.renderMode || '未配置' }}）
               · 当前版本 v{{ delivery?.currentVersion ?? 0 }}
             </span>
-            <el-button size="small" plain :loading="delivering" @click="doRenderDelivery">
+            <!-- R35：同「渲染机排版」，交付产物生成也走 creative:layout:render，按权限显示 -->
+            <el-button
+              v-hasPermi="['creative:layout:render']"
+              size="small"
+              plain
+              :loading="delivering"
+              @click="doRenderDelivery"
+            >
               生成交付产物
             </el-button>
           </div>
