@@ -33,8 +33,9 @@
     </p>
     <div class="ref-row">
       <div
-        v-for="file in files"
+        v-for="(file, index) in files"
         :key="String(file.fileId)"
+        :ref="(el) => setCardRef(el, index)"
         class="ref-card"
         :class="{ active: String(file.fileId) === String(selectedFileId) }"
         @click="$emit('update:selectedFileId', file.fileId ?? '')"
@@ -90,6 +91,7 @@
 </template>
 
 <script setup lang="ts">
+import { nextTick, onBeforeUnmount, onMounted, ref, watch, type ComponentPublicInstance } from 'vue';
 import type { UploadRequestOptions } from 'element-plus';
 import type { CpTaskFileVO } from '@/api/content/task/types';
 import type { ProjectProductImageVO, TagType } from '@/api/creative/types';
@@ -107,7 +109,7 @@ import type { ProjectProductImageVO, TagType } from '@/api/creative/types';
  *
  * @author creative
  */
-defineProps<{
+const props = defineProps<{
   /** 图片类附件（页面已按 fileKind 过滤） */
   files: CpTaskFileVO[];
   /** 产品图信息（未配置时 configured=false） */
@@ -142,9 +144,93 @@ defineProps<{
   doUpload: (options: UploadRequestOptions) => Promise<unknown> | XMLHttpRequest;
 }>();
 
-defineEmits<{
+const emit = defineEmits<{
   (e: 'update:selectedFileId', value: string | number): void;
   (e: 'update:asProductImage', value: boolean): void;
   (e: 'bind-product-image', file: CpTaskFileVO): void;
+  /**
+   * 这张卡**进入视口附近**了，请页面去取它的缩略图（R44）。
+   *
+   * <p>为什么由组件发这个信号：只有组件知道卡片在 DOM 里的位置。页面收到之后再决定
+   * "取哪张图、怎么去重、并发多少"——组件依旧不发请求（R32 的边界不变）。</p>
+   */
+  (e: 'need-thumb', fileId: string | number): void;
 }>();
+
+// ---------------------------------------------------------------------------
+// R44：视口内才取缩略图（41 张参考图不再是 41 个请求一起发）
+// ---------------------------------------------------------------------------
+
+/** 卡片元素（按 files 顺序；模板里用 :ref 收集） */
+const cardEls = ref<HTMLElement[]>([]);
+/** 已经通知过的附件（同一个卡片只通知一次） */
+const announced = new Set<string>();
+
+let observer: IntersectionObserver | null = null;
+
+/**
+ * 收集卡片元素引用（`:ref` 的回调；Vue 会对每个元素各调一次）。
+ *
+ * @param el  元素（卸载时为 null）
+ * @param index 在 files 里的下标
+ */
+function setCardRef(el: Element | ComponentPublicInstance | null, index: number) {
+  if (el instanceof HTMLElement) {
+    cardEls.value[index] = el;
+  }
+}
+
+/** 观察所有卡片：进入视口附近就通知页面去取缩略图（取过的不再重复通知） */
+function observeCards() {
+  observer?.disconnect();
+  if (typeof IntersectionObserver === 'undefined') {
+    // 老浏览器/测试环境：退回"全都通知"，行为等同改造前（只是仍走缩略图接口）
+    props.files.forEach((file) => announce(file.fileId));
+    return;
+  }
+  observer = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const index = cardEls.value.indexOf(entry.target as HTMLElement);
+        const file = props.files[index];
+        if (file) {
+          announce(file.fileId);
+        }
+        observer?.unobserve(entry.target);
+      }
+    },
+    { rootMargin: '200px' }
+  );
+  cardEls.value.forEach((el) => el && observer?.observe(el));
+}
+
+/**
+ * 通知页面取这一张的缩略图（去重）。
+ *
+ * @param fileId 附件ID
+ */
+function announce(fileId?: string | number) {
+  if (fileId == null) return;
+  const key = String(fileId);
+  if (announced.has(key)) return;
+  announced.add(key);
+  emit('need-thumb', fileId);
+}
+
+onMounted(() => {
+  // 图片列表是异步来的：先渲染、再观察（下一拍确保 DOM 里有卡片）
+  void nextTick(() => observeCards());
+});
+
+watch(
+  () => props.files.map((f) => String(f.fileId)).join(','),
+  () => {
+    announced.clear();
+    cardEls.value = [];
+    void nextTick(() => observeCards());
+  }
+);
+
+onBeforeUnmount(() => observer?.disconnect());
 </script>

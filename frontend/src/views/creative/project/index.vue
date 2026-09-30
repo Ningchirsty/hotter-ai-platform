@@ -150,6 +150,7 @@
             :format-time="formatTime"
             :do-upload="doUpload"
             @bind-product-image="doBindProductImage"
+            @need-thumb="loadFileThumb"
           />
         </template>
 
@@ -474,7 +475,7 @@ import {
   addCreativeProject,
   bindProjectProductImage,
   deleteCopyBlock,
-  fetchCreativeFileBlobUrl,
+  fetchCreativeFileThumbnailBlobUrl,
   fetchGenerationPreviewBlobUrl,
   fetchGenerationThumbnailBlobUrl,
   getCreativeProject,
@@ -1067,8 +1068,9 @@ async function loadDetail() {
     if (!selectedFileId.value && imageFiles.value.length) {
       selectedFileId.value = imageFiles.value[0].fileId ?? '';
     }
-    void loadFileThumbs();
-    void loadGenerationThumbs();
+    // R44：参考图缩略图不再"进页面就全拉"，改为卡片进视口时由 ProjectAssetsBlock 发 need-thumb；
+    // 候选缩略图仍在这里批量取（分页内数量有限，且卡片直接可见）
+    void loadGenerationThumbs(generations.value);
     syncPolling();
     void loadDnaState();
     // 品牌要求与文案块跟着详情一起取：各自失败各自如实报，不影响整页
@@ -1598,33 +1600,54 @@ function openDna() {
   window.open(`/creative/dna?taskId=${currentProjectId.value}`, '_self');
 }
 
-async function loadFileThumbs() {
-  for (const file of imageFiles.value) {
-    const key = 'file-' + file.fileId;
-    if (objectUrls.value[key]) continue;
-    try {
-      const url = await fetchCreativeFileBlobUrl(currentProjectId.value, file.fileId as string | number);
-      setUrl(key, url);
-    } catch {
-      /* 单张读失败不影响其它 */
-    }
+/**
+ * 取某张参考图的**缩略图**并按需缓存（R44）。
+ *
+ * <p>两处修正（都是"少请求"）：</p>
+ * <ol>
+ *   <li><b>取缩略图而不是原图</b>：卡片只有 90px 宽，原先每张都拉原图（实测单张可到 6.7MB）；
+ *       缩略图由服务端算一次并落对象存储（R34），单张几十 KB；</li>
+ *   <li><b>进视口才取</b>：由 `ProjectAssetsBlock` 用 IntersectionObserver 发 `need-thumb`，
+ *       这里只按需取——41 张参考图不再是 41 个请求一起发，而是首屏可见的那几张。</li>
+ * </ol>
+ *
+ * @param fileId 附件ID
+ */
+async function loadFileThumb(fileId: string | number) {
+  const key = 'file-' + fileId;
+  if (objectUrls.value[key]) return;
+  try {
+    const url = await fetchCreativeFileThumbnailBlobUrl(currentProjectId.value, fileId);
+    setUrl(key, url);
+  } catch {
+    /* 单张缩略图失败不影响其它（卡片显示"读取中…"，点开仍可取原图） */
   }
 }
 
-async function loadGenerationThumbs() {
-  for (const gen of generations.value) {
-    const key = 'gen-' + gen.id;
-    if (!gen.previewable) {
-      releaseUrl(key);
-      continue;
-    }
-    if (objectUrls.value[key]) continue;
-    try {
-      const url = await fetchGenerationThumbnailBlobUrl(gen.id);
-      setUrl(key, url);
-    } catch {
-      /* 缩略图失败就留空，点击预览仍可取原图 */
-    }
+/** 取某个候选的缩略图（按需，来自 GenerationBoard / ProjectGenerationsBlock 的可见行） */
+async function loadGenerationThumb(gen: DpGenerationVO) {
+  const key = 'gen-' + gen.id;
+  if (!gen.previewable) {
+    releaseUrl(key);
+    return;
+  }
+  if (objectUrls.value[key]) return;
+  try {
+    const url = await fetchGenerationThumbnailBlobUrl(gen.id);
+    setUrl(key, url);
+  } catch {
+    /* 缩略图失败就留空，点击预览仍可取原图 */
+  }
+}
+
+/**
+ * 批量取候选缩略图（分页内的候选；数量有限，串行即可，失败各自跳过）。
+ *
+ * @param list 候选列表
+ */
+async function loadGenerationThumbs(list: DpGenerationVO[]) {
+  for (const gen of list) {
+    await loadGenerationThumb(gen);
   }
 }
 
@@ -1789,7 +1812,7 @@ function startPolling() {
     try {
       const res = await listGenerations(currentProjectId.value);
       generations.value = res.data || [];
-      void loadGenerationThumbs();
+      void loadGenerationThumbs(generations.value);
       const hasRunning = generations.value.some((g) => g.status === 'QUEUED' || g.status === 'RUNNING');
       if (!hasRunning) {
         stopPolling();
