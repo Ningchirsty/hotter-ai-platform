@@ -700,6 +700,8 @@ export function useCreativeFlow(
     deliveryType,
     scenarioSteps: scenario.scenarioSteps,
     scenarioLine: scenario.line,
+    /** 该交付类型的默认输出规格（R39：工作台头部在页面没传 spec 时用它，避免显示"未配置"） */
+    defaultSpec: scenario.defaultSpec,
     mapping: scenario.mapping,
     mappingChip: scenario.mappingChip,
     assembly: scenario.assembly,

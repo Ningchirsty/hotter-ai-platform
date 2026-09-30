@@ -73,11 +73,17 @@
         </template>
 
         <!--
-          ② 页面没有按步骤提供插槽（基因 / 分镜 / 评审 / 生产四个页面还是整页一个主区）：
+          ② 页面没有按步骤提供插槽（评审 / 生产两页还是整页一个主区）：
              保持 R19 的行为——主舞台渲染页面自己的内容。装配是**逐步接入**的，
              没接入的页面行为一个字不变。
         -->
         <slot v-else name="main" />
+
+        <!--
+          ③ 页面级的跨步骤内容（R39）：不属于任何一步、但历史上就挂在这一页的东西
+             （例如分镜页的「逐屏出图与质检」——它其实是出图/质检步的入口，本轮先如实留在页面级）。
+        -->
+        <slot name="page-foot" />
 
         <!--
           ③ 页面按步骤给了插槽，但配置里没有可用的装配定义（读失败 / 交付类型为空）：
@@ -100,8 +106,8 @@
       <component
         :is="resolve(slot.code)"
         v-else-if="slot.target === 'COMPONENT' && slot.code === 'PROJECT_HEADER'"
-        :project="project"
-        :spec="outputSpec"
+        :project="headerProject"
+        :spec="headerSpec"
         :stage-label="flow.stageLabel.value"
         :stage-type="stageType"
         :loading="loading"
@@ -239,15 +245,25 @@ const currentStep = computed(() => flow.steps.value.find((s) => s.no === flow.ac
 const activeStepCode = computed(() => currentStep.value?.key || '');
 
 /**
+ * 头部数据的工作台兜底（R39）。
+ *
+ * <p>页面显式传了就听页面的；没传（基因页 / 分镜页只传了 taskId）就从流程状态与场景配置里取——
+ * 否则头部会显示"未选择项目 / 未配置"，而页面明明已经选好了项目（R31 的头部落到基因页时就是这样，
+ * 只是当时没人从头部这一侧看）。</p>
+ */
+const headerProject = computed(() => props.project ?? flow.project.value);
+const headerSpec = computed(() => props.outputSpec ?? flow.defaultSpec.value);
+
+/**
  * 页面**按步骤**提供的插槽（= 组件名）。
  *
- * <p>`main` / `header-actions` / `page-head` 不是步骤组件，排除掉；页面没按步骤给插槽时这里是空数组，
- * 主舞台就回到 R19 的行为（渲染 `#main`）。</p>
+ * <p>`main` / `header-actions` / `page-head` / `page-foot` 不是步骤组件，排除掉；
+ * 页面没按步骤给插槽时这里是空数组，主舞台就回到 R19 的行为（渲染 `#main`）。</p>
  */
 const slots = useSlots();
 const providedComponents = computed(() =>
   Object.keys(slots).filter(
-    (name) => !['main', 'header-actions', 'page-head', 'default'].includes(name)
+    (name) => !['main', 'header-actions', 'page-head', 'page-foot', 'default'].includes(name)
   )
 );
 const hasMainSlot = computed(() => Boolean(slots.main));

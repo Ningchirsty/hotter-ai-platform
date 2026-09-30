@@ -1,250 +1,153 @@
 <template>
   <div class="studio">
-    <CreativeFlowGuide :task-id="taskId" :refresh-token="flowToken" />
-    <header class="page-head">
-      <div>
-        <h2>视觉方向与分镜</h2>
-        <p class="muted">
-          先在同一个锁定基因下选一个方向（只在场景/光线/构图/情绪上分叉），再拆成逐屏规格。
-          分镜锁定后不可修改，重新生成会出新版本。
-        </p>
-      </div>
-      <div class="head-actions">
-        <el-select v-model="taskId" placeholder="选择视觉项目" filterable style="width: 260px" @change="loadAll">
-          <el-option
-            v-for="project in projects"
-            :key="String(project.taskId)"
-            :label="project.taskName || String(project.taskId)"
-            :value="String(project.taskId)"
-          />
-        </el-select>
-        <el-button plain :loading="loading" @click="loadAll">刷新</el-button>
-      </div>
-    </header>
-
-    <p v-if="!projects.length" class="empty">还没有视觉项目。先到「视觉项目」页新建一个。</p>
-    <template v-else>
-      <!-- 方向 -->
-      <section class="panel">
-        <div class="block-head">
-          <h3>1. 视觉方向（A/B/C）</h3>
-          <div class="head-actions">
-            <span class="muted">来源：{{ DIRECTION_SOURCE_LABELS[templateSource] || templateSource || '—' }}</span>
-            <el-button type="primary" :loading="generatingDir" @click="doGenerateDirections">
-              {{ directions.length ? '重新生成方向' : '生成方向' }}
-            </el-button>
+    <!-- R19：本页由工作台容器按配置装配。R39：两个步骤各拆成装配组件——
+         DIRECTION → DirectionBoard、STORYBOARD → StoryboardBoard；
+         「逐屏出图与质检」是跨步骤的视图（属于出图/质检步），本轮如实留在页面级（#page-foot）。 -->
+    <CreativeWorkspace
+      :task-id="taskId"
+      :refresh-token="flowToken"
+      :loading="loading"
+      @refresh="loadAll"
+    >
+      <template #page-head>
+        <header class="page-head">
+          <div>
+            <h2>视觉方向与分镜</h2>
+            <p class="muted">
+              先在同一个锁定基因下选一个方向（只在场景/光线/构图/情绪上分叉），再拆成逐屏规格。
+              分镜锁定后不可修改，重新生成会出新版本。
+            </p>
           </div>
-        </div>
-
-        <p v-if="!directions.length" class="empty">
-          还没有方向。生成后会得到三套「同一基因下的不同取舍」，选定其一即可继续拆分镜。
-          （须先有<b>已锁定</b>的视觉基因）
-        </p>
-        <div v-else class="direction-grid">
-          <div
-            v-for="item in directions"
-            :key="String(item.id)"
-            class="direction-card"
-            :class="{ selected: item.status === 'SELECTED', rejected: item.status === 'REJECTED' }"
-          >
-            <div class="direction-head">
-              <span class="code">{{ item.directionCode }}</span>
-              <span class="name">{{ item.directionName }}</span>
-              <el-tag v-if="item.status === 'SELECTED'" type="success" size="small">已选定</el-tag>
-              <el-tag v-else-if="item.status === 'REJECTED'" type="info" size="small">已弃用</el-tag>
-            </div>
-            <p class="concept">{{ item.concept }}</p>
-            <ul class="strategy-list">
-              <li v-for="key in strategyKeys(item)" :key="key">
-                <span class="key" :class="{ diff: (item.differences || []).includes(key) }">{{ key }}</span>
-                <span class="value">{{ item.strategy?.[key] }}</span>
-              </li>
-            </ul>
-            <div class="direction-actions">
-              <el-button
-                size="small"
-                type="primary"
-                :disabled="item.status === 'SELECTED'"
-                :loading="selectingId === String(item.id)"
-                @click="doSelect(item)"
-              >
-                {{ item.status === 'SELECTED' ? '当前方向' : '选定这个方向' }}
-              </el-button>
-              <!-- FIX-004：已选定的方向是后续 DNA/分镜/排版的基准，不允许原地改文案；
-                   要改就「重新生成方向」得到新版本再重新选定（后端也会拒绝，这里只是提前说明） -->
-              <el-tooltip
-                :disabled="item.status !== 'SELECTED'"
-                content="已选定的方向不能原地修改：它是后续分镜与排版的基准。要改请点上方「重新生成方向」得到新版本"
-                placement="top"
-              >
-                <span>
-                  <el-button
-                    size="small"
-                    text
-                    :disabled="item.status === 'SELECTED'"
-                    @click="openDirectionEdit(item)"
-                  >
-                    编辑文案
-                  </el-button>
-                </span>
-              </el-tooltip>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- 分镜 -->
-      <section class="panel">
-        <div class="block-head">
-          <h3>2. 分镜</h3>
           <div class="head-actions">
-            <template v-if="storyboard">
+            <el-select v-model="taskId" placeholder="选择视觉项目" filterable style="width: 260px" @change="loadAll">
+              <el-option
+                v-for="project in projects"
+                :key="String(project.taskId)"
+                :label="project.taskName || String(project.taskId)"
+                :value="String(project.taskId)"
+              />
+            </el-select>
+            <el-button plain :loading="loading" @click="loadAll">刷新</el-button>
+          </div>
+        </header>
+      </template>
+
+      <template #DirectionBoard>
+        <DirectionBoard
+          :directions="directions"
+          :template-source="templateSource"
+          :generating="generatingDir"
+          :selecting-id="selectingId"
+          :has-projects="projects.length > 0"
+          @generate="doGenerateDirections"
+          @select="doSelect"
+          @edit="openDirectionEdit"
+        />
+      </template>
+
+      <template #StoryboardBoard>
+        <StoryboardBoard
+          :storyboard="storyboard"
+          :generating="generatingSb"
+          :locking="lockingSb"
+          :has-projects="projects.length > 0"
+          @generate="doGenerateStoryboard"
+          @lock="doLockStoryboard"
+          @edit-screen="openScreenEdit"
+        />
+      </template>
+
+      <template #page-foot>
+        <!-- 逐屏生产（跨步骤视图：出图与质检属于 GENERATION/QA 步，历史上就挂在本页） -->
+        <section class="panel">
+          <div class="block-head">
+            <h3>3. 逐屏出图与质检</h3>
+            <div class="head-actions">
               <span class="muted">
-                {{ storyboard.storyboardNo }} · v{{ storyboard.version }} ·
-                {{ storyboard.statusDesc }} · {{ storyboard.screenCount }} 屏
+                本次提交 {{ production?.submitted ?? 0 }} 屏、跳过 {{ production?.skipped ?? 0 }} 屏
               </span>
-              <el-button size="small" :loading="generatingSb" @click="doGenerateStoryboard">重新生成分镜</el-button>
+              <el-button size="small" plain :loading="refreshing" @click="doRefreshProduction">刷新状态</el-button>
               <el-button
                 size="small"
                 type="primary"
-                :disabled="storyboard.status === 'LOCKED'"
-                :loading="lockingSb"
-                @click="doLockStoryboard"
+                :disabled="!storyboard || storyboard.status !== 'LOCKED'"
+                :loading="producing"
+                @click="doStartProduction"
               >
-                {{ storyboard.status === 'LOCKED' ? '已锁定' : '锁定分镜' }}
+                按分镜批量出图
               </el-button>
-            </template>
-            <el-button v-else type="primary" :loading="generatingSb" @click="doGenerateStoryboard">
-              生成分镜
-            </el-button>
-          </div>
-        </div>
-
-        <p v-if="storyboard && storyboard.sourceDesc" class="muted source-note">
-          来源：{{ storyboard.sourceDesc }}
-        </p>
-
-        <p v-if="!storyboard" class="empty">
-          还没有分镜。生成后会得到逐屏规格（屏号 / 类型 / 文案 / 画面独白 / 视觉规格）。
-          每屏必须写清「这张图不讲文案时自己要说清什么」——没有独白的屏不能锁定。
-        </p>
-        <div v-else class="screen-list">
-          <div v-for="screen in storyboard.screens || []" :key="String(screen.id)" class="screen-card">
-            <div class="screen-head">
-              <span class="screen-no">{{ screen.screenNo }}</span>
-              <span class="screen-type">{{ screen.screenTypeDesc }}</span>
-              <el-tag size="small" :type="screen.productLockLevel === 'STRICT' ? 'warning' : 'info'">
-                {{ screen.productLockLevel === 'STRICT' ? '产品严格保真' : '允许艺术化' }}
-              </el-tag>
-              <span class="spacer" />
-              <el-button size="small" text type="primary" @click="openScreenEdit(screen)">编辑</el-button>
             </div>
-            <div class="screen-body">
-              <h4>{{ screen.title || '（未填标题）' }}</h4>
-              <p v-if="screen.subtitle" class="muted">{{ screen.subtitle }}</p>
-              <p v-if="screen.bodyText" class="body-text">{{ screen.bodyText }}</p>
-              <p class="solo">
-                <b>画面独白：</b>{{ screen.pictureSoloStatement || '（缺失——锁定前必须补齐）' }}
-              </p>
-              <div class="spec-row">
-                <span v-for="(value, key) in screen.spec" :key="key" class="spec-item">
-                  <b>{{ specLabel(String(key)) }}</b>{{ value }}
+          </div>
+          <p class="muted">
+            提示词由已锁定基因按屏派生；失败候选每屏最多自动重试到 3 次尝试（到顶转人工）。
+            质检结论只用于筛选：<b>不一致的候选会被筛除，一致的也不会自动选定</b>。
+          </p>
+          <el-table v-if="production" :data="production.screens" size="small">
+            <el-table-column prop="screenNo" label="屏" width="70" />
+            <el-table-column prop="screenTypeDesc" label="类型" width="90" />
+            <el-table-column label="状态" width="120">
+              <template #default="{ row }">
+                <el-tag size="small" :type="screenStatusType(asScreen(row).status)">
+                  {{ SCREEN_STATUS_LABELS[asScreen(row).status || ''] || asScreen(row).status }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="candidateCount" label="候选数" width="80" />
+            <el-table-column label="最新候选" width="110">
+              <template #default="{ row }">
+                {{ GENERATION_STATUS_LABELS[asScreen(row).latestStatus || ''] || asScreen(row).latestStatus || '—' }}
+              </template>
+            </el-table-column>
+            <el-table-column label="质检" width="160">
+              <template #default="{ row }">
+                <span :class="qaClass(asScreen(row).qaVerdict)">
+                  {{ QA_VERDICT_LABELS[asScreen(row).qaVerdict || ''] || asScreen(row).qaVerdict || '未质检' }}
                 </span>
-              </div>
-              <p class="muted small">出图能力：{{ screen.workflowCode }}</p>
-            </div>
-          </div>
-        </div>
-      </section>
+              </template>
+            </el-table-column>
+            <el-table-column label="说明" min-width="150">
+              <template #default="{ row }">{{ asScreen(row).note || '—' }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="250" fixed="right">
+              <template #default="{ row }">
+                <el-button
+                  size="small"
+                  text
+                  type="primary"
+                  :loading="busyScreen === String(asScreen(row).screenId)"
+                  @click="doRegenerate(asScreen(row))"
+                >
+                  重出这一屏
+                </el-button>
+                <el-button
+                  size="small"
+                  text
+                  type="success"
+                  :disabled="!latestGenerationOf(asScreen(row))"
+                  :loading="selectingGen === String(latestGenerationOf(asScreen(row)))"
+                  @click="doSelectCandidate(asScreen(row))"
+                >
+                  选定候选
+                </el-button>
+                <el-button
+                  size="small"
+                  text
+                  :disabled="!latestGenerationOf(asScreen(row))"
+                  :loading="qaGen === String(latestGenerationOf(asScreen(row)))"
+                  @click="doQa(asScreen(row))"
+                >
+                  质检
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <p v-else class="empty">还没有生产记录。分镜锁定后点「按分镜批量出图」。</p>
+        </section>
+      </template>
+    </CreativeWorkspace>
 
-      <!-- 逐屏生产 -->
-      <section class="panel">
-        <div class="block-head">
-          <h3>3. 逐屏出图与质检</h3>
-          <div class="head-actions">
-            <span class="muted">
-              本次提交 {{ production?.submitted ?? 0 }} 屏、跳过 {{ production?.skipped ?? 0 }} 屏
-            </span>
-            <el-button size="small" plain :loading="refreshing" @click="doRefreshProduction">刷新状态</el-button>
-            <el-button
-              size="small"
-              type="primary"
-              :disabled="!storyboard || storyboard.status !== 'LOCKED'"
-              :loading="producing"
-              @click="doStartProduction"
-            >
-              按分镜批量出图
-            </el-button>
-          </div>
-        </div>
-        <p class="muted">
-          提示词由已锁定基因按屏派生；失败候选每屏最多自动重试到 3 次尝试（到顶转人工）。
-          质检结论只用于筛选：<b>不一致的候选会被筛除，一致的也不会自动选定</b>。
-        </p>
-        <el-table v-if="production" :data="production.screens" size="small">
-          <el-table-column prop="screenNo" label="屏" width="70" />
-          <el-table-column prop="screenTypeDesc" label="类型" width="90" />
-          <el-table-column label="状态" width="120">
-            <template #default="{ row }">
-              <el-tag size="small" :type="screenStatusType(asScreen(row).status)">
-                {{ SCREEN_STATUS_LABELS[asScreen(row).status || ''] || asScreen(row).status }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="candidateCount" label="候选数" width="80" />
-          <el-table-column label="最新候选" width="110">
-            <template #default="{ row }">
-              {{ GENERATION_STATUS_LABELS[asScreen(row).latestStatus || ''] || asScreen(row).latestStatus || '—' }}
-            </template>
-          </el-table-column>
-          <el-table-column label="质检" width="160">
-            <template #default="{ row }">
-              <span :class="qaClass(asScreen(row).qaVerdict)">
-                {{ QA_VERDICT_LABELS[asScreen(row).qaVerdict || ''] || asScreen(row).qaVerdict || '未质检' }}
-              </span>
-            </template>
-          </el-table-column>
-          <el-table-column label="说明" min-width="150">
-            <template #default="{ row }">{{ asScreen(row).note || '—' }}</template>
-          </el-table-column>
-          <el-table-column label="操作" width="250" fixed="right">
-            <template #default="{ row }">
-              <el-button
-                size="small"
-                text
-                type="primary"
-                :loading="busyScreen === String(asScreen(row).screenId)"
-                @click="doRegenerate(asScreen(row))"
-              >
-                重出这一屏
-              </el-button>
-              <el-button
-                size="small"
-                text
-                type="success"
-                :disabled="!latestGenerationOf(asScreen(row))"
-                :loading="selectingGen === String(latestGenerationOf(asScreen(row)))"
-                @click="doSelectCandidate(asScreen(row))"
-              >
-                选定候选
-              </el-button>
-              <el-button
-                size="small"
-                text
-                :disabled="!latestGenerationOf(asScreen(row))"
-                :loading="qaGen === String(latestGenerationOf(asScreen(row)))"
-                @click="doQa(asScreen(row))"
-              >
-                质检
-              </el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-        <p v-else class="empty">还没有生产记录。分镜锁定后点「按分镜批量出图」。</p>
-      </section>
-    </template>
-
-    <!-- 编辑方向 -->
+    <!-- 编辑弹窗（页面级浮层）：保存成功后才关，并且要顺带刷新数据与推进指引线——
+         这三件事必须在一起，所以弹窗与落库都留在页面（与 R32/R33 的项目页区块同一套做法）。 -->
     <el-dialog v-model="directionEditVisible" title="编辑方向文案" width="520px">
       <el-form label-width="80px">
         <el-form-item label="名称"><el-input v-model="directionForm.directionName" maxlength="64" /></el-form-item>
@@ -325,13 +228,25 @@ import type {
   TagType
 } from '@/api/creative/types';
 import {
-  DIRECTION_SOURCE_LABELS,
   GENERATION_STATUS_LABELS,
   QA_VERDICT_LABELS,
   SCREEN_STATUS_LABELS
 } from '@/api/creative/types';
-import CreativeFlowGuide from '../components/CreativeFlowGuide.vue';
+import CreativeWorkspace from '../components/CreativeWorkspace.vue';
+import DirectionBoard from './components/DirectionBoard.vue';
+import StoryboardBoard from './components/StoryboardBoard.vue';
 
+/**
+ * 视觉方向与分镜页（R19 起由工作台装配；R39 起两个步骤各自是装配组件）。
+ *
+ * <p><b>页面留下什么</b>：项目选择（页头）、拉数据、调接口、"成功后做什么"（提示 / 刷新 / 推进指引线），
+ * 以及两个编辑弹窗；「逐屏出图与质检」作为**页面级跨步骤视图**留在 `#page-foot`。</p>
+ *
+ * <p><b>为什么弹窗留在页面</b>：它同时牵动"关闭弹窗 + 刷新列表 + 推进流程指引线"三件事，
+ * 拆到组件里就会出现半个状态（组件关了弹窗但页面没刷新）。方向/分镜两块内容则是纯展示。</p>
+ *
+ * @author creative
+ */
 const projects = ref<CreativeProjectVO[]>([]);
 const taskId = ref('');
 // 流程指引线的刷新令牌：只在动作成功后 +1，加载/刷新函数里不动它
@@ -457,22 +372,6 @@ async function doQa(row: ScreenProductionVO) {
   } finally {
     qaGen.value = '';
   }
-}
-
-function strategyKeys(item: DpVisualDirectionVO): string[] {
-  return Object.keys(item.strategy || {}).filter((key) => key !== 'schema' && key !== 'differences');
-}
-
-function specLabel(key: string): string {
-  const map: Record<string, string> = {
-    shot: '镜头',
-    composition: '构图',
-    lighting: '光线',
-    background: '背景',
-    productRatio: '产品占比',
-    whitespace: '留白'
-  };
-  return map[key] || key;
 }
 
 async function loadProjects() {
@@ -659,7 +558,7 @@ onMounted(async () => {
     await loadProjects();
     await loadAll();
   } catch (error) {
-    ElMessage.error((await extractErrorMessage(error)) ?? '初始化失败');
+    ElMessage.error(await extractErrorMessage(error) ?? '初始化失败');
   }
 });
 </script>
@@ -677,6 +576,7 @@ onMounted(async () => {
   border-radius: 8px;
 }
 
+/* 页头（R39）：留在页面上；方向与分镜两块内容的样式搬进了各自组件 */
 .page-head {
   display: flex;
   gap: 16px;
@@ -696,6 +596,7 @@ onMounted(async () => {
   align-items: center;
 }
 
+/* 「逐屏出图与质检」这一块仍在页面上（页面级跨步骤视图） */
 .panel {
   padding: 16px;
   margin-bottom: 14px;
@@ -713,156 +614,6 @@ onMounted(async () => {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 12px;
-}
-
-.direction-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 12px;
-}
-.direction-card {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 14px;
-  background: var(--elevated);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-}
-.direction-card.selected {
-  border-color: #10b981;
-  box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.35);
-}
-.direction-card.rejected {
-  opacity: 0.62;
-}
-.direction-head {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.direction-head .code {
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  font-weight: 700;
-  color: #fff;
-  background: linear-gradient(135deg, #4f46e5, #7c3aed);
-  border-radius: 6px;
-}
-.direction-head .name {
-  flex: 1;
-  font-size: 15px;
-  font-weight: 600;
-}
-.concept {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.8;
-  color: var(--t2);
-}
-.strategy-list {
-  padding: 0;
-  margin: 0;
-  list-style: none;
-  font-size: 12px;
-  line-height: 1.9;
-}
-.strategy-list li {
-  display: flex;
-  gap: 8px;
-}
-.strategy-list .key {
-  flex: 0 0 84px;
-  color: var(--t3);
-}
-.strategy-list .key.diff {
-  color: #fde68a;
-}
-.strategy-list .value {
-  flex: 1;
-  color: var(--t1);
-}
-.direction-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 4px;
-}
-
-.source-note {
-  margin: 0 0 10px;
-}
-
-.screen-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 12px;
-}
-.screen-card {
-  display: flex;
-  flex-direction: column;
-  background: var(--elevated);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-}
-.screen-head {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--line);
-}
-.screen-head .spacer {
-  flex: 1;
-}
-.screen-no {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 13px;
-  color: #c7d2fe;
-}
-.screen-type {
-  font-size: 13px;
-  font-weight: 600;
-}
-.screen-body {
-  padding: 12px;
-}
-.screen-body h4 {
-  margin: 0 0 6px;
-  font-size: 14px;
-}
-.body-text {
-  margin: 6px 0;
-  font-size: 13px;
-  line-height: 1.8;
-  color: var(--t1);
-}
-.solo {
-  margin: 8px 0;
-  padding: 8px 10px;
-  font-size: 12px;
-  line-height: 1.8;
-  color: #ddd6fe;
-  background: rgba(124, 58, 237, 0.12);
-  border-left: 2px solid rgba(124, 58, 237, 0.6);
-  border-radius: 0 4px 4px 0;
-}
-.spec-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 12px;
-  margin-top: 8px;
-  font-size: 12px;
-  color: var(--t2);
-}
-.spec-item b {
-  margin-right: 4px;
-  color: var(--t3);
-  font-weight: 500;
-}
-.small {
-  font-size: 12px;
 }
 
 .good {

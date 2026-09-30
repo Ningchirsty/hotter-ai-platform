@@ -138,7 +138,7 @@ describe('workspaceAssembly：对照', () => {
     ]);
   });
 
-  it('分类如实：R38 起基因页也拆出装配组件，六个项目页区块仍是"宿主插槽组件"', () => {
+  it('分类如实：R39 起分镜页两步也拆出装配组件，只剩视觉门/长图/终审还是页面内区块', () => {
     const byName = Object.fromEntries(
       [...diff.panelRows, ...diff.stepRows].map((r) => [r.component || r.code, r.kind])
     );
@@ -155,19 +155,22 @@ describe('workspaceAssembly：对照', () => {
     expect(byName.ProjectCopyBlock).toBe('SLOT');
     expect(byName.ProjectHeroBlock).toBe('SLOT');
     expect(byName.ProjectGenerationsBlock).toBe('SLOT');
-    // 【R38 起期望值有变】基因页整页拆成 VisualDnaPanel（基因页的这一步内容）
+    // 【R38 起期望值有变】基因页整页拆成 VisualDnaPanel
     expect(byName.VisualDnaPanel).toBe('SLOT');
-    // 其余仍是"写在页面里的一段"（拆组件这件事一轮做不完，如实登记）
-    expect(byName.DirectionBoard).toBe('SECTION');
+    // 【R39 起期望值有变】分镜页两个步骤各拆成一个组件
+    expect(byName.DirectionBoard).toBe('SLOT');
+    expect(byName.StoryboardBoard).toBe('SLOT');
+    // 剩下三个还在评审页里（拆组件这件事一轮做不完，如实登记）
+    expect(byName.GatePanel).toBe('SECTION');
     expect(byName.LongPageCanvas).toBe('SECTION');
     expect(byName.FinalReviewPanel).toBe('SECTION');
     expect(diff.componentCount).toBe(5);
-    expect(diff.slotCount).toBe(7);
-    expect(diff.sectionCount).toBe(6);
+    expect(diff.slotCount).toBe(9);
+    expect(diff.sectionCount).toBe(4);
     expect(diff.missingCount).toBe(0);
-    // 口径：就绪 = 已是独立组件（工作台自解析 5 + 宿主插槽 7）；分母是组件行数（不是步骤数）
-    expect(diff.readyText).toBe('12/18');
-    expect(formatAssemblyChip(diff)).toBe('工作台装配 12/18');
+    // 口径：就绪 = 已是独立组件（工作台自解析 5 + 宿主插槽 9）；分母是组件行数（不是步骤数）
+    expect(diff.readyText).toBe('14/18');
+    expect(formatAssemblyChip(diff)).toBe('工作台装配 14/18');
   });
 
   it('每一行都带"代码里在哪"与一句补充（没有落点的对照等于没对照）', () => {
@@ -194,8 +197,8 @@ describe('workspaceAssembly：对照', () => {
     expect(diff.verdict).toContain('LONG_PAGE');
     expect(diff.verdict).toContain('配置声明 5 个面板 + 10 个步骤');
     expect(diff.verdict).toContain('共 13 个步骤组件');
-    expect(diff.verdict).toContain('已是独立组件 12 个');
-    expect(diff.verdict).toContain('工作台自行解析 5 个、宿主页面插槽提供 7 个');
+    expect(diff.verdict).toContain('已是独立组件 14 个');
+    expect(diff.verdict).toContain('工作台自行解析 5 个、宿主页面插槽提供 9 个');
     expect(diff.verdict).toContain('还没实现 0 个');
     expect(diff.verdict).toContain('共对照 18 项');
   });
@@ -369,13 +372,13 @@ describe('装配运行时：槽位计划', () => {
   it('只有真注册过的组件才会被装配（没拆成组件 / 宿主插槽 / 没实现的 → SKIP）', () => {
     // R38 起：SLOT（宿主插槽组件）也不能作为面板被工作台解析，理由要说清是"哪一类"
     const layout = parseWorkspaceLayout(
-      '{"workspace":"W","panels":["STEP_NAVIGATOR","MAIN_STAGE","DirectionBoard","VisualDnaPanel"],"steps":[]}'
+      '{"workspace":"W","panels":["STEP_NAVIGATOR","MAIN_STAGE","GatePanel","VisualDnaPanel"],"steps":[]}'
     );
     const d = diffWorkspaceAssembly(layout)!;
     const plan = buildAssemblyPlan(d.panelRows);
     expect(plan.map((s) => [s.code, s.target])).toEqual([
       ['STEP_NAVIGATOR', 'GUIDE'], ['MAIN_STAGE', 'MAIN'],
-      ['DirectionBoard', 'SKIP'], ['VisualDnaPanel', 'SKIP']
+      ['GatePanel', 'SKIP'], ['VisualDnaPanel', 'SKIP']
     ]);
     expect(plan[2].reason).toContain('页面内区块');
     expect(plan[3].reason).toContain('宿主插槽组件');
@@ -482,18 +485,21 @@ describe('R37：按步骤装配', () => {
 });
 
 /**
- * R38：基因页这一步拆成装配组件（`VisualDnaPanel`）。
+ * R38：基因页这一步拆成装配组件（`VisualDnaPanel`）；R39：分镜页两步各拆一个。
  *
  * <p>组件拆分最容易出的两种问题，静态就能钉住：① 动作在搬运中丢了（模板里少了 `@save`，
  * 类型系统不会报——emit 没人接就是静默失效，R19 的"按钮在、抽屉没人渲染"是同一类）；
  * ② 内容搬了两份（页面与组件各留一份，改一边就不生效）。</p>
  */
-describe('R38：基因页的装配组件', () => {
-  const page = readFileSync(new URL('../dna/index.vue', import.meta.url), 'utf-8');
+describe('R38 / R39：页面这一步的装配组件', () => {
+  const dnaPage = readFileSync(new URL('../dna/index.vue', import.meta.url), 'utf-8');
   const panel = readFileSync(new URL('../dna/components/VisualDnaPanel.vue', import.meta.url), 'utf-8');
+  const sbPage = readFileSync(new URL('../storyboard/index.vue', import.meta.url), 'utf-8');
+  const dirBoard = readFileSync(new URL('../storyboard/components/DirectionBoard.vue', import.meta.url), 'utf-8');
+  const sbBoard = readFileSync(new URL('../storyboard/components/StoryboardBoard.vue', import.meta.url), 'utf-8');
 
   it('基因页用同名插槽把这一步交给工作台，并把每个动作都接上', () => {
-    expect(page).toContain('#VisualDnaPanel');
+    expect(dnaPage).toContain('#VisualDnaPanel');
     for (const binding of [
       '@generate="doGenerate"',
       '@save="doSave"',
@@ -501,7 +507,7 @@ describe('R38：基因页的装配组件', () => {
       '@load-prompt="loadPrompt"',
       '@view-version="viewVersion"'
     ]) {
-      expect(page, `基因页没有把 ${binding} 接上`).toContain(binding);
+      expect(dnaPage, `基因页没有把 ${binding} 接上`).toContain(binding);
     }
     // 组件这一侧要真的声明并发出这些事件
     for (const name of ["'generate'", "'save'", "'lock'", "'load-prompt'", "'view-version'"]) {
@@ -510,12 +516,42 @@ describe('R38：基因页的装配组件', () => {
   });
 
   it('内容只留一份：页面里不再有这一步的内容（否则改一边不生效）', () => {
-    expect(page).not.toContain('data-dna-section');
-    expect(page).not.toContain('规范内容');
-    expect(page).not.toContain('版本历史');
+    expect(dnaPage).not.toContain('data-dna-section');
+    expect(dnaPage).not.toContain('规范内容');
+    expect(dnaPage).not.toContain('版本历史');
     // 组件里该有的分段标记齐全（验收脚本按它断言"五段都在"）
     for (const section of ['OVERVIEW', 'FORM', 'PROMPT', 'EVIDENCE', 'VERSIONS']) {
       expect(panel, `组件缺少 ${section} 分段标记`).toContain(`data-dna-section="${section}"`);
+    }
+  });
+
+  it('分镜页：两步各自的插槽与动作都接上，页面里不再有这两块内容', () => {
+    expect(sbPage).toContain('#DirectionBoard');
+    expect(sbPage).toContain('#StoryboardBoard');
+    // 页头与页面级跨步骤内容也要各就各位
+    expect(sbPage).toContain('#page-head');
+    expect(sbPage).toContain('#page-foot');
+    for (const binding of [
+      '@generate="doGenerateDirections"',
+      '@select="doSelect"',
+      '@edit="openDirectionEdit"',
+      '@generate="doGenerateStoryboard"',
+      '@lock="doLockStoryboard"',
+      '@edit-screen="openScreenEdit"'
+    ]) {
+      expect(sbPage, `分镜页没有把 ${binding} 接上`).toContain(binding);
+    }
+    // 内容只留一份：方向卡片/分镜卡片的选择器不该再出现在页面里
+    expect(sbPage).not.toContain('direction-card');
+    expect(sbPage).not.toContain('screen-card');
+    expect(dirBoard).toContain('data-board-section="DIRECTIONS"');
+    expect(sbBoard).toContain('data-board-section="SCREENS"');
+    // 两个组件各自声明了动作
+    for (const name of ["'generate'", "'select'", "'edit'"]) {
+      expect(dirBoard, `DirectionBoard 没有声明事件 ${name}`).toContain(name);
+    }
+    for (const name of ["'generate'", "'lock'", "'edit-screen'"]) {
+      expect(sbBoard, `StoryboardBoard 没有声明事件 ${name}`).toContain(name);
     }
   });
 });

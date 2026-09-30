@@ -119,14 +119,14 @@ export const CODE_COMPONENT_REGISTRY: Record<string, RegistryEntry> = {
     note: 'DNA 步：概览 / 规范编辑 / 派生提示词 / 证据链 / 版本历史；编辑态表单与"按参考图推荐"在组件里，落库仍由页面负责'
   },
   DirectionBoard: {
-    kind: 'SECTION',
-    location: 'storyboard/index.vue「方向」（:27）',
-    note: '方向与分镜同页，装配时是同页两个组件'
+    kind: 'SLOT',
+    location: 'storyboard/components/DirectionBoard.vue（R39 拆出；分镜页以同名插槽提供）',
+    note: 'DIRECTION 步：A/B/C 三套方向（选定、编辑文案入口）；编辑弹窗留在页面'
   },
   StoryboardBoard: {
-    kind: 'SECTION',
-    location: 'storyboard/index.vue「分镜」（:96，逐屏生产 :160）',
-    note: '同上'
+    kind: 'SLOT',
+    location: 'storyboard/components/StoryboardBoard.vue（R39 拆出；分镜页以同名插槽提供）',
+    note: 'STORYBOARD 步：逐屏规格卡片（屏号/类型/文案/画面独白/视觉规格）+ 生成与锁定；编辑单屏弹窗留在页面'
   },
   GatePanel: {
     kind: 'SECTION',
