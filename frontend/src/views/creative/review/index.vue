@@ -265,6 +265,93 @@
         </div>
       </section>
 
+      <!-- 交付产物（R30，文档 §26 Renderer Hub） -->
+      <section class="panel">
+        <div class="block-head">
+          <h3>交付产物</h3>
+          <div class="head-actions">
+            <span class="muted">
+              渲染器 {{ delivery?.rendererName || '—' }}（模式 {{ delivery?.renderMode || '未配置' }}）
+              · 当前版本 v{{ delivery?.currentVersion ?? 0 }}
+            </span>
+            <el-button size="small" plain :loading="delivering" @click="doRenderDelivery">
+              生成交付产物
+            </el-button>
+          </div>
+        </div>
+
+        <p class="muted">
+          渲染器由交付类型的<b>渲染模式</b>决定，不由页面猜：详情页（LONGPAGE）走长图排版，
+          商品主图（MULTI_IMAGE）走<b>多图打包</b>——把各屏已选定的交付图按屏序打成一个 ZIP，
+          包里第一项是 <code>manifest.json</code>（每张图是什么屏、多大、sha256 多少）。
+          交付包在下载时<b>现拼</b>，不再复制一份存储。
+        </p>
+
+        <div v-if="(delivery?.renderers || []).length" class="renderer-row">
+          <el-tag
+            v-for="r in delivery?.renderers || []"
+            :key="r.code"
+            size="small"
+            :type="r.implemented ? (r.selected ? 'success' : 'info') : 'warning'"
+            :effect="r.selected ? 'dark' : 'plain'"
+          >
+            {{ r.name }}（{{ r.code }}）{{ r.implemented ? (r.selected ? '· 本次使用' : '') : '· 未实现' }}
+          </el-tag>
+        </div>
+        <p class="muted small">
+          未实现的渲染器只登记、不执行（点了会明确报错，不会跑个空壳还报成功）。
+        </p>
+
+        <el-table
+          v-if="(delivery?.artifacts || []).length"
+          :data="delivery?.artifacts || []"
+          size="small"
+          class="version-table"
+        >
+          <el-table-column label="版本" width="170">
+            <template #default="{ row }">
+              <div class="cell-main">v{{ asArtifact(row).version }} · {{ asArtifact(row).rendererName }}</div>
+              <div class="muted small">{{ asArtifact(row).createTime }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column label="产物" width="130">
+            <template #default="{ row }">
+              {{ asArtifact(row).imageCount }} 张 ·
+              {{ formatBytes(asArtifact(row).totalBytes) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="清单校验和" width="160">
+            <template #default="{ row }">
+              <span class="mono small">{{ shortSha(asArtifact(row).checksum) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="说明 / 产物明细" min-width="320">
+            <template #default="{ row }">
+              <div class="muted small">{{ asArtifact(row).remark || '—' }}</div>
+              <div class="muted small">
+                {{ (asArtifact(row).products || []).map((p) => productText(p)).join('、') }}
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="120" fixed="right">
+            <template #default="{ row }">
+              <el-button
+                size="small"
+                text
+                type="primary"
+                :loading="downloadingId === String(asArtifact(row).id)"
+                @click="doDownloadArtifact(asArtifact(row))"
+              >
+                下载交付包
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <p v-else class="empty">
+          还没有交付产物。逐屏出图并选定候选后，点上面的「生成交付产物」。
+        </p>
+      </section>
+
       <el-dialog v-model="previewVisible" title="详情页长图预览" width="820px" @closed="closePreview">
         <div class="long-preview">
           <img v-if="previewUrl" :src="previewUrl" alt="详情页长图" />
@@ -280,10 +367,13 @@ import { onMounted, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import type { UploadRequestOptions } from 'element-plus';
 import {
+  downloadDeliveryArtifact,
   fetchDetailPreviewBlobUrl,
+  getDelivery,
   getDetailPage,
   getVisualGate,
   listCreativeProject,
+  renderDelivery,
   renderDetailPage,
   reviewDetailVersion,
   reviewVisualGate,
@@ -292,6 +382,9 @@ import {
 } from '@/api/creative';
 import type {
   CreativeProjectVO,
+  DeliveryArtifactVO,
+  DeliveryProductVO,
+  DeliveryVO,
   DpDetailPageVO,
   DpDetailPageVersionVO,
   GateEvaluationVO,
@@ -307,6 +400,10 @@ const taskId = ref('');
 const flowToken = ref(0);
 const gate = ref<GateEvaluationVO | null>(null);
 const detailPage = ref<DpDetailPageVO | null>(null);
+// R30：交付产物（Renderer Hub）——渲染器能力 + 历史交付版本
+const delivery = ref<DeliveryVO | null>(null);
+const delivering = ref(false);
+const downloadingId = ref('');
 const loading = ref(false);
 const submitting = ref(false);
 const reviewing = ref('');
@@ -324,6 +421,55 @@ function asItem(row: unknown): GateItem {
 
 function asVersion(row: unknown): DpDetailPageVersionVO {
   return row as DpDetailPageVersionVO;
+}
+
+function asArtifact(row: unknown): DeliveryArtifactVO {
+  return row as DeliveryArtifactVO;
+}
+
+/** 产物一行文字：屏号 + 模块 + 像素（页面表格里直接可读） */
+function productText(product: DeliveryProductVO): string {
+  const parts = [product.screenNo, product.moduleCode, `${product.width}×${product.height}`]
+    .filter((v) => v !== undefined && v !== null && String(v) !== '');
+  return parts.join(' ');
+}
+
+function formatBytes(bytes?: number): string {
+  if (!bytes) return '0B';
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)}KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+}
+
+function shortSha(sha?: string): string {
+  return sha ? `${sha.slice(0, 12)}…` : '—';
+}
+
+async function doRenderDelivery() {
+  if (!taskId.value) return;
+  delivering.value = true;
+  try {
+    const res = await renderDelivery(taskId.value);
+    delivery.value = (res.data as DeliveryVO) || null;
+    ElMessage.success('交付产物已生成');
+    flowToken.value += 1;
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '生成交付产物失败');
+  } finally {
+    delivering.value = false;
+  }
+}
+
+async function doDownloadArtifact(artifact: DeliveryArtifactVO) {
+  downloadingId.value = String(artifact.id);
+  try {
+    await downloadDeliveryArtifact(taskId.value, artifact.id, artifact.downloadName || 'delivery.zip');
+    ElMessage.success('已开始下载');
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '下载交付产物失败');
+  } finally {
+    downloadingId.value = '';
+  }
 }
 
 function versionStatusType(status?: string): TagType {
@@ -356,12 +502,14 @@ async function loadAll() {
   if (!taskId.value) return;
   loading.value = true;
   try {
-    const [gateRes, detailRes] = await Promise.all([
+    const [gateRes, detailRes, deliveryRes] = await Promise.all([
       getVisualGate(taskId.value),
-      getDetailPage(taskId.value)
+      getDetailPage(taskId.value),
+      getDelivery(taskId.value)
     ]);
     gate.value = gateRes.data || null;
     detailPage.value = detailRes.data || null;
+    delivery.value = deliveryRes.data || null;
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '加载视觉门失败');
   } finally {
@@ -620,6 +768,19 @@ onMounted(async () => {
 
 .version-table {
   margin-top: 12px;
+}
+
+/* R30：渲染器能力行（已实现/未实现一眼看出） */
+.renderer-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 4px;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0.02em;
 }
 
 .final-row {

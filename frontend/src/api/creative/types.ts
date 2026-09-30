@@ -115,6 +115,62 @@ export interface DpGenerationVO {
   createTime?: string;
 }
 
+/** 交付产物（R30，文档 §26 Renderer Hub） */
+export interface DeliveryProductVO {
+  /** 包内文件名（ASCII 安全） */
+  fileName?: string;
+  /** 角色：LONG_PAGE（长图）/ SCREEN_DELIVERY（逐屏交付图） */
+  role?: string;
+  screenNo?: string;
+  screenType?: string;
+  moduleCode?: string;
+  fileId?: string | number;
+  generationId?: string | number;
+  width?: number;
+  height?: number;
+  bytes?: number;
+  sha256?: string;
+}
+
+/** 一次交付渲染留痕（清单 + 产物明细；产物字节不重复存，下载时现拼） */
+export interface DeliveryArtifactVO {
+  id: string | number;
+  taskId?: string | number;
+  deliveryType?: string;
+  renderer?: string;
+  rendererName?: string;
+  version?: number;
+  imageCount?: number;
+  totalBytes?: number;
+  checksum?: string;
+  remark?: string;
+  products?: DeliveryProductVO[];
+  downloadName?: string;
+  createTime?: string;
+}
+
+/** 渲染器能力（implemented=false 表示只登记、不能执行——页面必须如实标注） */
+export interface RendererCapabilityVO {
+  code?: string;
+  name?: string;
+  targetStep?: string;
+  implemented?: boolean;
+  note?: string;
+  selected?: boolean;
+}
+
+/** 交付视图 */
+export interface DeliveryVO {
+  taskId?: string | number;
+  deliveryType?: string;
+  renderMode?: string;
+  renderer?: string;
+  rendererName?: string;
+  currentVersion?: number;
+  artifacts?: DeliveryArtifactVO[];
+  renderers?: RendererCapabilityVO[];
+}
+
 /** HERO 主图出图请求 */
 export interface CreativeHeroForm {
   fileId?: string | number;

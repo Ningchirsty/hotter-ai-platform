@@ -588,6 +588,68 @@ export const fetchDetailPreviewBlobUrl = async (
   return toMediaBlobUrl(res.data, '长图');
 };
 
+/** 交付视图（渲染器能力清单 + 历史交付版本） */
+export const getDelivery = (taskId: string | number) => {
+  return request({
+    url: `/creative/projects/${taskId}/delivery`,
+    method: 'get'
+  });
+};
+
+/**
+ * 渲染一次交付产物。
+ *
+ * 渲染器不在这里指定：后端按交付类型的渲染模式（LONGPAGE / MULTI_IMAGE）自动解析，
+ * 页面不需要知道这个交付类型是长图还是多图。`renderer` 只用于排障与验收。
+ */
+export const renderDelivery = (taskId: string | number, renderer?: string) => {
+  return request({
+    url: `/creative/projects/${taskId}/delivery/render`,
+    method: 'post',
+    params: renderer ? { renderer } : undefined
+  });
+};
+
+/**
+ * 下载交付产物并触发浏览器保存。
+ *
+ * 为什么不像长图预览那样直接给 blob URL：交付包是 ZIP，浏览器需要 `Content-Disposition`
+ * 才会存成文件；这里用同一套鉴权请求取字节，再在前端造一个 a[download] 点击。
+ */
+export const downloadDeliveryArtifact = async (
+  taskId: string | number,
+  versionId: string | number,
+  fileName: string
+): Promise<void> => {
+  const res = await request({
+    url: `/creative/projects/${taskId}/delivery/versions/${versionId}/download`,
+    method: 'get',
+    responseType: 'blob'
+  });
+  const blob = res.data as Blob;
+  if (!blob || blob.size === 0) {
+    throw new Error('交付产物内容为空');
+  }
+  if ((blob.type || '').includes('application/json')) {
+    const text = await blob.text();
+    let message = text;
+    try {
+      message = (JSON.parse(text) as { msg?: string }).msg || text;
+    } catch {
+      /* 保持原文 */
+    }
+    throw new Error(message || '下载交付产物失败');
+  }
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
+
 /**
  * 把返回体转成可直接放进 `<img>` 的 blob URL。
  *

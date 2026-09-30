@@ -96,4 +96,22 @@ public record CreativeScreenModuleConfig(Long referenceFileId, String visualRule
         String text = qa.isTextual() ? qa.asText() : qa.toString();
         return StringUtils.trimToNull(text);
     }
+
+    /**
+     * 从屏规格里取模块编码（R30 起交付包要按模块编码命名产物，多个调用方都需要）。
+     *
+     * @param specJson 屏规格 JSON（可空）
+     * @return 模块编码；取不到返回空串
+     */
+    public static String moduleCodeOf(String specJson) {
+        if (StringUtils.isBlank(specJson)) {
+            return "";
+        }
+        try {
+            JsonNode node = MAPPER.readTree(specJson);
+            return StringUtils.blankToDefault(StringUtils.trimToNull(node.path("moduleCode").asText(null)), "");
+        } catch (Exception e) {
+            return "";
+        }
+    }
 }
