@@ -40,6 +40,25 @@ SELECT schema_code, version,
   FROM dp_workspace_schema
  WHERE schema_code IN ('WS_LONG_PAGE', 'WS_MAIN_IMAGE');
 
+-- 4) 项目页那两块也标明"只属于项目页"。
+--    为什么必须标：装配运行时按"这一步在本页应当有的组件"来提示"配置与插槽对不上"，
+--    不标的话生产页会收到「声明了 ProjectHeroBlock/ProjectGenerationsBlock 却没提供插槽」的**假警报**
+--    （这两块本来就只属于项目页）。真机验收第一次就抓到了这条。
+UPDATE dp_workspace_schema
+   SET layout_json = REPLACE(
+         REPLACE(layout_json,
+                 '"ProjectHeroBlock"', '{"component":"ProjectHeroBlock","pages":["/creative/project"]}'),
+         '"ProjectGenerationsBlock"', '{"component":"ProjectGenerationsBlock","pages":["/creative/project"]}')
+ WHERE schema_code IN ('WS_LONG_PAGE', 'WS_MAIN_IMAGE')
+   AND layout_json LIKE '%"ProjectHeroBlock"%'
+   AND layout_json NOT LIKE '%"component":"ProjectHeroBlock"%';
+
+-- 5) 再核对一次 GENERATION 步（两块应带 pages，生产页那块也应带 pages）
+SELECT schema_code, version, JSON_VALID(layout_json) AS json_ok,
+       JSON_EXTRACT(layout_json, '$.steps[6]') AS generation_step
+  FROM dp_workspace_schema
+ WHERE schema_code IN ('WS_LONG_PAGE', 'WS_MAIN_IMAGE');
+
 -- =====================================================================
 -- 回滚（把 GENERATION 改回只有项目页那两块）
 --
