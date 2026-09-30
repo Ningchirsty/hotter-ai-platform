@@ -26,6 +26,23 @@ class CreativeTemplatePinTest {
     }
 
     @Test
+    @DisplayName("正式路径：模板码来自**当前模块计划**（改模板不必重拆分镜）")
+    void planCodesWin() {
+        CreativeTemplatePin.Pinned pinned = CreativeTemplatePin.resolveCodes(
+            Arrays.asList("longpage@1.0.2", "longpage@1.0.2"), "longpage", "1.0.1");
+
+        assertEquals("longpage", pinned.code());
+        assertEquals("1.0.2", pinned.version());
+        assertTrue(pinned.fromPlan());
+        // 计划里没钉 → 默认（不是"猜一个已发布版本"）
+        assertFalse(CreativeTemplatePin.resolveCodes(List.of(), "longpage", "1.0.1").fromPlan());
+        // 计划里钉冲突 → 报错（与屏上兜底路径同一套规则）
+        ServiceException ex = assertThrows(ServiceException.class, () -> CreativeTemplatePin.resolveCodes(
+            Arrays.asList("longpage@1.0.2", "longpage@1.0.1"), "longpage", "1.0.1"));
+        assertTrue(ex.getMessage().contains("不同的排版模板"), ex.getMessage());
+    }
+
+    @Test
     @DisplayName("没有屏钉模板（含老分镜/脏 spec）→ 用默认模板")
     void defaultsWhenNothingPinned() {
         CreativeTemplatePin.Pinned pinned = CreativeTemplatePin.resolve(

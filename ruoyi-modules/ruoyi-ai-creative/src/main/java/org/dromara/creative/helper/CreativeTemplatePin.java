@@ -45,7 +45,7 @@ public final class CreativeTemplatePin {
     }
 
     /**
-     * 从各屏的 spec_json 汇总模板选择。
+     * 从各屏的 spec_json 汇总模板选择（**兜底路径**：项目没有模块计划时用）。
      *
      * @param specJsons     各屏的 spec_json（可含 null / 空 / 脏数据）
      * @param defaultCode   默认模板码
@@ -60,6 +60,44 @@ public final class CreativeTemplatePin {
                 collect(specJson, votes);
             }
         }
+        return decide(votes, defaultCode, defaultVersion);
+    }
+
+    /**
+     * 从**当前模块计划**里的模板码汇总模板选择（正式路径，V0.2 R24）。
+     *
+     * <p><b>为什么模板要取"当前计划"，而参考图/视觉表达取"屏上冻的"</b>：
+     * 参考图与视觉表达是"这一屏**当时**是怎么出图的"——那是历史事实，必须冻在屏上才可追溯；
+     * 而模板决定的是"**现在**怎么渲染已有这些屏"，用户改模板不该被要求重拆分镜。
+     * 把两者混成一个来源，就会出现"改了模板却不生效"或"重拆分镜才敢改模板"。</p>
+     *
+     * @param codes          计划里启用模块的模板码（可为空＝没钉）
+     * @param defaultCode    默认模板码
+     * @param defaultVersion 默认模板版本
+     * @return 模板选择
+     */
+    public static Pinned resolveCodes(List<String> codes, String defaultCode, String defaultVersion) {
+        Map<String, Integer> votes = new LinkedHashMap<>();
+        if (codes != null) {
+            for (String code : codes) {
+                String value = StringUtils.trimToNull(code);
+                if (value != null) {
+                    votes.merge(value, 1, Integer::sum);
+                }
+            }
+        }
+        return decide(votes, defaultCode, defaultVersion);
+    }
+
+    /**
+     * 按票数决定用哪个模板。
+     *
+     * @param votes          模板码 → 出现次数
+     * @param defaultCode    默认模板码
+     * @param defaultVersion 默认模板版本
+     * @return 模板选择
+     */
+    private static Pinned decide(Map<String, Integer> votes, String defaultCode, String defaultVersion) {
         if (votes.isEmpty()) {
             return new Pinned(defaultCode, defaultVersion, false);
         }

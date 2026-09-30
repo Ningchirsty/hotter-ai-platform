@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
+import org.dromara.creative.domain.DpProjectModule;
+import org.dromara.creative.service.ICreativeModuleService;
 import org.dromara.creative.helper.CreativeTemplatePin;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
@@ -114,6 +116,12 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
     private final ICreativeStoryboardService storyboardService;
     private final ICreativeGenerationService generationService;
     private final ICreativeTemplateService templateService;
+
+    /**
+     * 模块引擎（R24）：排版按**当前模块计划**取模板码。
+     * <p>为什么模板取当前计划、而参考图/视觉表达取屏上冻的那份：模板决定「现在怎么渲染已有这些屏」，改模板不该被要求重拆分镜；参考图/视觉表达是「这一屏当时怎么出的图」，那是历史事实，必须冻在屏上。</p>
+     */
+    private final ICreativeModuleService moduleService;
     private final RendererClient rendererClient;
     private final IContentTaskService contentTaskService;
     private final ContentOssHelper contentOssHelper;
@@ -139,7 +147,7 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
         // 0) 先把"用哪个模板"定下来（R23）：模块规划钉了模板就用它，钉了但不可用就直接报错。
         //    放在逐屏取图之前，是因为**配置错要先于做工作被发现**：否则用户要先等一遍
         //    "还没有已选定产出图"的提示，才能看到真正的模板问题。
-        CreativeTemplatePin.Pinned pinned = pinnedTemplate(storyboard);
+        CreativeTemplatePin.Pinned pinned = pinnedTemplate(taskId, storyboard);
         var template = templateService.requirePublished(pinned.code(), pinned.version());
 
         // 1) 逐屏取「已选定」产出并内联为 data URI；没有选定的屏不编造，交给模板写明缺什么
@@ -272,7 +280,18 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
      * @param storyboard 本次排版的分镜
      * @return 模板选择
      */
-    private CreativeTemplatePin.Pinned pinnedTemplate(DpStoryboardVo storyboard) {
+    private CreativeTemplatePin.Pinned pinnedTemplate(Long taskId, DpStoryboardVo storyboard) {
+        // 正式路径：当前模块计划里启用模块的模板码（改模板立刻生效，不必重拆分镜）
+        List<String> codes = new ArrayList<>();
+        for (DpProjectModule module : moduleService.listProjectModules(taskId)) {
+            if (!"1".equals(module.getEnabled())) {
+                codes.addAll(CreativeModuleServiceImpl.splitCodes(module.getTemplateCodes()));
+            }
+        }
+        if (!codes.isEmpty()) {
+            return CreativeTemplatePin.resolveCodes(codes, PAGE_TEMPLATE_CODE, PAGE_TEMPLATE_VERSION);
+        }
+        // 兜底：老项目没有模块计划时，仍认屏上冻着的模板码（历史分镜的兼容路径）
         List<String> specs = new ArrayList<>();
         for (DpStoryboardScreenVo screen : storyboard.getScreens()) {
             specs.add(screen.getSpecJson());
@@ -287,12 +306,12 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
      * @param storyboard 分镜（可空）
      * @return 形如 longpage@1.0.2
      */
-    private String templateKeyOf(DpStoryboardVo storyboard) {
+    private String templateKeyOf(Long taskId, DpStoryboardVo storyboard) {
         if (storyboard == null || storyboard.getScreens() == null) {
             return PAGE_TEMPLATE_CODE + "@" + PAGE_TEMPLATE_VERSION;
         }
         try {
-            CreativeTemplatePin.Pinned pinned = pinnedTemplate(storyboard);
+            CreativeTemplatePin.Pinned pinned = pinnedTemplate(taskId, storyboard);
             return pinned.code() + "@" + pinned.version();
         } catch (Exception e) {
             return PAGE_TEMPLATE_CODE + "@" + PAGE_TEMPLATE_VERSION;
@@ -370,7 +389,7 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
         DpDetailPage page = findPage(taskId);
         DpDetailPageVo vo = new DpDetailPageVo();
         vo.setRendererAvailable(rendererClient.version() != null);
-        vo.setTemplateKey(templateKeyOf(storyboardService.latest(taskId)));
+        vo.setTemplateKey(templateKeyOf(taskId, storyboardService.latest(taskId)));
         vo.setScreensWithoutSelection(missingScreens(taskId));
         if (page == null) {
             vo.setTaskId(taskId);
