@@ -65,4 +65,18 @@ describe('界面说明文案与界面实际显示保持一致', () => {
     expect(ws).toContain('v-if="!hasGuide"');
     expect(ws).toContain("const hasGuide = computed(() => assembledCodes.value.includes('STEP_NAVIGATOR'))");
   });
+
+  it('基因页的提示词框：不许变成"能改"（那是第三个真相源），但必须给一条跳去出图框的路', () => {
+    const panel = source('dna/components/VisualDnaPanel.vue');
+    const page = source('dna/index.vue');
+    // 两个框保持只读（本页没有可落库的提示词存储）
+    expect(panel).toContain('<el-input :model-value="promptText" type="textarea" :rows="4" readonly />');
+    expect(panel).toContain('<el-input :model-value="negativeText" type="textarea" :rows="2" readonly />');
+    // 但要说清"本页改不了"，并给按钮一跳就到真正生效的地方
+    expect(panel).toContain('本页改不了');
+    expect(panel).toContain('去出图框改提示词');
+    expect(panel).toContain("(e: 'open-generation'): void;");
+    expect(page).toContain('@open-generation="openGeneration"');
+    expect(page).toContain("window.open(`/creative/project?taskId=${taskId.value}`, '_self')");
+  });
 });

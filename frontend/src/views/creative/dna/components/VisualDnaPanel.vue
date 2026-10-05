@@ -225,10 +225,15 @@
       </p>
       <p class="muted">
         下面两框是<b>出图时会预填进去的内容</b>：正向＝画面要什么，负向＝画面不要什么。
-        <b>要改请在出图框里改</b>（「视觉项目 → 生成 HERO 主图」或「AI 生产中心」的提交框），
-        改完照原样下发——本页只是派生结果的展示，在这里改不会生效。
-        「重新派生」会按当前这一版基因重算一次。
+        这里只做展示——<b>本页改不了</b>，因为它不是这一版基因的一部分（改了就没法回答
+        "这版基因派生出什么"）。要改就点下面的按钮去出图框，那儿是真正会生效的地方，
+        改完照原样下发。「重新派生」会按当前这一版基因重算一次。
       </p>
+      <div class="prompt-actions">
+        <el-button size="small" type="primary" plain @click="$emit('open-generation')">
+          去出图框改提示词
+        </el-button>
+      </div>
       <div class="prompt-box">
         <label>正向提示词（要什么）</label>
         <el-input :model-value="promptText" type="textarea" :rows="4" readonly />
@@ -416,6 +421,13 @@ const emit = defineEmits<{
   (e: 'lock'): void;
   /** 重新派生提示词 */
   (e: 'load-prompt'): void;
+  /**
+   * 去出图框改提示词（v1 反馈「可编辑」的落地方式）。
+   *
+   * <p>本页没有可落库的提示词存储，做出"能改"的假象就是第三个真相源；
+   * 但也不能只写一句"请去出图框改"让人自己找——所以给一个一跳就到那儿的动作。</p>
+   */
+  (e: 'open-generation'): void;
   /** 查看历史版本（页面负责切换当前版） */
   (e: 'view-version', row: DpVisualDnaVO): void;
 }>();
@@ -726,6 +738,9 @@ watch(() => props.dna, (value) => fillForm(value), { immediate: true });
 
 /* 提示词两框各自带标签（v1 反馈：原先两个框没有标题，看不出哪个是正向、哪个是负向） */
 .prompt-box {
+  margin-top: 10px;
+}
+.prompt-actions {
   margin-top: 10px;
 }
 .prompt-box > label {

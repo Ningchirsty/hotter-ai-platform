@@ -43,6 +43,7 @@
           @save="doSave"
           @lock="doLock"
           @load-prompt="loadPrompt"
+          @open-generation="openGeneration"
           @view-version="viewVersion"
         />
       </template>
@@ -151,6 +152,19 @@ function onProjectChange() {
   versions.value = [];
   prompt.value = null;
   void loadAll();
+}
+
+/**
+ * 去出图框改提示词（v1 反馈「可编辑」）。
+ *
+ * <p>本页只展示派生结果，真正可编辑、也真正会生效的地方是项目页的
+ * 「生成 HERO 主图」提交框。带 `taskId` 跳过去，用户不用自己找。</p>
+ */
+function openGeneration() {
+  if (!taskId.value) {
+    return;
+  }
+  window.open(`/creative/project?taskId=${taskId.value}`, '_self');
 }
 
 async function doGenerate() {
