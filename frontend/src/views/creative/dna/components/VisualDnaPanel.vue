@@ -6,11 +6,11 @@
   <!-- 尚未生成 -->
   <section v-else-if="!dna" class="panel generate-panel" data-dna-section="EMPTY">
     <h3>这个项目还没有视觉基因</h3>
-    <p class="muted">
+    <p class="hint">
       生成时会用到：<strong>已确认的产品事实</strong>（颜色、品牌调性、主体版本…）、
       <strong>项目里的参考图</strong>，以及一组<strong>明确标注来源的默认规范</strong>。
     </p>
-    <p class="muted">
+    <p class="hint">
       若治理台已为视觉分析注册了可用模型，模型结论会用于补全并逐项校验后采纳；
       没有可用模型时，基因来源会如实标为「事实推导」，<strong>不会把默认值包装成 AI 结论</strong>。
     </p>
@@ -105,11 +105,11 @@
       <div class="block-head">
         <h3>规范内容</h3>
         <div class="head-actions">
-          <span class="muted">改动保存即生效；已锁定版本保存会自动新建一版</span>
+          <span class="hint">改动保存即生效；已锁定版本保存会自动新建一版</span>
           <el-button size="small" :loading="recommending" @click="doRecommend">按参考图推荐</el-button>
         </div>
       </div>
-      <p class="muted recommend-hint">
+      <p class="hint recommend-hint">
         配色、饱和度、对比度、留白、产品占比由参考图<b>实测</b>得出；光线与场景是弱启发——
         逐项依据里用<b>实测</b>与<b>弱启发</b>两个标签标出，各自都能改。
         风格关键词、禁忌词、字体风格像素层面推不出来，<b>不会编</b>——需要人工填或由品牌调性事实带入。
@@ -220,10 +220,10 @@
         <h3>按这版基因派生的出图提示词</h3>
         <el-button size="small" text type="primary" @click="$emit('load-prompt')">重新派生</el-button>
       </div>
-      <p class="muted">
+      <p class="hint">
         用到的维度：{{ appliedText(prompt?.applied) || '—' }}。
       </p>
-      <p class="muted">
+      <p class="hint">
         下面两框是<b>出图时会预填进去的内容</b>：正向＝画面要什么，负向＝画面不要什么。
         这里只做展示——<b>本页改不了</b>，因为它不是这一版基因的一部分（改了就没法回答
         "这版基因派生出什么"）。要改就点下面的按钮去出图框，那儿是真正会生效的地方，
