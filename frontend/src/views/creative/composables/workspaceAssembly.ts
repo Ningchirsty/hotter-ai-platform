@@ -174,6 +174,24 @@ export interface StepComponentRef {
   pages: string[];
 }
 
+/**
+ * 一个面板在配置里的声明（R44 起支持**页面限定**）。
+ *
+ * <p>v1 人工测试反馈：基因 / 分镜 / 生产 / 审核四页各自已经有页头（页面用 `#page-head` 提供），
+ * 却仍然叠着配置里的「产品信息」（`PROJECT_HEADER`）与「流程指引」（`STEP_NAVIGATOR`），
+ * 于是同一个页面出现两层标题、本页模块被挤到下面。</p>
+ *
+ * <p>为什么不直接把这两个面板从配置里删掉：视觉项目页**没有**自己的页头
+ * （它的头部就是 `PROJECT_HEADER`），删了就少一页的头部。这不是"要不要"，而是
+ * "在哪些页面上要"——所以面板和步骤组件一样，得能写 `pages`。</p>
+ */
+export interface PanelRef {
+  /** 面板编码（= 注册表里的名字，如 `PROJECT_HEADER`） */
+  code: string;
+  /** 只在哪些页面（路由 path）上生效；空数组表示不限页面 */
+  pages: string[];
+}
+
 /** 对照结果的一行 */
 export interface AssemblyRow {
   /** 步骤编码或面板编码 */
@@ -182,6 +200,8 @@ export interface AssemblyRow {
   component: string;
   /** 配置里声明的全部组件名（一步多组件时不止一个） */
   components: string[];
+  /** 这一行只在哪些页面上生效；空数组表示不限页面（对照照旧全部列出，筛选发生在装配时） */
+  pages: string[];
   kind: AssemblyKind;
   location: string;
   note: string;
@@ -191,8 +211,13 @@ export interface AssemblyRow {
 export interface WorkspaceLayout {
   /** 工作台类型（如 LONG_PAGE） */
   workspace: string;
-  /** 面板编码 */
-  panels: string[];
+  /**
+   * 面板（R44 起带**页面限定**）。
+   *
+   * <p>旧写法 `["PROJECT_HEADER", ...]`（纯字符串）仍然解析（归一成 `pages:[]` = 不限页面），
+   * 这样配置改一半、或者别的工作台还没改过来时，装配不会突然空掉。</p>
+   */
+  panels: PanelRef[];
   /**
    * 步骤 → 组件（R37 起允许**一步多个组件**：项目页「资料」步就是"附件 + 品牌要求"两块）。
    *
@@ -200,6 +225,13 @@ export interface WorkspaceLayout {
    * 这样配置改一半、或者别的工作台还没改过来时，装配不会突然空掉。</p>
    */
   steps: Array<{ code: string; components: StepComponentRef[] }>;
+}
+
+/** 归一 `pages` 字段：只留非空字符串（配置写错时不猜，直接当"不限页面"） */
+function normalizePages(raw: unknown): string[] {
+  return Array.isArray(raw)
+    ? raw.filter((p): p is string => typeof p === 'string' && p.trim() !== '').map((p) => p.trim())
+    : [];
 }
 
 /** 把一个组件声明归一成 {@link StepComponentRef}（字符串 / 对象两种写法都认） */
@@ -214,10 +246,26 @@ function normalizeComponentRef(raw: unknown): StepComponentRef | null {
     if (!name) {
       return null;
     }
-    const pages = Array.isArray(row.pages)
-      ? row.pages.filter((p): p is string => typeof p === 'string' && p.trim() !== '').map((p) => p.trim())
-      : [];
-    return { name, pages };
+    return { name, pages: normalizePages(row.pages) };
+  }
+  return null;
+}
+
+/**
+ * 把一个面板声明归一成 {@link PanelRef}（字符串 / 对象两种写法都认）。
+ *
+ * @param raw 配置里的面板项（`"PROJECT_HEADER"` 或 `{"code":"PROJECT_HEADER","pages":[...]}`）
+ * @returns 归一结果；认不出来返回 null（不静默变成一个凭空的编码）
+ */
+export function normalizePanelRef(raw: unknown): PanelRef | null {
+  if (typeof raw === 'string') {
+    const code = raw.trim();
+    return code ? { code, pages: [] } : null;
+  }
+  if (raw && typeof raw === 'object') {
+    const row = raw as { code?: unknown; pages?: unknown };
+    const code = typeof row.code === 'string' ? row.code.trim() : '';
+    return code ? { code, pages: normalizePages(row.pages) } : null;
   }
   return null;
 }
@@ -237,7 +285,9 @@ export function parseWorkspaceLayout(json?: string | null): WorkspaceLayout | nu
     if (!parsed || typeof parsed !== 'object') {
       return null;
     }
-    const panels = Array.isArray(parsed.panels) ? parsed.panels.filter((p) => typeof p === 'string') : [];
+    const panels = Array.isArray(parsed.panels)
+      ? parsed.panels.map(normalizePanelRef).filter((p): p is PanelRef => p !== null)
+      : [];
     const steps = Array.isArray(parsed.steps)
       ? parsed.steps
           .filter((s) => s && typeof s === 'object')
@@ -351,12 +401,18 @@ function entryOf(name: string): RegistryEntry {
 }
 
 /** 造一行对照 */
-function rowOf(code: string, component: string, registry: Record<string, RegistryEntry>): AssemblyRow {
+function rowOf(
+  code: string,
+  component: string,
+  registry: Record<string, RegistryEntry>,
+  pages: string[] = []
+): AssemblyRow {
   const entry = registry[component] ?? entryOf(component);
   return {
     code,
     component,
     components: component ? [component] : [],
+    pages,
     kind: entry.kind,
     location: entry.location,
     note: entry.note
@@ -381,7 +437,7 @@ function stepRowsOf(
       continue;
     }
     for (const component of step.components) {
-      out.push(rowOf(step.code, component.name, registry));
+      out.push(rowOf(step.code, component.name, registry, component.pages));
     }
   }
   return out;
@@ -407,7 +463,7 @@ export function diffWorkspaceAssembly(
     return null;
   }
   const registry = options.registry ?? CODE_COMPONENT_REGISTRY;
-  const panelRows = layout.panels.map((panel) => rowOf(panel, panel, registry));
+  const panelRows = layout.panels.map((panel) => rowOf(panel.code, panel.code, registry, panel.pages));
   const stepRows = stepRowsOf(layout.steps, registry);
   const rows = [...panelRows, ...stepRows];
 
@@ -638,6 +694,25 @@ export interface AssemblySlot {
 }
 
 /**
+ * 挑出**在这个页面上生效**的面板行（R44）。
+ *
+ * <p>规则与步骤组件的页面限定完全一致：没写 `pages` 的面板在任何页面都算；
+ * 写了就只在列出的路由上算。抽成纯函数是为了能单测——"哪些面板在哪些页面出现"
+ * 是这次要钉住的产品口径，不该只靠肉眼看页面。</p>
+ *
+ * @param panelRows 面板对照行
+ * @param path      当前页面路由；空串表示不筛（返回全部）
+ * @returns 生效的面板行（保持配置顺序）
+ */
+export function panelsForPage(panelRows: AssemblyRow[], path?: string | null): AssemblyRow[] {
+  const here = (path || '').trim();
+  if (!here) {
+    return panelRows;
+  }
+  return panelRows.filter((row) => !row.pages.length || row.pages.includes(here));
+}
+
+/**
  * 把配置里的面板清单翻成装配计划（R19）。
  *
  * <p>规则（左侧是配置里的名字，右侧是这次渲染成什么）：</p>
@@ -654,11 +729,14 @@ export interface AssemblySlot {
  *
  * @param panelRows 装配对照里的面板行（`AssemblyDiff.panelRows`）；为空表示配置读不到
  * @param registry  真实组件注册表（用于判断"能不能解析出组件"）
+ * @param path      当前页面路由（R44：面板可以写 `pages` 限定页面，例如"产品信息与流程指引只在视觉项目页"）；
+ *                  空串表示不筛（配置读不到时的兜底计划也走这条路）
  * @returns 按配置顺序的装配计划
  */
 export function buildAssemblyPlan(
   panelRows: AssemblyRow[] | null | undefined,
-  registry: Record<string, unknown> = CODE_COMPONENT_REGISTRY
+  registry: Record<string, unknown> = CODE_COMPONENT_REGISTRY,
+  path?: string | null
 ): AssemblySlot[] {
   if (!panelRows || !panelRows.length) {
     // 兜底计划**必须包含项目头部**（R31）：
@@ -671,7 +749,7 @@ export function buildAssemblyPlan(
       { code: 'MAIN_STAGE', kind: 'SECTION', target: 'MAIN', reason: '配置读不到，按既有布局渲染页面内容' }
     ];
   }
-  return panelRows.map((row) => {
+  return panelsForPage(panelRows, path).map((row) => {
     if (row.code === 'STEP_NAVIGATOR') {
       return { code: row.code, kind: row.kind, target: 'GUIDE' as AssemblyTarget, reason: '步骤导航：五页共用的指引线组件' };
     }

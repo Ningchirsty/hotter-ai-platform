@@ -11,6 +11,7 @@ import {
   formatAssemblyChip,
   hostedSteps,
   layoutOfWorkspace,
+  panelsForPage,
   parseWorkspaceLayout,
   pickVisibleStep,
   referencedSchemaCode,
@@ -62,9 +63,11 @@ describe('workspaceAssembly：解析', () => {
     const layout = parseWorkspaceLayout(SEED_JSON);
     expect(layout).not.toBeNull();
     expect(layout!.workspace).toBe('LONG_PAGE');
-    expect(layout!.panels).toEqual([
+    expect(layout!.panels.map((p) => p.code)).toEqual([
       'PROJECT_HEADER', 'STEP_NAVIGATOR', 'MAIN_STAGE', 'INSPECTOR', 'ASSET_DRAWER'
     ]);
+    // R44 起面板也带 pages：种子配置是老写法（纯字符串）→ 归一成"不限页面"
+    expect(layout!.panels.every((p) => p.pages.length === 0)).toBe(true);
     expect(layout!.steps.map((s) => s.code)).toEqual([
       'INPUT', 'FACT', 'DNA', 'DIRECTION', 'STORYBOARD', 'GATE', 'GENERATION', 'QA', 'LAYOUT', 'FINAL'
     ]);
@@ -155,7 +158,7 @@ describe('workspaceAssembly：解析', () => {
       '{"workspace":"W","panels":["A",5,null],"steps":[{"code":"X"},{"component":"Y"},null,7]}'
     );
     expect(layout).not.toBeNull();
-    expect(layout!.panels).toEqual(['A']);
+    expect(layout!.panels.map((p) => p.code)).toEqual(['A']);
     // 脏项不丢：code 缺就补空串、组件缺就是空数组，交给对照去报"没给组件"
     expect(layout!.steps).toEqual([
       { code: 'X', components: [] },
@@ -311,7 +314,10 @@ describe('workspaceAssembly：对照', () => {
       expect(entry.note, `${name} 缺说明`).toBeTruthy();
     }
     const layout = parseWorkspaceLayout(SEED_JSON)!;
-    const names = [...layout.panels, ...layout.steps.flatMap((s) => s.components.map((c) => c.name))];
+    const names = [
+      ...layout.panels.map((p) => p.code),
+      ...layout.steps.flatMap((s) => s.components.map((c) => c.name))
+    ];
     for (const name of names) {
       expect(CODE_COMPONENT_REGISTRY[name], `配置里的 ${name} 没在注册表登记`).toBeTruthy();
     }
@@ -658,5 +664,58 @@ describe('R38 / R39：页面这一步的装配组件', () => {
     // 长图预览弹窗留在页面（blob URL 生命周期）
     expect(rvPage).toContain('previewVisible');
     expect(layoutPanel).not.toContain('revokeObjectURL');
+  });
+});
+
+describe('workspaceAssembly：面板的页面限定（R44，v1 反馈「各页面板裁剪」）', () => {
+  const PROD_JSON =
+    '{"workspace":"LONG_PAGE","panels":[' +
+    '{"code":"PROJECT_HEADER","pages":["/creative/project"]},' +
+    '{"code":"STEP_NAVIGATOR","pages":["/creative/project"]},' +
+    '"MAIN_STAGE","INSPECTOR","ASSET_DRAWER"],' +
+    '"steps":[{"code":"DNA","components":["VisualDnaPanel"]}]}';
+
+  it('解析：面板的 pages 认对象写法，纯字符串仍归一成"不限页面"', () => {
+    const layout = parseWorkspaceLayout(PROD_JSON)!;
+    expect(layout.panels.map((p) => p.code)).toEqual([
+      'PROJECT_HEADER', 'STEP_NAVIGATOR', 'MAIN_STAGE', 'INSPECTOR', 'ASSET_DRAWER'
+    ]);
+    expect(layout.panels[0].pages).toEqual(['/creative/project']);
+    expect(layout.panels[2].pages).toEqual([]);
+    // 脏项不编造：没有 code（或 code 不是字符串）直接丢掉
+    const dirty = parseWorkspaceLayout('{"workspace":"W","panels":[{"pages":["/a"]},{"code":"  "},7,"OK"]}')!;
+    expect(dirty.panels.map((p) => p.code)).toEqual(['OK']);
+  });
+
+  it('筛选：视觉项目页保留产品信息与流程指引，另外四页都不出现', () => {
+    const layout = parseWorkspaceLayout(PROD_JSON)!;
+    const rows = diffWorkspaceAssembly(layout)!.panelRows;
+    expect(panelsForPage(rows, '/creative/project').map((r) => r.code)).toEqual([
+      'PROJECT_HEADER', 'STEP_NAVIGATOR', 'MAIN_STAGE', 'INSPECTOR', 'ASSET_DRAWER'
+    ]);
+    for (const path of ['/creative/dna', '/creative/storyboard', '/creative/production', '/creative/review']) {
+      expect(panelsForPage(rows, path).map((r) => r.code), `${path} 不该有产品信息/流程指引`).toEqual([
+        'MAIN_STAGE', 'INSPECTOR', 'ASSET_DRAWER'
+      ]);
+    }
+    // 页面路径为空（配置还没读完 / 单独用纯函数）时不筛——不因"不知道在哪一页"就少渲染
+    expect(panelsForPage(rows, '')).toHaveLength(5);
+  });
+
+  it('装配计划：非项目页不再出现 GUIDE 槽位，但主舞台仍在（页面不会变空）', () => {
+    const rows = diffWorkspaceAssembly(parseWorkspaceLayout(PROD_JSON)!)!.panelRows;
+    const dnaPlan = buildAssemblyPlan(rows, undefined, '/creative/dna');
+    expect(dnaPlan.map((s) => s.target)).not.toContain('GUIDE');
+    expect(dnaPlan.map((s) => s.code)).not.toContain('PROJECT_HEADER');
+    expect(assembledSlots(dnaPlan).map((s) => s.code)).toEqual(['MAIN_STAGE', 'INSPECTOR', 'ASSET_DRAWER']);
+    // 项目页照旧：GUIDE + 头部 + 主舞台
+    const projPlan = buildAssemblyPlan(rows, undefined, '/creative/project');
+    expect(assembledSlots(projPlan).map((s) => s.code)).toEqual([
+      'PROJECT_HEADER', 'STEP_NAVIGATOR', 'MAIN_STAGE', 'INSPECTOR', 'ASSET_DRAWER'
+    ]);
+    // 配置读不到时仍走兜底计划（含头部与指引线），页面动作不会凭空消失
+    expect(buildAssemblyPlan(null, undefined, '/creative/dna').map((s) => s.code)).toEqual([
+      'PROJECT_HEADER', 'STEP_NAVIGATOR', 'MAIN_STAGE'
+    ]);
   });
 });

@@ -238,8 +238,18 @@ const flow = useCreativeFlow(
 /** 面板开合（工作台统一托管）；qa 是"步骤组件抽屉"，不在面板清单里 */
 const panels = reactive({ inspector: false, assets: false, qa: false });
 
-/** 装配计划：来自配置里的面板清单；配置读不到时是兜底计划 */
-const plan = computed(() => buildAssemblyPlan(flow.assembly.value?.panelRows));
+/** 当前路由（R41 起装配按页面筛步骤组件；R44 起面板也按页面筛） */
+const route = useRoute();
+
+/**
+ * 装配计划：来自配置里的面板清单；配置读不到时是兜底计划。
+ *
+ * <p><b>R44（v1 反馈）</b>：面板也能写 `pages` 了。产品信息（`PROJECT_HEADER`）与
+ * 流程指引（`STEP_NAVIGATOR`）只在视觉项目页出现——另外四页各自已经有页头
+ * （页面用 `#page-head` 提供），再叠一层就是"两层标题、本页模块被挤到下面"。
+ * 项目页没有自己的页头（它的头部就是 `PROJECT_HEADER`），所以这条路必须留着。</p>
+ */
+const plan = computed(() => buildAssemblyPlan(flow.assembly.value?.panelRows, undefined, route.path));
 /** 真的渲染出来的槽位编码（挂到 DOM 上供验收与排障） */
 const assembledCodes = computed(() => assembledSlots(plan.value).map((s) => s.code));
 const workspaceName = computed(() => flow.assembly.value?.workspace || 'FALLBACK');
@@ -273,8 +283,6 @@ const providedComponents = computed(() =>
 );
 const hasMainSlot = computed(() => Boolean(slots.main));
 
-/** 当前路由（R41：装配支持"同一个步骤在不同页面上的不同视图"，要靠它筛） */
-const route = useRoute();
 /** 没有项目就没有步骤：这时若页面提供了 #main（跨项目总览之类），就渲染它 */
 const projectLess = computed(() => !props.taskId && hasMainSlot.value);
 
