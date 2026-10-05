@@ -13,7 +13,7 @@
         <header class="page-head">
           <div>
             <h2>视觉方向与分镜</h2>
-            <p class="muted">
+            <p class="title-note">
               先在同一个锁定基因下选一个方向（只在场景/光线/构图/情绪上分叉），再拆成逐屏规格。
               分镜锁定后不可修改，重新生成会出新版本。
             </p>

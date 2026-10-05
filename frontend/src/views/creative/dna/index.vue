@@ -7,7 +7,7 @@
         <header class="dna-head">
           <div>
             <h2>视觉基因 DNA</h2>
-            <p class="muted">
+            <p class="title-note">
               把「这条详情页长什么样」写成结构化规范：配色、光线、留白、产品占比、场景与禁忌。
               <strong>锁定后不可修改</strong>，再改会新建版本——这样后面每一屏、每一张图都能回答「是按哪版基因做的」。
             </p>
