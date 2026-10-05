@@ -192,58 +192,72 @@
         <el-button size="small" text type="primary" @click="$emit('load-prompt')">重新派生</el-button>
       </div>
       <p class="muted">
-        用到的维度：{{ prompt?.applied?.join('、') || '—' }}。
-        这是<strong>预填</strong>到出图框的内容，你可以改；改完照原样下发。
+        用到的维度：{{ appliedText(prompt?.applied) || '—' }}。
       </p>
-      <el-input :model-value="promptText" type="textarea" :rows="4" readonly />
-      <el-input :model-value="negativeText" type="textarea" :rows="2" readonly class="mt8" />
+      <p class="muted">
+        下面两框是<b>出图时会预填进去的内容</b>：正向＝画面要什么，负向＝画面不要什么。
+        <b>要改请在出图框里改</b>（「视觉项目 → 生成 HERO 主图」或「AI 生产中心」的提交框），
+        改完照原样下发——本页只是派生结果的展示，在这里改不会生效。
+        「重新派生」会按当前这一版基因重算一次。
+      </p>
+      <div class="prompt-box">
+        <label>正向提示词（要什么）</label>
+        <el-input :model-value="promptText" type="textarea" :rows="4" readonly />
+      </div>
+      <div class="prompt-box">
+        <label>负向提示词（不要什么）</label>
+        <el-input :model-value="negativeText" type="textarea" :rows="2" readonly />
+      </div>
     </section>
 
-    <!-- 证据链 -->
-    <section class="panel" data-dna-section="EVIDENCE">
-      <div class="block-head">
-        <h3>这一版是怎么来的（证据链）</h3>
-        <span class="muted">{{ (dna.evidence || []).length }} 条</span>
-      </div>
-      <el-table :data="dna.evidence || []" size="small" empty-text="没有证据记录">
-        <el-table-column prop="kind" label="类型" width="100" />
-        <el-table-column prop="label" label="项目" width="200" />
-        <el-table-column prop="value" label="值" min-width="220" show-overflow-tooltip />
-        <el-table-column prop="source" label="来源" min-width="240" show-overflow-tooltip />
-      </el-table>
-    </section>
+    <!-- 证据链 + 版本历史：并列两张卡
+         （v1 反馈：这两块回答的是同一个问题「这一版从哪来」，各自占满整行时
+          要上下跳着对照；并列之后一屏能同时看到，卡内自己滚动，高度也不随条数无限长。） -->
+    <div class="dna-cards">
+      <section class="panel" data-dna-section="EVIDENCE">
+        <div class="block-head">
+          <h3>这一版是怎么来的（证据链）</h3>
+          <span class="muted">{{ (dna.evidence || []).length }} 条</span>
+        </div>
+        <el-table :data="dna.evidence || []" size="small" empty-text="没有证据记录" max-height="320">
+          <el-table-column prop="kind" label="类型" width="100" />
+          <el-table-column prop="label" label="项目" width="200" />
+          <el-table-column prop="value" label="值" min-width="220" show-overflow-tooltip />
+          <el-table-column prop="source" label="来源" min-width="240" show-overflow-tooltip />
+        </el-table>
+      </section>
 
-    <!-- 版本历史 -->
-    <section class="panel" data-dna-section="VERSIONS">
-      <div class="block-head">
-        <h3>版本历史</h3>
-        <span class="muted">{{ versions.length }} 版</span>
-      </div>
-      <el-table :data="versions" size="small">
-        <el-table-column prop="version" label="版本" width="80" />
-        <el-table-column prop="dnaNo" label="编号" width="180" />
-        <el-table-column label="来源" width="120">
-          <template #default="{ row }">
-            <el-tag :type="sourceType(asDna(row).source)" size="small">{{ sourceLabel(asDna(row).source) }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="statusDesc" label="状态" width="100" />
-        <el-table-column label="校验" width="90">
-          <template #default="{ row }">
-            <span :class="(asDna(row).issues || []).length ? 'bad' : 'good'">
-              {{ (asDna(row).issues || []).length ? '待补齐' : 'OK' }}
-            </span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="createTime" label="创建时间" width="180" />
-        <el-table-column prop="remark" label="说明" min-width="240" show-overflow-tooltip />
-        <el-table-column label="操作" width="90">
-          <template #default="{ row }">
-            <el-button size="small" text type="primary" @click="$emit('view-version', asDna(row))">查看</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-    </section>
+      <section class="panel" data-dna-section="VERSIONS">
+        <div class="block-head">
+          <h3>版本历史</h3>
+          <span class="muted">{{ versions.length }} 版</span>
+        </div>
+        <el-table :data="versions" size="small" max-height="320">
+          <el-table-column prop="version" label="版本" width="80" />
+          <el-table-column prop="dnaNo" label="编号" width="180" />
+          <el-table-column label="来源" width="120">
+            <template #default="{ row }">
+              <el-tag :type="sourceType(asDna(row).source)" size="small">{{ sourceLabel(asDna(row).source) }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="statusDesc" label="状态" width="100" />
+          <el-table-column label="校验" width="90">
+            <template #default="{ row }">
+              <span :class="(asDna(row).issues || []).length ? 'bad' : 'good'">
+                {{ (asDna(row).issues || []).length ? '待补齐' : 'OK' }}
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="createTime" label="创建时间" width="180" />
+          <el-table-column prop="remark" label="说明" min-width="240" show-overflow-tooltip />
+          <el-table-column label="操作" width="90">
+            <template #default="{ row }">
+              <el-button size="small" text type="primary" @click="$emit('view-version', asDna(row))">查看</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </section>
+    </div>
   </template>
 
   <!-- 推荐依据 -->
@@ -321,6 +335,7 @@ import {
   DNA_SOURCE_LABELS,
   DNA_SOURCE_TYPES
 } from '@/api/creative/types';
+import { appliedText } from '../../composables/promptApplied';
 
 /**
  * 「视觉基因」这一步的内容（V0.2 R38，装配组件名 `VisualDnaPanel`）。
@@ -584,8 +599,34 @@ watch(() => props.dna, (value) => fillForm(value), { immediate: true });
   margin-top: 16px;
 }
 
-.mt8 {
-  margin-top: 8px;
+/* 提示词两框各自带标签（v1 反馈：原先两个框没有标题，看不出哪个是正向、哪个是负向） */
+.prompt-box {
+  margin-top: 10px;
+}
+.prompt-box > label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--t2);
+}
+
+/* 证据链与版本历史并列（v1 反馈）：两块回答的是同一个问题「这一版从哪来」，
+   竖排要上下跳着对照。每张卡内的表格自己滚动（el-table 的 max-height 给固定表头），
+   所以卡片高度不随条数无限增长。窄屏退回单列——挤成两列会把列全压扁。 */
+.dna-cards {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+  gap: 14px;
+  align-items: start;
+  margin-bottom: 14px;
+}
+.dna-cards .panel {
+  margin-bottom: 0;
+}
+@media (max-width: 1280px) {
+  .dna-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .good {

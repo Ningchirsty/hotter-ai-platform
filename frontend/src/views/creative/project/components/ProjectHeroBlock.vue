@@ -34,7 +34,7 @@
     </div>
     <template v-if="dnaStateLoaded">
       <p v-if="promptFromDna" class="dna-hint">
-        已按<b>视觉基因</b>预填提示词（用到的维度：{{ promptApplied.join('、') }}）。可以改；改了就以你写的为准。
+        已按<b>视觉基因</b>预填提示词（用到的维度：{{ appliedText(promptApplied) || '—' }}）。可以改；改了就以你写的为准。
       </p>
       <p v-else-if="dnaLocked" class="dna-hint">
         将按<b>已锁定的视觉基因 {{ dnaLockedVersion }}</b>出图，但派生提示词尚未载入——点
@@ -76,6 +76,7 @@
 
 <script setup lang="ts">
 import type { CreativeWorkflowVO } from '@/api/creative/types';
+import { appliedText } from '../../composables/promptApplied';
 import { useStepHeading } from '../../composables/stepNumbering';
 
 /** 标题编号：本页步骤号（v1 反馈；没有工作台上下文时不显示编号） */

@@ -94,6 +94,12 @@ export interface CreativeProjectQuery extends PageQuery {
 export interface DpGenerationVO {
   id: string | number;
   taskId: string | number;
+  /**
+   * 项目名（后端 VO 在**列表**里填充，项目内单查不一定有）。
+   *
+   * 跨项目总览与候选预览都要显示它——只给一个 taskId 数字，人分不清是哪一单。
+   */
+  taskName?: string;
   screenId?: string | number;
   candidateNo?: number;
   workflowCode?: string;

@@ -161,6 +161,18 @@
     </CreativeWorkspace>
 
     <el-dialog v-model="previewVisible" title="候选预览" width="720px" @closed="closePreview">
+      <!-- v1 反馈：预览只给一张图，看不出这是哪一屏、什么用途。
+           光看画面本身分不清 HERO 主图和卖点图，而两者的验收标准不一样——
+           所以把「项目 / 屏 / 用途 / 候选 / 尺寸 / 状态」摆在图上方，
+           用途取不到分镜时如实说"未取到"，不拿"屏 12"这种编号冒充用途。 -->
+      <div v-if="previewRow" class="preview-meta">
+        <span class="pm-item"><b>项目</b>{{ previewProjectName }}</span>
+        <span class="pm-item"><b>屏</b>{{ screenLabel(previewRow, screenMap) }}</span>
+        <span class="pm-item"><b>用途</b>{{ previewTypeText }}</span>
+        <span class="pm-item"><b>候选</b>#{{ previewRow.candidateNo }}</span>
+        <span class="pm-item"><b>尺寸</b>{{ sizeText(previewRow) }}</span>
+        <span class="pm-item"><b>状态</b>{{ previewRow.statusDesc || statusLabel(previewRow.status) }}</span>
+      </div>
       <div class="preview-wrap">
         <img v-if="previewUrl" :src="previewUrl" alt="候选原图" />
         <p v-else class="muted">加载中…</p>
@@ -202,6 +214,7 @@ import {
   formatTime,
   screenLabel,
   screenTypeDesc,
+  sizeText,
   statusLabel,
   statusType
 } from './generationText';
@@ -231,6 +244,9 @@ const total = ref(0);
 const retryingId = ref('');
 const previewVisible = ref(false);
 const previewUrl = ref('');
+/** 正在预览的候选与它所属的屏（v1 反馈：预览要把"这是什么类型的图"说清楚） */
+const previewRow = ref<DpGenerationVO | null>(null);
+const previewScreen = ref<DpStoryboardScreenVO | null>(null);
 
 // 项目内视图
 const storyboard = ref<DpStoryboardVO | null>(null);
@@ -264,6 +280,36 @@ const compareScreenLabel = computed(() => {
   const screen = screenMap.value[compareScreenKey.value];
   if (!screen) return '';
   return screen.screenNo || String(screen.id);
+});
+
+/**
+ * 预览里的「用途」（v1 反馈：光看画面分不清 HERO 主图和卖点图）。
+ *
+ * 三种情况如实分开，不用一个含糊的默认值糊过去：
+ * ① 取到了屏 → 用屏自己的类型描述；
+ * ② 候选本来就不属于某一屏（HERO 整图这类）→ 直说"未归属屏"；
+ * ③ 有屏号但分镜没取到 → 说"未取到分镜"，而不是拿"屏 12"冒充用途。
+ */
+const previewTypeText = computed(() => {
+  if (previewScreen.value) {
+    return previewScreen.value.screenTypeDesc || '未标注用途';
+  }
+  return previewRow.value?.screenId == null ? '未归属屏（整图）' : '未取到分镜，用途未知';
+});
+
+/**
+ * 预览里的「项目名」。
+ *
+ * 只有跨项目列表（`queryPage`）会填 `taskName`；项目内列表不填，
+ * 于是预览里会退化成一串 taskId 数字——人分不清是哪一单。
+ * 项目内视图本来就有项目下拉（`projects`），从那里把名字补上，别显示数字。
+ */
+const previewProjectName = computed(() => {
+  const row = previewRow.value;
+  if (!row) return '';
+  if (row.taskName) return row.taskName;
+  const hit = projects.value.find((p) => String(p.taskId) === String(row.taskId));
+  return hit?.taskName || String(row.taskId);
 });
 
 function urlOf(key: string): string {
@@ -422,7 +468,20 @@ async function loadProductImageUrl() {
 }
 
 async function openPreview(row: DpGenerationVO) {
+  previewRow.value = row;
+  previewScreen.value = screenMap.value[String(row.screenId)] || null;
   previewVisible.value = true;
+  // 跨项目总览里没有该项目的分镜：按需取一次，只为把"这一屏是什么用途"说清楚。
+  // 取不到就显示"未取到分镜"——不拿"屏 12"这种编号冒充用途。
+  if (!previewScreen.value && row.screenId != null) {
+    try {
+      const res = await getStoryboard(row.taskId);
+      previewScreen.value =
+        (res.data?.screens || []).find((screen) => String(screen.id) === String(row.screenId)) || null;
+    } catch {
+      previewScreen.value = null;
+    }
+  }
   try {
     const url = await fetchGenerationPreviewBlobUrl(row.id);
     if (previewUrl.value) URL.revokeObjectURL(previewUrl.value);
@@ -435,6 +494,8 @@ async function openPreview(row: DpGenerationVO) {
 function closePreview() {
   if (previewUrl.value) URL.revokeObjectURL(previewUrl.value);
   previewUrl.value = '';
+  previewRow.value = null;
+  previewScreen.value = null;
 }
 
 async function doRetry(row: DpGenerationVO) {
@@ -765,6 +826,22 @@ onBeforeUnmount(() => {
   font-size: 12px;
   color: var(--t3);
   text-align: center;
+}
+
+.preview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  padding: 0 0 10px;
+  margin-bottom: 10px;
+  font-size: 12.5px;
+  color: var(--t2);
+  border-bottom: 1px solid var(--line);
+}
+.preview-meta .pm-item b {
+  margin-right: 6px;
+  font-weight: 500;
+  color: var(--t3);
 }
 
 .preview-wrap {
