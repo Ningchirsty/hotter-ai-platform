@@ -112,6 +112,28 @@ class CreativeDraftFactoryTest {
     }
 
     @Test
+    @DisplayName("档位写中文：方向文案里不出现 MEDIUM / HIGH 这种给代码看的枚举（v1 反馈）")
+    void levelsAreWrittenInChinese() {
+        // 三个档位故意取三个不同的值，任何一个漏翻都会在下面的断言里露出来
+        ObjectNode dna = dna("#F5F5F3", "#2E6B4F", "SOFT", "FRONT", "MEDIUM", "HIGH", "LOW",
+            "纯色底", 45, 65);
+        String text = flatten(CreativeDraftFactory.directions(dna, "鸢尾花", facts("product_name", "鸢尾花")));
+
+        assertFalse(text.contains("MEDIUM"), "方向文案里不该出现枚举 MEDIUM：\n" + text);
+        assertFalse(text.contains("HIGH"), "方向文案里不该出现枚举 HIGH：\n" + text);
+        assertFalse(text.contains("LOW"), "方向文案里不该出现枚举 LOW：\n" + text);
+        // 换成中文之后信息不能丢：三个档位都要读得出来
+        assertTrue(text.contains("饱和度 中"), "饱和度档应写成中文「中」：\n" + text);
+        assertTrue(text.contains("对比度 高"), "对比度档应写成中文「高」：\n" + text);
+        assertTrue(text.contains("留白 低"), "留白档应写成中文「低」：\n" + text);
+        // 基因里档位缺省时也不能写成"中"（那是编造），要明确说未设置
+        ObjectNode blank = dna("#F5F5F3", "#2E6B4F", "SOFT", "FRONT", null, null, null,
+            "纯色底", 45, 65);
+        String blankText = flatten(CreativeDraftFactory.directions(blank, "鸢尾花", Map.of()));
+        assertTrue(blankText.contains("饱和度 未设置"), "缺档位要说「未设置」，不能默认成「中」：\n" + blankText);
+    }
+
+    @Test
     @DisplayName("换基因必然换文案：背景/光型/场景/密度不同 → 方向名与分镜独白都不同")
     void differentDnaYieldsDifferentText() {
         Map<String, String> facts = facts("product_name", "鸢尾花", "color", "蓝紫渐变");

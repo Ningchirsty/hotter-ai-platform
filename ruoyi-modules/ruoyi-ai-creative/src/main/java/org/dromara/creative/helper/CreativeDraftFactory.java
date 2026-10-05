@@ -154,9 +154,11 @@ public final class CreativeDraftFactory {
         String density = densityOf(saturation, contrast, whitespace);
 
         // 基因摘要：让「这条方向是按哪份基因定的」在文案里可核对
+        // v1 人工测试反馈：这里原先把档位原样拼进去（「饱和 MEDIUM、对比 MEDIUM、留白 HIGH」），
+        // 卡片上于是出现给代码看的枚举值。档位是给人读的，就该说「中/高」。
         String dnaSummary = "主色 " + orDash(primary) + "、背景 " + background
-            + "、饱和 " + orDash(saturation) + "、对比 " + orDash(contrast)
-            + "、留白 " + orDash(whitespace) + "、产品占比 " + ratio;
+            + "、饱和度 " + levelCn(saturation) + "、对比度 " + levelCn(contrast)
+            + "、留白 " + levelCn(whitespace) + "、产品占比 " + ratio;
 
         List<DirectionDraft> list = new ArrayList<>();
         list.add(new DirectionDraft("A", "克制影棚 · " + light + tone,
@@ -165,7 +167,7 @@ public final class CreativeDraftFactory {
                 + "适合主图与参数屏——先把「这是什么」说清，再谈氛围。",
             strategy(background, "纯色底（沿用基因背景色 " + background + "）",
                 lightFull + "，无环境光干扰",
-                "产品居中、正投影，四周留白均等（留白 " + orDash(whitespace) + "）",
+                "产品居中、正投影，四周留白均等（留白 " + levelCn(whitespace) + "）",
                 "专业、克制、以产品为主",
                 dnaSummary, sceneType, ratio)));
 
@@ -177,7 +179,7 @@ public final class CreativeDraftFactory {
                 + "参考图实测场景为「" + orDash(sceneType) + "」，本方向据此贴近而非另起一套。",
             strategy("#F7F1E8", "生活场景（暖白桌面/家居环境）",
                 "自然光 + 侧光，带柔和投影",
-                "产品偏左或偏右三分位，留白处置文案（留白 " + orDash(whitespace) + "）",
+                "产品偏左或偏右三分位，留白处置文案（留白 " + levelCn(whitespace) + "）",
                 "温暖、日常、可代入",
                 dnaSummary, sceneType, ratio)));
 
@@ -348,7 +350,7 @@ public final class CreativeDraftFactory {
                 joinNonBlank("，", ctx.productNameFact(), ctx.color(), ctx.mainVersion()),
                 "一眼认出这是「" + ctx.product() + "」："
                     + (ctx.color() == null ? "形态、配色、材质" : "已确认的" + ctx.color() + "配色")
-                    + "与材质都在画面上讲清，不靠一行文案解释；留白 " + ctx.whitespace()
+                    + "与材质都在画面上讲清，不靠一行文案解释；留白 " + levelCn(ctx.whitespace())
                     + "，产品占比 " + ctx.ratio() + "。");
             case "SELLING_POINT" -> new ScreenDraft(screen.type(), screen.label(), screen.productLockLevel(),
                 ctx.product() + " · " + sellingLabel(index == 1 ? ctx.color() : ctx.craft(),
@@ -413,7 +415,7 @@ public final class CreativeDraftFactory {
                 "这一屏要能直接当平台首图：纯白底、产品完整居中、不裁不遮，"
                     + (ctx.color() == null ? "已确认的配色" : "已确认的「" + ctx.color() + "」配色")
                     + "与材质如实呈现；画面上不出现边框、水印与促销文字（主图口径：单图不拼版、不叠字）。"
-                    + "主体占比 " + ctx.ratio() + "，四周留白 " + ctx.whitespace() + "。");
+                    + "主体占比 " + ctx.ratio() + "，四周留白 " + levelCn(ctx.whitespace()) + "。");
             case "MAIN_SELLING_POINT" -> new ScreenDraft(screen.type(), screen.label(), screen.productLockLevel(),
                 ctx.product() + " · " + sellingLabel(index == 1 ? ctx.color() : ctx.craft(),
                     index == 1 ? "配色卖点" : "工艺卖点", screen.label()),
@@ -524,6 +526,30 @@ public final class CreativeDraftFactory {
      */
     private static String darkTone(String hex) {
         return luminance(hex) < 0.35 ? "暗场" : "压暗";
+    }
+
+    /**
+     * 档位的中文名（LOW/MEDIUM/HIGH → 低/中/高）。
+     *
+     * <p>v1 人工测试反馈：方向的策略明细与「基因依据」里原样出现 `MEDIUM` / `HIGH`——
+     * 那是给代码看的枚举值。档位本身是给人读的，写「中」「高」即可。</p>
+     *
+     * <p>认不出的档位（含空值）返回「未设置」而不是抛错：基因是人工可编辑的，
+     * 一个没填的档位不该让整条方向生成失败，但也不该被悄悄写成"中"。</p>
+     *
+     * @param level 档位码
+     * @return 中文名
+     */
+    private static String levelCn(String level) {
+        if (StringUtils.isBlank(level)) {
+            return "未设置";
+        }
+        return switch (up(level)) {
+            case "LOW" -> "低";
+            case "HIGH" -> "高";
+            case "MEDIUM" -> "中";
+            default -> level;
+        };
     }
 
     /**
