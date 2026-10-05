@@ -40,18 +40,25 @@ public class ContentFactManualBo implements Serializable {
     private String value;
 
     /**
-     * 事实出处：这个值是从哪份资料/哪个页签看来的（内测 S19 / C7 起必填）。
+     * 事实出处：这个值来自本任务的哪份资料（内测 S19 / C7-b 起**必选**）。
      *
-     * <p><b>为什么必填</b>：SPEC 红线第 2 条要求事实来自「经确认的产品资料」。
-     * 人工录入本来就是这个链条上最容易失控的一环——值直接落 {@code CONFIRMED}，
-     * 却没有留下"谁依据什么确认的"。实测开工包里 7 条事实有 5 条 {@code sourceLocator} 为空，
-     * 下游拿到的是一个无法追溯的数字。</p>
+     * <p>与 {@link #sourceLocator} 的分工：这里是**哪份资料**（结构化、可点开核对），
+     * 那里是**资料里的位置**（页/行，本来就是自由文本）。</p>
      *
-     * <p>与 {@link #remark} 的分工：这里是**出处**（可核对的定位，如
-     * 「产品参数表 V2 第 3 行」），remark 是**备注**（为什么以此值为准）。</p>
+     * <p><b>为什么从"必填一句话"升级成"必选一份资料"</b>：SPEC 红线第 2 条要求事实来自
+     * "经确认的产品资料"。自由文本可以被填成 {@code -} 或 {@code 见资料}——形式满足、追溯失效，
+     * 而这条值一旦落 CONFIRMED 就会随开工包交给设计侧。</p>
      */
-    @NotBlank(message = "请填写事实出处（这个值是从哪份资料 / 哪个页签看来的）")
-    @Size(max = 500, message = "事实出处长度不能超过 500")
+    @NotNull(message = "请选择事实出处（这条值是从哪份任务资料里看到的）")
+    private Long sourceFileId;
+
+    /**
+     * 资料里的位置（可选）：如「第 3 行」「第 2 页参数表」。
+     *
+     * <p>入库时会与资料名拼成 {@code 文件名 · 位置} 存进 {@code source_locator}，
+     * 因为开工包给下游看的就是这个字符串——只有位置没有文件名等于没说清出处。</p>
+     */
+    @Size(max = 500, message = "出处位置说明不能超过 500")
     private String sourceLocator;
 
     /**

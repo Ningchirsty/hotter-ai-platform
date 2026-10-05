@@ -1,5 +1,6 @@
 package org.dromara.content.service;
 
+import org.dromara.content.domain.bo.ContentFactManualBo;
 import org.dromara.content.domain.vo.CpFactSnapshotVo;
 import org.dromara.content.domain.vo.ContentFactFieldOptionVo;
 
@@ -54,18 +55,15 @@ public interface IContentFactService {
     /**
      * 手工录入一条事实（无候选值但有闸门要求时使用）。
      *
-     * <p><b>出处必填</b>（内测 S19 / C7）：人工录入的值直接落 {@code CONFIRMED}，
-     * 而开工包会把 {@code sourceLocator} 原样交给下游。不要求出处，就等于允许
-     * 一条「无法追溯、但已被当作事实」的数据进入产线。</p>
+     * <p><b>出处必须指到一份具体资料</b>（内测 S19 起要求出处，C7-b 起要求它结构化）：
+     * 人工录入的值直接落 {@code CONFIRMED}，而开工包会把出处原样交给下游。
+     * 只要求"填一句话"是不够的——自由文本可以被填成 {@code -}，形式满足、追溯失效。
+     * 位置（页/行）仍是可选自由文本，那部分本来就没有稳定结构。</p>
      *
-     * @param taskId        任务ID
-     * @param fieldCode     字段编码
-     * @param value         值
-     * @param remark        备注（可选）
-     * @param sourceLocator 事实出处（必填，如「产品参数表 V2 第 3 行」）
+     * @param bo 录入参数（含任务、字段、值、出处资料、位置与备注）
      * @return 新增快照行ID
      */
-    Long addManual(Long taskId, String fieldCode, String value, String remark, String sourceLocator);
+    Long addManual(ContentFactManualBo bo);
 
     /**
      * 某任务可录入的事实字段选项。

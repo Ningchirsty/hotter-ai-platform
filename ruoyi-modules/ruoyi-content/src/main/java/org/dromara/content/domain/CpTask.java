@@ -89,6 +89,21 @@ public class CpTask extends BaseEntity implements Serializable {
     private String status;
 
     /**
+     * 视觉阶段（{@code cp_task.visual_stage}，由创作域写入）。
+     *
+     * <p><b>为什么内容域要读它</b>（内测 S6 / 冲突 B 的最佳建议）：品牌部关心"图做到哪了"，
+     * 但 {@link #status} 回答的是"资料齐不齐、能不能开工"——两个正交的问题。
+     * 内测实测：视觉侧已经 {@code COMPLETED}，内容侧仍显示"可开工"，品牌部只能靠问人。
+     * 所以这里**只读展示**，绝不回写 status：一旦两边都写 status，
+     * "资料就绪度"这个判据就会随制作进度漂移，闸门与审计都会失真。</p>
+     *
+     * <p>取值见创作域 {@code DpVisualStageEnum}（内容域不依赖创作模块，故存编码，
+     * 中文由前端映射——字典在 {@code @/api/creative/types} 的 CREATIVE_STAGE_LABELS，
+     * 两处共用一份，避免抄出第二张会对不上的表）。</p>
+     */
+    private String visualStage;
+
+    /**
      * 当前阻断原因（闸门写入）
      */
     private String blockReason;

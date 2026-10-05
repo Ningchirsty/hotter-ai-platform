@@ -147,6 +147,18 @@
             <dict-tag :options="cp_task_status" :value="scope.row.status" />
           </template>
         </el-table-column>
+        <!--
+          视觉进度（内测 S6 / 冲突 B 的最佳建议）：品牌部需要"图做到哪了"。
+          它是**只读**展示——内容侧的 status 回答的是"资料齐不齐"，两者正交，所以分两列。
+        -->
+        <el-table-column label="视觉进度" align="center" width="130">
+          <template #default="scope">
+            <el-tag v-if="scope.row.visualStage" :type="visualStageType(scope.row.visualStage)" size="small">
+              {{ visualStageLabel(scope.row.visualStage) }}
+            </el-tag>
+            <span v-else class="muted">未进入</span>
+          </template>
+        </el-table-column>
         <el-table-column label="待处理卡数" align="center" width="110">
           <template #default="scope">
             <el-tag v-if="scope.row.pendingCardCount" type="warning" size="small">
@@ -371,7 +383,18 @@
             {{ parseTime(taskInfo.parseDoneAt) || '-' }}
           </el-descriptions-item>
           <el-descriptions-item label="阻断原因">{{ taskInfo.blockReason || '无' }}</el-descriptions-item>
+          <el-descriptions-item label="视觉进度">
+            <el-tag v-if="taskInfo.visualStage" :type="visualStageType(taskInfo.visualStage)" size="small">
+              {{ visualStageLabel(taskInfo.visualStage) }}
+            </el-tag>
+            <span v-else>未进入视觉工厂</span>
+          </el-descriptions-item>
         </el-descriptions>
+        <p class="muted small">
+          「任务状态」说的是<b>资料齐不齐、能不能开工</b>；「视觉进度」说的是<b>图做到哪了</b>。
+          两个问题正交，所以这里是<b>只读展示</b>——视觉侧的进度不会改回任务状态，
+          否则"资料就绪度"会随着制作进度漂移，闸门判定与审计都会失真。
+        </p>
 
         <div class="action-bar">
           <el-button
@@ -957,13 +980,28 @@
         <el-form-item label="字段值" prop="value">
           <el-input v-model="manualForm.value" placeholder="请输入经责任人确认的值" />
         </el-form-item>
-        <el-form-item label="事实出处" prop="sourceLocator">
+        <el-form-item label="事实出处" prop="sourceFileId">
+          <el-select
+            v-model="manualForm.sourceFileId"
+            placeholder="必选：这条值是从哪份任务资料里看到的"
+            filterable
+            style="width: 100%"
+          >
+            <el-option
+              v-for="f in sourceFileOptions"
+              :key="String(f.fileId)"
+              :label="sourceFileLabel(f)"
+              :value="f.fileId!"
+            />
+          </el-select>
           <el-input
             v-model="manualForm.sourceLocator"
-            placeholder="必填：这个值是从哪份资料 / 哪个页签看来的，如「产品参数表 V2 第 3 行」"
+            class="source-locator-input"
+            placeholder="可选：资料里的位置，如「第 3 行」「第 2 页参数表」"
           />
           <div class="form-tip">
-            出处会随开工包交给下游。手工录入的值直接标记为「已确认」，没有出处就无法追溯是谁依据什么确认的。
+            出处会随开工包交给下游。<b>必须选一份本任务的资料</b>（不能只写"见资料"）——
+            手工录入的值直接标记为「已确认」，出处要能被点开核对。
           </div>
         </el-form-item>
         <el-form-item label="备注" prop="remark">
@@ -1037,9 +1075,22 @@
             </div>
             <div v-if="cardOtherActive" class="other-input">
               <el-input v-model="cardOtherValue" placeholder="请填写确认值" style="max-width: 380px" />
+              <el-select
+                v-model="cardOtherFileId"
+                placeholder="必选：事实出处（本任务的哪份资料）"
+                filterable
+                style="max-width: 380px"
+              >
+                <el-option
+                  v-for="f in sourceFileOptions"
+                  :key="String(f.fileId)"
+                  :label="sourceFileLabel(f)"
+                  :value="f.fileId!"
+                />
+              </el-select>
               <el-input
-                v-model="cardOtherSource"
-                placeholder="必填：事实出处（这个值是从哪份资料 / 哪个页签看来的）"
+                v-model="cardOtherLocator"
+                placeholder="可选：资料里的位置，如「第 3 行」"
                 style="max-width: 380px"
               />
               <el-button
@@ -1108,6 +1159,10 @@ import {
 } from '@/api/content/brief/types';
 // 参考风格图片条：与视觉项目页共用同一个组件（展示逻辑与 blob 回收只维护一处）
 import BriefStyleImages from '@/components/BriefStyleImages/index.vue';
+// 视觉阶段的中文字典：**复用创作域那一份**，不在这里另抄一张表。
+// 抄一份的代价不是多打几个字，而是两张表迟早对不上（内测 S11 就是英文枚举直接漏到界面）。
+import { CREATIVE_STAGE_LABELS, CREATIVE_STAGE_TYPES } from '@/api/creative/types';
+import type { TagType } from '@/api/creative/types';
 import { checkPermi } from '@/utils/permission';
 import { addManualFact, confirmFact, confirmUnambiguousFacts, factFieldOptions, rejectFact } from '@/api/content/fact';
 import { productOptions } from '@/api/content/product';
@@ -1731,6 +1786,33 @@ const gate = computed(() => detail.value.gate || {});
 const workPackage = computed(() => detail.value.workPackage || null);
 const drawerTitle = computed(() => (taskInfo.value.taskNo ? '任务详情 · ' + taskInfo.value.taskNo : '任务详情'));
 
+/**
+ * 视觉阶段 → 中文。字典来自创作域（`CREATIVE_STAGE_LABELS`），本页只做兜底。
+ *
+ * 未知编码直接显示编码本身而不是空字符串：**看不懂的英文也比"什么都没有"有用**——
+ * 内测 S11 的教训就是枚举直接漏到界面上，而静默留白更糟（看起来像没有进度）。
+ *
+ * @param stage 阶段编码（cp_task.visual_stage）
+ * @returns 可读文案
+ */
+const visualStageLabel = (stage?: string) => (stage ? CREATIVE_STAGE_LABELS[stage] || stage : '未进入视觉工厂');
+
+/** 视觉阶段的徽标色彩（与创作域同一张表，保证两个部门看到的颜色语义一致） */
+const visualStageType = (stage?: string): TagType =>
+  ((stage ? CREATIVE_STAGE_TYPES[stage] : undefined) as TagType) || 'info';
+
+/**
+ * 可作为「事实出处」的资料：本任务的附件。
+ *
+ * C7-b 起出处必须指到一份具体资料（而不是一句自由文本），所以这里直接给出可选清单。
+ * 详情接口本来就把附件一起返回了（`files`），不必再打一次接口。
+ */
+const sourceFileOptions = computed<CpTaskFileVO[]>(() => files.value);
+
+/** 资料选项文案：文件名（类型）——类型能帮人认出"参数表还是设计稿" */
+const sourceFileLabel = (f: CpTaskFileVO) =>
+  `${f.fileName || '未命名'}${f.fileKind ? `（${f.fileKind}）` : ''}`;
+
 /** 作业中标记列表（用于轮询判定） */
 const hasRunningJob = (list: CpAsyncJobVO[]) =>
   list.some(j => j.status === 'QUEUED' || j.status === 'RUNNING');
@@ -1965,7 +2047,7 @@ const handleConfirmUnambiguous = async () => {
 const manualDialog = reactive<DialogOption>({ visible: false, title: '手工录入事实' });
 const manualFormRef = ref<ElFormInstance>();
 const manualSaving = ref(false);
-const manualForm = reactive({ fieldCode: '', value: '', sourceLocator: '', remark: '' });
+const manualForm = reactive({ fieldCode: '', value: '', sourceFileId: undefined as string | number | undefined, sourceLocator: '', remark: '' });
 /** 是否使用「自定义编码」输入（默认从下拉选，避免手打编码踩空） */
 const manualCustomMode = ref(false);
 /** 本任务可录入的字段选项（本交付类型的闸门要求项在前） */
@@ -1973,8 +2055,9 @@ const fieldOptionList = ref<CpFactFieldOptionVO[]>([]);
 const manualRules = {
   fieldCode: [{ required: true, message: '事实字段不能为空', trigger: 'change' }],
   value: [{ required: true, message: '字段值不能为空', trigger: 'blur' }],
-  // 出处必填（内测 S19 / C7）：值直接落 CONFIRMED 且会随开工包交给下游
-  sourceLocator: [{ required: true, message: '请填写事实出处（这个值是从哪份资料看来的）', trigger: 'blur' }]
+  // 出处必选（内测 S19 → C7-b）：值直接落 CONFIRMED 且会随开工包交给下游，
+  // 所以出处必须指到一份本任务的资料，"填一句话"不够（自由文本可以被填成「-」）
+  sourceFileId: [{ required: true, message: '请选择事实出处（这条值是从哪份任务资料里看到的）', trigger: 'change' }]
 };
 
 const gateFieldOptions = computed(() => fieldOptionList.value.filter(o => o.requiredByGate));
@@ -2009,6 +2092,7 @@ const loadFieldOptions = async () => {
 const openManualDialog = async () => {
   manualForm.fieldCode = '';
   manualForm.value = '';
+  manualForm.sourceFileId = undefined;
   manualForm.sourceLocator = '';
   manualForm.remark = '';
   manualCustomMode.value = false;
@@ -2041,7 +2125,8 @@ const submitManual = () => {
         taskId: detailTaskId.value,
         fieldCode: manualForm.fieldCode,
         value: manualForm.value,
-        sourceLocator: manualForm.sourceLocator,
+        sourceFileId: manualForm.sourceFileId!,
+        sourceLocator: manualForm.sourceLocator || undefined,
         remark: manualForm.remark
       });
       modal.msgSuccess('录入成功');
@@ -2084,8 +2169,9 @@ const cardDialog = reactive<DialogOption>({ visible: false, title: '处理互动
 const currentCard = ref<CpInteractionCardVO | null>(null);
 const cardOtherActive = ref(false);
 const cardOtherValue = ref('');
-/** 「填写其他值」的事实出处（必填，内测 S19 / C7） */
-const cardOtherSource = ref('');
+/** 「填写其他值」的出处：本任务的哪份资料（必选）+ 位置（可选）——内测 C7-b */
+const cardOtherFileId = ref<string | number | undefined>(undefined);
+const cardOtherLocator = ref('');
 const cardResolving = ref(false);
 
 const cardEvidence = computed<CardEvidenceItem[]>(() => parseJsonList<CardEvidenceItem>(currentCard.value?.evidenceJson));
@@ -2108,7 +2194,8 @@ const optionButtonType = (option?: string) => {
 const cancelOther = () => {
   cardOtherActive.value = false;
   cardOtherValue.value = '';
-  cardOtherSource.value = '';
+  cardOtherFileId.value = undefined;
+  cardOtherLocator.value = '';
 };
 
 const openCardDialog = (row: CpInteractionCardVO) => {
@@ -2118,7 +2205,14 @@ const openCardDialog = (row: CpInteractionCardVO) => {
 };
 
 /** 提交卡片处理；后端会同步重算闸门 */
-const doResolveCard = async (payload: { option: string; value?: string; snapshotId?: string | number; sourceLocator?: string; comment?: string }) => {
+const doResolveCard = async (payload: {
+  option: string;
+  value?: string;
+  snapshotId?: string | number;
+  sourceFileId?: string | number;
+  sourceLocator?: string;
+  comment?: string;
+}) => {
   if (!currentCard.value?.cardId || cardResolving.value) return;
   cardResolving.value = true;
   try {
@@ -2142,7 +2236,8 @@ const submitCardOption = async (opt: CardOptionItem) => {
   if (option === 'OTHER') {
     cardOtherActive.value = true;
     cardOtherValue.value = '';
-    cardOtherSource.value = '';
+    cardOtherFileId.value = undefined;
+    cardOtherLocator.value = '';
     return;
   }
   const tip =
@@ -2165,12 +2260,16 @@ const submitCardOther = async () => {
     modal.msgError('请填写确认值');
     return;
   }
-  const sourceLocator = cardOtherSource.value.trim();
-  if (!sourceLocator) {
-    modal.msgError('请填写事实出处（这个值是从哪份资料看来的）');
+  if (!cardOtherFileId.value) {
+    modal.msgError('请选择事实出处（这条值是从哪份任务资料里看到的）');
     return;
   }
-  await doResolveCard({ option: 'OTHER', value, sourceLocator });
+  await doResolveCard({
+    option: 'OTHER',
+    value,
+    sourceFileId: cardOtherFileId.value,
+    sourceLocator: cardOtherLocator.value.trim() || undefined
+  });
 };
 
 // ---------------------------------------------------------------- 开工包
@@ -2292,6 +2391,11 @@ onBeforeUnmount(() => {
   font-size: 12px;
   line-height: 1.5;
   color: var(--app-text-muted);
+}
+
+/* 出处：先选资料（必选），再补位置（可选）——两行摆在一起，别让人以为位置是主要入口 */
+.source-locator-input {
+  margin-top: 6px;
 }
 
 .task-detail {

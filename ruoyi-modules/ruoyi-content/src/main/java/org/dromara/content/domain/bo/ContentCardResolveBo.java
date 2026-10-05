@@ -41,13 +41,19 @@ public class ContentCardResolveBo implements Serializable {
     private String value;
 
     /**
-     * 事实出处（option=OTHER 时必填）。
+     * 事实出处：这个值来自本任务的哪份资料（option=OTHER 时**必选**，内测 C7-b）。
      *
      * <p>「填写其他值」与人工录入是同一种动作：值直接落 {@code CONFIRMED}，
-     * 并会随开工包把出处交给下游。所以它同样要求写清"这个值是从哪份资料看来的"
-     * （内测 S19 / C7）。{@code CONFIRM} 走的是已有候选行，出处本来就有，不需要填。</p>
+     * 并会随开工包把出处交给下游。所以它同样要求指到**一份具体资料**——
+     * 自由文本可以被填成 {@code -}，那等于没有出处。
+     * {@code CONFIRM} 走的是已有候选行，出处本来就有，不需要填。</p>
      */
-    @Size(max = 500, message = "事实出处长度不能超过 500")
+    private Long sourceFileId;
+
+    /**
+     * 资料里的位置（可选，option=OTHER 时）：如「第 3 行」。
+     */
+    @Size(max = 500, message = "出处位置说明不能超过 500")
     private String sourceLocator;
 
     /**

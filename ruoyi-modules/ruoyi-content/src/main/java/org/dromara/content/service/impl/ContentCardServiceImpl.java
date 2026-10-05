@@ -13,15 +13,18 @@ import org.dromara.content.constant.ContentConstants;
 import org.dromara.content.domain.CpFactSnapshot;
 import org.dromara.content.domain.CpInteractionCard;
 import org.dromara.content.domain.CpTask;
+import org.dromara.content.domain.CpTaskFile;
 import org.dromara.content.domain.bo.ContentCardQueryBo;
 import org.dromara.content.domain.bo.ContentCardResolveBo;
 import org.dromara.content.domain.vo.CpInteractionCardVo;
 import org.dromara.content.enums.ContentCardStatusEnum;
 import org.dromara.content.enums.ContentCardTypeEnum;
 import org.dromara.content.enums.ContentFactConfirmStatusEnum;
+import org.dromara.content.helper.ContentFactOrigin;
 import org.dromara.content.helper.ContentFieldAlias;
 import org.dromara.content.mapper.CpFactSnapshotMapper;
 import org.dromara.content.mapper.CpInteractionCardMapper;
+import org.dromara.content.mapper.CpTaskFileMapper;
 import org.dromara.content.mapper.CpTaskMapper;
 import org.dromara.content.service.IContentCardService;
 import org.dromara.content.service.IContentTaskGateService;
@@ -79,6 +82,13 @@ public class ContentCardServiceImpl implements IContentCardService {
      * 任务 Mapper
      */
     private final CpTaskMapper taskMapper;
+
+    /**
+     * 附件 Mapper：校验「填写其他值」的出处确实是本任务的资料（内测 C7-b）。
+     *
+     * <p>没有它就只能靠一句自由文本当出处，而那正是 C7-b 要修掉的形状。</p>
+     */
+    private final CpTaskFileMapper taskFileMapper;
 
     /**
      * 闸门重算服务
@@ -263,8 +273,10 @@ public class ContentCardServiceImpl implements IContentCardService {
     /**
      * 手工录入其他值：新增一行「已确认」事实。
      *
-     * <p><b>出处必填</b>（内测 S19 / C7）：这条路径与「人工录入事实」等价，两者都不产出候选、
-     * 直接落 {@code CONFIRMED}。以前只有值没有出处，开工包里就会出现无法追溯的事实行。</p>
+     * <p><b>出处必须指到一份具体资料</b>（内测 S19 要求出处，C7-b 要求它结构化）：
+     * 这条路径与「人工录入事实」等价，两者都不产出候选、直接落 {@code CONFIRMED}。
+     * 校验与拼装都在 {@link org.dromara.content.helper.ContentFactOrigin}——
+     * 两个入口共用一份逻辑，否则迟早出现"这边查了文件归属、那边没查"。</p>
      *
      * @param card 卡片
      * @param bo   入参
@@ -274,11 +286,8 @@ public class ContentCardServiceImpl implements IContentCardService {
         if (StringUtils.isBlank(value)) {
             throw new ServiceException("请填写确认值");
         }
-        String sourceLocator = bo.getSourceLocator() == null ? null : bo.getSourceLocator().trim();
-        if (StringUtils.isBlank(sourceLocator)) {
-            throw new ServiceException("请填写事实出处：这个值是从哪份资料 / 哪个页签看来的。"
-                + "「填写其他值」与手工录入一样，值是直接确认的，开工包会把出处原样交给下游。");
-        }
+        CpTaskFile sourceFile = ContentFactOrigin.requireFile(card.getTaskId(), bo.getSourceFileId(),
+            taskFileMapper, "填写其他值");
         List<CpFactSnapshot> rows = snapshotsOfField(card);
         String fieldName = null;
         int maxVersion = 1;
@@ -306,7 +315,9 @@ public class ContentCardServiceImpl implements IContentCardService {
         manual.setConfirmStatus(ContentFactConfirmStatusEnum.CONFIRMED.getCode());
         manual.setConfirmedBy(userId);
         manual.setConfirmedAt(now);
-        manual.setSourceLocator(sourceLocator);
+        // 结构化出处（哪份资料）+ 可读出处（文件名 · 位置）：前者能被核对，后者给人和下游看
+        manual.setSourceFileId(sourceFile.getFileId());
+        manual.setSourceLocator(ContentFactOrigin.describe(sourceFile, bo.getSourceLocator()));
         manual.setRemark("由互动卡手工确认录入");
         factSnapshotMapper.insert(manual);
 

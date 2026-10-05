@@ -147,9 +147,22 @@
                     placeholder="请填写确认值（该值将作为已确认事实录入）"
                     style="max-width: 420px"
                   />
+                  <el-select
+                    v-model="otherFileId"
+                    placeholder="必选：事实出处（本任务的哪份资料）"
+                    filterable
+                    style="max-width: 420px"
+                  >
+                    <el-option
+                      v-for="f in taskFiles"
+                      :key="String(f.fileId)"
+                      :label="`${f.fileName || '未命名'}${f.fileKind ? `（${f.fileKind}）` : ''}`"
+                      :value="f.fileId!"
+                    />
+                  </el-select>
                   <el-input
-                    v-model="otherSource"
-                    placeholder="必填：事实出处（这个值是从哪份资料 / 哪个页签看来的）"
+                    v-model="otherLocator"
+                    placeholder="可选：资料里的位置，如「第 3 行」"
                     style="max-width: 420px"
                   />
                   <el-button
@@ -238,6 +251,9 @@
 <script setup lang="ts">
 import type { CardEvidenceItem, CardImpactItem, CardOptionItem, CpCardQuery, CpInteractionCardVO } from '@/api/content/card/types';
 import { listCard, resolveCard } from '@/api/content/card';
+// 「填写其他值」的出处必须指到本任务的一份资料（内测 C7-b），所以要按任务取附件清单
+import { listTaskFiles } from '@/api/content/task';
+import type { CpTaskFileVO } from '@/api/content/task/types';
 import { useLoading } from '@/hooks/async/useLoading';
 import { useSearchReset } from '@/hooks/form/useSearchReset';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
@@ -263,8 +279,11 @@ const resolving = ref(false);
 /** 当前展开「填写其他值」输入框的卡片ID */
 const otherCardId = ref<string>('');
 const otherValue = ref('');
-/** 「填写其他值」的事实出处（必填，内测 S19 / C7） */
-const otherSource = ref('');
+/** 「填写其他值」的出处：本任务的哪份资料（必选）+ 位置（可选）——内测 C7-b */
+const otherFileId = ref<string | number | undefined>(undefined);
+const otherLocator = ref('');
+/** 当前卡片所属任务的资料清单（展开「填写其他值」时才拉，避免列表页为每行打一次接口） */
+const taskFiles = ref<CpTaskFileVO[]>([]);
 
 const data = reactive<PageData<Record<string, never>, CpCardQuery>>({
   form: {},
@@ -334,7 +353,9 @@ const optionButtonType = (option?: string) => {
 const cancelOther = () => {
   otherCardId.value = '';
   otherValue.value = '';
-  otherSource.value = '';
+  otherFileId.value = undefined;
+  otherLocator.value = '';
+  taskFiles.value = [];
 };
 
 /** 展开指定行，露出证据与处理区 */
@@ -345,7 +366,14 @@ const toggleRow = (row: CpInteractionCardVO) => {
 /** 提交处理请求，成功后刷新列表（后端会同步重算闸门） */
 const doResolve = async (
   row: CpInteractionCardVO,
-  payload: { option: string; value?: string; snapshotId?: string | number; sourceLocator?: string; comment?: string }
+  payload: {
+    option: string;
+    value?: string;
+    snapshotId?: string | number;
+    sourceFileId?: string | number;
+    sourceLocator?: string;
+    comment?: string;
+  }
 ) => {
   if (resolving.value) return;
   resolving.value = true;
@@ -369,7 +397,16 @@ const handleOption = async (row: CpInteractionCardVO, opt: CardOptionItem) => {
   if (option === 'OTHER') {
     otherCardId.value = String(row.cardId);
     otherValue.value = '';
-    otherSource.value = '';
+    otherFileId.value = undefined;
+    otherLocator.value = '';
+    // 出处只能从本任务的资料里选：拉一次清单，拉不到就让人看到空下拉（而不是沉默地允许自由填写）
+    taskFiles.value = [];
+    try {
+      const res = await listTaskFiles(row.taskId!);
+      taskFiles.value = res.data || [];
+    } catch {
+      modal.msgError('这条任务的资料清单没取到，无法选择事实出处，请刷新后重试');
+    }
     return;
   }
   // SUPPLEMENT / BLOCK：要求给出可读说明，作为人的决策记录
@@ -394,12 +431,16 @@ const submitOther = async (row: CpInteractionCardVO) => {
     modal.msgError('请填写确认值');
     return;
   }
-  const sourceLocator = otherSource.value.trim();
-  if (!sourceLocator) {
-    modal.msgError('请填写事实出处（这个值是从哪份资料看来的）');
+  if (!otherFileId.value) {
+    modal.msgError('请选择事实出处（这条值是从哪份任务资料里看到的）');
     return;
   }
-  await doResolve(row, { option: 'OTHER', value, sourceLocator });
+  await doResolve(row, {
+    option: 'OTHER',
+    value,
+    sourceFileId: otherFileId.value,
+    sourceLocator: otherLocator.value.trim() || undefined
+  });
 };
 
 /** 查询卡片列表 */

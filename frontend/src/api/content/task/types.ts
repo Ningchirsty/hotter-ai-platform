@@ -29,8 +29,15 @@ export interface CpTaskVO extends BaseEntity {
   dataLevel?: string;
   /** 是否允许外部AI（Y/N），阶段1A 一律仅本地 */
   allowExternal?: string;
-  /** 任务状态（cp_task_status） */
+  /** 任务状态（cp_task_status）：回答"资料齐不齐、能不能开工" */
   status?: string;
+  /**
+   * 视觉阶段（cp_task.visual_stage，创作域写入）：回答"图做到哪了"。
+   *
+   * 只读展示，与 status 正交——内测 S6 的缺口就是品牌部看不到这个值。
+   * 中文映射见 `@/api/creative/types` 的 CREATIVE_STAGE_LABELS（两域共用一份）。
+   */
+  visualStage?: string;
   /** 当前阻断原因（闸门写入） */
   blockReason?: string;
   parseDoneAt?: string;

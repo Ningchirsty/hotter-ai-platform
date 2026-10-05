@@ -101,8 +101,9 @@ public class ContentFactController {
     /**
      * 人工录入事实。
      *
-     * <p><b>出处（{@code sourceLocator}）必填</b>（内测 S19 / C7）：这个值会随开工包交给下游，
-     * 是"这条事实依据什么"的唯一线索。手工录入不要求出处，等于产线里混入无法追溯的事实。</p>
+     * <p><b>出处（{@code sourceFileId}）必选</b>（内测 S19 → C7-b）：
+     * 它必须指到本任务的一份具体资料，因为这个值会随开工包交给下游，
+     * 是"这条事实依据什么"的唯一线索。位置（{@code sourceLocator}）可选。</p>
      *
      * @param bo 录入参数
      * @return 新增快照行ID
@@ -112,8 +113,7 @@ public class ContentFactController {
     @Log(title = "产品事实", businessType = BusinessType.INSERT)
     @PostMapping("/manual")
     public R<Long> manual(@Validated @RequestBody ContentFactManualBo bo) {
-        return R.ok(factService.addManual(bo.getTaskId(), bo.getFieldCode(), bo.getValue(),
-            bo.getRemark(), bo.getSourceLocator()));
+        return R.ok(factService.addManual(bo));
     }
 
     /**

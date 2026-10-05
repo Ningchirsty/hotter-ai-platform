@@ -39,12 +39,14 @@ export interface CpFactManualForm {
   fieldCode: string;
   value: string;
   /**
-   * 事实出处：这个值是从哪份资料 / 哪个页签看来的（必填）。
+   * 事实出处：这个值来自本任务的哪份资料（必选）。
    *
-   * 手工录入的值直接落 CONFIRMED，开工包会把出处原样交给下游——
-   * 没有出处的事实无法追溯，所以后端也要求必填（内测 S19 / C7）。
+   * 手工录入的值直接落 CONFIRMED，开工包会把出处原样交给下游。
+   * 只要求"填一句话"是不够的——自由文本可以被填成 `-`，形式满足、追溯失效（内测 C7-b）。
    */
-  sourceLocator: string;
+  sourceFileId: string | number;
+  /** 资料里的位置（可选）：如「第 3 行」。入库时会拼成「文件名 · 位置」 */
+  sourceLocator?: string;
   /** 备注（可选）：为什么以此值为准 */
   remark?: string;
 }

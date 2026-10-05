@@ -93,6 +93,16 @@ public class CpTaskVo implements Serializable {
     private String status;
 
     /**
+     * 视觉阶段（{@code cp_task.visual_stage}，创作域写入，本域只读展示）。
+     *
+     * <p>品牌部需要"图做到哪了"，而 {@link #status} 只回答"资料齐不齐"。
+     * 内测 S6 实测：视觉侧已经 {@code COMPLETED}，内容侧仍显示"可开工"。
+     * 这里是那个缺口的补位——**只读**，不回写 status
+     * （回写会让"资料就绪度"随制作进度漂移，闸门与审计都会失真）。</p>
+     */
+    private String visualStage;
+
+    /**
      * 当前阻断原因
      */
     private String blockReason;

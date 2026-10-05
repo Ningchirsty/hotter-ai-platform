@@ -90,7 +90,9 @@ export interface CpCardResolveForm {
   option: string;
   value?: string;
   snapshotId?: string | number;
-  /** 事实出处（option=OTHER 时必填）；CONFIRM 走已有候选行，出处本来就有 */
+  /** 事实出处：本任务的哪份资料（option=OTHER 时必选，内测 C7-b）；CONFIRM 走已有候选行 */
+  sourceFileId?: string | number;
+  /** 资料里的位置（option=OTHER 时可选）：如「第 3 行」 */
   sourceLocator?: string;
   comment?: string;
 }

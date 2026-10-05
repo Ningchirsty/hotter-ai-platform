@@ -9,9 +9,12 @@ import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.content.domain.CpFactSnapshot;
 import org.dromara.content.domain.CpGateRule;
 import org.dromara.content.domain.CpTask;
+import org.dromara.content.domain.CpTaskFile;
+import org.dromara.content.domain.bo.ContentFactManualBo;
 import org.dromara.content.domain.vo.CpFactSnapshotVo;
 import org.dromara.content.domain.vo.ContentFactFieldOptionVo;
 import org.dromara.content.enums.ContentFactConfirmStatusEnum;
+import org.dromara.content.helper.ContentFactOrigin;
 import org.dromara.content.helper.ContentFieldAlias;
 import org.dromara.content.mapper.CpFactSnapshotMapper;
 import org.dromara.content.mapper.CpTaskMapper;
@@ -150,7 +153,10 @@ public class ContentFactServiceImpl implements IContentFactService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public Long addManual(Long taskId, String fieldCode, String value, String remark, String sourceLocator) {
+    public Long addManual(ContentFactManualBo bo) {
+        Long taskId = bo.getTaskId();
+        String fieldCode = bo.getFieldCode();
+        String value = bo.getValue();
         CpTask task = loadTask(taskId);
         if (StringUtils.isBlank(fieldCode)) {
             throw new ServiceException("事实字段编码不能为空");
@@ -158,12 +164,11 @@ public class ContentFactServiceImpl implements IContentFactService {
         if (StringUtils.isBlank(value)) {
             throw new ServiceException("事实值不能为空");
         }
-        // 出处必填（内测 S19 / C7）：这里再校验一次，不只靠 BO 上的 @NotBlank——
+        // 出处必须指到本任务的一份具体资料（内测 C7-b）：这里再校验一次，不只靠 BO 上的 @NotNull——
         // 服务层被别处直接调用时（例如以后的批量导入）也要挡住"无出处的事实"。
-        if (StringUtils.isBlank(sourceLocator)) {
-            throw new ServiceException("请填写事实出处：这个值是从哪份资料 / 哪个页签看来的。"
-                + "手工录入即视为已确认，开工包会把出处原样交给下游，没有出处的事实无法追溯。");
-        }
+        // 校验与拼装都在 ContentFactOrigin：互动卡那条路走的是同一份逻辑。
+        CpTaskFile sourceFile = ContentFactOrigin.requireFile(taskId, bo.getSourceFileId(),
+            taskFileMapper, "手工录入事实");
         String code = fieldCode.trim();
         requireRecordableCode(task, code);
         List<CpFactSnapshot> rows = factSnapshotMapper.selectList(new LambdaQueryWrapper<CpFactSnapshot>()
@@ -192,8 +197,10 @@ public class ContentFactServiceImpl implements IContentFactService {
         entity.setConfirmStatus(ContentFactConfirmStatusEnum.CONFIRMED.getCode());
         entity.setConfirmedBy(LoginHelper.getUserId());
         entity.setConfirmedAt(LocalDateTime.now());
-        entity.setSourceLocator(sourceLocator.trim());
-        entity.setRemark(StringUtils.blankToDefault(remark, "人工录入"));
+        // 结构化出处（哪份资料）与可读出处（文件名 · 位置）都写：前者能被核对，后者给人和下游看
+        entity.setSourceFileId(sourceFile.getFileId());
+        entity.setSourceLocator(ContentFactOrigin.describe(sourceFile, bo.getSourceLocator()));
+        entity.setRemark(StringUtils.blankToDefault(bo.getRemark(), "人工录入"));
         factSnapshotMapper.insert(entity);
 
         // 「录了但闸门不动」是对用户最不友好的一种结果：编码不在该交付类型的闸门规则里时，
