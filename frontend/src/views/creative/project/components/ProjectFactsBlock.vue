@@ -4,7 +4,7 @@
       <h4>{{ stepHeading }}事实确认</h4>
       <div class="block-actions">
         <span class="muted">已确认 {{ confirmedFacts.length }} 条 / 共 {{ facts.length }} 行</span>
-        <span class="muted">只读（品牌部在内容任务里确认）</span>
+        <span class="hint">只读（品牌部在内容任务里确认）</span>
       </div>
     </div>
     <p class="hint">

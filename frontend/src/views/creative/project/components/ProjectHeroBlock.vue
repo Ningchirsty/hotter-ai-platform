@@ -2,7 +2,7 @@
   <section class="block" data-block="PROJECT_HERO">
     <div class="block-head">
       <h4>{{ stepHeading }}生成 HERO 主图</h4>
-      <span class="muted">每次出 1 张候选；重试=新增一次候选</span>
+      <span class="hint">每次出 1 张候选；重试=新增一次候选</span>
     </div>
     <div class="form-row">
       <label>出图工作流</label>
@@ -33,21 +33,21 @@
       />
     </div>
     <template v-if="dnaStateLoaded">
-      <p v-if="promptFromDna" class="dna-hint">
+      <p v-if="promptFromDna" class="hint form-aligned">
         已按<b>视觉基因</b>预填提示词（用到的维度：{{ appliedText(promptApplied) || '—' }}）。可以改；改了就以你写的为准。
       </p>
-      <p v-else-if="dnaLocked" class="dna-hint">
+      <p v-else-if="dnaLocked" class="hint form-aligned">
         将按<b>已锁定的视觉基因 {{ dnaLockedVersion }}</b>出图，但派生提示词尚未载入——点
         <el-button link type="primary" size="small" @click="$emit('prefill-from-dna')">这里</el-button>
         载入。
       </p>
-      <p v-else class="dna-hint muted">
+      <p v-else class="hint form-aligned">
         这个项目还没有锁定视觉基因，提示词按默认模板生成。建议先到
         <el-button link type="primary" size="small" @click="$emit('open-dna')">视觉基因</el-button>
         定义配色与光线并锁定。
       </p>
     </template>
-    <p v-else class="dna-hint muted">正在检查该项目的视觉基因…</p>
+    <p v-else class="hint form-aligned">正在检查该项目的视觉基因…</p>
     <div class="form-row">
       <label>负向提示</label>
       <el-input

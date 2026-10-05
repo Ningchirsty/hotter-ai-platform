@@ -32,7 +32,7 @@
       <!-- 品牌红线（C8 起取自 Brief，不再是空数组） -->
       <div class="wp-grid">
         <div class="wp-card">
-          <div class="wp-card-head"><b>品牌红线（禁用词）</b><span class="muted">出图时逐条进负向提示词</span></div>
+          <div class="wp-card-head"><b>品牌红线（禁用词）</b><span class="hint">出图时逐条进负向提示词</span></div>
           <ul v-if="(content?.copy?.forbidden || []).length" class="wp-list">
             <li v-for="(t, i) in content?.copy?.forbidden || []" :key="'f' + i">{{ t }}</li>
           </ul>
@@ -40,7 +40,7 @@
           <p v-if="content?.copy?.forbiddenSource" class="wp-src">{{ content?.copy?.forbiddenSource }}</p>
         </div>
         <div class="wp-card">
-          <div class="wp-card-head"><b>必显信息</b><span class="muted">出图时进正向提示词</span></div>
+          <div class="wp-card-head"><b>必显信息</b><span class="hint">出图时进正向提示词</span></div>
           <ul v-if="(content?.copy?.confirmed || []).length" class="wp-list">
             <li v-for="(t, i) in content?.copy?.confirmed || []" :key="'c' + i">{{ t }}</li>
           </ul>
@@ -95,7 +95,7 @@
 
       <!-- 不可修改项 -->
       <div class="wp-card">
-        <div class="wp-card-head"><b>不可修改项</b><span class="muted">AI 生产不得自由重绘</span></div>
+        <div class="wp-card-head"><b>不可修改项</b><span class="hint">AI 生产不得自由重绘</span></div>
         <div class="wp-tags">
           <el-tag v-for="(t, i) in content?.immutableItems || []" :key="'i' + i" size="small" type="warning" effect="plain">
             {{ t }}
