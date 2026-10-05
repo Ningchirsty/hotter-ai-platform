@@ -1,7 +1,39 @@
 <template>
   <section class="block" data-block="PROJECT_ASSETS">
     <div class="block-head">
-      <h4>{{ stepHeading }}产品图与参考图</h4>
+      <h4>
+        {{ stepHeading }}
+        <!-- 注意 Element Plus 两个组件的插槽约定是**相反**的：
+             el-tooltip 的默认插槽 = 触发元素、#content = 内容；
+             el-popover 的 #reference = 触发元素、默认插槽 = 内容。
+             这里用 el-popover（与「品牌要求」那条注释同一套写法：popper-class + 非 scoped 样式）。 -->
+        <el-popover
+          placement="bottom-start"
+          :width="380"
+          trigger="hover"
+          popper-class="assets-term-popover"
+        >
+          <template #reference><span class="term">产品图</span></template>
+          <div class="term-body">
+            <b>产品图</b>＝产品主数据里唯一的那张照片，是<b>产品保真基准</b>：
+            质检拿它比对生成图里的产品有没有走形。只用提示词约束，<b>不自动判死</b>。
+          </div>
+        </el-popover>
+        与
+        <el-popover
+          placement="bottom-start"
+          :width="420"
+          trigger="hover"
+          popper-class="assets-term-popover"
+        >
+          <template #reference><span class="term">参考图</span></template>
+          <div class="term-body">
+            <b>参考图</b>＝本次任务喂给模型的输入图，可以有好多张，是<b>一致性基准</b>：
+            质检拿它比对画面是否走样，不一致会被筛除。<br />
+            图上的角色徽标（来源 / 产品保真基准 / 当前参考图）按后端记录的来源如实展示，不靠推测。
+          </div>
+        </el-popover>
+      </h4>
       <div class="block-actions">
         <span class="muted">{{ files.length }} 张</span>
         <el-tag :type="productImage?.configured ? 'success' : 'warning'" size="small" effect="dark">
@@ -9,13 +41,6 @@
         </el-tag>
       </div>
     </div>
-    <p class="hint">
-      这里有两样不同的东西，别混：<b>产品图</b> = 产品主数据里唯一的那张照片，是
-      <b>产品保真基准</b>（质检拿它比对生成图里的产品有没有走形；只用提示词约束，不自动判死）；
-      <b>参考图</b> = 本次任务喂给模型的输入图，可以有好多张，是
-      <b>一致性基准</b>（质检拿它比对画面是否走样，不一致会被筛除）。
-      角色徽标按后端记录的来源如实展示，不靠推测。
-    </p>
     <p class="hint">
       上传参考图<b>不会改变项目阶段</b>（已完成的项目也能补图）；只有下面的勾选框会把某张图登记成产品图。
     </p>
@@ -238,3 +263,35 @@ watch(
 
 onBeforeUnmount(() => observer?.disconnect());
 </script>
+
+<!-- 术语注释（v1 反馈 1.1/1.3 的原话：「在说明产品图和参考图的模块的时候应该是以标注或者
+     当鼠标停在'产品图'和'参考图'的时候显示注释」）。原先这段区分说明是一整段铺在卡片顶部，
+     现在挂在两个词上：hover 即见。浮层是 teleport 到 body 的，所以这里必须是非 scoped 块，
+     并显式带上工作台 token（否则解析失败会变成白卡）——与 .flow-popover / .brief-note-popover 同一套做法。 -->
+<style lang="scss">
+@use '@/assets/styles/tokens-studio.scss' as studio;
+
+.assets-term-popover.el-popover.el-popper {
+  @include studio.studio-tokens;
+
+  background: var(--elevated);
+  border: 1px solid var(--line);
+  color: var(--t1);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+
+  .el-popper__arrow::before {
+    background: var(--elevated);
+    border-color: var(--line);
+  }
+}
+
+.term-body {
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: var(--t1);
+
+  b {
+    color: #a5b4fc;
+  }
+}
+</style>
