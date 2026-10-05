@@ -56,6 +56,7 @@
           :generating="generatingSb"
           :locking="lockingSb"
           :has-projects="projects.length > 0"
+          :workflows="workflows"
           @generate="doGenerateStoryboard"
           @lock="doLockStoryboard"
           @edit-screen="openScreenEdit"
@@ -149,6 +150,7 @@ import {
   generateStoryboard,
   getStoryboard,
   listCreativeProject,
+  listCreativeWorkflows,
   listDirections,
   lockStoryboard,
   refreshProduction,
@@ -164,6 +166,7 @@ import type {
   CreativeDirectionForm,
   CreativeProjectVO,
   CreativeScreenForm,
+  CreativeWorkflowVO,
   DpStoryboardScreenVO,
   DpStoryboardVO,
   DpVisualDirectionVO,
@@ -195,6 +198,8 @@ const flowToken = ref(0);
 const directions = ref<DpVisualDirectionVO[]>([]);
 const storyboard = ref<DpStoryboardVO | null>(null);
 const production = ref<ProductionRunVO | null>(null);
+/** 出图工作流清单（只用于把 `wf-i2i-qwen21` 这种代号翻成「图生图」） */
+const workflows = ref<CreativeWorkflowVO[]>([]);
 const loading = ref(false);
 const generatingDir = ref(false);
 const generatingSb = ref(false);
@@ -346,6 +351,21 @@ async function loadAll() {
   }
 }
 
+/**
+ * 拉出图工作流清单（v1 反馈：分镜卡片上原本打印 `wf-i2i-qwen21` 这种代号）。
+ *
+ * <p>与 `loadAll` 分开、且**失败不提示**：它只服务于"把代号翻成中文"这一件事，
+ * 拉不到时组件如实回落成显示代号，不该因为一个装饰性请求打断整页。</p>
+ */
+async function loadWorkflows() {
+  try {
+    const res = await listCreativeWorkflows();
+    workflows.value = res.data || [];
+  } catch {
+    workflows.value = [];
+  }
+}
+
 async function doGenerateDirections() {
   generatingDir.value = true;
   try {
@@ -485,6 +505,8 @@ async function extractErrorMessage(error: unknown): Promise<string | undefined> 
 
 onMounted(async () => {
   try {
+    // 工作流清单与主数据并行拉：它只影响"代号显示成什么"，失败也不该拖住页面
+    void loadWorkflows();
     await loadProjects();
     await loadAll();
   } catch (error) {

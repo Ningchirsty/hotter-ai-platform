@@ -15,7 +15,7 @@
         <el-option
           v-for="wf in workflows"
           :key="wf.workflowCode"
-          :label="`${wf.workflowCode}（${wf.capabilityCode} · ${wf.published ? '已发布' : wf.status}）`"
+          :label="workflowOptionLabel(wf)"
           :value="wf.workflowCode"
         />
       </el-select>
@@ -77,6 +77,7 @@
 <script setup lang="ts">
 import type { CreativeWorkflowVO } from '@/api/creative/types';
 import { appliedText } from '../../composables/promptApplied';
+import { workflowOptionLabel } from '../../composables/workflowLabels';
 import { useStepHeading } from '../../composables/stepNumbering';
 
 /** 标题编号：本页步骤号（v1 反馈；没有工作台上下文时不显示编号） */

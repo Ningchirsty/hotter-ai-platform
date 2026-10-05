@@ -58,7 +58,11 @@
                 <b>{{ specLabel(String(key)) }}</b>{{ value }}
               </span>
             </div>
-            <p class="muted small">出图能力：{{ screen.workflowCode }}</p>
+            <!-- v1 反馈：这里原先直接打印 wf-i2i-qwen21 这种给代码看的代号。
+                 现在显示中文能力名（图生图），代号留在 title 里——排障时还能查到。 -->
+            <p class="muted small">
+              出图能力：<span :title="screen.workflowCode || ''">{{ workflowName(screen.workflowCode) }}</span>
+            </p>
           </div>
         </div>
       </div>
@@ -67,7 +71,8 @@
 </template>
 
 <script setup lang="ts">
-import type { DpStoryboardScreenVO, DpStoryboardVO } from '@/api/creative/types';
+import type { DpStoryboardScreenVO, DpStoryboardVO, CreativeWorkflowVO } from '@/api/creative/types';
+import { workflowDisplayName } from '../../composables/workflowLabels';
 import { useStepHeading } from '../../composables/stepNumbering';
 
 /** 标题编号：本页步骤号（v1 反馈；没有工作台上下文时不显示编号） */
@@ -82,7 +87,7 @@ const stepHeading = useStepHeading('StoryboardBoard');
  *
  * @author creative
  */
-defineProps<{
+const props = defineProps<{
   /** 当前分镜（没有表示还没生成） */
   storyboard: DpStoryboardVO | null;
   /** 正在生成分镜 */
@@ -91,6 +96,13 @@ defineProps<{
   locking: boolean;
   /** 项目列表是否非空（空列表要引导去新建项目，而不是显示"还没有分镜"） */
   hasProjects: boolean;
+  /**
+   * 出图工作流清单（页面从 `GET /creative/v1/workflows` 拿）。
+   *
+   * 只用来把 `wf-i2i-qwen21` 这种代号翻成「图生图」——清单拿不到时如实回落成代号，
+   * 不阻塞页面，也不假装知道。
+   */
+  workflows?: CreativeWorkflowVO[];
 }>();
 
 defineEmits<{
@@ -101,6 +113,16 @@ defineEmits<{
   /** 打开编辑单屏弹窗（弹窗与落库都在页面） */
   (e: 'edit-screen', screen: DpStoryboardScreenVO): void;
 }>();
+
+/**
+ * 单屏「出图能力」的中文名。
+ *
+ * @param workflowCode 工作流编码
+ * @returns 中文能力名；清单里查不到就返回编码本身
+ */
+function workflowName(workflowCode?: string): string {
+  return workflowDisplayName(workflowCode, props.workflows);
+}
 
 /**
  * 视觉规格字段的中文标签。
