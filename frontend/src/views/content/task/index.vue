@@ -2060,14 +2060,24 @@ const confirmStatusType = (status?: string): ElTagType => {
 };
 
 const handleConfirmFact = async (row: CpFactSnapshotVO) => {
-  if (!row.snapshotId) return;
+  // v1 反馈（详情页与审核 1.3）：「点击确认事实无误选项之后**还是没有反应**」。
+  // 这一条原来就是静默 return —— 点下去什么都不发生，人只能反复点。现在把原因说出来。
+  if (!row.snapshotId) {
+    modal.msgWarning(
+      '这一行没有可确认的候选快照（snapshotId 缺失），无法确认。请先刷新任务详情；若一直如此，请把这条反馈给我们。'
+    );
+    return;
+  }
   await confirmFact(row.snapshotId);
   modal.msgSuccess('已确认该值');
   await loadDetail();
 };
 
 const handleRejectFact = async (row: CpFactSnapshotVO) => {
-  if (!row.snapshotId) return;
+  if (!row.snapshotId) {
+    modal.msgWarning('这一行没有可否决的候选快照（snapshotId 缺失）。请先刷新任务详情；若一直如此，请反馈给我们。');
+    return;
+  }
   await modal.confirm('否决后该候选值不会被采用，是否继续？');
   await rejectFact(row.snapshotId);
   modal.msgSuccess('已否决该候选值');
@@ -2075,9 +2085,23 @@ const handleRejectFact = async (row: CpFactSnapshotVO) => {
 };
 
 const handleConfirmUnambiguous = async () => {
-  if (!detailTaskId.value) return;
+  if (!detailTaskId.value) {
+    modal.msgWarning('请先打开一个任务详情，再点「一键确认无争议项」');
+    return;
+  }
   const res = await confirmUnambiguousFacts(detailTaskId.value);
-  modal.msgSuccess('已确认 ' + (res.data ?? 0) + ' 条无争议项');
+  const count = res.data ?? 0;
+  if (!count) {
+    // 「已确认 0 条无争议项」和"没反应"是同一件事（v1 反馈原话），所以 0 条要解释为什么、
+    // 以及接下来去哪儿做——后端只把"没有待确认的无争议项"这件事告诉我们，
+    // "为什么没有"（都已确认 / 剩下的都要逐条裁定）由页面按事实清单的现状说清楚。
+    modal.msgWarning(
+      '没有可一键确认的无争议项：要么这些事实都已经确认过了，要么剩下的都需要逐条裁定——' +
+        '请在下面「事实清单」里逐行点「确认」或「否决」。'
+    );
+  } else {
+    modal.msgSuccess('已确认 ' + count + ' 条无争议项');
+  }
   await loadDetail();
   await getList();
 };
