@@ -443,9 +443,17 @@ watch(
   { immediate: true }
 );
 
+// 刷新令牌：
+// - 指引线**自持**流程状态时（没传 `flow`），令牌由它自己消化；
+// - 由工作台注入 `flow` 时，令牌由**工作台**消化（工作台自己也要用它刷新「本页步骤」的状态），
+//   这里再消化一次就是同一份数据发两遍请求。
 watch(
   () => props.refreshToken,
-  () => void reload()
+  () => {
+    if (!props.flow) {
+      void reload();
+    }
+  }
 );
 </script>
 
