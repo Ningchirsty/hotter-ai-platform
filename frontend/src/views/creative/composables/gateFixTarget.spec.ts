@@ -37,9 +37,14 @@ describe('gateFixTarget', () => {
 });
 
 describe('gateFixRoute', () => {
-  it('支持深链的页面带上 taskId', () => {
+  it('支持深链的页面带上 taskId，并钉住要补的那一步', () => {
     expect(gateFixRoute(gateFixTarget('DNA_LOCKED')!, '2104582766641799169'))
-      .toBe('/creative/dna?taskId=2104582766641799169');
+      .toBe('/creative/dna?taskId=2104582766641799169&step=DNA');
+    // 真机验过：只跳到 /creative/project 会停在「出图」，上传框不在那一屏 —— 必须带 step
+    expect(gateFixRoute(gateFixTarget('REFERENCE_IMAGE')!, '2104582766641799169'))
+      .toBe('/creative/project?taskId=2104582766641799169&step=INPUT');
+    expect(gateFixRoute(gateFixTarget('STORYBOARD_LOCKED')!, '2104582766641799169'))
+      .toBe('/creative/storyboard?taskId=2104582766641799169&step=STORYBOARD');
   });
 
   it('不支持的页面不硬塞 taskId（塞了反而让人以为已经定位到那一条）', () => {
@@ -47,9 +52,19 @@ describe('gateFixRoute', () => {
       .toBe('/business/content/task');
   });
 
-  it('没有 taskId 时只给路径，不产生 "?taskId=" 这种半截地址', () => {
-    expect(gateFixRoute(gateFixTarget('DNA_LOCKED')!, '')).toBe('/creative/dna');
-    expect(gateFixRoute(gateFixTarget('DNA_LOCKED')!, null)).toBe('/creative/dna');
-    expect(gateFixRoute(gateFixTarget('DNA_LOCKED')!)).toBe('/creative/dna');
+  it('没有 taskId 时只给路径与 step，不产生 "?taskId=" 这种半截地址', () => {
+    expect(gateFixRoute(gateFixTarget('DNA_LOCKED')!, '')).toBe('/creative/dna?step=DNA');
+    expect(gateFixRoute(gateFixTarget('DNA_LOCKED')!, null)).toBe('/creative/dna?step=DNA');
+    expect(gateFixRoute(gateFixTarget('DNA_LOCKED')!)).toBe('/creative/dna?step=DNA');
+  });
+
+  it('设计侧能补的四项都写了要钉住哪一步（跳过去要能直接看见那一块）', () => {
+    for (const code of ['DNA_LOCKED', 'REFERENCE_IMAGE', 'DIRECTION_SELECTED', 'STORYBOARD_LOCKED']) {
+      expect(gateFixTarget(code)?.step, `${code} 没写 step`).toBeTruthy();
+    }
+    // 品牌部的三项是内容侧列表页，没有"工作台步骤"可钉
+    for (const code of ['BRAND_TONE_CONFIRMED', 'BRAND_BRIEF_CONFIRMED', 'FORBIDDEN_WORDS_DECLARED']) {
+      expect(gateFixTarget(code)?.step).toBeUndefined();
+    }
   });
 });

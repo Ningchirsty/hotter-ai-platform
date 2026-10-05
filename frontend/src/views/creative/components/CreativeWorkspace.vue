@@ -372,9 +372,23 @@ const hosted = computed(() => {
 });
 const hostedCodes = computed(() => hosted.value.map((s) => s.code));
 
-/** 这一步显示哪一步：手工选过就先听手工的，否则按"全局当前步 → 进行中 → 没了结 → 最后一步" */
+/**
+ * 「钉住某一步」：来自地址栏的 `?step=<步骤编码>`（例如视觉门那枚「去哪儿补」按钮
+ * 跳到项目页的「产品资料与参考图」上传参考图——只跳到页面是不够的，页面默认显示的是
+ * **当前步**，而"没上传参考图"这件事要补的那一步往往不是当前步；真机验过：
+ * 跳到 `/creative/project` 会停在「出图」，上传框根本不在那一屏）。
+ *
+ * <p>与 `manualStep` 的区别：manualStep 是"用户点了步骤条"，只要流程推进就清掉；
+ * 这个是**带着意图进来的**，要一直钉住，直到用户自己点别的步骤。</p>
+ */
+const pinnedStep = ref(typeof route.query.step === 'string' ? route.query.step : '');
+
+/** 这一步显示哪一步：钉住的 → 手工选的 → 按"全局当前步 → 进行中 → 没了结 → 最后一步" */
 const manualStep = ref('');
 const visibleStep = computed(() => {
+  if (pinnedStep.value && hostedCodes.value.includes(pinnedStep.value)) {
+    return pinnedStep.value;
+  }
   if (manualStep.value && hostedCodes.value.includes(manualStep.value)) {
     return manualStep.value;
   }
@@ -417,6 +431,8 @@ const configMissing = computed(() => !flow.configPending.value && !flow.assembly
 /** 点步骤条：手工选一步（下一次流程推进时自动回到跟随当前步） */
 function selectStep(code: string) {
   manualStep.value = code;
+  // 用户自己点了步骤条：放弃地址栏带来的钉住，之后按正常规则跟随
+  pinnedStep.value = '';
 }
 
 /** 按名字解析组件（没实现返回 null，模板里那一支就不会渲染） */

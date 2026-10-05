@@ -23,14 +23,28 @@ export interface GateFixTarget {
   path: string;
   /** 该路由是否支持 `?taskId=` 深链（内容任务列表页不支持，带了反而误导） */
   carriesTaskId: boolean;
+  /**
+   * 要钉住的那一步（工作台的步骤编码，形如 `INPUT` / `STORYBOARD`）。
+   *
+   * <p><b>为什么必须带</b>：工作台默认显示"当前步"，而"缺参考图"要补的那一步常常不是当前步——
+   * 真机验过：只跳到 `/creative/project` 会停在「出图」，上传框根本不在那一屏。
+   * 页面没有这一步时会被忽略（工作台只认它自己托管的那几步）。</p>
+   */
+  step?: string;
 }
 
 /** item code → 补充去处（码与 `dp_gate_item.item_code` 一致） */
 export const GATE_FIX_TARGETS: Record<string, GateFixTarget> = {
-  DNA_LOCKED: { label: '去视觉基因页生成并锁定', path: '/creative/dna', carriesTaskId: true },
-  REFERENCE_IMAGE: { label: '去视觉项目页传参考图', path: '/creative/project', carriesTaskId: true },
-  DIRECTION_SELECTED: { label: '去视觉方向与分镜页选方向', path: '/creative/storyboard', carriesTaskId: true },
-  STORYBOARD_LOCKED: { label: '去视觉方向与分镜页锁定分镜', path: '/creative/storyboard', carriesTaskId: true },
+  DNA_LOCKED: { label: '去视觉基因页生成并锁定', path: '/creative/dna', carriesTaskId: true, step: 'DNA' },
+  REFERENCE_IMAGE: {
+    label: '去视觉项目页传参考图', path: '/creative/project', carriesTaskId: true, step: 'INPUT'
+  },
+  DIRECTION_SELECTED: {
+    label: '去视觉方向与分镜页选方向', path: '/creative/storyboard', carriesTaskId: true, step: 'DIRECTION'
+  },
+  STORYBOARD_LOCKED: {
+    label: '去视觉方向与分镜页锁定分镜', path: '/creative/storyboard', carriesTaskId: true, step: 'STORYBOARD'
+  },
   BRAND_TONE_CONFIRMED: { label: '去内容任务（品牌部录）', path: '/business/content/task', carriesTaskId: false },
   BRAND_BRIEF_CONFIRMED: { label: '去内容任务（品牌部录）', path: '/business/content/task', carriesTaskId: false },
   FORBIDDEN_WORDS_DECLARED: { label: '去内容任务（品牌部录）', path: '/business/content/task', carriesTaskId: false }
@@ -48,15 +62,19 @@ export function gateFixTarget(itemCode?: string | null): GateFixTarget | null {
 }
 
 /**
- * 拼出可跳转的地址（需要 `taskId` 的页面自动带上）。
+ * 拼出可跳转的地址（需要 `taskId` 的页面自动带上；有 `step` 的把它带成 `?step=`）。
  *
  * @param target 去处
  * @param taskId 当前项目ID
  * @returns 路由地址
  */
 export function gateFixRoute(target: GateFixTarget, taskId?: string | number | null): string {
-  if (!target.carriesTaskId || taskId == null || String(taskId).trim() === '') {
-    return target.path;
+  const params: string[] = [];
+  if (target.carriesTaskId && taskId != null && String(taskId).trim() !== '') {
+    params.push(`taskId=${encodeURIComponent(String(taskId))}`);
   }
-  return `${target.path}?taskId=${encodeURIComponent(String(taskId))}`;
+  if (target.step) {
+    params.push(`step=${encodeURIComponent(target.step)}`);
+  }
+  return params.length ? `${target.path}?${params.join('&')}` : target.path;
 }
