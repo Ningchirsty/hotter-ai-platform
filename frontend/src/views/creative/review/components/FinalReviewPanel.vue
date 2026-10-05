@@ -1,6 +1,16 @@
 <template>
   <!-- 单根容器：`src/views` 下的组件会被 `vite:check-transition` 检查（外层路由用 <transition> 包裹）。 -->
   <div class="final-panel">
+    <!--
+      C9：缺屏提示放在**两块之上**，因为两条交付收尾路径都要看到它——
+      长图走「上传精修最终版」，多图走「确认交付」；放在长图那一块里，
+      多图项目就永远看不到（内测时正是只修了长图那条）。
+    -->
+    <p v-if="(detailPage?.screensWithoutSelection || []).length" class="size-warn">
+      ⚠ 还有 {{ (detailPage?.screensWithoutSelection || []).length }} 屏没有已选定的产出图（{{
+        (detailPage?.screensWithoutSelection || []).join('、')
+      }}）。交付时（上传精修最终版 / 确认交付）会被要求确认「带空屏交付」。
+    </p>
     <!-- 交付最终版（V1.0）：LAYOUT 渲染完之后的人工精修产物 -->
     <section v-if="(detailPage?.currentVersion ?? 0) > 0" class="panel" data-final-section="FINAL">
       <div class="block-head">
@@ -12,12 +22,6 @@
       <!-- C10：终版尺寸与输出规格不一致时常驻显示（刷新后仍在），上传那一刻另有一次弹窗 -->
       <p v-if="detailPage?.finalSizeWarning" class="size-warn">
         ⚠ {{ detailPage.finalSizeWarning }}
-      </p>
-      <!-- C9：上传前先说清"还有几屏没出图"，上传时后端还会要求显式确认 -->
-      <p v-if="(detailPage?.screensWithoutSelection || []).length" class="size-warn">
-        ⚠ 还有 {{ (detailPage?.screensWithoutSelection || []).length }} 屏没有已选定的产出图（{{
-          (detailPage?.screensWithoutSelection || []).join('、')
-        }}）。上传最终版时会被要求确认「带空屏交付」。
       </p>
       <div class="final-row">
         <div class="final-hint">

@@ -4,15 +4,20 @@ import org.dromara.common.core.exception.ServiceException;
 import org.dromara.creative.domain.DpDeliveryArtifact;
 import org.dromara.creative.domain.DpDeliveryType;
 import org.dromara.creative.domain.vo.CreativeProjectVo;
+import org.dromara.creative.domain.vo.DpStoryboardScreenVo;
+import org.dromara.creative.domain.vo.DpStoryboardVo;
 import org.dromara.creative.helper.CreativeRenderer;
 import org.dromara.creative.helper.CreativeRendererHub;
 import org.dromara.creative.mapper.DpDeliveryArtifactMapper;
+import org.dromara.creative.mapper.DpGenerationMapper;
 import org.dromara.creative.service.ICreativeProjectService;
 import org.dromara.creative.service.ICreativeScenarioConfigService;
+import org.dromara.creative.service.ICreativeStoryboardService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -63,6 +68,10 @@ class CreativeDeliveryConfirmTest {
     private CreativeRenderer posterRenderer;
     @Mock
     private CreativeRenderer longPageRenderer;
+    @Mock
+    private ICreativeStoryboardService storyboardService;
+    @Mock
+    private DpGenerationMapper generationMapper;
 
     @InjectMocks
     private CreativeDeliveryServiceImpl service;
@@ -77,6 +86,9 @@ class CreativeDeliveryConfirmTest {
         project.setDeliverableType("MAIN_IMAGE");
         when(projectService.getProject(TASK)).thenReturn(project);
         when(projectService.stageOf(TASK)).thenReturn("FINAL_REVIEW");
+        // 默认没有分镜 → 缺屏清单为空 → 不会触发 C9-c 的确认闸。
+        // 需要测空屏的用例自己打桩（见 multiImageRequiresShortfallAck）。
+        when(storyboardService.latest(TASK)).thenReturn(null);
         when(multiImageRenderer.code()).thenReturn(MultiImageRenderer.CODE);
         when(multiImageRenderer.displayName()).thenReturn("多图交付渲染器");
         when(multiImageRenderer.targetStep()).thenReturn("FINAL");
@@ -123,7 +135,7 @@ class CreativeDeliveryConfirmTest {
     @DisplayName("长图交付类型不能用「确认交付」收尾：必须走上传精修最终版")
     void rejectsLongPageType() {
         renderMode("LONGPAGE");
-        ServiceException ex = assertThrows(ServiceException.class, () -> service.confirm(TASK, null, "终审通过"));
+        ServiceException ex = assertThrows(ServiceException.class, () -> service.confirm(TASK, null, "终审通过", false));
         // 消息要同时说清"是哪个渲染器"与"该走哪条路"（只说"不允许"会让人不知道下一步做什么）
         assertTrue(ex.getMessage().contains("LONG_PAGE"), ex.getMessage());
         assertTrue(ex.getMessage().contains("精修"), ex.getMessage());
@@ -136,7 +148,7 @@ class CreativeDeliveryConfirmTest {
     void rejectsWhenNoArtifact() {
         renderMode("MULTI_IMAGE");
         when(artifactMapper.selectList(any())).thenReturn(List.of());
-        ServiceException ex = assertThrows(ServiceException.class, () -> service.confirm(TASK, null, null));
+        ServiceException ex = assertThrows(ServiceException.class, () -> service.confirm(TASK, null, null, false));
         assertTrue(ex.getMessage().contains("还没有交付产物"), ex.getMessage());
         verify(projectService, never()).moveStage(anyLong(), any(), anyString(), anyString());
     }
@@ -146,7 +158,7 @@ class CreativeDeliveryConfirmTest {
     void rejectsWhenAlreadyCompleted() {
         renderMode("MULTI_IMAGE");
         when(projectService.stageOf(TASK)).thenReturn("COMPLETED");
-        ServiceException ex = assertThrows(ServiceException.class, () -> service.confirm(TASK, null, null));
+        ServiceException ex = assertThrows(ServiceException.class, () -> service.confirm(TASK, null, null, false));
         assertTrue(ex.getMessage().contains("已完成"), ex.getMessage());
         verify(projectService, never()).moveStage(anyLong(), any(), anyString(), anyString());
     }
@@ -157,7 +169,7 @@ class CreativeDeliveryConfirmTest {
         renderMode("MULTI_IMAGE");
         when(artifactMapper.selectById(VERSION_ID)).thenReturn(artifact(999L, 1));
         ServiceException ex = assertThrows(ServiceException.class,
-            () -> service.confirm(TASK, VERSION_ID, null));
+            () -> service.confirm(TASK, VERSION_ID, null, false));
         assertTrue(ex.getMessage().contains("不属于该项目"), ex.getMessage());
         verify(projectService, never()).moveStage(anyLong(), any(), anyString(), anyString());
     }
@@ -168,7 +180,7 @@ class CreativeDeliveryConfirmTest {
         renderMode("MULTI_IMAGE");
         when(artifactMapper.selectList(any())).thenReturn(List.of(artifact(TASK, 3)));
 
-        var vo = service.confirm(TASK, null, "终审通过，交付");
+        var vo = service.confirm(TASK, null, "终审通过，交付", false);
 
         assertEquals(1, vo.getArtifacts().size());
         assertEquals(3, vo.getCurrentVersion());
@@ -184,10 +196,44 @@ class CreativeDeliveryConfirmTest {
         renderMode("POSTER");
         when(artifactMapper.selectList(any())).thenReturn(List.of(artifact(TASK, 1)));
 
-        var vo = service.confirm(TASK, null, "三档成品图确认交付");
+        var vo = service.confirm(TASK, null, "三档成品图确认交付", false);
 
         assertEquals(1, vo.getCurrentVersion());
         verify(projectService).moveStage(eq(TASK), eq(org.dromara.creative.enums.DpVisualStageEnum.COMPLETED),
             eq("DELIVERY_CONFIRMED"), anyString());
+    }
+
+    @Test
+    @DisplayName("C9-c：多图交付也要空屏确认——未确认拒绝，确认后放行且把缺屏写进事件")
+    void multiImageRequiresShortfallAck() {
+        renderMode("MULTI_IMAGE");
+        when(artifactMapper.selectList(any())).thenReturn(List.of(artifact(TASK, 3)));
+        DpStoryboardVo storyboard = new DpStoryboardVo();
+        storyboard.setScreens(List.of(screen("S01"), screen("S02"), screen("S03")));
+        when(storyboardService.latest(TASK)).thenReturn(storyboard);
+        when(generationMapper.selectList(any())).thenReturn(List.of());
+
+        // 未确认：拒绝，且必须列出缺哪几屏（说不出"缺什么"就等于没说）
+        ServiceException ex = assertThrows(ServiceException.class,
+            () -> service.confirm(TASK, null, "直接交", false));
+        assertTrue(ex.getMessage().contains("S01") && ex.getMessage().contains("S03"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("确认交付"), "要说清是哪个动作被拦：" + ex.getMessage());
+        verify(projectService, never()).moveStage(anyLong(), any(), anyString(), anyString());
+
+        // 确认后：放行，且事件里留下"这一版是带空屏交的"——审计要能回答"为什么是空的"
+        service.confirm(TASK, null, "确认带空屏交付", true);
+        ArgumentCaptor<String> detail = ArgumentCaptor.forClass(String.class);
+        verify(projectService).appendEvent(eq(TASK), eq("DELIVERY"), eq("DELIVERY_CONFIRMED"),
+            detail.capture());
+        assertTrue(detail.getValue().contains("shortfallAcknowledged"), detail.getValue());
+        assertTrue(detail.getValue().contains("S01"), detail.getValue());
+    }
+
+    /** 造一屏（只需要屏号与 id） */
+    private static DpStoryboardScreenVo screen(String no) {
+        DpStoryboardScreenVo screen = new DpStoryboardScreenVo();
+        screen.setScreenNo(no);
+        screen.setId((long) no.hashCode());
+        return screen;
     }
 }

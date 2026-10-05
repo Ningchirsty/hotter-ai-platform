@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.dromara.creative.domain.DpProjectModule;
 import org.dromara.creative.service.ICreativeModuleService;
 import org.dromara.creative.helper.CreativeTemplatePin;
+import org.dromara.creative.helper.CreativeScreenCoverage;
 import org.dromara.creative.helper.CreativeStepTypes;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
@@ -31,7 +32,6 @@ import org.dromara.creative.domain.vo.DpDetailPageVo;
 import org.dromara.creative.domain.vo.DpStoryboardScreenVo;
 import org.dromara.creative.domain.vo.DpStoryboardVo;
 import org.dromara.creative.enums.DpCopyBlockTypeEnum;
-import org.dromara.creative.enums.DpGenerationStatusEnum;
 import org.dromara.creative.enums.DpVisualStageEnum;
 import org.dromara.creative.helper.RendererClient;
 import org.dromara.creative.helper.SimpleMultipartFile;
@@ -604,13 +604,9 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
         }
         // C9：空屏交付要显式确认。注意这不是"硬拦"——确认过就照收，
         // 因为"先把做好的部分交出去"是这条产线上的真实业务；要拦的是"没人注意到缺屏"。
+        // 判据与措辞都在 CreativeScreenCoverage：多图交付那条路走的是同一个闸。
         List<String> missing = missingScreens(taskId);
-        if (!missing.isEmpty() && !acknowledgeShortfall) {
-            throw new ServiceException("还有 " + missing.size() + " 屏没有已选定的产出图（屏号："
-                + String.join("、", missing) + "）。现在上传等于「带空屏交付」——排版稿上这几屏是空白的。"
-                + "如确认就要这样交付，请在确认提示后重新提交上传；"
-                + "如不是，请先回分镜页逐屏出图并选定候选。");
-        }
+        CreativeScreenCoverage.requireAcknowledged(missing, acknowledgeShortfall, "上传");
 
         DpDetailPage page = requireOrCreatePage(taskId);
         int nextVersion = (page.getCurrentVersion() == null ? 0 : page.getCurrentVersion()) + 1;
@@ -641,7 +637,7 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
         version.setRemark(sizeWarning == null
             ? "人工精修最终版（V1.0）"
             : "人工精修最终版（V1.0）｜⚠ " + sizeWarning
-                + (missing.isEmpty() ? "" : "｜⚠ 带空屏交付，缺屏：" + String.join("、", missing)));
+                + (missing.isEmpty() ? "" : "｜⚠ " + CreativeScreenCoverage.describe(missing)));
         versionMapper.insert(version);
 
         page.setCurrentVersion(nextVersion);
@@ -691,30 +687,16 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
     // ------------------------------------------------------------------
 
     private DpGeneration approvedGeneration(Long taskId, Long screenId) {
-        if (screenId == null) {
-            return null;
-        }
-        List<DpGeneration> rows = generationMapper.selectList(new LambdaQueryWrapper<DpGeneration>()
-            .eq(DpGeneration::getTaskId, taskId)
-            .eq(DpGeneration::getScreenId, screenId)
-            .eq(DpGeneration::getStatus, DpGenerationStatusEnum.APPROVED.getCode())
-            .orderByDesc(DpGeneration::getId)
-            .last("limit 1"));
-        return rows.isEmpty() ? null : rows.get(0);
+        return CreativeScreenCoverage.approvedGeneration(taskId, screenId, generationMapper);
     }
 
+    /**
+     * 缺屏清单。判据与"确认闸"都在 {@link CreativeScreenCoverage}——
+     * 长图上传与多图「确认交付」两条路必须用同一份判据，否则就是"修了一条、以为两条都好了"
+     * （内测 S21/C9 的真实教训）。
+     */
     private List<String> missingScreens(Long taskId) {
-        DpStoryboardVo storyboard = storyboardService.latest(taskId);
-        List<String> missing = new ArrayList<>();
-        if (storyboard == null || storyboard.getScreens() == null) {
-            return missing;
-        }
-        for (DpStoryboardScreenVo screen : storyboard.getScreens()) {
-            if (approvedGeneration(taskId, screen.getId()) == null) {
-                missing.add(screen.getScreenNo());
-            }
-        }
-        return missing;
+        return CreativeScreenCoverage.missingScreens(taskId, storyboardService, generationMapper);
     }
 
     private DpDetailPage findPage(Long taskId) {

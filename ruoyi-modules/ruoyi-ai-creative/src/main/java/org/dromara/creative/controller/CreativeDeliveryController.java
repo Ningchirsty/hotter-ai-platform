@@ -73,9 +73,10 @@ public class CreativeDeliveryController {
      * <p>多图交付类型（主图、海报）没有"长图精修版"可上传，原先唯一能收尾的动作对它们不可用，
      * 项目会卡在「终审」——这一步就是它们的收尾动作。长图类会被后端拒绝（走「上传精修最终版」）。</p>
      *
-     * @param taskId    项目ID
-     * @param versionId 交付产物ID（可空＝当前最新一版）
-     * @param comment   说明（可空）
+     * @param taskId               项目ID
+     * @param versionId            交付产物ID（可空＝当前最新一版）
+     * @param comment              说明（可空）
+     * @param acknowledgeShortfall 是否已确认带空屏交付（还有屏没出图时必须显式传 true）
      * @return 交付视图
      */
     @SaCheckPermission(CreativeConstants.PERM_FINAL_REVIEW)
@@ -85,8 +86,10 @@ public class CreativeDeliveryController {
     public R<DeliveryVo> confirm(@NotNull(message = "项目ID不能为空")
                                  @PathVariable("taskId") Long taskId,
                                  @RequestParam(value = "versionId", required = false) Long versionId,
-                                 @RequestParam(value = "comment", required = false) String comment) {
-        return R.ok(deliveryService.confirm(taskId, versionId, comment));
+                                 @RequestParam(value = "comment", required = false) String comment,
+                                 @RequestParam(value = "acknowledgeShortfall", required = false,
+                                     defaultValue = "false") boolean acknowledgeShortfall) {
+        return R.ok(deliveryService.confirm(taskId, versionId, comment, acknowledgeShortfall));
     }
 
     /**

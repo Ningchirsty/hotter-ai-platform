@@ -52,12 +52,18 @@ public interface ICreativeDeliveryService {
      * 长图类的"交付完成"是设计师改过图之后上传精修版，不能由一次点击代替。两条路都指向
      * {@code COMPLETED}，但含义不同，混在一起会让人以为"点一下就交了精修版"。</p>
      *
-     * @param taskId    项目ID
-     * @param versionId 交付产物版本ID（可空＝当前最新一版）
-     * @param comment   说明（可空；进事件留痕）
+     * <p><b>空屏也要显式确认</b>（内测 S21 / C9-c）：多图交付同样可能"7 屏只出了 2 屏"。
+     * 内测时只给长图那条路加了确认闸，这条路上同一类缺陷原样存在。判据与措辞与长图共用
+     * {@link org.dromara.creative.helper.CreativeScreenCoverage}。
+     * 只确认、不硬拦——"先交做好的部分"是真实业务，要拦的是"没人注意到缺屏"。</p>
+     *
+     * @param taskId               项目ID
+     * @param versionId            交付产物版本ID（可空＝当前最新一版）
+     * @param comment              说明（可空；进事件留痕）
+     * @param acknowledgeShortfall 是否已确认"带空屏交付"
      * @return 交付视图
      */
-    DeliveryVo confirm(Long taskId, Long versionId, String comment);
+    DeliveryVo confirm(Long taskId, Long versionId, String comment, boolean acknowledgeShortfall);
 
     /**
      * 取某版本的交付产物字节。

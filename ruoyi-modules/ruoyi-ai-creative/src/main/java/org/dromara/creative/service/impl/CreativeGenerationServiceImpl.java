@@ -550,15 +550,45 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
         }
     }
 
-    private CpTaskFileVo resolveReference(Long taskId, Long fileId, List<CpTaskFileVo> files) {
+    /**
+     * 挑本次出图的参考图（**参考图优先级只有这一处**，内测 S4 的收口）。
+     *
+     * <p>顺序：</p>
+     * <ol>
+     *   <li><b>显式指定</b>（{@code fileId}）：项目页「当前参考图」选中项、或模块规划里
+     *       {@code referenceFileIds} 的第一项。指定了就必须存在，否则报错而不是悄悄换一张——
+     *       "我选的是 A，出图用的是 B"是最难查的一类问题；</li>
+     *   <li><b>被登记为参考图的附件</b>（{@code source_type=REFERENCE}，取最新一张）：
+     *       内测 S4/S15 之前，设计侧上传的参考图与普通图片附件混在一起，兜底只能取"最新一张图片"，
+     *       于是后传的产品图会把参考图顶掉；</li>
+     *   <li><b>最新一张图片附件</b>：最后的兜底，保持与改造前一致（没有标注过角色时不能因此拒绝出图）。</li>
+     * </ol>
+     *
+     * <p><b>为什么兜底要优先 REFERENCE</b>：{@code source_type} 是"这张图是干什么用的"的唯一声明，
+     * 而 {@code createTime} 只说明"谁后传的"。拿后者当判据，等于让上传顺序决定出图输入。</p>
+     *
+     * <p>包可见且无实例依赖，便于单测逐条钉住（见 {@code CreativeReferencePrecedenceTest}）。</p>
+     *
+     * @param taskId 项目ID（仅用于报错文案）
+     * @param fileId 显式指定的参考图附件ID（可空）
+     * @param files  项目附件
+     * @return 本次要喂给模型的参考图（一定非空）
+     */
+    static CpTaskFileVo resolveReference(Long taskId, Long fileId, List<CpTaskFileVo> files) {
         if (fileId != null) {
             return files.stream()
                 .filter(f -> fileId.equals(f.getFileId()))
                 .findFirst()
                 .orElseThrow(() -> new ServiceException("参考图不在该项目附件中：" + fileId));
         }
-        return files.stream()
+        List<CpTaskFileVo> images = files.stream()
             .filter(f -> "IMAGE".equalsIgnoreCase(f.getFileKind()))
+            .toList();
+        List<CpTaskFileVo> marked = images.stream()
+            .filter(f -> "REFERENCE".equalsIgnoreCase(f.getSourceType()))
+            .toList();
+        List<CpTaskFileVo> candidates = marked.isEmpty() ? images : marked;
+        return candidates.stream()
             .max(Comparator.comparing(CpTaskFileVo::getCreateTime,
                 Comparator.nullsFirst(Comparator.naturalOrder())))
             .orElseThrow(() -> new ServiceException(

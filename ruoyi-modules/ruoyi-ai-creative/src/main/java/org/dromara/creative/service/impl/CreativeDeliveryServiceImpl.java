@@ -17,10 +17,13 @@ import org.dromara.creative.enums.DpVisualStageEnum;
 import org.dromara.creative.helper.CreativeDeliveryManifest;
 import org.dromara.creative.helper.CreativeRenderer;
 import org.dromara.creative.helper.CreativeRendererHub;
+import org.dromara.creative.helper.CreativeScreenCoverage;
 import org.dromara.creative.mapper.DpDeliveryArtifactMapper;
+import org.dromara.creative.mapper.DpGenerationMapper;
 import org.dromara.creative.service.ICreativeDeliveryService;
 import org.dromara.creative.service.ICreativeProjectService;
 import org.dromara.creative.service.ICreativeScenarioConfigService;
+import org.dromara.creative.service.ICreativeStoryboardService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -66,6 +69,15 @@ public class CreativeDeliveryServiceImpl implements ICreativeDeliveryService {
     private final DpDeliveryArtifactMapper artifactMapper;
     private final ICreativeProjectService projectService;
     private final ICreativeScenarioConfigService scenarioConfigService;
+
+    /**
+     * 判"还有几屏没有已选定产出"（内测 S21/C9）。
+     *
+     * <p>注入这两个而不是复用排版服务，是为了**避免服务间环**：判据本身在
+     * {@link org.dromara.creative.helper.CreativeScreenCoverage}，两条交付路径各带自己的依赖去调它。</p>
+     */
+    private final ICreativeStoryboardService storyboardService;
+    private final DpGenerationMapper generationMapper;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -140,7 +152,7 @@ public class CreativeDeliveryServiceImpl implements ICreativeDeliveryService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public DeliveryVo confirm(Long taskId, Long versionId, String comment) {
+    public DeliveryVo confirm(Long taskId, Long versionId, String comment, boolean acknowledgeShortfall) {
         CreativeProjectVo project = projectService.getProject(taskId);
         String deliveryType = project.getDeliverableType();
         DpDeliveryType type = scenarioConfigService.getDeliveryType(deliveryType);
@@ -162,6 +174,12 @@ public class CreativeDeliveryServiceImpl implements ICreativeDeliveryService {
         }
         DpDeliveryArtifact row = requireArtifact(taskId, versionId);
 
+        // C9：多图交付也要空屏确认（内测时只修了长图那条路，于是"7 屏只出 2 屏"在这条路上原样存在）。
+        // 放在"取交付产物"之后：先让人知道"有没有产物可确认"，再谈"这一版覆盖全不全"。
+        // 判据与措辞与长图那条路共用 CreativeScreenCoverage，避免两份判据各自演化。
+        List<String> missing = CreativeScreenCoverage.missingScreens(taskId, storyboardService, generationMapper);
+        CreativeScreenCoverage.requireAcknowledged(missing, acknowledgeShortfall, "确认交付");
+
         Map<String, Object> event = new LinkedHashMap<>();
         event.put("artifactId", row.getId());
         event.put("renderer", row.getRenderer());
@@ -169,10 +187,15 @@ public class CreativeDeliveryServiceImpl implements ICreativeDeliveryService {
         event.put("imageCount", row.getImageCount());
         event.put("checksum", row.getChecksum());
         event.put("comment", StringUtils.blankToDefault(comment, "交付产物确认"));
+        if (!missing.isEmpty()) {
+            // 确认过也照样记下来：审计要能回答"这一版为什么是空的"
+            event.put("shortfallAcknowledged", true);
+            event.put("screensWithoutSelection", missing);
+        }
         projectService.appendEvent(taskId, "DELIVERY", ACTION_DELIVERY_CONFIRMED, toJson(event));
         projectService.moveStage(taskId, DpVisualStageEnum.COMPLETED, ACTION_DELIVERY_CONFIRMED, toJson(event));
-        log.info("交付已确认 taskId={} versionId={} version={} 产物={} 张",
-            taskId, row.getId(), row.getVersion(), row.getImageCount());
+        log.info("交付已确认 taskId={} versionId={} version={} 产物={} 张 缺屏={}",
+            taskId, row.getId(), row.getVersion(), row.getImageCount(), missing.size());
         return view(taskId, row.getRenderer());
     }
 

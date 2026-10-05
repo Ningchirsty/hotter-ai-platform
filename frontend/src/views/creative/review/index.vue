@@ -256,19 +256,31 @@ async function doRender() {
 async function doConfirmDelivery() {
   const version = delivery.value?.currentVersion ?? 0;
   const artifact = (delivery.value?.artifacts || []).find((a) => a.version === version);
+  // C9-c：多图交付同样可能"7 屏只出了 2 屏"。长图那条路已经有确认闸，这里是补齐另一条——
+  // 缺屏这件事必须出现在**这一次确认**里（而不是页面上另找一条提示），否则还是一样的漏。
+  const missing = detailPage.value?.screensWithoutSelection || [];
+  const shortfall = missing.length
+    ? `⚠ 还有 ${missing.length} 屏没有已选定的产出图（屏号：${missing.join('、')}）——`
+      + '交付物里这几屏是空白的。\n\n'
+    : '';
   try {
     await ElMessageBox.confirm(
-      `把交付产物 v${version}（${artifact?.imageCount ?? 0} 张）定为最终交付物，`
+      shortfall
+      + `把交付产物 v${version}（${artifact?.imageCount ?? 0} 张）定为最终交付物，`
       + '项目将置为「已完成」。这一步不可撤销，之后要改需要走返工。',
-      '确认交付',
-      { confirmButtonText: '确认交付', cancelButtonText: '再想想', type: 'warning' }
+      missing.length ? '带空屏交付确认' : '确认交付',
+      {
+        confirmButtonText: missing.length ? '确认交付（含空屏）' : '确认交付',
+        cancelButtonText: missing.length ? '先去出图' : '再想想',
+        type: 'warning'
+      }
     );
   } catch {
     return; // 人取消
   }
   confirming.value = true;
   try {
-    const res = await confirmDelivery(taskId.value, artifact?.id, '终审通过，确认交付');
+    const res = await confirmDelivery(taskId.value, artifact?.id, '终审通过，确认交付', missing.length > 0);
     delivery.value = res.data || delivery.value;
     ElMessage.success('已确认交付，项目置为「已完成」');
     await loadAll();

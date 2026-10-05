@@ -625,18 +625,23 @@ export const renderDelivery = (taskId: string | number, renderer?: string) => {
  *
  * 多图交付类型（主图、海报）没有"长图精修版"可上传，这是它们的收尾动作；
  * 长图类会被后端拒绝（走「上传精修最终版」）。`versionId` 不传＝当前最新一版。
+ *
+ * @param acknowledgeShortfall 还有屏没出图时，必须显式传 true（C9-c）。
+ *   与「上传精修最终版」同一个口径：后端不硬拦，但要的是"我知道缺屏、仍要交付"这个明确表态。
  */
 export const confirmDelivery = (
   taskId: string | number,
   versionId?: string | number,
-  comment?: string
+  comment?: string,
+  acknowledgeShortfall?: boolean
 ) => {
   return request({
     url: `/creative/projects/${taskId}/delivery/confirm`,
     method: 'post',
     params: {
       ...(versionId ? { versionId } : {}),
-      ...(comment ? { comment } : {})
+      ...(comment ? { comment } : {}),
+      ...(acknowledgeShortfall ? { acknowledgeShortfall: true } : {})
     }
   });
 };
