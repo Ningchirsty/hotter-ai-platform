@@ -397,10 +397,13 @@ public class CreativeGateServiceImpl implements ICreativeGateService {
      * （冲突 A 把本项升为 BLOCK 后，提示仍在说"只提示、不阻断"）。
      * 等级由界面上的「等级」列展示，只有一处来源。</p>
      *
+     * <p>包可见是为了让单测能直接钉住"三态分开说"这件事——这段文案出错的后果是
+     * 品牌部照它去点一个必然被拒绝的按钮（v1 反馈的"确认没反应"）。</p>
+     *
      * @param brief 品牌 Brief 视图
      * @return 闸门项
      */
-    private static GateItem brandBriefItem(CpBrandBriefVo brief) {
+    static GateItem brandBriefItem(CpBrandBriefVo brief) {
         boolean configured = brief != null && Boolean.TRUE.equals(brief.getConfigured());
         boolean confirmed = configured
             && ContentBriefStatusEnum.CONFIRMED.getCode().equals(brief.getStatus());
@@ -408,14 +411,54 @@ public class CreativeGateServiceImpl implements ICreativeGateService {
             return new GateItem("BRAND_BRIEF_CONFIRMED", "品牌 Brief 已填写并确认", LEVEL_CONDITION, true,
                 "品牌方已确认（确认时间 " + brief.getConfirmedAt() + "）");
         }
+        // v1 反馈「品牌 brief 确认点了没反应」的根因之一：**有一条全空的 Brief 记录**
+        // 被这里说成「Brief 已填写但状态是『草稿』」——品牌部照这话去点「品牌方确认」，
+        // 后端会以「8 项全空：至少填一项再确认」拒绝（本地实测：确认接口返回 500，
+        // 状态仍是 DRAFT），于是看起来就是"点了没反应"。三态必须分开说：
+        // 没有记录 / 有记录但一个字没填 / 填了但没确认。
+        boolean hasContent = configured && briefHasContent(brief);
         return new GateItem("BRAND_BRIEF_CONFIRMED", "品牌 Brief 已填写并确认", LEVEL_CONDITION, false,
-            (configured
-                ? "Brief 已填写但状态是「" + ContentBriefStatusEnum.descOf(brief.getStatus())
-                    + "」：确认权在品牌部——请品牌部到「内容生产协同 → 内容任务 → 任务详情」"
-                    + "点「品牌方确认」"
-                : "还没有填品牌 Brief：请品牌部到「内容生产协同 → 内容任务 → 任务详情」填写品牌调性/"
-                    + "必显信息/禁用词/主推卖点，然后点「品牌方确认」")
+            (!configured
+                ? "还没有填品牌 Brief：请品牌部到「内容生产协同 → 内容任务 → 任务详情」填写品牌调性/"
+                    + "必显信息/禁用词/主推卖点，然后点「品牌方确认」"
+                : !hasContent
+                    ? "Brief 还是一份空草稿（8 项都没填、也没有参考风格图片）：请品牌部先填内容再点"
+                        + "「品牌方确认」——全空时确认会被直接拒绝，所以现在点它不会有任何变化"
+                    : "Brief 已填写但还没确认（当前状态「"
+                        + ContentBriefStatusEnum.descOf(brief.getStatus())
+                        + "」）：确认权在品牌部——请品牌部到「内容生产协同 → 内容任务 → 任务详情」"
+                        + "点「品牌方确认」")
                 + "。设计侧对本项只读（C1 起已收回设计侧的确认入口）");
+    }
+
+    /**
+     * 这份 Brief 里到底有没有内容（8 个文字字段 + 参考风格图片）。
+     *
+     * <p>口径与内容域的确认校验一致（那边是"8 项全空且没传参考风格图片就不许确认"）：
+     * 只传了参考风格图片也算填过——否则会出现"两边对同一份 Brief 说法不同"。</p>
+     *
+     * @param brief 品牌 Brief 视图
+     * @return 有内容返回 true
+     */
+    private static boolean briefHasContent(CpBrandBriefVo brief) {
+        if (brief == null) {
+            return false;
+        }
+        for (String value : List.of(
+            // `List.of` 不收 null，所以先空串化——这里只是"有没有字"，不改变取值口径
+            StringUtils.blankToDefault(brief.getBrandTone(), ""),
+            StringUtils.blankToDefault(brief.getMustShow(), ""),
+            StringUtils.blankToDefault(brief.getForbiddenWords(), ""),
+            StringUtils.blankToDefault(brief.getTargetAudience(), ""),
+            StringUtils.blankToDefault(brief.getMainPush(), ""),
+            StringUtils.blankToDefault(brief.getSizeSpecReq(), ""),
+            StringUtils.blankToDefault(brief.getStyleRef(), ""),
+            StringUtils.blankToDefault(brief.getStyleRefFiles(), ""))) {
+            if (StringUtils.isNotBlank(value)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
