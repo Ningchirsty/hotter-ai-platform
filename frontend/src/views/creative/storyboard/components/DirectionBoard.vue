@@ -1,5 +1,4 @@
 <template>
-  <!-- 单根容器：`src/views` 下的组件会被 `vite:check-transition` 检查（外层路由用 <transition> 包裹）。 -->
   <div class="direction-board">
     <p v-if="!hasProjects" class="empty">还没有视觉项目。先到「视觉项目」页新建一个。</p>
     <section v-else class="panel" data-board-section="DIRECTIONS">

@@ -1,6 +1,4 @@
 <template>
-  <!-- 单根容器：`src/views` 下的组件会被 `vite:check-transition` 检查（外层路由用 <transition> 包裹，
-       多根节点会让过渡失效）。这个 div 不带任何样式，只为满足单根要求。 -->
   <div class="dna-panel">
     <p v-if="!hasProjects" class="empty">还没有视觉项目。先到「视觉项目」页新建一个。</p>
     <p v-else-if="loading" class="empty">加载中…</p>

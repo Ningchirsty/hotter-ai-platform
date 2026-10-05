@@ -1,5 +1,4 @@
 <template>
-  <!-- 单根容器：`src/views` 下的组件会被 `vite:check-transition` 检查（外层路由用 <transition> 包裹）。 -->
   <div class="layout-panel">
     <!--
       R52：同一个「版式」步骤服务两种交付形态——

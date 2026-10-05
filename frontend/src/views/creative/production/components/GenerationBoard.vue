@@ -1,5 +1,4 @@
 <template>
-  <!-- 单根容器：`src/views` 下的组件会被 `vite:check-transition` 检查（外层路由用 <transition> 包裹）。 -->
   <div class="generation-board">
     <!--
       模式一（分镜页）：**按屏**看这一轮生产与质检——"哪一屏还没出、哪一屏质检没过"。

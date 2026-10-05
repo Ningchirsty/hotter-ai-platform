@@ -1,5 +1,4 @@
 <template>
-  <!-- 单根容器：`src/views` 下的组件会被 `vite:check-transition` 检查（外层路由用 <transition> 包裹）。 -->
   <div class="final-panel">
     <!--
       C9：缺屏提示放在**两块之上**，因为两条交付收尾路径都要看到它——
