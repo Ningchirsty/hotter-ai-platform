@@ -28,6 +28,7 @@ import org.dromara.system.domain.vo.SysPostVo;
 import org.dromara.system.domain.vo.SysRoleVo;
 import org.dromara.system.domain.vo.SysUserExportVo;
 import org.dromara.system.domain.vo.SysUserVo;
+import org.dromara.system.event.OnlineUserCleanEvent;
 import org.dromara.system.mapper.*;
 import org.dromara.system.service.ISysUserService;
 import org.springframework.cache.annotation.CacheEvict;
@@ -456,6 +457,13 @@ public class SysUserServiceImpl implements ISysUserService, UserService {
     /**
      * 新增用户角色信息
      *
+     * <p><b>角色变化后要让在线会话失效</b>（R53 修复）：登录时会把权限集固化进会话
+     * （{@code LoginUser.menuPermission}），而菜单路由是每次实时查库——两者不同步的表现就是
+     * "改完角色，用户刷新能看到新菜单，点进去却 403 没有访问权限"。
+     * 框架里 {@code OnlineUserCleanEvent} 这套机制本来就有（角色改菜单、角色加/删用户那几条路都发了），
+     * 唯独"在用户管理里改某人的角色"这条漏了。这里补上：**只有角色集合真的变了**才踢，
+     * 免得改个昵称也把人踢下线。</p>
+     *
      * @param userId  用户ID
      * @param roleIds 角色组
      * @param clear   清除已存在的关联数据
@@ -482,8 +490,11 @@ public class SysUserServiceImpl implements ISysUserService, UserService {
             throw new ServiceException("没有权限访问角色的数据");
         }
 
-        // 是否清除原有绑定
+        // 改绑之前先记下旧角色，用来判断"到底变没变"（没变就不该影响在线会话）
+        Set<Long> before = Set.of();
         if (clear) {
+            before = new HashSet<>(userRoleMapper.lambda().eq(SysUserRole::getUserId, userId).list()
+                .stream().map(SysUserRole::getRoleId).toList());
             userRoleMapper.lambda().eq(SysUserRole::getUserId, userId).delete();
         }
 
@@ -496,6 +507,13 @@ public class SysUserServiceImpl implements ISysUserService, UserService {
                 return ur;
             });
         userRoleMapper.insertBatch(list);
+
+        // 角色集合真的变了 → 清理该用户的在线会话（事件在事务提交后异步执行，见 OnlineUserCleanListener）。
+        // 用户在下次请求时会被要求重新登录，重新登录后拿到的是新权限集。
+        if (clear && !before.equals(new HashSet<>(roleList))) {
+            log.info("用户角色发生变化，清理其在线会话 userId={} 前={} 后={}", userId, before, roleList);
+            SpringUtils.context().publishEvent(OnlineUserCleanEvent.byUsers(List.of(userId)));
+        }
     }
 
     /**

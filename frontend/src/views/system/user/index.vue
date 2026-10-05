@@ -787,6 +787,15 @@ const handleAdd = async () => {
 };
 
 /** 修改按钮操作 */
+/**
+ * 打开「修改用户」时记下的角色集合（R53）。
+ *
+ * 用途：提交时判断"角色到底有没有变"——变了才提示用户需要重新登录。
+ * 为什么需要这个提示：权限集在**登录时**固化进会话，后端虽然已经在角色变更时清掉该用户的
+ * 在线会话，但管理员在界面上看不到这件事，容易以为"授权没生效"（真实工单就是这么来的）。
+ */
+const originalRoleIds = ref<string[]>([]);
+
 const handleUpdate = async (row?: Partial<UserForm>) => {
   reset();
   const userId = row?.userId || ids.value[0];
@@ -800,7 +809,15 @@ const handleUpdate = async (row?: Partial<UserForm>) => {
   );
   form.value.postIds = data.postIds;
   form.value.roleIds = data.roleIds;
+  originalRoleIds.value = [...(data.roleIds || [])].map(String).toSorted();
   form.value.password = '';
+};
+
+/** 角色集合是否变了（顺序无关） */
+const roleIdsChanged = (): boolean => {
+  const after = [...(form.value.roleIds || [])].map(String).toSorted();
+  const before = originalRoleIds.value;
+  return after.length !== before.length || after.some((id, i) => id !== before[i]);
 };
 
 /** 提交按钮 */
@@ -814,11 +831,17 @@ const submitForm = () => {
           form.value.deptId = null;
           form.value.postIds = null;
         }
+        const changed = form.value.roleIds != null && roleIdsChanged();
         await api.updateUser(form.value);
+        // 角色变了 → 后端会清掉该用户的在线会话（R53 修复），这里如实告诉管理员
+        modal.msgSuccess(changed
+          ? '操作成功。该用户的角色已变更，其在线会话已清理，需要重新登录后新权限才生效'
+          : '操作成功');
       } else {
         await api.addUser(form.value);
+        originalRoleIds.value = [];
+        modal.msgSuccess('操作成功');
       }
-      modal.msgSuccess('操作成功');
       closeUserDialog();
       await getList();
     }

@@ -152,6 +152,16 @@ insert ignore into sys_role_menu values (1765100000000000002, 176500000000000010
 insert ignore into sys_role_menu values (1765100000000000002, 1765000000000001501);
 
 -- ---------------------------------------------------------------------------
+-- 五之二、父级必须一起授（R53 修正）
+-- ---------------------------------------------------------------------------
+-- 为什么单独强调：菜单路由是从 parent_id=0 **递归拼树**的，父级不在角色返回集合里，
+-- 整棵子树都会被丢掉。只授「内容生产人员」的人因此**完全看不到「内容生产协同」**
+-- （表现成"没有访问权限"）。这里把两个内容角色的父级「业务应用」一起补上，
+-- 用 insert ignore 保证重复执行安全。
+insert ignore into sys_role_menu values (1765100000000000001, 1764000000000000003);
+insert ignore into sys_role_menu values (1765100000000000002, 1764000000000000003);
+
+-- ---------------------------------------------------------------------------
 -- 六、自检
 -- ---------------------------------------------------------------------------
 select '菜单' as item, count(1) as cnt from sys_menu where menu_id between 1765000000000000001 and 1765000000000001599;
@@ -160,4 +170,9 @@ select '字典数据' as item, count(1) as cnt from sys_dict_data where dict_typ
 select r.role_key, count(1) as 授权数 from sys_role_menu rm
   join sys_role r on r.role_id = rm.role_id
  where r.role_key in ('content_admin','content_member')
+ group by r.role_key;
+-- R53：父级是否齐（两个角色都应为 1）
+select r.role_key, count(1) as 有业务应用 from sys_role_menu rm
+  join sys_role r on r.role_id = rm.role_id
+ where r.role_key in ('content_admin','content_member') and rm.menu_id = 1764000000000000003
  group by r.role_key;
