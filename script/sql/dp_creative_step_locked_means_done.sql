@@ -27,18 +27,36 @@
 --      这一点已被 `CreativeStepProjectionTest` 显式钉住，属于有意行为；
 --   3. 三种交付类型（ECOM_DETAIL / MAIN_IMAGE / BRAND_POSTER）一起改——步骤语义是共用的，
 --      只改一种会让不同交付类型的同一步行为不一致。
+--      （前两版只做成了"按步骤名匹配"，于是 11 行里漏了 1 行，见下。）
+--
+-- ⚠️ 覆盖范围的坑（复核时补上）：海报交付类型里"分镜那一步"叫 **POSTER_CONCEPT**（不是
+--   STORYBOARD），于是只按 step_code='STORYBOARD' 匹配会漏掉它——海报项目锁定分镜后，
+--   「海报概念与主视觉」这一步仍会显示"进行中"，正是本文件要修的那个现象（只是换了个步骤名）。
+--   所以下面第 5 条单独补上；核对也改成**不按步骤名过滤**的通用断言——
+--   "步骤改名"不该让断言失明（本次就是断言按名字过滤才漏掉的）。
+--   执行前/执行后共用同一条查询，期望值从「11 行」变成「空」。
+--
+--   11 行是怎么来的：三份种子各插了自己交付类型的步骤
+--   （`dp_creative_r11_scenario_foundation.sql` 的 ECOM_DETAIL 4 行
+--    + `dp_creative_r21_main_image_scenario.sql` 的 MAIN_IMAGE 4 行
+--    + `dp_creative_r46_brand_poster.sql` 的 BRAND_POSTER 3 行 = 11），
+--   是按种子逐行数出来的，不是估的。本机实例上用"先按回滚段还原成种子状态 → 跑本文件 → 核对"
+--   的往返方式验过（执行前 11 行、执行后空）。
 --
 -- 幂等：只按"旧的完整值"匹配；已经改过就不再动。
 -- 回滚见文件末尾。
 -- ============================================================================
 
--- 1) 执行前
-SELECT '=== 1) 执行前：四个步骤的 stage_codes ===' AS s;
+-- 1) 执行前：所有仍把"自己的锁定阶段"算进本步的步骤（不按步骤名过滤，避免改名漏网）
+SELECT '=== 1) 执行前：把 *_LOCKED 算进本步的步骤（期望 11 行）===' AS s;
 SELECT p.delivery_type, s.step_code, s.sort_no, s.stage_codes
   FROM dp_scenario_step s
   JOIN dp_scenario_profile p ON p.id = s.profile_id
  WHERE s.del_flag = '0'
-   AND s.step_code IN ('DNA', 'DIRECTION', 'STORYBOARD', 'GATE')
+   AND (s.stage_codes LIKE '%DNA_LOCKED%'
+     OR s.stage_codes LIKE '%DIRECTION_LOCKED%'
+     OR s.stage_codes LIKE '%STORYBOARD_LOCKED%'
+     OR s.stage_codes LIKE '%VISUAL_LOCKED%')
  ORDER BY p.delivery_type, s.sort_no;
 
 -- 2) 把各自的锁定阶段摘掉（锁定＝该步完成）
@@ -62,24 +80,22 @@ UPDATE dp_scenario_step
  WHERE del_flag = '0' AND step_code = 'GATE'
    AND stage_codes = 'VISUAL_GATE,VISUAL_LOCKED';
 
--- 3) 执行后核对（期望：四个步骤都不再含各自的 *_LOCKED）
-SELECT '=== 3) 执行后：四个步骤的 stage_codes ===' AS s;
-SELECT p.delivery_type, s.step_code, s.stage_codes
-  FROM dp_scenario_step s
-  JOIN dp_scenario_profile p ON p.id = s.profile_id
- WHERE s.del_flag = '0'
-   AND s.step_code IN ('DNA', 'DIRECTION', 'STORYBOARD', 'GATE')
- ORDER BY p.delivery_type, s.sort_no;
+-- 5) 海报交付类型：这一步叫 POSTER_CONCEPT（同一语义、不同步骤名），必须与 STORYBOARD 同改
+UPDATE dp_scenario_step
+   SET stage_codes = 'STORYBOARD_GENERATING,STORYBOARD_REVIEW', update_time = sysdate()
+ WHERE del_flag = '0' AND step_code = 'POSTER_CONCEPT'
+   AND stage_codes = 'STORYBOARD_GENERATING,STORYBOARD_REVIEW,STORYBOARD_LOCKED';
 
-SELECT '=== 3.1 仍把锁定阶段算进本步的（期望为空）===' AS s;
+-- 3) 执行后核对（期望：一行都不剩）
+SELECT '=== 3) 执行后：把 *_LOCKED 算进本步的步骤（期望空）===' AS s;
 SELECT p.delivery_type, s.step_code, s.stage_codes
   FROM dp_scenario_step s
   JOIN dp_scenario_profile p ON p.id = s.profile_id
  WHERE s.del_flag = '0'
-   AND ((s.step_code = 'DNA' AND s.stage_codes LIKE '%DNA_LOCKED%')
-     OR (s.step_code = 'DIRECTION' AND s.stage_codes LIKE '%DIRECTION_LOCKED%')
-     OR (s.step_code = 'STORYBOARD' AND s.stage_codes LIKE '%STORYBOARD_LOCKED%')
-     OR (s.step_code = 'GATE' AND s.stage_codes LIKE '%VISUAL_LOCKED%'));
+   AND (s.stage_codes LIKE '%DNA_LOCKED%'
+     OR s.stage_codes LIKE '%DIRECTION_LOCKED%'
+     OR s.stage_codes LIKE '%STORYBOARD_LOCKED%'
+     OR s.stage_codes LIKE '%VISUAL_LOCKED%');
 
 -- ---------------------------------------------------------------------------
 -- 回滚（把锁定阶段写回各自步骤 = 恢复"锁定后仍显示进行中"）
@@ -92,3 +108,5 @@ SELECT p.delivery_type, s.step_code, s.stage_codes
 --  WHERE del_flag='0' AND step_code='STORYBOARD' AND stage_codes='STORYBOARD_GENERATING,STORYBOARD_REVIEW';
 -- UPDATE dp_scenario_step SET stage_codes='VISUAL_GATE,VISUAL_LOCKED'
 --  WHERE del_flag='0' AND step_code='GATE' AND stage_codes='VISUAL_GATE';
+-- UPDATE dp_scenario_step SET stage_codes='STORYBOARD_GENERATING,STORYBOARD_REVIEW,STORYBOARD_LOCKED'
+--  WHERE del_flag='0' AND step_code='POSTER_CONCEPT' AND stage_codes='STORYBOARD_GENERATING,STORYBOARD_REVIEW';

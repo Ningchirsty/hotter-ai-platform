@@ -11,6 +11,7 @@ import java.util.Collections;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -22,7 +23,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <b>「某阶段下这 10 步分别是什么」</b>的整表对照，而不是抽查一两项。</p>
  *
  * <p>步骤配置取的是生产种子（{@code dp_creative_r11_scenario_foundation.sql} 里
- * ECOM_DETAIL 的 10 步），因此本测试同时钉住了「种子里的 stage_codes 与阶段枚举对得上」——
+ * ECOM_DETAIL 的 10 步，以及 {@code dp_creative_r46_brand_poster.sql} 里海报的 8 步），
+ * 因此本测试同时钉住了「种子里的 stage_codes 与阶段枚举对得上」——
  * 种子写错一个阶段码，这里会红。</p>
  */
 class CreativeStepProjectionTest {
@@ -51,13 +53,46 @@ class CreativeStepProjectionTest {
     );
 
     /**
+     * 海报交付类型（BRAND_POSTER）的 8 步（profile 1769200000000000002，取自
+     * {@code dp_creative_r46_brand_poster.sql} / {@code dp_creative_step_locked_means_done.sql} 之后的值）。
+     *
+     * <p><b>单独钉一份的原因</b>：海报链路复用 {@code STORYBOARD_*} 阶段，但那一步的名字不是
+     * {@code STORYBOARD} 而是 {@code POSTER_CONCEPT}。按步骤名过滤的写法（改配置的 SQL、核对查询、
+     * 只盯 ECOM 的测试）都会看不见它——海报项目锁定分镜后「海报概念与主视觉」会一直显示
+     * 「进行中」，与 ECOM 那个已修的现象同源。所以这里连"改名陷阱"一起钉住。</p>
+     */
+    private static final List<ConfiguredStep> POSTER_SEED = List.of(
+        new ConfiguredStep("INPUT", "产品资料与参考图", "MATERIAL_READY", 10),
+        new ConfiguredStep("DNA", "视觉基因", "DNA_GENERATING,DNA_REVIEW", 20),
+        new ConfiguredStep("POSTER_CONCEPT", "海报概念与主视觉",
+            "STORYBOARD_GENERATING,STORYBOARD_REVIEW", 30),
+        new ConfiguredStep("GATE", "视觉门", "VISUAL_GATE", 40),
+        new ConfiguredStep("GENERATION", "出图", "PRODUCING", 50),
+        new ConfiguredStep("POSTER_LAYOUT", "海报版式与多尺寸适配",
+            "LAYOUT_PROCESSING,DESIGN_REFINING", 60),
+        new ConfiguredStep("REVIEW", "终审", "V08_READY,FINAL_REVIEW", 70),
+        new ConfiguredStep("EXPORT", "导出交付", "COMPLETED", 80)
+    );
+
+    /**
      * 取某阶段下各步骤的状态串（形如 {@code ACTIVE,PENDING,…}），便于整表对照。
      *
      * @param stage 当前阶段
      * @return 10 个状态，用逗号连接
      */
     private static String statuses(String stage) {
-        return String.join(",", CreativeStepProjection.project(SEED, stage).stream()
+        return statuses(SEED, stage);
+    }
+
+    /**
+     * 取**指定**步骤表在某阶段下的状态串（ECOM 与海报两套配置共用）。
+     *
+     * @param steps 步骤配置
+     * @param stage 当前阶段
+     * @return 各步状态，用逗号连接
+     */
+    private static String statuses(List<ConfiguredStep> steps, String stage) {
+        return String.join(",", CreativeStepProjection.project(steps, stage).stream()
             .map(StepState::status).toList());
     }
 
@@ -68,8 +103,19 @@ class CreativeStepProjectionTest {
      * @return 步骤编码列表（同序）
      */
     private static List<String> activeAt(String stage) {
+        return activeAt(SEED, stage);
+    }
+
+    /**
+     * 取**指定**步骤表在某阶段下处于 ACTIVE 的步骤编码。
+     *
+     * @param steps 步骤配置
+     * @param stage 当前阶段
+     * @return 步骤编码列表（同序）
+     */
+    private static List<String> activeAt(List<ConfiguredStep> steps, String stage) {
         List<String> codes = new ArrayList<>();
-        for (StepState state : CreativeStepProjection.project(SEED, stage)) {
+        for (StepState state : CreativeStepProjection.project(steps, stage)) {
             if (CreativeStepProjection.ACTIVE.equals(state.status())) {
                 codes.add(state.stepCode());
             }
@@ -77,19 +123,29 @@ class CreativeStepProjectionTest {
         return codes;
     }
 
-    @Test
-    @DisplayName("种子里的 10 步与阶段枚举逐一对得上（阶段码写错会在这里红）")
-    void seedStageCodesAreKnown() {
-        for (ConfiguredStep step : SEED) {
+    /**
+     * 一套步骤配置的自检：阶段码都认得出、sort_no 递增。
+     *
+     * @param seed 步骤配置
+     */
+    private static void assertSeedSane(List<ConfiguredStep> seed) {
+        for (ConfiguredStep step : seed) {
             for (String code : step.stageCodes().split(",")) {
                 assertNotNull(DpVisualStageEnum.find(code.trim()),
                     "步骤 " + step.stepCode() + " 引用了未知阶段：" + code);
             }
         }
-        for (int i = 1; i < SEED.size(); i++) {
-            assertTrue(SEED.get(i).sortNo() > SEED.get(i - 1).sortNo(),
-                "sort_no 必须递增：" + SEED.get(i).stepCode());
+        for (int i = 1; i < seed.size(); i++) {
+            assertTrue(seed.get(i).sortNo() > seed.get(i - 1).sortNo(),
+                "sort_no 必须递增：" + seed.get(i).stepCode());
         }
+    }
+
+    @Test
+    @DisplayName("两套交付类型的种子步骤都与阶段枚举逐一对得上（阶段码写错会在这里红）")
+    void seedStageCodesAreKnown() {
+        assertSeedSane(SEED);
+        assertSeedSane(POSTER_SEED);
     }
 
     @Test
@@ -151,6 +207,35 @@ class CreativeStepProjectionTest {
             assertEquals(List.of(), activeAt(stage),
                 stage + " 之后不该还有步骤显示「进行中」——这一步已经了结，下一步用户还没开始；"
                     + "界面此时显示的是「第一个还没了结的步骤」（pickVisibleStep）");
+        }
+    }
+
+    @Test
+    @DisplayName("海报类型里「分镜那一步」叫 POSTER_CONCEPT：锁定分镜后它也必须 DONE")
+    void posterConceptCountsLockedStoryboardAsDone() {
+        // 海报复用 STORYBOARD_* 阶段，但那一步不叫 STORYBOARD。复核
+        // dp_creative_step_locked_means_done.sql 时发现：只按 step_code='STORYBOARD' 匹配会漏掉它，
+        // 海报项目锁定分镜后「海报概念与主视觉」会一直停在「进行中」（与 ECOM 那个已修的现象同源）。
+        assertEquals("DONE,DONE,DONE,PENDING,PENDING,PENDING,PENDING,PENDING",
+            statuses(POSTER_SEED, "STORYBOARD_LOCKED"));
+        assertEquals(List.of(), activeAt(POSTER_SEED, "STORYBOARD_LOCKED"));
+        // 改名不影响"待确认时还在这一步里"
+        assertEquals(List.of("POSTER_CONCEPT"), activeAt(POSTER_SEED, "STORYBOARD_REVIEW"));
+    }
+
+    @Test
+    @DisplayName("没有任何步骤把「自己的锁定阶段」算进本步（ECOM 与海报两套配置一起钉）")
+    void noStepCountsItsOwnLockStage() {
+        List<String> lockStages = List.of(
+            "DNA_LOCKED", "DIRECTION_LOCKED", "STORYBOARD_LOCKED", "VISUAL_LOCKED");
+        for (List<ConfiguredStep> seed : List.of(SEED, POSTER_SEED)) {
+            for (ConfiguredStep step : seed) {
+                for (String stage : lockStages) {
+                    assertFalse(step.stageCodes().contains(stage),
+                        "步骤 " + step.stepCode() + " 仍把锁定阶段算进本步：" + stage
+                            + "（R44 口径：锁定/确认 ＝ 这一步做完了）");
+                }
+            }
         }
     }
 
