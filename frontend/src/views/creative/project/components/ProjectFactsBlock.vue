@@ -34,7 +34,9 @@
         >
           <span class="mark">{{ option.satisfied ? '✓' : '✗' }}</span>
           {{ option.fieldName || option.fieldCode }}
-          <em class="gate-level">{{ option.gateLevel || '—' }}</em>
+          <!-- v1 反馈：这里原来直接打印闸门等级码（BLOCK / CONDITION），
+               而评审页同一概念写的是「硬性 / 建议」——中文口径统一由 gateLevelLabel 给。 -->
+          <em class="gate-level">{{ gateLevelLabel(option.gateLevel) || '—' }}</em>
         </span>
         <span v-if="!requiredOptions.length" class="muted">该交付类型没有声明必填事实项。</span>
       </div>
@@ -102,6 +104,7 @@
 <script setup lang="ts">
 import type { CpFactFieldOptionVO, CpFactSnapshotVO } from '@/api/content/fact/types';
 import type { TagType } from '@/api/creative/types';
+import { gateLevelLabel } from '../../composables/gateLabels';
 import { useStepHeading } from '../../composables/stepNumbering';
 
 /** 标题编号：本页步骤号（v1 反馈；没有工作台上下文时不显示编号） */

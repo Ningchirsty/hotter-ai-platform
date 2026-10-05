@@ -515,6 +515,7 @@ import {
 import { listDeliveryTypes } from '@/api/creative/scenario';
 import type { ScenarioDeliveryType } from '@/api/creative/scenario';
 import { labelOfDeliveryType, pickDefaultDeliveryType } from '../composables/projectCreateForm';
+import { gateLevelLabel } from '../composables/gateLabels';
 import CreativeWorkspace from '../components/CreativeWorkspace.vue';
 // R32：项目页区块开始拆组件（状态仍在页面，组件只拿"显示的数据 + 触发的动作"）
 import ProjectAssetsBlock from './components/ProjectAssetsBlock.vue';
@@ -1154,7 +1155,9 @@ function factStatusType(status?: string): TagType {
 
 function optionLabel(option: CpFactFieldOptionVO): string {
   const parts = [`${option.fieldName || option.fieldCode}（${option.fieldCode}）`];
-  if (option.gateLevel) parts.push(option.gateLevel);
+  // 闸门等级用中文（与「事实确认」的状态带、评审页的「等级」列同一口径）
+  const level = gateLevelLabel(option.gateLevel);
+  if (level) parts.push(level);
   if (option.satisfied) parts.push('已确认');
   return parts.join(' · ');
 }

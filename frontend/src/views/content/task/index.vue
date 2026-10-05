@@ -1144,6 +1144,7 @@ import type {
   ContentTaskDetailVO
 } from '@/api/content/task/types';
 import type { WorkPackageContent } from '@/api/content/workPackage/types';
+import { taskStatusLabel } from '@/api/content/task/status';
 import { resolveCard } from '@/api/content/card';
 // 品牌要求（Brief）：归属内容生产协同，品牌部在这里录入与确认（AI 视觉工厂只读）
 import { confirmBrandBrief, getBrandBrief, saveBrandBrief } from '@/api/content/brief';
@@ -2327,15 +2328,6 @@ const jobStatusType = (status?: string): ElTagType => {
   if (status === 'FAILED') return 'danger';
   if (status === 'RUNNING') return 'primary';
   return 'info';
-};
-
-const taskStatusLabel = (status?: string) => {
-  if (status === 'DRAFT') return '草稿';
-  if (status === 'PARSING') return '解析中';
-  if (status === 'PENDING_CONFIRM') return '待确认/待补料';
-  if (status === 'CONDITIONAL_READY') return '条件开工';
-  if (status === 'READY') return '可开工';
-  return status || '-';
 };
 
 const formatSize = (size?: number) => {

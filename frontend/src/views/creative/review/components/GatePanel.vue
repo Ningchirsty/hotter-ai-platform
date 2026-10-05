@@ -70,7 +70,7 @@
           <el-table-column label="等级" width="110">
             <template #default="{ row }">
               <el-tag :type="asItem(row).level === 'BLOCK' ? 'danger' : 'info'" size="small">
-                {{ asItem(row).level === 'BLOCK' ? '硬性' : '建议' }}
+                {{ gateLevelLabel(asItem(row).level) }}
               </el-tag>
             </template>
           </el-table-column>
@@ -145,6 +145,7 @@
 import { ref } from 'vue';
 import type { GateEvaluationVO, GateItem } from '@/api/creative/types';
 import { gateFixRoute, gateFixTarget } from '../../composables/gateFixTarget';
+import { gateLevelLabel } from '../../composables/gateLabels';
 
 /**
  * 「视觉门」这一步的内容（V0.2 R40，装配组件名 `GatePanel`）。

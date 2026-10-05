@@ -1,5 +1,6 @@
 package org.dromara.creative.helper;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dromara.common.core.utils.StringUtils;
 import org.springframework.stereotype.Component;
@@ -169,8 +170,18 @@ public class DnaSeedBuilder {
         if (dna.path("styleKeywords").isEmpty()) {
             dna.withArray("styleKeywords").add("现代简约").add("清爽留白").add("商业摄影");
         }
+        // 证据链里这一行是"默认值一眼看全"的摘要。v1 反馈后按同一口径写中文档位
+        // （原先是 MEDIUM/MEDIUM/HIGH/纯色底/SOFT+FRONT/45~65% 这种给代码看的枚举串）；
+        // 值一律从刚构造出来的 dna 上读回来，避免"摘要"和实际设置漂移成两套说法。
         VisualDnaSchema.addEvidence(dna, "DEFAULT", "饱和度/对比度/留白/场景/光线/占比/禁忌词",
-            "MEDIUM/MEDIUM/HIGH/纯色底/SOFT+FRONT/45~65%", "行业默认值（非模型结论，可人工修改）");
+            CreativeLevelText.level(dna.path("saturation").asText(null)) + "/"
+                + CreativeLevelText.level(dna.path("contrastLevel").asText(null)) + "/"
+                + CreativeLevelText.level(dna.path("whitespaceLevel").asText(null)) + "/"
+                + dna.path("sceneType").asText("纯色底") + "/"
+                + CreativeLevelText.lighting(dna.path("lighting").path("type").asText(null)) + "+"
+                + CreativeLevelText.lightingDirection(dna.path("lighting").path("direction").asText(null))
+                + "/" + ratioText(dna),
+            "行业默认值（非模型结论，可人工修改）");
         notes.add("饱和度、对比度、留白、场景、光线、产品占比、禁忌词为默认值，需人工确认或等视觉模型分析");
 
         // 6) 主体说明
@@ -209,6 +220,22 @@ public class DnaSeedBuilder {
     private String defaultIfAbsent(ObjectNode node, String field, String fallback) {
         String current = node.path(field).asText(null);
         return StringUtils.isBlank(current) ? fallback : current;
+    }
+
+    /**
+     * 产品占比区间的展示文案（`45~65%`；取不到说「未设置」，不编一个区间）。
+     *
+     * <p>包可见是为了让单测直接钉住"没有占比时不编造"这一条。</p>
+     *
+     * @param dna DNA 树
+     * @return 占比文案
+     */
+    static String ratioText(ObjectNode dna) {
+        JsonNode ratio = dna.path("productRatio");
+        if (ratio.path("min").isMissingNode() || ratio.path("max").isMissingNode()) {
+            return "未设置";
+        }
+        return ratio.path("min").asInt() + "~" + ratio.path("max").asInt() + "%";
     }
 
     private static String factSource(FactRow fact) {

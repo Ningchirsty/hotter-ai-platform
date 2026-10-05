@@ -74,7 +74,19 @@ UPDATE dp_storyboard_screen
      OR spec_json LIKE '%光线：SOFT%' OR spec_json LIKE '%光线：HARD%'
      OR spec_json LIKE '%光线：STUDIO%' OR spec_json LIKE '%光线：NATURAL%');
 
--- 5) 执行后核对（期望：两条计数都是 0）
+-- 5) 基因证据链里「默认值」那条摘要（`dp_visual_dna.dna_json`）
+--    老文案是 DnaSeedBuilder 写死的 `MEDIUM/MEDIUM/HIGH/纯色底/SOFT+FRONT/45~65%`，
+--    基因页的「证据链」表会把 value 原样显示出来（v1 反馈：那一列印着枚举）。
+--    这个串带斜杠、很独特，直接换成中文档位；比例区间保持原样。
+UPDATE dp_visual_dna
+   SET dna_json = REPLACE(dna_json,
+         'MEDIUM/MEDIUM/HIGH/纯色底/SOFT+FRONT/',
+         '中/中/高/纯色底/柔光+正面光/'),
+       update_time = sysdate()
+ WHERE dna_json IS NOT NULL
+   AND dna_json LIKE '%MEDIUM/MEDIUM/HIGH/纯色底/SOFT+FRONT/%';
+
+-- 6) 执行后核对（期望：两条计数都是 0）
 SELECT '=== 5) 执行后（期望全 0）===' AS s;
 SELECT 'direction.strategy_json' AS t, COUNT(*) AS n FROM dp_visual_direction
  WHERE REPLACE(strategy_json, ' ', '') REGEXP '留白(HIGH|MEDIUM|LOW)|饱和(HIGH|MEDIUM|LOW)|对比(HIGH|MEDIUM|LOW)'
@@ -84,16 +96,24 @@ SELECT 'screen.spec_json', COUNT(*) FROM dp_storyboard_screen
 UNION ALL
 SELECT 'screen.whitespace', COUNT(*) FROM dp_storyboard_screen
  WHERE JSON_VALID(spec_json)
-   AND JSON_UNQUOTE(JSON_EXTRACT(spec_json, '$.whitespace')) IN ('HIGH', 'MEDIUM', 'LOW');
+   AND JSON_UNQUOTE(JSON_EXTRACT(spec_json, '$.whitespace')) IN ('HIGH', 'MEDIUM', 'LOW')
+UNION ALL
+SELECT 'dna.evidence_default_summary', COUNT(*) FROM dp_visual_dna
+ WHERE dna_json LIKE '%MEDIUM/MEDIUM/HIGH/纯色底/SOFT+FRONT/%';
 
--- 6) 抽样看一眼改完的样子
-SELECT '=== 6) 抽样 ===' AS s;
+SELECT '=== 6.1 迁移后 dna_json 必须仍是合法 JSON（期望空）===' AS s;
+SELECT id FROM dp_visual_dna WHERE dna_json IS NOT NULL AND NOT JSON_VALID(dna_json);
+
+-- 7) 抽样看一眼改完的样子
+SELECT '=== 7) 抽样 ===' AS s;
 SELECT id, JSON_UNQUOTE(JSON_EXTRACT(strategy_json, '$.composition')) AS composition,
        JSON_UNQUOTE(JSON_EXTRACT(strategy_json, '$.dnaBasis')) AS dna_basis
   FROM dp_visual_direction WHERE task_id = 2104582766641799169 AND status = 'SELECTED';
 SELECT screen_no, JSON_UNQUOTE(JSON_EXTRACT(spec_json, '$.whitespace')) AS whitespace,
        JSON_UNQUOTE(JSON_EXTRACT(spec_json, '$.composition')) AS composition
   FROM dp_storyboard_screen WHERE task_id = 2104582766641799169 ORDER BY sort_no LIMIT 3;
+SELECT id, JSON_UNQUOTE(JSON_EXTRACT(dna_json, '$.evidence[7].value')) AS default_summary
+  FROM dp_visual_dna WHERE task_id = 2104582766641799169 ORDER BY id DESC LIMIT 1;
 
 -- ---------------------------------------------------------------------------
 -- 回滚（中文 → 旧枚举；一般不需要，这里只是把口径写全）

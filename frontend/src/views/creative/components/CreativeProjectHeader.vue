@@ -5,7 +5,9 @@
       <div class="ph-tags">
         <span v-if="stageLabel" class="stage-tag" :class="'is-' + stageType">{{ stageLabel }}</span>
         <span v-if="project?.taskNo" class="muted">{{ project.taskNo }}</span>
-        <span v-if="project?.status" class="muted">内容协同状态：{{ project.status }}</span>
+        <!-- v1 反馈：这里原来直接打印内容任务的状态码（真机上出现过
+             「内容协同状态：CONDITIONAL_READY」）。中文口径与内容任务页共用一处。 -->
+        <span v-if="project?.status" class="muted">内容协同状态：{{ taskStatusLabel(project.status) }}</span>
       </div>
     </div>
 
@@ -59,6 +61,7 @@
 import { computed } from 'vue';
 import type { CreativeProjectVO } from '@/api/creative/types';
 import { DELIVERY_TYPE_LABELS } from '@/api/creative/types';
+import { taskStatusLabel } from '@/api/content/task/status';
 import type { ScenarioOutputSpec } from '@/api/creative/scenario';
 
 /**

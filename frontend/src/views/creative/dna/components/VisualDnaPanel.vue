@@ -249,7 +249,10 @@
           <span class="muted">{{ (dna.evidence || []).length }} 条</span>
         </div>
         <el-table :data="dna.evidence || []" size="small" empty-text="没有证据记录" max-height="320">
-          <el-table-column prop="kind" label="类型" width="100" />
+          <!-- v1 反馈：这里原来直接打印证据类型码（FACT / DEFAULT / MANUAL）——中文口径由 gateLabels 给 -->
+          <el-table-column label="类型" width="100">
+            <template #default="{ row }">{{ evidenceKind(row) }}</template>
+          </el-table-column>
           <el-table-column prop="label" label="项目" width="200" />
           <el-table-column prop="value" label="值" min-width="220" show-overflow-tooltip />
           <el-table-column prop="source" label="来源" min-width="240" show-overflow-tooltip />
@@ -366,6 +369,7 @@ import {
 } from '@/api/creative/types';
 import { appliedText } from '../../composables/promptApplied';
 import { dnaIssueTarget, hasMeasurableIssue } from '../../composables/dnaIssues';
+import { dnaEvidenceKindLabel } from '../../composables/gateLabels';
 
 /**
  * 「视觉基因」这一步的内容（V0.2 R38，装配组件名 `VisualDnaPanel`）。
@@ -432,6 +436,11 @@ function sourceLabel(source?: string): string {
 
 function asDna(row: unknown): DpVisualDnaVO {
   return row as DpVisualDnaVO;
+}
+
+/** 证据链「类型」列的中文名（表格行是 unknown，这里显式收窄） */
+function evidenceKind(row: unknown): string {
+  return dnaEvidenceKindLabel((row as { kind?: string } | null)?.kind);
 }
 
 /**
