@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.dromara.creative.service.ICreativeScenarioConfigService;
 import org.dromara.creative.domain.DpOutputSpec;
 import org.dromara.creative.helper.ReferenceImageFitter;
+import org.dromara.content.enums.ContentFileSourceEnum;
 import org.dromara.content.service.IContentTaskService;
 import org.dromara.creative.domain.vo.CreativeProjectVo;
 import org.dromara.creative.helper.CreativeOutputSpecResolver;
@@ -298,7 +299,8 @@ public class CreativeProductionServiceImpl implements ICreativeProductionService
                 return;
             }
             Long fileId = contentTaskService.uploadFile(taskId, null,
-                new SimpleMultipartFile("file", fitted.fileName(), fitted.contentType(), fitted.bytes()));
+                new SimpleMultipartFile("file", fitted.fileName(), fitted.contentType(), fitted.bytes()),
+                ContentFileSourceEnum.GENERATED.getCode());
             row.setOutputFileId(fileId);
             generationMapper.updateById(row);
             Map<String, Object> snapshot = new LinkedHashMap<>();

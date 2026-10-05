@@ -303,7 +303,7 @@
           :disabled="!manualForm.fieldCode || !manualForm.value"
           @click="doAddManualFact"
         >
-          录入（落为待确认）
+          录入（直接确认为事实）
         </el-button>
       </template>
     </el-dialog>
@@ -1208,7 +1208,9 @@ async function doAddManualFact() {
       value: manualForm.value,
       remark: manualForm.remark || undefined
     });
-    ElMessage.success('已录入，状态为「待确认」——请在事实表里确认后才算数');
+    // 人工录入在后端是**直接落 CONFIRMED**（ContentFactServiceImpl.addManual），
+    // 文案必须与行为一致：以前这里写「待确认…请在事实表里确认后才算数」，是假的（内测 S18）。
+    ElMessage.success('已录入并确认为事实（人工录入即视为已确认，无需再确认）');
     manualForm.value = '';
     manualForm.remark = '';
     manualFactVisible.value = false;

@@ -16,6 +16,7 @@ import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.json.utils.JsonUtils;
 import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.content.domain.vo.CpTaskFileVo;
+import org.dromara.content.enums.ContentFileSourceEnum;
 import org.dromara.content.helper.ContentOssHelper;
 import org.dromara.content.service.IContentTaskService;
 import org.dromara.creative.domain.DpDetailPage;
@@ -239,7 +240,8 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
         int nextVersion = (page.getCurrentVersion() == null ? 0 : page.getCurrentVersion()) + 1;
         String fileName = "detail-" + storyboard.getStoryboardNo() + "-v" + nextVersion + ".png";
         Long fileId = contentTaskService.uploadFile(taskId, null,
-            new SimpleMultipartFile("file", fileName, "image/png", result.png()));
+            new SimpleMultipartFile("file", fileName, "image/png", result.png()),
+            ContentFileSourceEnum.GENERATED.getCode());
 
         // 5) 版本落库
         DpDetailPageVersion version = new DpDetailPageVersion();
@@ -511,7 +513,8 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
         }
         DpDetailPage page = requireOrCreatePage(taskId);
         int nextVersion = (page.getCurrentVersion() == null ? 0 : page.getCurrentVersion()) + 1;
-        Long fileId = contentTaskService.uploadFile(taskId, null, file);
+        Long fileId = contentTaskService.uploadFile(taskId, null, file,
+            ContentFileSourceEnum.GENERATED.getCode());
 
         DpDetailPageVersion version = new DpDetailPageVersion();
         version.setDetailPageId(page.getId());

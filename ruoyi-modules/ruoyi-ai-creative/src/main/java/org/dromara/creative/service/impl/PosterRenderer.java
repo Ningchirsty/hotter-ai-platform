@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.json.utils.JsonUtils;
+import org.dromara.content.enums.ContentFileSourceEnum;
 import org.dromara.content.service.IContentTaskService;
 import org.dromara.creative.domain.DpGeneration;
 import org.dromara.creative.domain.DpOutputSpec;
@@ -200,7 +201,8 @@ public class PosterRenderer implements CreativeRenderer {
             // 产出登记为任务附件（交付包下载与交付清单都按 fileId 取字节，不重复存两份）
             String fileName = "poster-" + StringUtils.blankToDefault(spec.getSpecCode(), "spec") + ".png";
             Long fileId = contentTaskService.uploadFile(taskId, null,
-                new SimpleMultipartFile("file", fileName, "image/png", result.png()));
+                new SimpleMultipartFile("file", fileName, "image/png", result.png()),
+                ContentFileSourceEnum.GENERATED.getCode());
             products.add(new Product(
                 CreativeRenderer.fileNameOf(index, spec.getSpecCode(), CODE, "png"),
                 CreativeDeliveryManifest.ROLE_POSTER,

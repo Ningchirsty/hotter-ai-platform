@@ -23,6 +23,7 @@ import org.dromara.content.domain.bo.ContentTaskBo;
 import org.dromara.content.domain.vo.CpTaskFileVo;
 import org.dromara.content.domain.vo.ContentTaskDetailVo;
 import org.dromara.content.domain.vo.CpTaskVo;
+import org.dromara.content.enums.ContentFileSourceEnum;
 import org.dromara.content.helper.ContentOssHelper;
 import org.dromara.content.service.IContentProductService;
 import org.dromara.content.service.IContentTaskService;
@@ -629,7 +630,9 @@ public class CreativeProjectServiceImpl implements ICreativeProjectService {
             productId = project.getProductId();
         }
         // 复用内容模块的附件上传（落对象存储 + 登记 cp_task_file，业务留痕在内容侧）
-        Long fileId = contentTaskService.uploadFile(taskId, null, file);
+        // 来源角色显式声明：这是视觉工厂传的**参考图**，不是普通资料附件（内测 S15）
+        Long fileId = contentTaskService.uploadFile(taskId, null, file,
+            ContentFileSourceEnum.REFERENCE.getCode());
         if (asProductImage) {
             productService.bindImageFromFile(productId, fileId);
         }
