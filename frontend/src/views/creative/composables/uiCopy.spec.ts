@@ -54,4 +54,15 @@ describe('界面说明文案与界面实际显示保持一致', () => {
     }
     expect(modulePlan).not.toContain('STRICT（产品必须一致）');
   });
+
+  it('辅助入口：流程指引被裁掉的页面仍要能打开检查器/资产/质检/模块规划', () => {
+    // R44 把流程指引从四页裁掉后，这几个面板**没有触发点了**（装配里还在、就是打不开）。
+    // 这条静态守卫钉住"工作台补齐了这四个入口"，以及"有指引线时不重复渲染"。
+    const ws = source('components/CreativeWorkspace.vue');
+    for (const label of ['检查器', '资产', '质检与交付', '模块规划']) {
+      expect(ws, `辅助入口缺少「${label}」`).toContain(`>\n              ${label}\n            </button>`);
+    }
+    expect(ws).toContain('v-if="!hasGuide"');
+    expect(ws).toContain("const hasGuide = computed(() => assembledCodes.value.includes('STEP_NAVIGATOR'))");
+  });
 });

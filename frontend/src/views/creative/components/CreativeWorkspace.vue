@@ -44,7 +44,8 @@
                没提供的页面（项目页的头部是配置里的 PROJECT_HEADER）这里就是空的。 -->
           <slot name="page-head" />
 
-          <div v-if="hosted.length > 1" class="ws-step-bar">            <span class="bar-label">本页步骤</span>
+          <div v-if="hosted.length > 1" class="ws-step-bar">
+            <span class="bar-label">本页步骤</span>
             <button
               v-for="item in hosted"
               :key="item.code"
@@ -56,6 +57,29 @@
             >
               {{ item.no }}. {{ item.name }}
               <span class="tab-status">{{ item.statusLabel }}</span>
+            </button>
+          </div>
+
+          <!--
+            辅助入口（v1 反馈的连带影响）：流程指引里原来带着「检查器 / 资产 / 模块规划」三个入口，
+            而 R44 把流程指引从基因 / 分镜 / 生产 / 审核四页裁掉之后，那几个面板**没人能打开了**
+            （装配里还在、只是没有触发点）。这里在**没有指引线**的页面上补一条最小入口，
+            文案与指引线、项目页头部保持一致。
+            有指引线时不渲染——避免同一页出现两排一样的按钮。
+          -->
+          <div v-if="!hasGuide" class="ws-panel-bar">
+            <span class="bar-label">辅助</span>
+            <button type="button" class="panel-tab" :disabled="!taskId" @click="panels.inspector = true">
+              检查器
+            </button>
+            <button type="button" class="panel-tab" :disabled="!taskId" @click="panels.assets = true">
+              资产
+            </button>
+            <button type="button" class="panel-tab" :disabled="!taskId" @click="panels.qa = true">
+              质检与交付
+            </button>
+            <button type="button" class="panel-tab" :disabled="!taskId" @click="openModulePlan">
+              模块规划
             </button>
           </div>
 
@@ -167,7 +191,7 @@
 
 <script setup lang="ts">
 import { computed, provide, reactive, ref, watch, useSlots, type Component } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import CreativeFlowGuide from './CreativeFlowGuide.vue';
 import CreativeInspectorPanel from './CreativeInspectorPanel.vue';
 import CreativeAssetDrawer from './CreativeAssetDrawer.vue';
@@ -248,11 +272,25 @@ const flow = useCreativeFlow(
  */
 watch(() => props.refreshToken, () => void flow.reload());
 
+/**
+ * 首屏加载流程数据（项目 / 附件 / 事实 / 字段选项 + 步骤状态）。
+ *
+ * <p><b>为什么工作台要自己加载</b>：这份活原先也挂在「流程指引」的
+ * `watch(taskId, reload, { immediate: true })` 上——指引线一被裁掉，
+ * 那四页的 `flow.project` / `flow.files` / `flow.facts` 就永远是空的
+ * （步骤状态另有一条内部通道，所以步骤条看着是对的，掩盖了这件事）。
+ * 后果是检查器与资产抽屉拿不到 `<b>项目名</b>`（标题空白）。
+ * 工作台持有这个实例，就该由它保证首屏有数据。</p>
+ */
+watch(() => props.taskId, () => void flow.reload(), { immediate: true });
+
 /** 面板开合（工作台统一托管）；qa 是"步骤组件抽屉"，不在面板清单里 */
 const panels = reactive({ inspector: false, assets: false, qa: false });
 
 /** 当前路由（R41 起装配按页面筛步骤组件；R44 起面板也按页面筛） */
 const route = useRoute();
+/** 路由跳转（辅助入口里的「模块规划」要带 taskId 深链过去，与指引线同一套做法） */
+const router = useRouter();
 
 /**
  * 装配计划：来自配置里的面板清单；配置读不到时是兜底计划。
@@ -265,6 +303,8 @@ const route = useRoute();
 const plan = computed(() => buildAssemblyPlan(flow.assembly.value?.panelRows, undefined, route.path));
 /** 真的渲染出来的槽位编码（挂到 DOM 上供验收与排障） */
 const assembledCodes = computed(() => assembledSlots(plan.value).map((s) => s.code));
+/** 本页装配里有没有流程指引：没有时工作台补一条最小的辅助入口（见模板） */
+const hasGuide = computed(() => assembledCodes.value.includes('STEP_NAVIGATOR'));
 const workspaceName = computed(() => flow.assembly.value?.workspace || 'FALLBACK');
 
 /** 当前步（进行中的那一步）：检查器要它 */
@@ -401,6 +441,19 @@ function loadCurrentStepDetail() {
     void flow.ensureStep(currentStep.value.key);
   }
 }
+
+/**
+ * 打开「模块规划」页（辅助入口里的第四个按钮）。
+ *
+ * <p>与指引线的做法逐字一致：带 `taskId` 深链过去（模块计划挂在项目上，不带 ID 进去是空页），
+ * 用 `push` 而不是 `replace`，这样改完能按返回回到刚才那一步。</p>
+ */
+function openModulePlan() {
+  if (!props.taskId) {
+    return;
+  }
+  void router.push({ path: '/creative/module-plan', query: { taskId: String(props.taskId) } });
+}
 </script>
 
 <style scoped lang="scss">
@@ -428,6 +481,41 @@ function loadCurrentStepDetail() {
   }
 }
 
+/* 辅助入口（没有指引线的页面才有）：一行朴素文字按钮，不复刻指引线 */
+.ws-panel-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 10px;
+
+  .bar-label {
+    margin-right: 4px;
+    color: var(--t3);
+    font-size: 11px;
+  }
+}
+
+.panel-tab {
+  padding: 3px 8px;
+  font-size: 12px;
+  color: var(--t2);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    color: var(--t1);
+    border-color: var(--line);
+  }
+
+  &:disabled {
+    color: var(--t3);
+    cursor: not-allowed;
+  }
+}
+
 .step-tab {
   display: inline-flex;
   align-items: center;
@@ -440,7 +528,6 @@ function loadCurrentStepDetail() {
   border-radius: 999px;
   cursor: pointer;
   transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
-
   &:hover {
     color: var(--t1);
     border-color: var(--t3);
