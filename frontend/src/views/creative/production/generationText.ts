@@ -143,6 +143,30 @@ export function screenTypeDesc(gen: DpGenerationVO, screenMap: Record<string, Dp
   return screenOf(gen, screenMap)?.screenTypeDesc || '—';
 }
 
+/**
+ * 把「页面已加载的屏表」与「按需取到的那一屏」合成一张表。
+ *
+ * <p><b>为什么需要它</b>：跨项目总览里，候选所属项目的分镜是**预览时按需取一次**的
+ * （页面的 `screenMap` 只装当前选中项目的分镜）。如果「屏」这一格用的是页面的 `screenMap`、
+ * 而「用途」用的是按需取到的屏，两个字段就会对同一件事给出不同答案——
+ * 真机上出现过「屏**屏 2104582808140242946**」（屏号退化成 id）与「用途 卖点」并排。
+ * 同一件事必须读同一张表。</p>
+ *
+ * @param screenMap     页面已加载的屏表（键为屏 id 的字符串形式）
+ * @param extraScreen   按需取到的那一屏（可空）
+ * @returns 合并后的屏表（`extraScreen` 优先）
+ */
+export function mergeScreenMap(
+  screenMap: Record<string, DpStoryboardScreenVO>,
+  extraScreen?: DpStoryboardScreenVO | null
+): Record<string, DpStoryboardScreenVO> {
+  const merged: Record<string, DpStoryboardScreenVO> = { ...screenMap };
+  if (extraScreen && extraScreen.id != null) {
+    merged[String(extraScreen.id)] = extraScreen;
+  }
+  return merged;
+}
+
 /** 只有出图完成且还没选定的候选才需要（且能够）选定 */
 export function canSelect(gen: DpGenerationVO): boolean {
   return gen.status === 'SUCCEEDED';

@@ -167,7 +167,7 @@
            用途取不到分镜时如实说"未取到"，不拿"屏 12"这种编号冒充用途。 -->
       <div v-if="previewRow" class="preview-meta">
         <span class="pm-item"><b>项目</b>{{ previewProjectName }}</span>
-        <span class="pm-item"><b>屏</b>{{ screenLabel(previewRow, screenMap) }}</span>
+        <span class="pm-item"><b>屏</b>{{ screenLabel(previewRow, previewScreenMap) }}</span>
         <span class="pm-item"><b>用途</b>{{ previewTypeText }}</span>
         <span class="pm-item"><b>候选</b>#{{ previewRow.candidateNo }}</span>
         <span class="pm-item"><b>尺寸</b>{{ sizeText(previewRow) }}</span>
@@ -212,6 +212,7 @@ import {
 import {
   asGen,
   formatTime,
+  mergeScreenMap,
   screenLabel,
   screenTypeDesc,
   sizeText,
@@ -281,6 +282,19 @@ const compareScreenLabel = computed(() => {
   if (!screen) return '';
   return screen.screenNo || String(screen.id);
 });
+
+/**
+ * 预览用的屏表：项目内视图用页面的 `screenMap`，跨项目总览里那个项目的分镜是**按需取**的
+ * （`previewScreen`）。
+ *
+ * <p><b>为什么要合成一张</b>：v1 反馈那条预览元信息里，「用途」走的是 `previewScreen`
+ * （所以显示对了：「卖点」），而「屏」走的是 `screenMap`——跨项目时它是空的，
+ * 于是真机上出现「屏**屏 2104582808140242946**」这种把 id 当屏号的说法
+ * （无项目状态的冒烟里抓到）。两个字段读同一件事，必须用同一张表。</p>
+ */
+const previewScreenMap = computed<Record<string, DpStoryboardScreenVO>>(() =>
+  mergeScreenMap(screenMap.value, previewScreen.value)
+);
 
 /**
  * 预览里的「用途」（v1 反馈：光看画面分不清 HERO 主图和卖点图）。
