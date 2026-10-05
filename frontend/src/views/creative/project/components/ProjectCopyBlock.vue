@@ -1,7 +1,7 @@
 <template>
   <section class="block" data-block="PROJECT_COPY">
     <div class="block-head">
-      <h4>3. 文案与要点</h4>
+      <h4>{{ stepHeading }}文案与要点</h4>
       <div class="block-actions">
         <span class="muted">共 {{ blocks.length }} 条</span>
         <el-button size="small" plain :loading="busy === 'load'" @click="$emit('refresh')">刷新</el-button>
@@ -120,6 +120,10 @@
 
 <script setup lang="ts">
 import type { CopyBlockVO, TagType } from '@/api/creative/types';
+import { useStepHeading } from '../../composables/stepNumbering';
+
+/** 标题编号：本页步骤号（v1 反馈；没有工作台上下文时不显示编号） */
+const stepHeading = useStepHeading('ProjectCopyBlock');
 
 /** 文案分组页签（页面按块类型生成的元数据，组件只负责显示） */
 export interface CopyTabMeta {

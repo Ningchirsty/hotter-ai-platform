@@ -1,7 +1,7 @@
 <template>
   <section class="block" data-block="PROJECT_WORK_PACKAGE">
     <div class="block-head">
-      <h4>3. 开工包（品牌部签发的交接凭证）</h4>
+      <h4>{{ stepHeading }}开工包（品牌部签发的交接凭证）</h4>
       <div class="block-actions">
         <el-tag v-if="loaded && view?.available" size="small" effect="dark" :type="statusType">
           {{ view?.statusDesc || view?.status }}
@@ -121,6 +121,10 @@ import type { CreativeWorkPackageVO } from '@/api/creative/types';
 // 另写一套的代价不是重复几十行，而是内容侧一改结构这边就悄悄错位。
 import type { WorkPackageContent } from '@/api/content/workPackage/types';
 import { parseTime } from '@/utils/ruoyi';
+import { useStepHeading } from '../../composables/stepNumbering';
+
+/** 标题编号：本页步骤号（v1 反馈；没有工作台上下文时不显示编号） */
+const stepHeading = useStepHeading('ProjectWorkPackageBlock');
 
 /**
  * 项目页区块③「开工包」（内测 C5①：开工包＝跨部门交接凭证）。

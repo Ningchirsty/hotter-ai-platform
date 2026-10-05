@@ -1,7 +1,7 @@
 <template>
   <section class="block" data-block="PROJECT_HERO">
     <div class="block-head">
-      <h4>5. 生成 HERO 主图</h4>
+      <h4>{{ stepHeading }}生成 HERO 主图</h4>
       <span class="muted">每次出 1 张候选；重试=新增一次候选</span>
     </div>
     <div class="form-row">
@@ -76,6 +76,10 @@
 
 <script setup lang="ts">
 import type { CreativeWorkflowVO } from '@/api/creative/types';
+import { useStepHeading } from '../../composables/stepNumbering';
+
+/** 标题编号：本页步骤号（v1 反馈；没有工作台上下文时不显示编号） */
+const stepHeading = useStepHeading('ProjectHeroBlock');
 
 /**
  * 项目页区块⑤「生成 HERO 主图」（V0.2 R33）。

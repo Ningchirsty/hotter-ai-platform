@@ -1,7 +1,7 @@
 <template>
   <section class="block" data-block="PROJECT_ASSETS">
     <div class="block-head">
-      <h4>1. 产品图与参考图</h4>
+      <h4>{{ stepHeading }}产品图与参考图</h4>
       <div class="block-actions">
         <span class="muted">{{ files.length }} 张</span>
         <el-tag :type="productImage?.configured ? 'success' : 'warning'" size="small" effect="dark">
@@ -95,6 +95,10 @@ import { nextTick, onBeforeUnmount, onMounted, ref, watch, type ComponentPublicI
 import type { UploadRequestOptions } from 'element-plus';
 import type { CpTaskFileVO } from '@/api/content/task/types';
 import type { ProjectProductImageVO, TagType } from '@/api/creative/types';
+import { useStepHeading } from '../../composables/stepNumbering';
+
+/** 标题编号：本页步骤号（v1 反馈；没有工作台上下文时不显示编号） */
+const stepHeading = useStepHeading('ProjectAssetsBlock');
 
 /**
  * 项目页区块①「产品图与参考图」（V0.2 R32，文档 §23 的 ProjectInputPanel 一部分）。

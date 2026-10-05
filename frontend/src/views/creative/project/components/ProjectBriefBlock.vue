@@ -1,7 +1,7 @@
 <template>
   <section class="block" data-block="PROJECT_BRIEF">
     <div class="block-head">
-      <h4>2. 品牌要求（Brief）（由品牌部在内容任务里录入）</h4>
+      <h4>{{ stepHeading }}品牌要求（Brief）（由品牌部在内容任务里录入）</h4>
       <div class="block-actions">
         <el-tag :type="briefStatusType" size="small" effect="dark">{{ briefStatusText }}</el-tag>
         <el-button size="small" type="warning" plain @click="$emit('apply-change')">
@@ -68,6 +68,10 @@ import type { BrandBriefFieldKey, BrandBriefVO } from '@/api/content/brief/types
 import { BRAND_BRIEF_FIELDS } from '@/api/content/brief/types';
 import type { CpInteractionCardVO } from '@/api/content/card/types';
 import type { TagType } from '@/api/creative/types';
+import { useStepHeading } from '../../composables/stepNumbering';
+
+/** 标题编号：本页步骤号（v1 反馈；没有工作台上下文时不显示编号） */
+const stepHeading = useStepHeading('ProjectBriefBlock');
 
 /**
  * 项目页区块②「品牌要求（Brief）」（V0.2 R32）。

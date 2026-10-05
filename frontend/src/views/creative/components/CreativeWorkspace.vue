@@ -166,13 +166,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch, useSlots, type Component } from 'vue';
+import { computed, provide, reactive, ref, watch, useSlots, type Component } from 'vue';
 import { useRoute } from 'vue-router';
 import CreativeFlowGuide from './CreativeFlowGuide.vue';
 import CreativeInspectorPanel from './CreativeInspectorPanel.vue';
 import CreativeAssetDrawer from './CreativeAssetDrawer.vue';
 import CreativeQaPanel from './CreativeQaPanel.vue';
 import { useCreativeFlow } from '../composables/useCreativeFlow';
+import { provideStepNumbering } from '../composables/stepNumbering';
 import {
   assembledSlots,
   buildAssemblyPlan,
@@ -291,16 +292,20 @@ const declaredComponents = computed(() =>
 /** 本页面托管的步骤：配置里有（且对本页生效）、页面也提供了插槽的那些 */
 const hosted = computed(() => {
   const status = new Map(flow.steps.value.map((s) => [s.key, s]));
-  return hostedSteps(layoutSteps.value, providedComponents.value, route.path).map((step) => {
+  return hostedSteps(layoutSteps.value, providedComponents.value, route.path).map((step, index) => {
     const hit = status.get(step.code);
     return {
       code: step.code,
       components: step.components,
-      no: hit?.no ?? 0,
+      // v1 反馈：步骤条原来用流程里的全局步号（出图＝第 7 步），于是本页读起来是"1、2、7"。
+      // 这里改成**本页序号**：它回答的是"在这个页面上按什么顺序看"。
+      // 整条流程的顺序由「流程指引线」负责（那边仍用全局步号），两者分工不同。
+      no: index + 1,
       name: hit?.name || step.code,
       status: hit?.status || 'todo',
       statusLabel: hit?.statusLabel || '未开始',
       hint: `只显示「${hit?.name || step.code}」这一步：${step.components.join(' + ')}`
+        + (hit?.no ? `（流程第 ${hit.no} 步）` : '')
     };
   });
 });
@@ -322,6 +327,21 @@ watch(activeStepCode, () => {
 /** 这一步真的要渲染的组件（页面提供了插槽的）+ 声明了却没有的 */
 const visible = computed(() => hosted.value.find((s) => s.code === visibleStep.value) || null);
 const visibleComponents = computed(() => visible.value?.components || []);
+
+/**
+ * 本页步骤编号（v1 反馈）：区块标题里的号必须与"本页步骤"一致，
+ * 否则会出现"事实确认是 4、文案与要点是 3，而 4 排在 3 前面"这种读不通的顺序。
+ *
+ * 只提供、不强制：区块自己不取（例如被用在别处）时就不显示编号——
+ * 编一个可能错的号比没有号更难发现。
+ */
+provideStepNumbering(
+  computed(() => ({
+    no: visible.value?.no || 0,
+    size: visibleComponents.value.length,
+    orderOf: (component: string) => visibleComponents.value.indexOf(component) + 1
+  }))
+);
 const visibleMissing = computed(() =>
   componentsHere(visibleStep.value).filter(
     (component) => !providedComponents.value.includes(component)

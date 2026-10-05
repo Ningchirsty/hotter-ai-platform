@@ -1,7 +1,7 @@
 <template>
   <section class="block" data-block="PROJECT_FACTS">
     <div class="block-head">
-      <h4>4. 事实确认</h4>
+      <h4>{{ stepHeading }}事实确认</h4>
       <div class="block-actions">
         <span class="muted">已确认 {{ confirmedFacts.length }} 条 / 共 {{ facts.length }} 行</span>
         <span class="muted">只读（品牌部在内容任务里确认）</span>
@@ -102,6 +102,10 @@
 <script setup lang="ts">
 import type { CpFactFieldOptionVO, CpFactSnapshotVO } from '@/api/content/fact/types';
 import type { TagType } from '@/api/creative/types';
+import { useStepHeading } from '../../composables/stepNumbering';
+
+/** 标题编号：本页步骤号（v1 反馈；没有工作台上下文时不显示编号） */
+const stepHeading = useStepHeading('ProjectFactsBlock');
 
 /** 事实筛选页签（页面按状态统计好数量，组件只显示） */
 export interface FactFilterMeta {

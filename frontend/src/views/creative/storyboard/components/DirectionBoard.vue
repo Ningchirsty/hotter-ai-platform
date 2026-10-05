@@ -4,7 +4,7 @@
     <p v-if="!hasProjects" class="empty">还没有视觉项目。先到「视觉项目」页新建一个。</p>
     <section v-else class="panel" data-board-section="DIRECTIONS">
       <div class="block-head">
-        <h3>1. 视觉方向（A/B/C）</h3>
+        <h3>{{ stepHeading }}视觉方向（A/B/C）</h3>
         <div class="head-actions">
           <span class="muted">来源：{{ DIRECTION_SOURCE_LABELS[templateSource] || templateSource || '—' }}</span>
           <el-button type="primary" :loading="generating" @click="$emit('generate')">
@@ -75,6 +75,10 @@
 <script setup lang="ts">
 import type { DpVisualDirectionVO } from '@/api/creative/types';
 import { DIRECTION_SOURCE_LABELS } from '@/api/creative/types';
+import { useStepHeading } from '../../composables/stepNumbering';
+
+/** 标题编号：本页步骤号（v1 反馈；没有工作台上下文时不显示编号） */
+const stepHeading = useStepHeading('DirectionBoard');
 
 /**
  * 「视觉方向」这一步的内容（V0.2 R39，装配组件名 `DirectionBoard`）。

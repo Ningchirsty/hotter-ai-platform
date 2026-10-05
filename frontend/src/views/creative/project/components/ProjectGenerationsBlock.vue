@@ -1,7 +1,7 @@
 <template>
   <section class="block" data-block="PROJECT_GENERATIONS">
     <div class="block-head">
-      <h4>6. 出图候选</h4>
+      <h4>{{ stepHeading }}出图候选</h4>
       <span class="muted">
         {{ generations.length }} 条
         <template v-if="polling">· 状态跟踪中…</template>
@@ -50,6 +50,10 @@
 
 <script setup lang="ts">
 import type { DpGenerationVO } from '@/api/creative/types';
+import { useStepHeading } from '../../composables/stepNumbering';
+
+/** 标题编号：本页步骤号（v1 反馈；没有工作台上下文时不显示编号） */
+const stepHeading = useStepHeading('ProjectGenerationsBlock');
 
 /**
  * 项目页区块⑥「出图候选」（V0.2 R33）。
