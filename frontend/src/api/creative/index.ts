@@ -13,6 +13,7 @@ import type {
   CreativeProjectVO,
   CreativeScreenForm,
   CreativeWorkflowVO,
+  CreativeWorkPackageVO,
   DnaPromptVO,
   DpGenerationVO,
   DpLayoutTemplateVO,
@@ -136,6 +137,21 @@ export function purgeDeletedProjectMaterials(
 export function listCreativeFiles(taskId: string | number): AxiosPromise<CpTaskFileVO[]> {
   return request({
     url: '/creative/projects/' + taskId + '/files',
+    method: 'get'
+  });
+}
+
+/**
+ * 品牌部签发的开工包（**跨部门交接凭证**）只读视图（内测 C5①）。
+ *
+ * 包内容原样透传（结构属内容域），创作域只补 `renderOutputSize`——
+ * 它与包里"品牌部确认的尺寸要求"含义不同，两个都要摆出来由人裁定。
+ *
+ * @param taskId 项目ID
+ */
+export function getProjectWorkPackage(taskId: string | number): AxiosPromise<CreativeWorkPackageVO> {
+  return request({
+    url: `/creative/projects/${taskId}/work-package`,
     method: 'get'
   });
 }

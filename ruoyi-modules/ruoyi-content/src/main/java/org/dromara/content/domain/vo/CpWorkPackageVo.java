@@ -68,6 +68,13 @@ public class CpWorkPackageVo implements Serializable {
     private Long issuedBy;
 
     /**
+     * 签发人昵称（内测 C5①：开工包改成跨部门交接凭证之后，"谁签发的"必须能看见）。
+     *
+     * <p>以前只透出 {@code issuedBy}（用户ID）——交接凭证上写一个用户ID等于没写。</p>
+     */
+    private String issuedByName;
+
+    /**
      * 签发时间
      */
     private LocalDateTime issuedAt;

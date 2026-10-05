@@ -7,6 +7,7 @@ import org.dromara.content.domain.vo.CpTaskFileVo;
 import org.dromara.creative.domain.bo.CreativeProjectBo;
 import org.dromara.creative.domain.vo.ProjectMaterialsVo;
 import org.dromara.creative.domain.vo.CreativeProjectVo;
+import org.dromara.creative.domain.vo.CreativeWorkPackageView;
 import org.dromara.creative.domain.vo.DpStageEventVo;
 import org.dromara.creative.enums.DpVisualStageEnum;
 import org.springframework.web.multipart.MultipartFile;
@@ -251,5 +252,22 @@ public interface ICreativeProjectService {
      * @param detailJson 事件明细（可空）
      */
     void appendEvent(Long taskId, String eventType, String action, String detailJson);
+
+    /**
+     * 品牌部签发的**开工包**（跨部门交接凭证）的只读视图（内测 C5①）。
+     *
+     * <p><b>为什么创作域要读内容域的包</b>：开工包原先在设计侧零引用（连字段都没有），
+     * "交接"只是内容侧的单方面动作（内测 S5）。它的定位是跨部门交接凭证之后，
+     * 设计侧必须能读到"品牌部交接了什么、缺什么、什么不能改"。
+     * 依赖方向是创作域 → 内容域（单向，本来就允许）。</p>
+     *
+     * <p>包内容原样透传（结构属内容域），本域只**补一个字段**：
+     * 排版实际使用的输出规格（来自 {@code dp_output_spec}）——
+     * 它与包里"品牌部确认的尺寸要求"含义不同，两个都要摆出来由人裁定。</p>
+     *
+     * @param taskId 项目ID
+     * @return 只读视图；品牌部还没生成时 {@code available=false}（不是异常）
+     */
+    CreativeWorkPackageView workPackage(Long taskId);
 
 }

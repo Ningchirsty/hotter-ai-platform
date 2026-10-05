@@ -579,6 +579,34 @@ export interface DpDetailPageVersionVO {
   previewable?: boolean;
 }
 
+/**
+ * 品牌部签发的开工包在视觉工厂侧的只读视图（内测 C5①）。
+ *
+ * 包内容原样透传 `contentJson`（结构属内容域，见 `@/api/content/workPackage/types`），
+ * 创作域只补一个字段 `renderOutputSize`（排版实际使用的规格）。
+ */
+export interface CreativeWorkPackageVO {
+  /** 是否已有开工包（false＝品牌部还没生成） */
+  available?: boolean;
+  packageId?: string | number;
+  /** 签发时冻结的事实版本 */
+  snapshotVersion?: number;
+  /** DRAFT / ISSUED */
+  status?: string;
+  statusDesc?: string;
+  generatedBy?: string | number;
+  generatedAt?: string;
+  issuedBy?: string | number;
+  issuedByName?: string;
+  issuedAt?: string;
+  /** 包内容原文（结构见 SPEC §4.5，由内容域生成） */
+  contentJson?: string;
+  /** 本交付类型排版实际使用的输出规格（创作域补；与包里的品牌尺寸要求含义不同） */
+  renderOutputSize?: string;
+  /** 这份包在跨部门协作里的地位（页面直接显示） */
+  note?: string;
+}
+
 /** 详情页 */
 export interface DpDetailPageVO {
   id?: string | number;

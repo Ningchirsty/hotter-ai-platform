@@ -98,6 +98,11 @@ export const CODE_COMPONENT_REGISTRY: Record<string, RegistryEntry> = {
     location: 'project/components/ProjectFactsBlock.vue（R32 拆出；项目页以同名插槽提供）',
     note: 'FACT 步：事实确认（只读；事实由品牌部在内容任务里确认——筛选/排序口径留在页面一处）'
   },
+  ProjectWorkPackageBlock: {
+    kind: 'SLOT',
+    location: 'project/components/ProjectWorkPackageBlock.vue（C5① 新增；项目页以同名插槽提供）',
+    note: 'INPUT 步：开工包（品牌部签发的跨部门交接凭证，只读；含品牌红线、缺口、不可修改项、两个尺寸权威）'
+  },
   ProjectCopyBlock: {
     kind: 'SLOT',
     location: 'project/components/ProjectCopyBlock.vue（R32 拆出；项目页以同名插槽提供）',

@@ -29,7 +29,7 @@ import {
  */
 const SEED_JSON =
   '{"workspace":"LONG_PAGE","panels":["PROJECT_HEADER","STEP_NAVIGATOR","MAIN_STAGE","INSPECTOR","ASSET_DRAWER"],' +
-  '"steps":[{"code":"INPUT","components":["ProjectAssetsBlock","ProjectBriefBlock"]},' +
+  '"steps":[{"code":"INPUT","components":["ProjectAssetsBlock","ProjectBriefBlock","ProjectWorkPackageBlock"]},' +
   '{"code":"FACT","components":["ProjectFactsBlock","ProjectCopyBlock"]},' +
   '{"code":"DNA","component":"VisualDnaPanel"},{"code":"DIRECTION","component":"DirectionBoard"},' +
   '{"code":"STORYBOARD","component":"StoryboardBoard"},{"code":"GATE","component":"GatePanel"},' +
@@ -58,7 +58,7 @@ function listVueFiles(dir: URL): string[] {
 }
 
 describe('workspaceAssembly：解析', () => {
-  it('解析生产配置：5 个面板 + 10 个步骤（13 个步骤组件，工作台 LONG_PAGE）', () => {
+  it('解析生产配置：5 个面板 + 10 个步骤（14 个步骤组件，工作台 LONG_PAGE）', () => {
     const layout = parseWorkspaceLayout(SEED_JSON);
     expect(layout).not.toBeNull();
     expect(layout!.workspace).toBe('LONG_PAGE');
@@ -73,7 +73,8 @@ describe('workspaceAssembly：解析', () => {
       code: 'INPUT',
       components: [
         { name: 'ProjectAssetsBlock', pages: [] },
-        { name: 'ProjectBriefBlock', pages: [] }
+        { name: 'ProjectBriefBlock', pages: [] },
+        { name: 'ProjectWorkPackageBlock', pages: [] }
       ]
     });
     expect(layout!.steps[2]).toEqual({
@@ -166,15 +167,15 @@ describe('workspaceAssembly：解析', () => {
 describe('workspaceAssembly：对照', () => {
   const diff = diffWorkspaceAssembly(parseWorkspaceLayout(SEED_JSON))!;
 
-  it('19 项全对照：5 面板 + 14 个步骤组件（10 步，其中 4 步多块）', () => {
+  it('20 项全对照：5 面板 + 15 个步骤组件（10 步，其中 4 步多块）', () => {
     expect(diff.panelRows).toHaveLength(5);
-    expect(diff.stepRows).toHaveLength(14);
+    expect(diff.stepRows).toHaveLength(15);
     expect(diff.panelRows.map((r) => r.code)).toEqual([
       'PROJECT_HEADER', 'STEP_NAVIGATOR', 'MAIN_STAGE', 'INSPECTOR', 'ASSET_DRAWER'
     ]);
   });
 
-  it('分类如实：R41 起生产页也拆出装配组件（同一步在项目页/生产页各有一块），就绪 18/19', () => {
+  it('分类如实：R41 起生产页也拆出装配组件（同一步在项目页/生产页各有一块），就绪 19/20', () => {
     const byName = Object.fromEntries(
       [...diff.panelRows, ...diff.stepRows].map((r) => [r.component || r.code, r.kind])
     );
@@ -189,6 +190,8 @@ describe('workspaceAssembly：对照', () => {
     expect(byName.ProjectBriefBlock).toBe('SLOT');
     expect(byName.ProjectFactsBlock).toBe('SLOT');
     expect(byName.ProjectCopyBlock).toBe('SLOT');
+    // 【C5① 起期望值有变】新增「开工包」区块（跨部门交接凭证，只读）
+    expect(byName.ProjectWorkPackageBlock).toBe('SLOT');
     expect(byName.ProjectHeroBlock).toBe('SLOT');
     expect(byName.ProjectGenerationsBlock).toBe('SLOT');
     // 【R38 起期望值有变】基因页整页拆成 VisualDnaPanel
@@ -203,13 +206,13 @@ describe('workspaceAssembly：对照', () => {
     // 【R41 起期望值有变】「出图」步在生产页是另一块视图（配置用 pages 标明它只属于生产页）
     expect(byName.GenerationBoard).toBe('SLOT');
     expect(diff.componentCount).toBe(5);
-    expect(diff.slotCount).toBe(13);
+    expect(diff.slotCount).toBe(14);
     // 只剩 MAIN_STAGE 一个"页面内区块"（它是主舞台本身，本来就不该是组件）
     expect(diff.sectionCount).toBe(1);
     expect(diff.missingCount).toBe(0);
-    // 口径：就绪 = 已是独立组件（工作台自解析 5 + 宿主插槽 13）；分母是组件行数（不是步骤数）
-    expect(diff.readyText).toBe('18/19');
-    expect(formatAssemblyChip(diff)).toBe('工作台装配 18/19');
+    // 口径：就绪 = 已是独立组件（工作台自解析 5 + 宿主插槽 14）；分母是组件行数（不是步骤数）
+    expect(diff.readyText).toBe('19/20');
+    expect(formatAssemblyChip(diff)).toBe('工作台装配 19/20');
   });
 
   it('每一行都带"代码里在哪"与一句补充（没有落点的对照等于没对照）', () => {
@@ -232,14 +235,14 @@ describe('workspaceAssembly：对照', () => {
       .toContain('CreativeProjectHeader.vue');
   });
 
-  it('结论句只用算出的事实拼（含工作台名、各计数、共 18 项）', () => {
+  it('结论句只用算出的事实拼（含工作台名、各计数、共 19 项）', () => {
     expect(diff.verdict).toContain('LONG_PAGE');
     expect(diff.verdict).toContain('配置声明 5 个面板 + 10 个步骤');
-    expect(diff.verdict).toContain('共 14 个步骤组件');
-    expect(diff.verdict).toContain('已是独立组件 18 个');
-    expect(diff.verdict).toContain('工作台自行解析 5 个、宿主页面插槽提供 13 个');
+    expect(diff.verdict).toContain('共 15 个步骤组件');
+    expect(diff.verdict).toContain('已是独立组件 19 个');
+    expect(diff.verdict).toContain('工作台自行解析 5 个、宿主页面插槽提供 14 个');
     expect(diff.verdict).toContain('还没实现 0 个');
-    expect(diff.verdict).toContain('共对照 19 项');
+    expect(diff.verdict).toContain('共对照 20 项');
   });
 
   it('注册表与配置互相校验：注册表里多出来的名字要报"没用上"', () => {
@@ -468,7 +471,8 @@ describe('R37：按步骤装配', () => {
     expect(steps.map((s) => s.code)).toEqual([
       'INPUT', 'FACT', 'DNA', 'DIRECTION', 'STORYBOARD', 'GATE', 'GENERATION', 'QA', 'LAYOUT', 'FINAL'
     ]);
-    expect(steps[0].components.map((c) => c.name)).toEqual(['ProjectAssetsBlock', 'ProjectBriefBlock']);
+    expect(steps[0].components.map((c) => c.name))
+      .toEqual(['ProjectAssetsBlock', 'ProjectBriefBlock', 'ProjectWorkPackageBlock']);
     expect(steps[6].components.map((c) => c.name))
       .toEqual(['ProjectHeroBlock', 'ProjectGenerationsBlock', 'GenerationBoard']);
     expect(steps[2].components.map((c) => c.name)).toEqual(['VisualDnaPanel']);
@@ -479,13 +483,14 @@ describe('R37：按步骤装配', () => {
 
   it('本页面托管的步骤 = 配置里有、且页面提供了插槽的那些（按配置顺序）', () => {
     const steps = parseWorkspaceLayout(SEED_JSON)!.steps;
-    // 项目页只提供了六个区块的插槽 → 托管 INPUT / FACT / GENERATION 三步
+    // 项目页提供了七个区块的插槽 → 托管 INPUT / FACT / GENERATION 三步
     const hosted = hostedSteps(steps, [
-      'ProjectAssetsBlock', 'ProjectBriefBlock', 'ProjectCopyBlock', 'ProjectFactsBlock',
-      'ProjectHeroBlock', 'ProjectGenerationsBlock'
+      'ProjectAssetsBlock', 'ProjectBriefBlock', 'ProjectWorkPackageBlock', 'ProjectCopyBlock',
+      'ProjectFactsBlock', 'ProjectHeroBlock', 'ProjectGenerationsBlock'
     ], '/creative/project');
     expect(hosted.map((s) => s.code)).toEqual(['INPUT', 'FACT', 'GENERATION']);
-    expect(hosted[0].components).toEqual(['ProjectAssetsBlock', 'ProjectBriefBlock']);
+    expect(hosted[0].components)
+      .toEqual(['ProjectAssetsBlock', 'ProjectBriefBlock', 'ProjectWorkPackageBlock']);
     // 一个插槽都没提供（别的页面还是整页主区）→ 本页不托管任何步骤 → 回落到 #main
     expect(hostedSteps(steps, [], '/creative/storyboard')).toEqual([]);
     // 只提供了一半：那一步仍然是"托管的"，但组件如实少一个（剩下的由页面提示说明）

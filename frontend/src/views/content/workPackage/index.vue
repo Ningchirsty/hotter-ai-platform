@@ -2,7 +2,7 @@
   <div class="p-2 app-container content-workPackage-page">
     <PageHeading
       title="内容生产协同"
-      subtitle="设计开工包（内容侧内部凭证）：已确认事实 + 缺口与替代 + 允许的 AI 动作 + 不可修改项"
+      subtitle="设计开工包（跨部门交接凭证）：已确认事实 + 缺口与替代 + 品牌红线 + 允许的 AI 动作 + 不可修改项"
       module="content"
     />
     <div class="search-wrap">

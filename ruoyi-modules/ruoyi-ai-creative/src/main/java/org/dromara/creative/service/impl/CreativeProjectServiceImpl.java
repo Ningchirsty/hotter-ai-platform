@@ -23,15 +23,19 @@ import org.dromara.content.domain.bo.ContentTaskBo;
 import org.dromara.content.domain.vo.CpTaskFileVo;
 import org.dromara.content.domain.vo.ContentTaskDetailVo;
 import org.dromara.content.domain.vo.CpTaskVo;
+import org.dromara.content.domain.vo.CpWorkPackageVo;
 import org.dromara.content.enums.ContentFileSourceEnum;
 import org.dromara.content.helper.ContentOssHelper;
 import org.dromara.content.service.IContentProductService;
 import org.dromara.content.service.IContentTaskService;
+import org.dromara.content.service.IContentWorkPackageService;
 import org.dromara.creative.constant.CreativeConstants;
 import org.dromara.creative.domain.DpStageEvent;
 import org.dromara.creative.domain.bo.CreativeProjectBo;
 import org.dromara.creative.domain.vo.CreativeProjectVo;
+import org.dromara.creative.domain.vo.CreativeWorkPackageView;
 import org.dromara.creative.domain.vo.DpStageEventVo;
+import org.dromara.creative.helper.CreativeOutputSpecs;
 import org.dromara.creative.helper.CreativeStepStateWriter;
 import org.dromara.creative.enums.DpVisualStageEnum;
 import org.dromara.creative.mapper.CreativeTaskStageMapper;
@@ -118,6 +122,11 @@ public class CreativeProjectServiceImpl implements ICreativeProjectService {
 
     /** 质检记录（R26：随素材一起清，因为它引用的两张图都会消失） */
     private final CpOutputCheckMapper outputCheckMapper;
+
+    /**
+     * 开工包（内容域）：内测 C5① 起作为**跨部门交接凭证**透出给设计侧只读。
+     */
+    private final IContentWorkPackageService contentWorkPackageService;
 
     @Override
     public PageResult<CreativeProjectVo> queryPage(ContentTaskBo bo, PageQuery pageQuery) {
@@ -902,6 +911,53 @@ public class CreativeProjectServiceImpl implements ICreativeProjectService {
             log.warn("读取交付类型中文名失败（{}）：{}", deliverableType, e.getMessage());
             return null;
         }
+    }
+
+    @Override
+    public CreativeWorkPackageView workPackage(Long taskId) {
+        CreativeProjectVo project = getProject(taskId);
+        CreativeWorkPackageView view = new CreativeWorkPackageView();
+        // 注意：这段文案会原样显示在页面上（不是 markdown），别写 ** 之类的标记
+        view.setNote("品牌部签发的交接凭证：包内事实与尺寸要求在本包签发时即冻结，"
+            + "品牌部后续修改不会自动改动它；与项目页其它信息不一致时，"
+            + "以本包冻结的那一版为准，并由人工裁定（本页只读）");
+        // 排版实际使用的规格由创作域补（尺寸权威在场景配置，见 CreativeOutputSpecs）
+        view.setRenderOutputSize(CreativeOutputSpecs.describe(
+            CreativeOutputSpecs.defaultSpec(project.getDeliverableType(), scenarioConfigService)));
+
+        CpWorkPackageVo pkg = contentWorkPackageService.getByTask(taskId);
+        if (pkg == null) {
+            view.setAvailable(false);
+            return view;
+        }
+        view.setAvailable(true);
+        view.setPackageId(pkg.getPackageId());
+        view.setSnapshotVersion(pkg.getSnapshotVersion());
+        view.setStatus(pkg.getStatus());
+        view.setStatusDesc(packageStatusDesc(pkg.getStatus()));
+        view.setGeneratedBy(pkg.getGeneratedBy());
+        view.setGeneratedAt(pkg.getGeneratedAt());
+        view.setIssuedBy(pkg.getIssuedBy());
+        view.setIssuedByName(pkg.getIssuedByName());
+        view.setIssuedAt(pkg.getIssuedAt());
+        view.setContentJson(pkg.getContentJson());
+        return view;
+    }
+
+    /**
+     * 开工包状态的中文（内容域的编码在这里只用于展示，不由创作域决定含义）。
+     *
+     * @param status DRAFT / ISSUED
+     * @return 可读文案；认不出的编码照原样显示（能拿去对内容侧配置，比留白强）
+     */
+    private static String packageStatusDesc(String status) {
+        if ("ISSUED".equalsIgnoreCase(status)) {
+            return "已签发（可开工）";
+        }
+        if ("DRAFT".equalsIgnoreCase(status)) {
+            return "草稿（未签发，品牌部可能还会改）";
+        }
+        return status;
     }
 
     private CreativeProjectVo toProjectVo(CpTaskVo task) {

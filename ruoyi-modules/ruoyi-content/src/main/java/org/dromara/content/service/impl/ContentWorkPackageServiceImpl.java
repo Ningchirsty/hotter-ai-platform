@@ -14,6 +14,7 @@ import org.dromara.content.domain.CpProduct;
 import org.dromara.content.domain.CpTask;
 import org.dromara.content.domain.CpTaskFile;
 import org.dromara.content.domain.CpWorkPackage;
+import org.dromara.content.domain.vo.CpBrandBriefVo;
 import org.dromara.content.domain.vo.CpWorkPackageVo;
 import org.dromara.content.enums.ContentDeliverableTypeEnum;
 import org.dromara.content.enums.ContentFactConfirmStatusEnum;
@@ -25,6 +26,8 @@ import org.dromara.content.mapper.CpTaskMapper;
 import org.dromara.content.mapper.CpWorkPackageMapper;
 import org.dromara.content.service.IContentTaskGateService;
 import org.dromara.content.service.IContentWorkPackageService;
+import org.dromara.content.service.IContentBrandBriefService;
+import org.dromara.system.api.UserService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -90,6 +93,18 @@ public class ContentWorkPackageServiceImpl implements IContentWorkPackageService
      * 闸门重算服务（只读判定）
      */
     private final IContentTaskGateService taskGateService;
+
+    /**
+     * 品牌要求（Brief）：C8 起开工包要把品牌红线与必显信息写进去，不再留空数组。
+     */
+    private final IContentBrandBriefService briefService;
+
+    /**
+     * 用户昵称解析（{@code ruoyi-api} 的 UserService，实现由 system 模块提供）。
+     *
+     * <p>只用于把「签发人」从用户ID变成名字——交接凭证上写ID等于没写（内测 C5①）。</p>
+     */
+    private final UserService userService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -166,10 +181,47 @@ public class ContentWorkPackageServiceImpl implements IContentWorkPackageService
         vo.setGeneratedBy(latest.getGeneratedBy());
         vo.setGeneratedAt(latest.getGeneratedAt());
         vo.setIssuedBy(latest.getIssuedBy());
+        vo.setIssuedByName(nicknameOf(latest.getIssuedBy()));
         vo.setIssuedAt(latest.getIssuedAt());
         vo.setCreateBy(latest.getCreateBy());
         vo.setCreateTime(latest.getCreateTime());
         return vo;
+    }
+
+    /**
+     * 多行文本 → 非空行列表（必显信息/禁用词在 Brief 里都是「一行一条」）。
+     *
+     * <p>返回空列表而不是 null：这两段会被直接写进 JSON 数组，null 会让下游多一处判空。</p>
+     *
+     * @param text 多行文本（可空）
+     * @return 行列表
+     */
+    private static List<String> lines(String text) {
+        if (StringUtils.isBlank(text)) {
+            return List.of();
+        }
+        return text.lines().map(String::trim).filter(StringUtils::isNotBlank).toList();
+    }
+
+    /**
+     * 解析签发人昵称。
+     *
+     * <p>查不到（用户被删/被禁用）时返回 null 并保留 {@code issuedBy}——
+     * 页面据此显示「签发（ID · 时间）」，不能因为一个昵称查不到就让整个交接凭证 500。</p>
+     *
+     * @param userId 用户ID
+     * @return 昵称；无法解析返回 null
+     */
+    private String nicknameOf(Long userId) {
+        if (userId == null) {
+            return null;
+        }
+        try {
+            return userService.selectNicknameById(userId);
+        } catch (Exception e) {
+            log.warn("解析开工包签发人昵称失败 userId={} error={}", userId, e.getMessage());
+            return null;
+        }
     }
 
     /**
@@ -223,11 +275,21 @@ public class ContentWorkPackageServiceImpl implements IContentWorkPackageService
         // 素材：本阶段只提供当前任务附件
         content.put("assets", buildAssets(task.getTaskId()));
 
-        // 文案：本阶段没有文案确认模型
+        // 文案与红线（内测 C8）：开工包定位为**跨部门交接凭证**之后，这两段不能再是硬编码空数组——
+        // 设计侧最需要知道的就是"必须出现什么"和"绝对不能出现什么"，
+        // 而这两件事品牌部已经在 Brief 里写过一遍了，不该让他们在别处再写一遍。
+        // 取值时点是**本包生成时的那一版 Brief**（包一旦签发就冻结，后续补料不会自动改这一包）。
+        CpBrandBriefVo brief = briefService.get(task.getTaskId());
         Map<String, Object> copy = new LinkedHashMap<>();
-        copy.put("confirmed", List.of());
-        copy.put("forbidden", List.of());
-        copy.put("note", "文案确认与禁用表达属品牌环节，阶段1A 未建内容模型，此处不代替品牌判断");
+        copy.put("confirmed", lines(brief == null ? null : brief.getMustShow()));
+        copy.put("forbidden", lines(brief == null ? null : brief.getForbiddenWords()));
+        copy.put("mustShowSource", "品牌要求（Brief）的「必显信息」，一行一条");
+        copy.put("forbiddenSource", "品牌要求（Brief）的「禁用词与合规红线」，一行一条；"
+            + "出图时会逐条进负向提示词");
+        copy.put("briefStatus", brief == null || !Boolean.TRUE.equals(brief.getConfigured())
+            ? "未填写" : StringUtils.blankToDefault(brief.getStatus(), "DRAFT"));
+        copy.put("note", "取自品牌要求的当前值（不是解析结果）。本包签发后即冻结，"
+            + "品牌部后续修改不会自动改动这一包——需要以最新要求为准时请重新生成并签发");
         content.put("copy", copy);
 
         // 缺口：未满足的条件项（可按替代方案开工，但必须记录）
@@ -257,6 +319,11 @@ public class ContentWorkPackageServiceImpl implements IContentWorkPackageService
         Map<String, Object> spec = new LinkedHashMap<>();
         spec.put("outputSize", factValue(confirmed, "output_size"));
         spec.put("resolution", factValue(confirmed, "resolution"));
+        // 内测 C8/冲突C：这里说清"这是哪个权威的尺寸"。
+        // 品牌部确认的尺寸要求（事实）与排版实际使用的规格（创作域 dp_output_spec）是两个东西，
+        // 混成一个字段就会变成"排版按 750、验收按别的"那种自相矛盾。
+        spec.put("outputSizeNote", "以上来自已确认事实（品牌部确认的尺寸要求）；"
+            + "排版实际使用的规格由创作域的交付类型配置决定——两者不一致时以排版规格为准并由人工裁定");
         spec.put("acceptance", "以闸门规则与已确认事实为准");
         content.put("spec", spec);
 

@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.dromara.creative.domain.DpProjectModule;
 import org.dromara.creative.service.ICreativeModuleService;
 import org.dromara.creative.helper.CreativeTemplatePin;
+import org.dromara.creative.helper.CreativeOutputSpecs;
 import org.dromara.creative.helper.CreativeScreenCoverage;
 import org.dromara.creative.helper.CreativeStepTypes;
 import lombok.extern.slf4j.Slf4j;
@@ -426,16 +427,7 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
      * @return 默认规格；没有配置或读取失败时返回 {@code null}（调用方各自决定回落策略）
      */
     private DpOutputSpec defaultOutputSpec(String deliveryType) {
-        if (StringUtils.isBlank(deliveryType)) {
-            return null;
-        }
-        try {
-            List<DpOutputSpec> specs = scenarioConfigService.listOutputSpecs(deliveryType);
-            return specs.isEmpty() ? null : specs.get(0);
-        } catch (Exception e) {
-            log.warn("读取默认输出规格失败（交付类型 {}）：{}", deliveryType, e.getMessage());
-            return null;
-        }
+        return CreativeOutputSpecs.defaultSpec(deliveryType, scenarioConfigService);
     }
 
     /**

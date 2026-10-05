@@ -177,6 +177,16 @@
           />
         </template>
 
+        <template #ProjectWorkPackageBlock>
+          <!--
+            开工包（内测 C5①：定位为跨部门交接凭证）。
+            组件自己取数（只读、按 taskId 拉），页面不替它管状态——
+            与它并列的品牌要求区块是页面供数（历史写法），两种写法并存是事实，
+            新组件一律自带取数，免得页面越来越重。
+          -->
+          <ProjectWorkPackageBlock :task-id="currentProjectId" />
+        </template>
+
         <template #ProjectCopyBlock>
           <!-- 文案与要点：详情页的「字」（R32：已拆成组件） -->
           <ProjectCopyBlock
@@ -509,6 +519,7 @@ import CreativeWorkspace from '../components/CreativeWorkspace.vue';
 // R32：项目页区块开始拆组件（状态仍在页面，组件只拿"显示的数据 + 触发的动作"）
 import ProjectAssetsBlock from './components/ProjectAssetsBlock.vue';
 import ProjectBriefBlock from './components/ProjectBriefBlock.vue';
+import ProjectWorkPackageBlock from './components/ProjectWorkPackageBlock.vue';
 import ProjectCopyBlock from './components/ProjectCopyBlock.vue';
 import ProjectFactsBlock from './components/ProjectFactsBlock.vue';
 import ProjectHeroBlock from './components/ProjectHeroBlock.vue';

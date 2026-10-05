@@ -25,6 +25,7 @@ import org.dromara.creative.constant.CreativeConstants;
 import org.dromara.creative.domain.bo.BriefChangeRequestBo;
 import org.dromara.creative.domain.bo.CreativeProjectBo;
 import org.dromara.creative.domain.vo.CreativeProjectVo;
+import org.dromara.creative.domain.vo.CreativeWorkPackageView;
 import org.dromara.creative.domain.vo.DpStageEventVo;
 import org.dromara.creative.service.ICreativeProjectService;
 import org.springframework.http.MediaType;
@@ -114,6 +115,22 @@ public class CreativeProjectController {
     @GetMapping("/{taskId}")
     public R<CreativeProjectVo> getInfo(@NotNull(message = "项目ID不能为空") @PathVariable("taskId") Long taskId) {
         return R.ok(projectService.getProject(taskId));
+    }
+
+    /**
+     * 品牌部签发的开工包（跨部门交接凭证）只读视图（内测 C5①）。
+     *
+     * <p>权限复用 {@code creative:project:query}：这是项目页要展示的只读内容，
+     * 不该再要求设计侧额外持有内容域的开工包权限——他本来也没有那个菜单。</p>
+     *
+     * @param taskId 项目ID
+     * @return 只读视图（品牌部还没生成时 available=false，不是异常）
+     */
+    @SaCheckPermission(CreativeConstants.PERM_PROJECT_QUERY)
+    @GetMapping("/{taskId}/work-package")
+    public R<CreativeWorkPackageView> workPackage(@NotNull(message = "项目ID不能为空")
+                                                  @PathVariable("taskId") Long taskId) {
+        return R.ok(projectService.workPackage(taskId));
     }
 
     /**
