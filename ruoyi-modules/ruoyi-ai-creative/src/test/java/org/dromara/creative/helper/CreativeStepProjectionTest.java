@@ -29,16 +29,21 @@ class CreativeStepProjectionTest {
 
     /**
      * 生产种子里的 10 步（profile 1765000000000000002），顺序即 sort_no。
+     *
+     * <p><b>R44 起与种子有意的差异</b>：四个步骤的 {@code *_LOCKED} 阶段被
+     * {@code dp_creative_step_locked_means_done.sql} 从各自步骤里摘掉了——
+     * 产品口径是「锁定/确认 ＝ 这一步做完了」（v1 人工测试反馈：锁定分镜后步骤条仍写
+     * 「分镜 进行中」、页面也不推进）。本表跟着改，否则测试钉的是已经不发货的配置。</p>
      */
     private static final List<ConfiguredStep> SEED = List.of(
         new ConfiguredStep("INPUT", "产品资料与参考图", "MATERIAL_READY", 10),
         new ConfiguredStep("FACT", "事实确认", "MATERIAL_READY", 20),
-        new ConfiguredStep("DNA", "视觉基因", "DNA_GENERATING,DNA_REVIEW,DNA_LOCKED", 30),
+        new ConfiguredStep("DNA", "视觉基因", "DNA_GENERATING,DNA_REVIEW", 30),
         new ConfiguredStep("DIRECTION", "视觉方向",
-            "DIRECTION_GENERATING,DIRECTION_REVIEW,DIRECTION_LOCKED", 40),
+            "DIRECTION_GENERATING,DIRECTION_REVIEW", 40),
         new ConfiguredStep("STORYBOARD", "分镜",
-            "STORYBOARD_GENERATING,STORYBOARD_REVIEW,STORYBOARD_LOCKED", 50),
-        new ConfiguredStep("GATE", "视觉门", "VISUAL_GATE,VISUAL_LOCKED", 60),
+            "STORYBOARD_GENERATING,STORYBOARD_REVIEW", 50),
+        new ConfiguredStep("GATE", "视觉门", "VISUAL_GATE", 60),
         new ConfiguredStep("GENERATION", "出图", "PRODUCING", 70),
         new ConfiguredStep("QA", "质检", "QA_PROCESSING", 80),
         new ConfiguredStep("LAYOUT", "长图排版", "LAYOUT_PROCESSING,DESIGN_REFINING", 90),
@@ -96,26 +101,35 @@ class CreativeStepProjectionTest {
     }
 
     @Test
-    @DisplayName("每个阶段的整表对照（含阶段内部的生成中/待确认/已锁定三态）")
+    @DisplayName("每个阶段的整表对照（含阶段内部的生成中/待确认三态）")
     void fullTableForEveryStage() {
-        // 基因：三个内部阶段都算"基因这一步"
+        // 基因：生成中与待确认都算"基因这一步"
         String dna = "DONE,DONE,ACTIVE,PENDING,PENDING,PENDING,PENDING,PENDING,PENDING,PENDING";
         assertEquals(dna, statuses("DNA_GENERATING"));
         assertEquals(dna, statuses("DNA_REVIEW"));
-        assertEquals(dna, statuses("DNA_LOCKED"));
+        // 锁定＝这一步做完了（R44）：基因 DONE、方向还没开始
+        assertEquals("DONE,DONE,DONE,PENDING,PENDING,PENDING,PENDING,PENDING,PENDING,PENDING",
+            statuses("DNA_LOCKED"));
 
         // 方向
         assertEquals("DONE,DONE,DONE,ACTIVE,PENDING,PENDING,PENDING,PENDING,PENDING,PENDING",
+            statuses("DIRECTION_GENERATING"));
+        assertEquals("DONE,DONE,DONE,DONE,PENDING,PENDING,PENDING,PENDING,PENDING,PENDING",
             statuses("DIRECTION_LOCKED"));
 
         // 分镜
         assertEquals("DONE,DONE,DONE,DONE,ACTIVE,PENDING,PENDING,PENDING,PENDING,PENDING",
             statuses("STORYBOARD_REVIEW"));
+        // 真机复现过的那一条：锁定分镜后步骤条不该再写"分镜 进行中"
+        assertEquals("DONE,DONE,DONE,DONE,DONE,PENDING,PENDING,PENDING,PENDING,PENDING",
+            statuses("STORYBOARD_LOCKED"));
 
-        // 视觉门：审核中与已通过都停在"视觉门"这一步
+        // 视觉门：审核中停在"视觉门"这一步
         String gate = "DONE,DONE,DONE,DONE,DONE,ACTIVE,PENDING,PENDING,PENDING,PENDING";
         assertEquals(gate, statuses("VISUAL_GATE"));
-        assertEquals(gate, statuses("VISUAL_LOCKED"));
+        // 人工确认通过＝视觉门做完了
+        assertEquals("DONE,DONE,DONE,DONE,DONE,DONE,PENDING,PENDING,PENDING,PENDING",
+            statuses("VISUAL_LOCKED"));
 
         // 生产链
         assertEquals("DONE,DONE,DONE,DONE,DONE,DONE,ACTIVE,PENDING,PENDING,PENDING",
@@ -128,6 +142,16 @@ class CreativeStepProjectionTest {
         // 终审
         assertEquals("DONE,DONE,DONE,DONE,DONE,DONE,DONE,DONE,DONE,ACTIVE",
             statuses("FINAL_REVIEW"));
+    }
+
+    @Test
+    @DisplayName("锁定/确认之后没有任何一步在进行中——有意如此：那一步已了结，下一步还没开始")
+    void lockStagesLeaveNoActiveStep() {
+        for (String stage : List.of("DNA_LOCKED", "DIRECTION_LOCKED", "STORYBOARD_LOCKED", "VISUAL_LOCKED")) {
+            assertEquals(List.of(), activeAt(stage),
+                stage + " 之后不该还有步骤显示「进行中」——这一步已经了结，下一步用户还没开始；"
+                    + "界面此时显示的是「第一个还没了结的步骤」（pickVisibleStep）");
+        }
     }
 
     @Test
