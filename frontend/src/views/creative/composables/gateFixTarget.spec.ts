@@ -14,12 +14,18 @@ describe('gateFixTarget', () => {
     expect(gateFixTarget('STORYBOARD_LOCKED')?.path).toBe('/creative/storyboard');
   });
 
-  it('品牌部的项指到内容任务详情（不是设计侧能自己做的），并钉到「品牌要求」那张卡', () => {
-    for (const code of ['BRAND_TONE_CONFIRMED', 'BRAND_BRIEF_CONFIRMED', 'FORBIDDEN_WORDS_DECLARED']) {
+  it('品牌部的项指到内容任务详情，并**各自钉到真正能改它的那张卡**', () => {
+    // 第 24 轮核对后端权威来源后发现：品牌调性判的是**事实** brand_tone，不是 Brief；
+    // 另两项判的才是 Brief。三项都指 section=brief 会把"品牌调性"送到改不动它的卡上。
+    const expected: Record<string, string> = {
+      BRAND_TONE_CONFIRMED: 'facts',
+      BRAND_BRIEF_CONFIRMED: 'brief',
+      FORBIDDEN_WORDS_DECLARED: 'brief'
+    };
+    for (const [code, section] of Object.entries(expected)) {
       expect(gateFixTarget(code)?.path).toBe('/business/content/task');
-      // 内容任务页本轮补了深链支持：带 taskId 直接开那条任务的详情，section 决定滚到哪张卡
       expect(gateFixTarget(code)?.carriesTaskId).toBe(true);
-      expect(gateFixTarget(code)?.section).toBe('brief');
+      expect(gateFixTarget(code)?.section, `${code} 应钉到 ${section} 卡`).toBe(section);
     }
   });
 

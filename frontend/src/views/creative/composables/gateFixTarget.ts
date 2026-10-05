@@ -58,12 +58,18 @@ export const GATE_FIX_TARGETS: Record<string, GateFixTarget> = {
   STORYBOARD_LOCKED: {
     label: '去视觉方向与分镜页锁定分镜', path: '/creative/storyboard', carriesTaskId: true, step: 'STORYBOARD'
   },
-  // 品牌部这三项都在任务详情的「品牌要求（Brief）」卡里补，所以带上 taskId 与 section=brief
+  // 品牌部这三项都在任务详情里补，但**不在同一张卡上**——第 24 轮核对权威来源时发现：
+  //   · 品牌 Brief 已填写并确认 → 判的是 Brief（`CreativeGateServiceImpl#brandBriefItem`）→ brief 卡
+  //   · 已声明禁用词与合规红线 → 判的也是 Brief 的 forbiddenWords → brief 卡
+  //   · **品牌调性已确认 → 判的是「事实」里的 brand_tone，不是 Brief 里的品牌调性**
+  //     （`#brandToneItem` 遍历 `detail.getFacts()` 找 fieldCode=brand_tone）
+  // 我原先三项都写成 section=brief，于是"品牌调性"这一项会把人送到一张**改不动它**的卡上——
+  // 正是 v1 反馈那句"没有跳转到相应要确认的地方"。现在按各自的权威来源分开指。
   BRAND_TONE_CONFIRMED: {
-    label: '去内容任务详情补品牌调性',
+    label: '去内容任务详情确认「品牌调性」事实',
     path: '/business/content/task',
     carriesTaskId: true,
-    section: 'brief'
+    section: 'facts'
   },
   BRAND_BRIEF_CONFIRMED: {
     label: '去内容任务详情填并确认品牌要求',
