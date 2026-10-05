@@ -28,8 +28,14 @@ import org.springframework.web.bind.annotation.RestController;
  * 就会出现"品牌部想写要求得先有视觉权限"的反向依赖。R7 之后视觉工厂项目页上的
  * 品牌要求是**只读展示**（由创作域通过 {@code IContentBrandBriefService} 读取）。</p>
  *
- * <p>权限沿用内容任务的既有编码（查询 {@code content:task:query} / 编辑 {@code content:task:edit}），
- * 不新增权限码：新增权限码要同步菜单 SQL，否则非超管角色一律 403。</p>
+ * <p><b>权限（内测 C1 起独立编码）</b>：读取 {@code content:task:query}、录入
+ * {@code content:brief:edit}、确认 {@code content:brief:confirm}。
+ * C1 之前三者都只要 {@code content:task:edit}，而该权限在设计账号手里（视觉工厂菜单曾
+ * 整体授予内容角色），于是"设计部能自己写一版品牌要求、再自己批一版"在权限层成立，
+ * 审计里 {@code confirmed_by} 记的还是设计师——职责边界只剩口头约定。</p>
+ *
+ * <p><b>上线顺序</b>：{@code script/sql/cp_content_brief_perm.sql} 必须先于（或同时于）
+ * 本类上线，否则品牌角色会因为库里没有新权限码而点不了「保存 / 品牌方确认」。</p>
  *
  * @author content
  */
@@ -57,11 +63,14 @@ public class ContentBrandBriefController {
     /**
      * 保存品牌要求（upsert，草稿态；不会改「已确认」状态）。
      *
+     * <p>权限用 {@link ContentConstants#PERM_BRIEF_EDIT} 而不是 {@code content:task:edit}：
+     * 后者的持有者包含设计账号，会让"设计部改品牌要求"变成权限层允许的事。</p>
+     *
      * @param taskId 任务ID
      * @param bo     表单
      * @return 保存后的视图
      */
-    @SaCheckPermission(ContentConstants.PERM_TASK_EDIT)
+    @SaCheckPermission(ContentConstants.PERM_BRIEF_EDIT)
     @Log(title = "品牌要求", businessType = BusinessType.UPDATE)
     @PutMapping
     public R<CpBrandBriefVo> saveBrandBrief(@NotNull(message = "任务ID不能为空")
@@ -73,10 +82,14 @@ public class ContentBrandBriefController {
     /**
      * 品牌方确认：确认后视觉门的「品牌要求已填写并确认」闸门项才会通过。
      *
+     * <p>权限用 {@link ContentConstants#PERM_BRIEF_CONFIRM}：这是品牌方的**批准**动作，
+     * 与"把要求写下来"分开授权——否则设计侧可以自己写一版、自己批一版，
+     * 而审计只会记下"某人确认过"。</p>
+     *
      * @param taskId 任务ID
      * @return 确认后的视图
      */
-    @SaCheckPermission(ContentConstants.PERM_TASK_EDIT)
+    @SaCheckPermission(ContentConstants.PERM_BRIEF_CONFIRM)
     @RepeatSubmit
     @Log(title = "品牌要求确认", businessType = BusinessType.UPDATE)
     @PostMapping("/confirm")

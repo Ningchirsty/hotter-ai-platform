@@ -37,6 +37,25 @@ public interface ContentConstants {
      */
     String PERM_TASK_REMOVE = "content:task:remove";
 
+    // ---------------- 品牌要求（Brief） ----------------
+
+    /**
+     * 品牌要求-录入（保存草稿）。
+     *
+     * <p><b>为什么从 {@code content:task:edit} 单独拆出来</b>：Brief 的作者是品牌方，
+     * 视觉工厂那边只读。原先写它只要 {@code content:task:edit}，而该权限在设计账号手里，
+     * 于是"设计部能改品牌要求"这件事在权限层是成立的（内测实测过）。拆出独立权限码后，
+     * 才能把写权限只授给品牌角色。</p>
+     */
+    String PERM_BRIEF_EDIT = "content:brief:edit";
+    /**
+     * 品牌要求-品牌方确认。
+     *
+     * <p>与录入分开：录入是"把要求写下来"，确认是"品牌方认可这一版"——后端拿 {@code status=CONFIRMED}
+     * 当视觉门的判据。让同一个权限码同时管两件事，就等于允许"谁写谁批"，确认也就没有意义了。</p>
+     */
+    String PERM_BRIEF_CONFIRM = "content:brief:confirm";
+
     // ---------------- 互动确认卡 ----------------
 
     /**

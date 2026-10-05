@@ -314,7 +314,8 @@
             </template>
             <p class="form-tip collapse-tip">
               品牌方提的「必须怎么做」。必显信息与主推卖点会进 AI 视觉工厂出图的正向提示词、禁用词进负向提示词；
-              品牌调性 / 目标人群 / 尺寸规范 / 参考风格作为创作依据。此处留空则不提交品牌要求（任务仍会保存）。
+              品牌调性 / 目标人群 / 尺寸规范 / 参考风格<b>当前版本没有任何下游消费</b>（不进出图、不参与渲染），仅记录备查。
+              此处留空则不提交品牌要求（任务仍会保存）。
             </p>
             <el-form-item v-for="field in briefFields" :key="field.key" :label="field.label">
               <el-input
@@ -514,8 +515,9 @@
               <span class="panel-kicker">Brand Brief</span>
               <h3>品牌要求（Brief）</h3>
               <p>
-                品牌方提的「必须怎么做」。去向：<b>必显信息</b>与<b>主推卖点</b>进 AI 视觉工厂出图的<b>正向提示词</b>，
-                <b>禁用词</b>进<b>负向提示词</b>；品牌调性 / 目标人群 / 尺寸规范 / 参考风格作为创作依据。
+                品牌方提的「必须怎么做」。去向（按实际接线如实写）：<b>必显信息</b>与<b>主推卖点</b>进 AI 视觉工厂出图的<b>正向提示词</b>，
+                <b>禁用词</b>进<b>负向提示词</b>；<b>品牌调性 / 目标人群 / 尺寸规范 / 参考风格</b>当前版本
+                <b>没有任何下游消费</b>，仅记录备查。
                 平面设计部在 AI 视觉工厂按此创作，<b>那边只读</b>，要改就在这里改。
               </p>
             </div>
@@ -527,7 +529,7 @@
             <div class="brief-bar-actions">
               <template v-if="!briefEditing">
                 <el-button
-                  v-hasPermi="['content:task:edit']"
+                  v-hasPermi="['content:brief:edit']"
                   size="small"
                   type="primary"
                   plain
@@ -537,7 +539,7 @@
                   编辑
                 </el-button>
                 <el-button
-                  v-hasPermi="['content:task:edit']"
+                  v-hasPermi="['content:brief:confirm']"
                   size="small"
                   plain
                   :loading="briefBusy === 'confirm'"
@@ -597,7 +599,7 @@
                 <BriefStyleImages
                   :task-id="detailTaskId"
                   :images="briefStyleImages"
-                  :editable="checkPermi(['content:task:edit'])"
+                  :editable="checkPermi(['content:brief:edit'])"
                   :busy="briefBusy === 'style'"
                   @upload="onStyleImagePick"
                   @remove="removeStyleImage"
@@ -848,6 +850,12 @@
                   }}
                 </p>
                 <p v-else>尚未生成开工包；需先满足强制项（可开工或条件开工）。</p>
+                <!-- C5②：如实说明这份包的实际去向。设计侧全模块零引用，说成"交接给设计部"是误导 -->
+                <p class="form-tip">
+                  <b>这份包是内容侧的内部凭证</b>：平设计部在 AI 视觉工厂<b>看不到它</b>
+                  （那边没有任何读取入口）。品牌红线请写进「品牌要求（Brief）」对齐，
+                  不要指望开工包传达。
+                </p>
               </div>
               <div class="toolbar-actions">
                 <el-button

@@ -133,7 +133,7 @@ export const BRAND_BRIEF_FIELDS: BrandBriefField[] = [
     rows: 2,
     max: 500,
     placeholder: '如：清新、治愈、自然；克制不喧哗',
-    hint: '品牌方希望的调性。与事实里的 brand_tone 并存，冲突时以人裁定（页面不会自动合并两处）。'
+    hint: '品牌方希望的调性。与事实里的 brand_tone 并存，冲突时以人裁定（页面不会自动合并两处）。当前版本不进出图提示词，仅作展示与人工参考。'
   },
   {
     key: 'mustShow',
@@ -149,7 +149,7 @@ export const BRAND_BRIEF_FIELDS: BrandBriefField[] = [
     rows: 3,
     max: 1000,
     placeholder: '一行一条，如：\n最\n第一\n治疗失眠',
-    hint: '合规红线与禁用词，一行一条；会作为出图的负向提示词与文案校验依据。'
+    hint: '合规红线与禁用词，一行一条；会作为出图的负向提示词。当前版本没有成品端的禁用词扫描（成品不会被自动比对禁用词），红线靠人工把关。'
   },
   {
     key: 'mainPush',
@@ -165,7 +165,7 @@ export const BRAND_BRIEF_FIELDS: BrandBriefField[] = [
     rows: 2,
     max: 500,
     placeholder: '如：25-35 岁都市女性，悦己消费',
-    hint: '卖给谁。影响文案口吻与画面调性。'
+    hint: '卖给谁。当前版本不参与出图、也不参与文案派生，仅记录备查。'
   },
   {
     key: 'sizeSpecReq',
@@ -173,7 +173,7 @@ export const BRAND_BRIEF_FIELDS: BrandBriefField[] = [
     rows: 2,
     max: 1000,
     placeholder: '如：详情页宽 750px；主图 1:1；正文不小于 14px',
-    hint: '画布比例、留白、字号、平台规范等硬要求。'
+    hint: '画布比例、留白、字号、平台规范等硬要求。当前版本不参与渲染、交付时也不校验（详情页宽由排版模板固定为 750px），仅记录备查。'
   },
   {
     key: 'styleRef',
@@ -181,7 +181,7 @@ export const BRAND_BRIEF_FIELDS: BrandBriefField[] = [
     rows: 2,
     max: 1000,
     placeholder: '如：参考图 2 的自然光；无印良品式的留白',
-    hint: '参考图 / 参考品牌 / 风格描述，帮助统一画面取向；也可以直接上传参考风格图片（下方）。'
+    hint: '参考图 / 参考品牌 / 风格描述。当前版本不作为出图条件——出图只吃项目里的「参考图」，下方上传的参考风格图片也仅在视觉项目页展示、不入图。'
   },
   {
     key: 'remark',
