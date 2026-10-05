@@ -45,6 +45,8 @@
             <el-button type="primary" plain :loading="loading" @click="reloadCurrent">刷新</el-button>
           </div>
         </header>
+        <!-- S12：出图这一页同样要看得见品牌要求（必显信息/禁用词/主推卖点会进提示词） -->
+        <CreativeBriefStrip :task-id="taskId" />
       </template>
 
       <template #GenerationBoard>
@@ -108,9 +110,18 @@
             {{ row.durationMs ? `${(row.durationMs / 1000).toFixed(1)}s` : '—' }}
           </template>
         </el-table-column>
-        <el-table-column label="失败/提示" min-width="200">
+        <el-table-column label="失败/提示" min-width="240">
           <template #default="{ row }">
-            <span :class="row.errorMessage ? 'gen-error' : 'cell-sub'">{{ row.errorMessage || '—' }}</span>
+            <span v-if="row.errorMessage" class="gen-error">{{ row.errorMessage }}</span>
+            <!--
+              S13：把"填了却没进提示词"摆到台面上。
+              以前它只写在阶段事件的原始 JSON 里，用户看到"我填了必显信息、出图却没体现"时
+              根本查不到——而这条提示正好回答那个问题。
+            -->
+            <span v-if="asGen(row).promptOmitted" class="gen-omitted" :title="asGen(row).promptOmitted">
+              {{ asGen(row).promptOmitted }}
+            </span>
+            <span v-if="!row.errorMessage && !asGen(row).promptOmitted" class="cell-sub">—</span>
           </template>
         </el-table-column>
         <el-table-column label="提交时间" width="170">
@@ -195,6 +206,7 @@ import {
   statusType
 } from './generationText';
 import CreativeWorkspace from '../components/CreativeWorkspace.vue';
+import CreativeBriefStrip from '../components/CreativeBriefStrip.vue';
 import GenerationBoard from './components/GenerationBoard.vue';
 
 /** 并排对比的目标：候选 + 它所属屏的类型描述 */
@@ -674,6 +686,14 @@ onBeforeUnmount(() => {
 .gen-error {
   font-size: 12px;
   color: #fca5a5;
+}
+
+/* S13：不是错误，是"填了但没进提示词"的如实交代——用警示色而不是危险色 */
+.gen-omitted {
+  display: block;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #fbbf24;
 }
 
 .good {

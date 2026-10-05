@@ -85,6 +85,19 @@ public class DpGeneration extends BaseEntity implements Serializable {
     private String negativePrompt;
 
     /**
+     * 未进提示词的条目与原因（内测 S13；给人看的可读文案，分号连接）。
+     *
+     * <p>{@code DnaPromptBuilder} 一直在如实计算哪些条目因为长度上限没放进提示词
+     * （必显信息 / 主推卖点 / 禁用词 / 屏文案截断），也一直把这份留痕写进阶段事件——
+     * 但那是原始 JSON，用户看到"我填了必显信息、出图却没体现"时根本找不到它。
+     * 这一列让它出现在候选列表上。</p>
+     *
+     * <p>另外，**人工指定提示词**时品牌要求根本没有参与派生，这同样属于
+     * "填了但没进提示词"，而且更容易被误解成"系统没生效"——那种情况也会在这里留一句话。</p>
+     */
+    private String promptOmitted;
+
+    /**
      * 随机种子（可复现）
      */
     private Long seed;

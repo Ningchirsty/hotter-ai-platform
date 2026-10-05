@@ -30,6 +30,11 @@
             <el-button plain :loading="loading" @click="loadAll">刷新</el-button>
           </div>
         </header>
+        <!--
+          S12：品牌要求摘要条。本页是设计师真正干活的地方（选方向、拆分镜），
+          而品牌要求原先只在「视觉项目」页可见——人不会为了看一眼必显信息来回切页面。
+        -->
+        <CreativeBriefStrip :task-id="taskId" />
       </template>
 
       <template #DirectionBoard>
@@ -166,6 +171,7 @@ import type {
   ScreenProductionVO
 } from '@/api/creative/types';
 import CreativeWorkspace from '../components/CreativeWorkspace.vue';
+import CreativeBriefStrip from '../components/CreativeBriefStrip.vue';
 import GenerationBoard from '../production/components/GenerationBoard.vue';
 import { latestGenerationOf } from '../production/generationText';
 import DirectionBoard from './components/DirectionBoard.vue';

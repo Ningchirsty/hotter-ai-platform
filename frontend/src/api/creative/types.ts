@@ -24,6 +24,13 @@ export interface CreativeProjectVO {
   visualStage?: string;
   /** 视觉阶段描述 */
   visualStageDesc?: string;
+  /**
+   * 交付类型中文名（后端按配置 `dp_delivery_type.delivery_name` 填好）。
+   *
+   * 内测 S11：界面上以前直接漏 `ECOM_DETAIL` 这种编码。名字的权威在配置里，
+   * 所以后端填、前端不再抄第二张字典（兜底见 `DELIVERY_TYPE_LABELS`）。
+   */
+  deliverableTypeDesc?: string;
   pendingCardCount?: number;
   blockingCardCount?: number;
   /** 参考图数量（详情接口返回） */
@@ -92,6 +99,15 @@ export interface DpGenerationVO {
   workflowCode?: string;
   workflowVersion?: string;
   prompt?: string;
+  /**
+   * 未进提示词的条目与原因（内测 S13）。
+   *
+   * 必显信息/主推卖点/禁用词因长度上限未放入、屏文案被截断，
+   * 或"提示词由人工指定、品牌要求未自动追加"。为空＝本次没有这种情况。
+   *
+   * 以前这份留痕只写在阶段事件的原始 JSON 里，用户看到"我填了必显信息却没体现"时查不到它。
+   */
+  promptOmitted?: string;
   status?: string;
   statusDesc?: string;
   outputAssetId?: string | number;
@@ -626,6 +642,39 @@ export interface DnaRecommendationVO {
   skipped?: string[];
   notes?: string[];
 }
+
+/**
+ * 交付类型编码 → 可读名（**前端兜底**）。
+ *
+ * <p>权威名在配置里（`dp_delivery_type.delivery_name`，场景配置接口的 `deliveryName`）——
+ * 有配置列表的地方优先用配置名；这里只是给"手上只有编码"的组件一个兜底，
+ * 免得界面上直接漏出 `ECOM_DETAIL`（内测 S11）。新加的交付类型没进这张表时会显示编码本身，
+ * 那也比空白强：**看不懂的英文至少能对上配置，静默留白没人能查**。</p>
+ */
+export const DELIVERY_TYPE_LABELS: Record<string, string> = {
+  ECOM_DETAIL: '电商详情图',
+  MAIN_IMAGE: '主图/SKU图',
+  BRAND_POSTER: '品牌海报',
+  EXHIBITION: '展会宣传图',
+  MANUAL: '说明书',
+  PACKAGE: '包装',
+  VIDEO: '视频内容'
+};
+
+/**
+ * 渲染模式 → 可读名（前端兜底，权威在配置 `dp_delivery_type.render_mode`）。
+ *
+ * <p>渲染模式决定"交付物是一张长图还是一组图/一个包"，是使用者能感知的差异，
+ * 不该以 `MULTI_IMAGE` 这种编码出现在终审页上。</p>
+ */
+export const RENDER_MODE_LABELS: Record<string, string> = {
+  LONGPAGE: '长图（整页排版）',
+  MULTI_IMAGE: '多图（按屏打包）',
+  POSTER: '海报（多档成品图）',
+  ARTICLE: '图文',
+  PRINT: '印刷',
+  VIDEO: '视频'
+};
 
 /** 阶段编码 → 可读描述（前端兜底；权威描述在后端 DpVisualStageEnum） */
 export const CREATIVE_STAGE_LABELS: Record<string, string> = {

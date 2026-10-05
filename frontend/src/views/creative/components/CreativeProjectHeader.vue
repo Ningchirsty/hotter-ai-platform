@@ -36,7 +36,8 @@
       </div>
       <div>
         <dt>交付类型</dt>
-        <dd>{{ project?.deliverableType || '—' }}</dd>
+        <!-- 不直接漏编码：配置里有权威名（deliveryName），拿到就用它；只有编码时用前端兜底表（内测 S11） -->
+        <dd>{{ deliveryTypeText }}</dd>
       </div>
       <div>
         <dt>截止</dt>
@@ -57,6 +58,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { CreativeProjectVO } from '@/api/creative/types';
+import { DELIVERY_TYPE_LABELS } from '@/api/creative/types';
 import type { ScenarioOutputSpec } from '@/api/creative/scenario';
 
 /**
@@ -109,6 +111,20 @@ const sizeText = computed(() => {
     return `${width}×自动高度`;
   }
   return `${width}×${height || '—'}`;
+});
+
+/**
+ * 交付类型的展示文案（内测 S11：以前这里直接漏 `ECOM_DETAIL`）。
+ *
+ * <p>顺序：后端按配置填好的 `deliverableTypeDesc`（权威名）→ 前端兜底表 → 编码本身。
+ * 最后那档是刻意的：**显示看不懂的编码，也强过留白**——编码至少能拿去对配置，空白没人能查。</p>
+ */
+const deliveryTypeText = computed(() => {
+  const code = props.project?.deliverableType;
+  if (!code) {
+    return '—';
+  }
+  return props.project?.deliverableTypeDesc || DELIVERY_TYPE_LABELS[code] || code;
 });
 </script>
 

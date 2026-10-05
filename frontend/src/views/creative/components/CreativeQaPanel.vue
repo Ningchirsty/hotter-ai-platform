@@ -69,7 +69,10 @@
                 <div class="cell-main">{{ row.screenNo }}</div>
                 <div class="muted small">{{ row.screenTypeDesc }}</div>
               </td>
-              <td class="muted small">#{{ row.candidateNo ?? '—' }}<br />{{ row.status }}</td>
+              <!-- 候选状态用中文（内测 S11：以前这里直接漏 READY/FAILED 这种编码） -->
+              <td class="muted small">
+                #{{ row.candidateNo ?? '—' }}<br />{{ genStatusText(row.status) }}
+              </td>
               <td v-for="item in row.evidence" :key="item.key">
                 <el-tag size="small" :type="qaStatusType(item.status)">{{ item.statusLabel }}</el-tag>
                 <div class="muted small">{{ item.detail }}</div>
@@ -87,6 +90,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { listGenerations, getDelivery, getStoryboard } from '@/api/creative';
+import { GENERATION_STATUS_LABELS } from '@/api/creative/types';
 import type { CreativeProjectVO, DeliveryVO, DpGenerationVO, DpStoryboardVO } from '@/api/creative/types';
 import {
   QA_SEMANTICS,
@@ -95,6 +99,17 @@ import {
   qaStatusType,
   type QaScreenRow
 } from '../composables/qaVerdicts';
+
+/**
+ * 候选状态的中文（内测 S11）。
+ *
+ * <p>这里以前直接输出 `row.status`，界面上就是 `READY` / `FAILED` 这种编码。
+ * 字典复用创作域那一份（`GENERATION_STATUS_LABELS`），不另抄——
+ * 抄一份的代价是两张表迟早对不上。认不出的编码照原样显示。</p>
+ */
+function genStatusText(status?: string): string {
+  return status ? GENERATION_STATUS_LABELS[status] || status : '—';
+}
 
 /**
  * 质检与交付面板（V0.2 R31，文档 §23 的 QaPanel + §30 双基准 + R29/R30 新结论）。

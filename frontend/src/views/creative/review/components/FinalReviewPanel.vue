@@ -46,7 +46,7 @@
         <h3>交付产物</h3>
         <div class="head-actions">
           <span class="muted">
-            渲染器 {{ delivery?.rendererName || '—' }}（模式 {{ delivery?.renderMode || '未配置' }}）
+            渲染器 {{ delivery?.rendererName || '—' }}（模式 {{ renderModeText }}）
             · 当前版本 v{{ delivery?.currentVersion ?? 0 }}
           </span>
           <!--
@@ -151,13 +151,30 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue';
 import type { UploadRequestOptions } from 'element-plus';
+import { RENDER_MODE_LABELS } from '@/api/creative/types';
 import type {
   DeliveryArtifactVO,
   DeliveryProductVO,
   DeliveryVO,
   DpDetailPageVO
 } from '@/api/creative/types';
+
+/**
+ * 渲染模式的展示文案（内测 S11）。
+ *
+ * <p>渲染模式决定"交付物是一张长图还是一组图"，是使用者能感知的差异，
+ * 不该以 `MULTI_IMAGE` 这种编码出现在终审页上。权威名在配置里，这里只是显示层兜底；
+ * 认不出的编码照原样显示（能拿去对配置，比留白强）。</p>
+ */
+const renderModeText = computed(() => {
+  const mode = (props.delivery?.renderMode || '').trim();
+  if (!mode) {
+    return '未配置';
+  }
+  return RENDER_MODE_LABELS[mode.toUpperCase()] || mode;
+});
 
 /**
  * 「终审交付」这一步的内容（V0.2 R40，装配组件名 `FinalReviewPanel`）。
@@ -171,7 +188,7 @@ import type {
  *
  * @author creative
  */
-defineProps<{
+const props = defineProps<{
   /** 详情页状态（这里只用"当前版本"判断要不要显示上传入口） */
   detailPage: DpDetailPageVO | null;
   /** 交付产物视图（渲染器能力 + 历史版本） */

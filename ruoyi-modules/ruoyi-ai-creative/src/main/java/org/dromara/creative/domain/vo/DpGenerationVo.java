@@ -76,6 +76,14 @@ public class DpGenerationVo implements Serializable {
     private String prompt;
 
     /**
+     * 未进提示词的条目与原因（内测 S13）：必显信息/主推卖点/禁用词因长度上限未放入、
+     * 屏文案被截断，或"提示词由人工指定、品牌要求未自动追加"。
+     *
+     * <p>为空＝本次没有任何"填了却没进提示词"的情况。</p>
+     */
+    private String promptOmitted;
+
+    /**
      * 状态编码
      */
     private String status;

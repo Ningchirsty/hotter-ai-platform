@@ -24,7 +24,7 @@
           <el-option
             v-for="p in projects"
             :key="String(p.taskId)"
-            :label="`${p.taskName}（${p.deliverableType || 'ECOM_DETAIL'}）`"
+            :label="`${p.taskName}（${deliveryTypeText(p)}）`"
             :value="String(p.taskId)"
           />
         </el-select>
@@ -397,6 +397,7 @@
     type ModuleDefinitionForm,
     confirmProjectModulePlan} from '@/api/creative/scenario';
   import { listCopyBlocks, listCreativeProject } from '@/api/creative';
+  import { DELIVERY_TYPE_LABELS } from '@/api/creative/types';
   import type { CopyBlockVO } from '@/api/creative/types';
   import { extractErrorMessage } from '@/utils/request';
   import { checkPermi } from '@/utils/permission';
@@ -421,8 +422,23 @@
 
   const taskId = ref<string>(String(route.query.taskId || ''));
   const pickedTaskId = ref<string>('');
-  const projects = ref<{ taskId?: string | number; taskName?: string; deliverableType?: string }[]>([]);
+  const projects = ref<
+    { taskId?: string | number; taskName?: string; deliverableType?: string; deliverableTypeDesc?: string }[]
+  >([]);
   const projectLoading = ref(false);
+
+  /**
+   * 项目选择器里的交付类型文案（内测 S11：以前这里直接漏 `ECOM_DETAIL` 编码）。
+   *
+   * <p>顺序：后端按配置填好的中文名 → 前端兜底表 → 编码本身。</p>
+   */
+  function deliveryTypeText(p: { deliverableType?: string; deliverableTypeDesc?: string }): string {
+    const code = p.deliverableType;
+    if (!code) {
+      return '未指定交付类型';
+    }
+    return p.deliverableTypeDesc || DELIVERY_TYPE_LABELS[code] || code;
+  }
 
   const plan = ref<ProjectModulePlan | null>(null);
   const modules = ref<EditableModule[]>([]);

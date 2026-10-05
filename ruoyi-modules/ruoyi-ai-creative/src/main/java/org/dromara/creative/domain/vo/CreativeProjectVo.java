@@ -76,6 +76,14 @@ public class CreativeProjectVo implements Serializable {
     private String status;
 
     /**
+     * 交付类型的中文名（来自配置 {@code dp_delivery_type.delivery_name}）。
+     *
+     * <p>内测 S11：界面上以前直接显示 {@code ECOM_DETAIL} 这种编码。
+     * 名字的权威在配置里，所以由后端查好填进来，前端不再抄第二张字典。</p>
+     */
+    private String deliverableTypeDesc;
+
+    /**
      * 资料敏感级别（PUBLIC/INTERNAL/RESTRICTED）——视觉模型调用要按它选路由
      */
     private String dataLevel;

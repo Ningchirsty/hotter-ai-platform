@@ -882,12 +882,39 @@ public class CreativeProjectServiceImpl implements ICreativeProjectService {
         }
     }
 
+    /**
+     * 交付类型编码 → 配置里的中文名（{@code dp_delivery_type.delivery_name}）。
+     *
+     * <p>读不到配置时返回 {@code null} 而不抛错：那是"配置被删了"，项目本身还在，
+     * 让人看到"没有名字"比让整个列表 500 合理；前端另有兜底表把编码显示出来。</p>
+     *
+     * @param deliverableType 交付类型编码
+     * @return 中文名；没有配置时为 null
+     */
+    private String deliveryTypeNameOf(String deliverableType) {
+        if (StringUtils.isBlank(deliverableType)) {
+            return null;
+        }
+        try {
+            DpDeliveryType type = scenarioConfigService.getDeliveryType(deliverableType);
+            return type == null ? null : StringUtils.trimToNull(type.getDeliveryName());
+        } catch (Exception e) {
+            log.warn("读取交付类型中文名失败（{}）：{}", deliverableType, e.getMessage());
+            return null;
+        }
+    }
+
     private CreativeProjectVo toProjectVo(CpTaskVo task) {
         CreativeProjectVo vo = new CreativeProjectVo();
         vo.setTaskId(task.getTaskId());
         vo.setTaskNo(task.getTaskNo());
         vo.setTaskName(task.getTaskName());
         vo.setDeliverableType(task.getDeliverableType());
+        // 交付类型的中文名（内测 S11：界面以前直接漏 ECOM_DETAIL 这种编码）。
+        // 权威名在配置里（dp_delivery_type.delivery_name），所以这里查一次配置填进 VO——
+        // 而不是让前端再抄一张字典（内测已经吃过"两张表迟早对不上"的亏）。
+        // 查不到不报错：项目还在、只是配置被删了，让前端回落到兜底表或显示编码本身。
+        vo.setDeliverableTypeDesc(deliveryTypeNameOf(task.getDeliverableType()));
         vo.setProductId(task.getProductId());
         vo.setProductName(task.getProductName());
         vo.setProductCode(task.getProductCode());

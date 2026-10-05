@@ -183,12 +183,19 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
             if (StringUtils.isBlank(prompt)) {
                 prompt = derived.prompt();
                 promptApplied = derived.applied();
-                promptOmitted = derived.omitted();
             }
             if (StringUtils.isBlank(negativePrompt)) {
                 negativePrompt = derived.negativePrompt();
             }
+            // 只要正/负**任意一侧**是派生出来的，未放入的条目就都要留痕。
+            // 以前这行写在"正向也是派生"的分支里：人写了正向提示词、只派生负向时，
+            // 「禁用词因长度上限没放进去」会被静默丢掉（内测 S13 复查时发现）。
+            promptOmitted.addAll(derived.omitted());
         }
+        // 人工写了哪一侧，那一侧就没有带上品牌要求——**两侧要分开说**，因为进的词不一样：
+        // 必显信息/主推卖点在正向，禁用词在负向。不区分就会给出"品牌要求没生效"这种
+        // 说不清哪一半的提示（第一版就是这么写的，实测漏掉了"只人工写正向"这种最常见的情况）。
+        promptOmitted.addAll(promptOmissionNotes(promptInput, negativeInput));
 
         // 4) 候选序号（同项目累加；重试也会递增，因此「第几次尝试」可数）
         long existing = countGenerations(taskId);
@@ -224,12 +231,17 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
         row.setWorkflowVersion(version.version());
         row.setPrompt(prompt);
         row.setNegativePrompt(negativePrompt);
+        // S13：把"填了却没进提示词"的条目落成可查字段（可读文案，分号连接）。
+        // 事件 detail 里那份留着不动——它是给排障看的完整快照，这一列是给用户看的一句话。
+        row.setPromptOmitted(promptOmitted.isEmpty() ? null : String.join("；", promptOmitted));
         row.setInputFileId(reference.getFileId());
         row.setInputAssetId(assetId);
         Map<String, Object> snapshot = inputSnapshot(reference, version, assetId, fitted);
         // R23：把"这次为什么用这张参考图""用了哪个模块的视觉表达"一起留痕。
         // 出图是异步的，事后要能回答"这屏当时按什么出的"，不能只靠猜。
-        snapshot.put("referenceFrom", fileId == null ? "LATEST_ATTACHMENT" : "MODULE_PLAN");
+        // 标签要和实际取图逻辑一致：兜底现在会优先「被登记为参考图」的附件，
+        // 所以只有真的没有那种附件时才算"取最新附件"——否则这条留痕本身就在说谎。
+        snapshot.put("referenceFrom", referenceFromLabel(fileId, reference));
         if (target != null && target.usable()) {
             snapshot.put("outputSpec", target.code());
             snapshot.put("outputSpecSize", target.width() + "x" + target.height());
@@ -548,6 +560,53 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
             log.warn("读取输出规格失败，出图尺寸回落工作流默认：{}", e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * 人工指定提示词时，"品牌要求没进提示词"的留痕（内测 S13）。
+     *
+     * <p><b>为什么正负分开说</b>：品牌要求分两路进词——必显信息 / 主推卖点进**正向**，
+     * 禁用词进**负向**。所以"人工写了正向"与"人工写了负向"漏掉的是不同的东西，
+     * 合成一句"品牌要求没生效"用户不知道去补哪一半。第一版就是这么写的，
+     * 实测漏掉了"只人工写正向"（最常见的那种）——因为那时整段逻辑挂在
+     * "正负都人工指定"的分支上。</p>
+     *
+     * <p>纯函数、无依赖，便于单测逐条钉住。</p>
+     *
+     * @param promptInput        调用方传入的正向提示词（可空）
+     * @param negativePromptInput 调用方传入的负向提示词（可空）
+     * @return 说明列表（都不为空时返回空列表）
+     */
+    static List<String> promptOmissionNotes(String promptInput, String negativePromptInput) {
+        List<String> notes = new ArrayList<>();
+        if (StringUtils.isNotBlank(promptInput)) {
+            notes.add("正向提示词由人工指定：必显信息 / 主推卖点没有自动追加，请自行确认画面与文案已包含");
+        }
+        if (StringUtils.isNotBlank(negativePromptInput)) {
+            notes.add("负向提示词由人工指定：禁用词没有自动追加，请自行确认品牌红线已覆盖");
+        }
+        return notes;
+    }
+
+    /**
+     * 参考图来源的标签（写进 {@code dp_generation.input_json} 的 {@code referenceFrom}）。
+     *
+     * <p>三档与 {@link #resolveReference} 一一对应：显式指定 / 被登记为参考图的附件 / 最新图片附件。
+     * 以前只有两档（{@code MODULE_PLAN} 与 {@code LATEST_ATTACHMENT}），而兜底已经开始优先
+     * REFERENCE——标签不改就会把"取了被登记为参考图的那张"说成"取最新一张"，
+     * 排障时按这条留痕核对会得出相反结论。</p>
+     *
+     * @param fileId    显式指定的附件ID（可空）
+     * @param reference 实际选中的附件
+     * @return 标签
+     */
+    private static String referenceFromLabel(Long fileId, CpTaskFileVo reference) {
+        if (fileId != null) {
+            return "MODULE_PLAN";
+        }
+        return reference != null && "REFERENCE".equalsIgnoreCase(reference.getSourceType())
+            ? "MARKED_REFERENCE"
+            : "LATEST_ATTACHMENT";
     }
 
     /**
