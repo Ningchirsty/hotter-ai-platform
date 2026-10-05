@@ -38,8 +38,10 @@
           :has-projects="projects.length > 0"
           :submitting="submitting"
           :reviewing="reviewing"
+          :task-id="taskId"
           @submit="doSubmit"
           @review="doReview"
+          @go-fix="doGoFix"
         />
       </template>
 
@@ -386,6 +388,21 @@ async function doSubmit() {
   } finally {
     submitting.value = false;
   }
+}
+
+/**
+ * 去补某个未满足的门禁项（v1 反馈：未满足项原先只说不满足，没有去处）。
+ *
+ * <p>地址由组件按「未满足项 → 页面」对照拼好（`composables/gateFixTarget.ts`），
+ * 这里只负责跳转——与项目页「去内容任务」同一套做法（`window.open(..., '_self')`）。</p>
+ *
+ * @param route 目标地址
+ */
+function doGoFix(route: string) {
+  if (!route) {
+    return;
+  }
+  window.open(route, '_self');
 }
 
 /**

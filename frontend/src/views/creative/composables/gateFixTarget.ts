@@ -1,0 +1,62 @@
+/**
+ * 视觉门准入项「去哪儿补」的对照（v1 人工测试反馈：未满足项只说了不满足，没说去哪儿补）。
+ *
+ * <p><b>为什么要有这张表</b>：视觉门会给出一串未满足项（`BRAND_BRIEF_CONFIRMED` 之类），
+ * 但"这一项该在哪个页面补"原先只存在于人的记忆里。最典型的是
+ * 「品牌 Brief 已填写并确认」——它<b>不是设计侧能做的事</b>（要品牌部在内容任务里录），
+ * 页面上却只显示"未满足"，于是点哪儿都像没反应。</p>
+ *
+ * <p><b>为什么不复用后端的 item_label</b>：label 说的是"什么没满足"，
+ * 这里要说的是"去哪儿补"，两者不是一回事；而且这条口径要能被单测钉住。</p>
+ *
+ * <p><b>认不出的 item_code 返回 null</b>：配置里新加一项时页面不给假链接，
+ * 只显示"—"（宁可不给按钮，也不要指错路）。</p>
+ *
+ * @author creative
+ */
+
+/** 一个准入项的补充去处 */
+export interface GateFixTarget {
+  /** 按钮文案（说清去哪个页面做什么） */
+  label: string;
+  /** 页面路由 */
+  path: string;
+  /** 该路由是否支持 `?taskId=` 深链（内容任务列表页不支持，带了反而误导） */
+  carriesTaskId: boolean;
+}
+
+/** item code → 补充去处（码与 `dp_gate_item.item_code` 一致） */
+export const GATE_FIX_TARGETS: Record<string, GateFixTarget> = {
+  DNA_LOCKED: { label: '去视觉基因页生成并锁定', path: '/creative/dna', carriesTaskId: true },
+  REFERENCE_IMAGE: { label: '去视觉项目页传参考图', path: '/creative/project', carriesTaskId: true },
+  DIRECTION_SELECTED: { label: '去视觉方向与分镜页选方向', path: '/creative/storyboard', carriesTaskId: true },
+  STORYBOARD_LOCKED: { label: '去视觉方向与分镜页锁定分镜', path: '/creative/storyboard', carriesTaskId: true },
+  BRAND_TONE_CONFIRMED: { label: '去内容任务（品牌部录）', path: '/business/content/task', carriesTaskId: false },
+  BRAND_BRIEF_CONFIRMED: { label: '去内容任务（品牌部录）', path: '/business/content/task', carriesTaskId: false },
+  FORBIDDEN_WORDS_DECLARED: { label: '去内容任务（品牌部录）', path: '/business/content/task', carriesTaskId: false }
+};
+
+/**
+ * 取一个准入项的补充去处。
+ *
+ * @param itemCode 准入项编码（`GateItem.code`）
+ * @returns 去处；认不出返回 null（页面显示"—"，不给假链接）
+ */
+export function gateFixTarget(itemCode?: string | null): GateFixTarget | null {
+  const code = (itemCode || '').trim();
+  return code ? GATE_FIX_TARGETS[code] || null : null;
+}
+
+/**
+ * 拼出可跳转的地址（需要 `taskId` 的页面自动带上）。
+ *
+ * @param target 去处
+ * @param taskId 当前项目ID
+ * @returns 路由地址
+ */
+export function gateFixRoute(target: GateFixTarget, taskId?: string | number | null): string {
+  if (!target.carriesTaskId || taskId == null || String(taskId).trim() === '') {
+    return target.path;
+  }
+  return `${target.path}?taskId=${encodeURIComponent(String(taskId))}`;
+}

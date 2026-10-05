@@ -42,6 +42,9 @@
           <ul class="issue-list">
             <li v-for="(item, index) in gate.blocked" :key="index">{{ item }}</li>
           </ul>
+          <!-- v1 反馈：这里原先是纯文字清单——说了"哪儿不行"，没说"去哪儿补"，
+               于是点哪儿都像没反应。补法在下面「准入项」表的「去哪儿补」列。 -->
+          <p class="issue-next">每一项该去哪儿补，见下方「准入项」表的<b>去哪儿补</b>列。</p>
         </el-alert>
         <el-alert
           v-else-if="!gate.passed"
@@ -77,7 +80,21 @@
               <span :class="asItem(row).passed ? 'good' : 'bad'">{{ asItem(row).passed ? '已满足' : '未满足' }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="detail" label="依据 / 说明" min-width="360" show-overflow-tooltip />
+          <el-table-column prop="detail" label="依据 / 说明" min-width="320" show-overflow-tooltip />
+          <el-table-column label="去哪儿补" width="200">
+            <template #default="{ row }">
+              <el-button
+                v-if="fixLabel(asItem(row))"
+                size="small"
+                text
+                type="primary"
+                @click="goFix(asItem(row))"
+              >
+                {{ fixLabel(asItem(row)) }}
+              </el-button>
+              <span v-else class="muted">—</span>
+            </template>
+          </el-table-column>
         </el-table>
       </section>
 
@@ -127,6 +144,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import type { GateEvaluationVO, GateItem } from '@/api/creative/types';
+import { gateFixRoute, gateFixTarget } from '../../composables/gateFixTarget';
 
 /**
  * 「视觉门」这一步的内容（V0.2 R40，装配组件名 `GatePanel`）。
@@ -135,9 +153,13 @@ import type { GateEvaluationVO, GateItem } from '@/api/creative/types';
  * 所以由组件持有并随事件一起交回页面（`review(action, comment)`）——页面负责调接口、
  * 提示、刷新与推进指引线。</p>
  *
+ * <p><b>V1 反馈补的「去哪儿补」</b>：未满足项原先只说"未满足"。现在每一项（未满足且认识该码的）
+ * 给一个跳转到"补它的地方"的按钮；跳转由页面执行（组件不自己导航，与本仓其它组件一致）。
+ * 认不出的码不给按钮——宁可不给，也不指错路。</p>
+ *
  * @author creative
  */
-defineProps<{
+const props = defineProps<{
   /** 视觉门评估（没取到时为 null） */
   gate: GateEvaluationVO | null;
   /** 项目列表是否非空（空列表要引导去新建项目） */
@@ -146,6 +168,8 @@ defineProps<{
   submitting: boolean;
   /** 正在处理的审核动作（'CONFIRM' / 'BLOCK'，用于按钮 loading） */
   reviewing: string;
+  /** 当前项目ID（拼"去哪儿补"的深链用） */
+  taskId?: string | number | null;
 }>();
 
 const emit = defineEmits<{
@@ -153,6 +177,8 @@ const emit = defineEmits<{
   (e: 'submit'): void;
   /** 人工确认或打回（意见随事件交回页面） */
   (e: 'review', action: 'CONFIRM' | 'BLOCK', comment: string): void;
+  /** 去补某个未满足的准入项（地址已拼好，页面负责跳转） */
+  (e: 'go-fix', route: string): void;
 }>();
 
 /** 审核意见（这一步自己的输入；只有本次操作有效，不落库直到点了确认/打回） */
@@ -160,6 +186,34 @@ const comment = ref('');
 
 function asItem(row: unknown): GateItem {
   return row as GateItem;
+}
+
+/**
+ * 一个准入项的「去哪儿补」按钮文案。
+ *
+ * 已满足的项不给按钮（不需要补）；认不出的码也不给（不指错路）。
+ *
+ * @param item 准入项
+ * @returns 按钮文案；不需要/不认识时为空串
+ */
+function fixLabel(item: GateItem): string {
+  if (item.passed) {
+    return '';
+  }
+  return gateFixTarget(item.code)?.label || '';
+}
+
+/**
+ * 去补这一项：把地址算好交给页面（组件不自己导航）。
+ *
+ * @param item 准入项
+ */
+function goFix(item: GateItem) {
+  const target = gateFixTarget(item.code);
+  if (!target) {
+    return;
+  }
+  emit('go-fix', gateFixRoute(target, props.taskId));
 }
 
 /**
@@ -220,6 +274,11 @@ function review(action: 'CONFIRM' | 'BLOCK') {
   margin: 4px 0 0;
   font-size: 13px;
   line-height: 1.9;
+}
+.issue-next {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.8;
 }
 
 .review-row {

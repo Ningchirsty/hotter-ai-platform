@@ -32,8 +32,10 @@
           <p class="concept">{{ item.concept }}</p>
           <ul class="strategy-list">
             <li v-for="key in strategyKeys(item)" :key="key">
-              <span class="key" :class="{ diff: (item.differences || []).includes(key) }">{{ key }}</span>
-              <span class="value">{{ item.strategy?.[key] }}</span>
+              <span class="key" :class="{ diff: (item.differences || []).includes(key) }">
+                {{ strategyLabel(key) }}
+              </span>
+              <span class="value">{{ strategyValue(item, key) }}</span>
             </li>
           </ul>
           <div class="direction-actions">
@@ -74,6 +76,11 @@
 <script setup lang="ts">
 import type { DpVisualDirectionVO } from '@/api/creative/types';
 import { DIRECTION_SOURCE_LABELS } from '@/api/creative/types';
+import {
+  directionStrategyKeys,
+  directionStrategyLabel,
+  directionStrategyValue
+} from '../../composables/directionStrategy';
 import { useStepHeading } from '../../composables/stepNumbering';
 
 /** 标题编号：本页步骤号（v1 反馈；没有工作台上下文时不显示编号） */
@@ -113,11 +120,25 @@ defineEmits<{
 /**
  * 策略维度（去掉 schema / differences 这类非"取舍"字段）。
  *
+ * v1 反馈：原来这里直接 `Object.keys(strategy)` 并原样渲染键名，卡片上于是出现
+ * `background / scene / lighting / composition / mood / productRatio / …` 一串英文标识符。
+ * 中文标签与阅读顺序统一由 `composables/directionStrategy.ts` 给（纯函数，有单测）。
+ *
  * @param item 方向
- * @returns 维度键
+ * @returns 维度键（中文顺序）
  */
 function strategyKeys(item: DpVisualDirectionVO): string[] {
-  return Object.keys(item.strategy || {}).filter((key) => key !== 'schema' && key !== 'differences');
+  return directionStrategyKeys(item.strategy);
+}
+
+/** 维度的中文标签（认不出的键原样返回，不静默丢） */
+function strategyLabel(key: string): string {
+  return directionStrategyLabel(key);
+}
+
+/** 维度的展示值（缺值给空串，不显示 "undefined"） */
+function strategyValue(item: DpVisualDirectionVO, key: string): string {
+  return directionStrategyValue(item.strategy, key);
 }
 </script>
 
