@@ -234,14 +234,10 @@
           去出图框改提示词
         </el-button>
       </div>
-      <div class="prompt-box">
-        <label>正向提示词（要什么）</label>
-        <el-input :model-value="promptText" type="textarea" :rows="4" readonly />
-      </div>
-      <div class="prompt-box">
-        <label>负向提示词（不要什么）</label>
-        <el-input :model-value="negativeText" type="textarea" :rows="2" readonly />
-      </div>
+      <!-- v1 反馈 1.2「具体的编号对应的是相应的颜色。不要展示编号最好」：
+           默认把色号画成色块（色值悬停可见），另给「查看原文」放出逐字原文——文本一个字没改。 -->
+      <PromptWithSwatches label="正向提示词（要什么）" :text="promptText" :rows="4" />
+      <PromptWithSwatches label="负向提示词（不要什么）" :text="negativeText" :rows="2" />
     </section>
 
     <!-- 证据链 + 版本历史：并列两张卡
@@ -375,6 +371,7 @@ import {
 import { appliedText } from '../../composables/promptApplied';
 import { dnaIssueTarget, hasMeasurableIssue } from '../../composables/dnaIssues';
 import { dnaEvidenceKindLabel } from '../../composables/gateLabels';
+import PromptWithSwatches from './PromptWithSwatches.vue';
 
 /**
  * 「视觉基因」这一步的内容（V0.2 R38，装配组件名 `VisualDnaPanel`）。

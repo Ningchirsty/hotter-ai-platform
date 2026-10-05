@@ -3,7 +3,10 @@
     <p v-if="!hasProjects" class="empty">还没有视觉项目。先到「视觉项目」页新建一个。</p>
     <section v-else class="panel" data-board-section="DIRECTIONS">
       <div class="block-head">
-        <h3>{{ stepHeading }}视觉方向（A/B/C）</h3>
+        <!-- v1 反馈 1.3「方向的每一个卡片都以中文展示，不要以英文或者编号去展示」：
+             标题里原先带「（A/B/C）」，卡片头上还印一个 A/B/C 的 code。编号现在只在悬停时出现
+             （口头指认还用得上），页面上不再展示。 -->
+        <h3>{{ stepHeading }}视觉方向</h3>
         <div class="head-actions">
           <span class="muted">来源：{{ DIRECTION_SOURCE_LABELS[templateSource] || templateSource || '—' }}</span>
           <el-button type="primary" :loading="generating" @click="$emit('generate')">
@@ -23,8 +26,10 @@
           class="direction-card"
           :class="{ selected: item.status === 'SELECTED', rejected: item.status === 'REJECTED' }"
         >
-          <div class="direction-head">
-            <span class="code">{{ item.directionCode }}</span>
+          <div
+            class="direction-head"
+            :title="item.directionCode ? `方向 ${item.directionCode}（页面上不再展示编号，仅悬停可见）` : undefined"
+          >
             <span class="name">{{ item.directionName }}</span>
             <el-tag v-if="item.status === 'SELECTED'" type="success" size="small">已选定</el-tag>
             <el-tag v-else-if="item.status === 'REJECTED'" type="info" size="small">已弃用</el-tag>
@@ -197,16 +202,6 @@ function strategyValue(item: DpVisualDirectionVO, key: string): string {
   display: flex;
   gap: 8px;
   align-items: center;
-}
-.direction-head .code {
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  font-weight: 700;
-  color: #fff;
-  background: linear-gradient(135deg, #4f46e5, #7c3aed);
-  border-radius: 6px;
 }
 .direction-head .name {
   flex: 1;

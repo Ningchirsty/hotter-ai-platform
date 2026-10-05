@@ -370,7 +370,7 @@ async function doGenerateDirections() {
   generatingDir.value = true;
   try {
     await generateDirections(taskId.value);
-    ElMessage.success('已生成 A/B/C 三个方向');
+    ElMessage.success('已生成 3 个视觉方向');
     await loadAll();
     flowToken.value += 1;
   } catch (error) {
@@ -384,7 +384,8 @@ async function doSelect(item: DpVisualDirectionVO) {
   selectingId.value = String(item.id);
   try {
     await selectDirection(taskId.value, item.id);
-    ElMessage.success(`已选定方向 ${item.directionCode}`);
+    // 用中文名而不是 A/B/C：页面上已经不展示编号了，提示里再印一个编号只会对不上
+    ElMessage.success(`已选定方向「${item.directionName || '未命名'}」`);
     await loadAll();
     flowToken.value += 1;
   } catch (error) {

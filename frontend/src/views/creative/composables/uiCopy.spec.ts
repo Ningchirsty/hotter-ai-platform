@@ -69,9 +69,18 @@ describe('界面说明文案与界面实际显示保持一致', () => {
   it('基因页的提示词框：不许变成"能改"（那是第三个真相源），但必须给一条跳去出图框的路', () => {
     const panel = source('dna/components/VisualDnaPanel.vue');
     const page = source('dna/index.vue');
-    // 两个框保持只读（本页没有可落库的提示词存储）
-    expect(panel).toContain('<el-input :model-value="promptText" type="textarea" :rows="4" readonly />');
-    expect(panel).toContain('<el-input :model-value="negativeText" type="textarea" :rows="2" readonly />');
+    const box = source('dna/components/PromptWithSwatches.vue');
+    // 两个框保持只读（本页没有可落库的提示词存储）。
+    // 守卫口径：断言"意图"而不是某个具体标签——原先这里钉的是 `<el-input ... readonly />` 的字面量，
+    // 于是本轮把色号渲染成色块（v1 反馈 1.2）就把它碰红了，而"只读"这件事其实没变。
+    expect(panel).toContain('label="正向提示词（要什么）" :text="promptText"');
+    expect(panel).toContain('label="负向提示词（不要什么）" :text="negativeText"');
+    // 展示组件内部：原文框只读；色块只读渲染；**不许出现双向绑定**（那才是"能改"）
+    expect(box).toContain(':model-value="text"');
+    expect(box).toContain('readonly');
+    expect(box).not.toContain('v-model="text"');
+    expect(box).not.toContain('@update:model-value');
+    expect(panel).not.toContain('v-model="promptText"');
     // 但要说清"本页改不了"，并给按钮一跳就到真正生效的地方
     expect(panel).toContain('本页改不了');
     expect(panel).toContain('去出图框改提示词');
