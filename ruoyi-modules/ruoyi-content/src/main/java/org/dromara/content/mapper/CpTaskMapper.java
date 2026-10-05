@@ -32,4 +32,19 @@ public interface CpTaskMapper extends BaseMapperPlus<CpTask, CpTaskVo> {
     @Select("select max(task_no) from cp_task where task_no like concat(#{prefix}, '%')")
     String selectMaxTaskNoIncludeDeleted(@Param("prefix") String prefix);
 
+    /**
+     * 读任务的视觉阶段（{@code cp_task.visual_stage}）。
+     *
+     * <p><b>为什么用原生 SQL，而不是把这一列加进 {@link CpTask} 实体</b>：该列由创作域
+     * （{@code ruoyi-ai-creative}）拥有并写入，内容域的实体刻意不认识它——两个模块各写各的列，
+     * 是刻意的隔离设计（见 {@code CreativeTaskStageMapper} 的类注释）。内容域此处的需求只是
+     * 「看一眼设计部开没开工」，为这点需求把列加进实体，会让通用 {@code updateById}
+     * 有机会把它一并写掉，反而制造新的耦合。</p>
+     *
+     * @param taskId 任务ID
+     * @return 视觉阶段编码；从未进入视觉工厂时为 null
+     */
+    @Select("select visual_stage from cp_task where task_id = #{taskId}")
+    String selectVisualStage(@Param("taskId") Long taskId);
+
 }

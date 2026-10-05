@@ -32,7 +32,9 @@ import java.util.List;
  * <ol>
  *   <li>不与 {@code brand_tone} 事实自动合并——两者作者不同（资料解析 vs 品牌方填写），
  *       冲突要人裁定，自动合并等于替人做决定；</li>
- *   <li>不在保存时动状态——状态只能由确认接口推进，因为视觉门的闸门项判的就是它；</li>
+ *   <li>保存时<b>只在「已确认 + 内容有实质变更」这一种情况下</b>把状态打回草稿，其余情况状态只由确认接口推进。
+ *       视觉门的 {@code BRAND_BRIEF_CONFIRMED} 判的就是这个状态：改完内容不重置，
+ *       等于拿着「旧内容的确认」一路绿过去（内测 S9 实测成立），所以这一种情况必须重置；</li>
  *   <li>不往视觉阶段时间线（{@code dp_stage_event}）写事件——R7 把 Brief 归到内容侧之后，
  *       内容模块不该去写创作域的表（那是反向依赖）。品牌要求的审计信息落在本表自身：
  *       {@code update_time} / {@code confirmed_by} / {@code confirmed_at}；
@@ -79,6 +81,10 @@ public class ContentBrandBriefServiceImpl implements IContentBrandBriefService {
         BrandBriefBo form = bo == null ? new BrandBriefBo() : bo;
         CpBrandBrief entity = find(taskId);
         boolean created = entity == null;
+        // 保存前留一份旧值：下面要判断「这次保存到底改没改内容」（见类注释第 2 条）
+        String[] before = created ? null : valuesOf(entity);
+        boolean wasConfirmed = !created
+            && ContentBriefStatusEnum.CONFIRMED.getCode().equals(entity.getStatus());
         if (created) {
             entity = new CpBrandBrief();
             entity.setTaskId(taskId);
@@ -97,8 +103,20 @@ public class ContentBrandBriefServiceImpl implements IContentBrandBriefService {
         entity.setStyleRef(norm(form.getStyleRef()));
         entity.setStyleRefFiles(normalizeStyleRefFiles(taskId, form.getStyleRefFiles()));
         entity.setRemark(norm(form.getRemark()));
-        // status/confirmedBy/confirmedAt 刻意不在这里赋值：保存草稿不该把已确认打回草稿，
-        // 也不该替品牌方按下确认。原记录是 CONFIRMED 时保存后仍是 CONFIRMED（下面如实带回）。
+        // 状态口径（R54 修正，内测 S9）：
+        //   · 新建                        → 草稿（确认权在品牌方，不在保存表单）；
+        //   · 已确认 + 内容有实质变更      → 打回草稿，并清掉确认人与确认时间；
+        //   · 已确认 + 内容没变（重复保存）→ 保持已确认（不该因为再点一次保存就把确认作废）；
+        //   · 未确认                      → 保持原状，等品牌方点确认。
+        // 为什么"改了就作废"：视觉门的 BRAND_BRIEF_CONFIRMED 判的是 status=CONFIRMED，
+        // 不重置就会出现"内容改了、门还绿着"，等于用一个过期确认放行出图。
+        boolean contentChanged = !created && !java.util.Arrays.equals(before, valuesOf(entity));
+        boolean resetToDraft = wasConfirmed && contentChanged;
+        if (resetToDraft) {
+            entity.setStatus(ContentBriefStatusEnum.DRAFT.getCode());
+            entity.setConfirmedBy(null);
+            entity.setConfirmedAt(null);
+        }
         if (created) {
             briefMapper.insert(entity);
         } else {
@@ -107,7 +125,7 @@ public class ContentBrandBriefServiceImpl implements IContentBrandBriefService {
             // 刷新又回来了（前端实施时发现并上报）。这张表是整行编辑（表单一次提交 8 个文本字段 + 图片引用），
             // "所见即所存"才是正确语义，所以这里把这 9 个业务列**逐个显式 set**（set 会写 NULL）。
             // 不用 @TableField(updateStrategy = IGNORED)：本项目 MP 3.5.17 的 FieldStrategy 不能作注解常量（编译报错）。
-            briefMapper.update(entity, new LambdaUpdateWrapper<CpBrandBrief>()
+            LambdaUpdateWrapper<CpBrandBrief> wrapper = new LambdaUpdateWrapper<CpBrandBrief>()
                 .eq(CpBrandBrief::getId, entity.getId())
                 .set(CpBrandBrief::getBrandTone, entity.getBrandTone())
                 .set(CpBrandBrief::getMustShow, entity.getMustShow())
@@ -117,7 +135,17 @@ public class ContentBrandBriefServiceImpl implements IContentBrandBriefService {
                 .set(CpBrandBrief::getSizeSpecReq, entity.getSizeSpecReq())
                 .set(CpBrandBrief::getStyleRef, entity.getStyleRef())
                 .set(CpBrandBrief::getStyleRefFiles, entity.getStyleRefFiles())
-                .set(CpBrandBrief::getRemark, entity.getRemark()));
+                .set(CpBrandBrief::getRemark, entity.getRemark());
+            if (resetToDraft) {
+                // 同理必须显式 set：靠实体传 null 在这套策略下写不进去
+                wrapper.set(CpBrandBrief::getStatus, ContentBriefStatusEnum.DRAFT.getCode())
+                    .set(CpBrandBrief::getConfirmedBy, null)
+                    .set(CpBrandBrief::getConfirmedAt, null);
+            }
+            briefMapper.update(entity, wrapper);
+        }
+        if (resetToDraft) {
+            log.info("品牌 Brief 内容有变更，已从「已确认」打回「草稿」 taskId={}", taskId);
         }
         log.info("品牌 Brief 已保存 taskId={} created={} status={} 必显={}条 禁用词={}条 主推={}条",
             taskId, created, entity.getStatus(), lineCount(entity.getMustShow()),
@@ -132,6 +160,19 @@ public class ContentBrandBriefServiceImpl implements IContentBrandBriefService {
         CpBrandBrief entity = find(taskId);
         if (entity == null) {
             throw new ServiceException("请先填写品牌要求（必显信息/禁用词/主推卖点）再确认");
+        }
+        // 「有记录」不等于「填过内容」：8 项全空且没传参考风格图片时，确认没有意义，
+        // 还会在视觉门里造出一个「已确认但什么都没说」的假信号（内测 S16）。
+        // 前端本来就有这条校验，这里补齐服务端——否则绕过页面直接调接口就能造出空确认。
+        boolean anyContent = false;
+        for (String value : valuesOf(entity)) {
+            if (StringUtils.isNotBlank(value)) {
+                anyContent = true;
+                break;
+            }
+        }
+        if (!anyContent) {
+            throw new ServiceException("品牌要求 8 项全空：至少填一项再确认（确认后视觉工厂会按它创作）");
         }
         boolean already = ContentBriefStatusEnum.CONFIRMED.getCode().equals(entity.getStatus());
         entity.setStatus(ContentBriefStatusEnum.CONFIRMED.getCode());
@@ -308,6 +349,29 @@ public class ContentBrandBriefServiceImpl implements IContentBrandBriefService {
      */
     private static String norm(String value) {
         return StringUtils.isBlank(value) ? null : value.trim();
+    }
+
+    /**
+     * 把 9 个业务列取成数组，用于回答两个问题：「这次保存改没改内容」与「到底填过东西没有」。
+     *
+     * <p>两侧都过一遍 {@link #norm}：库里历史行可能存在 {@code ""} 与 {@code null} 混用，
+     * 不归一化会把「没改」误判成「改了」，从而把已确认的 Brief 无谓地打回草稿。</p>
+     *
+     * @param entity Brief 实体（不可为空）
+     * @return 长度固定为 9 的数组（8 个文本字段 + 参考风格图片引用串）
+     */
+    private static String[] valuesOf(CpBrandBrief entity) {
+        return new String[] {
+            norm(entity.getBrandTone()),
+            norm(entity.getMustShow()),
+            norm(entity.getForbiddenWords()),
+            norm(entity.getTargetAudience()),
+            norm(entity.getMainPush()),
+            norm(entity.getSizeSpecReq()),
+            norm(entity.getStyleRef()),
+            norm(entity.getStyleRefFiles()),
+            norm(entity.getRemark())
+        };
     }
 
     /**

@@ -69,7 +69,7 @@ public interface IContentTaskService {
     void remove(Long taskId);
 
     /**
-     * 上传资料附件。
+     * 上传资料附件（来源角色固定为 {@code UPLOAD}）。
      *
      * @param taskId 任务ID
      * @param dataLevel 该文件的数据等级（可空，取任务等级）
@@ -77,6 +77,25 @@ public interface IContentTaskService {
      * @return 附件ID
      */
     Long uploadFile(Long taskId, String dataLevel, MultipartFile file);
+
+    /**
+     * 上传附件并**显式声明来源角色**（{@code cp_task_file.source_type}）。
+     *
+     * <p><b>为什么要这个重载</b>：产品照片、被引用的参考图、系统生成的结果图都会落成
+     * {@code file_kind=IMAGE}，只靠 file_kind 分不出「这张是风格参考、还是刚生成的候选」，
+     * 页面角色标签与出图选图都受影响（内测 S15）。</p>
+     *
+     * <p><b>为什么由调用方传、而不是服务端推断</b>：与 {@link org.dromara.content.enums.ContentFileSourceEnum}
+     * 的口径保持一致——系统不「推测」角色。但**调用方自己知道自己传的是什么**
+     * （视觉工厂传参考图 / 出图产出 / 精修终版），那是声明，不是猜测。</p>
+     *
+     * @param taskId     任务ID
+     * @param dataLevel  该文件的数据等级（可空，取任务等级）
+     * @param file       文件
+     * @param sourceType 来源角色编码（可空＝{@code UPLOAD}）；非法编码直接拒绝
+     * @return 附件ID
+     */
+    Long uploadFile(Long taskId, String dataLevel, MultipartFile file, String sourceType);
 
     /**
      * 附件列表。

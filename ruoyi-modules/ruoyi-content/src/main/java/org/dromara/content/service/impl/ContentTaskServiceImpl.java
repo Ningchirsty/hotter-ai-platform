@@ -40,6 +40,7 @@ import org.dromara.content.enums.ContentCardTypeEnum;
 import org.dromara.content.enums.ContentDeliverableTypeEnum;
 import org.dromara.content.enums.ContentFactConfirmStatusEnum;
 import org.dromara.content.enums.ContentFileKindEnum;
+import org.dromara.content.enums.ContentFileSourceEnum;
 import org.dromara.content.enums.ContentGateLevelEnum;
 import org.dromara.content.enums.ContentParseStatusEnum;
 import org.dromara.content.enums.ContentTaskStatusEnum;
@@ -267,6 +268,10 @@ public class ContentTaskServiceImpl implements IContentTaskService {
             && ContentDeliverableTypeEnum.find(bo.getDeliverableType()) == null) {
             throw new ServiceException("交付类型非法：" + bo.getDeliverableType());
         }
+        // 交付类型决定这条任务走哪条生产流程，而视觉工厂的项目列表正是按它过滤的。
+        // 设计部一旦已开工，改类型会让项目从列表里消失、详情接口报 500，
+        // 已出的图与已排的版都成了打不开的孤儿（内测 S17 实测）。
+        requireDeliverableTypeUnchanged(exist, bo.getDeliverableType());
         CpTask entity = BeanUtil.copyProperties(bo, CpTask.class);
         entity.setTaskId(exist.getTaskId());
         // 任务号与状态不由编辑接口改写：状态只能经闸门重算流转
@@ -280,6 +285,35 @@ public class ContentTaskServiceImpl implements IContentTaskService {
                 writeProductFacts(latest);
             }
         }
+    }
+
+    /**
+     * 已经进入视觉工厂生产的任务，不允许再改交付类型。
+     *
+     * <p><b>为什么拦</b>：「视觉项目」列表是按「配置里启用的交付类型」过滤 {@code cp_task} 的
+     * （{@code CreativeProjectServiceImpl#supportedDeliverableTypes}）。类型一改，这条任务立刻
+     * 从设计部的列表里消失，项目详情也会被拒（"该任务不是…项目"）；而它名下的出图候选、
+     * 分镜、排版版本都还在库里，只是再也打不开——设计师看到的是"项目凭空没了"（内测 S17 实测）。</p>
+     *
+     * <p><b>为什么以 {@code visual_stage} 非空为界</b>：那是创作域唯一写入的阶段列，
+     * 非空＝设计部已经碰过这条任务。还没碰过的任务改类型是安全的，不该一律禁止。</p>
+     *
+     * @param exist        库里的任务
+     * @param incomingType 本次提交的交付类型（可空＝不改）
+     */
+    private void requireDeliverableTypeUnchanged(CpTask exist, String incomingType) {
+        String incoming = StringUtils.trimToNull(incomingType);
+        String current = StringUtils.trimToNull(exist.getDeliverableType());
+        if (incoming == null || incoming.equalsIgnoreCase(current)) {
+            return;
+        }
+        String stage = taskMapper.selectVisualStage(exist.getTaskId());
+        if (StringUtils.isBlank(stage)) {
+            return;
+        }
+        throw new ServiceException("该任务已进入视觉工厂生产（阶段：" + stage + "），不能再改交付类型——"
+            + "改了会让设计部那边正在做的项目从列表里消失、项目详情也打不开，而它的产出仍留在库里。"
+            + "如确需换一种交付形式，请新建一条任务。");
     }
 
     @Override
@@ -404,6 +438,13 @@ public class ContentTaskServiceImpl implements IContentTaskService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Long uploadFile(Long taskId, String dataLevel, MultipartFile file) {
+        // 不声明角色的调用方（内容侧人工上传）保持 UPLOAD，与改造前行为一致
+        return uploadFile(taskId, dataLevel, file, null);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Long uploadFile(Long taskId, String dataLevel, MultipartFile file, String sourceType) {
         CpTask task = load(taskId);
         if (file == null || file.isEmpty()) {
             throw new ServiceException("上传文件不能为空");
@@ -426,7 +467,7 @@ public class ContentTaskServiceImpl implements IContentTaskService {
         entity.setFileExt(ext);
         entity.setFileSize((long) bytes.length);
         entity.setFileKind(ContentFileKindEnum.ofExt(ext).getCode());
-        entity.setSourceType("UPLOAD");
+        entity.setSourceType(resolveSourceType(sourceType));
         entity.setDataLevel(StringUtils.isBlank(dataLevel) ? task.getDataLevel() : dataLevel);
         entity.setParseStatus(ContentParseStatusEnum.PENDING.getCode());
         taskFileMapper.insert(entity);
@@ -441,6 +482,26 @@ public class ContentTaskServiceImpl implements IContentTaskService {
         log.info("上传资料附件, taskId={}, fileId={}, ext={}, size={}",
             taskId, entity.getFileId(), ext, bytes.length);
         return entity.getFileId();
+    }
+
+    /**
+     * 归一化附件来源角色；不传＝{@code UPLOAD}（人工上传）。
+     *
+     * <p>非法编码**直接拒绝**而不是回落到 UPLOAD：枚举写歪了却静默入库，
+     * 会让页面角色标签与出图选图按错误角色走，而且事后查不出来（内测 S15 的教训）。</p>
+     *
+     * @param sourceType 调用方声明的来源角色编码（可空）
+     * @return 合法的来源角色编码
+     */
+    private static String resolveSourceType(String sourceType) {
+        if (StringUtils.isBlank(sourceType)) {
+            return ContentFileSourceEnum.UPLOAD.getCode();
+        }
+        ContentFileSourceEnum found = ContentFileSourceEnum.find(sourceType);
+        if (found == null) {
+            throw new ServiceException("附件来源角色非法：" + sourceType);
+        }
+        return found.getCode();
     }
 
     @Override
