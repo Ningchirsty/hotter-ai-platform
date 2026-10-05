@@ -50,9 +50,37 @@
         class="issues"
         title="这一版还不能锁定，请先补齐："
       >
+        <!-- v1 反馈：这里原先是一串只能读的字符串。后端其实已经说清是哪个字段
+             （「主色未设置」「产品占比区间颠倒…」），但用户还得自己在下面 15 个
+             表单项里找。认识的那几条因此给一个「去填」按钮，直接滚到并聚焦那一项。 -->
         <ul class="issue-list">
-          <li v-for="(issue, index) in dna.issues" :key="index">{{ issue }}</li>
+          <li v-for="(issue, index) in dna.issues" :key="index">
+            <span class="issue-text">{{ issue }}</span>
+            <el-button
+              v-if="issueLabel(issue)"
+              size="small"
+              text
+              type="primary"
+              @click="focusIssue(issue)"
+            >
+              去填「{{ issueLabel(issue) }}」
+            </el-button>
+          </li>
         </ul>
+        <p class="issue-next">
+          配色、饱和度、对比度、留白、产品占比这几项可以由参考图<b>实测</b>给出建议值
+          <el-button
+            v-if="hasMeasurableIssue(dna.issues)"
+            size="small"
+            text
+            type="primary"
+            :loading="recommending"
+            @click="doRecommend"
+          >
+            按参考图实测推荐
+          </el-button>
+          <span v-else>；这一版的未满足项实测给不出值，需要人工填。</span>
+        </p>
       </el-alert>
       <el-alert
         v-else
@@ -88,7 +116,7 @@
       </p>
 
       <div class="form-grid">
-        <div class="form-item span2">
+        <div id="dna-field-styleKeywords" class="form-item span2">
           <label>风格关键词</label>
           <el-select
             v-model="form.styleKeywords"
@@ -113,36 +141,36 @@
           />
         </div>
 
-        <div class="form-item">
+        <div id="dna-field-colorPrimary" class="form-item">
           <label>主色</label>
           <el-color-picker v-model="form.colorPrimary" show-alpha />
         </div>
-        <div class="form-item">
+        <div id="dna-field-colorSecondary" class="form-item">
           <label>辅色</label>
           <el-color-picker v-model="form.colorSecondary" show-alpha />
         </div>
-        <div class="form-item">
+        <div id="dna-field-colorAccent" class="form-item">
           <label>点缀色</label>
           <el-color-picker v-model="form.colorAccent" show-alpha />
         </div>
-        <div class="form-item">
+        <div id="dna-field-colorBg" class="form-item">
           <label>背景色</label>
           <el-color-picker v-model="form.colorBg" show-alpha />
         </div>
 
-        <div class="form-item">
+        <div id="dna-field-saturation" class="form-item">
           <label>饱和度</label>
           <el-select v-model="form.saturation" clearable placeholder="未设置">
             <el-option v-for="item in DNA_LEVEL_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
         </div>
-        <div class="form-item">
+        <div id="dna-field-contrastLevel" class="form-item">
           <label>对比度</label>
           <el-select v-model="form.contrastLevel" clearable placeholder="未设置">
             <el-option v-for="item in DNA_LEVEL_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
         </div>
-        <div class="form-item">
+        <div id="dna-field-whitespaceLevel" class="form-item">
           <label>留白</label>
           <el-select v-model="form.whitespaceLevel" clearable placeholder="未设置">
             <el-option v-for="item in DNA_LEVEL_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
@@ -153,23 +181,23 @@
           <el-input v-model="form.sceneType" placeholder="如：纯色底 / 生活场景" />
         </div>
 
-        <div class="form-item">
+        <div id="dna-field-lightingType" class="form-item">
           <label>光线类型</label>
           <el-select v-model="form.lightingType" clearable placeholder="未设置">
             <el-option v-for="item in DNA_LIGHTING_TYPES" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
         </div>
-        <div class="form-item">
+        <div id="dna-field-lightingDir" class="form-item">
           <label>光位</label>
           <el-select v-model="form.lightingDir" clearable placeholder="未设置">
             <el-option v-for="item in DNA_LIGHTING_DIRS" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
         </div>
-        <div class="form-item">
+        <div id="dna-field-productRatioMin" class="form-item">
           <label>产品占比下限 (%)</label>
           <el-input-number v-model="form.productRatioMin" :min="0" :max="100" controls-position="right" />
         </div>
-        <div class="form-item">
+        <div id="dna-field-productRatioMax" class="form-item">
           <label>产品占比上限 (%)</label>
           <el-input-number v-model="form.productRatioMax" :min="0" :max="100" controls-position="right" />
         </div>
@@ -336,6 +364,7 @@ import {
   DNA_SOURCE_TYPES
 } from '@/api/creative/types';
 import { appliedText } from '../../composables/promptApplied';
+import { dnaIssueTarget, hasMeasurableIssue } from '../../composables/dnaIssues';
 
 /**
  * 「视觉基因」这一步的内容（V0.2 R38，装配组件名 `VisualDnaPanel`）。
@@ -402,6 +431,72 @@ function sourceLabel(source?: string): string {
 
 function asDna(row: unknown): DpVisualDnaVO {
   return row as DpVisualDnaVO;
+}
+
+/**
+ * 一句「不能锁定的原因」对应的表单字段名（对不上返回空串）。
+ *
+ * @param issue issue 原文
+ * @returns 字段名；认不出为空串
+ */
+function issueField(issue: string): string {
+  return dnaIssueTarget(issue)?.field || '';
+}
+
+/**
+ * 「去填 X」按钮的文案（认不出的 issue 返回空串 → 不渲染按钮）。
+ *
+ * @param issue issue 原文
+ * @returns 字段中文名
+ */
+function issueLabel(issue: string): string {
+  return dnaIssueTarget(issue)?.label || '';
+}
+
+/**
+ * 滚到并聚焦这一句 issue 指的那个输入框（v1 反馈：说了"哪儿不行"，还要能一键到那儿）。
+ *
+ * <p>同一句可能关联两个字段（产品占比的上下限），第二个只高亮不聚焦——
+ * 两个框连着，滚到下限就够了。</p>
+ *
+ * @param issue issue 原文
+ */
+function focusIssue(issue: string) {
+  const target = dnaIssueTarget(issue);
+  if (!target) {
+    return;
+  }
+  const el = document.getElementById(`dna-field-${target.field}`);
+  if (!el) {
+    // 对不上 DOM（字段改名/被条件渲染掉）时不静默：滚不到就明确说一声
+    ElMessage.warning(`没找到「${target.label}」这一项，请在下方的「规范内容」里手动找一下`);
+    return;
+  }
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  // 颜色选择器在 Element Plus 里**没有 input**（触发件是个 div），
+  // 所以不能只找 input/textarea——找不到就把容器本身变成可聚焦元素，
+  // 否则"点了按钮什么都没发生"跟没做这个功能一样。
+  const focusable = el.querySelector<HTMLElement>('input, textarea, button, [tabindex]');
+  if (focusable) {
+    focusable.focus();
+  } else {
+    el.setAttribute('tabindex', '-1');
+    el.focus();
+  }
+  // 短暂高亮：不管能不能聚焦，都要让人一眼看到"就是这一项"
+  highlight(el);
+  if (target.also) {
+    const second = document.getElementById(`dna-field-${target.also}`);
+    if (second) {
+      highlight(second);
+    }
+  }
+}
+
+/** 给一个表单项加 2 秒高亮（两个框都关乎同一句 issue 时也会用到） */
+function highlight(el: HTMLElement) {
+  el.classList.add('issue-highlight');
+  setTimeout(() => el.classList.remove('issue-highlight'), 2000);
 }
 
 /**
@@ -536,6 +631,26 @@ watch(() => props.dna, (value) => fillForm(value), { immediate: true });
   margin: 4px 0 0;
   font-size: 13px;
   line-height: 1.9;
+}
+.issue-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+}
+.issue-text {
+  flex: 1 1 auto;
+  min-width: 220px;
+}
+.issue-next {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  line-height: 1.9;
+}
+/* 「两个框都关乎这句 issue」时给第二个框的短暂高亮（产品占比的上下限） */
+.form-item.issue-highlight {
+  border-radius: 6px;
+  box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.45);
 }
 
 .block-head {
