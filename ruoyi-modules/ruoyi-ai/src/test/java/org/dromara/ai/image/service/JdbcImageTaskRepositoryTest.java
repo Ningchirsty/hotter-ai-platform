@@ -76,4 +76,17 @@ class JdbcImageTaskRepositoryTest {
         row.put("has_alpha", 0);
         assertEquals(Boolean.FALSE, JdbcImageTaskRepository.toAssetRow(row).hasAlpha());
     }
+
+    @Test
+    @DisplayName("任务查询必须带上 submitted_time / started_time（否则页面「耗时」永远是「—」）")
+    void taskSelectCarriesTimeColumnsTheCreativeSideReads() {
+        String sql = JdbcImageTaskRepository.taskSelect();
+        // 视觉工厂用它算耗时：durationMs = finished_time - started_time
+        assertTrue(sql.contains("started_time"),
+            "缺 started_time → CreativeGenerationServiceImpl.durationOf 恒为 null → 「耗时」列永远是「—」");
+        // 内核真正的提交时刻（候选行的 create_time 是派发**之后**写的，不等价）
+        assertTrue(sql.contains("submitted_time"),
+            "缺 submitted_time → 页面上拿不到内核记录的真实提交时刻");
+        assertTrue(sql.contains("finished_time"), "缺 finished_time 则耗时算不出来");
+    }
 }

@@ -282,13 +282,29 @@ public class JdbcImageTaskRepository implements ImageTaskRepository {
             """, taskId, tenantId, userId);
     }
 
-    private static String taskSelect() {
+    /**
+     * 任务查询的统一列清单。
+     *
+     * <p><b>为什么把 {@code submitted_time} / {@code started_time} 也查出来</b>：
+     * 视觉工厂的候选列表要用它们算「提交时间」与「耗时」
+     * （{@code CreativeGenerationServiceImpl#applyKernelState} 读
+     * {@code started_time} 与 {@code finished_time} 相减）。这两列以前不在 SELECT 里，
+     * 于是那个 Map 里根本没有这个键 → {@code durationOf} 恒返回 null →
+     * 生产页「耗时」列对**每一个**候选都显示「—」（v1 人工测试反馈：时间取不到实际值）。
+     * 加了列以后同一个方法立刻能算出耗时，不需要改调用方。</p>
+     *
+     * <p>包可见是为了让 {@code JdbcImageTaskRepositoryTest} 能直接钉住"这几列必须在"——
+     * 这是个只靠读代码很难发现、只在页面上表现为"永远空着"的缺陷。</p>
+     *
+     * @return SELECT 片段（不带 WHERE）
+     */
+    static String taskSelect() {
         return """
             SELECT id, tenant_id, user_id, task_no, task_name, capability_code, workflow_code, workflow_version,
                    model_code, status, size_label, strength_label, prompt, negative_prompt, input_json,
                    comfy_prompt_id, comfy_worker, output_asset_id, cover_asset_id, progress,
                    error_code, error_message, attempt_count, output_width, output_height, output_has_alpha,
-                   output_size_bytes, create_time, finished_time
+                   output_size_bytes, submitted_time, started_time, create_time, finished_time
               FROM image_task
             """;
     }
