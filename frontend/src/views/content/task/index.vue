@@ -957,6 +957,15 @@
         <el-form-item label="字段值" prop="value">
           <el-input v-model="manualForm.value" placeholder="请输入经责任人确认的值" />
         </el-form-item>
+        <el-form-item label="事实出处" prop="sourceLocator">
+          <el-input
+            v-model="manualForm.sourceLocator"
+            placeholder="必填：这个值是从哪份资料 / 哪个页签看来的，如「产品参数表 V2 第 3 行」"
+          />
+          <div class="form-tip">
+            出处会随开工包交给下游。手工录入的值直接标记为「已确认」，没有出处就无法追溯是谁依据什么确认的。
+          </div>
+        </el-form-item>
         <el-form-item label="备注" prop="remark">
           <el-input v-model="manualForm.remark" type="textarea" :rows="2" placeholder="为什么以此值为准（可选）" />
         </el-form-item>
@@ -1028,6 +1037,11 @@
             </div>
             <div v-if="cardOtherActive" class="other-input">
               <el-input v-model="cardOtherValue" placeholder="请填写确认值" style="max-width: 380px" />
+              <el-input
+                v-model="cardOtherSource"
+                placeholder="必填：事实出处（这个值是从哪份资料 / 哪个页签看来的）"
+                style="max-width: 380px"
+              />
               <el-button
                 v-hasPermi="['content:card:handle']"
                 type="primary"
@@ -1036,7 +1050,7 @@
               >
                 提交其他值
               </el-button>
-              <el-button @click="cardOtherActive = false">取消</el-button>
+              <el-button @click="cancelOther">取消</el-button>
             </div>
             <div class="form-tip">确认或阻断后，任务闸门会立即重算。</div>
           </div>
@@ -1951,14 +1965,16 @@ const handleConfirmUnambiguous = async () => {
 const manualDialog = reactive<DialogOption>({ visible: false, title: '手工录入事实' });
 const manualFormRef = ref<ElFormInstance>();
 const manualSaving = ref(false);
-const manualForm = reactive({ fieldCode: '', value: '', remark: '' });
+const manualForm = reactive({ fieldCode: '', value: '', sourceLocator: '', remark: '' });
 /** 是否使用「自定义编码」输入（默认从下拉选，避免手打编码踩空） */
 const manualCustomMode = ref(false);
 /** 本任务可录入的字段选项（本交付类型的闸门要求项在前） */
 const fieldOptionList = ref<CpFactFieldOptionVO[]>([]);
 const manualRules = {
   fieldCode: [{ required: true, message: '事实字段不能为空', trigger: 'change' }],
-  value: [{ required: true, message: '字段值不能为空', trigger: 'blur' }]
+  value: [{ required: true, message: '字段值不能为空', trigger: 'blur' }],
+  // 出处必填（内测 S19 / C7）：值直接落 CONFIRMED 且会随开工包交给下游
+  sourceLocator: [{ required: true, message: '请填写事实出处（这个值是从哪份资料看来的）', trigger: 'blur' }]
 };
 
 const gateFieldOptions = computed(() => fieldOptionList.value.filter(o => o.requiredByGate));
@@ -1993,6 +2009,7 @@ const loadFieldOptions = async () => {
 const openManualDialog = async () => {
   manualForm.fieldCode = '';
   manualForm.value = '';
+  manualForm.sourceLocator = '';
   manualForm.remark = '';
   manualCustomMode.value = false;
   manualDialog.visible = true;
@@ -2024,6 +2041,7 @@ const submitManual = () => {
         taskId: detailTaskId.value,
         fieldCode: manualForm.fieldCode,
         value: manualForm.value,
+        sourceLocator: manualForm.sourceLocator,
         remark: manualForm.remark
       });
       modal.msgSuccess('录入成功');
@@ -2066,6 +2084,8 @@ const cardDialog = reactive<DialogOption>({ visible: false, title: '处理互动
 const currentCard = ref<CpInteractionCardVO | null>(null);
 const cardOtherActive = ref(false);
 const cardOtherValue = ref('');
+/** 「填写其他值」的事实出处（必填，内测 S19 / C7） */
+const cardOtherSource = ref('');
 const cardResolving = ref(false);
 
 const cardEvidence = computed<CardEvidenceItem[]>(() => parseJsonList<CardEvidenceItem>(currentCard.value?.evidenceJson));
@@ -2088,6 +2108,7 @@ const optionButtonType = (option?: string) => {
 const cancelOther = () => {
   cardOtherActive.value = false;
   cardOtherValue.value = '';
+  cardOtherSource.value = '';
 };
 
 const openCardDialog = (row: CpInteractionCardVO) => {
@@ -2097,7 +2118,7 @@ const openCardDialog = (row: CpInteractionCardVO) => {
 };
 
 /** 提交卡片处理；后端会同步重算闸门 */
-const doResolveCard = async (payload: { option: string; value?: string; snapshotId?: string | number; comment?: string }) => {
+const doResolveCard = async (payload: { option: string; value?: string; snapshotId?: string | number; sourceLocator?: string; comment?: string }) => {
   if (!currentCard.value?.cardId || cardResolving.value) return;
   cardResolving.value = true;
   try {
@@ -2121,6 +2142,7 @@ const submitCardOption = async (opt: CardOptionItem) => {
   if (option === 'OTHER') {
     cardOtherActive.value = true;
     cardOtherValue.value = '';
+    cardOtherSource.value = '';
     return;
   }
   const tip =
@@ -2143,7 +2165,12 @@ const submitCardOther = async () => {
     modal.msgError('请填写确认值');
     return;
   }
-  await doResolveCard({ option: 'OTHER', value });
+  const sourceLocator = cardOtherSource.value.trim();
+  if (!sourceLocator) {
+    modal.msgError('请填写事实出处（这个值是从哪份资料看来的）');
+    return;
+  }
+  await doResolveCard({ option: 'OTHER', value, sourceLocator });
 };
 
 // ---------------------------------------------------------------- 开工包

@@ -147,6 +147,11 @@
                     placeholder="请填写确认值（该值将作为已确认事实录入）"
                     style="max-width: 420px"
                   />
+                  <el-input
+                    v-model="otherSource"
+                    placeholder="必填：事实出处（这个值是从哪份资料 / 哪个页签看来的）"
+                    style="max-width: 420px"
+                  />
                   <el-button
                     v-hasPermi="['content:card:handle']"
                     type="primary"
@@ -258,6 +263,8 @@ const resolving = ref(false);
 /** 当前展开「填写其他值」输入框的卡片ID */
 const otherCardId = ref<string>('');
 const otherValue = ref('');
+/** 「填写其他值」的事实出处（必填，内测 S19 / C7） */
+const otherSource = ref('');
 
 const data = reactive<PageData<Record<string, never>, CpCardQuery>>({
   form: {},
@@ -327,6 +334,7 @@ const optionButtonType = (option?: string) => {
 const cancelOther = () => {
   otherCardId.value = '';
   otherValue.value = '';
+  otherSource.value = '';
 };
 
 /** 展开指定行，露出证据与处理区 */
@@ -337,7 +345,7 @@ const toggleRow = (row: CpInteractionCardVO) => {
 /** 提交处理请求，成功后刷新列表（后端会同步重算闸门） */
 const doResolve = async (
   row: CpInteractionCardVO,
-  payload: { option: string; value?: string; snapshotId?: string | number; comment?: string }
+  payload: { option: string; value?: string; snapshotId?: string | number; sourceLocator?: string; comment?: string }
 ) => {
   if (resolving.value) return;
   resolving.value = true;
@@ -361,6 +369,7 @@ const handleOption = async (row: CpInteractionCardVO, opt: CardOptionItem) => {
   if (option === 'OTHER') {
     otherCardId.value = String(row.cardId);
     otherValue.value = '';
+    otherSource.value = '';
     return;
   }
   // SUPPLEMENT / BLOCK：要求给出可读说明，作为人的决策记录
@@ -385,7 +394,12 @@ const submitOther = async (row: CpInteractionCardVO) => {
     modal.msgError('请填写确认值');
     return;
   }
-  await doResolve(row, { option: 'OTHER', value });
+  const sourceLocator = otherSource.value.trim();
+  if (!sourceLocator) {
+    modal.msgError('请填写事实出处（这个值是从哪份资料看来的）');
+    return;
+  }
+  await doResolve(row, { option: 'OTHER', value, sourceLocator });
 };
 
 /** 查询卡片列表 */

@@ -263,6 +263,9 @@ public class ContentCardServiceImpl implements IContentCardService {
     /**
      * 手工录入其他值：新增一行「已确认」事实。
      *
+     * <p><b>出处必填</b>（内测 S19 / C7）：这条路径与「人工录入事实」等价，两者都不产出候选、
+     * 直接落 {@code CONFIRMED}。以前只有值没有出处，开工包里就会出现无法追溯的事实行。</p>
+     *
      * @param card 卡片
      * @param bo   入参
      */
@@ -270,6 +273,11 @@ public class ContentCardServiceImpl implements IContentCardService {
         String value = bo.getValue() == null ? null : bo.getValue().trim();
         if (StringUtils.isBlank(value)) {
             throw new ServiceException("请填写确认值");
+        }
+        String sourceLocator = bo.getSourceLocator() == null ? null : bo.getSourceLocator().trim();
+        if (StringUtils.isBlank(sourceLocator)) {
+            throw new ServiceException("请填写事实出处：这个值是从哪份资料 / 哪个页签看来的。"
+                + "「填写其他值」与手工录入一样，值是直接确认的，开工包会把出处原样交给下游。");
         }
         List<CpFactSnapshot> rows = snapshotsOfField(card);
         String fieldName = null;
@@ -298,6 +306,7 @@ public class ContentCardServiceImpl implements IContentCardService {
         manual.setConfirmStatus(ContentFactConfirmStatusEnum.CONFIRMED.getCode());
         manual.setConfirmedBy(userId);
         manual.setConfirmedAt(now);
+        manual.setSourceLocator(sourceLocator);
         manual.setRemark("由互动卡手工确认录入");
         factSnapshotMapper.insert(manual);
 

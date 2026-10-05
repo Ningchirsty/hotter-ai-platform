@@ -150,13 +150,19 @@ public class ContentFactServiceImpl implements IContentFactService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public Long addManual(Long taskId, String fieldCode, String value, String remark) {
+    public Long addManual(Long taskId, String fieldCode, String value, String remark, String sourceLocator) {
         CpTask task = loadTask(taskId);
         if (StringUtils.isBlank(fieldCode)) {
             throw new ServiceException("事实字段编码不能为空");
         }
         if (StringUtils.isBlank(value)) {
             throw new ServiceException("事实值不能为空");
+        }
+        // 出处必填（内测 S19 / C7）：这里再校验一次，不只靠 BO 上的 @NotBlank——
+        // 服务层被别处直接调用时（例如以后的批量导入）也要挡住"无出处的事实"。
+        if (StringUtils.isBlank(sourceLocator)) {
+            throw new ServiceException("请填写事实出处：这个值是从哪份资料 / 哪个页签看来的。"
+                + "手工录入即视为已确认，开工包会把出处原样交给下游，没有出处的事实无法追溯。");
         }
         String code = fieldCode.trim();
         requireRecordableCode(task, code);
@@ -186,6 +192,7 @@ public class ContentFactServiceImpl implements IContentFactService {
         entity.setConfirmStatus(ContentFactConfirmStatusEnum.CONFIRMED.getCode());
         entity.setConfirmedBy(LoginHelper.getUserId());
         entity.setConfirmedAt(LocalDateTime.now());
+        entity.setSourceLocator(sourceLocator.trim());
         entity.setRemark(StringUtils.blankToDefault(remark, "人工录入"));
         factSnapshotMapper.insert(entity);
 

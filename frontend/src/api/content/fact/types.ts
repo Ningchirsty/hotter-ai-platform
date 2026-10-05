@@ -38,6 +38,14 @@ export interface CpFactManualForm {
   taskId: string | number;
   fieldCode: string;
   value: string;
+  /**
+   * 事实出处：这个值是从哪份资料 / 哪个页签看来的（必填）。
+   *
+   * 手工录入的值直接落 CONFIRMED，开工包会把出处原样交给下游——
+   * 没有出处的事实无法追溯，所以后端也要求必填（内测 S19 / C7）。
+   */
+  sourceLocator: string;
+  /** 备注（可选）：为什么以此值为准 */
   remark?: string;
 }
 

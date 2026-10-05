@@ -90,5 +90,7 @@ export interface CpCardResolveForm {
   option: string;
   value?: string;
   snapshotId?: string | number;
+  /** 事实出处（option=OTHER 时必填）；CONFIRM 走已有候选行，出处本来就有 */
+  sourceLocator?: string;
   comment?: string;
 }

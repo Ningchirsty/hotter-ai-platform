@@ -54,13 +54,18 @@ public interface IContentFactService {
     /**
      * 手工录入一条事实（无候选值但有闸门要求时使用）。
      *
-     * @param taskId    任务ID
-     * @param fieldCode 字段编码
-     * @param value     值
-     * @param remark    说明
+     * <p><b>出处必填</b>（内测 S19 / C7）：人工录入的值直接落 {@code CONFIRMED}，
+     * 而开工包会把 {@code sourceLocator} 原样交给下游。不要求出处，就等于允许
+     * 一条「无法追溯、但已被当作事实」的数据进入产线。</p>
+     *
+     * @param taskId        任务ID
+     * @param fieldCode     字段编码
+     * @param value         值
+     * @param remark        备注（可选）
+     * @param sourceLocator 事实出处（必填，如「产品参数表 V2 第 3 行」）
      * @return 新增快照行ID
      */
-    Long addManual(Long taskId, String fieldCode, String value, String remark);
+    Long addManual(Long taskId, String fieldCode, String value, String remark, String sourceLocator);
 
     /**
      * 某任务可录入的事实字段选项。
