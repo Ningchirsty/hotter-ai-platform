@@ -59,9 +59,9 @@
         <div class="block-head">
           <h3>准入项</h3>
           <span class="muted">
-            硬性项（BLOCK）不满足时不能提交；建议项（CONDITION）只提示
-            <b>（「品牌 Brief 已填写并确认」「已声明禁用词与合规红线」是品牌方的必填要求，
-            当前只提示，待存量项目补齐后会升为硬性项）</b>
+            硬性项（BLOCK）不满足时不能提交；建议项（CONDITION）只提示。
+            「品牌 Brief 已填写并确认」「已声明禁用词与合规红线」是品牌方的要求，
+            <b>等级以下表「等级」列为准</b>——文案里不写死等级，避免配置改了文案还在说旧话。
           </span>
         </div>
         <el-table :data="gate.items" size="small">

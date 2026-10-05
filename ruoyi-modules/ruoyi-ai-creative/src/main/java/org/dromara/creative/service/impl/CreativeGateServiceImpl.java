@@ -80,10 +80,22 @@ public class CreativeGateServiceImpl implements ICreativeGateService {
     private final DpGateItemMapper gateItemMapper;
 
     /**
-     * 默认闸门项清单（**逐字复现**改造前内联的那 7 项，顺序与等级一致）。
+     * 默认闸门项清单（**没有配置时的回落**，也是"配置写错了"的参照物）。
      *
-     * <p>它是"没有配置时的回落"，也是"配置写错了"的参照物：某场景还没配 Gate Profile 时，
-     * 门禁必须与改造前完全一致——既不能失效（漏判），也不能误封（多判）。</p>
+     * <p><b>等级变更（内测冲突 A 的落地，2026-10）</b>：{@code BRAND_BRIEF_CONFIRMED} 从
+     * {@code CONDITION} 升为 {@code BLOCK}。这是一次**有意的行为变更**，
+     * {@code CreativeGateItemConfigTest} 的 golden list 就是为此设的闸门，改它必须是有意识的决定。</p>
+     *
+     * <p><b>为什么升级</b>：内测实测"不填品牌要求也能一路出图到交付 V1.0"（S1）。
+     * 牌子是同一件事：品牌部没做完功课。按"同一产线的同一根因只留一道硬拦"的定案，
+     * 这道硬拦就是<b>品牌 Brief 是否已确认</b>——它是品牌部功课的总闸，
+     * 而 {@code FORBIDDEN_WORDS_DECLARED} 只是它的一项细项，再设成 BLOCK 就是对同一根因拦第二次。</p>
+     *
+     * <p><b>⚠️ 与数据库配置必须一致</b>：有闸门档案（{@code dp_gate_profile}）的交付类型，
+     * 等级以**档案里的 {@code dp_gate_item.level} 为准**（见 {@link #mergeItems}），
+     * 本清单只在"该交付类型没有已发布档案"时生效。两处不一致 = 同一件要求在不同交付类型上
+     * 时紧时松，那正是内测冲突 F 的形状。配套 SQL：
+     * {@code script/sql/dp_gate_brand_requirement_uniform.sql}。</p>
      */
     static final List<ItemSpec> DEFAULT_ITEMS = List.of(
         new ItemSpec("DNA_LOCKED", "视觉基因已锁定", LEVEL_BLOCK),
@@ -91,7 +103,7 @@ public class CreativeGateServiceImpl implements ICreativeGateService {
         new ItemSpec("DIRECTION_SELECTED", "视觉方向已选定", LEVEL_CONDITION),
         new ItemSpec("STORYBOARD_LOCKED", "分镜已锁定", LEVEL_CONDITION),
         new ItemSpec("BRAND_TONE_CONFIRMED", "品牌调性已确认", LEVEL_CONDITION),
-        new ItemSpec("BRAND_BRIEF_CONFIRMED", "品牌 Brief 已填写并确认", LEVEL_CONDITION),
+        new ItemSpec("BRAND_BRIEF_CONFIRMED", "品牌 Brief 已填写并确认", LEVEL_BLOCK),
         new ItemSpec("FORBIDDEN_WORDS_DECLARED", "已声明禁用词与合规红线", LEVEL_CONDITION)
     );
 
@@ -376,6 +388,18 @@ public class CreativeGateServiceImpl implements ICreativeGateService {
      * @param brief 品牌 Brief 视图
      * @return 闸门项
      */
+    /**
+     * 品牌 Brief 是否已由品牌方确认（R7）。
+     *
+     * <p><b>这里产出的 level 会被 {@link #mergeItems} 覆盖</b>（等级以场景配置为准），
+     * 所以 <b>detail 文案里绝不能声明等级</b>：文案写"当前是建议级、以后会升级"，
+     * 而等级改到配置里之后，文案就变成谎话——内测真机上就出现过这一幕
+     * （冲突 A 把本项升为 BLOCK 后，提示仍在说"只提示、不阻断"）。
+     * 等级由界面上的「等级」列展示，只有一处来源。</p>
+     *
+     * @param brief 品牌 Brief 视图
+     * @return 闸门项
+     */
     private static GateItem brandBriefItem(CpBrandBriefVo brief) {
         boolean configured = brief != null && Boolean.TRUE.equals(brief.getConfigured());
         boolean confirmed = configured
@@ -391,13 +415,15 @@ public class CreativeGateServiceImpl implements ICreativeGateService {
                     + "点「品牌方确认」"
                 : "还没有填品牌 Brief：请品牌部到「内容生产协同 → 内容任务 → 任务详情」填写品牌调性/"
                     + "必显信息/禁用词/主推卖点，然后点「品牌方确认」")
-                + "。设计侧对本项只读（C1 起已收回设计侧的确认入口）。"
-                + "品牌方的必填要求——当前是建议级（只提示、不阻断出图），"
-                + "待存量项目补齐后升为硬性项（BLOCK），届时未确认将不能提交视觉门");
+                + "。设计侧对本项只读（C1 起已收回设计侧的确认入口）");
     }
 
     /**
      * 是否已声明禁用词与合规红线（R7）。
+     *
+     * <p>同样地，detail 里不声明等级（等级来自场景配置）。它是「品牌 Brief 已确认」的细项，
+     * 按冲突 A 的定案不与总闸各设一道硬拦——但**这件事也不写在文案里**，
+     * 否则配置一改文案就失真。</p>
      *
      * @param brief 品牌 Brief 视图
      * @return 闸门项
@@ -407,8 +433,7 @@ public class CreativeGateServiceImpl implements ICreativeGateService {
         return new GateItem("FORBIDDEN_WORDS_DECLARED", "已声明禁用词与合规红线", LEVEL_CONDITION, declared,
             declared ? "已声明 " + lineCount(brief.getForbiddenWords()) + " 条；出图负向提示词会逐条追加"
                 : "还没有声明禁用词：请品牌部到「内容生产协同 → 内容任务 → 任务详情」的"
-                    + "「禁用词与合规红线」里一行一条填上（未声明时出图只能用默认禁忌词表）。"
-                    + "同样是品牌方的必填项，当前只提示、待存量补齐后升为硬性项（BLOCK）");
+                    + "「禁用词与合规红线」里一行一条填上（未声明时出图只能用默认禁忌词表）");
     }
 
     /**
