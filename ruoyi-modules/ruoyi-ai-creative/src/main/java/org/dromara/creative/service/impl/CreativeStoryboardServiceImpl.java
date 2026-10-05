@@ -28,6 +28,7 @@ import org.dromara.creative.enums.DpCopyBlockTypeEnum;
 import org.dromara.creative.enums.DpVisualStageEnum;
 import org.dromara.creative.helper.CreativeDraftBrain;
 import org.dromara.creative.helper.CreativeDraftFactory;
+import org.dromara.creative.helper.CreativeLevelText;
 import org.dromara.creative.helper.CreativeScreenSkeleton;
 import org.dromara.creative.helper.CreativeScreenSkeletonRegistry;
 import org.dromara.creative.helper.VisualDnaSchema;
@@ -731,12 +732,15 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
             ? String.valueOf(direction.getStrategy().getOrDefault("composition", "")) : "";
         spec.put("shot", active.shotOf(template, ratio(dna)));
         spec.put("composition", StringUtils.blankToDefault(composition, "产品居中，四周留白均等"));
+        // 没有选定方向时不要拼「光线：SOFT」这种给代码看的枚举（v1 反馈：卡片上印着 MEDIUM/HIGH/SOFT）
         spec.put("lighting", StringUtils.blankToDefault(lighting,
-            "光线：" + dna.path("lighting").path("type").asText("SOFT")));
+            "光线：" + CreativeLevelText.lighting(dna.path("lighting").path("type").asText(null))));
         spec.put("background", StringUtils.blankToDefault(scene,
             dna.path("colors").path("background").asText("纯色底")));
         spec.put("productRatio", ratio(dna));
-        spec.put("whitespace", dna.path("whitespaceLevel").asText("HIGH"));
+        // 「留白」原先直接落 dna 里的枚举（卡片上就是「留白 HIGH」）。
+        // 这一列没有任何程序消费（全仓只写不读），而且它就是给人看的档位——写中文。
+        spec.put("whitespace", CreativeLevelText.level(dna.path("whitespaceLevel").asText(null)));
         // V0.2 R23：把模块规划里"这一屏专属"的配置**烙进屏**（模块目标/视觉表达/参考图/模板/卖点）。
         // 为什么要烙：出图与排版是在**别的请求**里跑的，它们只看得到屏。不烙的话要么每次反查模块计划
         // （多一次库依赖、且计划改了以后老分镜的语义会跟着变），要么这些字段永远只是"存着"。

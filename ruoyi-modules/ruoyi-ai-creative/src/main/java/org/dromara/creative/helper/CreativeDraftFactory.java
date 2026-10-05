@@ -534,22 +534,14 @@ public final class CreativeDraftFactory {
      * <p>v1 人工测试反馈：方向的策略明细与「基因依据」里原样出现 `MEDIUM` / `HIGH`——
      * 那是给代码看的枚举值。档位本身是给人读的，写「中」「高」即可。</p>
      *
-     * <p>认不出的档位（含空值）返回「未设置」而不是抛错：基因是人工可编辑的，
-     * 一个没填的档位不该让整条方向生成失败，但也不该被悄悄写成"中"。</p>
+     * <p>口径已抽到 {@link CreativeLevelText}：分镜屏规格里的「留白 HIGH」与
+     * "没有方向时的光线兜底"也从那里取，避免同一件事三份实现（v1 就是这么漏翻的）。</p>
      *
      * @param level 档位码
      * @return 中文名
      */
     private static String levelCn(String level) {
-        if (StringUtils.isBlank(level)) {
-            return "未设置";
-        }
-        return switch (up(level)) {
-            case "LOW" -> "低";
-            case "HIGH" -> "高";
-            case "MEDIUM" -> "中";
-            default -> level;
-        };
+        return CreativeLevelText.level(level);
     }
 
     /**
