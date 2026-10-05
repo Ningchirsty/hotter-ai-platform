@@ -9,6 +9,16 @@
           当前版本 v{{ detailPage?.currentVersion ?? 0 }}（{{ detailPage?.statusDesc || '未排版' }}）
         </span>
       </div>
+      <!-- C10：终版尺寸与输出规格不一致时常驻显示（刷新后仍在），上传那一刻另有一次弹窗 -->
+      <p v-if="detailPage?.finalSizeWarning" class="size-warn">
+        ⚠ {{ detailPage.finalSizeWarning }}
+      </p>
+      <!-- C9：上传前先说清"还有几屏没出图"，上传时后端还会要求显式确认 -->
+      <p v-if="(detailPage?.screensWithoutSelection || []).length" class="size-warn">
+        ⚠ 还有 {{ (detailPage?.screensWithoutSelection || []).length }} 屏没有已选定的产出图（{{
+          (detailPage?.screensWithoutSelection || []).join('、')
+        }}）。上传最终版时会被要求确认「带空屏交付」。
+      </p>
       <div class="final-row">
         <div class="final-hint">
           <b>交付最终版（V1.0）</b>
@@ -303,6 +313,18 @@ function shortSha(sha?: string): string {
 }
 .final-hint .muted {
   margin: 0;
+}
+
+/* C9/C10 的提醒：都不是拦截，但必须显眼——它们是"交付质量"这件事上唯一的提示 */
+.size-warn {
+  padding: 8px 10px;
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  line-height: 1.8;
+  color: #fbbf24;
+  background: rgb(251 191 36 / 8%);
+  border-left: 3px solid #fbbf24;
+  border-radius: 4px;
 }
 
 .muted {

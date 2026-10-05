@@ -401,22 +401,111 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
      * @return 页宽（px）
      */
     private int resolvePageWidth(CreativeProjectVo project) {
-        try {
-            if (project != null && StringUtils.isNotBlank(project.getDeliverableType())) {
-                List<DpOutputSpec> specs = scenarioConfigService.listOutputSpecs(project.getDeliverableType());
-                if (!specs.isEmpty() && specs.get(0).getWidth() != null && specs.get(0).getWidth() > 0) {
-                    DpOutputSpec spec = specs.get(0);
-                    log.info("排版页宽取默认输出规格 {} = {}px（交付类型 {}）",
-                        spec.getSpecCode(), spec.getWidth(), project.getDeliverableType());
-                    return spec.getWidth();
-                }
-                log.info("交付类型 {} 没有可用的默认输出规格，回落 creative.page-width={}",
-                    project.getDeliverableType(), pageWidth);
-            }
-        } catch (Exception e) {
-            log.warn("读取默认输出规格失败，回落 creative.page-width={}：{}", pageWidth, e.getMessage());
+        DpOutputSpec spec = project == null ? null : defaultOutputSpec(project.getDeliverableType());
+        if (spec != null && spec.getWidth() != null && spec.getWidth() > 0) {
+            log.info("排版页宽取默认输出规格 {} = {}px（交付类型 {}）",
+                spec.getSpecCode(), spec.getWidth(), project.getDeliverableType());
+            return spec.getWidth();
+        }
+        if (project != null && StringUtils.isNotBlank(project.getDeliverableType())) {
+            log.info("交付类型 {} 没有可用的默认输出规格，回落 creative.page-width={}",
+                project.getDeliverableType(), pageWidth);
         }
         return pageWidth;
+    }
+
+    /**
+     * 该交付类型的默认输出规格（{@code dp_output_spec.is_default='1'}，由
+     * {@code listOutputSpecs} 排到最前）。
+     *
+     * <p>抽出来的原因：排版取页宽（{@link #resolvePageWidth}）与终版尺寸校验
+     * （{@link #sizeWarning}）必须是**同一个规格**——两处各查一遍，迟早出现
+     * "排版按 750 渲染、验收按 790 判定"这种互相打架的结论。</p>
+     *
+     * @param deliveryType 交付类型
+     * @return 默认规格；没有配置或读取失败时返回 {@code null}（调用方各自决定回落策略）
+     */
+    private DpOutputSpec defaultOutputSpec(String deliveryType) {
+        if (StringUtils.isBlank(deliveryType)) {
+            return null;
+        }
+        try {
+            List<DpOutputSpec> specs = scenarioConfigService.listOutputSpecs(deliveryType);
+            return specs.isEmpty() ? null : specs.get(0);
+        } catch (Exception e) {
+            log.warn("读取默认输出规格失败（交付类型 {}）：{}", deliveryType, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 终版尺寸与默认输出规格是否一致（内测 S22 / C10）——只产出警告文案，不做拦截。
+     *
+     * <p><b>为什么高度只在 {@code heightMode=FIXED} 时比对</b>：详情长图是
+     * {@code heightMode=AUTO}，高度由内容决定（实测 750×4551）。拿一个规格高度去比长图，
+     * 每一版都会被判成"不合规"——警告一旦常态化就没人看了，等于没有。</p>
+     *
+     * <p>读不出尺寸（{@link #readImageSize} 返回 0）时不报警：那是"无法判定"，
+     * 不是"不合规"，不能把不确定说成有罪。</p>
+     *
+     * <p>纯函数、无依赖，故为 {@code static} 包可见：尺寸规则是这条链路上最容易
+     * 悄悄写错的一处（AUTO 高、倍率、读不出尺寸），必须能被单测逐条钉住。</p>
+     *
+     * @param spec 默认输出规格，可为 null
+     * @param size 实际尺寸 [width, height]
+     * @return 警告文案；一致、无规格可比或无法判定时返回 {@code null}
+     */
+    static String sizeWarning(DpOutputSpec spec, int[] size) {
+        if (spec == null || spec.getWidth() == null || spec.getWidth() <= 0) {
+            return null;
+        }
+        if (size == null || size.length < 2 || size[0] <= 0) {
+            return null;
+        }
+        int scale = spec.getSourceScale() == null || spec.getSourceScale() < 1 ? 1 : spec.getSourceScale();
+        List<String> problems = new ArrayList<>();
+        int expectedWidth = spec.getWidth() * scale;
+        if (size[0] != expectedWidth) {
+            problems.add("宽度 " + size[0] + "px，规格要求 " + expectedWidth + "px");
+        }
+        if ("FIXED".equalsIgnoreCase(spec.getHeightMode())
+            && spec.getHeight() != null && spec.getHeight() > 0
+            && size[1] != spec.getHeight() * scale) {
+            problems.add("高度 " + size[1] + "px，规格要求 " + (spec.getHeight() * scale) + "px");
+        }
+        if (problems.isEmpty()) {
+            return null;
+        }
+        return "终版尺寸与输出规格 " + spec.getSpecCode() + " 不一致（" + String.join("；", problems)
+            + "）。当前只警告、不拦交付，请确认是否要按规格重新导出。";
+    }
+
+    /**
+     * 已交付终版的尺寸警告（读路径上重算，内测 C10）。
+     *
+     * <p>放在 {@link #detail} 里重算而不是只在上传那一刻弹一次：尺寸不合规这件事
+     * 需要"刷新之后依然看得见"——上传时错过一个 toast，就等于没有提示。</p>
+     *
+     * @param taskId 项目ID
+     * @return 警告文案；没有终版、或尺寸与规格一致时返回 {@code null}
+     */
+    private String finalSizeWarning(Long taskId) {
+        List<DpDetailPageVersion> finals = versionMapper.selectList(
+            new LambdaQueryWrapper<DpDetailPageVersion>()
+                .eq(DpDetailPageVersion::getTaskId, taskId)
+                .eq(DpDetailPageVersion::getKind, KIND_FINAL)
+                .orderByDesc(DpDetailPageVersion::getVersion)
+                .last("limit 1"));
+        if (finals.isEmpty()) {
+            return null;
+        }
+        DpDetailPageVersion last = finals.get(0);
+        int[] size = {
+            last.getPageWidth() == null ? 0 : last.getPageWidth(),
+            last.getPageHeight() == null ? 0 : last.getPageHeight()
+        };
+        CreativeProjectVo project = projectService.getProject(taskId);
+        return sizeWarning(project == null ? null : defaultOutputSpec(project.getDeliverableType()), size);
     }
 
     private ArrayNode copyBlocksNode(Long taskId) {
@@ -450,6 +539,7 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
         vo.setRendererAvailable(rendererClient.version() != null);
         vo.setTemplateKey(templateKeyOf(taskId, storyboardService.latest(taskId)));
         vo.setScreensWithoutSelection(missingScreens(taskId));
+        vo.setFinalSizeWarning(finalSizeWarning(taskId));
         if (page == null) {
             vo.setTaskId(taskId);
             vo.setCurrentVersion(0);
@@ -507,14 +597,31 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public DpDetailPageVo uploadFinal(Long taskId, MultipartFile file, String comment) {
+    public DpDetailPageVo uploadFinal(Long taskId, MultipartFile file, String comment,
+                                     boolean acknowledgeShortfall) {
         if (file == null || file.isEmpty()) {
             throw new ServiceException("请选择精修后的长图");
         }
+        // C9：空屏交付要显式确认。注意这不是"硬拦"——确认过就照收，
+        // 因为"先把做好的部分交出去"是这条产线上的真实业务；要拦的是"没人注意到缺屏"。
+        List<String> missing = missingScreens(taskId);
+        if (!missing.isEmpty() && !acknowledgeShortfall) {
+            throw new ServiceException("还有 " + missing.size() + " 屏没有已选定的产出图（屏号："
+                + String.join("、", missing) + "）。现在上传等于「带空屏交付」——排版稿上这几屏是空白的。"
+                + "如确认就要这样交付，请在确认提示后重新提交上传；"
+                + "如不是，请先回分镜页逐屏出图并选定候选。");
+        }
+
         DpDetailPage page = requireOrCreatePage(taskId);
         int nextVersion = (page.getCurrentVersion() == null ? 0 : page.getCurrentVersion()) + 1;
         Long fileId = contentTaskService.uploadFile(taskId, null, file,
             ContentFileSourceEnum.GENERATED.getCode());
+
+        int[] size = readImageSize(file);
+        // C10：与"该交付类型的默认输出规格"比对，只警告不拦（存量不合规终版需要能被看见）
+        CreativeProjectVo project = projectService.getProject(taskId);
+        DpOutputSpec spec = project == null ? null : defaultOutputSpec(project.getDeliverableType());
+        String sizeWarning = sizeWarning(spec, size);
 
         DpDetailPageVersion version = new DpDetailPageVersion();
         version.setDetailPageId(page.getId());
@@ -527,20 +634,38 @@ public class CreativeLayoutServiceImpl implements ICreativeLayoutService {
         version.setReviewBy(LoginHelper.getUserId());
         version.setReviewAt(LocalDateTime.now());
         version.setReviewComment(StringUtils.blankToDefault(comment, "人工精修后上传"));
-        int[] size = readImageSize(file);
         version.setPageWidth(size[0]);
         version.setPageHeight(size[1]);
         version.setScreenCount(null);
-        version.setRemark("人工精修最终版（V1.0）");
+        // 备注里留痕：这条版本的"不合规"是随版本走的，翻版本列表时能直接看到
+        version.setRemark(sizeWarning == null
+            ? "人工精修最终版（V1.0）"
+            : "人工精修最终版（V1.0）｜⚠ " + sizeWarning
+                + (missing.isEmpty() ? "" : "｜⚠ 带空屏交付，缺屏：" + String.join("、", missing)));
         versionMapper.insert(version);
 
         page.setCurrentVersion(nextVersion);
         page.setStatus(PAGE_FINAL);
         pageMapper.updateById(page);
 
-        projectService.appendEvent(taskId, "FINAL", "FINAL_UPLOADED",
-            JsonUtils.toJsonString(Map.of("versionId", version.getId(), "version", nextVersion,
-                "fileId", fileId)));
+        Map<String, Object> uploaded = new LinkedHashMap<>();
+        uploaded.put("versionId", version.getId());
+        uploaded.put("version", nextVersion);
+        uploaded.put("fileId", fileId);
+        uploaded.put("pageWidth", size[0]);
+        uploaded.put("pageHeight", size[1]);
+        if (!missing.isEmpty()) {
+            // 确认过也照样记下来：审计要能回答"这一版为什么是空的"
+            uploaded.put("shortfallAcknowledged", true);
+            uploaded.put("screensWithoutSelection", missing);
+        }
+        if (sizeWarning != null) {
+            uploaded.put("sizeWarning", sizeWarning);
+            if (spec != null) {
+                uploaded.put("specCode", spec.getSpecCode());
+            }
+        }
+        projectService.appendEvent(taskId, "FINAL", "FINAL_UPLOADED", JsonUtils.toJsonString(uploaded));
         projectService.moveStage(taskId, DpVisualStageEnum.COMPLETED, "FINAL_UPLOADED",
             JsonUtils.toJsonString(Map.of("version", nextVersion)));
         return detail(taskId);

@@ -559,18 +559,28 @@ export function reviewDetailVersion(
   });
 }
 
-/** 上传人工精修后的最终版 V1.0 */
+/**
+ * 上传人工精修后的最终版 V1.0。
+ *
+ * @param acknowledgeShortfall 还有屏没出图时，必须显式传 true（C9）。
+ *   后端不硬拦，但要的是"我知道缺屏、仍要交付"这个明确表态；
+ *   不传或 false 会被拒绝并列出缺哪些屏。
+ */
 export function uploadDetailFinal(
   taskId: string | number,
   file: File,
-  comment?: string
+  comment?: string,
+  acknowledgeShortfall?: boolean
 ): AxiosPromise<DpDetailPageVO> {
   const formData = new FormData();
   formData.append('file', file);
   return request({
     url: `/creative/projects/${taskId}/detail-page/final`,
     method: 'post',
-    params: comment ? { comment } : undefined,
+    params: {
+      ...(comment ? { comment } : {}),
+      ...(acknowledgeShortfall ? { acknowledgeShortfall: true } : {})
+    },
     data: formData
   });
 }

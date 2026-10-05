@@ -46,12 +46,22 @@ public interface ICreativeLayoutService {
     /**
      * 上传人工精修后的最终版（V1.0）。
      *
-     * @param taskId  项目ID
-     * @param file    精修后的长图
-     * @param comment 说明
+     * <p><b>空屏交付要显式确认</b>（内测 S21 / C9）：还有屏没有「已选定产出」时，
+     * 上传等于交付一张带空白屏的长图。这条链路<b>不硬拦</b>（先交部分图是真实业务），
+     * 但要求调用方明确表示"我知道缺屏，仍要交付"——{@code acknowledgeShortfall=false}
+     * 时直接拒绝并列出缺哪些屏。</p>
+     *
+     * <p><b>尺寸只警告不拦</b>（内测 S22 / C10）：终版尺寸与默认输出规格不一致时照常收下，
+     * 但把不一致写进版本备注、事件与详情（见 {@code DpDetailPageVo.finalSizeWarning}）。
+     * 先让问题可见，稳定后再改为拦。</p>
+     *
+     * @param taskId               项目ID
+     * @param file                 精修后的长图
+     * @param comment              说明
+     * @param acknowledgeShortfall 是否已确认"带空屏交付"
      * @return 详情页
      */
-    DpDetailPageVo uploadFinal(Long taskId, MultipartFile file, String comment);
+    DpDetailPageVo uploadFinal(Long taskId, MultipartFile file, String comment, boolean acknowledgeShortfall);
 
     /**
      * 读某个版本的渲染长图字节（页面预览走后端代理）。

@@ -86,9 +86,14 @@ public class CreativeLayoutController {
     /**
      * 上传人工精修后的最终版 V1.0。
      *
-     * @param taskId  项目ID
-     * @param file    精修长图
-     * @param comment 说明
+     * <p><b>{@code acknowledgeShortfall}</b>（内测 S21 / C9）：还有屏没出图时，
+     * 不传或传 false 会被拒绝并列出缺哪些屏；前端在用户确认「带空屏交付」后传 true。
+     * 只确认、不硬拦——"先交做好的部分"是真实业务，要拦的是"没人注意到缺屏"。</p>
+     *
+     * @param taskId               项目ID
+     * @param file                 精修长图
+     * @param comment              说明
+     * @param acknowledgeShortfall 是否已确认带空屏交付
      * @return 详情页
      */
     @SaCheckPermission(CreativeConstants.PERM_FINAL_SUBMIT)
@@ -97,8 +102,10 @@ public class CreativeLayoutController {
     public R<DpDetailPageVo> uploadFinal(@NotNull(message = "项目ID不能为空")
                                          @PathVariable("taskId") Long taskId,
                                          @RequestPart("file") MultipartFile file,
-                                         @RequestParam(value = "comment", required = false) String comment) {
-        return R.ok(layoutService.uploadFinal(taskId, file, comment));
+                                         @RequestParam(value = "comment", required = false) String comment,
+                                         @RequestParam(value = "acknowledgeShortfall", required = false,
+                                             defaultValue = "false") boolean acknowledgeShortfall) {
+        return R.ok(layoutService.uploadFinal(taskId, file, comment, acknowledgeShortfall));
     }
 
     /**

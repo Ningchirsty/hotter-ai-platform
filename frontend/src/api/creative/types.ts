@@ -574,6 +574,13 @@ export interface DpDetailPageVO {
   versions?: DpDetailPageVersionVO[];
   /** 还没有已选定产出的屏号 */
   screensWithoutSelection?: string[];
+  /**
+   * 已交付终版的尺寸警告（内测 S22 / C10）。
+   *
+   * 终版尺寸与该交付类型默认输出规格不一致时的文案（如「宽度 512px，规格要求 750px」）；
+   * 一致或还没有终版时为 null。只警告、不阻断交付。
+   */
+  finalSizeWarning?: string;
   rendererAvailable?: boolean;
   templateKey?: string;
 }

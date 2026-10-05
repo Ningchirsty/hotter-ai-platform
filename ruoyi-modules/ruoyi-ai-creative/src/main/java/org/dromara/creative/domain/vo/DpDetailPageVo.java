@@ -37,6 +37,14 @@ public class DpDetailPageVo implements Serializable {
     private List<String> screensWithoutSelection = new ArrayList<>();
 
     /**
+     * 已交付终版的尺寸警告（内测 S22 / C10）。
+     *
+     * <p>终版尺寸与该交付类型的默认输出规格（{@code dp_output_spec} 默认项）不一致时给出文案，
+     * 一致或没有终版时为 null。**只警告、不阻断交付**——先让问题可见，稳定后再改为拦。</p>
+     */
+    private String finalSizeWarning;
+
+    /**
      * 渲染服务是否可用
      */
     private Boolean rendererAvailable;

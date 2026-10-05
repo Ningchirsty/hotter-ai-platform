@@ -321,10 +321,38 @@ async function doVersionReview(row: DpDetailPageVersionVO, approve: boolean) {
 }
 
 async function doUploadFinal(options: UploadRequestOptions) {
+  // C9：空屏交付先让人明确表态。后端也会拦一次（此处只是把话说在点按钮之前），
+  // 因为"排到一半先交"是真实业务，要拦的是"没注意到还有屏是空的"。
+  const missing = detailPage.value?.screensWithoutSelection || [];
+  let acknowledgeShortfall = false;
+  if (missing.length) {
+    try {
+      await ElMessageBox.confirm(
+        `还有 ${missing.length} 屏没有已选定的产出图（屏号：${missing.join('、')}）。` +
+          '现在上传等于「带空屏交付」——排版稿上这几屏是空白的。确认仍要交付？',
+        '带空屏交付确认',
+        { type: 'warning', confirmButtonText: '确认交付', cancelButtonText: '先去出图' }
+      );
+      acknowledgeShortfall = true;
+    } catch {
+      return;
+    }
+  }
   uploadingFinal.value = true;
   try {
-    await uploadDetailFinal(taskId.value, options.file as File, '人工精修最终版');
-    ElMessage.success('最终版已上传并登记为 V1.0');
+    const res = await uploadDetailFinal(
+      taskId.value,
+      options.file as File,
+      '人工精修最终版',
+      acknowledgeShortfall
+    );
+    // C10：尺寸不一致只警告不拦——但必须让人看见（后端同时写进版本备注与事件）
+    const sizeWarning = res.data?.finalSizeWarning;
+    if (sizeWarning) {
+      await ElMessageBox.alert(sizeWarning, '终版尺寸与输出规格不一致', { type: 'warning' });
+    } else {
+      ElMessage.success('最终版已上传并登记为 V1.0');
+    }
     await loadAll();
     flowToken.value += 1;
   } catch (error) {
