@@ -6,6 +6,8 @@ import VxeTablePlugin from 'vxe-table';
 import 'virtual:uno.css';
 import 'element-plus/theme-chalk/dark/css-vars.css';
 import '@/assets/styles/index.scss';
+// 视觉工作台的区块样式（内测 v1：抽出的六个区块内部曾完全没有样式，见该文件头注释）
+import '@/assets/styles/creative-studio.scss';
 import '@/assets/styles/tokens-nebula.scss';
 import 'highlight.js/styles/atom-one-dark.css';
 import 'highlight.js/lib/common';
