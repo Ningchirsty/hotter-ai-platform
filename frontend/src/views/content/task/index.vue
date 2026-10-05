@@ -532,7 +532,8 @@
         </el-card>
 
         <!-- 品牌要求（Brief）：品牌部在这里录入并确认；AI 视觉工厂那边只读 -->
-        <el-card shadow="never" class="detail-card">
+        <!-- id 是深链的落点：视觉门「去哪儿补」会带 ?taskId=…&section=brief 过来，直接滚到这张卡 -->
+        <el-card id="detail-brief" shadow="never" class="detail-card">
           <template #header>
             <div class="card-head">
               <span class="panel-kicker">Brand Brief</span>
@@ -740,7 +741,8 @@
         </el-card>
 
         <!-- 事实清单 -->
-        <el-card shadow="never" class="detail-card">
+        <!-- id 是深链的落点：视觉门「去哪儿补」会带 ?taskId=…&section=facts 过来 -->
+        <el-card id="detail-facts" shadow="never" class="detail-card">
           <template #header>
             <div class="card-head-row">
               <div class="card-head">
@@ -1866,9 +1868,42 @@ const loadDetail = async (taskId: string | number | undefined = detailTaskId.val
 };
 
 const openDetail = async (row: CpTaskVO) => {
-  detailTaskId.value = row.taskId;
+  await openDetailById(row.taskId);
+};
+
+/**
+ * 按 taskId 打开任务详情（抽屉）。
+ *
+ * <p><b>为什么单独抽出来</b>：深链只有一个 id、没有列表行对象，而列表里也未必有这一条
+ * （`openDetail(row)` 不能直接用）。详情接口 `getTask(taskId)` 本来就能按 id 取，
+ * 所以两条入口共用同一段加载逻辑，不需要"先找到那一行"。</p>
+ *
+ * @param taskId 任务ID
+ * @param section 打开后滚动到的卡片（`brief` / `facts`；不带就停在顶部）
+ */
+const openDetailById = async (taskId: string | number, section?: string | null) => {
+  detailTaskId.value = taskId;
   detailVisible.value = true;
-  await loadDetail(row.taskId);
+  await loadDetail(taskId);
+  await scrollToDetailSection(section);
+};
+
+/**
+ * 把详情抽屉滚到指定卡片（深链用）。
+ *
+ * <p>抽屉是懒渲染的（`el-drawer` 的内容在打开后才挂载），所以必须等一帧再查 DOM；
+ * 找不到就**什么都不做**——锚点不对不该让深链整体失败。</p>
+ *
+ * @param section 卡片标识（`brief` / `facts`）
+ */
+const scrollToDetailSection = async (section?: string | null) => {
+  const key = (section || '').trim();
+  if (!key) return;
+  await nextTick();
+  const el = document.getElementById(`detail-${key}`);
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 };
 
 // 轮询：解析/预检为应用内异步作业，前端按作业状态自动刷新（SPEC §5）
@@ -2340,6 +2375,27 @@ const formatSize = (size?: number) => {
 onMounted(async () => {
   await loadProducts();
   await getList();
+  // 深链：`?taskId=…[&section=brief|facts]` 直接打开那条任务的详情。
+  //
+  // 为什么必须有：视觉门的「去哪儿补」把品牌部的项指到本页（品牌要求 / 事实只有品牌方能在
+  // 任务详情里确认），而本页原先**不支持深链**，于是点了按钮只落到任务列表——
+  // 用户看到的正是"也没有跳转到相应要确认的地方"（v1 人工测试反馈 详情页与审核 1.3）。
+  const query = new URLSearchParams(location.search);
+  const deepTaskId = (query.get('taskId') || '').trim();
+  if (deepTaskId) {
+    try {
+      await openDetailById(deepTaskId, query.get('section'));
+    } catch (error) {
+      // 深链指到不存在的任务 / 没有权限 / id 不合法：不能留下"抽屉空着 + 控制台一条未捕获异常"。
+      // 关掉抽屉并说清原因，人就还能正常用这个页面（列表已经加载好了）。
+      detailVisible.value = false;
+      detailTaskId.value = undefined;
+      modal.msgError(
+        '打开这个任务失败（可能已删除、id 不合法或没有权限）：' +
+          ((await extractErrorMessage(error)) ?? '接口失败')
+      );
+    }
+  }
 });
 
 onBeforeUnmount(() => {

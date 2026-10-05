@@ -21,7 +21,14 @@ export interface GateFixTarget {
   label: string;
   /** 页面路由 */
   path: string;
-  /** 该路由是否支持 `?taskId=` 深链（内容任务列表页不支持，带了反而误导） */
+  /**
+   * 该路由是否支持 `?taskId=` 深链。
+   *
+   * <p><b>内容任务列表页原先不支持</b>（带上去只会落到列表，看着像"点了没反应"——
+   * 这正是 v1 反馈里"也没有跳转到相应要确认的地方"）。本轮给它补了深链支持：
+   * `?taskId=…[&section=brief|facts]` 会直接打开那条任务的详情抽屉并滚到对应卡片，
+   * 所以品牌部的三项现在也带 taskId 了。</p>
+   */
   carriesTaskId: boolean;
   /**
    * 要钉住的那一步（工作台的步骤编码，形如 `INPUT` / `STORYBOARD`）。
@@ -31,6 +38,12 @@ export interface GateFixTarget {
    * 页面没有这一步时会被忽略（工作台只认它自己托管的那几步）。</p>
    */
   step?: string;
+  /**
+   * 落在目标页的哪张卡片（内容任务详情的锚点，`brief` / `facts`）。
+   *
+   * <p>与 `step` 是两种页面的两种"钉住"：工作台按步骤钉，内容任务详情按卡片锚点钉。</p>
+   */
+  section?: string;
 }
 
 /** item code → 补充去处（码与 `dp_gate_item.item_code` 一致） */
@@ -45,9 +58,25 @@ export const GATE_FIX_TARGETS: Record<string, GateFixTarget> = {
   STORYBOARD_LOCKED: {
     label: '去视觉方向与分镜页锁定分镜', path: '/creative/storyboard', carriesTaskId: true, step: 'STORYBOARD'
   },
-  BRAND_TONE_CONFIRMED: { label: '去内容任务（品牌部录）', path: '/business/content/task', carriesTaskId: false },
-  BRAND_BRIEF_CONFIRMED: { label: '去内容任务（品牌部录）', path: '/business/content/task', carriesTaskId: false },
-  FORBIDDEN_WORDS_DECLARED: { label: '去内容任务（品牌部录）', path: '/business/content/task', carriesTaskId: false }
+  // 品牌部这三项都在任务详情的「品牌要求（Brief）」卡里补，所以带上 taskId 与 section=brief
+  BRAND_TONE_CONFIRMED: {
+    label: '去内容任务详情补品牌调性',
+    path: '/business/content/task',
+    carriesTaskId: true,
+    section: 'brief'
+  },
+  BRAND_BRIEF_CONFIRMED: {
+    label: '去内容任务详情填并确认品牌要求',
+    path: '/business/content/task',
+    carriesTaskId: true,
+    section: 'brief'
+  },
+  FORBIDDEN_WORDS_DECLARED: {
+    label: '去内容任务详情声明禁用词',
+    path: '/business/content/task',
+    carriesTaskId: true,
+    section: 'brief'
+  }
 };
 
 /**
@@ -62,7 +91,7 @@ export function gateFixTarget(itemCode?: string | null): GateFixTarget | null {
 }
 
 /**
- * 拼出可跳转的地址（需要 `taskId` 的页面自动带上；有 `step` 的把它带成 `?step=`）。
+ * 拼出可跳转的地址（需要 `taskId` 的页面自动带上；`step` / `section` 各自带成查询参数）。
  *
  * @param target 去处
  * @param taskId 当前项目ID
@@ -75,6 +104,9 @@ export function gateFixRoute(target: GateFixTarget, taskId?: string | number | n
   }
   if (target.step) {
     params.push(`step=${encodeURIComponent(target.step)}`);
+  }
+  if (target.section) {
+    params.push(`section=${encodeURIComponent(target.section)}`);
   }
   return params.length ? `${target.path}?${params.join('&')}` : target.path;
 }

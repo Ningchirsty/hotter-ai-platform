@@ -14,10 +14,12 @@ describe('gateFixTarget', () => {
     expect(gateFixTarget('STORYBOARD_LOCKED')?.path).toBe('/creative/storyboard');
   });
 
-  it('品牌部的项指到内容任务（不是设计侧能自己做的）', () => {
+  it('品牌部的项指到内容任务详情（不是设计侧能自己做的），并钉到「品牌要求」那张卡', () => {
     for (const code of ['BRAND_TONE_CONFIRMED', 'BRAND_BRIEF_CONFIRMED', 'FORBIDDEN_WORDS_DECLARED']) {
       expect(gateFixTarget(code)?.path).toBe('/business/content/task');
-      expect(gateFixTarget(code)?.carriesTaskId).toBe(false);
+      // 内容任务页本轮补了深链支持：带 taskId 直接开那条任务的详情，section 决定滚到哪张卡
+      expect(gateFixTarget(code)?.carriesTaskId).toBe(true);
+      expect(gateFixTarget(code)?.section).toBe('brief');
     }
   });
 
@@ -47,9 +49,16 @@ describe('gateFixRoute', () => {
       .toBe('/creative/storyboard?taskId=2104582766641799169&step=STORYBOARD');
   });
 
-  it('不支持的页面不硬塞 taskId（塞了反而让人以为已经定位到那一条）', () => {
+  it('品牌部的项带上 taskId 与 section，落到那条任务的「品牌要求」卡上', () => {
+    // 本轮改动的原因：原先这里断言的是"不带 taskId"（列表页不支持深链），
+    // 结果点了按钮只落到任务列表——用户原话"也没有跳转到相应要确认的地方"。
     expect(gateFixRoute(gateFixTarget('BRAND_BRIEF_CONFIRMED')!, '2104582766641799169'))
-      .toBe('/business/content/task');
+      .toBe('/business/content/task?taskId=2104582766641799169&section=brief');
+  });
+
+  it('没有 taskId 时不产生半截地址（section 仍保留，页面忽略即可）', () => {
+    expect(gateFixRoute(gateFixTarget('BRAND_BRIEF_CONFIRMED')!, ''))
+      .toBe('/business/content/task?section=brief');
   });
 
   it('没有 taskId 时只给路径与 step，不产生 "?taskId=" 这种半截地址', () => {
