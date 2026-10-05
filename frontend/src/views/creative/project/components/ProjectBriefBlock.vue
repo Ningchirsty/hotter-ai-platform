@@ -15,15 +15,35 @@
         </el-button>
       </div>
     </div>
-    <p class="hint">
-      <b>本页只读</b>：品牌要求由品牌部在<b>内容生产协同 → 内容任务 → 任务详情 →「品牌要求（Brief）」</b>
-      里录入与确认，平面设计按此创作（那边确认后本页即可见）。要改要求请点右上「申请修改品牌要求」，
-      提交后进入品牌部的待办（互动确认卡），处理完这里会跟着更新。
-      产品事实同样只读（下面「4. 事实确认」），由品牌部在内容侧确认；品牌调性与事实里的 brand_tone
-      <b>并存</b>——一个是品牌方自己提的要求，一个是从资料里解析确认的，两者冲突时同时展示、由人裁定，不自动合并。
-      这些要求的去向（<b>按实际接线如实写</b>）：<b>必显信息</b>与<b>主推卖点</b>进出图的正向提示词，
-      <b>禁用词</b>进出图的负向提示词；<b>品牌调性 / 目标人群 / 尺寸规范 / 参考风格</b>
-      当前版本<b>没有任何下游消费</b>——不进出图提示词、不参与渲染，仅在此展示备查。
+    <p class="hint brief-note">
+      <b>本页只读</b>：品牌要求由品牌部在「内容生产协同 → 内容任务 → 任务详情 → 品牌要求（Brief）」里
+      录入与确认，确认后本页即可见。
+      <el-popover
+        placement="bottom-start"
+        :width="560"
+        trigger="hover"
+        popper-class="brief-note-popover"
+      >
+        <template #reference>
+          <span class="brief-note-more">只读范围 · 这些要求的去向</span>
+        </template>
+        <div class="brief-note-body">
+          <p>
+            要改要求请点右上「申请修改品牌要求」，提交后进入品牌部的待办（互动确认卡），
+            处理完这里会跟着更新。
+          </p>
+          <p>
+            产品事实同样只读（在下面「事实确认」那一步），由品牌部在内容侧确认；品牌调性与事实里的
+            brand_tone <b>并存</b>——一个是品牌方自己提的要求，一个是从资料里解析确认的，
+            两者冲突时同时展示、由人裁定，不自动合并。
+          </p>
+          <p>
+            这些要求的去向（<b>按实际接线如实写</b>）：<b>必显信息</b>与<b>主推卖点</b>进出图的正向提示词，
+            <b>禁用词</b>进出图的负向提示词；<b>品牌调性 / 目标人群 / 尺寸规范 / 参考风格</b>
+            当前版本<b>没有任何下游消费</b>——不进出图提示词、不参与渲染，仅在此展示备查。
+          </p>
+        </div>
+      </el-popover>
     </p>
     <p v-if="error" class="fact-error">
       {{ error }}（点右上「刷新」重试，页面不会用默认值糊过去）
@@ -52,7 +72,7 @@
               source="creative"
             />
             <span v-if="(brief?.styleRefImages || []).length" class="hint">
-              这些图也是任务附件，可以在上面「1. 产品图与参考图」里被选作出图参考图。
+              这些图也是任务附件，可以在「产品图与参考图」那一步里被选作出图参考图。
             </span>
           </div>
           <span class="hint">{{ field.hint }}</span>
@@ -114,3 +134,41 @@ defineEmits<{
   (e: 'go-content-task'): void;
 }>();
 </script>
+
+<!-- 悬浮卡是 teleport 到 body 的：既不在页面根节点下、也拿不到 scoped 的 data-v，
+     所以这里必须是**非 scoped** 块，并显式带上工作台的 token（否则 --elevated/--t1 解析失败，
+     弹层会退化成"暗色工作台里的一块白卡"）。与 CreativeFlowGuide 的 .flow-popover 同一套做法。 -->
+<style lang="scss">
+@use '@/assets/styles/tokens-studio.scss' as studio;
+
+.brief-note-popover.el-popover.el-popper {
+  @include studio.studio-tokens;
+
+  background: var(--elevated);
+  border: 1px solid var(--line);
+  color: var(--t2);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+
+  .el-popper__arrow::before {
+    background: var(--elevated);
+    border-color: var(--line);
+  }
+}
+
+.brief-note-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: var(--t1);
+
+  p {
+    margin: 0;
+  }
+
+  b {
+    color: #a5b4fc;
+  }
+}
+</style>

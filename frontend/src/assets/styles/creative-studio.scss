@@ -270,6 +270,51 @@
     align-items: center;
   }
 
+  /**
+   * 「辅助入口」一行（检查器 / 资产 / 质检与交付 / 模块规划）。
+   *
+   * v1 反馈 1.2 的原话：「基因待确认模块的流程中的'检查器、资产和模块规划模块'在流程卡中的
+   * 排版仅占卡片中的小部分位置，不符合正常的排版」——原先这三枚是挤在指引线标题行右侧的
+   * 小号文字按钮，看起来像临时塞进去的。
+   *
+   * 现在有**两种承载方式**：有指引线的页面挂在指引线卡片里，没有指引线的四个页面由工作台补一行。
+   * 两处共用这里的同一套类与样式（而不是各自写一份），既保证外观一致，也避免"改了一处、
+   * 另一处还是老样子"——这一轮已经修过好几次"同一件事两处定义"的毛病了。
+   */
+  .ws-panel-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 10px;
+
+    .bar-label {
+      margin-right: 2px;
+      font-size: 11px;
+      color: var(--t3);
+    }
+
+    .panel-tab {
+      padding: 3px 10px;
+      font-size: 12px;
+      color: var(--t2);
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      cursor: pointer;
+
+      &:hover:not(:disabled) {
+        color: var(--t1);
+        border-color: rgba(165, 180, 252, 0.5);
+      }
+
+      &:disabled {
+        color: var(--t3);
+        cursor: not-allowed;
+      }
+    }
+  }
+
   .fact-gate {
     display: flex;
     flex-wrap: wrap;
@@ -595,17 +640,42 @@
     gap: 12px;
   }
 
+  /**
+   * 只读的品牌要求卡片（v1 反馈 1.3 的原话：「品牌要求的信息在信息卡片上应该以不同的颜色去展示，
+   * 主要是为了区分标题和标题的主要内容，需要有主次关系，视觉上看得出来是品牌要求的卡片，
+   * 而不是一堆堆积的信息」）。
+   *
+   * 做法：整块给一层"卡片"外观 + 左侧一条品类色，字段名用品类色小字、字段值用正文色，
+   * 行与行之间用发丝线分隔 —— 这样"标题 / 内容"一眼分得开，整块也读得出是一张品牌要求卡。
+   */
+  .brief-grid-readonly {
+    gap: 0;
+    padding: 2px 14px;
+    background: rgba(165, 180, 252, 0.04);
+    border: 1px solid rgba(165, 180, 252, 0.18);
+    border-left: 3px solid #a5b4fc;
+    border-radius: 6px;
+  }
+
   .brief-row {
     display: flex;
     gap: 12px;
     align-items: flex-start;
+    padding: 10px 0;
+    border-bottom: 1px dashed var(--line);
+  }
+
+  .brief-row:last-child {
+    border-bottom: 0;
   }
 
   .brief-row > label {
-    flex: 0 0 112px;
-    padding-top: 8px;
-    font-size: 13px;
-    color: var(--t2);
+    flex: 0 0 104px;
+    padding-top: 1px;
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: #a5b4fc;
   }
 
   .brief-control {
@@ -617,8 +687,8 @@
   }
 
   .brief-value {
-    font-size: 13px;
-    line-height: 1.8;
+    font-size: 13.5px;
+    line-height: 1.75;
     color: var(--t1);
     white-space: pre-line;
     word-break: break-word;
@@ -626,6 +696,28 @@
 
   .brief-value.is-empty {
     color: var(--t3);
+  }
+
+  /* 字段说明：小字 + 更暗，读的时候不跟字段值抢注意力 */
+  .brief-control .hint {
+    font-size: 11.5px;
+    line-height: 1.6;
+    opacity: 0.85;
+  }
+
+  /* 「本页只读…」压成一行小字，整段说明移到悬浮卡里（v1 反馈 1.3 原话：
+   * 「本页只读」的注释应该去掉或者以小字体的展现形式，而不是一整段全部都展现在卡片上） */
+  .brief-note {
+    margin: 0 0 10px;
+    font-size: 12px;
+    line-height: 1.7;
+  }
+
+  .brief-note-more {
+    margin-left: 4px;
+    color: #a5b4fc;
+    cursor: help;
+    border-bottom: 1px dashed rgba(165, 180, 252, 0.5);
   }
 
   .brief-style-images {

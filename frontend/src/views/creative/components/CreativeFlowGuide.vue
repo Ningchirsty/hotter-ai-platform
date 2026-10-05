@@ -9,23 +9,32 @@
         <span class="spinner" aria-hidden="true" />这一步正在执行
       </span>
       <span class="spacer" />
-      <!-- 装配定义里的两个面板（R18 真做）：只读，任何页面都能开。
-           在工作台（R19）里由宿主统一托管，这里只发事件，不再自己开抽屉。 -->
-      <el-button class="panel-btn" size="small" text :disabled="!taskId" @click="openPanel('INSPECTOR')">
-        检查器
-      </el-button>
-      <el-button class="panel-btn" size="small" text :disabled="!taskId" @click="openPanel('ASSET_DRAWER')">
-        资产
-      </el-button>
-      <!-- 模块规划（R22，文档 §24）：屏集合的唯一人工入口。
-           放这里而不是塞进某个页面，是因为它跟"当前在哪一步"无关——任何页面都能进去改计划。 -->
-      <el-button class="panel-btn" size="small" text :disabled="!taskId" @click="openModulePlan">
-        模块规划
-      </el-button>
       <div class="progress" :title="progress.text">
         <i :style="{ width: progress.pct + '%' }" />
       </div>
       <span class="progress-text">{{ progress.text }}</span>
+    </div>
+
+    <!-- 辅助入口（v1 反馈 1.2 的原话：「基因待确认模块的流程中的'检查器、资产和模块规划模块'
+         在流程卡中的排版仅占卡片中的小部分位置，不符合正常的排版」）。
+         原先这三枚是挤在标题行右侧的小号文字按钮，看着像临时塞进去的；现在给它自己一行，
+         并**复用工作台补的那排「辅助」入口的同一套类与样式** —— 有指引线时挂在这里、
+         没有指引线时由工作台补一行，两处外观由同一份样式保证一致，不会再各自漂移。 -->
+    <div class="ws-panel-bar flow-panel-bar">
+      <span class="bar-label">辅助</span>
+      <!-- 装配定义里的两个面板（R18 真做）：只读，任何页面都能开。
+           在工作台（R19）里由宿主统一托管，这里只发事件，不再自己开抽屉。 -->
+      <button type="button" class="panel-tab" :disabled="!taskId" @click="openPanel('INSPECTOR')">
+        检查器
+      </button>
+      <button type="button" class="panel-tab" :disabled="!taskId" @click="openPanel('ASSET_DRAWER')">
+        资产
+      </button>
+      <!-- 模块规划（R22，文档 §24）：屏集合的唯一人工入口。
+           放这里而不是塞进某个页面，是因为它跟"当前在哪一步"无关——任何页面都能进去改计划。 -->
+      <button type="button" class="panel-tab" :disabled="!taskId" @click="openModulePlan">
+        模块规划
+      </button>
     </div>
 
     <p v-if="!taskId" class="flow-empty">选择一个视觉项目后，这里会显示它在流程里的位置。</p>
@@ -693,22 +702,6 @@ watch(
     color: var(--t2);
     min-width: 76px;
     text-align: right;
-  }
-
-  /* 面板入口：小号文字按钮，压住 Element Plus 的默认内边距，不抢"进度"的视觉重心 */
-  .panel-btn {
-    color: var(--t2);
-    font-size: 12px;
-    padding: 0 8px;
-    height: 22px;
-
-    &:hover {
-      color: var(--t1);
-    }
-
-    &.is-disabled {
-      color: var(--t3);
-    }
   }
 }
 

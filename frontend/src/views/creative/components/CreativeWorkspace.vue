@@ -497,40 +497,9 @@ function openModulePlan() {
   }
 }
 
-/* 辅助入口（没有指引线的页面才有）：一行朴素文字按钮，不复刻指引线 */
-.ws-panel-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
-  margin-bottom: 10px;
-
-  .bar-label {
-    margin-right: 4px;
-    color: var(--t3);
-    font-size: 11px;
-  }
-}
-
-.panel-tab {
-  padding: 3px 8px;
-  font-size: 12px;
-  color: var(--t2);
-  background: none;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  cursor: pointer;
-
-  &:hover:not(:disabled) {
-    color: var(--t1);
-    border-color: var(--line);
-  }
-
-  &:disabled {
-    color: var(--t3);
-    cursor: not-allowed;
-  }
-}
+/* 辅助入口那一行的样式已抽到全局 creative-studio.scss（.ws-panel-bar / .bar-label / .panel-tab）：
+   有指引线的页面（挂指引线卡片里）与没有指引线的页面（这里补的一行）必须长得一样，
+   两处各写一份就会漂移——这是本轮"去掉重复定义"的一部分，选择器与外观都没变。 */
 
 .step-tab {
   display: inline-flex;
