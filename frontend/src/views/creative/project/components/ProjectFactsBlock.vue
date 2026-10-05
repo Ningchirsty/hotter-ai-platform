@@ -4,19 +4,15 @@
       <h4>4. 事实确认</h4>
       <div class="block-actions">
         <span class="muted">已确认 {{ confirmedFacts.length }} 条 / 共 {{ facts.length }} 行</span>
-        <el-button
-          size="small"
-          plain
-          :loading="busy === 'confirmUnambiguous'"
-          @click="$emit('confirm-unambiguous')"
-        >
-          一键确认无歧义项
-        </el-button>
-        <el-button size="small" type="primary" plain @click="$emit('manual-entry')">人工录入</el-button>
+        <span class="muted">只读（品牌部在内容任务里确认）</span>
       </div>
     </div>
     <p class="hint">
       只有 <b>CONFIRMED</b> 的事实才会进入基因 / 方向 / 分镜文案的推导；PENDING 与已否决都不算。
+    </p>
+    <p class="hint">
+      本区块<b>只读</b>：事实由<b>品牌部</b>在「内容生产协同 → 内容任务 → 任务详情」确认。
+      设计侧不提供新增 / 确认 / 驳回入口——参考图与 AI 结论都不得反向成为产品事实。
     </p>
     <p v-if="error" class="fact-error">
       {{ error }}（点右上「刷新」重试，页面不会用默认值糊过去）
@@ -41,16 +37,6 @@
           <em class="gate-level">{{ option.gateLevel || '—' }}</em>
         </span>
         <span v-if="!requiredOptions.length" class="muted">该交付类型没有声明必填事实项。</span>
-      </div>
-      <div v-if="unsatisfiedOptions.length" class="block-actions">
-        <el-button
-          v-for="option in unsatisfiedOptions"
-          :key="'fill-' + option.fieldCode"
-          size="small"
-          @click="$emit('manual-entry', option.fieldCode)"
-        >
-          ＋ 录入「{{ option.fieldName || option.fieldCode }}」
-        </el-button>
       </div>
     </template>
 
@@ -104,33 +90,11 @@
             <span v-else class="muted">原文：—</span>
           </div>
         </div>
-        <div class="fact-ops">
-          <el-button
-            link
-            size="small"
-            type="primary"
-            :disabled="asFact(row).confirmStatus === 'CONFIRMED'"
-            :loading="busy === 'fact-' + asFact(row).snapshotId"
-            @click="$emit('confirm', asFact(row))"
-          >
-            确认
-          </el-button>
-          <el-button
-            link
-            size="small"
-            type="danger"
-            :disabled="asFact(row).confirmStatus === 'REJECTED'"
-            :loading="busy === 'fact-' + asFact(row).snapshotId"
-            @click="$emit('reject', asFact(row))"
-          >
-            驳回
-          </el-button>
-        </div>
       </div>
       <p v-if="!visibleFacts.length" class="empty">该筛选下没有事实行。</p>
     </div>
     <p v-else class="empty">
-      还没有事实候选。资料解析后会自动落成待确认行；也可以点「人工录入」补齐。
+      还没有事实候选。资料上传后由品牌部在内容任务里解析并确认，这里只做展示。
     </p>
   </section>
 </template>
@@ -171,14 +135,10 @@ defineProps<{
   filter: string;
   /** 闸门必填项 */
   requiredOptions: CpFactFieldOptionVO[];
-  /** 未满足的必填项 */
-  unsatisfiedOptions: CpFactFieldOptionVO[];
   /** 字段选项是否取到（没取到要如实说明"无法判断齐备"） */
   fieldOptionsLoaded: boolean;
   /** 闸门必填项的 hover 说明 */
   optionLabel: (option: CpFactFieldOptionVO) => string;
-  /** 正在进行的动作（'fact-<id>' / 'confirmUnambiguous'） */
-  busy: string;
   /** 读取失败原因（不静默） */
   error: string;
   /** 行收窄 */
@@ -192,10 +152,6 @@ defineProps<{
 
 defineEmits<{
   (e: 'update:filter', value: string): void;
-  (e: 'confirm-unambiguous'): void;
-  (e: 'manual-entry', fieldCode?: string): void;
-  (e: 'confirm', row: CpFactSnapshotVO): void;
-  (e: 'reject', row: CpFactSnapshotVO): void;
   (e: 'toggle-excerpt', row: CpFactSnapshotVO): void;
 }>();
 </script>

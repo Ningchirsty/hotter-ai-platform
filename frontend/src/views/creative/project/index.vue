@@ -93,6 +93,10 @@
             <span v-if="project.blockingCardCount" class="project-warn">
               有 {{ project.blockingCardCount }} 张阻断卡待处理
             </span>
+            <!-- C3①：内容闸门未过的任务只提示、不拦；避免"品牌部资料没齐"在设计师这里完全不可见 -->
+            <span v-if="contentGateWarning(project)" class="project-warn">
+              {{ contentGateWarning(project) }}
+            </span>
           </button>
         </div>
       </aside>
@@ -199,7 +203,7 @@
         </template>
 
         <template #ProjectFactsBlock>
-          <!-- 事实确认（R32：已拆成组件） -->
+          <!-- 事实确认（R32：已拆成组件；C1：设计侧只读，事实由品牌部在内容任务里确认） -->
           <ProjectFactsBlock
             v-model:filter="factFilter"
             :facts="facts"
@@ -207,19 +211,13 @@
             :visible-facts="visibleFacts"
             :filters="factFilters"
             :required-options="requiredFieldOptions"
-            :unsatisfied-options="unsatisfiedRequiredOptions"
             :field-options-loaded="fieldOptionsLoaded"
             :option-label="optionLabel"
-            :busy="factBusy"
             :error="factLoadError"
             :as-fact="asFact"
             :status-label="factStatusLabel"
             :status-type="factStatusType"
             :expanded="expandedFacts"
-            @confirm-unambiguous="doConfirmUnambiguousFacts"
-            @manual-entry="openManualFact"
-            @confirm="doConfirmFact"
-            @reject="doRejectFact"
             @toggle-excerpt="toggleFactExcerpt"
           />
         </template>
@@ -267,46 +265,6 @@
         </div>
       </section>
     </div>
-
-    <!-- 人工录入事实 -->
-    <el-dialog v-model="manualFactVisible" title="人工录入事实" width="520px">
-      <el-form label-width="90px">
-        <el-form-item label="字段">
-          <el-select
-            v-model="manualForm.fieldCode"
-            filterable
-            allow-create
-            default-first-option
-            placeholder="从闸门字段里选（不支持时可直接输入编码）"
-            style="width: 100%"
-          >
-            <el-option
-              v-for="option in fieldOptions"
-              :key="String(option.fieldCode)"
-              :label="optionLabel(option)"
-              :value="option.fieldCode"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="字段值">
-          <el-input v-model="manualForm.value" placeholder="字段值" />
-        </el-form-item>
-        <el-form-item label="备注">
-          <el-input v-model="manualForm.remark" placeholder="备注（可空）" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="manualFactVisible = false">取消</el-button>
-        <el-button
-          type="primary"
-          :loading="factBusy === 'manualFact'"
-          :disabled="!manualForm.fieldCode || !manualForm.value"
-          @click="doAddManualFact"
-        >
-          录入（直接确认为事实）
-        </el-button>
-      </template>
-    </el-dialog>
 
     <!-- 申请修改品牌要求：设计不能直接改（品牌要求归品牌部），但需求要能到品牌部手里 -->
     <el-dialog v-model="briefChangeVisible" title="申请修改品牌要求" width="560px">
@@ -472,14 +430,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import type { UploadRequestOptions } from 'element-plus';
 import { productOptions } from '@/api/content/product';
 import type { CpProductVO } from '@/api/content/product/types';
-import {
-  addManualFact,
-  confirmFact,
-  confirmUnambiguousFacts,
-  factFieldOptions,
-  listFact,
-  rejectFact
-} from '@/api/content/fact';
+import { factFieldOptions, listFact } from '@/api/content/fact';
 import type { CpFactFieldOptionVO, CpFactSnapshotVO } from '@/api/content/fact/types';
 import type { CpTaskFileVO } from '@/api/content/task/types';
 // 品牌要求（Brief）已归属内容生产协同：读的是内容域接口，本页只读展示
@@ -600,9 +551,8 @@ const fieldOptions = ref<CpFactFieldOptionVO[]>([]);
 /** 字段选项接口是否取到：取不到就不下「必填项齐了没」的结论 */
 const fieldOptionsLoaded = ref(false);
 const factLoadError = ref('');
-const factBusy = ref('');
-const manualFactVisible = ref(false);
-const manualForm = reactive({ fieldCode: '', value: '', remark: '' });
+// C1：设计侧不再写入事实。原先这里有 factBusy / manualFactVisible / manualForm，
+// 以及对应的一键确认、逐条确认/驳回、人工录入入口——已全部移除（权威在内容域）。
 
 // ------------------------------------------------------------------
 // 品牌要求（Brief）：**只读**展示（品牌部在内容任务里录入与确认）
@@ -906,7 +856,6 @@ const productImageOrigin = computed(() => {
 
 const confirmedFacts = computed(() => facts.value.filter((f) => f.confirmStatus === 'CONFIRMED'));
 const requiredFieldOptions = computed(() => fieldOptions.value.filter((o) => o.requiredByGate));
-const unsatisfiedRequiredOptions = computed(() => requiredFieldOptions.value.filter((o) => !o.satisfied));
 
 /**
  * 事实清单的筛选与排序（无框列表用）。
@@ -980,6 +929,41 @@ function stageLabel(stage?: string): string {
 
 function stageType(stage?: string): string {
   return (stage && CREATIVE_STAGE_TYPES[stage]) || 'info';
+}
+
+/**
+ * 「资料还没就绪」的内容侧状态（cp_task.status）→ 中文。
+ *
+ * <p>口径见 {@code ContentTaskStatusEnum}：只有 DRAFT / PARSING / PENDING_CONFIRM 三种是
+ * 「品牌部还没把资料弄齐」；{@code CONDITIONAL_READY}（条件开工）与 {@code READY}（可开工）
+ * 都算能开工，不提示。</p>
+ *
+ * <p><b>为什么用白名单而不是"非 READY 就算未就绪"</b>：同一个枚举里还有制作期的
+ * {@code PRODUCING / AI_CHECKING / REVIEWING / CONFIRMED / DELIVERED} 等状态，
+ * 黑名单写法会把它们标成「品牌部资料未就绪」——那是假的，而且最容易在交付阶段被看到。</p>
+ */
+const CONTENT_NOT_READY_LABELS: Record<string, string> = {
+  DRAFT: '草稿',
+  PARSING: '解析中',
+  PENDING_CONFIRM: '待确认/待补料'
+};
+
+/**
+ * 内容闸门还没过的项目，在列表里打一个提示标（C3①）。
+ *
+ * <p><b>为什么需要它</b>：视觉项目列表只按「交付类型」过滤 cp_task，**完全不看内容侧状态**——
+ * 于是品牌部那边还是「草稿」「待确认/待补料」的任务，在设计师这里和就绪的任务长得一模一样，
+ * 既不知道资料没齐，也不知道该不该等。</p>
+ *
+ * <p><b>为什么只提示、不拦截</b>：先开工后补资料是这条产线上的常态（设计不依赖全部事实），
+ * 硬拦会把"资料没齐"变成产线阻塞。所以这里只把事实摆出来，判断留给人和流程。</p>
+ *
+ * @param project 列表行
+ * @returns 提示文案；已就绪、制作期或没有状态时返回空串（不显示）
+ */
+function contentGateWarning(project?: { status?: string }): string {
+  const label = CONTENT_NOT_READY_LABELS[String(project?.status || '')];
+  return label ? `品牌部资料未就绪（${label}）` : '';
 }
 
 function genStatusLabel(status?: string): string {
@@ -1140,87 +1124,6 @@ async function loadFacts() {
     factRes == null || optionRes == null
       ? '该项目的事实数据没取到（事实清单或字段选项接口失败），下面显示的内容可能不完整'
       : '';
-}
-
-async function doConfirmFact(row: CpFactSnapshotVO) {
-  if (row.snapshotId == null) return;
-  factBusy.value = 'fact-' + row.snapshotId;
-  try {
-    await confirmFact(row.snapshotId);
-    ElMessage.success('已确认该值');
-    await loadFacts();
-    flowToken.value += 1;
-  } catch (error) {
-    ElMessage.error((await extractErrorMessage(error)) ?? '确认失败');
-  } finally {
-    factBusy.value = '';
-  }
-}
-
-async function doRejectFact(row: CpFactSnapshotVO) {
-  if (row.snapshotId == null) return;
-  try {
-    await ElMessageBox.confirm('驳回后该候选值不会被采用，是否继续？', '驳回候选值', { type: 'warning' });
-  } catch {
-    return;
-  }
-  factBusy.value = 'fact-' + row.snapshotId;
-  try {
-    await rejectFact(row.snapshotId);
-    ElMessage.success('已驳回该候选值');
-    await loadFacts();
-    flowToken.value += 1;
-  } catch (error) {
-    ElMessage.error((await extractErrorMessage(error)) ?? '驳回失败');
-  } finally {
-    factBusy.value = '';
-  }
-}
-
-async function doConfirmUnambiguousFacts() {
-  if (!currentProjectId.value) return;
-  factBusy.value = 'confirmUnambiguous';
-  try {
-    const res = await confirmUnambiguousFacts(currentProjectId.value);
-    ElMessage.success(`已确认 ${res.data ?? 0} 条无争议项`);
-    await loadFacts();
-    flowToken.value += 1;
-  } catch (error) {
-    ElMessage.error((await extractErrorMessage(error)) ?? '一键确认失败');
-  } finally {
-    factBusy.value = '';
-  }
-}
-
-/** 打开人工录入对话框（可从「缺某项」的按钮带出字段编码） */
-function openManualFact(fieldCode?: string) {
-  if (fieldCode) manualForm.fieldCode = fieldCode;
-  manualFactVisible.value = true;
-}
-
-async function doAddManualFact() {
-  if (!currentProjectId.value || !manualForm.fieldCode || !manualForm.value) return;
-  factBusy.value = 'manualFact';
-  try {
-    await addManualFact({
-      taskId: currentProjectId.value,
-      fieldCode: manualForm.fieldCode,
-      value: manualForm.value,
-      remark: manualForm.remark || undefined
-    });
-    // 人工录入在后端是**直接落 CONFIRMED**（ContentFactServiceImpl.addManual），
-    // 文案必须与行为一致：以前这里写「待确认…请在事实表里确认后才算数」，是假的（内测 S18）。
-    ElMessage.success('已录入并确认为事实（人工录入即视为已确认，无需再确认）');
-    manualForm.value = '';
-    manualForm.remark = '';
-    manualFactVisible.value = false;
-    await loadFacts();
-    flowToken.value += 1;
-  } catch (error) {
-    ElMessage.error((await extractErrorMessage(error)) ?? '录入失败');
-  } finally {
-    factBusy.value = '';
-  }
 }
 
 function factStatusLabel(status?: string): string {
@@ -2568,12 +2471,6 @@ button {
 .fact-excerpt.open {
   color: var(--t2);
   -webkit-line-clamp: unset;
-}
-.fact-ops {
-  display: flex;
-  flex: 0 0 auto;
-  gap: 2px;
-  align-items: center;
 }
 .fact-error {
   margin: 0 0 10px;

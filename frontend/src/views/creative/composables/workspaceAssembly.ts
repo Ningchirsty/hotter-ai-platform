@@ -96,7 +96,7 @@ export const CODE_COMPONENT_REGISTRY: Record<string, RegistryEntry> = {
   ProjectFactsBlock: {
     kind: 'SLOT',
     location: 'project/components/ProjectFactsBlock.vue（R32 拆出；项目页以同名插槽提供）',
-    note: 'FACT 步：事实确认（筛选/排序口径留在页面一处）'
+    note: 'FACT 步：事实确认（只读；事实由品牌部在内容任务里确认——筛选/排序口径留在页面一处）'
   },
   ProjectCopyBlock: {
     kind: 'SLOT',

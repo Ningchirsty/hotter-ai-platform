@@ -385,11 +385,15 @@ public class CreativeGateServiceImpl implements ICreativeGateService {
                 "品牌方已确认（确认时间 " + brief.getConfirmedAt() + "）");
         }
         return new GateItem("BRAND_BRIEF_CONFIRMED", "品牌 Brief 已填写并确认", LEVEL_CONDITION, false,
-            configured
+            (configured
                 ? "Brief 已填写但状态是「" + ContentBriefStatusEnum.descOf(brief.getStatus())
-                    + "」：请到「视觉项目 → 品牌 Brief」点「品牌方确认」"
-                : "还没有填品牌 Brief：请到「视觉项目 → 品牌 Brief」填写品牌调性/必显信息/"
-                    + "禁用词/主推卖点，然后点「品牌方确认」");
+                    + "」：确认权在品牌部——请品牌部到「内容生产协同 → 内容任务 → 任务详情」"
+                    + "点「品牌方确认」"
+                : "还没有填品牌 Brief：请品牌部到「内容生产协同 → 内容任务 → 任务详情」填写品牌调性/"
+                    + "必显信息/禁用词/主推卖点，然后点「品牌方确认」")
+                + "。设计侧对本项只读（C1 起已收回设计侧的确认入口）。"
+                + "品牌方的必填要求——当前是建议级（只提示、不阻断出图），"
+                + "待存量项目补齐后升为硬性项（BLOCK），届时未确认将不能提交视觉门");
     }
 
     /**
@@ -402,8 +406,9 @@ public class CreativeGateServiceImpl implements ICreativeGateService {
         boolean declared = brief != null && StringUtils.isNotBlank(brief.getForbiddenWords());
         return new GateItem("FORBIDDEN_WORDS_DECLARED", "已声明禁用词与合规红线", LEVEL_CONDITION, declared,
             declared ? "已声明 " + lineCount(brief.getForbiddenWords()) + " 条；出图负向提示词会逐条追加"
-                : "还没有声明禁用词：请到「视觉项目 → 品牌 Brief」的「禁用词与合规红线」里一行一条填上"
-                    + "（未声明时出图只能用默认禁忌词表）");
+                : "还没有声明禁用词：请品牌部到「内容生产协同 → 内容任务 → 任务详情」的"
+                    + "「禁用词与合规红线」里一行一条填上（未声明时出图只能用默认禁忌词表）。"
+                    + "同样是品牌方的必填项，当前只提示、待存量补齐后升为硬性项（BLOCK）");
     }
 
     /**
