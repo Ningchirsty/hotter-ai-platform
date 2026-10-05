@@ -163,9 +163,13 @@
     <el-dialog v-model="previewVisible" title="候选预览" width="720px" @closed="closePreview">
       <!-- v1 反馈：预览只给一张图，看不出这是哪一屏、什么用途。
            光看画面本身分不清 HERO 主图和卖点图，而两者的验收标准不一样——
-           所以把「项目 / 屏 / 用途 / 候选 / 尺寸 / 状态」摆在图上方，
+           所以把「图 / 项目 / 屏 / 用途 / 候选 / 尺寸 / 状态」摆在图上方，
            用途取不到分镜时如实说"未取到"，不拿"屏 12"这种编号冒充用途。 -->
+      <!-- 第 22 轮补「图」这一栏：原文还有一句「预览中的是最终的出图还是上传的产品图还是参考图
+           并不明确」。这里能预览的**只有出图候选**（openPreview 收的是 DpGenerationVO），
+           所以直接把这件事写在最前面，不必让人从画面去猜。 -->
       <div v-if="previewRow" class="preview-meta">
+        <span class="pm-item pm-kind"><b>图</b>已出图候选（模型生成，非产品图/参考图）</span>
         <span class="pm-item"><b>项目</b>{{ previewProjectName }}</span>
         <span class="pm-item"><b>屏</b>{{ screenLabel(previewRow, previewScreenMap) }}</span>
         <span class="pm-item"><b>用途</b>{{ previewTypeText }}</span>
@@ -174,7 +178,7 @@
         <span class="pm-item"><b>状态</b>{{ previewRow.statusDesc || statusLabel(previewRow.status) }}</span>
       </div>
       <div class="preview-wrap">
-        <img v-if="previewUrl" :src="previewUrl" alt="候选原图" />
+        <img v-if="previewUrl" :src="previewUrl" alt="出图候选原图" />
         <p v-else class="muted">加载中…</p>
       </div>
     </el-dialog>
@@ -856,6 +860,16 @@ onBeforeUnmount(() => {
   margin-right: 6px;
   font-weight: 500;
   color: var(--t3);
+}
+/* 「图」这一栏是回答"我看的是什么图"的，比别的元信息重要一档：
+   整行独占、用品类色，扫一眼就能确认这不是产品图/参考图（v1 反馈 生产中心 1.2）。 */
+.preview-meta .pm-kind {
+  flex: 0 0 100%;
+  color: var(--t1);
+
+  b {
+    color: #a5b4fc;
+  }
 }
 
 .preview-wrap {

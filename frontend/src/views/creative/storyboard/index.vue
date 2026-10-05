@@ -60,6 +60,7 @@
           @generate="doGenerateStoryboard"
           @lock="doLockStoryboard"
           @edit-screen="openScreenEdit"
+          @open-module-plan="openModulePlan"
         />
       </template>
 
@@ -144,6 +145,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import {
   generateDirections,
@@ -193,6 +195,7 @@ import StoryboardBoard from './components/StoryboardBoard.vue';
  */
 const projects = ref<CreativeProjectVO[]>([]);
 const taskId = ref('');
+const router = useRouter();
 // 流程指引线的刷新令牌：只在动作成功后 +1，加载/刷新函数里不动它
 const flowToken = ref(0);
 const directions = ref<DpVisualDirectionVO[]>([]);
@@ -433,9 +436,15 @@ async function doGenerateStoryboard() {
 }
 
 async function doLockStoryboard() {
+  // v1 反馈 方向与分镜 1.4：「目前只能按照 7 个分镜头去锁定」——锁定的范围原先没写出来，
+  // 人只看到一句"确认锁定？"。这里把**锁的是哪几屏、这个集合从哪来**说在点按钮之前，
+  // 免得锁完才发现屏数不是自己要的（那时只能重新生成一版）。
+  const count = storyboard.value?.screenCount ?? (storyboard.value?.screens || []).length;
+  const scope = count ? `本次锁定的是当前这一版的 ${count} 屏（集合与顺序来自「模块规划」）。` : '';
   try {
     await ElMessageBox.confirm(
-      '锁定后这一版分镜不可修改（重新生成会出新版本），并成为视觉门审核与批量出图的依据。确认锁定？',
+      scope +
+        '锁定后这一版分镜不可修改（重新生成会出新版本），并成为视觉门审核与批量出图的依据。确认锁定？',
       '锁定分镜',
       { type: 'warning' }
     );
@@ -453,6 +462,18 @@ async function doLockStoryboard() {
   } finally {
     lockingSb.value = false;
   }
+}
+
+/**
+ * 去「模块规划」改屏集合与顺序（v1 反馈 方向与分镜 1.4：「应该是可配置的，
+ * 目前只能按照 7 个分镜头去锁定」）。可配置这件事一直在（计划驱动屏集合），
+ * 缺的是"在分镜这一步能看见并从这儿过去"，所以由分镜区块发一个事件过来。
+ */
+function openModulePlan() {
+  if (!taskId.value) {
+    return;
+  }
+  void router.push({ path: '/creative/module-plan', query: { taskId: String(taskId.value) } });
 }
 
 function openScreenEdit(screen: DpStoryboardScreenVO) {

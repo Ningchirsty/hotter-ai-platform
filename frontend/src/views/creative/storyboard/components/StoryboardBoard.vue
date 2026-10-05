@@ -27,8 +27,20 @@
         </div>
       </div>
 
-      <p v-if="storyboard && storyboard.sourceDesc" class="muted source-note">
+      <p v-if="storyboard && storyboard.sourceDesc" class="hint source-note">
         来源：{{ storyboard.sourceDesc }}
+      </p>
+
+      <!-- v1 反馈 方向与分镜 1.4：「7 个分镜应该是不同的分镜点，并且应该是可配置的，
+           目前只能按照 7 个分镜头去锁定」——可配置这件事**本来就存在**（屏集合与顺序由
+           「模块规划」决定，改完重新生成分镜即可），但页面上没有任何地方说这件事，
+           于是"锁定"看起来像是被固定成 7 屏。这里把它说清楚并给一条路。 -->
+      <p v-if="storyboard" class="hint storyboard-scope">
+        本次要锁定的就是这 <b>{{ storyboard.screenCount }} 屏</b>（集合与顺序来自<b>「模块规划」</b>）。
+        想加屏、减屏或调顺序，请先去模块规划改计划，改完<b>重新生成分镜</b>再用新的一版锁定。
+        <el-button size="small" text type="primary" @click="$emit('open-module-plan')">
+          去模块规划
+        </el-button>
       </p>
 
       <p v-if="!storyboard" class="empty">
@@ -112,6 +124,8 @@ defineEmits<{
   (e: 'lock'): void;
   /** 打开编辑单屏弹窗（弹窗与落库都在页面） */
   (e: 'edit-screen', screen: DpStoryboardScreenVO): void;
+  /** 去「模块规划」改屏集合与顺序（v1 反馈：可配置这件事原先页面上没人说） */
+  (e: 'open-module-plan'): void;
 }>();
 
 /**
