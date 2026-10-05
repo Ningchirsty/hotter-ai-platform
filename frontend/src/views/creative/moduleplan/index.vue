@@ -97,8 +97,8 @@
         </el-form-item>
         <el-form-item label="保真等级">
           <el-select v-model="definitionForm.productLockLevel" class="pick">
-            <el-option label="STRICT（产品必须一致）" value="STRICT" />
-            <el-option label="LOOSE（允许场景化演绎）" value="LOOSE" />
+            <el-option label="严格保真（结构与配色不得变）" value="STRICT" />
+            <el-option label="允许艺术化（可换场景与角度）" value="LOOSE" />
           </el-select>
         </el-form-item>
         <el-form-item label="取景">
