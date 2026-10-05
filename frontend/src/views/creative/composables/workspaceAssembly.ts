@@ -131,7 +131,7 @@ export const CODE_COMPONENT_REGISTRY: Record<string, RegistryEntry> = {
   DirectionBoard: {
     kind: 'SLOT',
     location: 'storyboard/components/DirectionBoard.vue（R39 拆出；分镜页以同名插槽提供）',
-    note: 'DIRECTION 步：A/B/C 三套方向（选定、编辑文案入口）；编辑弹窗留在页面'
+    note: 'DIRECTION 步：三套方向（选定、编辑文案入口）；编辑弹窗留在页面'
   },
   StoryboardBoard: {
     kind: 'SLOT',

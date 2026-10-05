@@ -358,9 +358,12 @@ public class CreativeGateServiceImpl implements ICreativeGateService {
      */
     private GateItem directionSelectedItem(Long taskId) {
         DpVisualDirectionVo direction = directionService.selected(taskId);
+        // 详情文案不再提"A/B/C"也不印方向代号：界面上已经不给方向展示编号了
+        // （v1 反馈 方向与分镜 1.3「不要以英文或者编号去展示」），闸门里再印一个 A 会指向
+        // 一个界面上看不到的东西。方向名本来就是中文，够用。
         return new GateItem("DIRECTION_SELECTED", "视觉方向已选定", LEVEL_CONDITION, direction != null,
-            direction == null ? "尚未在 A/B/C 中选定方向"
-                : "已选定 " + direction.getDirectionCode() + " · " + direction.getDirectionName());
+            direction == null ? "还没有在候选方向里选定一个"
+                : "已选定「" + direction.getDirectionName() + "」");
     }
 
     /**

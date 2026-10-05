@@ -183,7 +183,9 @@ const STEP_DETAIL_CHECKERS: Record<string, (ctx: StepDetailContext) => Promise<S
     const missing: string[] = [];
     const dnaDone = ctx.stepDone('DNA');
     if (!dnaDone) missing.push('视觉基因还没有锁定版本（后端会拒绝生成方向）');
-    if (rows.length && !selected) missing.push('还没有在 A/B/C 中选定方向');
+    // 不再说"A/B/C"：页面上已经不给方向印编号了（v1 反馈 方向与分镜 1.3），
+    // 提示里再提 A/B/C 会指到一个界面上不存在的东西。
+    if (rows.length && !selected) missing.push('还没有在候选方向里选定一个');
     if (!rows.length && dnaDone) missing.push('还没有生成方向');
     return {
       missing,
