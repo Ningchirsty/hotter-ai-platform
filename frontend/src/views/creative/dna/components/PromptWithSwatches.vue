@@ -1,21 +1,22 @@
 <template>
   <div class="prompt-box">
-    <div class="prompt-label">
+    <div v-if="!previewOnly" class="prompt-label">
       <label>{{ label }}</label>
       <el-button size="small" text type="primary" @click="showRaw = !showRaw">
         {{ showRaw ? '看色块版' : '查看原文' }}
       </el-button>
     </div>
     <!-- 原文：与下发时逐字相同，可选中复制 -->
-    <el-input v-if="showRaw" :model-value="text" type="textarea" :rows="rows" readonly />
+    <el-input v-if="!previewOnly && showRaw" :model-value="text" type="textarea" :rows="rows" readonly />
     <!-- 默认视图：色号渲染成色块，正文不再印 #RRGGBB（色值在 title 里，悬停可见） -->
     <div v-else class="prompt-render">
       <template v-for="(seg, index) in segments" :key="index">
         <span v-if="seg.kind === 'text'">{{ seg.text }}</span>
         <span v-else class="swatch" :style="{ background: seg.text }" :title="seg.text" />
       </template>
+      <span v-if="!segments.length" class="prompt-empty">（空）</span>
     </div>
-    <p v-if="!showRaw && tokens.length" class="swatch-note">
+    <p v-if="!previewOnly && !showRaw && tokens.length" class="swatch-note">
       色块＝提示词里的色号（悬停看色值）。这段文本本身一个字没改，点「查看原文」能看到并复制原样。
     </p>
   </div>
@@ -40,14 +41,21 @@ import { promptColorTokens, splitPromptColors } from '../../composables/promptSw
  */
 const props = withDefaults(
   defineProps<{
-    /** 框上方的标题（正向/负向） */
-    label: string;
+    /** 框上方的标题（正向/负向）；{@code previewOnly} 时不显示，可省 */
+    label?: string;
     /** 提示词原文 */
     text: string;
     /** 「查看原文」时文本框的行数 */
     rows?: number;
+    /**
+     * 只做色块预览：不显示标题与「查看原文」开关。
+     *
+     * <p>裁定 ③ 之后提示词在本页**可编辑**，编辑框用的是普通 textarea（里面必然是带色号的原文），
+     * 所以另配一份纯预览——既满足"框里能改"，又保住"色号看起来是什么颜色"。</p>
+     */
+    previewOnly?: boolean;
   }>(),
-  { rows: 4 }
+  { rows: 4, previewOnly: false, label: '' }
 );
 
 /** 当前是否显示逐字原文 */

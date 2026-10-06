@@ -130,6 +130,25 @@ public class DnaPromptBuilder {
     public Prompt build(ObjectNode dna, String subject, String screenHint,
                         CpBrandBriefVo brief, String screenText, String moduleVisualRules) {
         ObjectNode node = dna == null ? VisualDnaSchema.empty() : dna;
+
+        // ③ 人工改写过的提示词（v1 人工测试反馈裁定 2026-10-06：「在框里改」**算新一版基因**）。
+        //
+        // 覆盖存在 `dna_json.promptOverride`，也就是**跟着版本走**：这一版带着覆盖，
+        // 预览与真正下发给模型的提示词都以它为准；下一版没带覆盖就回到派生。
+        //
+        // 为什么放在 build() 里面而不是各个调用方各判一次：预览（promptPreview）与出图
+        // （submitForScreen）都走这个派生器，放在这里才是"改完立刻生效"的唯一权威；
+        // 放在调用方就得记住每处都判，漏一处就会出现"页面显示改了、出图还是老的"。
+        JsonNode override = node.path("promptOverride");
+        if (override.isObject()) {
+            String overriddenPositive = override.path("positive").asText("");
+            String overriddenNegative = override.path("negative").asText("");
+            if (StringUtils.isNotBlank(overriddenPositive) || StringUtils.isNotBlank(overriddenNegative)) {
+                return new Prompt(overriddenPositive, overriddenNegative,
+                    List.of("promptOverride(人工改写)"), List.of());
+            }
+        }
+
         List<String> applied = new ArrayList<>();
         List<String> omitted = new ArrayList<>();
         StringBuilder sb = new StringBuilder();

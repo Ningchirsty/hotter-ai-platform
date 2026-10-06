@@ -291,6 +291,14 @@ export interface CreativeDnaForm {
   typographyStyle?: string;
   sceneType?: string;
   remark?: string;
+  /**
+   * 人工改写的正向提示词（v1 裁定 ③：在基因页框里改提示词**算新一版基因**）。
+   *
+   * 三态：不传＝这次保存不动提示词；空串＝清掉人工改写、回到按基因派生；有内容＝存进这一版。
+   */
+  promptPositive?: string;
+  /** 人工改写的负向提示词（口径同上） */
+  promptNegative?: string;
 }
 
 /** DNA 派生的提示词 */

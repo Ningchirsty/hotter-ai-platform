@@ -138,7 +138,9 @@ async function loadAll() {
 async function loadPrompt() {
   if (!taskId.value) return;
   try {
-    const res = await getDnaPrompt(taskId.value, 'HERO 主图');
+    // 按**页面正在显示的那一版**取提示词（不是"当前生效版本"）：
+    // 在锁定版上改提示词会新建一版，若这里不传 dnaId，刚改完一刷新就会看到改动"没了"。
+    const res = await getDnaPrompt(taskId.value, 'HERO 主图', dna.value?.id);
     prompt.value = res.data || null;
     promptText.value = res.data?.prompt || '';
     negativeText.value = res.data?.negativePrompt || '';
@@ -195,7 +197,13 @@ async function doSave(payload: CreativeDnaForm) {
     const res = await saveDna(taskId.value, { ...payload });
     const wasLocked = dna.value?.locked;
     dna.value = res.data || null;
-    ElMessage.success(wasLocked ? '已基于锁定版新建一版' : '已保存');
+    // 说清后果（裁定 ③）：在锁定版上保存会新建一版，而**出图仍按已锁定那一版**，
+    // 所以"改完还要锁定"这件事必须写在提示里，否则人会以为改完就生效了。
+    ElMessage.success(
+      wasLocked
+        ? `已新建 v${res.data?.version ?? ''}（草稿待确认）——锁定这一版后才会成为出图依据`
+        : '已保存'
+    );
     await loadAll();
     flowToken.value += 1;
   } catch (error) {

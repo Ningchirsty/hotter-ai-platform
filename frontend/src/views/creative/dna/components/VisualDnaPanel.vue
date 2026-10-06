@@ -221,26 +221,51 @@
     <section class="panel" data-dna-section="PROMPT">
       <div class="block-head">
         <h3>按这版基因派生的出图提示词</h3>
-        <el-button size="small" text type="primary" @click="$emit('load-prompt')">重新派生</el-button>
+        <div class="head-actions">
+          <el-button size="small" text type="primary" @click="$emit('load-prompt')">重新派生</el-button>
+          <el-button size="small" type="primary" :loading="saving" @click="submit">
+            保存为新一版基因
+          </el-button>
+        </div>
       </div>
       <p class="hint">
         用到的维度：{{ appliedText(prompt?.applied) || '—' }}。
       </p>
+      <!-- v1 裁定 ③（2026-10-06）：「在框里改」**算新一版基因**。
+           所以这里从"只做展示"改成可编辑：改完点「保存为新一版基因」，提示词作为
+           这一版基因的一部分存下来（锁定后再改会自动新建一版），出图时会原样预填。 -->
       <p class="hint">
-        下面两框是<b>出图时会预填进去的内容</b>：正向＝画面要什么，负向＝画面不要什么。
-        这里只做展示——<b>本页改不了</b>，因为它不是这一版基因的一部分（改了就没法回答
-        "这版基因派生出什么"）。要改就点下面的按钮去出图框，那儿是真正会生效的地方，
-        改完照原样下发。「重新派生」会按当前这一版基因重算一次。
+        这两框<b>可以改</b>：改完点右上「保存为新一版基因」——提示词会作为<b>这一版基因</b>的一部分
+        存下来（锁定后再改会自动新建一版），出图时原样预填。想回到派生结果，点「重新派生」再保存。
+        每个框下面配了一份<b>色块预览</b>：色号照旧随提示词下发给模型，颜色在这里看得见。
       </p>
+      <div class="prompt-edit">
+        <label>正向提示词（要什么）</label>
+        <el-input
+          v-model="form.promptPositive"
+          type="textarea"
+          :rows="5"
+          maxlength="1000"
+          show-word-limit
+        />
+        <PromptWithSwatches :text="form.promptPositive || ''" preview-only />
+      </div>
+      <div class="prompt-edit">
+        <label>负向提示词（不要什么）</label>
+        <el-input
+          v-model="form.promptNegative"
+          type="textarea"
+          :rows="2"
+          maxlength="500"
+          show-word-limit
+        />
+        <PromptWithSwatches :text="form.promptNegative || ''" preview-only />
+      </div>
       <div class="prompt-actions">
         <el-button size="small" type="primary" plain @click="$emit('open-generation')">
           去出图框改提示词
         </el-button>
       </div>
-      <!-- v1 反馈 1.2「具体的编号对应的是相应的颜色。不要展示编号最好」：
-           默认把色号画成色块（色值悬停可见），另给「查看原文」放出逐字原文——文本一个字没改。 -->
-      <PromptWithSwatches label="正向提示词（要什么）" :text="promptText" :rows="4" />
-      <PromptWithSwatches label="负向提示词（不要什么）" :text="negativeText" :rows="2" />
     </section>
 
     <!-- 证据链 + 版本历史：并列两张卡
@@ -597,6 +622,21 @@ async function doRecommend() {
 
 // 换版 / 保存后重新拉取都会替换 dna 对象：表单跟着覆盖填充（这是"当前版"的编辑态）
 watch(() => props.dna, (value) => fillForm(value), { immediate: true });
+
+/**
+ * 提示词框的可编辑初值：以接口当前返回的为准（可能是派生结果，也可能是这一版人工改写的）。
+ *
+ * <p>「重新派生」、换版、保存后重新拉取都会让它跟着刷新——与「还原为当前版本」同一口径：
+ * 页面上看到的初值永远是"这一版基因现在的提示词"。</p>
+ */
+watch(
+  () => [props.promptText, props.negativeText],
+  ([positive, negative]) => {
+    form.promptPositive = positive || '';
+    form.promptNegative = negative || '';
+  },
+  { immediate: true }
+);
 </script>
 
 <style scoped lang="scss">
@@ -742,6 +782,21 @@ watch(() => props.dna, (value) => fillForm(value), { immediate: true });
 }
 .prompt-actions {
   margin-top: 10px;
+}
+/* ③ 提示词改成可编辑之后：每个框下面跟一份色块预览（纯预览，不参与编辑） */
+.prompt-edit {
+  margin-top: 12px;
+
+  > label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 12px;
+    color: var(--t2);
+  }
+
+  .prompt-box {
+    margin-top: 6px;
+  }
 }
 .prompt-box > label {
   display: block;

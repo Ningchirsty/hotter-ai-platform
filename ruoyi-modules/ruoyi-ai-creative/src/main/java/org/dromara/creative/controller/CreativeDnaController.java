@@ -127,13 +127,15 @@ public class CreativeDnaController {
      *
      * @param taskId     项目ID
      * @param screenHint 画面用途提示
+     * @param dnaId      指定版本（可空＝当前生效版本，即已锁定那版）
      * @return 派生的提示词与用到的维度
      */
     @SaCheckPermission(CreativeConstants.PERM_DNA_LIST)
     @GetMapping("/prompt")
     public R<DnaPromptBuilder.Prompt> prompt(@NotNull(message = "项目ID不能为空") @PathVariable("taskId") Long taskId,
-                                             @RequestParam(value = "screenHint", required = false) String screenHint) {
-        return R.ok(dnaService.promptPreview(taskId, screenHint));
+                                             @RequestParam(value = "screenHint", required = false) String screenHint,
+                                             @RequestParam(value = "dnaId", required = false) Long dnaId) {
+        return R.ok(dnaService.promptPreview(taskId, screenHint, dnaId));
     }
 
 }

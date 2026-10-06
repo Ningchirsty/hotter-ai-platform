@@ -397,12 +397,26 @@ export function lockDna(taskId: string | number, dnaId?: string | number): Axios
   });
 }
 
-/** 按当前生效基因派生提示词 */
-export function getDnaPrompt(taskId: string | number, screenHint?: string): AxiosPromise<DnaPromptVO> {
+/**
+ * 按基因派生提示词。
+ *
+ * @param taskId     项目ID
+ * @param screenHint 画面用途提示
+ * @param dnaId      指定版本（可空＝当前生效版本）。页面正在看哪一版就传哪一版：
+ *                   在锁定版上改提示词会新建一版，若不传这个，刚改完刷新会看到改动"没了"
+ */
+export function getDnaPrompt(
+  taskId: string | number,
+  screenHint?: string,
+  dnaId?: string | number
+): AxiosPromise<DnaPromptVO> {
+  const params: Record<string, string | number> = {};
+  if (screenHint) params.screenHint = screenHint;
+  if (dnaId != null && dnaId !== '') params.dnaId = dnaId;
   return request({
     url: `/creative/projects/${taskId}/dna/prompt`,
     method: 'get',
-    params: screenHint ? { screenHint } : undefined
+    params: Object.keys(params).length ? params : undefined
   });
 }
 

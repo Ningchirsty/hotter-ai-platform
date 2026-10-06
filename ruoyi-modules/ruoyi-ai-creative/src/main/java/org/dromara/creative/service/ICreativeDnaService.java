@@ -109,7 +109,20 @@ public interface ICreativeDnaService {
     Long activeDnaId(Long taskId);
 
     /**
-     * 按当前生效基因派生提示词（预填到页面，用户可改）。
+     * 按基因派生提示词。
+     *
+     * @param taskId     项目ID
+     * @param screenHint 画面用途提示（如「HERO 主图」）
+     * @param dnaId      指定版本（可空＝当前生效版本，即已锁定那版）。
+     *                   页面正在看哪一版就传哪一版：在锁定版上改提示词会新建一版，
+     *                   若预览仍按生效版本算，人刚改完一刷新就会觉得"改动没了"（其实存在新版本里）；
+     *                   **出图仍按生效版本**，这是产品既有口径。
+     * @return 派生的提示词
+     */
+    DnaPromptBuilder.Prompt promptPreview(Long taskId, String screenHint, Long dnaId);
+
+    /**
+     * 按当前生效基因派生提示词（等价于 {@code promptPreview(taskId, screenHint, null)}）。
      *
      * @param taskId     项目ID
      * @param screenHint 画面用途提示（如「HERO 主图」）

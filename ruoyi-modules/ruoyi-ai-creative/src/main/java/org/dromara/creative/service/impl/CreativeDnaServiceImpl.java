@@ -414,15 +414,26 @@ public class CreativeDnaServiceImpl implements ICreativeDnaService {
     }
 
     @Override
-    public DnaPromptBuilder.Prompt promptPreview(Long taskId, String screenHint) {
+    public DnaPromptBuilder.Prompt promptPreview(Long taskId, String screenHint, Long dnaId) {
         CreativeProjectVo project = projectService.getProject(taskId);
-        ObjectNode node = activeDna(taskId);
+        // 指定了版本就按那一版派生（页面正在看的版本），否则按"当前生效版本"（已锁定那版）。
+        //
+        // 为什么需要这个区分（裁定 ③ 落地时真机发现的）：在锁定版上改提示词会**新建一版**，
+        // 而"当前生效版本"仍是旧的锁定版——若预览也按生效版本算，人刚改完、一刷新就看到自己
+        // 的改动"没了"（其实存在新版本里）。出图仍按生效版本（锁定版），这是产品既有口径。
+        ObjectNode node = dnaId != null ? VisualDnaSchema.parse(requireOwned(taskId, dnaId).getDnaJson())
+            : activeDna(taskId);
         String subject = StringUtils.isNotBlank(project.getProductName())
             ? project.getProductName()
             : node == null ? project.getTaskName() : node.path("subject").asText(project.getTaskName());
         // R7：预览与实际出图走同一个派生器与同一份输入（品牌 Brief 的必显/卖点/禁用词也在内），
         // 否则页面上预填的提示词与真正发给模型的那一段会不一样
         return promptBuilder.build(node, subject, screenHint, briefService.get(taskId), null);
+    }
+
+    @Override
+    public DnaPromptBuilder.Prompt promptPreview(Long taskId, String screenHint) {
+        return promptPreview(taskId, screenHint, null);
     }
 
     // ------------------------------------------------------------------
@@ -701,6 +712,37 @@ public class CreativeDnaServiceImpl implements ICreativeDnaService {
                 ratio.put("max", bo.getProductRatioMax());
             }
         }
+        // ③ 人工改写的提示词：跟着这一版基因走（v1 裁定 2026-10-06「在框里改算新一版基因」）。
+        // 三态：两个都 null＝这次保存不动它；都为空＝清掉改写、回到按基因派生；有内容＝写进本版。
+        applyPromptOverride(node, bo);
+    }
+
+    /**
+     * 把人工改写的提示词写进（或从）这一版基因里。
+     *
+     * <p>存的位置是 {@code dna_json.promptOverride}——**刻意不是单独的存储**：
+     * 裁定要的是"算新一版基因"，那它就该和配色/光线那些字段一样**随版本走**：
+     * 旧版本留着旧的改写、新版本带新的改写、锁定的版本永不被改（保存走的是新建版本那条路）。
+     * 派生侧的唯一读取点在 {@code DnaPromptBuilder#build}，预览与出图共用。</p>
+     *
+     * @param node 这一版基因的文档
+     * @param bo   保存入参
+     */
+    private void applyPromptOverride(ObjectNode node, CreativeDnaBo bo) {
+        if (bo.getPromptPositive() == null && bo.getPromptNegative() == null) {
+            return;
+        }
+        boolean cleared = StringUtils.isBlank(bo.getPromptPositive())
+            && StringUtils.isBlank(bo.getPromptNegative());
+        if (cleared) {
+            node.remove("promptOverride");
+            return;
+        }
+        ObjectNode override = node.withObject("/promptOverride");
+        override.put("positive", StringUtils.blankToDefault(bo.getPromptPositive(), ""));
+        override.put("negative", StringUtils.blankToDefault(bo.getPromptNegative(), ""));
+        override.put("editedBy", displayName());
+        override.put("editedAt", LocalDateTime.now().toString());
     }
 
     private static void putArray(ObjectNode node, String field, List<String> values) {

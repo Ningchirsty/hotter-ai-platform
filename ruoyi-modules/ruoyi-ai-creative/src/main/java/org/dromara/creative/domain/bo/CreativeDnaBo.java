@@ -109,4 +109,20 @@ public class CreativeDnaBo implements Serializable {
     @Size(max = 500, message = "备注长度不能超过 500")
     private String remark;
 
+    /**
+     * 人工改写的正向提示词（v1 裁定 ③：在基因页框里改提示词**算新一版基因**）。
+     *
+     * <p><b>这两个字段的三态是有意义的</b>：{@code null}＝这次保存不动提示词；
+     * 空串＝清掉人工改写、回到"按基因派生"；有内容＝写进这一版基因的 {@code promptOverride}。
+     * 若把"不动"和"清掉"混成同一个值，改别的字段时就会把人改过的提示词顺手抹掉。</p>
+     */
+    @Size(max = 1000, message = "正向提示词长度不能超过 1000")
+    private String promptPositive;
+
+    /**
+     * 人工改写的负向提示词（口径同 {@link #promptPositive}；上限与出图框的负向提示词一致）
+     */
+    @Size(max = 500, message = "负向提示词长度不能超过 500")
+    private String promptNegative;
+
 }
