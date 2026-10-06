@@ -372,8 +372,10 @@ async function loadWorkflows() {
 async function doGenerateDirections() {
   generatingDir.value = true;
   try {
-    await generateDirections(taskId.value);
-    ElMessage.success('已生成 3 个视觉方向');
+    const res = await generateDirections(taskId.value);
+    // 提示里带上轮次（v1 裁定 ⑨）：重新生成会留下多组方向，说清这是第几轮
+    const batchNo = res.data?.[0]?.batchNo;
+    ElMessage.success(batchNo ? `已生成第 ${batchNo} 轮 3 个视觉方向` : '已生成 3 个视觉方向');
     await loadAll();
     flowToken.value += 1;
   } catch (error) {

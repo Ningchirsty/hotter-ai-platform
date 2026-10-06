@@ -72,6 +72,14 @@ public class DpVisualDirectionVo implements Serializable {
     private String status;
 
     /**
+     * 第几轮生成（1 起；页面显示「第 N 轮」用）。
+     *
+     * <p>v1 人工测试反馈裁定 ⑨：重新生成方向会在库里留下多组同名 A/B/C，
+     * 没有轮次时页面上分不清哪组是哪次生成的。</p>
+     */
+    private Integer batchNo;
+
+    /**
      * 状态描述
      */
     private String statusDesc;

@@ -131,11 +131,16 @@ public class CreativeDirectionServiceImpl implements ICreativeDirectionService {
             modelReason = suggestion.reason();
         }
 
+        // 这一轮是第几轮：同一个任务内 batch_no 从 1 递增（v1 裁定 ⑨：方向卡要能显示"第几轮"）。
+        // 一次生成插入的 3 行共用同一个 batch_no，页面据此就能把两组同名 A/B/C 分开。
+        Integer batchNo = nextBatchNo(taskId);
+
         List<DpVisualDirection> created = new ArrayList<>();
         for (CreativeDraftFactory.DirectionDraft draft : drafts) {
             DpVisualDirection entity = build(taskId, draft.code(), draft.name(), draft.concept(),
                 draft.strategy(), created.size() + 1);
             entity.setSource(source);
+            entity.setBatchNo(batchNo);
             created.add(entity);
         }
 
@@ -257,6 +262,24 @@ public class CreativeDirectionServiceImpl implements ICreativeDirectionService {
     // ------------------------------------------------------------------
     // 内部
     // ------------------------------------------------------------------
+
+    /**
+     * 这一轮是第几轮生成（同一任务内从 1 递增）。
+     *
+     * <p>取该任务现有最大的 {@code batch_no} 加一。存量数据由
+     * {@code script/sql/dp_creative_direction_batch.sql} 回填过，所以老项目不会从 1 重来。</p>
+     *
+     * @param taskId 项目ID
+     * @return 本次生成使用的轮次号
+     */
+    private Integer nextBatchNo(Long taskId) {
+        DpVisualDirection last = directionMapper.selectOne(new LambdaQueryWrapper<DpVisualDirection>()
+            .select(DpVisualDirection::getBatchNo)
+            .eq(DpVisualDirection::getTaskId, taskId)
+            .orderByDesc(DpVisualDirection::getBatchNo)
+            .last("LIMIT 1"));
+        return last == null || last.getBatchNo() == null ? 1 : last.getBatchNo() + 1;
+    }
 
     private DpVisualDirection build(Long taskId, String code, String name, String concept,
                                    Map<String, Object> strategy, int sortNo) {
@@ -417,6 +440,8 @@ public class CreativeDirectionServiceImpl implements ICreativeDirectionService {
         vo.setPreviewFileIds(splitIds(entity.getPreviewFileIds()));
         vo.setStatus(entity.getStatus());
         vo.setStatusDesc(statusDesc(entity.getStatus()));
+        // 第几轮生成（v1 裁定 ⑨）：页面据此把两组同名 A/B/C 分开显示
+        vo.setBatchNo(entity.getBatchNo());
         vo.setSortNo(entity.getSortNo());
         vo.setSource(entity.getSource());
         vo.setSelectedBy(entity.getSelectedBy());

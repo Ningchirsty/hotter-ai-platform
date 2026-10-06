@@ -360,6 +360,13 @@ export interface DpVisualDirectionVO {
   previewFileIds?: string[];
   status?: string;
   statusDesc?: string;
+  /**
+   * 第几轮生成（1 起）。
+   *
+   * v1 裁定 ⑨：重新生成方向会在库里留下多组同名 A/B/C，页面靠这个字段显示「第 N 轮」，
+   * 才能分清哪组是哪次生成的。
+   */
+  batchNo?: number;
   sortNo?: number;
   source?: string;
   selectedBy?: string | number;

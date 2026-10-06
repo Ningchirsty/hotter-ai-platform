@@ -75,6 +75,22 @@ public class DpVisualDirection extends BaseEntity implements Serializable {
     private Integer sortNo;
 
     /**
+     * 第几轮生成（同一任务内从 1 递增；一次「生成方向」插入的 3 行共用同一个值）。
+     *
+     * <p>v1 人工测试反馈裁定（⑨「方向卡要加第几轮标记」）：表里此前没有任何轮次概念，
+     * 重新生成只是又插 3 行，页面上出现两组同名 A/B/C，只能靠名字与状态猜哪组是哪次生成的。</p>
+     */
+    private Integer batchNo;
+
+    /**
+     * 本次生成的差异种子（v1 裁定 ⑤「可以复现，但每次生成都要有差异化」的落点）。
+     *
+     * <p><b>当前尚未被消费</b>：列与写入路径先备好，差异化逻辑（同种子同输出、换种子换输出）
+     * 在下一步接上；在接上之前保持 NULL，不假装它已经生效。</p>
+     */
+    private Long variantSeed;
+
+    /**
      * 来源（AI生成/MANUAL人工）
      */
     private String source;

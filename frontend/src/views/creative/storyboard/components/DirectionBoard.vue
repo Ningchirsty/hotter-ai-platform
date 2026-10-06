@@ -30,6 +30,8 @@
             class="direction-head"
             :title="item.directionCode ? `方向 ${item.directionCode}（页面上不再展示编号，仅悬停可见）` : undefined"
           >
+            <!-- v1 裁定 ⑨：重新生成会留下多组同名 A/B/C，必须一眼看出哪组是哪次生成的 -->
+            <span v-if="item.batchNo" class="batch">第 {{ item.batchNo }} 轮</span>
             <span class="name">{{ item.directionName }}</span>
             <el-tag v-if="item.status === 'SELECTED'" type="success" size="small">已选定</el-tag>
             <el-tag v-else-if="item.status === 'REJECTED'" type="info" size="small">已弃用</el-tag>
@@ -202,6 +204,16 @@ function strategyValue(item: DpVisualDirectionVO, key: string): string {
   display: flex;
   gap: 8px;
   align-items: center;
+}
+/* 「第几轮」标记：说明性的小标签，不抢方向名的位置 */
+.direction-head .batch {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  font-size: 11px;
+  color: var(--t2);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line);
+  border-radius: 999px;
 }
 .direction-head .name {
   flex: 1;
