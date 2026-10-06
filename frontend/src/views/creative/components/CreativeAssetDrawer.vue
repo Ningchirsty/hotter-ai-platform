@@ -146,6 +146,7 @@ import type {
   DpStoryboardVO
 } from '@/api/creative/types';
 import type { CpTaskFileVO } from '@/api/content/task/types';
+import { notifyNoProject } from '../composables/noProject';
 
 /**
  * 资产抽屉（ASSET_DRAWER，R18 真做）。
@@ -344,6 +345,8 @@ async function loadThumbs(list: CpTaskFileVO[]) {
 /** 加载数据（打开抽屉时调用；也可手动刷新） */
 async function load() {
   if (!props.taskId) {
+    // 第 34 轮：没选项目时点「刷新」原先什么都不发生，现在有回话
+    notifyNoProject();
     return;
   }
   loading.value = true;

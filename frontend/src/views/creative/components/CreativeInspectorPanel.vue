@@ -96,6 +96,7 @@ import { CREATIVE_STAGE_LABELS } from '@/api/creative/types';
 import type { DpStageEventVO } from '@/api/creative/types';
 import type { ProjectStepState } from '@/api/creative/scenario';
 import type { FlowStep } from '../composables/useCreativeFlow';
+import { notifyNoProject } from '../composables/noProject';
 
 /**
  * 细节检查器（INSPECTOR，R18 真做）。
@@ -173,6 +174,8 @@ function shortTime(time?: string): string {
 /** 读时间线 */
 async function load() {
   if (!props.taskId) {
+    // 第 34 轮：没选项目时点「刷新」原先什么都不发生，现在有回话
+    notifyNoProject();
     events.value = [];
     return;
   }

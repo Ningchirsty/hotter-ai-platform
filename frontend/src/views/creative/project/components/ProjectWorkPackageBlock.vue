@@ -122,6 +122,7 @@ import type { CreativeWorkPackageVO } from '@/api/creative/types';
 import type { WorkPackageContent } from '@/api/content/workPackage/types';
 import { parseTime } from '@/utils/ruoyi';
 import { useStepHeading } from '../../composables/stepNumbering';
+import { notifyNoProject } from '../../composables/noProject';
 
 /** 标题编号：本页步骤号（v1 反馈；没有工作台上下文时不显示编号） */
 const stepHeading = useStepHeading('ProjectWorkPackageBlock');
@@ -180,6 +181,8 @@ async function load(): Promise<void> {
   error.value = '';
   parseWarning.value = '';
   if (!id) {
+    // 第 34 轮：没选项目时点「刷新」原先什么都不发生，现在有回话
+    notifyNoProject();
     return;
   }
   loading.value = true;

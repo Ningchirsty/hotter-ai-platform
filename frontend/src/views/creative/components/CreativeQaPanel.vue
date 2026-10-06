@@ -99,6 +99,7 @@ import {
   qaStatusType,
   type QaScreenRow
 } from '../composables/qaVerdicts';
+import { notifyNoProject } from '../composables/noProject';
 
 /**
  * 候选状态的中文（内测 S11）。
@@ -156,6 +157,8 @@ const deliveryLine = computed(() => deliveryEvidence(delivery.value));
  */
 async function load() {
   if (!props.taskId) {
+    // 第 34 轮：没选项目时点「刷新」原先什么都不发生，现在有回话
+    notifyNoProject();
     return;
   }
   if (loaded.value && !loadError.value) {

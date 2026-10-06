@@ -184,6 +184,7 @@ import type {
 } from '@/api/creative/types';
 import CreativeWorkspace from '../components/CreativeWorkspace.vue';
 import CreativeBriefStrip from '../components/CreativeBriefStrip.vue';
+import { notifyNoProject } from '../composables/noProject';
 import GenerationBoard from '../production/components/GenerationBoard.vue';
 import { latestGenerationOf } from '../production/generationText';
 import DirectionBoard from './components/DirectionBoard.vue';
@@ -345,7 +346,11 @@ async function loadProjects() {
 }
 
 async function loadAll() {
-  if (!taskId.value) return;
+  if (!taskId.value) {
+    // 第 34 轮：没选项目时点「刷新」原先什么都不发生（"点了没反应"那一类），现在有回话
+    notifyNoProject();
+    return;
+  }
   loading.value = true;
   try {
     const [dirRes, sbRes] = await Promise.all([listDirections(taskId.value), getStoryboard(taskId.value)]);

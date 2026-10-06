@@ -120,6 +120,7 @@ import GatePanel from './components/GatePanel.vue';
 import LongPageCanvas from './components/LongPageCanvas.vue';
 import FinalReviewPanel from './components/FinalReviewPanel.vue';
 import { canConfirmDelivery as canConfirmDeliveryOf, canvasModeOf } from '../composables/deliveryActions';
+import { notifyNoProject } from '../composables/noProject';
 
 /**
  * 详情页与审核页（R19 起由工作台装配；R40 起三个步骤各自是装配组件）。
@@ -214,7 +215,11 @@ async function loadProjects() {
 }
 
 async function loadAll() {
-  if (!taskId.value) return;
+  if (!taskId.value) {
+    // 第 34 轮：没选项目时点「刷新」原先什么都不发生，现在有回话
+    notifyNoProject();
+    return;
+  }
   loading.value = true;
   try {
     const [gateRes, detailRes, deliveryRes] = await Promise.all([

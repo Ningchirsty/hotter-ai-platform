@@ -401,6 +401,7 @@
   import type { CopyBlockVO } from '@/api/creative/types';
   import { extractErrorMessage } from '@/utils/request';
   import { checkPermi } from '@/utils/permission';
+  import { notifyNoProject } from '../composables/noProject';
 
   /**
    * 模块规划页（V0.2 R22，文档 §24）。
@@ -503,6 +504,8 @@
 
   async function load() {
     if (!taskId.value) {
+      // 第 34 轮：没选项目时点「刷新」原先什么都不发生，现在有回话
+      notifyNoProject();
       return;
     }
     loading.value = true;
