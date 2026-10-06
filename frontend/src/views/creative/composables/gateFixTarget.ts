@@ -86,6 +86,20 @@ export const GATE_FIX_TARGETS: Record<string, GateFixTarget> = {
 };
 
 /**
+ * 「识别到 N 条待确认」的去处（v1 反馈 详情页与审核 1.3 的收尾）。
+ *
+ * <p>第 37 轮在视觉门里加了「上传资料并识别」：识别走内容侧那条链，
+ * 结果**一律以待确认落库**。这个目标就是"去把识别出来的事实确认掉"——
+ * 与「品牌调性」那一项同一个落点（内容任务详情的事实卡），所以路径口径只写在这里一处。</p>
+ */
+export const CONFIRM_FACTS_TARGET: GateFixTarget = {
+  label: '去内容任务详情确认事实',
+  path: '/business/content/task',
+  carriesTaskId: true,
+  section: 'facts'
+};
+
+/**
  * 取一个准入项的补充去处。
  *
  * @param itemCode 准入项编码（`GateItem.code`）

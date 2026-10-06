@@ -134,4 +134,24 @@ describe('界面说明文案与界面实际显示保持一致', () => {
     // 加屏之后不许假装这一屏已经写好了：文案与画面独白是空的，且必须提示去补
     expect(page).toContain('文案与画面独白是空的');
   });
+
+  it('视觉门：上传资料并识别（v1 反馈 详情页与审核 1.3，裁定「在闸门里做上传+识别」）', () => {
+    const panel = source('review/components/GatePanel.vue');
+    const target = readFileSync(new URL('./gateFixTarget.ts', import.meta.url), 'utf-8');
+    // 三个动作真的接上了
+    expect(panel).toContain('uploadGateMaterial');
+    expect(panel).toContain('parseGateMaterials');
+    expect(panel).toContain('getGateMaterials');
+    // 说清"识别不在这里做"：识别走内容侧那条链，结果以待确认落库、确认后才进开工包
+    expect(panel).toContain('内容侧的文档解析能力');
+    expect(panel).toContain('以待确认落库');
+    expect(panel).toContain('只有人工确认的值才会进入开工包');
+    // 失败/跳过必须带原因（只显示"失败"等于让人去猜）
+    expect(panel).toContain('item.parseMessage');
+    // 待确认条数要能一键去确认，落点与「品牌调性」那一项同一个事实卡（口径只有一处）
+    expect(panel).toContain('CONFIRM_FACTS_TARGET');
+    expect(target).toContain("section: 'facts'");
+    // 允许的类型写在界面上，不藏在代码里
+    expect(panel).toContain('.pdf,.doc,.docx,.txt,.md,.csv,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.webp');
+  });
 });

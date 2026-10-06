@@ -24,6 +24,8 @@ import type {
   DpVisualDnaVO,
   DnaRecommendationVO,
   GateEvaluationVO,
+  GateMaterialVO,
+  GateMaterialsVO,
   ProductionRunVO,
   ProjectMaterialsVO,
   ProjectProductImageVO
@@ -326,6 +328,49 @@ export function listCreativeWorkflows(): AxiosPromise<CreativeWorkflowVO[]> {
   return request({
     url: '/creative/workflows',
     method: 'get'
+  });
+}
+
+/**
+ * 视觉门「上传资料并识别」的现状（v1 反馈 详情页与审核 1.3）。
+ *
+ * <p>权限用 creative:review:list（读）；上传与识别用 creative:project:upload
+ * （设计师本来就有，语义是给这个项目补资料）。</p>
+ */
+export function getGateMaterials(taskId: string | number): AxiosPromise<GateMaterialsVO> {
+  return request({
+    url: `/creative/projects/${taskId}/visual-gate/materials`,
+    method: 'get'
+  });
+}
+
+/**
+ * 在视觉门里上传一份资料（文档或图片，≤ 20MB）。
+ *
+ * @param taskId 项目ID
+ * @param file   文件
+ */
+export function uploadGateMaterial(taskId: string | number, file: File): AxiosPromise<GateMaterialVO> {
+  const data = new FormData();
+  data.append('file', file);
+  return request({
+    url: `/creative/projects/${taskId}/visual-gate/materials`,
+    method: 'post',
+    data,
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 120000
+  });
+}
+
+/**
+ * 触发识别（异步）：走内容侧的文档解析链路，识别结果一律**以待确认落库**。
+ *
+ * @param taskId 项目ID
+ */
+export function parseGateMaterials(taskId: string | number): AxiosPromise<number> {
+  return request({
+    url: `/creative/projects/${taskId}/visual-gate/materials/parse`,
+    method: 'post'
   });
 }
 

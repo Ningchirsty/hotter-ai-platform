@@ -9,8 +9,11 @@ import org.dromara.common.json.utils.JsonUtils;
 import org.dromara.common.mybatis.utils.IdGeneratorUtil;
 import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.content.domain.vo.CpFactSnapshotVo;
+import org.dromara.content.domain.vo.CpTaskFileVo;
 import org.dromara.content.domain.vo.ContentTaskDetailVo;
 import org.dromara.content.enums.ContentFactConfirmStatusEnum;
+import org.dromara.content.enums.ContentFileSourceEnum;
+import org.dromara.content.enums.ContentParseStatusEnum;
 import org.dromara.content.service.IContentTaskGateService;
 import org.dromara.content.service.IContentTaskService;
 import org.dromara.creative.domain.DpGateItem;
@@ -35,10 +38,13 @@ import org.dromara.creative.service.ICreativeProjectService;
 import org.dromara.creative.service.ICreativeStoryboardService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -248,6 +254,129 @@ public class CreativeGateServiceImpl implements ICreativeGateService {
                 .map(GateItem::label).reduce((a, b) -> a + "、" + b).orElse("")).append("）");
         }
         throw new ServiceException(reason.toString());
+    }
+
+    // ------------------------------------------------------------------
+    // 上传资料并识别（v1 人工测试反馈 详情页与审核 1.3；裁定：在闸门里做上传+识别）
+    //
+    // 这一块**不自己识别**：上传落内容侧同一张附件表，识别走内容侧的文档解析链路，
+    // 结果**一律以待确认落库**（与内容任务页同一条链、同一套口径）；视觉门这边只负责
+    // 入口、触发与状态（识别到几条待确认、去哪确认），并如实显示解析失败的原因。
+    // 权限用 `creative:project:upload`（设计师本来就有），不用内容侧的写权限——
+    // 见 ICreativeGateService 里那段说明。
+    // ------------------------------------------------------------------
+
+    /**
+     * 资料文件上限（与参考图同一档：20MB）
+     */
+    private static final long MAX_MATERIAL_BYTES = 20L * 1024 * 1024;
+
+    /**
+     * 允许上传的资料类型：文档 + 图片。
+     *
+     * <p>解析能力对"这类文件不支持"会给 {@code SKIPPED} 并写原因，所以这里只挡住
+     * 明显不是资料的类型（视频/压缩包/可执行文件），不去替解析器判断它认不认。</p>
+     */
+    private static final List<String> MATERIAL_EXTS = List.of(
+        "pdf", "doc", "docx", "txt", "md", "csv", "xls", "xlsx", "ppt", "pptx",
+        "png", "jpg", "jpeg", "webp");
+
+    @Override
+    public GateMaterials materials(Long taskId) {
+        projectService.getProject(taskId);
+        ContentTaskDetailVo detail = contentTaskService.getDetail(taskId);
+        List<GateMaterial> files = new ArrayList<>();
+        long pending = 0;
+        long confirmed = 0;
+        if (detail != null) {
+            if (detail.getFiles() != null) {
+                for (CpTaskFileVo file : detail.getFiles()) {
+                    files.add(toMaterial(file));
+                }
+            }
+            if (detail.getFacts() != null) {
+                for (CpFactSnapshotVo fact : detail.getFacts()) {
+                    String status = fact.getConfirmStatus();
+                    if (ContentFactConfirmStatusEnum.CONFIRMED.getCode().equals(status)) {
+                        confirmed++;
+                    } else if (ContentFactConfirmStatusEnum.PENDING.getCode().equals(status)) {
+                        pending++;
+                    }
+                }
+            }
+        }
+        LocalDateTime parseDoneAt = detail == null || detail.getTask() == null
+            ? null : detail.getTask().getParseDoneAt();
+        return new GateMaterials(files, pending, confirmed, parseDoneAt);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public GateMaterial uploadMaterial(Long taskId, MultipartFile file) {
+        projectService.getProject(taskId);
+        if (file == null || file.isEmpty()) {
+            throw new ServiceException("请选择要上传的资料文件");
+        }
+        if (file.getSize() > MAX_MATERIAL_BYTES) {
+            throw new ServiceException("资料文件不能超过 20MB（当前约 "
+                + Math.max(1, file.getSize() / 1024 / 1024) + "MB）");
+        }
+        String ext = extensionOf(file.getOriginalFilename());
+        if (!MATERIAL_EXTS.contains(ext)) {
+            throw new ServiceException("这一版只接受文档与图片资料（"
+                + String.join(" / ", MATERIAL_EXTS) + "）；其它类型请到内容任务页上传");
+        }
+        Long fileId = contentTaskService.uploadFile(taskId, null, file,
+            ContentFileSourceEnum.UPLOAD.getCode());
+        // 上传成功后把这一份读回来：解析状态由内容侧初始化，页面要显示的是**真实状态**
+        for (CpTaskFileVo item : contentTaskService.listFiles(taskId)) {
+            if (fileId != null && fileId.equals(item.getFileId())) {
+                return toMaterial(item);
+            }
+        }
+        // 读不回来就说读不回来，不替它编一个状态（文件确实已经存下了，刷新后能看到）
+        throw new ServiceException("资料已上传但读不回状态（附件ID " + fileId + "）：请刷新后再看");
+    }
+
+    @Override
+    public Long triggerMaterialParse(Long taskId) {
+        projectService.getProject(taskId);
+        ContentTaskDetailVo detail = contentTaskService.getDetail(taskId);
+        boolean hasFile = detail != null && detail.getFiles() != null && !detail.getFiles().isEmpty();
+        if (!hasFile) {
+            throw new ServiceException("还没有上传资料：先上传一份资料（"
+                + String.join(" / ", MATERIAL_EXTS) + "），再点「识别」");
+        }
+        return contentTaskService.triggerParse(taskId);
+    }
+
+    /**
+     * 附件 → 视觉门里的一份资料。
+     *
+     * @param file 附件
+     * @return 资料（含解析状态中文与失败原因）
+     */
+    private static GateMaterial toMaterial(CpTaskFileVo file) {
+        ContentParseStatusEnum status = ContentParseStatusEnum.find(file.getParseStatus());
+        return new GateMaterial(file.getFileId(), file.getFileName(), file.getFileExt(),
+            file.getFileSize(), file.getParseStatus(),
+            status == null ? StringUtils.blankToDefault(file.getParseStatus(), "—") : status.getDesc(),
+            file.getParseMessage(), file.getCreateTime());
+    }
+
+    /**
+     * 取扩展名（小写、不含点）。
+     *
+     * @param fileName 文件名（可空）
+     * @return 扩展名；取不到返回空串
+     */
+    private static String extensionOf(String fileName) {
+        if (StringUtils.isBlank(fileName)) {
+            return "";
+        }
+        int dot = fileName.lastIndexOf('.');
+        return dot < 0 || dot == fileName.length() - 1
+            ? "" : fileName.substring(dot + 1).trim().toLowerCase(Locale.ROOT);
     }
 
     // ------------------------------------------------------------------

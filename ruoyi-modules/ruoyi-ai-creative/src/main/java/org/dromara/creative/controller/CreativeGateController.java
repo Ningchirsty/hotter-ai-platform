@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * 视觉门 控制层。
@@ -73,6 +74,57 @@ public class CreativeGateController {
                                                          @RequestParam(value = "comment", required = false)
                                                          String comment) {
         return R.ok(gateService.review(taskId, option, comment));
+    }
+
+    // ------------------------------------------------------------------
+    // 上传资料并识别（v1 人工测试反馈 详情页与审核 1.3）
+    //
+    // 权限用 `creative:project:upload`（设计师本来就有，语义是"给这个项目补资料"）：
+    // 内容侧的 `content:task:edit` 是品牌侧写权限，内测里"同一账号同时拥有品牌侧与设计侧
+    // 全部权限"本身就是被反馈过的问题（S7），不能为了这个功能把它加回来。
+    // ------------------------------------------------------------------
+
+    /**
+     * 视觉门里「上传资料并识别」的现状（资料列表 + 各自解析状态 + 待确认/已确认条数）。
+     *
+     * @param taskId 项目ID
+     * @return 现状
+     */
+    @SaCheckPermission(CreativeConstants.PERM_REVIEW_LIST)
+    @GetMapping("/materials")
+    public R<ICreativeGateService.GateMaterials> materials(@NotNull(message = "项目ID不能为空")
+                                                           @PathVariable("taskId") Long taskId) {
+        return R.ok(gateService.materials(taskId));
+    }
+
+    /**
+     * 在视觉门里上传一份资料（文档或图片，≤ 20MB），供随后的「识别」使用。
+     *
+     * @param taskId 项目ID
+     * @param file   文件
+     * @return 刚上传的那一份（含初始解析状态）
+     */
+    @SaCheckPermission(CreativeConstants.PERM_PROJECT_UPLOAD)
+    @Log(title = "视觉门资料上传", businessType = BusinessType.INSERT)
+    @PostMapping("/materials")
+    public R<ICreativeGateService.GateMaterial> uploadMaterial(@NotNull(message = "项目ID不能为空")
+                                                               @PathVariable("taskId") Long taskId,
+                                                               @RequestParam("file") MultipartFile file) {
+        return R.ok(gateService.uploadMaterial(taskId, file));
+    }
+
+    /**
+     * 触发识别（异步）：走内容侧的文档解析链路，识别结果一律以待确认落库。
+     *
+     * @param taskId 项目ID
+     * @return 异步作业ID
+     */
+    @SaCheckPermission(CreativeConstants.PERM_PROJECT_UPLOAD)
+    @Log(title = "视觉门资料识别", businessType = BusinessType.UPDATE)
+    @PostMapping("/materials/parse")
+    public R<Long> parseMaterials(@NotNull(message = "项目ID不能为空")
+                                  @PathVariable("taskId") Long taskId) {
+        return R.ok(gateService.triggerMaterialParse(taskId));
     }
 
 }

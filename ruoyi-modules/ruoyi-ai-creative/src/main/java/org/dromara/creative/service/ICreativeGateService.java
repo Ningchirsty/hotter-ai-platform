@@ -93,4 +93,78 @@ public interface ICreativeGateService {
      */
     void requireCanProduce(Long taskId);
 
+    // ------------------------------------------------------------------
+    // 上传资料并识别（v1 人工测试反馈 详情页与审核 1.3）
+    //
+    // 原文：「闸门结论版块**除了手动录入信息之外还应该有上传信息自动识别录入的功能**」；
+    // 裁定：「在闸门里做上传+识别」。
+    //
+    // <b>为什么复用内容侧那条链，而不是在视觉门里另写一套识别</b>：
+    //   内容任务页本来就有「上传资料 → 触发解析 → 解析结果**以待确认落库** → 人工确认」，
+    //   事实行还带溯源（source_file_id / source_locator / source_excerpt / confidence）。
+    //   视觉门这一侧加的是**入口与状态**：能上传、能触发、能看见"识别到几条待确认、去哪确认"；
+    //   识别本身仍由内容侧的文档解析能力做——两套识别一定会给出两个答案。
+    //
+    // <b>权限口径</b>：用 `creative:project:upload`（设计师本来就有，语义就是"给这个项目补资料"），
+    //   而不是内容侧的 `content:task:edit`——后者是品牌侧写权限，
+    //   而内测里"同一账号同时拥有品牌侧与设计侧全部权限"本身就是被反馈过的问题（S7）。
+    // ------------------------------------------------------------------
+
+    /**
+     * 视觉门里的一份资料（上传 + 识别状态）。
+     *
+     * @param fileId          附件ID
+     * @param fileName        文件名
+     * @param fileExt         扩展名
+     * @param fileSize        字节数
+     * @param parseStatus     解析状态码（PENDING/PARSING/DONE/FAILED/SKIPPED）
+     * @param parseStatusDesc 解析状态中文
+     * @param parseMessage    解析失败/跳过的原因（成功时为 null）
+     * @param createTime      上传时间
+     */
+    record GateMaterial(Long fileId, String fileName, String fileExt, Long fileSize,
+                        String parseStatus, String parseStatusDesc, String parseMessage,
+                        java.time.LocalDateTime createTime) {
+    }
+
+    /**
+     * 视觉门「上传资料并识别」这一块的现状。
+     *
+     * @param files          已上传的资料（含各自的解析状态）
+     * @param pendingFacts   识别出来但**还没人工确认**的事实条数（人要去确认的就是这些）
+     * @param confirmedFacts 已确认的事实条数（会进开工包）
+     * @param parseDoneAt    最近一次解析完成时间（空＝还没跑过解析）
+     */
+    record GateMaterials(java.util.List<GateMaterial> files, long pendingFacts, long confirmedFacts,
+                         java.time.LocalDateTime parseDoneAt) {
+    }
+
+    /**
+     * 读取「上传资料并识别」这一块的现状。
+     *
+     * @param taskId 项目ID
+     * @return 现状（资料列表 + 待确认/已确认条数 + 最近解析时间）
+     */
+    GateMaterials materials(Long taskId);
+
+    /**
+     * 上传一份资料（供识别用）。
+     *
+     * <p>落到内容侧同一张附件表（`cp_task_file`，来源标 {@code UPLOAD}），解析状态从
+     * {@code PENDING} 开始——**识别要人点「识别」才跑**，免得传一个文件就自动触发一次模型调用。</p>
+     *
+     * @param taskId 项目ID
+     * @param file   文件（文档或图片，≤ 20MB）
+     * @return 刚上传的那一份（含初始解析状态）
+     */
+    GateMaterial uploadMaterial(Long taskId, org.springframework.web.multipart.MultipartFile file);
+
+    /**
+     * 触发识别（异步，走内容侧的文档解析链路）。
+     *
+     * @param taskId 项目ID
+     * @return 异步作业ID
+     */
+    Long triggerMaterialParse(Long taskId);
+
 }

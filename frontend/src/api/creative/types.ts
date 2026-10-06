@@ -490,6 +490,35 @@ export interface GateEvaluationVO {
   stageDesc?: string;
 }
 
+/**
+ * 视觉门里的一份资料（v1 反馈 详情页与审核 1.3：闸门结论版块要能上传资料并自动识别）。
+ *
+ * <p>解析状态由**内容侧的文档解析链路**给出（PENDING/PARSING/DONE/FAILED/SKIPPED）——
+ * 视觉门这一侧不自己识别，只显示真实状态与失败原因。</p>
+ */
+export interface GateMaterialVO {
+  fileId: string | number;
+  fileName?: string;
+  fileExt?: string;
+  fileSize?: number;
+  parseStatus?: string;
+  parseStatusDesc?: string;
+  /** 解析失败/跳过的原因（成功时为 null） */
+  parseMessage?: string;
+  createTime?: string;
+}
+
+/** 视觉门「上传资料并识别」这一块的现状 */
+export interface GateMaterialsVO {
+  files?: GateMaterialVO[];
+  /** 识别出来但还没人工确认的条数（人要去确认的就是这些） */
+  pendingFacts?: number;
+  /** 已确认的条数（会进开工包） */
+  confirmedFacts?: number;
+  /** 最近一次解析完成时间（空＝还没跑过解析） */
+  parseDoneAt?: string;
+}
+
 /** 方向来源 */
 export const DIRECTION_SOURCE_LABELS: Record<string, string> = {
   TEMPLATE: '取舍模板派生',
