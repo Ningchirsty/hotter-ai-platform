@@ -179,7 +179,9 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
         if (StringUtils.isBlank(prompt) || StringUtils.isBlank(negativePrompt)) {
             DnaPromptBuilder.Prompt derived = dnaPromptBuilder.build(
                 dnaService.activeDna(taskId), project.getProductName(), screenHint,
-                briefService.get(taskId), screenText, moduleVisualRules);
+                briefService.get(taskId), screenText, moduleVisualRules,
+                // ⑤：措辞种子跟生效版本走——页面上预览的那套说法与实际下发的必须是同一套
+                dnaService.activePromptSeed(taskId));
             if (StringUtils.isBlank(prompt)) {
                 prompt = derived.prompt();
                 promptApplied = derived.applied();

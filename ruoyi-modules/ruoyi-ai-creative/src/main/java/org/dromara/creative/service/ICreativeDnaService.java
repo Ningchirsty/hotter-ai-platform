@@ -122,6 +122,17 @@ public interface ICreativeDnaService {
     DnaPromptBuilder.Prompt promptPreview(Long taskId, String screenHint, Long dnaId);
 
     /**
+     * 当前生效版本的提示词措辞种子（v1 裁定 ⑤：提示词也"可复现 + 每次不同"）。
+     *
+     * <p>出图那条路要走这里取种子，才能与页面预览用**同一套措辞**——
+     * 否则同一次出图在页面上看到的提示词与实际下发的会是两套说法。</p>
+     *
+     * @param taskId 项目ID
+     * @return 种子（0＝改造前的原文案；没有基因版本时也是 0）
+     */
+    long activePromptSeed(Long taskId);
+
+    /**
      * 按当前生效基因派生提示词（等价于 {@code promptPreview(taskId, screenHint, null)}）。
      *
      * @param taskId     项目ID

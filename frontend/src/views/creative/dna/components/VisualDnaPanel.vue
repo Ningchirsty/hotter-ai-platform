@@ -38,7 +38,17 @@
           <span class="muted">{{ dna.sourceDesc }}</span>
         </div>
         <div class="dna-actions">
-          <el-button size="small" :loading="generating" @click="$emit('generate')">重新生成</el-button>
+          <!-- v1 反馈 1.2：「不满足可『重新生成』，点了要出现新提示词」。
+               第 30 轮起这句话是真的：『重新生成』会新建一版基因，并按这一版的措辞种子重写提示词
+               （值一个字不变，变的是先说什么与引导语）。这里把"点下去会发生什么"说在点之前。 -->
+          <el-tooltip
+            content="会新建一版基因：字段按事实与参考图重新推导，提示词跟着换一套措辞（色号等取值不变）"
+            placement="top"
+          >
+            <span>
+              <el-button size="small" :loading="generating" @click="$emit('generate')">重新生成</el-button>
+            </span>
+          </el-tooltip>
           <el-button size="small" type="primary" :disabled="dna.locked" :loading="locking" @click="$emit('lock')">
             {{ dna.locked ? '已锁定' : '锁定这一版' }}
           </el-button>

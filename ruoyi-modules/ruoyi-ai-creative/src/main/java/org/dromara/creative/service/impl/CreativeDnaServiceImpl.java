@@ -144,6 +144,9 @@ public class CreativeDnaServiceImpl implements ICreativeDnaService {
         entity.setStatus(STATUS_REVIEW);
         entity.setDnaJson(VisualDnaSchema.toJson(seed.dna()));
         entity.setSource(source);
+        // ⑤：这一版提示词用哪套措辞（裁定原文：「点了『重新生成』要出现新提示词」）。
+        // 种子跟着版本走并存下来：同一版逐字复现，下一版必然换一套措辞（下标每次移一位）。
+        entity.setPromptSeed(DnaPromptBuilder.variantSeed(taskId, version));
         entity.setModelKey(modelKey);
         entity.setTraceId(traceId);
         entity.setRemark(notes.isEmpty() ? null : String.join("；", notes));
@@ -339,6 +342,10 @@ public class CreativeDnaServiceImpl implements ICreativeDnaService {
             }
             if (current != null) {
                 target.setModelKey(current.getModelKey());
+                // ⑤：**保存（改字段）不换措辞** —— 只是把上一版的措辞种子接着用。
+                // 只有『重新生成』（generate）才会推进种子：那一句"点了要出现新提示词"说的是重新生成，
+                // 不是"改个名字提示词也跟着重排"（那会让人以为自己的改动把提示词弄乱了）。
+                target.setPromptSeed(current.getPromptSeed());
             }
             target.setSource(SOURCE_MANUAL);
         } else {
@@ -401,16 +408,43 @@ public class CreativeDnaServiceImpl implements ICreativeDnaService {
 
     @Override
     public ObjectNode activeDna(Long taskId) {
-        DpVisualDna locked = lockedEntity(taskId);
-        DpVisualDna entity = locked != null ? locked : latestEntity(taskId);
+        DpVisualDna entity = activeEntity(taskId);
         return entity == null ? null : VisualDnaSchema.parse(entity.getDnaJson());
     }
 
     @Override
     public Long activeDnaId(Long taskId) {
-        DpVisualDna locked = lockedEntity(taskId);
-        DpVisualDna entity = locked != null ? locked : latestEntity(taskId);
+        DpVisualDna entity = activeEntity(taskId);
         return entity == null ? null : entity.getId();
+    }
+
+    @Override
+    public long activePromptSeed(Long taskId) {
+        return promptSeedOf(activeEntity(taskId));
+    }
+
+    /**
+     * 当前生效的基因版本实体（已锁定版优先，否则最新一版）。
+     *
+     * <p>提示词措辞种子要跟版本走，所以这里必须拿到**实体**（{@code activeDna} 只返回 json 树，
+     * 拿不到版本与种子）。做成一个方法，让"哪一版生效"只有一处口径。</p>
+     *
+     * @param taskId 项目ID
+     * @return 实体；没有版本返回 null
+     */
+    private DpVisualDna activeEntity(Long taskId) {
+        DpVisualDna locked = lockedEntity(taskId);
+        return locked != null ? locked : latestEntity(taskId);
+    }
+
+    /**
+     * 某一版基因的提示词措辞种子（空＝改造前的原文案）。
+     *
+     * @param entity 基因版本（可空）
+     * @return 种子（0 表示默认措辞）
+     */
+    private static long promptSeedOf(DpVisualDna entity) {
+        return entity == null || entity.getPromptSeed() == null ? 0L : entity.getPromptSeed();
     }
 
     @Override
@@ -421,14 +455,16 @@ public class CreativeDnaServiceImpl implements ICreativeDnaService {
         // 为什么需要这个区分（裁定 ③ 落地时真机发现的）：在锁定版上改提示词会**新建一版**，
         // 而"当前生效版本"仍是旧的锁定版——若预览也按生效版本算，人刚改完、一刷新就看到自己
         // 的改动"没了"（其实存在新版本里）。出图仍按生效版本（锁定版），这是产品既有口径。
-        ObjectNode node = dnaId != null ? VisualDnaSchema.parse(requireOwned(taskId, dnaId).getDnaJson())
-            : activeDna(taskId);
+        DpVisualDna entity = dnaId != null ? requireOwned(taskId, dnaId) : activeEntity(taskId);
+        ObjectNode node = entity == null ? null : VisualDnaSchema.parse(entity.getDnaJson());
         String subject = StringUtils.isNotBlank(project.getProductName())
             ? project.getProductName()
             : node == null ? project.getTaskName() : node.path("subject").asText(project.getTaskName());
         // R7：预览与实际出图走同一个派生器与同一份输入（品牌 Brief 的必显/卖点/禁用词也在内），
-        // 否则页面上预填的提示词与真正发给模型的那一段会不一样
-        return promptBuilder.build(node, subject, screenHint, briefService.get(taskId), null);
+        // 否则页面上预填的提示词与真正发给模型的那一段会不一样。
+        // ⑤：措辞种子也走同一处（存哪版就用哪版的种子），所以预览与出图的**措辞**同样一致。
+        return promptBuilder.build(node, subject, screenHint, briefService.get(taskId), null, null,
+            promptSeedOf(entity));
     }
 
     @Override

@@ -138,6 +138,19 @@ public class DpVisualDna extends BaseEntity implements Serializable {
     private String dnaJson;
 
     /**
+     * 这一版提示词的「措辞种子」（v1 人工测试反馈裁定 ⑤：「可以复现，但每次生成都要有差异化」）。
+     *
+     * <p>原文那一条是「不满足可『重新生成』，点了要出现新提示词」：提示词是基因的派生结果，
+     * 若『重新生成』补出来的字段一样，提示词就逐字一样，人看到的就是"点了没变化"。
+     * 这颗种子决定 {@code DnaPromptBuilder} 用哪一套措辞（顺序与引导语），
+     * <b>只换说法、不换任何值</b>（色号/光线/留白/占比/场景一个字都不动）。</p>
+     *
+     * <p>为 {@code null} 表示「按改造前的原文案派生」——历史版本与老评测记录因此逐字不变；
+     * 只有走过一次『重新生成』的新版本才会带上种子。</p>
+     */
+    private Long promptSeed;
+
+    /**
      * 来源（AI生成/MANUAL人工/FACTS由已确认事实推导）
      */
     private String source;

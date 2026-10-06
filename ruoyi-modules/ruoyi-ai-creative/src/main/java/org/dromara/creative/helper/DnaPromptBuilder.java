@@ -7,7 +7,9 @@ import org.dromara.content.domain.vo.CpBrandBriefVo;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 由 Visual DNA 派生出图提示词。
@@ -86,6 +88,184 @@ public class DnaPromptBuilder {
     }
 
     /**
+     * 措辞变体的组合空间：3 种「先说什么」的顺序 × 2 套引导语 = 6。
+     *
+     * <p>为什么要有这个数：裁定 ⑤ 要求"每次生成都要有差异化"，而差异必须可枚举、可测试——
+     * 6 种组合意味着相邻两版基因**必然**换一套措辞（下标每次移一位），且第 7 版才回到起点。</p>
+     */
+    public static final int PROMPT_VARIANT_SPACE = 6;
+
+    /**
+     * 顺序变体的个数（组合空间里"顺序"这一维的大小）
+     */
+    private static final int ORDER_COUNT = 3;
+
+    /**
+     * 提示词里的一个「基因块」：块本身的值来自基因，只有顺序与引导语随种子变。
+     */
+    private enum GeneBlock {
+        /**
+         * 整体风格（基因没写时用内置兜底）
+         */
+        STYLE("styleKeywords"),
+        /**
+         * 配色（主色/辅色/点缀色/背景）
+         */
+        COLORS("colors"),
+        /**
+         * 光线（光型 + 光位）
+         */
+        LIGHTING("lighting"),
+        /**
+         * 留白档位
+         */
+        WHITESPACE("whitespaceLevel"),
+        /**
+         * 产品占比
+         */
+        RATIO("productRatio"),
+        /**
+         * 场景
+         */
+        SCENE("sceneType"),
+        /**
+         * 饱和度/对比度
+         */
+        TONE("saturation/contrastLevel");
+
+        private final String applied;
+
+        GeneBlock(String applied) {
+            this.applied = applied;
+        }
+
+        /**
+         * @return 这一块在 {@link Prompt#applied()} 里的名字（与改造前逐字一致）
+         */
+        String applied() {
+            return applied;
+        }
+    }
+
+    /**
+     * 三种「先说什么」的顺序。
+     *
+     * <p>第 0 种就是改造前的顺序（风格→配色→光线→留白→占比→场景→档位），
+     * 所以种子 0 的输出与改造前**逐字相同**——老版本基因的提示词不会因为这次改造而变样。</p>
+     *
+     * @param order 顺序下标（0/1/2）
+     * @return 该顺序下的块序列
+     */
+    private static List<GeneBlock> orderOf(int order) {
+        return switch (order) {
+            // 1：从"这在哪里拍"说起（场景→配色→光线→占比→风格→留白→档位）
+            case 1 -> List.of(GeneBlock.SCENE, GeneBlock.COLORS, GeneBlock.LIGHTING,
+                GeneBlock.RATIO, GeneBlock.STYLE, GeneBlock.WHITESPACE, GeneBlock.TONE);
+            // 2：从"色彩"说起（配色→场景→风格→光线→占比→留白→档位）
+            case 2 -> List.of(GeneBlock.COLORS, GeneBlock.SCENE, GeneBlock.STYLE,
+                GeneBlock.LIGHTING, GeneBlock.RATIO, GeneBlock.WHITESPACE, GeneBlock.TONE);
+            // 0：默认顺序（与改造前一致）
+            default -> List.of(GeneBlock.STYLE, GeneBlock.COLORS, GeneBlock.LIGHTING,
+                GeneBlock.WHITESPACE, GeneBlock.RATIO, GeneBlock.SCENE, GeneBlock.TONE);
+        };
+    }
+
+    /**
+     * 由「任务 + 基因版本」推出这一版提示词的措辞种子。
+     *
+     * <p>与视觉方向同一套办法（{@code CreativeDraftFactory#variantSeed}）：种子是纯函数，
+     * 由"哪个任务、第几版基因"算出来，**并且会被写进 {@code dp_visual_dna.prompt_seed}** ——
+     * 于是"这一版当初用的是哪套措辞"是可查的，不依赖任何人重算。</p>
+     *
+     * <p>相邻版本必然不同：种子 = 任务基址 + 版本号，落到组合空间取模，版本号加一 → 下标移一位。</p>
+     *
+     * @param taskId    项目ID（可空）
+     * @param versionNo 基因版本号（可空＝按 0 处理，即改造前的措辞）
+     * @return 措辞种子
+     */
+    public static long variantSeed(Long taskId, Integer versionNo) {
+        long base = Math.floorMod(mix64(taskId == null ? 0L : taskId), PROMPT_VARIANT_SPACE);
+        return base + (versionNo == null ? 0 : versionNo);
+    }
+
+    /**
+     * 64 位混洗（splitmix64 收尾步）：把任务ID摊平到组合空间，避免相邻项目ID拿到同一套措辞。
+     *
+     * @param value 输入
+     * @return 混洗结果（纯函数，与时间/机器/进程无关）
+     */
+    private static long mix64(long value) {
+        long z = value + 0x9E3779B97F4A7C15L;
+        z = (z ^ (z >>> 30)) * 0xBF58476D1CE4E5B9L;
+        z = (z ^ (z >>> 27)) * 0x94D049BB133111EBL;
+        return z ^ (z >>> 31);
+    }
+
+    /**
+     * 把这一版基因渲染成「块 → 文本」。
+     *
+     * <p><b>不猜的纪律照旧</b>：测不出来/没设置的项一律不放块（{@code null}），
+     * 不给变体任何"顺手补一句"的空间——变体只负责换个说法，不负责补内容。</p>
+     *
+     * @param node       基因树
+     * @param altWording 是否用第二套引导语
+     * @return 块 → 文本（缺的块不在表里）
+     */
+    private static Map<GeneBlock, String> geneBlocks(ObjectNode node, boolean altWording) {
+        Map<GeneBlock, String> blocks = new LinkedHashMap<>();
+        String style = joinArray(node.path("styleKeywords"));
+        blocks.put(GeneBlock.STYLE,
+            (altWording ? "风格基调：" : "整体风格：") + (StringUtils.isBlank(style) ? FALLBACK_STYLE : style) + "；");
+
+        JsonNode colors = node.path("colors");
+        List<String> colorDesc = new ArrayList<>();
+        appendColor(colorDesc, "主色", colors.path("primary").asText(null));
+        appendColor(colorDesc, "辅色", colors.path("secondary").asText(null));
+        appendColor(colorDesc, "点缀色", colors.path("accent").asText(null));
+        appendColor(colorDesc, "背景", colors.path("background").asText(null));
+        if (!colorDesc.isEmpty()) {
+            blocks.put(GeneBlock.COLORS,
+                (altWording ? "色彩方案：" : "配色：") + String.join("、", colorDesc) + "；");
+        }
+
+        String lighting = lightingDesc(node.path("lighting"), altWording);
+        if (StringUtils.isNotBlank(lighting)) {
+            blocks.put(GeneBlock.LIGHTING, lighting + "；");
+        }
+
+        String whitespaceLevel = levelValue(node.path("whitespaceLevel").asText(null));
+        if (whitespaceLevel != null) {
+            blocks.put(GeneBlock.WHITESPACE,
+                altWording ? "画面留白：" + whitespaceLevel + "；" : "留白" + whitespaceLevel + "；");
+        }
+
+        String ratio = ratioDesc(node.path("productRatio"), altWording);
+        if (StringUtils.isNotBlank(ratio)) {
+            blocks.put(GeneBlock.RATIO, ratio + "；");
+        }
+
+        String scene = node.path("sceneType").asText(null);
+        if (StringUtils.isNotBlank(scene)) {
+            blocks.put(GeneBlock.SCENE, (altWording ? "使用场景：" : "场景：") + scene + "；");
+        }
+
+        String saturation = levelValue(node.path("saturation").asText(null));
+        String contrast = levelValue(node.path("contrastLevel").asText(null));
+        List<String> tone = new ArrayList<>();
+        if (saturation != null) {
+            tone.add(altWording ? saturation + "饱和" : "饱和度" + saturation);
+        }
+        if (contrast != null) {
+            tone.add(altWording ? contrast + "对比" : "对比度" + contrast);
+        }
+        if (!tone.isEmpty()) {
+            blocks.put(GeneBlock.TONE,
+                (altWording ? "色彩倾向：" : "") + String.join("、", tone) + "；");
+        }
+        return blocks;
+    }
+
+    /**
      * 派生提示词（不带屏文案与品牌 Brief；保留给不需要这两项输入的老调用点与测试）。
      *
      * @param dna        DNA 树（可为空树）
@@ -129,6 +309,34 @@ public class DnaPromptBuilder {
      */
     public Prompt build(ObjectNode dna, String subject, String screenHint,
                         CpBrandBriefVo brief, String screenText, String moduleVisualRules) {
+        return build(dna, subject, screenHint, brief, screenText, moduleVisualRules, 0L);
+    }
+
+    /**
+     * 派生提示词（带措辞种子）。
+     *
+     * <p><b>为什么提示词也要有种子（v1 人工测试反馈裁定 ⑤「可以复现，但每次生成都要有差异化」）</b>：
+     * 原文那条是「不满足可『重新生成』，点了要出现新提示词」——改造前提示词是基因的纯函数，
+     * 『重新生成』若补出来的字段一样，提示词就逐字一样，人看到的就是"点了没变化"。
+     * 做法与视觉方向一致：<b>把差异来源存下来</b>（`dp_visual_dna.prompt_seed`），
+     * 于是同一颗种子逐字相同（可复现、可回归），换一版基因则必然换一套措辞。</p>
+     *
+     * <p><b>种子只换措辞，绝不换事实</b>：色号、光线、留白、占比、场景、各档位的<b>值一个字都不改</b>，
+     * 变的只是"先说什么后说什么"与引导语（「整体风格」↔「风格基调」、「光线」↔「布光」…）。
+     * 所以任何变体下，提示词里出现的色号与要求集合完全相同（有单测逐条钉住）。</p>
+     *
+     * @param dna               DNA 树（可为空树）
+     * @param subject           主体（通常是产品名）
+     * @param screenHint        画面用途提示（如「HERO 主图」「卖点图」），可空
+     * @param brief             品牌 Brief（可空＝该项目还没填）
+     * @param screenText        屏文案（画面独白/正文/标题，可空）
+     * @param moduleVisualRules 模块规划里的「视觉表达」（可空）
+     * @param variantSeed       措辞种子（0＝改造前的原文案）
+     * @return 派生结果
+     */
+    public Prompt build(ObjectNode dna, String subject, String screenHint,
+                        CpBrandBriefVo brief, String screenText, String moduleVisualRules,
+                        long variantSeed) {
         ObjectNode node = dna == null ? VisualDnaSchema.empty() : dna;
 
         // ③ 人工改写过的提示词（v1 人工测试反馈裁定 2026-10-06：「在框里改」**算新一版基因**）。
@@ -185,55 +393,21 @@ public class DnaPromptBuilder {
             }
         }
 
-        String style = joinArray(node.path("styleKeywords"));
-        sb.append("整体风格：").append(StringUtils.isBlank(style) ? FALLBACK_STYLE : style).append("；");
-        applied.add("styleKeywords");
-
-        JsonNode colors = node.path("colors");
-        List<String> colorDesc = new ArrayList<>();
-        appendColor(colorDesc, "主色", colors.path("primary").asText(null));
-        appendColor(colorDesc, "辅色", colors.path("secondary").asText(null));
-        appendColor(colorDesc, "点缀色", colors.path("accent").asText(null));
-        appendColor(colorDesc, "背景", colors.path("background").asText(null));
-        if (!colorDesc.isEmpty()) {
-            sb.append("配色：").append(String.join("、", colorDesc)).append("；");
-            applied.add("colors");
+        // ---- 基因块：值一个字不改，只按种子换「先说什么」与引导语（裁定 ⑤ 用在提示词上）----
+        int variant = (int) Math.floorMod(variantSeed, PROMPT_VARIANT_SPACE);
+        boolean altWording = variant >= ORDER_COUNT;
+        Map<GeneBlock, String> blocks = geneBlocks(node, altWording);
+        for (GeneBlock block : orderOf(variant % ORDER_COUNT)) {
+            String text = blocks.get(block);
+            if (text != null) {
+                sb.append(text);
+                applied.add(block.applied());
+            }
         }
 
-        String lighting = lightingDesc(node.path("lighting"));
-        if (StringUtils.isNotBlank(lighting)) {
-            sb.append(lighting).append("；");
-            applied.add("lighting");
-        }
-
-        String whitespace = levelDesc(node.path("whitespaceLevel").asText(null), "留白");
-        if (StringUtils.isNotBlank(whitespace)) {
-            sb.append(whitespace).append("；");
-            applied.add("whitespaceLevel");
-        }
-
-        String ratio = ratioDesc(node.path("productRatio"));
-        if (StringUtils.isNotBlank(ratio)) {
-            sb.append(ratio).append("；");
-            applied.add("productRatio");
-        }
-
-        String scene = node.path("sceneType").asText(null);
-        if (StringUtils.isNotBlank(scene)) {
-            sb.append("场景：").append(scene).append("；");
-            applied.add("sceneType");
-        }
-
-        String saturation = levelDesc(node.path("saturation").asText(null), "饱和度");
-        String contrast = levelDesc(node.path("contrastLevel").asText(null), "对比度");
-        if (StringUtils.isNotBlank(saturation) || StringUtils.isNotBlank(contrast)) {
-            sb.append(StringUtils.blankToDefault(saturation, ""))
-                .append(StringUtils.isBlank(saturation) || StringUtils.isBlank(contrast) ? "" : "、")
-                .append(StringUtils.blankToDefault(contrast, "")).append("；");
-            applied.add("saturation/contrastLevel");
-        }
-
-        sb.append("产品结构、配色与细节保持与参考图一致，画面干净、主体清晰。");
+        sb.append(altWording
+            ? "须与参考图一致：产品结构、配色与细节；画面干净、主体清晰。"
+            : "产品结构、配色与细节保持与参考图一致，画面干净、主体清晰。");
 
         // 品牌 Brief：必显 → 主推卖点（整条追加，放不下的记进 omitted）
         appendMustShow(sb, applied, omitted, brief);
@@ -448,13 +622,23 @@ public class DnaPromptBuilder {
         }
     }
 
-    private static String lightingDesc(JsonNode lighting) {
+    /**
+     * 光线描述。
+     *
+     * <p>变体只换引导语（「光线」↔「布光」），光型与光位的取值一个字不改——
+     * 那是基因里的实测/事实值，措辞变体没有权限动它。</p>
+     *
+     * @param lighting   光线节点
+     * @param altWording 是否用第二套引导语
+     * @return 描述；光型与光位都缺时返回 null（不编造）
+     */
+    private static String lightingDesc(JsonNode lighting, boolean altWording) {
         String type = lighting.path("type").asText(null);
         String dir = lighting.path("direction").asText(null);
         if (StringUtils.isBlank(type) && StringUtils.isBlank(dir)) {
             return null;
         }
-        StringBuilder sb = new StringBuilder("光线：");
+        StringBuilder sb = new StringBuilder(altWording ? "布光：" : "光线：");
         sb.append(switch (StringUtils.blankToDefault(type, "")) {
             case "SOFT" -> "柔和散射光";
             case "HARD" -> "硬质方向光";
@@ -475,30 +659,43 @@ public class DnaPromptBuilder {
         return sb.toString();
     }
 
-    private static String levelDesc(String value, String label) {
+    /**
+     * 档位的中文值（LOW/MEDIUM/HIGH → 低/中/高；认不出的原样返回）。
+     *
+     * @param value 档位码（可空）
+     * @return 中文值；空返回 null（缺就不写，不默认成「中」）
+     */
+    private static String levelValue(String value) {
         if (StringUtils.isBlank(value)) {
             return null;
         }
-        String desc = switch (value) {
+        return switch (value) {
             case "LOW" -> "低";
             case "HIGH" -> "高";
             case "MEDIUM" -> "中";
             default -> value;
         };
-        return label + desc;
     }
 
-    private static String ratioDesc(JsonNode ratio) {
+    /**
+     * 产品占比描述（变体只换引导语：产品占画面 ↔ 主体占比）。
+     *
+     * @param ratio      占比节点
+     * @param altWording 是否用第二套引导语
+     * @return 描述；没有 min/max 时返回 null
+     */
+    private static String ratioDesc(JsonNode ratio, boolean altWording) {
         JsonNode min = ratio.path("min");
         JsonNode max = ratio.path("max");
+        String label = altWording ? "主体占比" : "产品占画面";
         if (min.isNumber() && max.isNumber()) {
-            return "产品占画面 " + min.asInt() + "%~" + max.asInt() + "%";
+            return label + " " + min.asInt() + "%~" + max.asInt() + "%";
         }
         if (min.isNumber()) {
-            return "产品占画面不低于 " + min.asInt() + "%";
+            return label + "不低于 " + min.asInt() + "%";
         }
         if (max.isNumber()) {
-            return "产品占画面不超过 " + max.asInt() + "%";
+            return label + "不超过 " + max.asInt() + "%";
         }
         return null;
     }

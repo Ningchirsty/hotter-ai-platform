@@ -89,6 +89,10 @@ describe('界面说明文案与界面实际显示保持一致', () => {
     expect(panel).toContain("(e: 'open-generation'): void;");
     expect(page).toContain('@open-generation="openGeneration"');
     expect(page).toContain("window.open(`/creative/project?taskId=${taskId.value}`, '_self')");
+    // v1 反馈 1.2「不满足可『重新生成』，点了要出现新提示词」：说清点下去会发生什么——
+    // 新建一版基因（提示词随之换一套措辞），而取值不变（变体只换说法，不换事实）
+    expect(panel).toContain('提示词跟着换一套措辞');
+    expect(panel).toContain('色号等取值不变');
   });
 
   it('方向卡的「第 N 轮」：差异种子只在悬停提示里如实给出，不当正文摆出来', () => {
