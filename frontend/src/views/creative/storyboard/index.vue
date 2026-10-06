@@ -57,9 +57,13 @@
           :locking="lockingSb"
           :has-projects="projects.length > 0"
           :workflows="workflows"
+          :busy-screen-id="screenActionId"
           @generate="doGenerateStoryboard"
           @lock="doLockStoryboard"
           @edit-screen="openScreenEdit"
+          @lock-screen="doLockScreen"
+          @add-screen="doAddScreen"
+          @delete-screen="doDeleteScreen"
           @open-module-plan="openModulePlan"
         />
       </template>
@@ -148,6 +152,8 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import {
+  addStoryboardScreen,
+  deleteStoryboardScreen,
   generateDirections,
   generateStoryboard,
   getStoryboard,
@@ -155,6 +161,7 @@ import {
   listCreativeWorkflows,
   listDirections,
   lockStoryboard,
+  lockStoryboardScreen,
   refreshProduction,
   regenerateScreen,
   runCandidateQa,
@@ -210,6 +217,11 @@ const selectingId = ref('');
 const lockingSb = ref(false);
 const savingDirection = ref(false);
 const savingScreen = ref(false);
+/**
+ * 正在处理的屏（逐屏锁定/加屏/删屏共用）——v1 裁定 ④。
+ * 一次只动一屏，所以一个 id 就够，比三个布尔量更难出现"两个按钮同时转圈"。
+ */
+const screenActionId = ref('');
 const directionEditVisible = ref(false);
 const screenEditVisible = ref(false);
 const directionForm = reactive<CreativeDirectionForm>({ id: '' });
@@ -441,8 +453,13 @@ async function doLockStoryboard() {
   // v1 反馈 方向与分镜 1.4：「目前只能按照 7 个分镜头去锁定」——锁定的范围原先没写出来，
   // 人只看到一句"确认锁定？"。这里把**锁的是哪几屏、这个集合从哪来**说在点按钮之前，
   // 免得锁完才发现屏数不是自己要的（那时只能重新生成一版）。
+  //
+  // v1 裁定 ④ 之后，屏数在这一页就能改（整版锁定之前），所以这句话要跟着改：
+  // 集合不再只"来自模块规划"，而是"你现在看到的这一版"。
   const count = storyboard.value?.screenCount ?? (storyboard.value?.screens || []).length;
-  const scope = count ? `本次锁定的是当前这一版的 ${count} 屏（集合与顺序来自「模块规划」）。` : '';
+  const scope = count
+    ? `本次锁定的是当前这一版的 ${count} 屏（就是你现在看到的这些；锁定前可以加屏/删屏调整）。`
+    : '';
   try {
     await ElMessageBox.confirm(
       scope +
@@ -476,6 +493,82 @@ function openModulePlan() {
     return;
   }
   void router.push({ path: '/creative/module-plan', query: { taskId: String(taskId.value) } });
+}
+
+/**
+ * 单独锁定 / 解锁一屏（v1 裁定 ④：「可以原地锁定一个屏幕，但其余可以自定义」）。
+ *
+ * 不解锁整版锁定：整版锁定后这一版就冻结了（要改就重新生成）——这条口径没变，
+ * 单屏锁定只是草稿期"先冻住这一屏、其余继续改"。
+ *
+ * @param screen 屏
+ * @param locked true＝锁定，false＝解锁
+ */
+async function doLockScreen(screen: DpStoryboardScreenVO, locked: boolean) {
+  screenActionId.value = String(screen.id);
+  try {
+    await lockStoryboardScreen(taskId.value, screen.id, locked);
+    ElMessage.success(locked
+      ? `已锁定 ${screen.screenNo} 这一屏（其余屏仍可改）`
+      : `已解锁 ${screen.screenNo}，这一屏现在可以改了`);
+    await loadAll();
+    flowToken.value += 1;
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? (locked ? '锁定这一屏失败' : '解锁这一屏失败'));
+  } finally {
+    screenActionId.value = '';
+  }
+}
+
+/**
+ * 在某一屏之后插入一屏（v1 裁定 ④：屏数由使用人说了算）。
+ *
+ * 新屏是"人工新增的屏"：后端只沿用参照屏的类型/取景/保真等级/出图能力，
+ * **文案与画面独白留空**（不替人编一句），所以这里必须把"接下来要干嘛"说出来。
+ */
+async function doAddScreen(screen: DpStoryboardScreenVO) {
+  screenActionId.value = String(screen.id);
+  try {
+    const res = await addStoryboardScreen(taskId.value, screen.id);
+    const added = res.data as DpStoryboardScreenVO | undefined;
+    ElMessage.success(`已在 ${screen.screenNo} 之后加了 1 屏（${added?.screenNo ?? '新屏'}）；`
+      + '它的文案与画面独白是空的，请点「编辑」补上——锁定整版前每屏都必须有画面独白');
+    await loadAll();
+    flowToken.value += 1;
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '加屏失败');
+  } finally {
+    screenActionId.value = '';
+  }
+}
+
+/**
+ * 删掉一屏（v1 裁定 ④）。删之前先说清是哪一屏、删完屏号会重排——
+ * 屏号是给人指认用的（"第 3 屏"），不说清很容易删错。
+ */
+async function doDeleteScreen(screen: DpStoryboardScreenVO) {
+  const label = `${screen.screenNo}（${screen.screenTypeDesc || screen.screenType || '未命名'}`
+    + `${screen.title ? ' · ' + screen.title : ''}）`;
+  try {
+    await ElMessageBox.confirm(
+      `确定删除 ${label} 这一屏？删掉之后后面的屏号会往前补（S01..S0N）。`,
+      '删除这一屏',
+      { type: 'warning' }
+    );
+  } catch {
+    return;
+  }
+  screenActionId.value = String(screen.id);
+  try {
+    await deleteStoryboardScreen(taskId.value, screen.id);
+    ElMessage.success(`已删除 ${screen.screenNo}（屏号已重排）`);
+    await loadAll();
+    flowToken.value += 1;
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '删屏失败');
+  } finally {
+    screenActionId.value = '';
+  }
 }
 
 function openScreenEdit(screen: DpStoryboardScreenVO) {

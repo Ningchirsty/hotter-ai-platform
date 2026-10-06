@@ -409,6 +409,16 @@ export interface DpStoryboardScreenVO {
   workflowCode?: string;
   productLockLevel?: string;
   status?: string;
+  /**
+   * 逐屏锁定（DRAFT 未锁 / LOCKED 已锁）——v1 裁定 ④。
+   *
+   * 锁住的**这一屏**不能改（其余屏照旧可改）；整版锁定时所有屏都是 LOCKED。
+   */
+  lockStatus?: string;
+  /** 逐屏锁定的中文口径（后端算好，页面直接显示，不在前端复算规则） */
+  lockStatusDesc?: string;
+  /** 这一屏能不能改（后端算好：未单独锁定且整版未锁定） */
+  editable?: boolean;
   remark?: string;
 }
 

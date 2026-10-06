@@ -476,6 +476,47 @@ export function lockStoryboard(taskId: string | number, storyboardId?: string | 
   });
 }
 
+/**
+ * 单独锁定/解锁一屏（v1 裁定 ④：「可以原地锁定一个屏幕，但其余可以自定义」）。
+ *
+ * @param taskId   项目ID
+ * @param screenId 屏ID
+ * @param locked   true＝锁定这一屏，false＝解锁这一屏
+ */
+export function lockStoryboardScreen(
+  taskId: string | number,
+  screenId: string | number,
+  locked: boolean
+) {
+  return request({
+    url: `/creative/projects/${taskId}/storyboard/screen/${screenId}/lock`,
+    method: 'post',
+    params: { locked }
+  });
+}
+
+/**
+ * 在某一屏之后插入一屏（v1 裁定 ④：屏数由使用人说了算；只允许在整版锁定之前）。
+ *
+ * @param taskId        项目ID
+ * @param afterScreenId 插在这一屏之后（不传＝追加到最后）
+ */
+export function addStoryboardScreen(taskId: string | number, afterScreenId?: string | number) {
+  return request({
+    url: `/creative/projects/${taskId}/storyboard/screen`,
+    method: 'post',
+    params: afterScreenId ? { afterScreenId } : undefined
+  });
+}
+
+/** 删除一屏（只允许在整版锁定之前；已单独锁定或已出图的屏删不掉，后端会说清原因） */
+export function deleteStoryboardScreen(taskId: string | number, screenId: string | number) {
+  return request({
+    url: `/creative/projects/${taskId}/storyboard/screen/${screenId}`,
+    method: 'delete'
+  });
+}
+
 /** 视觉门评估 */
 export function getVisualGate(taskId: string | number): AxiosPromise<GateEvaluationVO> {
   return request({ url: `/creative/projects/${taskId}/visual-gate`, method: 'get' });

@@ -16,6 +16,7 @@ import org.dromara.creative.domain.vo.DpVisualDirectionVo;
 import org.dromara.creative.service.ICreativeDirectionService;
 import org.dromara.creative.service.ICreativeStoryboardService;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -178,6 +179,59 @@ public class CreativeStoryboardController {
                                             @RequestParam(value = "storyboardId", required = false)
                                             Long storyboardId) {
         return R.ok(storyboardService.lock(taskId, storyboardId));
+    }
+
+    /**
+     * 单独锁定/解锁一屏（v1 裁定 ④：「可以原地锁定一个屏幕，但其余可以自定义」）。
+     *
+     * @param taskId   项目ID
+     * @param screenId 屏ID
+     * @param locked   true＝锁定这一屏；缺省 true
+     * @return 这一屏
+     */
+    @SaCheckPermission(CreativeConstants.PERM_STORYBOARD_EDIT)
+    @Log(title = "分镜单屏锁定", businessType = BusinessType.UPDATE)
+    @PostMapping("/storyboard/screen/{screenId}/lock")
+    public R<DpStoryboardScreenVo> lockScreen(@NotNull(message = "项目ID不能为空")
+                                              @PathVariable("taskId") Long taskId,
+                                              @PathVariable("screenId") Long screenId,
+                                              @RequestParam(value = "locked", required = false,
+                                                  defaultValue = "true") Boolean locked) {
+        return R.ok(storyboardService.lockScreen(taskId, screenId, Boolean.TRUE.equals(locked)));
+    }
+
+    /**
+     * 在某一屏之后插入一屏（v1 裁定 ④：屏数由使用人说了算；只允许在整版锁定之前）。
+     *
+     * @param taskId        项目ID
+     * @param afterScreenId 插在这一屏之后（可空＝追加到最后）
+     * @return 新增的屏
+     */
+    @SaCheckPermission(CreativeConstants.PERM_STORYBOARD_EDIT)
+    @Log(title = "分镜加屏", businessType = BusinessType.INSERT)
+    @PostMapping("/storyboard/screen")
+    public R<DpStoryboardScreenVo> addScreen(@NotNull(message = "项目ID不能为空")
+                                             @PathVariable("taskId") Long taskId,
+                                             @RequestParam(value = "afterScreenId", required = false)
+                                             Long afterScreenId) {
+        return R.ok(storyboardService.addScreen(taskId, afterScreenId));
+    }
+
+    /**
+     * 删除一屏（v1 裁定 ④；只允许在整版锁定之前，已单独锁定/已出图的屏不能删）。
+     *
+     * @param taskId   项目ID
+     * @param screenId 屏ID
+     * @return 空
+     */
+    @SaCheckPermission(CreativeConstants.PERM_STORYBOARD_EDIT)
+    @Log(title = "分镜删屏", businessType = BusinessType.DELETE)
+    @DeleteMapping("/storyboard/screen/{screenId}")
+    public R<Void> deleteScreen(@NotNull(message = "项目ID不能为空")
+                                @PathVariable("taskId") Long taskId,
+                                @PathVariable("screenId") Long screenId) {
+        storyboardService.deleteScreen(taskId, screenId);
+        return R.ok();
     }
 
 }

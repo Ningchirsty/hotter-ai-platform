@@ -14,6 +14,7 @@ import org.dromara.content.domain.vo.ContentTaskDetailVo;
 import org.dromara.content.enums.ContentFactConfirmStatusEnum;
 import org.dromara.content.service.IContentTaskService;
 import org.dromara.creative.constant.CreativeConstants;
+import org.dromara.creative.domain.DpGeneration;
 import org.dromara.creative.domain.DpProjectModule;
 import org.dromara.creative.domain.DpStoryboard;
 import org.dromara.creative.domain.DpStoryboardScreen;
@@ -32,6 +33,7 @@ import org.dromara.creative.helper.CreativeLevelText;
 import org.dromara.creative.helper.CreativeScreenSkeleton;
 import org.dromara.creative.helper.CreativeScreenSkeletonRegistry;
 import org.dromara.creative.helper.VisualDnaSchema;
+import org.dromara.creative.mapper.DpGenerationMapper;
 import org.dromara.creative.mapper.DpStoryboardMapper;
 import org.dromara.creative.mapper.DpStoryboardScreenMapper;
 import org.dromara.content.service.IContentBrandBriefService;
@@ -77,6 +79,15 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
     private static final String STATUS_LOCKED = "LOCKED";
 
     /**
+     * 逐屏锁定状态（v1 裁定 ④）：DRAFT＝未锁可改 / LOCKED＝这一屏被冻结。
+     *
+     * <p>刻意与 {@code dp_storyboard.status} 用同一套词：整版锁定与逐屏锁定是同一件事的不同粒度，
+     * 用两套词（比如 0/1）会让"这个 0 到底是锁了还是没锁"变成必须翻代码的问题。</p>
+     */
+    private static final String LOCK_DRAFT = "DRAFT";
+    private static final String LOCK_LOCKED = "LOCKED";
+
+    /**
      * 屏骨架加载器（构造依赖）。
      *
      * <p>为什么注入而不是直接调静态方法：如果把骨架读进字段初始化器，这个字段会在
@@ -89,6 +100,11 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
 
     private final DpStoryboardMapper storyboardMapper;
     private final DpStoryboardScreenMapper screenMapper;
+    /**
+     * 出图记录（v1 裁定 ④）：删屏前要确认这一屏还没有出过图——
+     * 否则删掉屏会让已有候选"对不上屏"，那是比"屏数不能改"更糟的一种状态。
+     */
+    private final DpGenerationMapper generationMapper;
     private final ICreativeDnaService dnaService;
     private final ICreativeDirectionService directionService;
     private final ICreativeProjectService projectService;
@@ -339,6 +355,8 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
             screen.setWorkflowCode(workflowOf(owners, sortNo - 1));
             screen.setProductLockLevel(template.productLockLevel());
             screen.setStatus(STATUS_DRAFT);
+            // v1 裁定 ④：新生成的屏默认未锁定（要冻哪一屏由人按"锁定这一屏"决定）
+            screen.setLockStatus(LOCK_DRAFT);
             screenMapper.insert(screen);
         }
 
@@ -386,14 +404,17 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
         if (bo == null || bo.getId() == null) {
             throw new ServiceException("屏ID不能为空");
         }
-        DpStoryboardScreen screen = screenMapper.selectById(bo.getId());
-        if (screen == null || !taskId.equals(screen.getTaskId())) {
-            throw new ServiceException("屏不属于该项目：" + bo.getId());
-        }
+        DpStoryboardScreen screen = requireScreen(taskId, bo.getId());
         DpStoryboard storyboard = storyboardMapper.selectById(screen.getStoryboardId());
         if (storyboard != null && STATUS_LOCKED.equals(storyboard.getStatus())) {
             throw new ServiceException("该分镜已锁定（" + storyboard.getStoryboardNo()
                 + "），锁定版不可修改；请先「重新生成分镜」得到新版本再改");
+        }
+        // v1 裁定 ④：逐屏锁定——锁住的**这一屏**不能改，其余屏照旧可改。
+        // 报错必须说清"是这一屏被锁了、别的没被锁"，否则人会以为整版都锁了。
+        if (LOCK_LOCKED.equals(lockStatusOf(screen))) {
+            throw new ServiceException("第 " + screen.getScreenNo() + " 屏已单独锁定，不能修改；"
+                + "要改请先「解锁这一屏」（其余屏不受影响）");
         }
         if (bo.getTitle() != null) {
             screen.setTitle(bo.getTitle());
@@ -426,7 +447,7 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
 
         projectService.moveStage(taskId, DpVisualStageEnum.STORYBOARD_REVIEW, "STORYBOARD_EDIT",
             JsonUtils.toJsonString(Map.of("screenId", screen.getId(), "screenNo", screen.getScreenNo())));
-        return toScreenVo(screen);
+        return toScreenVo(screen, false);
     }
 
     @Override
@@ -455,10 +476,131 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
         storyboard.setApprovedBy(LoginHelper.getUserId());
         storyboard.setApprovedAt(LocalDateTime.now());
         storyboardMapper.updateById(storyboard);
+        // v1 裁定 ④：整版锁定＝逐屏锁定 + 版本置 LOCKED。
+        // 这一版的屏今天事实上就是冻结的，所以把逐屏状态也标实——页面上每屏都显示「已锁定」，
+        // 而不是"版本锁了但每屏还写着未锁"这种自相矛盾的状态。
+        int lockedScreens = lockAllScreens(screens);
         projectService.moveStage(taskId, DpVisualStageEnum.STORYBOARD_LOCKED, "STORYBOARD_LOCK",
             JsonUtils.toJsonString(Map.of("storyboardId", storyboard.getId(),
-                "version", storyboard.getVersion(), "screenCount", screens.size())));
+                "version", storyboard.getVersion(), "screenCount", screens.size(),
+                "lockedScreens", lockedScreens)));
         return loadVo(storyboard);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public DpStoryboardScreenVo lockScreen(Long taskId, Long screenId, boolean locked) {
+        DpStoryboardScreen screen = requireScreen(taskId, screenId);
+        DpStoryboard storyboard = storyboardMapper.selectById(screen.getStoryboardId());
+        if (storyboard != null && STATUS_LOCKED.equals(storyboard.getStatus())) {
+            throw new ServiceException("整版分镜已锁定（" + storyboard.getStoryboardNo()
+                + "），逐屏锁定/解锁不再起作用；要改就「重新生成分镜」得到新版本");
+        }
+        // 与整版锁定同一条要求，只是下移到屏级：没有画面独白的屏等于没想清楚，不许锁。
+        // 允许锁"没想清楚"的屏会让防线形同虚设——人锁住一屏的用意正是"别再动它了"。
+        if (locked && StringUtils.isBlank(screen.getPictureSoloStatement())) {
+            throw new ServiceException("第 " + screen.getScreenNo()
+                + " 屏还没写「画面自己要说清什么」，不能锁定：请先补上画面独白");
+        }
+        screen.setLockStatus(locked ? LOCK_LOCKED : LOCK_DRAFT);
+        screenMapper.updateById(screen);
+        Map<String, Object> event = new LinkedHashMap<>();
+        event.put("screenId", screen.getId());
+        event.put("screenNo", screen.getScreenNo());
+        event.put("locked", locked);
+        projectService.moveStage(taskId, DpVisualStageEnum.STORYBOARD_REVIEW,
+            locked ? "SCREEN_LOCK" : "SCREEN_UNLOCK", JsonUtils.toJsonString(event));
+        return toScreenVo(screen, false);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public DpStoryboardScreenVo addScreen(Long taskId, Long afterScreenId) {
+        DpStoryboardScreen reference = afterScreenId == null ? null : requireScreen(taskId, afterScreenId);
+        DpStoryboard storyboard = reference == null ? latestEntity(taskId)
+            : storyboardMapper.selectById(reference.getStoryboardId());
+        if (storyboard == null) {
+            throw new ServiceException("还没有分镜，请先「生成分镜」");
+        }
+        requireScreenSetEditable(storyboard, "加屏");
+        List<DpStoryboardScreen> screens = screensOf(storyboard.getId());
+        DpStoryboardScreen anchor = reference == null
+            ? (screens.isEmpty() ? null : screens.get(screens.size() - 1)) : reference;
+
+        DpStoryboardScreen screen = new DpStoryboardScreen();
+        screen.setStoryboardId(storyboard.getId());
+        screen.setTaskId(taskId);
+        screen.setScreenNo("S00");
+        screen.setSortNo(screens.size() + 1);
+        screen.setStatus(STATUS_DRAFT);
+        screen.setLockStatus(LOCK_DRAFT);
+        if (anchor != null) {
+            // 同一份基因与方向下，参照屏的取景/构图/光线/背景/质检规则都可以沿用；
+            // 但**模块归属不沿用**——这一屏不属于任何模块行，冒充某个模块会让"计划 vs 实际屏"
+            // 更乱（出图产物文件名也会顶着一个它并不来自的模块编码）。
+            screen.setScreenType(anchor.getScreenType());
+            screen.setProductLockLevel(anchor.getProductLockLevel());
+            screen.setWorkflowCode(anchor.getWorkflowCode());
+            Map<String, Object> spec = parseSpec(anchor.getSpecJson());
+            spec.remove("moduleCode");
+            spec.remove("moduleName");
+            spec.remove("objective");
+            spec.remove("visualRules");
+            spec.remove("sellingPointBlockIds");
+            spec.put("manualAdded", true);
+            spec.put("copiedFromScreenNo", StringUtils.blankToDefault(anchor.getScreenNo(), ""));
+            screen.setSpecJson(JsonUtils.toJsonString(spec));
+        }
+        // 文案与画面独白**留空**：不替人编一句。页面会提示"这一屏待填写"，
+        // 而整版锁定前的"每屏必须有画面独白"这条守卫会挡住"没写就锁版"。
+        screen.setRemark("人工新增的屏：请填写标题与画面独白（画面独白在锁定整版之前必填）");
+        screenMapper.insert(screen);
+
+        int at = indexAfter(screens, anchor);
+        screens.add(at, screen);
+        int count = renumber(storyboard, screens);
+        Map<String, Object> event = new LinkedHashMap<>();
+        event.put("screenId", screen.getId());
+        event.put("screenNo", screen.getScreenNo());
+        event.put("afterScreenNo", anchor == null ? null : anchor.getScreenNo());
+        event.put("screenCount", count);
+        projectService.moveStage(taskId, DpVisualStageEnum.STORYBOARD_REVIEW, "SCREEN_ADD",
+            JsonUtils.toJsonString(event));
+        return toScreenVo(screen, false);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteScreen(Long taskId, Long screenId) {
+        DpStoryboardScreen screen = requireScreen(taskId, screenId);
+        DpStoryboard storyboard = storyboardMapper.selectById(screen.getStoryboardId());
+        if (storyboard == null) {
+            throw new ServiceException("屏所属的分镜不存在：" + screen.getStoryboardId());
+        }
+        requireScreenSetEditable(storyboard, "删屏");
+        if (LOCK_LOCKED.equals(lockStatusOf(screen))) {
+            throw new ServiceException("第 " + screen.getScreenNo()
+                + " 屏已单独锁定，不能删除：请先「解锁这一屏」");
+        }
+        List<DpStoryboardScreen> screens = screensOf(storyboard.getId());
+        if (screens.size() <= 1) {
+            throw new ServiceException("这是最后一屏，删掉就没有分镜了；要清空请重新生成一版分镜");
+        }
+        Long generations = generationMapper.selectCount(new LambdaQueryWrapper<DpGeneration>()
+            .eq(DpGeneration::getScreenId, screen.getId()));
+        if (generations != null && generations > 0) {
+            throw new ServiceException("第 " + screen.getScreenNo() + " 屏已经有 " + generations
+                + " 条出图记录，不能删除：删掉会让已有候选对不上屏");
+        }
+        screenMapper.deleteById(screen.getId());
+        screens.removeIf(item -> item.getId().equals(screen.getId()));
+        int count = renumber(storyboard, screens);
+        Map<String, Object> event = new LinkedHashMap<>();
+        event.put("screenId", screen.getId());
+        event.put("screenNo", screen.getScreenNo());
+        event.put("screenCount", count);
+        projectService.moveStage(taskId, DpVisualStageEnum.STORYBOARD_REVIEW, "SCREEN_DELETE",
+            JsonUtils.toJsonString(event));
     }
 
     // ------------------------------------------------------------------
@@ -877,14 +1019,26 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
         vo.setRemark(entity.getRemark());
         vo.setCreateTime(entity.getCreateTime());
         List<DpStoryboardScreenVo> screenVos = new ArrayList<>();
+        boolean storyboardLocked = STATUS_LOCKED.equals(entity.getStatus());
         for (DpStoryboardScreen screen : screens) {
-            screenVos.add(toScreenVo(screen));
+            screenVos.add(toScreenVo(screen, storyboardLocked));
         }
         vo.setScreens(screenVos);
         return vo;
     }
 
     private DpStoryboardScreenVo toScreenVo(DpStoryboardScreen screen) {
+        return toScreenVo(screen, false);
+    }
+
+    /**
+     * 屏 → 展示对象。
+     *
+     * @param screen           屏
+     * @param storyboardLocked 它所属的分镜版本是否已整版锁定（决定"能不能改"）
+     * @return 展示对象
+     */
+    private DpStoryboardScreenVo toScreenVo(DpStoryboardScreen screen, boolean storyboardLocked) {
         DpStoryboardScreenVo vo = new DpStoryboardScreenVo();
         vo.setId(screen.getId());
         vo.setStoryboardId(screen.getStoryboardId());
@@ -903,7 +1057,126 @@ public class CreativeStoryboardServiceImpl implements ICreativeStoryboardService
         vo.setProductLockLevel(screen.getProductLockLevel());
         vo.setStatus(screen.getStatus());
         vo.setRemark(screen.getRemark());
+        // v1 裁定 ④：逐屏锁定的中文口径与"能不能改"都在这里算一次——
+        // 前端复算一遍规则，迟早会与后端的守卫漂移（那是最难查的一种不一致）。
+        String lockStatus = lockStatusOf(screen);
+        vo.setLockStatus(lockStatus);
+        // 三种状态说三种话：整版锁了就不该说成"这一屏被单独锁了"（那是另一件事），
+        // 否则人会去点"解锁这一屏"然后发现点不动。
+        if (storyboardLocked) {
+            vo.setLockStatusDesc("整版已锁定，不可改");
+        } else if (LOCK_LOCKED.equals(lockStatus)) {
+            vo.setLockStatusDesc("已单独锁定（这一屏已冻结）");
+        } else {
+            vo.setLockStatusDesc("未锁定，可改");
+        }
+        vo.setEditable(!LOCK_LOCKED.equals(lockStatus) && !storyboardLocked);
         return vo;
+    }
+
+    // ------------------------------------------------------------------
+    // v1 裁定 ④：逐屏锁定 + 屏数自定义的公共部分
+    // ------------------------------------------------------------------
+
+    /**
+     * 取一屏并校验归属（守卫顺序：先确认"这屏是这个项目的"，再谈别的）。
+     *
+     * @param taskId   项目ID
+     * @param screenId 屏ID
+     * @return 屏
+     */
+    private DpStoryboardScreen requireScreen(Long taskId, Long screenId) {
+        DpStoryboardScreen screen = screenId == null ? null : screenMapper.selectById(screenId);
+        if (screen == null || !taskId.equals(screen.getTaskId())) {
+            throw new ServiceException("屏不属于该项目：" + screenId);
+        }
+        return screen;
+    }
+
+    /**
+     * 屏的逐屏锁定状态（历史数据没写过这一列时按未锁定处理）。
+     *
+     * @param screen 屏
+     * @return DRAFT / LOCKED
+     */
+    private static String lockStatusOf(DpStoryboardScreen screen) {
+        return StringUtils.blankToDefault(screen.getLockStatus(), LOCK_DRAFT);
+    }
+
+    /**
+     * 把某一版的全部屏标成已锁定（整版锁定时调用）。
+     *
+     * @param screens 该版的屏
+     * @return 屏数
+     */
+    private int lockAllScreens(List<DpStoryboardScreen> screens) {
+        for (DpStoryboardScreen screen : screens) {
+            if (!LOCK_LOCKED.equals(lockStatusOf(screen))) {
+                screen.setLockStatus(LOCK_LOCKED);
+                screenMapper.updateById(screen);
+            }
+        }
+        return screens.size();
+    }
+
+    /**
+     * 屏集合是否还能改（v1 裁定 ④：加/删屏只发生在整版锁定之前）。
+     *
+     * @param storyboard 分镜版本
+     * @param action     动作名（进报错，让人知道是"哪件事"被拒绝了）
+     */
+    private static void requireScreenSetEditable(DpStoryboard storyboard, String action) {
+        if (STATUS_LOCKED.equals(storyboard.getStatus())) {
+            throw new ServiceException("分镜已锁定（" + storyboard.getStoryboardNo()
+                + "）：屏集合就是锁定那一刻的约定，不能" + action + "；要改屏数请「重新生成分镜」得到新版本");
+        }
+    }
+
+    /**
+     * 新屏要插在有序列表的第几位（参照屏之后；没有参照屏就追加到最后）。
+     *
+     * @param screens 该版现有的屏（按屏号有序）
+     * @param anchor  参照屏（可空）
+     * @return 下标
+     */
+    private static int indexAfter(List<DpStoryboardScreen> screens, DpStoryboardScreen anchor) {
+        if (anchor == null) {
+            return screens.size();
+        }
+        for (int i = 0; i < screens.size(); i++) {
+            if (screens.get(i).getId().equals(anchor.getId())) {
+                return i + 1;
+            }
+        }
+        return screens.size();
+    }
+
+    /**
+     * 按给定顺序重排屏号（S01..S0N）与排序号，并把屏数写回分镜。
+     *
+     * <p>为什么每次加/删屏都整体重排：屏号是给人指认的（"第 3 屏"），中间删掉一屏后留着
+     * S01/S02/S04 会让人以为漏了一屏；而排序号是排版与出图的顺序依据，必须连续。</p>
+     *
+     * @param storyboard 分镜版本
+     * @param ordered    期望顺序（第一条就是 S01）
+     * @return 屏数
+     */
+    private int renumber(DpStoryboard storyboard, List<DpStoryboardScreen> ordered) {
+        int no = 0;
+        for (DpStoryboardScreen item : ordered) {
+            no++;
+            String screenNo = String.format("S%02d", no);
+            boolean changed = !screenNo.equals(item.getScreenNo())
+                || item.getSortNo() == null || item.getSortNo() != no;
+            if (changed) {
+                item.setScreenNo(screenNo);
+                item.setSortNo(no);
+                screenMapper.updateById(item);
+            }
+        }
+        storyboard.setScreenCount(no);
+        storyboardMapper.updateById(storyboard);
+        return no;
     }
 
     @SuppressWarnings("unchecked")

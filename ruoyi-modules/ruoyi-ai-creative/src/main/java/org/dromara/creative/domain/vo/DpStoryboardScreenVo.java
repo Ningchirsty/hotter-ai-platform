@@ -102,6 +102,22 @@ public class DpStoryboardScreenVo implements Serializable {
     private String status;
 
     /**
+     * 逐屏锁定（DRAFT/LOCKED；v1 裁定 ④）。
+     */
+    private String lockStatus;
+
+    /**
+     * 逐屏锁定的中文口径（「未锁定，可改」/「已单独锁定，冻结这一屏」）——页面直接显示，不再由前端拼。
+     */
+    private String lockStatusDesc;
+
+    /**
+     * 这一屏能不能改（＝未锁定且整版未锁定）。页面据此决定按钮的可用与提示语，
+     * 规则只在后端算一次（前端复算容易与守卫漂移）。
+     */
+    private Boolean editable;
+
+    /**
      * 备注
      */
     private String remark;

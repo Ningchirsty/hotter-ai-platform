@@ -609,7 +609,11 @@ describe('R38 / R39：页面这一步的装配组件', () => {
       '@edit="openDirectionEdit"',
       '@generate="doGenerateStoryboard"',
       '@lock="doLockStoryboard"',
-      '@edit-screen="openScreenEdit"'
+      '@edit-screen="openScreenEdit"',
+      // v1 裁定 ④：逐屏锁定 + 屏数自定义（加屏/删屏）——这三个动作同样"少接一个就静默失效"
+      '@lock-screen="doLockScreen"',
+      '@add-screen="doAddScreen"',
+      '@delete-screen="doDeleteScreen"'
     ]) {
       expect(sbPage, `分镜页没有把 ${binding} 接上`).toContain(binding);
     }
@@ -623,7 +627,8 @@ describe('R38 / R39：页面这一步的装配组件', () => {
     for (const name of ["'generate'", "'select'", "'edit'"]) {
       expect(dirBoard, `DirectionBoard 没有声明事件 ${name}`).toContain(name);
     }
-    for (const name of ["'generate'", "'lock'", "'edit-screen'"]) {
+    for (const name of ["'generate'", "'lock'", "'edit-screen'", "'lock-screen'", "'add-screen'",
+      "'delete-screen'"]) {
       expect(sbBoard, `StoryboardBoard 没有声明事件 ${name}`).toContain(name);
     }
   });

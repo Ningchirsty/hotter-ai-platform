@@ -104,4 +104,30 @@ describe('界面说明文案与界面实际显示保持一致', () => {
     expect(board).toContain('生成时还没有差异种子记录');
     expect(board).toContain('item.variantSeed == null');
   });
+
+  it('分镜卡：逐屏锁定与屏数自定义的入口和边界都写在页面上（v1 裁定 ④）', () => {
+    const board = source('storyboard/components/StoryboardBoard.vue');
+    const page = source('storyboard/index.vue');
+    // 三件事都要能在分镜这一页做：锁一屏 / 加一屏 / 删一屏
+    for (const name of ["'lock-screen'", "'add-screen'", "'delete-screen'"]) {
+      expect(board, `分镜卡没有声明事件 ${name}`).toContain(name);
+    }
+    expect(board).toContain('锁定这一屏');
+    expect(board).toContain('解锁这一屏');
+    expect(board).toContain('在这屏后加一屏');
+    expect(board).toContain('删这一屏');
+    // 边界必须写在页面上：加/删屏只发生在整版锁定之前
+    expect(board).toContain('整版锁定');
+    expect(board).toContain('不能加屏、删屏或改文案');
+    // "这一屏能不能改"由后端算好（前端复算规则迟早与后端守卫漂移，那是最难查的一种不一致）
+    expect(board).toContain('screen.editable === false');
+    expect(board).toContain('screen.lockStatusDesc');
+    // 页面侧三个动作都接上；删屏前先确认并说清"删的是哪一屏、屏号会重排"
+    expect(page).toContain('@lock-screen="doLockScreen"');
+    expect(page).toContain('@add-screen="doAddScreen"');
+    expect(page).toContain('@delete-screen="doDeleteScreen"');
+    expect(page).toContain('屏号会往前补');
+    // 加屏之后不许假装这一屏已经写好了：文案与画面独白是空的，且必须提示去补
+    expect(page).toContain('文案与画面独白是空的');
+  });
 });

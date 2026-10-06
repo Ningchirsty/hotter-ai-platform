@@ -99,6 +99,19 @@ public class DpStoryboardScreen extends BaseEntity implements Serializable {
     private String status;
 
     /**
+     * 逐屏锁定（v1 裁定 ④：「可以原地锁定一个屏幕，但其余可以自定义」）。
+     *
+     * <p>{@code DRAFT}＝未锁（可改）；{@code LOCKED}＝这一屏被冻结，其余屏照旧可改。
+     * 用 DRAFT/LOCKED 而不是 0/1：分镜表自己的 {@code status} 就是这两个词，同一套词不必查文档，
+     * 也不会撞上 RuoYi「0＝正常/启用」的惯例（那会让 {@code locked=0} 的含义变成必须翻代码的问题）。</p>
+     *
+     * <p><b>与整版锁定的关系</b>：整版锁定（{@code dp_storyboard.status = LOCKED}）时，
+     * 这个版本的所有屏一起置为 LOCKED（它们今天事实上就是冻结的）；反过来，
+     * 单屏锁定**不**等于整版锁定——出图闸门仍然要求整版锁定，单屏锁定只是草稿期的防误改。</p>
+     */
+    private String lockStatus;
+
+    /**
      * 备注
      */
     private String remark;
