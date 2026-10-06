@@ -31,7 +31,9 @@
             :title="item.directionCode ? `方向 ${item.directionCode}（页面上不再展示编号，仅悬停可见）` : undefined"
           >
             <!-- v1 裁定 ⑨：重新生成会留下多组同名 A/B/C，必须一眼看出哪组是哪次生成的 -->
-            <span v-if="item.batchNo" class="batch">第 {{ item.batchNo }} 轮</span>
+            <span v-if="item.batchNo" class="batch" :title="batchTitle(item)">
+              第 {{ item.batchNo }} 轮
+            </span>
             <span class="name">{{ item.directionName }}</span>
             <el-tag v-if="item.status === 'SELECTED'" type="success" size="small">已选定</el-tag>
             <el-tag v-else-if="item.status === 'REJECTED'" type="info" size="small">已弃用</el-tag>
@@ -146,6 +148,27 @@ function strategyLabel(key: string): string {
 /** 维度的展示值（缺值给空串，不显示 "undefined"） */
 function strategyValue(item: DpVisualDirectionVO, key: string): string {
   return directionStrategyValue(item.strategy, key);
+}
+
+/**
+ * 「第 N 轮」标记的悬停说明。
+ *
+ * v1 裁定 ⑤「可以复现，但每次生成都要有差异化」：每次「重新生成方向」都会换一版拍法
+ * （机位、光比、场景处理、氛围），但同一颗种子必然产出逐字相同的一套。
+ * 种子是一串数字，放在卡片正文里会成为噪音（正文全是设计同事要读的取舍内容），
+ * 所以只在悬停时如实给出——想说清"这一轮是哪一版"的人随时能看到。
+ *
+ * 历史数据没有种子（那时还没有差异化逻辑），这里如实说"没有记录"，不编一个数字。
+ *
+ * @param item 方向
+ * @returns 悬停提示文案
+ */
+function batchTitle(item: DpVisualDirectionVO): string {
+  const head = `第 ${item.batchNo} 轮生成的方向`;
+  if (item.variantSeed == null) {
+    return `${head}（生成时还没有差异种子记录）`;
+  }
+  return `${head}；差异种子 ${item.variantSeed}——同一颗种子重新生成会得到完全相同的结果，换一轮则必然不同`;
 }
 </script>
 

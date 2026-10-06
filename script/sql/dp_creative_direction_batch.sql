@@ -10,7 +10,8 @@
 --      `variant_seed` 就是那个来源（同种子必然产出同一份内容；换种子必然换一份内容）。
 --
 -- batch_no：同一个任务内，一次「生成方向」插入的 3 行共用同一个 batch_no，从 1 开始递增。
--- variant_seed：这一次生成用的差异种子（可空＝历史数据，按 0 处理）。
+-- variant_seed：这一次生成用的差异种子（**只在差异化逻辑上线后**由服务层写入；
+--              为 NULL＝历史数据，那一版生成时还没有这个机制，所以"没有记录"而不是"种子是 0"）。
 --
 -- 存量数据的回填：老数据没有这两个字段，只能按"同一秒插入的一组 = 同一轮"来切
 -- （实测两组分别是 2026-09-28 14:43:35 与 2026-10-05 13:24:49，各 3 行、时刻完全相同）。
@@ -33,7 +34,7 @@ SET @has_seed := (SELECT COUNT(*) FROM information_schema.COLUMNS
                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'dp_visual_direction'
                      AND COLUMN_NAME = 'variant_seed');
 SET @sql := IF(@has_seed = 0,
-  'ALTER TABLE dp_visual_direction ADD COLUMN variant_seed BIGINT NULL COMMENT ''本次生成的差异种子（可复现：同种子同输出；空＝历史数据按 0 处理）''',
+  'ALTER TABLE dp_visual_direction ADD COLUMN variant_seed BIGINT NULL COMMENT ''本次生成的差异种子（服务层写入，最小 1；NULL＝历史数据，当时还没有差异化机制）''',
   'SELECT ''variant_seed 已存在，跳过'' AS note');
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
@@ -46,8 +47,12 @@ UPDATE dp_visual_direction d
    SET d.batch_no = g.rn
  WHERE d.del_flag = '0';
 
--- 2b) variant_seed 保持 NULL：它要等 ⑤ 的差异化逻辑上线后才由服务层写入。
---     现在填 0 会让人以为"已经有种子了"，而其实没有任何代码消费它——不假装。
+-- 2b) variant_seed 的口径修正：这一段迁移落地时它必须是 NULL（"历史数据，没有记录过种子"）。
+--     如果某个环境上这一列被早期草稿填成了 0，这里统一纠正回 NULL——
+--     因为服务层写入的种子最小是 1（种子 = 任务基址 + 轮次，轮次从 1 起），
+--     所以 **0 只可能来自"当时还没有差异化逻辑"**，把它当"有种子"会变成一句假话：
+--     页面会声称"同一颗种子重新生成会得到完全相同的结果"，而那一版根本不是这么来的。
+UPDATE dp_visual_direction SET variant_seed = NULL WHERE del_flag = '0' AND variant_seed = 0;
 
 -- 3) 核对：每个任务的轮次与行数（期望：本机那个任务 2 轮 × 3 行）
 SELECT '=== 回填结果（按任务 × 轮次）===' AS s;

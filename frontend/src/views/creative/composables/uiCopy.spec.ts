@@ -90,4 +90,18 @@ describe('界面说明文案与界面实际显示保持一致', () => {
     expect(page).toContain('@open-generation="openGeneration"');
     expect(page).toContain("window.open(`/creative/project?taskId=${taskId.value}`, '_self')");
   });
+
+  it('方向卡的「第 N 轮」：差异种子只在悬停提示里如实给出，不当正文摆出来', () => {
+    const board = source('storyboard/components/DirectionBoard.vue');
+    // v1 裁定 ⑨：重新生成会留下多组同名 A/B/C，轮次标记是"哪组是哪次生成的"的唯一凭据
+    expect(board).toContain('第 {{ item.batchNo }} 轮');
+    expect(board).toContain(':title="batchTitle(item)"');
+    // v1 裁定 ⑤：种子是"这一版怎么复现"的凭据 —— 给出来，但不占卡片正文
+    // （正文里都是设计同事要读的取舍内容，一串数字放进去只会变成噪音）
+    expect(board).toContain('差异种子');
+    expect(board).toContain('同一颗种子重新生成会得到完全相同的结果');
+    // 历史数据没有种子（那时还没有差异化逻辑），不许编一个数字出来
+    expect(board).toContain('生成时还没有差异种子记录');
+    expect(board).toContain('item.variantSeed == null');
+  });
 });

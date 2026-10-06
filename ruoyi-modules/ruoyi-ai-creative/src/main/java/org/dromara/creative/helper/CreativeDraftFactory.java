@@ -125,17 +125,45 @@ public final class CreativeDraftFactory {
     // ------------------------------------------------------------------
 
     /**
-     * 生成 3 条视觉方向草稿。
+     * 生成 3 条视觉方向草稿（不带差异种子，等价于种子 0）。
      *
-     * <p>3 条方向代表 3 种**行业取舍**（克制/代入/质感），这是稳定的业务骨架；
-     * 但方向名、取舍说明与策略明细全部由输入推导，因此不同项目看到的内容不同。</p>
+     * <p>保留这个重载：不关心轮次差异的调用方（含单测）拿到的是**改造前逐字相同**的输出
+     * （每个方向的第 0 号变体就是原来的文案）。真要按轮次差异化，请用带种子的重载。</p>
      *
-     * @param dna        锁定基因（含参考图实测镜像字段）
+     * @param dna         锁定基因（含参考图实测镜像字段）
      * @param productName 产品名
-     * @param facts      已确认事实（字段编码 → 值）
+     * @param facts       已确认事实（字段编码 → 值）
      * @return 3 条方向草稿
      */
     public static List<DirectionDraft> directions(ObjectNode dna, String productName, Map<String, String> facts) {
+        return directions(dna, productName, facts, 0L);
+    }
+
+    /**
+     * 生成 3 条视觉方向草稿（按差异种子取拍法变体）。
+     *
+     * <p>3 条方向代表 3 种**行业取舍**（克制/代入/质感），这是稳定的业务骨架，任何种子都不改变它；
+     * 种子只决定每条取舍**这一次具体怎么拍**（机位、光比、场景处理、氛围），
+     * 并且只在"同样忠于锁定基因"的若干种拍法之间选。</p>
+     *
+     * <p><b>为什么要有种子（v1 裁定 ⑤「可以复现，但每次生成都要有差异化」）</b>：
+     * 改造前这里是纯函数——同一份输入永远同一份输出，于是"重新生成方向"看到的还是那三句话，
+     * 人无法判断这次重生成到底有没有变化；但直接塞随机数又会毁掉"可复现"
+     * （出问题时要能回到当时那一版）。折中是：<b>把差异来源存下来</b>——
+     * 种子相同则逐字相同（可复现、可回归测试），种子不同则必然不同（每次生成都有差异）。
+     * 种子怎么来见 {@link #variantSeed(Long, int)}。</p>
+     *
+     * <p><b>种子不改变的事实</b>：背景色/产品占比/档位/已确认事实仍然只来自基因与事实，
+     * 变体只在"怎么拍"上做选择；参考图实测场景依旧如实引用，测不出来时依旧说"不猜"。</p>
+     *
+     * @param dna         锁定基因（含参考图实测镜像字段）
+     * @param productName 产品名
+     * @param facts       已确认事实（字段编码 → 值）
+     * @param variantSeed 差异种子（同种子同输出）
+     * @return 3 条方向草稿
+     */
+    public static List<DirectionDraft> directions(ObjectNode dna, String productName, Map<String, String> facts,
+                                                  long variantSeed) {
         String background = text(dna.path("colors"), "background", "#F5F5F3");
         String primary = text(dna.path("colors"), "primary", null);
         String lightingType = text(dna.path("lighting"), "type", "SOFT");
@@ -153,6 +181,12 @@ public final class CreativeDraftFactory {
         String tone = toneOf(background);
         String density = densityOf(saturation, contrast, whitespace);
 
+        // 这一次的拍法变体：由种子决定，但**每条取舍各自在自己的变体表里选**，
+        // 所以 A 永远是"克制影棚"、B 永远是"生活代入"、C 永远是"质感特写"，不会被种子换掉骨架。
+        DirectionVariant va = pick(VARIANT_A, variantSeed, 0);
+        DirectionVariant vb = pick(VARIANT_B, variantSeed, 1);
+        DirectionVariant vc = pick(VARIANT_C, variantSeed, 2);
+
         // 基因摘要：让「这条方向是按哪份基因定的」在文案里可核对
         // v1 人工测试反馈：这里原先把档位原样拼进去（「饱和 MEDIUM、对比 MEDIUM、留白 HIGH」），
         // 卡片上于是出现给代码看的枚举值。档位是给人读的，就该说「中/高」。
@@ -161,14 +195,18 @@ public final class CreativeDraftFactory {
             + "、留白 " + levelCn(whitespace) + "、产品占比 " + ratio;
 
         List<DirectionDraft> list = new ArrayList<>();
+        // 方向 A 的背景处理：变体只说"这块底怎么处理"，主色永远引用基因里的背景色（不另起一套）
+        String sceneA = va.scene() == null
+            ? "纯色底（沿用基因背景色 " + background + "）"
+            : va.scene() + "（主色仍为基因背景色 " + background + "）";
         list.add(new DirectionDraft("A", "克制影棚 · " + light + tone,
             "同一基因下信息最清楚的拍法：以「" + background + "」为底，"
                 + lightFull + "均匀铺开，" + density + "，主体占比守在 " + ratio + "。"
-                + "适合主图与参数屏——先把「这是什么」说清，再谈氛围。",
-            strategy(background, "纯色底（沿用基因背景色 " + background + "）",
-                lightFull + "，无环境光干扰",
-                "产品居中、正投影，四周留白均等（留白 " + levelCn(whitespace) + "）",
-                "专业、克制、以产品为主",
+                + "适合主图与参数屏——先把「这是什么」说清，再谈氛围。" + note(va),
+            strategy(background, sceneA,
+                lightFull + "，" + va.lighting(),
+                va.composition() + "（留白 " + levelCn(whitespace) + "）",
+                va.mood(),
                 dnaSummary, sceneType, ratio)));
 
         list.add(new DirectionDraft("B", "生活代入 · " + sceneLabel(sceneType) + tone,
@@ -176,11 +214,11 @@ public final class CreativeDraftFactory {
                 + (facts != null && StringUtils.isNotBlank(facts.get("color"))
                     ? "（画面里保留已确认的「" + facts.get("color") + "」配色特征）" : "")
                 + "，构图走三分位、留白处承接文案。"
-                + "参考图实测场景为「" + orDash(sceneType) + "」，本方向据此贴近而非另起一套。",
-            strategy("#F7F1E8", "生活场景（暖白桌面/家居环境）",
-                "自然光 + 侧光，带柔和投影",
-                "产品偏左或偏右三分位，留白处置文案（留白 " + levelCn(whitespace) + "）",
-                "温暖、日常、可代入",
+                + "参考图实测场景为「" + orDash(sceneType) + "」，本方向据此贴近而非另起一套。" + note(vb),
+            strategy("#F7F1E8", sceneB(vb, sceneType),
+                vb.lighting(),
+                vb.composition() + "（留白 " + levelCn(whitespace) + "）",
+                vb.mood(),
                 dnaSummary, sceneType, ratio)));
 
         list.add(new DirectionDraft("C", "质感特写 · " + light + darkTone(background),
@@ -188,14 +226,192 @@ public final class CreativeDraftFactory {
                 + LIGHT_WORDS.getOrDefault(up(lightingType), "柔光") + "切小面积、强调材质反射。"
                 + "事实里能支撑细节的字段"
                 + (detailFact(facts) == null ? "暂缺，请先确认工艺/规格后再定这一屏"
-                    : "为「" + detailFact(facts) + "」") + "。",
-            strategy(darken(background), "主题暗场（深色渐变）",
-                "硬质方向光 + 轮廓光，强调材质反射",
-                "局部特写（结构/工艺/材质），大特写裁切",
-                "精致、高级、强调质感",
+                    : "为「" + detailFact(facts) + "」") + "。" + note(vc),
+            strategy(darken(background), vc.scene(),
+                vc.lighting(),
+                vc.composition(),
+                vc.mood(),
                 dnaSummary, sceneType, ratio)));
 
         return list;
+    }
+
+    // ------------------------------------------------------------------
+    // ⑤ 差异种子与「拍法变体」
+    //
+    // v1 裁定 ⑤：「重新生成可以复现，但每次生成都要有差异化」。这两件事看似矛盾，
+    // 解法只有一条——把"这次为什么长这样"存下来，而不要引入真正的随机：
+    //   种子相同 → 逐字相同（可复现、可写回归测试、可回到当时那一版）
+    //   种子不同 → 必然不同（"重新生成方向"一定看得到变化）
+    //
+    // 变体的边界（这也是"不猜"的一部分）：种子只换"怎么拍"（机位/光比/场景处理/氛围），
+    // 不换"拍什么"。背景色、产品占比、档位、已确认事实、参考图实测场景仍然是基因与事实说了算；
+    // 参考图没测出场景时，变体也不许编一个场景出来（见 sceneB）。
+    // ------------------------------------------------------------------
+
+    /** 每条取舍各有多少种拍法变体（4×4×4＝64 种组合，够 64 轮不重样） */
+    public static final int VARIANTS_PER_DIRECTION = 4;
+
+    /**
+     * 一次「拍法变体」：只描述怎么拍，不含任何产品事实。
+     *
+     * @param scene       背景/场景的处理方式；{@code null} 表示沿用第 0 号变体的原始口径
+     * @param lighting    光线处理（不改变基因的光型，只改变投影与光比的处理）
+     * @param composition 构图与机位（后面会自动补上"留白 X"）
+     * @param mood        情绪/调性
+     * @param note        追加在概念末尾的一句说明；{@code null} 表示不加（第 0 号变体保持逐字不变）
+     */
+    private record DirectionVariant(String scene, String lighting, String composition,
+                                    String mood, String note) {
+    }
+
+    /**
+     * 方向 A「克制影棚」的拍法变体；第 0 号是改造前的原文案（保证默认输出逐字不变）。
+     */
+    private static final List<DirectionVariant> VARIANT_A = List.of(
+        new DirectionVariant(null, "无环境光干扰",
+            "产品居中、正投影，四周留白均等", "专业、克制、以产品为主", null),
+        new DirectionVariant("同色系渐变底", "加同色系反光板补暗部，光比压平",
+            "45° 微俯，产品居中，留白收在左右两侧", "理性、干净、偏目录感",
+            "机位改为 45° 微俯，接近翻目录时的视角。"),
+        new DirectionVariant(null, "顶部硬边投影，光比略高",
+            "90° 正俯视，产品居中，投影当构图元素", "现代、利落、秩序感",
+            "正俯视把投影变成画面里唯一的装饰，信息依旧最清楚。"),
+        new DirectionVariant("同色系浅底（主色不变，只提亮明度）", "背面加冷白轮廓光勾边，正面光比不变",
+            "侧向平视，产品居中略偏右三分位", "冷静、精致、留白充裕",
+            "侧向平视加轮廓光勾边，体块与边缘更分明。"));
+
+    /**
+     * 方向 B「生活代入」的拍法变体；第 0 号是改造前的原文案。
+     *
+     * <p>注意 B 的场景写法（见 {@link #sceneB}）：变体只说"怎么处理场景"，
+     * 参考图实测到的场景永远如实引用——原样搬一个家居场景进来会与"贴近参考图"自相矛盾。</p>
+     */
+    private static final List<DirectionVariant> VARIANT_B = List.of(
+        new DirectionVariant(null, "自然光 + 侧光，带柔和投影",
+            "产品偏左或偏右三分位，留白处置文案", "温暖、日常、可代入", null),
+        new DirectionVariant("窗边家居角落 + 织物", "侧窗自然光作主光，带窗棂投影",
+            "俯拍 45°，产品落在左下三分位，右上留白置文案", "松弛、有生活痕迹",
+            "改用俯拍 45° 与窗光，画面更像日常随手记录。"),
+        new DirectionVariant("晨间桌面（早餐场景）", "自然光 + 逆光轮廓，前景略虚",
+            "平视中景，产品居中偏左，右侧留白置文案", "清爽、明亮、有早晨的温度",
+            "换成平视中景，把使用状态与场景一起交代。"),
+        new DirectionVariant("傍晚居家（暖色台灯环境）", "暖色环境光 + 侧逆光，暗部保留细节",
+            "低机位平视，产品落在右三分位，左侧留白置文案", "安静、有归属感、偏夜色",
+            "低机位配暖色环境光，把氛围往傍晚推。"));
+
+    /**
+     * 方向 C「质感特写」的拍法变体；第 0 号是改造前的原文案。
+     */
+    private static final List<DirectionVariant> VARIANT_C = List.of(
+        new DirectionVariant("主题暗场（深色渐变）", "硬质方向光 + 轮廓光，强调材质反射",
+            "局部特写（结构/工艺/材质），大特写裁切", "精致、高级、强调质感", null),
+        new DirectionVariant("纯暗底（无渐变）", "单侧硬光，明暗交界线压在结构上",
+            "微距特写，取材质最密的一段", "冷峻、克制、像产品摄影棚样张",
+            "换成单侧硬光微距，明暗交界线压在结构上。"),
+        new DirectionVariant("暗底 + 反光板（局部提亮）", "顶部硬光 + 底部反光板补暗部",
+            "中特写，带一点环境交代", "扎实、可信、工艺感强",
+            "用顶部硬光配反光板，先把做工讲扎实。"),
+        new DirectionVariant("暗底渐变 + 背景光晕", "逆光轮廓 + 前方柔光补面",
+            "特写，浅景深虚化背景", "通透、轻盈、材质感清透",
+            "逆光轮廓加浅景深，画面更通透。"));
+
+    /**
+     * 差异种子的组合空间（A/B/C 三条取舍的变体数之积）。
+     *
+     * @return 组合数（64）
+     */
+    public static int directionVariantSpace() {
+        int space = 1;
+        for (int i = 0; i < 3; i++) {
+            space *= VARIANTS_PER_DIRECTION;
+        }
+        return space;
+    }
+
+    /**
+     * 由「任务 + 第几轮」推出这一次的差异种子。
+     *
+     * <p><b>为什么是纯函数</b>：种子必须可复现，而"任务的第 N 轮"是库里已有的事实
+     * （{@code batch_no}），所以种子可以由它算出来，不需要额外记一张表；
+     * 服务层仍会把算出来的种子写进 {@code dp_visual_direction.variant_seed}，
+     * 这样"当时用的是哪个种子"是可查的，不依赖任何人重算。</p>
+     *
+     * <p><b>为什么相邻轮次一定不同</b>：种子＝"任务基址 + 轮次"，取值再落到组合空间取模。
+     * 轮次每次加 1，组合下标也每次移一位——所以「重新生成」在同一个任务内<b>必然</b>换一版，
+     * 不会出现"点了重新生成、三个方向跟上一轮一模一样"（纯哈希取模做不到这一点，会撞）。</p>
+     *
+     * @param taskId  项目ID（可为空）
+     * @param batchNo 第几轮（同一任务内从 1 递增）
+     * @return 种子
+     */
+    public static long variantSeed(Long taskId, int batchNo) {
+        long base = Math.floorMod(mix64(taskId == null ? 0L : taskId), directionVariantSpace());
+        return base + batchNo;
+    }
+
+    /**
+     * 取某一条取舍这一次的拍法变体。
+     *
+     * <p>把种子当成一个"组合下标"，按位切给 A/B/C：A 取最低位、B 取次低位、C 取高位。
+     * 这样相邻种子一定在 A 上先不同（人一眼就能看出"这次换了"），而 64 轮之后才会回到起点。</p>
+     *
+     * @param variants 该取舍的变体表
+     * @param seed     差异种子
+     * @param slot     第几条取舍（0/1/2）
+     * @return 变体
+     */
+    private static DirectionVariant pick(List<DirectionVariant> variants, long seed, int slot) {
+        int combo = (int) Math.floorMod(seed, directionVariantSpace());
+        int slotBase = 1;
+        for (int i = 0; i < slot; i++) {
+            slotBase *= VARIANTS_PER_DIRECTION;
+        }
+        return variants.get((combo / slotBase) % VARIANTS_PER_DIRECTION);
+    }
+
+    /**
+     * 追加在方向概念末尾的变体说明；第 0 号变体没有说明，输出因此与改造前逐字相同。
+     *
+     * @param variant 变体
+     * @return 说明（可能为空串）
+     */
+    private static String note(DirectionVariant variant) {
+        return variant.note() == null ? "" : variant.note();
+    }
+
+    /**
+     * 方向 B 的场景写法：变体只提供"场景怎么处理"，参考图实测到的场景如实引用。
+     *
+     * <p>为什么不能直接把变体里的场景词当成结论：B 的概念里写着"参考图实测场景为「X」，本方向据此贴近"。
+     * 如果变体把场景换成"窗边家居角落"，那句话就成了假话（参考图可能测出的是影棚底）。
+     * 所以这里明确写成"对实测场景 X 的家居化处理：…"，测不出场景时照旧说"不猜"。</p>
+     *
+     * @param variant   变体
+     * @param sceneType 参考图实测场景（可空）
+     * @return 场景描述
+     */
+    private static String sceneB(DirectionVariant variant, String sceneType) {
+        if (variant.scene() == null) {
+            return "生活场景（暖白桌面/家居环境）";
+        }
+        if (StringUtils.isBlank(sceneType)) {
+            return "生活场景（参考图未测出场景，不猜；本次按「" + variant.scene() + "」处理）";
+        }
+        return "生活场景（参考图实测场景「" + sceneType + "」的家居化处理：" + variant.scene() + "）";
+    }
+
+    /**
+     * 64 位混洗（splitmix64 的收尾步）：把任务ID摊平到组合空间，避免"相邻项目ID只差一点、方向也几乎一样"。
+     *
+     * @param value 输入
+     * @return 混洗结果（纯函数，与时间/机器/进程无关）
+     */
+    private static long mix64(long value) {
+        long z = value + 0x9E3779B97F4A7C15L;
+        z = (z ^ (z >>> 30)) * 0xBF58476D1CE4E5B9L;
+        z = (z ^ (z >>> 27)) * 0x94D049BB133111EBL;
+        return z ^ (z >>> 31);
     }
 
     // ------------------------------------------------------------------

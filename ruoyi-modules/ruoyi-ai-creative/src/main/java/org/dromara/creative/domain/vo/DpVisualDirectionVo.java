@@ -80,6 +80,15 @@ public class DpVisualDirectionVo implements Serializable {
     private Integer batchNo;
 
     /**
+     * 这一次生成用的差异种子（v1 裁定 ⑤）。
+     *
+     * <p>页面用它说明「这一轮是哪一版」：种子相同则三个方向的文案逐字相同（可复现），
+     * 相邻轮次的种子必然不同（每次生成都有差异化）。历史数据为 {@code null}
+     * （当时还没有差异化逻辑，不能假装它有一个种子）。</p>
+     */
+    private Long variantSeed;
+
+    /**
      * 状态描述
      */
     private String statusDesc;

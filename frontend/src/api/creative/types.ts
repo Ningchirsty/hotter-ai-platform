@@ -375,6 +375,14 @@ export interface DpVisualDirectionVO {
    * 才能分清哪组是哪次生成的。
    */
   batchNo?: number;
+  /**
+   * 这一次生成用的差异种子（可空＝历史数据，那时还没有差异化逻辑）。
+   *
+   * v1 裁定 ⑤「可以复现，但每次生成都要有差异化」：同一颗种子必然产出逐字相同的三个方向，
+   * 相邻轮次必然不同。页面把它在「第 N 轮」标记的悬停提示里如实给出——不放正文，
+   * 因为它是"这一版怎么复现"的凭据，不是给设计同事读的取舍内容。
+   */
+  variantSeed?: number | null;
   sortNo?: number;
   source?: string;
   selectedBy?: string | number;

@@ -87,10 +87,18 @@ public class CreativeDirectionServiceImpl implements ICreativeDirectionService {
 
         // 参数化草稿：方向名/取舍说明/策略明细全部由「锁定基因（含参考图实测）+ 已确认事实 + 产品名」推导。
         // 同输入可复现（不引入随机数），不同输入必然不同——这正是「刷新内容永远一样」的修复点。
+        //
+        // ⑤「可以复现，但每次生成都要有差异化」：这一轮是第几轮先算出来（batch_no），
+        // 再由它推出差异种子——种子只换"怎么拍"（拍法变体），不换"拍什么"（基因与事实仍然唯一权威）。
+        // 同一个种子必然得到逐字相同的三份草稿（可复现），相邻轮次的种子必然不同（每次生成都有变化）。
+        // 说清楚边界：这条保证覆盖的是**参数化模板**这条路。若治理台路由到了模型，
+        // 名称与概念由模型给出，同一颗种子不保证逐字相同——种子仍然完整决定了喂给模型的基线方案。
+        Integer batchNo = nextBatchNo(taskId);
+        long variantSeed = CreativeDraftFactory.variantSeed(taskId, batchNo);
         CreativeProjectVo project = projectService.getProject(taskId);
         Map<String, String> facts = confirmedFacts(contentTaskService.getDetail(taskId));
         List<CreativeDraftFactory.DirectionDraft> drafts =
-            CreativeDraftFactory.directions(dna, project.getProductName(), facts);
+            CreativeDraftFactory.directions(dna, project.getProductName(), facts, variantSeed);
 
         // 有可用模型就用模型润色文案（LOCAL 优先，不出公司）；没有就如实回落参数化模板。
         // 采纳是逐字段的：模型没给的字段保留参数化草稿，绝不因为「模型返回了」就整段照抄。
@@ -133,14 +141,14 @@ public class CreativeDirectionServiceImpl implements ICreativeDirectionService {
 
         // 这一轮是第几轮：同一个任务内 batch_no 从 1 递增（v1 裁定 ⑨：方向卡要能显示"第几轮"）。
         // 一次生成插入的 3 行共用同一个 batch_no，页面据此就能把两组同名 A/B/C 分开。
-        Integer batchNo = nextBatchNo(taskId);
-
+        // 差异种子同样 3 行共用（它就是"这一次生成"的属性，不是某一条方向的属性）。
         List<DpVisualDirection> created = new ArrayList<>();
         for (CreativeDraftFactory.DirectionDraft draft : drafts) {
             DpVisualDirection entity = build(taskId, draft.code(), draft.name(), draft.concept(),
                 draft.strategy(), created.size() + 1);
             entity.setSource(source);
             entity.setBatchNo(batchNo);
+            entity.setVariantSeed(variantSeed);
             created.add(entity);
         }
 
@@ -157,6 +165,9 @@ public class CreativeDirectionServiceImpl implements ICreativeDirectionService {
 
         Map<String, Object> event = new LinkedHashMap<>();
         event.put("dnaId", dnaId);
+        event.put("batchNo", batchNo);
+        // 差异种子写进事件：事后核对"这一轮到底用的哪个种子"不必去猜、也不必重算
+        event.put("variantSeed", variantSeed);
         event.put("directions", result.stream().map(DpVisualDirectionVo::getDirectionCode).toList());
         event.put("source", source);
         event.put("modelKey", modelKey);
@@ -442,6 +453,9 @@ public class CreativeDirectionServiceImpl implements ICreativeDirectionService {
         vo.setStatusDesc(statusDesc(entity.getStatus()));
         // 第几轮生成（v1 裁定 ⑨）：页面据此把两组同名 A/B/C 分开显示
         vo.setBatchNo(entity.getBatchNo());
+        // 这一次生成用的差异种子（v1 裁定 ⑤）：页面在轮次标记的悬停提示里如实给出，
+        // 人凭它就能说清"这一轮是哪一版"，也给将来"用同一轮种子重跑"留了入口
+        vo.setVariantSeed(entity.getVariantSeed());
         vo.setSortNo(entity.getSortNo());
         vo.setSource(entity.getSource());
         vo.setSelectedBy(entity.getSelectedBy());

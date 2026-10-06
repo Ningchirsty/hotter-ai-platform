@@ -85,8 +85,11 @@ public class DpVisualDirection extends BaseEntity implements Serializable {
     /**
      * 本次生成的差异种子（v1 裁定 ⑤「可以复现，但每次生成都要有差异化」的落点）。
      *
-     * <p><b>当前尚未被消费</b>：列与写入路径先备好，差异化逻辑（同种子同输出、换种子换输出）
-     * 在下一步接上；在接上之前保持 NULL，不假装它已经生效。</p>
+     * <p>由 {@code CreativeDraftFactory#variantSeed(taskId, batchNo)} 算出（纯函数，只跟"哪个任务、第几轮"有关），
+     * 一次生成插入的 3 行共用同一个值：同一颗种子必然产出逐字相同的三份草稿（可复现），
+     * 相邻轮次必然不同（每次重新生成都换一版拍法）。</p>
+     *
+     * <p>为 {@code null} 表示<b>历史数据</b>——那时还没有差异化逻辑，不能反推说它当初用的是哪个种子。</p>
      */
     private Long variantSeed;
 
