@@ -50,6 +50,35 @@
       </template>
 
       <template #GenerationBoard>
+        <!-- 第 36 轮（v1 反馈 AI生产中心 1.2 原文「已出图的方向应该是最终的产品详情图」）：
+             把**最终那张详情长图**摆在这里，并说明它是什么（长图排版产物，不是模型候选）。
+             判定"哪一版是长图"由纯函数 pickFinalDetailVersion 给（有单测）；没有就如实说没有。 -->
+        <section class="panel final-detail" data-generation-section="FINAL_DETAIL">
+          <div class="block-head">
+            <h3>
+              最终产品详情图
+              <span class="muted">{{ finalDetailCaption || '长图排版产物' }}</span>
+            </h3>
+            <div class="head-actions">
+              <el-button size="small" plain @click="openReviewPage">去「详情页与审核」</el-button>
+            </div>
+          </div>
+          <p class="hint">
+            这是<b>排版成品</b>（长图详情页），不是模型候选：候选是逐屏生成的原图，
+            最终成品在「详情页与审核」里由分镜与候选排版而成。左边/下面那张长图就是最终产物。
+          </p>
+          <div v-if="finalDetail && urlOf('final-detail')" class="final-detail-body">
+            <img :src="urlOf('final-detail')" alt="最终产品详情图（长图排版产物）" />
+          </div>
+          <p v-else-if="finalDetailFetchError" class="hint">
+            最终详情图的预览读不出来：{{ finalDetailFetchError }}（这一块不影响候选列表）
+          </p>
+          <p v-else class="empty">
+            这个项目还没有长图排版产物。先到「详情页与审核」把分镜锁定、渲染一版长图，
+            这里就会出现最终那张详情图。
+          </p>
+        </section>
+
         <GenerationBoard
           :rows="rows"
           :storyboard="storyboard"
@@ -189,9 +218,11 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import {
+  fetchDetailPreviewBlobUrl,
   fetchGenerationPreviewBlobUrl,
   fetchGenerationThumbnailBlobUrl,
   fetchProductImageBlobUrl,
+  getDetailPage,
   getProjectProductImage,
   getStoryboard,
   listCreativeProject,
@@ -205,6 +236,8 @@ import {
 } from '@/api/creative';
 import type {
   CreativeProjectVO,
+  DpDetailPageVersionVO,
+  DpDetailPageVO,
   DpGenerationVO,
   DpStoryboardScreenVO,
   DpStoryboardVO,
@@ -223,6 +256,10 @@ import {
   statusLabel,
   statusType
 } from './generationText';
+import {
+  finalDetailCaption as finalDetailCaptionOf,
+  pickFinalDetailVersion
+} from './finalDetailImage';
 import CreativeWorkspace from '../components/CreativeWorkspace.vue';
 import CreativeBriefStrip from '../components/CreativeBriefStrip.vue';
 import GenerationBoard from './components/GenerationBoard.vue';
@@ -256,6 +293,18 @@ const previewScreen = ref<DpStoryboardScreenVO | null>(null);
 // 项目内视图
 const storyboard = ref<DpStoryboardVO | null>(null);
 const productImage = ref<ProjectProductImageVO | null>(null);
+/**
+ * 项目内视图里的「最终产品详情图」（第 36 轮，v1 反馈 AI生产中心 1.2 原文
+ * 「已出图的方向应该是最终的产品详情图」）。
+ *
+ * 这一块**只是把已有产物显示出来**：判定"哪一版是长图"由纯函数
+ * {@link pickFinalDetailVersion} 给（有单测），拿不到长图就如实说"还没有"，
+ * 不拿别的图顶上——"这是什么图"这件事上，含糊比缺失更糟。
+ */
+const finalDetail = ref<DpDetailPageVersionVO | null>(null);
+const finalDetailCaption = ref('');
+/** 最终详情图预览读取失败时的如实说明（不弹错、不留白） */
+const finalDetailFetchError = ref('');
 /** 正在跑的项目内动作（按钮 loading 与互斥用），同时只有一个 */
 const busy = ref('');
 const refreshing = ref(false);
@@ -397,20 +446,60 @@ async function loadProject() {
   if (!taskId.value) return;
   loading.value = true;
   try {
-    const [genRes, sbRes, productRes] = await Promise.all([
+    const [genRes, sbRes, productRes, detailRes] = await Promise.all([
       listGenerations(taskId.value),
       getStoryboard(taskId.value).catch(() => null),
-      getProjectProductImage(taskId.value).catch(() => null)
+      getProjectProductImage(taskId.value).catch(() => null),
+      // 最终产品详情图（第 36 轮）：拿不到就只是这一块空着，不影响候选列表
+      getDetailPage(taskId.value).catch(() => null)
     ]);
     rows.value = genRes.data || [];
     storyboard.value = sbRes?.data ?? null;
     productImage.value = productRes?.data ?? null;
     // R45：缩略图不再一次性全取——由 GenerationBoard 在候选行进入视口时发 need-thumb
     void loadProductImageUrl();
+    void loadFinalDetail((detailRes?.data as DpDetailPageVO | null) ?? null);
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '加载项目候选失败');
   } finally {
     loading.value = false;
+  }
+}
+
+/**
+ * 去「详情页与审核」看/排版最终长图（第 36 轮）。
+ *
+ * <p>用 `window.open(..., '_self')` 而不是 router：与视觉基因页那条「去出图框改提示词」同一套做法
+ * （那一页也没有 router），并且带 taskId 深链过去。</p>
+ */
+function openReviewPage(): void {
+  if (!taskId.value) {
+    return;
+  }
+  window.open(`/creative/review?taskId=${taskId.value}`, '_self');
+}
+
+/**
+ * 载入「最终产品详情图」（第 36 轮）。
+ *
+ * <p>判定交给纯函数 {@link pickFinalDetailVersion}（长图才认、多版取最新、不能预览的不要），
+ * 这里只负责取预览图与兜底文案：**没有长图就说没有**，并把人指到「详情页与审核」。</p>
+ *
+ * @param page 详情页视图（可空＝没取到）
+ */
+async function loadFinalDetail(page: DpDetailPageVO | null): Promise<void> {
+  const picked = pickFinalDetailVersion(page?.versions);
+  finalDetail.value = picked;
+  finalDetailCaption.value = finalDetailCaptionOf(picked);
+  releaseUrl('final-detail');
+  if (!picked || !taskId.value) {
+    return;
+  }
+  try {
+    setUrl('final-detail', await fetchDetailPreviewBlobUrl(taskId.value, picked.id));
+  } catch (error) {
+    // 取不到预览图不弹错：这一块本来就是"有就看、没有就说"的补充信息
+    finalDetailFetchError.value = (await extractErrorMessage(error)) ?? '最终详情图预览读取失败';
   }
 }
 
@@ -677,6 +766,20 @@ onBeforeUnmount(() => {
 
 .prod-table {
   background: transparent;
+}
+/* 最终产品详情图（第 36 轮）：长图很高，容器内滚动，避免把候选列表推到屏幕外 */
+.final-detail-body {
+  max-height: 420px;
+  overflow: auto;
+  padding: 8px;
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.final-detail-body img {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 .prod-table :deep(.el-table__inner-wrapper::before) {
   background-color: var(--line);
