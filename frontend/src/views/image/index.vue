@@ -1,12 +1,25 @@
 <template>
-  <div class="studio">
+  <div :class="['studio', 'creative-light', { 'creation-workbench': activeView === 'create' }]">
     <div v-if="showGuide" class="guide-bar">
       <el-icon><MagicStick /></el-icon>
-      <span>创建任务：选择图像能力，上传素材并描述画面，确认输出档位。四个能力均走 Qwen-Image-2.1 本地 GPU 工作流。</span>
+      <span>
+        创建任务：选择图像能力，上传素材并描述画面，确认输出档位。五个能力均走 Qwen-Image-2.1 本地 GPU 工作流。
+      </span>
       <button type="button" title="关闭引导" aria-label="关闭引导" @click="showGuide = false">
         <el-icon><Close /></el-icon>
       </button>
     </div>
+
+    <header v-if="activeView === 'create'" class="creation-title">
+      <div>
+        <h1>创作工作台</h1>
+        <p>发现喜欢的作品，选择适合的模型，开启你的创作。</p>
+      </div>
+      <nav class="media-switch" aria-label="创作类型">
+        <router-link to="/ai-tools/video-creation">视频创作</router-link>
+        <router-link to="/ai-tools/image-creation" class="current" aria-current="page">图像创作</router-link>
+      </nav>
+    </header>
 
     <nav class="studio-nav" aria-label="图像创作功能">
       <button
@@ -25,148 +38,159 @@
     <!-- ================= 创建 ================= -->
     <div v-if="activeView === 'create'" class="workbench-grid">
       <section class="studio-card create-card">
-        <div class="section-heading">
-          <div>
-            <span>图像创作 · Qwen-Image-2.1</span>
-            <h2>{{ activeModule.name }}</h2>
+        <GenerationSource v-model="generationSource" :busy="uploading || submitting" />
+        <CloudGenerationForm v-show="generationSource === 'cloud'" media="image" :busy="uploading || submitting" />
+        <div v-show="generationSource === 'local'" class="editor-body">
+          <div class="section-heading">
+            <div>
+              <span>图像创作 · Qwen-Image-2.1</span>
+              <h2>{{ activeModule.name }}</h2>
+            </div>
+            <span class="version-pill">{{ versionPill }}</span>
           </div>
-          <span class="version-pill">{{ versionPill }}</span>
-        </div>
 
-        <div class="capability-grid" aria-label="图像能力">
-          <button
-            v-for="item in IMAGE_MODULES"
-            :key="item.code"
-            type="button"
-            :class="['capability', { active: item.code === activeModule.code }]"
-            :aria-pressed="item.code === activeModule.code"
-            @click="selectModule(item)"
-          >
-            <el-icon><component :is="moduleIcon(item.code)" /></el-icon>
-            <strong>{{ item.name }}</strong>
-            <small>{{ item.desc }}</small>
-          </button>
-        </div>
+          <div class="capability-grid" aria-label="图像能力">
+            <button
+              v-for="item in IMAGE_MODULES"
+              :key="item.code"
+              type="button"
+              :class="['capability', { active: item.code === activeModule.code }]"
+              :aria-pressed="item.code === activeModule.code"
+              @click="selectModule(item)"
+            >
+              <el-icon><component :is="moduleIcon(item.code)" /></el-icon>
+              <strong>{{ item.name }}</strong>
+              <small>{{ item.desc }}</small>
+            </button>
+          </div>
 
-        <div class="form-divider" />
+          <div class="form-divider" />
+          <p class="local-model-note">
+            <b>Qwen-Image-2.1</b>
+            本地 ComfyUI · 支持文生图、图生图、指令改图、抠图与白底图
+          </p>
 
-        <!--
+          <!--
           先上传、后写文字：参考图决定输出画布（image1 定尺寸）与主体，
           用户的心智顺序是「给图 → 说要求」，所以上传区放在提示词上方。
         -->
-        <div v-if="activeModule.imageFields || activeModule.imageField" class="field-block">
-          <label>
-            {{ activeModule.code === 'EDIT' ? '参考图（第一张是编辑目标，必填）' : '输入图片' }}
-            <em>*</em>
-          </label>
-          <label class="upload-zone" :class="{ complete: previewUrls.length > 0 }">
-            <input
-              ref="fileInput"
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              :multiple="activeModule.code === 'EDIT'"
-              @change="handleFiles"
-            />
-            <!--
+          <div v-if="activeModule.imageFields || activeModule.imageField" class="field-block">
+            <label>
+              {{ activeModule.code === 'EDIT' ? '参考图（第一张是编辑目标，必填）' : '输入图片' }}
+              <em>*</em>
+            </label>
+            <label class="upload-zone" :class="{ complete: previewUrls.length > 0 }">
+              <input
+                ref="fileInput"
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                :multiple="activeModule.code === 'EDIT'"
+                @change="handleFiles"
+              />
+              <!--
               已选图片的预览：没有它用户只能看到一行素材 ID，传错图要等生成完才发现。
               每张右上角可单独移除，移除后槽位顺序会重排（见 removeImage）。
             -->
-            <div v-if="previewUrls.length" class="upload-previews">
-              <figure v-for="(url, index) in previewUrls" :key="url">
-                <img :src="url" :alt="slotLabels[index] || '参考图'" />
-                <button
-                  type="button"
-                  :title="'移除' + (slotLabels[index] || '参考图')"
-                  aria-label="移除该图片"
-                  @click.prevent.stop="removeImage(index)"
-                >
-                  <el-icon><Close /></el-icon>
-                </button>
-              </figure>
-              <span class="upload-previews-badge">已上传 {{ previewUrls.length }} 张</span>
-            </div>
-            <template v-else>
-              <el-icon><UploadFilled /></el-icon>
-              <b>{{ uploadHint }}</b>
-              <small>
-                {{ uploading && uploadPercent > 0 ? `上传中 ${uploadPercent}%` : '支持 PNG / JPG / WEBP，单张不超过 20MB' }}
-              </small>
-            </template>
-          </label>
-        </div>
+              <div v-if="previewUrls.length" class="upload-previews">
+                <figure v-for="(url, index) in previewUrls" :key="url">
+                  <img :src="url" :alt="slotLabels[index] || '参考图'" />
+                  <button
+                    type="button"
+                    :title="'移除' + (slotLabels[index] || '参考图')"
+                    aria-label="移除该图片"
+                    @click.prevent.stop="removeImage(index)"
+                  >
+                    <el-icon><Close /></el-icon>
+                  </button>
+                </figure>
+                <span class="upload-previews-badge">已上传 {{ previewUrls.length }} 张</span>
+              </div>
+              <template v-else>
+                <el-icon><UploadFilled /></el-icon>
+                <b>{{ uploadHint }}</b>
+                <small>
+                  {{
+                    uploading && uploadPercent > 0
+                      ? `上传中 ${uploadPercent}%`
+                      : '支持 PNG / JPG / WEBP，单张不超过 20MB'
+                  }}
+                </small>
+              </template>
+            </label>
+          </div>
 
-        <div v-if="activeModule.fields.includes('prompt')" class="field-block">
-          <label>
-            {{ activeModule.promptLabel || '提示词' }}
-            <em>*</em>
-          </label>
-          <el-input
-            v-model="values.prompt"
-            type="textarea"
-            :rows="5"
-            :maxlength="1000"
-            show-word-limit
-            :placeholder="activeModule.placeholder || '描述你想要的画面'"
-          />
-          <p v-for="tip in activeModule.tips" :key="tip" class="field-hint">· {{ tip }}</p>
-        </div>
+          <div v-if="activeModule.fields.includes('prompt')" class="field-block">
+            <label>
+              {{ activeModule.promptLabel || '提示词' }}
+              <em>*</em>
+            </label>
+            <el-input
+              v-model="values.prompt"
+              type="textarea"
+              :rows="5"
+              :maxlength="1000"
+              show-word-limit
+              :placeholder="activeModule.placeholder || '描述你想要的画面'"
+            />
+            <p v-for="tip in activeModule.tips" :key="tip" class="field-hint">· {{ tip }}</p>
+          </div>
 
-        <!-- 固定提示词的能力（抠图/白底图）：没有可填的提示词，但说明必须照常展示，
+          <!-- 固定提示词的能力（抠图/白底图）：没有可填的提示词，但说明必须照常展示，
              否则用户只会看到「怎么没有输入框」，不知道提示词是由服务端固定的 -->
-        <div v-else class="field-block">
-          <p v-for="tip in activeModule.tips" :key="tip" class="field-hint">· {{ tip }}</p>
-        </div>
+          <div v-else class="field-block">
+            <p v-for="tip in activeModule.tips" :key="tip" class="field-hint">· {{ tip }}</p>
+          </div>
 
-        <div v-if="activeModule.fields.includes('negative_prompt')" class="field-block">
-          <label>负向提示词（可选）</label>
-          <el-input v-model="values.negative_prompt" :maxlength="500" placeholder="cfg 固定为 1，通常留空" />
-        </div>
+          <div v-if="activeModule.fields.includes('negative_prompt')" class="field-block">
+            <label>负向提示词（可选）</label>
+            <el-input v-model="values.negative_prompt" :maxlength="500" placeholder="cfg 固定为 1，通常留空" />
+          </div>
 
-        <div v-if="activeModule.fields.includes('size')" class="field-block">
-          <label>
-            输出尺寸
-            <em>*</em>
-          </label>
-          <p class="model-group-label">
-            <el-icon><Grid /></el-icon>
-            {{ sizeOptions.length }} 个档位可选
-          </p>
-          <div class="choice-grid size-choices">
-            <button
-              v-for="opt in sizeOptions"
-              :key="opt.label"
-              type="button"
-              :class="{ active: values.size === opt.label }"
-              @click="values.size = opt.label"
-            >
-              {{ opt.label }}
-              <small>{{ opt.width }}×{{ opt.height }}</small>
-            </button>
+          <div v-if="activeModule.fields.includes('size')" class="field-block">
+            <label>
+              输出尺寸
+              <em>*</em>
+            </label>
+            <p class="model-group-label">
+              <el-icon><Grid /></el-icon>
+              {{ sizeOptions.length }} 个档位可选
+            </p>
+            <div class="choice-grid size-choices">
+              <button
+                v-for="opt in sizeOptions"
+                :key="opt.label"
+                type="button"
+                :class="{ active: values.size === opt.label }"
+                @click="values.size = opt.label"
+              >
+                {{ opt.label }}
+                <small>{{ opt.width }}×{{ opt.height }}</small>
+              </button>
+            </div>
+          </div>
+
+          <div v-if="activeModule.fields.includes('strength')" class="field-block">
+            <label>
+              重绘幅度
+              <em>*</em>
+            </label>
+            <p class="model-group-label">
+              <el-icon><Grid /></el-icon>
+              数值越大越偏离原图
+            </p>
+            <div class="choice-grid strength-choices">
+              <button
+                v-for="opt in strengthOptions"
+                :key="opt"
+                type="button"
+                :class="{ active: values.strength === opt }"
+                @click="values.strength = opt"
+              >
+                {{ opt }}
+              </button>
+            </div>
           </div>
         </div>
-
-        <div v-if="activeModule.fields.includes('strength')" class="field-block">
-          <label>
-            重绘幅度
-            <em>*</em>
-          </label>
-          <p class="model-group-label">
-            <el-icon><Grid /></el-icon>
-            数值越大越偏离原图
-          </p>
-          <div class="choice-grid strength-choices">
-            <button
-              v-for="opt in strengthOptions"
-              :key="opt"
-              type="button"
-              :class="{ active: values.strength === opt }"
-              @click="values.strength = opt"
-            >
-              {{ opt }}
-            </button>
-          </div>
-        </div>
-
         <div class="submit-row">
           <button
             v-hasPermi="['image:creation:submit']"
@@ -177,63 +201,27 @@
             @click="submitTask"
           >
             <el-icon><MagicStick /></el-icon>
-            {{ submitting ? '提交中…' : canSubmit ? '提交生成' : '暂不可提交' }}
+            {{
+              submitting
+                ? '提交中…'
+                : generationSource === 'cloud'
+                  ? '云端服务待接入'
+                  : canSubmit
+                    ? '提交生成'
+                    : '暂不可提交'
+            }}
           </button>
           <span>{{ submitBlockReason || '提交后将经服务端填充模板并交由 ComfyUI 执行' }}</span>
         </div>
       </section>
 
-      <aside class="right-column">
-        <section class="studio-card inspiration-card">
-          <div class="section-heading compact">
-            <div>
-              <h2>灵感 · 一键同款</h2>
-              <span>自动带入能力与描述</span>
-            </div>
-          </div>
-          <div class="inspiration-list">
-            <article v-for="item in INSPIRATIONS" :key="item.title">
-              <div :class="['inspiration-poster', inspirationTone(item.capability)]">
-                <el-icon><PictureFilled /></el-icon>
-                <span>{{ moduleOf(item.capability)?.name }}</span>
-              </div>
-              <div>
-                <b>{{ item.title }}</b>
-                <p>{{ item.prompt }}</p>
-              </div>
-              <button type="button" @click="applyInspiration(item)">
-                用同款
-                <el-icon><ArrowRight /></el-icon>
-              </button>
-            </article>
-          </div>
-        </section>
-
-        <section class="studio-card recent-card">
-          <div class="section-heading compact">
-            <div>
-              <h2>最近任务</h2>
-              <span>当前创作队列</span>
-            </div>
-          </div>
-          <div v-for="task in recentTasks" :key="task.id" class="recent-task" @click="openDetail(task.id)">
-            <span :class="toneOf(task.status)"><i /></span>
-            <div>
-              <b>{{ task.taskName || task.taskNo }}</b>
-              <small>{{ moduleOf(task.capabilityCode)?.name || task.capabilityCode }} · {{ task.sizeLabel || task.workflowCode }}</small>
-            </div>
-            <em>{{ statusText(task.status) }}</em>
-          </div>
-          <div v-if="!recentTasks.length" class="recent-task">
-            <span class="muted"><i /></span>
-            <div>
-              <b>暂无任务</b>
-              <small>创建后可在此查看进度</small>
-            </div>
-            <em>—</em>
-          </div>
-        </section>
-      </aside>
+      <CreativeInspiration
+        media="image"
+        :workflows="workflows"
+        :busy="uploading || submitting"
+        :applied-title="appliedInspirationTitle"
+        @apply="applyCreativeInspiration"
+      />
     </div>
 
     <!-- ================= 我的任务 ================= -->
@@ -290,7 +278,9 @@
               <el-icon><component :is="moduleIcon(task.capabilityCode)" /></el-icon>
               <span>{{ task.sizeLabel || task.strengthLabel || moduleOf(task.capabilityCode)?.name }}</span>
             </template>
-            <span v-if="coverFor(task)" class="task-cover-zoom"><el-icon><ZoomIn /></el-icon></span>
+            <span v-if="coverFor(task)" class="task-cover-zoom">
+              <el-icon><ZoomIn /></el-icon>
+            </span>
           </div>
           <div class="task-main">
             <div class="task-title-row">
@@ -299,7 +289,7 @@
             </div>
             <p>
               {{ moduleOf(task.capabilityCode)?.name || task.capabilityCode }} · {{ task.workflowCode }}
-              <template v-if="task.outputWidth"> · {{ task.outputWidth }}×{{ task.outputHeight }}</template>
+              <template v-if="task.outputWidth">· {{ task.outputWidth }}×{{ task.outputHeight }}</template>
             </p>
             <small>{{ task.taskNo }} · {{ task.createTime || '—' }}</small>
             <small v-if="task.errorMessage" class="task-error">{{ task.errorMessage }}</small>
@@ -381,7 +371,7 @@
             <b>{{ asset.originalName || '素材 ' + asset.id }}</b>
             <small>
               {{ asset.sourceKind === 'UPLOAD' ? '上传' : '产出' }}
-              <template v-if="asset.sizeBytes"> · {{ formatSize(asset.sizeBytes) }}</template>
+              <template v-if="asset.sizeBytes">· {{ formatSize(asset.sizeBytes) }}</template>
               · {{ asset.createTime || '—' }}
             </small>
           </div>
@@ -398,12 +388,14 @@
     </section>
 
     <!-- ================= 详情弹窗 ================= -->
-    <el-dialog v-model="detailVisible" title="任务详情" width="min(920px, 92vw)" top="6vh">
+    <el-dialog class="creative-dialog" v-model="detailVisible" title="任务详情" width="min(920px, 92vw)" top="6vh">
       <div v-if="detail">
         <el-descriptions :column="2" border size="small">
           <el-descriptions-item label="任务编号">{{ detail.taskNo }}</el-descriptions-item>
           <el-descriptions-item label="状态">{{ statusText(detail.status) }}</el-descriptions-item>
-          <el-descriptions-item label="能力">{{ moduleOf(detail.capabilityCode)?.name || detail.capabilityCode }}</el-descriptions-item>
+          <el-descriptions-item label="能力">
+            {{ moduleOf(detail.capabilityCode)?.name || detail.capabilityCode }}
+          </el-descriptions-item>
           <el-descriptions-item label="工作流">{{ detail.workflowCode }}</el-descriptions-item>
           <el-descriptions-item label="输出尺寸">
             <span v-if="detail.outputWidth">{{ detail.outputWidth }}×{{ detail.outputHeight }}</span>
@@ -428,14 +420,15 @@
             :timestamp="event.createTime || ''"
             :type="event.eventType === 'FAILED' ? 'danger' : event.eventType === 'SUCCEEDED' ? 'success' : 'primary'"
           >
-            {{ event.eventType }}<span v-if="event.detail"> · {{ event.detail }}</span>
+            {{ event.eventType }}
+            <span v-if="event.detail">· {{ event.detail }}</span>
           </el-timeline-item>
         </el-timeline>
       </div>
     </el-dialog>
 
     <!-- ================= 预览弹窗 ================= -->
-    <el-dialog v-model="previewVisible" title="素材预览" width="min(920px, 92vw)" top="6vh">
+    <el-dialog class="creative-dialog" v-model="previewVisible" title="素材预览" width="min(920px, 92vw)" top="6vh">
       <img v-if="previewUrl" :src="previewUrl" style="width: 100%" alt="素材预览" />
     </el-dialog>
 
@@ -445,6 +438,7 @@
       关闭时统一 revoke，避免内存里的 base64/blob 越堆越多。
     -->
     <el-dialog
+      class="creative-dialog"
       v-model="taskPreviewVisible"
       :title="taskPreviewTask?.taskName || taskPreviewTask?.taskNo || '产出预览'"
       width="min(920px, 92vw)"
@@ -488,10 +482,7 @@
 
 <script setup lang="ts">
 import type { Component } from 'vue';
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
-import { ElMessage, ElMessageBox } from 'element-plus';
 import {
-  ArrowRight,
   Brush,
   Close,
   Delete,
@@ -508,6 +499,16 @@ import {
   View,
   ZoomIn
 } from '@element-plus/icons-vue';
+import { ElMessage, ElMessageBox } from 'element-plus';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import type {
+  ImageAssetVO,
+  ImageCapabilityCode,
+  ImageTaskDetailVO,
+  ImageTaskStatus,
+  ImageTaskVO,
+  ImageWorkflowVO
+} from '@/api/image/types';
 import {
   cancelImageTask,
   createImageTask,
@@ -521,27 +522,23 @@ import {
   listImageWorkflows,
   uploadImageAsset
 } from '@/api/image';
-import type {
-  ImageAssetVO,
-  ImageCapabilityCode,
-  ImageTaskDetailVO,
-  ImageTaskStatus,
-  ImageTaskVO,
-  ImageWorkflowVO
-} from '@/api/image/types';
-import { extractErrorMessage } from '@/utils/request';
+import CloudGenerationForm from '@/components/CreativeInspiration/CloudGenerationForm.vue';
+import GenerationSource from '@/components/CreativeInspiration/GenerationSource.vue';
+import CreativeInspiration from '@/components/CreativeInspiration/index.vue';
 import {
-  IMAGE_MODULES,
-  INSPIRATIONS,
-  moduleOf,
-  type ImageCapabilityModule,
-  type ImageFieldKey,
-  type ImageInspiration
-} from './modules';
+  canSubmitLocal,
+  isRouteAvailable,
+  type GenerationSource as GenerationSourceType,
+  type InspirationRoute
+} from '@/components/CreativeInspiration/types';
+import { extractErrorMessage } from '@/utils/request';
+import { IMAGE_MODULES, moduleOf, type ImageCapabilityModule, type ImageFieldKey } from './modules';
 
 type StudioView = 'create' | 'tasks' | 'assets';
 
 const activeView = ref<StudioView>('create');
+const generationSource = ref<GenerationSourceType>('local');
+const appliedInspirationTitle = ref('');
 const showGuide = ref(true);
 const studioViews: Array<{ key: StudioView; label: string; icon: unknown }> = [
   { key: 'create', label: '创建图像', icon: MagicStick },
@@ -566,13 +563,6 @@ const moduleIcons: Record<ImageCapabilityCode, Component> = {
 
 function moduleIcon(code: string): Component {
   return moduleIcons[code as ImageCapabilityCode] ?? Picture;
-}
-
-/** 灵感卡海报色：与视频页一致的三种色调。 */
-function inspirationTone(code: string) {
-  if (code === 'I2I' || code === 'BGREMOVE') return 'cyan';
-  if (code === 'EDIT') return 'rose';
-  return '';
 }
 
 const activeModule = ref<ImageCapabilityModule>(IMAGE_MODULES[0]);
@@ -625,13 +615,14 @@ const POLL_INTERVAL_MS = 3000;
 const pollingTaskIds = new Set<string>();
 let pollTimer: ReturnType<typeof setInterval> | undefined;
 
-const currentWorkflow = computed(() => workflows.value.find((w) => w.workflowCode === activeModule.value.workflowCode));
+const currentWorkflow = computed(() => workflows.value.find(w => w.workflowCode === activeModule.value.workflowCode));
 const sizeOptions = computed(() => currentWorkflow.value?.sizes || []);
 const strengthOptions = computed(() => currentWorkflow.value?.strengths || []);
 const slotLabels = computed(() =>
-  activeModule.value.imageFields ? activeModule.value.imageFields.map((f, i) => (i === 0 ? '目标图' : '参考图 ' + i)) : ['输入图']
+  activeModule.value.imageFields
+    ? activeModule.value.imageFields.map((f, i) => (i === 0 ? '目标图' : '参考图 ' + i))
+    : ['输入图']
 );
-const recentTasks = computed(() => tasks.value.slice(0, 5));
 const versionPill = computed(() => {
   const workflow = currentWorkflow.value;
   return workflow ? workflow.version + ' · ' + workflow.status : '工作流读取中';
@@ -642,7 +633,7 @@ const uploadHint = computed(() => {
 });
 const filteredTasks = computed(() => {
   const keyword = taskKeyword.value.trim().toLowerCase();
-  return tasks.value.filter((task) => {
+  return tasks.value.filter(task => {
     if (taskFilter.value !== 'ALL' && task.status !== taskFilter.value) return false;
     if (!keyword) return true;
     return (task.taskName || '').toLowerCase().includes(keyword) || task.taskNo.toLowerCase().includes(keyword);
@@ -650,9 +641,10 @@ const filteredTasks = computed(() => {
 });
 
 /** 提交可用性完全由服务端状态决定，不靠前端猜测。 */
-const canSubmit = computed(() => currentWorkflow.value?.submittable === true);
+const canSubmit = computed(() => canSubmitLocal(generationSource.value, currentWorkflow.value));
 
 const submitBlockReason = computed(() => {
+  if (generationSource.value === 'cloud') return '云端 API 待接入，当前可配置草稿，暂不支持提交';
   if (!workflows.value.length) return '正在读取工作流状态…';
   const workflow = currentWorkflow.value;
   if (!workflow) return activeModule.value.workflowCode + ' 尚未在服务端注册';
@@ -672,6 +664,7 @@ function toneOf(status: string) {
 }
 
 function selectModule(item: ImageCapabilityModule) {
+  appliedInspirationTitle.value = '';
   activeModule.value = item;
   values.prompt = '';
   values.negative_prompt = '';
@@ -693,24 +686,28 @@ function applyDefaults() {
   }
 }
 
-function applyInspiration(item: ImageInspiration) {
-  const module = moduleOf(item.capability);
+function applyCreativeInspiration(route: InspirationRoute, title: string) {
+  if (route.media !== 'image' || uploading.value || submitting.value || !isRouteAvailable(route, workflows.value))
+    return;
+  const module = IMAGE_MODULES.find(item => item.code === route.capability && item.workflowCode === route.workflowCode);
   if (!module) return;
-  activeModule.value = module;
-  clearImages();
-  applyDefaults();
-  values.prompt = item.prompt;
+  generationSource.value = 'local';
+  if (activeModule.value.code !== module.code) selectModule(module);
+  values.prompt = route.prompt;
+  appliedInspirationTitle.value = title;
   activeView.value = 'create';
+  ElMessage.success('创作方向已带入，请完善素材与参数');
 }
 
 function clearImages() {
-  previewUrls.value.forEach((url) => URL.revokeObjectURL(url));
+  previewUrls.value.forEach(url => URL.revokeObjectURL(url));
   previewUrls.value = [];
-  Object.keys(uploadAssetIds).forEach((key) => delete uploadAssetIds[key as ImageFieldKey]);
+  Object.keys(uploadAssetIds).forEach(key => delete uploadAssetIds[key as ImageFieldKey]);
 }
 
 function removeImage(index: number) {
-  const fields = activeModule.value.imageFields || (activeModule.value.imageField ? [activeModule.value.imageField] : []);
+  const fields =
+    activeModule.value.imageFields || (activeModule.value.imageField ? [activeModule.value.imageField] : []);
   const field = fields[index];
   if (field) {
     delete uploadAssetIds[field];
@@ -719,8 +716,8 @@ function removeImage(index: number) {
   if (url) URL.revokeObjectURL(url);
   previewUrls.value.splice(index, 1);
   // 删除后按槽位顺序重新排列素材 ID，避免出现「第 2 张图跑到 image1」
-  const remaining = fields.map((key) => uploadAssetIds[key]).filter(Boolean) as Array<Array<number | string>>;
-  fields.forEach((key) => delete uploadAssetIds[key]);
+  const remaining = fields.map(key => uploadAssetIds[key]).filter(Boolean) as Array<Array<number | string>>;
+  fields.forEach(key => delete uploadAssetIds[key]);
   remaining.forEach((ids, i) => {
     uploadAssetIds[fields[i]] = ids;
   });
@@ -732,7 +729,8 @@ async function handleFiles(event: Event) {
   input.value = '';
   if (!files.length) return;
 
-  const fields = activeModule.value.imageFields || (activeModule.value.imageField ? [activeModule.value.imageField] : []);
+  const fields =
+    activeModule.value.imageFields || (activeModule.value.imageField ? [activeModule.value.imageField] : []);
   const maxCount = fields.length || 1;
   const room = maxCount - previewUrls.value.length;
   if (room <= 0) {
@@ -750,7 +748,7 @@ async function handleFiles(event: Event) {
   uploading.value = true;
   try {
     for (const file of accepted) {
-      const res = await uploadImageAsset(file, (percent) => {
+      const res = await uploadImageAsset(file, percent => {
         uploadPercent.value = percent;
       });
       const assetId = res.data?.assetId;
@@ -770,6 +768,10 @@ async function handleFiles(event: Event) {
 }
 
 async function submitTask() {
+  if (!canSubmit.value || submitting.value || uploading.value) {
+    ElMessage.warning(submitBlockReason.value || '请等待当前操作完成');
+    return;
+  }
   const module = activeModule.value;
   const workflowCode = module.workflowCode;
   if (module.fields.includes('prompt') && !values.prompt?.trim()) {
@@ -789,10 +791,11 @@ async function submitTask() {
   if (module.fields.includes('prompt')) fields.prompt = values.prompt || '';
   if (module.fields.includes('negative_prompt')) fields.negative_prompt = values.negative_prompt || '';
   if (module.fields.includes('size')) fields.size = values.size || currentWorkflow.value?.defaultSize || '';
-  if (module.fields.includes('strength')) fields.strength = values.strength || currentWorkflow.value?.defaultStrength || '';
+  if (module.fields.includes('strength'))
+    fields.strength = values.strength || currentWorkflow.value?.defaultStrength || '';
   if (module.imageField) fields[module.imageField] = uploadAssetIds[module.imageField]?.[0];
   if (module.imageFields) {
-    module.imageFields.forEach((key) => {
+    module.imageFields.forEach(key => {
       const id = uploadAssetIds[key]?.[0];
       if (id !== undefined) fields[key] = id;
     });
@@ -844,8 +847,8 @@ async function loadTasks() {
     const res = await listImageTasks({ pageNum: 1, pageSize: 50 });
     tasks.value = res.data?.rows || [];
     tasks.value
-      .filter((task) => !TERMINAL_STATUSES.includes(task.status))
-      .forEach((task) => pollingTaskIds.add(String(task.id)));
+      .filter(task => !TERMINAL_STATUSES.includes(task.status))
+      .forEach(task => pollingTaskIds.add(String(task.id)));
     if (pollingTaskIds.size > 0) ensurePolling();
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '读取任务失败');
@@ -893,7 +896,7 @@ async function pollPendingTasks() {
       finished.push(id);
     }
   }
-  finished.forEach((id) => stopTaskPolling(id));
+  finished.forEach(id => stopTaskPolling(id));
   if (finished.length) {
     await loadTasks();
     await loadAssets();
@@ -920,7 +923,10 @@ async function openDetail(taskId: number | string) {
 
 async function cancelTask(taskId: number | string) {
   try {
-    await ElMessageBox.confirm('确认取消该任务？', '取消任务', { type: 'warning' });
+    await ElMessageBox.confirm('确认取消该任务？', '取消任务', {
+      type: 'warning',
+      customClass: 'creative-message-box'
+    });
   } catch {
     return;
   }
@@ -988,7 +994,10 @@ async function handleAssetFiles(event: Event) {
 
 async function removeAsset(assetId: number | string) {
   try {
-    await ElMessageBox.confirm('确认删除该素材？', '删除素材', { type: 'warning' });
+    await ElMessageBox.confirm('确认删除该素材？', '删除素材', {
+      type: 'warning',
+      customClass: 'creative-message-box'
+    });
   } catch {
     return;
   }
@@ -1135,9 +1144,9 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   if (pollTimer !== undefined) clearInterval(pollTimer);
-  previewUrls.value.forEach((url) => URL.revokeObjectURL(url));
-  Object.values(assetThumbs).forEach((url) => URL.revokeObjectURL(url));
-  Object.values(taskCoverUrls.value).forEach((url) => URL.revokeObjectURL(url));
+  previewUrls.value.forEach(url => URL.revokeObjectURL(url));
+  Object.values(assetThumbs).forEach(url => URL.revokeObjectURL(url));
+  Object.values(taskCoverUrls.value).forEach(url => URL.revokeObjectURL(url));
   if (detailPreviewUrl.value) URL.revokeObjectURL(detailPreviewUrl.value);
   if (previewUrl.value) URL.revokeObjectURL(previewUrl.value);
   if (taskPreviewUrl.value) URL.revokeObjectURL(taskPreviewUrl.value);
@@ -2111,4 +2120,8 @@ button {
     justify-self: start;
   }
 }
+</style>
+
+<style scoped lang="scss">
+@use '@/assets/styles/creative-workbench.scss';
 </style>

@@ -1,5 +1,5 @@
 <template>
-  <div class="studio">
+  <div :class="['studio', 'creative-light', { 'creation-workbench': activeView === 'create' }]">
     <div v-if="showGuide" class="guide-bar">
       <el-icon><MagicStick /></el-icon>
       <span>创建任务：选择视频方式和模型，添加素材与描述，确认输出档位。</span>
@@ -7,6 +7,17 @@
         <el-icon><Close /></el-icon>
       </button>
     </div>
+
+    <header v-if="activeView === 'create'" class="creation-title">
+      <div>
+        <h1>创作工作台</h1>
+        <p>发现喜欢的作品，选择适合的模型，开启你的创作。</p>
+      </div>
+      <nav class="media-switch" aria-label="创作类型">
+        <router-link to="/ai-tools/video-creation" class="current" aria-current="page">视频创作</router-link>
+        <router-link to="/ai-tools/image-creation">图像创作</router-link>
+      </nav>
+    </header>
 
     <nav class="studio-nav" aria-label="视频创作功能">
       <button
@@ -24,241 +35,259 @@
 
     <div v-if="activeView === 'create'" class="workbench-grid">
       <section class="studio-card create-card">
-        <div class="section-heading">
-          <div>
-            <span>创建任务</span>
-            <h2>{{ currentModule.name }}</h2>
+        <GenerationSource v-model="generationSource" :busy="uploading || submitting" />
+        <CloudGenerationForm v-show="generationSource === 'cloud'" media="video" :busy="uploading || submitting" />
+        <div v-show="generationSource === 'local'" class="editor-body">
+          <div class="section-heading">
+            <div>
+              <span>创建任务</span>
+              <h2>{{ currentModule.name }}</h2>
+            </div>
+            <span class="version-pill">{{ versionPill }}</span>
           </div>
-          <span class="version-pill">{{ versionPill }}</span>
-        </div>
 
-        <div class="capability-grid" aria-label="视频能力">
-          <button
-            v-for="item in VIDEO_MODULES"
-            :key="item.code"
-            type="button"
-            :class="['capability', { active: item.code === currentModule.code }]"
-            :aria-pressed="item.code === currentModule.code"
-            @click="selectModule(item)"
-          >
-            <el-icon><component :is="moduleIcons[item.code]" /></el-icon>
-            <strong>{{ item.name }}</strong>
-            <small>{{ item.desc }}</small>
-          </button>
-        </div>
-
-        <div class="form-divider" />
-
-        <div v-if="currentModule.models.length" class="field-block">
-          <label>
-            生成模型
-            <em>*</em>
-          </label>
-          <p v-if="closedModels.length" class="model-group-label">
-            <el-icon><Lock /></el-icon>
-            闭源模型
-          </p>
-          <div v-if="closedModels.length" class="model-grid">
+          <div class="capability-grid" aria-label="视频能力">
             <button
-              v-for="item in closedModels"
+              v-for="item in VIDEO_MODULES"
               :key="item.code"
               type="button"
-              :class="['model-option', { active: item.code === currentModel.code }]"
-              :disabled="item.code !== 'H3'"
-              @click="currentModel = item"
+              :class="['capability', { active: item.code === currentModule.code }]"
+              :aria-pressed="item.code === currentModule.code"
+              @click="selectModule(item)"
             >
-              <span>
-                <b>{{ item.name }}</b>
-                <i v-if="item.recommended">推荐</i>
-              </span>
-              <small>{{ item.code === 'H3' ? '模板已导入 · 待服务接入' : '工作流待接入' }}</small>
+              <el-icon><component :is="moduleIcons[item.code]" /></el-icon>
+              <strong>{{ item.name }}</strong>
+              <small>{{ item.desc }}</small>
             </button>
           </div>
-          <p v-if="openModels.length" class="model-group-label">
-            <el-icon><Cpu /></el-icon>
-            开源模型
-          </p>
-          <div v-if="openModels.length" class="model-grid">
-            <button
-              v-for="item in openModels"
-              :key="item.code"
-              type="button"
-              :class="['model-option', { active: item.code === currentModel.code }]"
-              disabled
-              @click="currentModel = item"
-            >
-              <span>
-                <b>{{ item.name }}</b>
-              </span>
-              <small>工作流待接入</small>
-            </button>
-          </div>
-        </div>
-        <div v-else class="field-block">
-          <label>
-            处理工作流
-            <em>*</em>
-          </label>
-          <div class="fixed-workflow">
-            <span>
-              <b>{{ currentModule.fixedWorkflow!.name }}</b>
-              <i>固定工作流</i>
-            </span>
-            <small>
-              {{ currentModule.fixedWorkflow!.version }} · 本地 GPU · {{ currentModule.fixedWorkflow!.eta }}
-            </small>
-          </div>
-        </div>
 
-        <template v-for="field in currentModule.fields" :key="field">
-          <div v-if="isUploadField(field)" class="field-block">
-            <label>
-              {{ fieldLabels[field] }}
-              <em v-if="isRequired(field)">*</em>
-            </label>
-            <label class="upload-zone" :class="{ complete: uploadAssetIds[field]?.length }">
-              <input
-                type="file"
-                :accept="field === 'audio' ? 'audio/*' : 'image/*'"
-                :multiple="field === 'frames'"
-                @change="handleFiles(field, $event)"
-              />
-              <!--
-                已选图片的预览。没有它，用户只能看到一行「素材 1234567890」，
-                传错图要等生成完才发现。
-              -->
-              <div v-if="uploadPreviews[field]?.length" class="upload-previews">
-                <img
-                  v-for="(src, index) in uploadPreviews[field]"
-                  :key="index"
-                  :src="src"
-                  :alt="`已选素材 ${index + 1}`"
-                />
-                <span v-if="uploadAssetIds[field]?.length" class="upload-previews-badge">
-                  已上传 {{ uploadAssetIds[field]!.length }} 张
-                </span>
-              </div>
-              <template v-else>
-                <el-icon>
-                  <Check v-if="uploadAssetIds[field]?.length" />
-                  <UploadFilled v-else />
-                </el-icon>
-                <b>{{ uploadSummary(field) }}</b>
-              </template>
-              <small>
-                {{
-                  uploading && uploadPercent > 0
-                    ? `上传中 ${uploadPercent}%…`
-                    : field === 'frames'
-                      ? '支持 2-10 张关键帧'
-                      : field === 'audio'
-                        ? '支持 MP3、WAV、M4A'
-                        : '支持 JPG、PNG、WEBP，单张不超过 20MB（大图会自动压缩）'
-                }}
-              </small>
-            </label>
-          </div>
+          <div class="form-divider" />
 
-          <div v-else-if="field === 'source'" class="field-block">
+          <div v-if="currentModule.models.length" class="field-block">
             <label>
-              源视频
+              生成模型
               <em>*</em>
             </label>
-            <el-select v-model="values.source" placeholder="请选择已完成的视频" size="large">
-              <el-option v-for="item in COMPLETED_VIDEOS" :key="item" :label="item" :value="item" />
-            </el-select>
-          </div>
-
-          <div v-else-if="field === 'desc'" class="field-block">
-            <label>
-              {{ currentModule.promptLabel }}
-              <em v-if="isRequired(field)">*</em>
-            </label>
-            <el-input
-              v-model="values.desc"
-              type="textarea"
-              :rows="4"
-              maxlength="1000"
-              show-word-limit
-              :placeholder="currentModule.placeholder"
-            />
-            <div class="prompt-tools">
-              <div>
-                <button v-for="chip in PROMPT_CHIPS" :key="chip" type="button" @click="appendPrompt(chip)">
-                  {{ chip }}
-                </button>
-              </div>
-              <button class="optimize" type="button" @click="optimizePrompt">
-                <el-icon><MagicStick /></el-icon>
-                优化描述
+            <p v-if="closedModels.length" class="model-group-label">
+              <el-icon><Lock /></el-icon>
+              本地 · 闭源模型
+            </p>
+            <div v-if="closedModels.length" class="model-grid">
+              <button
+                v-for="item in closedModels"
+                :key="item.code"
+                type="button"
+                :class="['model-option', { active: item.code === currentModel.code }]"
+                :disabled="item.code !== 'H3'"
+                @click="currentModel = item"
+              >
+                <span>
+                  <b>{{ item.name }}</b>
+                  <i v-if="item.recommended">推荐</i>
+                </span>
+                <small>
+                  {{
+                    item.code === 'H3'
+                      ? '本地 ComfyUI · ' +
+                        (currentWorkflow?.status === 'PUBLISHED' && currentWorkflow.submittable ? '可用' : '暂未开放')
+                      : '本地工作流待接入'
+                  }}
+                </small>
+              </button>
+            </div>
+            <p v-if="openModels.length" class="model-group-label">
+              <el-icon><Cpu /></el-icon>
+              本地 · 开源模型
+            </p>
+            <div v-if="openModels.length" class="model-grid">
+              <button
+                v-for="item in openModels"
+                :key="item.code"
+                type="button"
+                :class="['model-option', { active: item.code === currentModel.code }]"
+                disabled
+                @click="currentModel = item"
+              >
+                <span>
+                  <b>{{ item.name }}</b>
+                </span>
+                <small>工作流待接入</small>
               </button>
             </div>
           </div>
+          <div v-else class="field-block">
+            <label>
+              处理工作流
+              <em>*</em>
+            </label>
+            <div class="fixed-workflow">
+              <span>
+                <b>{{ currentModule.fixedWorkflow!.name }}</b>
+                <i>固定工作流</i>
+              </span>
+              <small>
+                {{ currentModule.fixedWorkflow!.version }} · 本地 GPU · {{ currentModule.fixedWorkflow!.eta }}
+              </small>
+            </div>
+          </div>
 
-          <div v-else-if="field === 'tier' || field === 'dur'" class="field-block">
-            <!--
+          <template v-for="field in currentModule.fields" :key="field">
+            <div v-if="isUploadField(field)" class="field-block">
+              <label>
+                {{ fieldLabels[field] }}
+                <em v-if="isRequired(field)">*</em>
+              </label>
+              <label class="upload-zone" :class="{ complete: uploadAssetIds[field]?.length }">
+                <input
+                  type="file"
+                  :accept="field === 'audio' ? 'audio/*' : 'image/*'"
+                  :multiple="field === 'frames'"
+                  @change="handleFiles(field, $event)"
+                />
+                <!--
+                已选图片的预览。没有它，用户只能看到一行「素材 1234567890」，
+                传错图要等生成完才发现。
+              -->
+                <div v-if="uploadPreviews[field]?.length" class="upload-previews">
+                  <img
+                    v-for="(src, index) in uploadPreviews[field]"
+                    :key="index"
+                    :src="src"
+                    :alt="`已选素材 ${index + 1}`"
+                  />
+                  <span v-if="uploadAssetIds[field]?.length" class="upload-previews-badge">
+                    已上传 {{ uploadAssetIds[field]!.length }} 张
+                  </span>
+                </div>
+                <template v-else>
+                  <el-icon>
+                    <Check v-if="uploadAssetIds[field]?.length" />
+                    <UploadFilled v-else />
+                  </el-icon>
+                  <b>{{ uploadSummary(field) }}</b>
+                </template>
+                <small>
+                  {{
+                    uploading && uploadPercent > 0
+                      ? `上传中 ${uploadPercent}%…`
+                      : field === 'frames'
+                        ? '支持 2-10 张关键帧'
+                        : field === 'audio'
+                          ? '支持 MP3、WAV、M4A'
+                          : '支持 JPG、PNG、WEBP，单张不超过 20MB（大图会自动压缩）'
+                  }}
+                </small>
+              </label>
+            </div>
+
+            <div v-else-if="field === 'source'" class="field-block">
+              <label>
+                源视频
+                <em>*</em>
+              </label>
+              <el-select
+                popper-class="creative-popup"
+                v-model="values.source"
+                placeholder="请选择已完成的视频"
+                size="large"
+              >
+                <el-option v-for="item in COMPLETED_VIDEOS" :key="item" :label="item" :value="item" />
+              </el-select>
+            </div>
+
+            <div v-else-if="field === 'desc'" class="field-block">
+              <label>
+                {{ currentModule.promptLabel }}
+                <em v-if="isRequired(field)">*</em>
+              </label>
+              <el-input
+                v-model="values.desc"
+                type="textarea"
+                :rows="4"
+                maxlength="1000"
+                show-word-limit
+                :placeholder="currentModule.placeholder"
+              />
+              <div class="prompt-tools">
+                <div>
+                  <button v-for="chip in PROMPT_CHIPS" :key="chip" type="button" @click="appendPrompt(chip)">
+                    {{ chip }}
+                  </button>
+                </div>
+                <button class="optimize" type="button" @click="optimizePrompt">
+                  <el-icon><MagicStick /></el-icon>
+                  优化描述
+                </button>
+              </div>
+            </div>
+
+            <div v-else-if="field === 'tier' || field === 'dur'" class="field-block">
+              <!--
               画面比例：只决定下面清晰度档位的分组，本身不是提交字段——
               档位才是唯一的输出旋钮（契约声明、服务端校验、随任务落库、成片尺寸断言都用它）。
               只有服务端确实下发了多个比例时才渲染这一组按钮。
             -->
-            <template v-if="field === 'tier' && supportedRatios.length > 1">
-              <label>
-                画面比例
+              <template v-if="field === 'tier' && supportedRatios.length > 1">
+                <label>
+                  画面比例
+                  <em>*</em>
+                </label>
+                <div class="choice-grid ratio-choices" aria-label="画面比例">
+                  <button
+                    v-for="item in supportedRatios"
+                    :key="item"
+                    type="button"
+                    :class="{ active: selectedRatio === item }"
+                    :aria-pressed="selectedRatio === item"
+                    @click="selectRatio(item)"
+                  >
+                    {{ item }}
+                  </button>
+                </div>
+                <label>
+                  {{ fieldLabels[field] }}
+                  <em>*</em>
+                </label>
+              </template>
+              <label v-else>
+                {{ fieldLabels[field] }}
                 <em>*</em>
               </label>
-              <div class="choice-grid ratio-choices" aria-label="画面比例">
+              <div :class="['choice-grid', { 'tier-choices': field === 'tier' }]">
                 <button
-                  v-for="item in supportedRatios"
+                  v-for="item in optionsFor(field)"
                   :key="item"
                   type="button"
-                  :class="{ active: selectedRatio === item }"
-                  :aria-pressed="selectedRatio === item"
-                  @click="selectRatio(item)"
+                  :class="{ active: values[field] === item }"
+                  :disabled="field === 'tier' && !ratioTiers.includes(item)"
+                  @click="selectChoice(field, item)"
                 >
                   {{ item }}
                 </button>
               </div>
+            </div>
+
+            <div v-else class="field-block">
               <label>
                 {{ fieldLabels[field] }}
                 <em>*</em>
               </label>
-            </template>
-            <label v-else>
-              {{ fieldLabels[field] }}
-              <em>*</em>
-            </label>
-            <div :class="['choice-grid', { 'tier-choices': field === 'tier' }]">
-              <button
-                v-for="item in optionsFor(field)"
-                :key="item"
-                type="button"
-                :class="{ active: values[field] === item }"
-                :disabled="field === 'tier' && !ratioTiers.includes(item)"
-                @click="selectChoice(field, item)"
-              >
-                {{ item }}
-              </button>
+              <el-select popper-class="creative-popup" v-model="values[field]" placeholder="请选择" size="large">
+                <el-option v-for="item in fieldOptions[field]" :key="item" :label="item" :value="item" />
+              </el-select>
             </div>
-          </div>
-
-          <div v-else class="field-block">
-            <label>
-              {{ fieldLabels[field] }}
-              <em>*</em>
-            </label>
-            <el-select v-model="values[field]" placeholder="请选择" size="large">
-              <el-option v-for="item in fieldOptions[field]" :key="item" :label="item" :value="item" />
-            </el-select>
-          </div>
-        </template>
-
-        <p class="workflow-note">
-          MiniMax H3 三种工作流模板已导入；清晰度档位由服务端契约声明，时长最多 5 秒。
-          <template v-if="currentWorkflow">
-            服务端状态：<b>{{ currentWorkflow.status }}</b>。
           </template>
-          提交按钮仅在对应工作流发布（PUBLISHED）后开放，未通过实机验收前保持禁用。
-        </p>
+
+          <p class="workflow-note">
+            MiniMax H3 支持三种生成方式；比例、清晰度与可选时长以服务端契约为准，时长随清晰度档位联动。
+            <template v-if="currentWorkflow">
+              服务端状态：
+              <b>{{ currentWorkflow.status }}</b>
+              。
+            </template>
+            提交按钮仅在对应工作流发布（PUBLISHED）后开放，未通过实机验收前保持禁用。
+          </p>
+        </div>
         <div class="submit-row">
           <button
             v-hasPermi="['video:creation:submit']"
@@ -269,117 +298,27 @@
             @click="submitTask"
           >
             <el-icon><MagicStick /></el-icon>
-            {{ submitting ? '提交中…' : canSubmit ? '提交生成' : '暂不可提交' }}
+            {{
+              submitting
+                ? '提交中…'
+                : generationSource === 'cloud'
+                  ? '云端服务待接入'
+                  : canSubmit
+                    ? '提交生成'
+                    : '暂不可提交'
+            }}
           </button>
           <span>{{ submitBlockReason || '提交后将经服务端填充模板并交由 ComfyUI 执行' }}</span>
         </div>
       </section>
 
-      <aside class="right-column">
-        <section class="latest-player">
-          <div class="player-badges">
-            <span>成片示意</span>
-            <span>1080P</span>
-            <span>00:05</span>
-          </div>
-          <button
-            type="button"
-            class="play-button"
-            title="播放最新成片"
-            aria-label="播放最新成片"
-            @click="ElMessage.info('示例成片暂无真实视频')"
-          >
-            <el-icon><VideoPlay /></el-icon>
-          </button>
-          <div class="player-footer">
-            <div>
-              <b>新品发布主视频</b>
-              <small>VIDEO-20260911-017 · 5 分钟前</small>
-            </div>
-            <div>
-              <button type="button" title="示例成片不可下载" aria-label="下载" disabled>
-                <el-icon><Download /></el-icon>
-              </button>
-              <button type="button" title="示例成片不可分享" aria-label="分享" disabled>
-                <el-icon><Share /></el-icon>
-              </button>
-              <button type="button" class="recreate" @click="useInspiration(INSPIRATIONS[1])">
-                <el-icon><RefreshRight /></el-icon>
-                再创作
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <section class="stats" aria-label="视频创作统计">
-          <div>
-            <b>18</b>
-            <span>本周成片</span>
-          </div>
-          <div>
-            <b>{{ queueCount }}</b>
-            <span>排队中</span>
-          </div>
-          <div>
-            <b>6</b>
-            <span>素材库</span>
-          </div>
-          <div>
-            <b>98%</b>
-            <span>生成成功率</span>
-          </div>
-        </section>
-
-        <section class="studio-card inspiration-card">
-          <div class="section-heading compact">
-            <div>
-              <h2>灵感 · 一键同款</h2>
-              <span>自动带入能力、模型与描述</span>
-            </div>
-          </div>
-          <div class="inspiration-list">
-            <article v-for="item in INSPIRATIONS" :key="item.title">
-              <div :class="['inspiration-poster', item.tone]">
-                <el-icon><VideoCameraFilled /></el-icon>
-                <span>{{ moduleName(item.module) }} · {{ modelName(item.model) }}</span>
-              </div>
-              <div>
-                <b>{{ item.title }}</b>
-                <p>{{ item.prompt }}</p>
-              </div>
-              <button type="button" @click="useInspiration(item)">
-                用同款
-                <el-icon><ArrowRight /></el-icon>
-              </button>
-            </article>
-          </div>
-        </section>
-
-        <section class="studio-card recent-card">
-          <div class="section-heading compact">
-            <div>
-              <h2>最近任务</h2>
-              <span>当前创作队列</span>
-            </div>
-          </div>
-          <div v-for="task in recentTasks" :key="task.id" class="recent-task">
-            <span :class="taskStatusClass(task.status)"><i /></span>
-            <div>
-              <b>{{ task.taskName || task.taskNo }}</b>
-              <small>{{ moduleName(task.capabilityCode) }} · {{ modelName(task.modelCode) }}</small>
-            </div>
-            <em>{{ taskStatusText(task.status) }}</em>
-          </div>
-          <div v-if="!recentTasks.length" class="recent-task">
-            <span><i /></span>
-            <div>
-              <b>暂无任务</b>
-              <small>创建后可在此查看进度</small>
-            </div>
-            <em>—</em>
-          </div>
-        </section>
-      </aside>
+      <CreativeInspiration
+        media="video"
+        :workflows="workflows"
+        :busy="uploading || submitting"
+        :applied-title="appliedInspirationTitle"
+        @apply="applyCreativeInspiration"
+      />
     </div>
 
     <section v-else-if="activeView === 'tasks'" class="content-view">
@@ -456,8 +395,7 @@
               <span :class="['task-status', taskStatusClass(task.status)]">{{ taskStatusText(task.status) }}</span>
             </div>
             <p>
-              {{ moduleName(task.capabilityCode) }} · {{ modelName(task.modelCode) }} ·
-              {{ task.durationSeconds }} 秒
+              {{ moduleName(task.capabilityCode) }} · {{ modelName(task.modelCode) }} · {{ task.durationSeconds }} 秒
             </p>
             <small>
               {{ task.taskNo }} · {{ task.createTime || '—' }}
@@ -536,12 +474,7 @@
         <article v-for="asset in assets" :key="asset.id" class="asset-card">
           <div :class="['asset-preview', assetKind(asset)]">
             <!-- 真实缩略图；取不到时回退成图标，不让卡片出现空白 -->
-            <img
-              v-if="imageFor(asset)"
-              class="asset-thumb"
-              :src="imageFor(asset)"
-              :alt="asset.originalName || ''"
-            />
+            <img v-if="imageFor(asset)" class="asset-thumb" :src="imageFor(asset)" :alt="asset.originalName || ''" />
             <template v-else>
               <el-icon><component :is="assetIcon(assetKind(asset))" /></el-icon>
               <span>{{ assetKindLabel(asset) }}</span>
@@ -569,6 +502,7 @@
       这里用带鉴权取回的 blob URL 交给 <video>，因为 <video src> 不会携带 Authorization 头。
     -->
     <el-dialog
+      class="creative-dialog"
       v-model="previewVisible"
       :title="previewTarget?.taskName || previewTarget?.taskNo || '成片预览'"
       width="min(920px, 92vw)"
@@ -620,7 +554,6 @@
 <script setup lang="ts">
 import type { Component } from 'vue';
 import {
-  ArrowRight,
   Check,
   Close,
   Cpu,
@@ -632,16 +565,22 @@ import {
   MagicStick,
   Picture,
   RefreshRight,
-  Share,
   Search,
   UploadFilled,
   VideoCamera,
-  VideoCameraFilled,
   VideoPlay,
   View
 } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import type {
+  VideoAssetVO,
+  VideoCapabilityCode,
+  VideoTaskVO,
+  VideoTaskStatus,
+  VideoWorkersVO,
+  VideoWorkflowVO
+} from '@/api/video/types';
 import {
   cancelVideoTask,
   createVideoTask,
@@ -657,24 +596,23 @@ import {
   retryVideoTask,
   uploadVideoAsset
 } from '@/api/video';
-import type {
-  VideoAssetVO,
-  VideoCapabilityCode,
-  VideoTaskVO,
-  VideoTaskStatus,
-  VideoWorkersVO,
-  VideoWorkflowVO
-} from '@/api/video/types';
+import CloudGenerationForm from '@/components/CreativeInspiration/CloudGenerationForm.vue';
+import GenerationSource from '@/components/CreativeInspiration/GenerationSource.vue';
+import CreativeInspiration from '@/components/CreativeInspiration/index.vue';
+import {
+  canSubmitLocal,
+  isRouteAvailable,
+  type GenerationSource as GenerationSourceType,
+  type InspirationRoute
+} from '@/components/CreativeInspiration/types';
 import { extractErrorMessage } from '@/utils/request';
 import {
   COMPLETED_VIDEOS,
-  INSPIRATIONS,
   PROMPT_CHIPS,
   VIDEO_MODELS,
   VIDEO_MODULES,
   resolveWorkflowCode,
   type FieldKey,
-  type Inspiration,
   type StudioModule
 } from './modules';
 
@@ -683,6 +621,8 @@ type AssetKind = 'image' | 'video' | 'audio';
 type TaskFilterKey = 'all' | VideoTaskStatus;
 
 const activeView = ref<StudioView>('create');
+const generationSource = ref<GenerationSourceType>('local');
+const appliedInspirationTitle = ref('');
 const studioViews: Array<{ key: StudioView; label: string; icon: Component }> = [
   { key: 'create', label: '创建任务', icon: MagicStick },
   { key: 'tasks', label: '我的任务', icon: Document },
@@ -882,9 +822,9 @@ const currentWorkflow = computed(
 
 /**
  * 只有 PUBLISHED 才允许在正式环境提交。
- * 三个 H3 模板当前均为 DRAFT，因此默认为不可提交，且提示真实原因。
+ * 未读取到已发布且可提交的工作流时，保持禁用并提示真实原因。
  */
-const canSubmit = computed(() => currentWorkflow.value?.submittable === true);
+const canSubmit = computed(() => canSubmitLocal(generationSource.value, currentWorkflow.value));
 
 /**
  * 当前工作流允许的输出档位（清晰度）。
@@ -980,6 +920,7 @@ watch(
 );
 
 const submitBlockReason = computed(() => {
+  if (generationSource.value === 'cloud') return '云端 API 待接入，当前可配置草稿，暂不支持提交';
   if (!workflows.value.length) return '正在读取工作流状态…';
   const workflow = currentWorkflow.value;
   if (!workflow) return `${currentWorkflowCode.value} 尚未在服务端注册`;
@@ -1001,16 +942,10 @@ const filteredTasks = computed(() => {
   const keyword = taskKeyword.value.trim().toLowerCase();
   return tasks.value.filter(task => {
     const matchesFilter = taskFilter.value === 'all' || task.status === taskFilter.value;
-    const matchesKeyword =
-      !keyword || `${task.taskNo ?? ''} ${task.taskName ?? ''}`.toLowerCase().includes(keyword);
+    const matchesKeyword = !keyword || `${task.taskNo ?? ''} ${task.taskName ?? ''}`.toLowerCase().includes(keyword);
     return matchesFilter && matchesKeyword;
   });
 });
-
-const recentTasks = computed(() => tasks.value.slice(0, 4));
-const queueCount = computed(
-  () => tasks.value.filter(task => task.status === 'QUEUED' || task.status === 'RUNNING').length
-);
 
 onMounted(() => {
   void loadWorkflows();
@@ -1049,7 +984,6 @@ async function loadTasks() {
   }
 }
 
-
 async function loadAssets() {
   loadingAssets.value = true;
   try {
@@ -1064,6 +998,7 @@ async function loadAssets() {
 }
 
 function selectModule(item: StudioModule) {
+  appliedInspirationTitle.value = '';
   currentModule.value = item;
   currentModel.value =
     VIDEO_MODELS.find(candidate => candidate.code === item.defaultModel) ??
@@ -1089,7 +1024,7 @@ function isRequired(field: FieldKey) {
 
 function optionsFor(field: FieldKey) {
   // 档位选项按已选画面比例过滤：竖屏比例下只给竖屏档位，避免选出一个必然被拒的组合。
-  if (field === 'tier') return ratioTiers.value.length ? ratioTiers.value : fieldOptions.tier ?? [];
+  if (field === 'tier') return ratioTiers.value.length ? ratioTiers.value : (fieldOptions.tier ?? []);
   if (field !== 'dur') return fieldOptions[field] ?? [];
   // 时长选项以服务端为准：长时长只在低分辨率档位开放（H3 帧数随时长线性增长、
   // 显存与耗时显著上升）。服务端未下发时退回内置兜底值，保证旧后端仍可用。
@@ -1204,6 +1139,10 @@ function optimizePrompt() {
  * 提交前再次校验 workPermit（后端也会独立校验，前端禁用只是体验层）。
  */
 async function submitTask() {
+  if (!canSubmit.value || submitting.value || uploading.value) {
+    ElMessage.warning(submitBlockReason.value || '请等待当前操作完成');
+    return;
+  }
   const capabilityCode = currentModule.value.code as VideoCapabilityCode;
   if (!capabilityCode) return;
 
@@ -1245,6 +1184,7 @@ async function submitTask() {
       return;
     }
     ElMessage.success('任务已创建，正在提交生成…');
+    activeView.value = 'tasks';
     await loadTasks();
 
     const executed = await executeVideoTask(taskId);
@@ -1354,7 +1294,7 @@ async function pollPendingTasks() {
   await loadTasks();
   if (finished.length) {
     await loadAssets();
-    if (finished.some((item) => item.status === 'SUCCEEDED')) void loadTaskCovers();
+    if (finished.some(item => item.status === 'SUCCEEDED')) void loadTaskCovers();
   }
   if (pollingTaskIds.size === 0) stopTaskPolling();
 }
@@ -1400,7 +1340,7 @@ const coverLoading = new Set<string>();
 
 function coverFor(task: VideoTaskVO) {
   const id = task.outputAssetId;
-  return id === null || id === undefined ? '' : coverUrls.value[String(id)] ?? '';
+  return id === null || id === undefined ? '' : (coverUrls.value[String(id)] ?? '');
 }
 
 /**
@@ -1521,9 +1461,7 @@ async function previewTask(task: VideoTaskVO) {
       detail.outputWidth && detail.outputHeight
         ? { label: '分辨率', value: `${detail.outputWidth}×${detail.outputHeight}` }
         : null,
-      detail.outputDurationMs
-        ? { label: '时长', value: `${(detail.outputDurationMs / 1000).toFixed(3)} 秒` }
-        : null,
+      detail.outputDurationMs ? { label: '时长', value: `${(detail.outputDurationMs / 1000).toFixed(3)} 秒` } : null,
       detail.outputFps ? { label: '帧率', value: `${detail.outputFps} fps` } : null,
       detail.truncationApplied ? { label: '截断', value: '已按目标时长精确截断' } : null
     ].filter(Boolean) as Array<{ label: string; value: string }>;
@@ -1544,7 +1482,7 @@ async function previewTask(task: VideoTaskVO) {
       // 网络抖动重试一次：经 Cloudflare 的链路偶发失败是真实存在的，
       // 但重试前必须确认上一次没有留下半个 blob（releasePreviewUrl 已经处理）。
       try {
-        await new Promise((resolve) => setTimeout(resolve, 600));
+        await new Promise(resolve => setTimeout(resolve, 600));
         previewUrl.value = await fetchVideoAssetBlobUrl(detail.outputAssetId);
       } catch {
         previewError.value = (await extractErrorMessage(error)) ?? '成片加载失败';
@@ -1622,14 +1560,21 @@ async function retryTask(task: VideoTaskVO) {
   }
 }
 
-function useInspiration(item: Inspiration) {
-  const module = VIDEO_MODULES.find(candidate => candidate.code === item.module);
-  const model = VIDEO_MODELS.find(candidate => candidate.code === item.model);
-  if (module) selectModule(module);
-  if (module && model && item.model === 'H3') currentModel.value = model;
-  values.desc = item.prompt;
+function applyCreativeInspiration(route: InspirationRoute, title: string) {
+  if (route.media !== 'video' || uploading.value || submitting.value || !isRouteAvailable(route, workflows.value))
+    return;
+  const module = VIDEO_MODULES.find(
+    item => item.code === route.capability && resolveWorkflowCode(item, 'H3') === route.workflowCode
+  );
+  const model = VIDEO_MODELS.find(item => item.code === 'H3');
+  if (!module || !model) return;
+  generationSource.value = 'local';
+  if (currentModule.value.code !== module.code) selectModule(module);
+  currentModel.value = model;
+  values.desc = route.prompt;
+  appliedInspirationTitle.value = title;
   activeView.value = 'create';
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  ElMessage.success('创作方向已带入，请完善素材与参数');
 }
 
 /**
@@ -2924,4 +2869,8 @@ button {
     border-bottom: 1px solid var(--line);
   }
 }
+</style>
+
+<style scoped lang="scss">
+@use '@/assets/styles/creative-workbench.scss';
 </style>
