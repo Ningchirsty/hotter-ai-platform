@@ -628,11 +628,22 @@ public class CreativeProjectServiceImpl implements ICreativeProjectService {
         if (contentType == null || !contentType.toLowerCase().startsWith("image/")) {
             throw new ServiceException("参考图必须是图片（png/jpg/webp）");
         }
-        // 「同时设为产品图」要在落对象存储之前先判断可行性：没有关联产品的项目不可能设产品图，
-        // 与其传完再报错留一张孤儿图，不如先拒绝
+        // 【R38-1 修复】**无条件**先走 getProject，而不是只在「同时设为产品图」时才走。
+        //
+        // 修的是什么：本方法把文件登记进**内容域**的 cp_task_file。改造前 asProductImage=false
+        // （前端默认）时整段跳过 getProject，于是只要持有 creative:project:upload 就能对
+        // **任意** taskId 挂一张 source_type=REFERENCE 的附件——包括创作域根本不处理的
+        // MANUAL / EXHIBITION 任务，且内容域的 uploadFile 只校验「任务存在 + 非空 + ≤50MB」，
+        // 不校验交付类型、不校验项目归属。表现为「设计角色能给品牌侧任务加附件」。
+        //
+        // getProject 自带三道校验（交付类型已登记 / 未停用 / 有已发布场景档案），
+        // 正好是「这条任务是不是视觉工厂的项目」的权威判据；把它提前到落对象存储之前，
+        // 既不留下孤儿图，也不改变 ECOM_DETAIL / MAIN_IMAGE / BRAND_POSTER 的正常上传。
+        CreativeProjectVo project = getProject(taskId);
+        // 「同时设为产品图」还要额外的可行性判断：没有关联产品的项目不可能设产品图。
+        // 与上面同一口径——先拒绝，不要传完再报错留一张孤儿图。
         Long productId = null;
         if (asProductImage) {
-            CreativeProjectVo project = getProject(taskId);
             if (project.getProductId() == null) {
                 throw new ServiceException("该项目没有关联产品，无法设为产品图；请先在项目里选择产品");
             }

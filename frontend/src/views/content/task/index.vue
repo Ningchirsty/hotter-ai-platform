@@ -444,6 +444,22 @@
             </div>
           </template>
 
+          <!-- R38-5 / P1-3：「没配规则」不能长得跟「校验通过」一样。
+               生产实测只有 ECOM_DETAIL 与 EXHIBITION 灌了规则；其余交付类型的任务直接到
+               「可开工」，但那是**没人校验过**。这里如实把这件事说出来——
+               文案里的去向（「闸门规则」页）由后端 hint 给出，不在前端拼路由（内容侧路由由菜单树生成，
+               硬写路径一旦对不上就是"点了跳到空白页"）。 -->
+          <el-alert
+            v-if="gate.rulesConfigured === false"
+            type="warning"
+            show-icon
+            :closable="false"
+            class="gate-no-rules"
+            title="该交付类型尚未配置闸门规则——下面的「可开工」是「没有规则可校验」，不是「校验通过」"
+          >
+            <p class="muted">{{ gate.rulesMissingHint }}</p>
+          </el-alert>
+
           <div class="gate-block">
             <div class="block-title danger">
               未满足的强制项（{{ (gate.blockUnsatisfied || []).length }}）

@@ -74,6 +74,15 @@ public class ContentGateEngine {
         result.setConditionUnsatisfied(conditionUnsatisfied);
         result.setNotices(notices);
 
+        // 「没配规则」与「校验通过」必须能区分开（R38-5 / P1-3）。
+        // 生产实测：种子只给 ECOM_DETAIL 与 EXHIBITION 灌了规则，MAIN_IMAGE / BRAND_POSTER /
+        // MANUAL / PACKAGE / VIDEO 的任务因此可以直接到「可开工」——那是没人校验过的状态。
+        result.setRulesConfigured(rules != null && !rules.isEmpty());
+        if (!result.isRulesConfigured()) {
+            result.setRulesMissingHint("该交付类型还没有配置任何闸门规则，本次「可开工」是"
+                + "「没有规则可校验」而不是「校验通过」——要真正把关，请到「闸门规则」页为它补规则。");
+        }
+
         // 人为显式阻断优先：即便闸门规则都满足了，只要有人选择「暂不确认并阻断」，
         // 任务就不得流转——这是设计文档 §7.2 给出的第四个处理选项。
         if (hasBlockedCard) {
@@ -143,6 +152,21 @@ public class ContentGateEngine {
          * 非阻断提醒项（不参与流转判定）
          */
         private List<CpGateRule> notices = new ArrayList<>();
+
+        /**
+         * 这个交付类型**是否配了闸门规则**。
+         *
+         * <p>为什么要单列一个字段：规则为空时 {@link #evaluate} 会直接判 {@code READY}
+         * ——那是"没有可校验的东西"，不是"校验通过"。两者在页面上长得一模一样，
+         * 于是「这个交付类型根本没配规则」这件事从来没人知道，直到出问题。
+         * 有了它，页面才能如实说「该交付类型尚未配置闸门规则，当前不校验」。</p>
+         */
+        private boolean rulesConfigured;
+
+        /**
+         * 规则为空时的如实说明（有规则时为 null）。
+         */
+        private String rulesMissingHint;
 
         /**
          * 是否可用于生成开工包。

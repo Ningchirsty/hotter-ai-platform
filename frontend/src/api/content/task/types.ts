@@ -121,6 +121,15 @@ export interface ContentGateResult {
   conditionUnsatisfied?: CpGateRuleVO[];
   /** 非阻断提醒项（不参与流转判定） */
   notices?: CpGateRuleVO[];
+  /**
+   * 这个交付类型**是否配了闸门规则**（R38-5 / P1-3 起后端如实上报）。
+   *
+   * `false` 时结论里的「可开工」是"没有规则可校验"，不是"校验通过"——页面必须说出来，
+   * 否则「这个交付类型根本没配规则」这件事永远没人知道。
+   */
+  rulesConfigured?: boolean;
+  /** 规则为空时的如实说明（有规则时为 null） */
+  rulesMissingHint?: string;
 }
 
 /** 任务详情 */

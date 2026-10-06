@@ -55,6 +55,18 @@
         </div>
       </div>
 
+      <!-- R38-3 / P0-3：把「出图依据是哪一版」摆在最上面。
+           修的是这条最贵的误解——出图永远按**已锁定**那一版派生提示词（后端 activeEntity），
+           而页面显示的是**当前编辑**的那一版。锁定 v1 → 改字段 → 自动新建 v2 → 人以为按 v2 出图，
+           其实仍按 v1，于是"出图结果与改的东西对不上"看起来像功能坏了。
+           判定口径只有一处（composables/promptBasis.ts），别处不要再判一遍。 -->
+      <div class="basis" :class="{ 'is-pending': basis.version == null, 'is-same': basis.editingIsBasis }">
+        <span class="basis-label">出图依据</span>
+        <strong v-if="basis.version != null">v{{ basis.version }}（已锁定）</strong>
+        <strong v-else>尚未锁定</strong>
+        <span class="basis-note">{{ basis.note }}</span>
+      </div>
+
       <el-alert
         v-if="dna.issues && dna.issues.length"
         type="warning"
@@ -241,6 +253,26 @@
       <p class="hint">
         用到的维度：{{ appliedText(prompt?.applied) || '—' }}。
       </p>
+      <!-- R38-2 / P0-2（第 2 步）：派生时**放过不下、被截断**的条目要在这儿说出来。
+           后端 Prompt.omitted 一直都有（「必显信息 有 2 条因正向提示词长度上限未放入：…」
+           「屏文案超过 300 字，已截断（原文 412 字）」…），但页面上从来没显示过——
+           表现就是"色号/必填信息明明写了，出图却像没吃进去"，而且没有任何线索。 -->
+      <el-alert
+        v-if="prompt?.omitted && prompt.omitted.length"
+        type="warning"
+        show-icon
+        :closable="false"
+        class="omitted"
+        title="这一版的提示词有内容没放进去（如实列出，不是猜测）："
+      >
+        <ul class="omitted-list">
+          <li v-for="(item, index) in prompt.omitted" :key="index">{{ item }}</li>
+        </ul>
+        <p class="hint">
+          处理办法：把相关条目写短一些，或减少条数（提示词有长度上限），然后点「重新派生」；
+          改完记得「保存为新一版基因」。
+        </p>
+      </el-alert>
       <!-- v1 裁定 ③（2026-10-06）：「在框里改」**算新一版基因**。
            所以这里从"只做展示"改成可编辑：改完点「保存为新一版基因」，提示词作为
            这一版基因的一部分存下来（锁定后再改会自动新建一版），出图时会原样预填。 -->
@@ -389,7 +421,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import { recommendDna } from '@/api/creative';
 import type {
@@ -409,6 +441,7 @@ import {
 import { appliedText } from '../../composables/promptApplied';
 import { dnaIssueTarget, hasMeasurableIssue } from '../../composables/dnaIssues';
 import { dnaEvidenceKindLabel } from '../../composables/gateLabels';
+import { pickPromptBasis } from '../../composables/promptBasis';
 import PromptWithSwatches from './PromptWithSwatches.vue';
 
 /**
@@ -472,6 +505,14 @@ const form = reactive<CreativeDnaForm>({});
 const recommending = ref(false);
 const recommendVisible = ref(false);
 const recommendation = ref<DnaRecommendationVO | null>(null);
+
+/**
+ * 出图依据（R38-3）：判定口径在 `composables/promptBasis.ts`，这里只负责显示。
+ *
+ * <p>为什么值得单列一块：出图按**已锁定**那一版派生提示词，页面显示的是**当前编辑**那一版，
+ * 两者不一致时人会以为"我改了但出图没变"。所以把依据版本直接写在最上面。</p>
+ */
+const basis = computed(() => pickPromptBasis(props.versions, props.dna));
 
 function sourceType(source?: string): TagType {
   return (source && DNA_SOURCE_TYPES[source]) || 'info';
@@ -691,6 +732,53 @@ watch(
 
 .issues {
   margin-top: 12px;
+}
+/* 出图依据（R38-3）：常驻在最上面，因为它回答的是"现在出图会用哪一版"。
+   三等状态各自配色：已锁定且正在编辑它（绿）/ 已锁定但编辑的是草稿（蓝，最常见）/
+   一版都没锁（黄，此时没有出图依据）。 */
+.basis {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  padding: 8px 12px;
+  margin-top: 12px;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--t1);
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--t3, #94a3b8);
+  border-radius: 6px;
+}
+.basis.is-same {
+  border-left-color: var(--success, #22c55e);
+}
+.basis.is-pending {
+  border-left-color: var(--warning, #f59e0b);
+}
+.basis-label {
+  padding: 1px 6px;
+  font-size: 12px;
+  color: var(--t2);
+  background: var(--elevated);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.basis strong {
+  font-weight: 600;
+}
+.basis-note {
+  color: var(--t2);
+}
+.omitted {
+  margin: 10px 0 4px;
+}
+.omitted-list {
+  padding-left: 18px;
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.9;
 }
 .issue-list {
   padding-left: 18px;
