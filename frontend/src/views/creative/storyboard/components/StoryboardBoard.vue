@@ -21,7 +21,9 @@
               {{ storyboard.status === 'LOCKED' ? '已锁定' : '锁定分镜' }}
             </el-button>
           </template>
-          <el-button v-else type="primary" :loading="generating" @click="$emit('generate')">
+          <!-- v1 反馈 1.1：空态这一颗原先也没写 size，与有分镜后那两颗不一致
+               （静态守卫 blockHeadConsistency.spec.ts 抓出来的） -->
+          <el-button v-else size="small" type="primary" :loading="generating" @click="$emit('generate')">
             生成分镜
           </el-button>
         </div>

@@ -675,19 +675,6 @@ onBeforeUnmount(() => {
   align-items: center;
 }
 
-.sub-head {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-}
-.sub-head h3 {
-  margin: 0;
-  font-size: 15px;
-}
-
 .prod-table {
   background: transparent;
 }

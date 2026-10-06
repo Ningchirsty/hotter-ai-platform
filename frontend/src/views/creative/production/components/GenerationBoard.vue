@@ -5,7 +5,7 @@
       与模式二共用同一批口径（generationText），但回答的是不同的问题，所以是两种呈现而不是两套逻辑。
     -->
     <section v-if="mode === 'SCREENS'" class="panel" data-generation-section="SCREENS">
-      <div class="sub-head">
+      <div class="block-head">
         <h3>
           逐屏出图与质检
           <span class="muted">
@@ -89,7 +89,7 @@
 
     <!-- 模式二（生产页）：**按候选**看——缩略图、质检/产品基准、规则体检、选定/重出/对比 -->
     <section v-else class="panel" data-generation-section="CANDIDATES">
-      <div class="sub-head">
+      <div class="block-head">
         <h3>
           项目候选
           <span class="muted">
@@ -487,13 +487,7 @@ onBeforeUnmount(() => {
   font-size: 15px;
 }
 
-.sub-head {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-}
+/* 区块头统一用全局 .block-head（第 35 轮收口） */
 .head-actions {
   display: flex;
   gap: 10px;

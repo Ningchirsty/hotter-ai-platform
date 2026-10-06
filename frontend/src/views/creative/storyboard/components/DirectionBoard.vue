@@ -9,7 +9,9 @@
         <h3>{{ stepHeading }}视觉方向</h3>
         <div class="head-actions">
           <span class="muted">来源：{{ DIRECTION_SOURCE_LABELS[templateSource] || templateSource || '—' }}</span>
-          <el-button type="primary" :loading="generating" @click="$emit('generate')">
+          <!-- v1 反馈 1.1「排版没有设计和逻辑」：这一颗原先没写 size，
+               在同一行里比旁边的「重新生成分镜 / 锁定分镜」大一号（第 35 轮量出来的） -->
+          <el-button size="small" type="primary" :loading="generating" @click="$emit('generate')">
             {{ directions.length ? '重新生成方向' : '生成方向' }}
           </el-button>
         </div>
