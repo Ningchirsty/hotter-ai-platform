@@ -478,13 +478,7 @@ onBeforeUnmount(() => {
   display: block;
 }
 
-.panel {
-  padding: 16px;
-  margin-bottom: 14px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-}
+/* .panel 的外观统一在全局 creative-studio.scss（第 33 轮收口：这里原有一份逐字相同的副本） */
 .panel h3 {
   display: flex;
   gap: 10px;

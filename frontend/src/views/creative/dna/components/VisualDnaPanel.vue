@@ -655,13 +655,7 @@ watch(
   display: block;
 }
 
-.panel {
-  padding: 16px;
-  margin-bottom: 14px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-}
+/* .panel 的外观统一在全局 creative-studio.scss（第 33 轮收口：这里原有一份逐字相同的副本） */
 .panel h3 {
   margin: 0 0 8px;
   font-size: 15px;
@@ -725,14 +719,7 @@ watch(
   box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.45);
 }
 
-.block-head {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
+/* .block-head 统一在全局 creative-studio.scss（第 33 轮收口：原副本与它权重相同、只靠注入顺序取胜） */
 .head-actions {
   display: flex;
   gap: 10px;

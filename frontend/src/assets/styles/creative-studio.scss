@@ -31,8 +31,31 @@
     border-radius: 6px;
   }
 
+  /**
+   * `.panel`：区块容器的**另一套外观**（比 `.block` 更"成块"：16px 内边距、底色更深一档）。
+   *
+   * <p><b>为什么由这里统一给</b>（第 33 轮收口）：`.panel` 的这 5 条声明原先在
+   * dna / storyboard×2 / review×3 / production / template **各写了一份完全相同的副本**。
+   * 更麻烦的是 `.block-head`：共享规则是 10px，而分镜那两个组件各自写了 12px ——
+   * 两处选择器权重**一样**（`.block-head[data-v-x]` 与 `.studio .block-head` 都是 2 个类），
+   * 谁生效只取决于样式注入顺序：开发态按组件懒加载顺序、生产打包按打包顺序，
+   * 于是"同一个页面在 dev 和 build 里间距不一样"是可能的。**同一件事一处定义**才是解。</p>
+   *
+   * <p>各页仍可只写**自己的差异**（例如 `.panel h3` 的 margin / 是否 flex 排布），
+   * 那些确实是每页不同的东西，留在各自 scoped 样式里。</p>
+   */
+  .panel {
+    padding: 16px;
+    margin-bottom: 14px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+
   .block-head {
     display: flex;
+    /* 区块头在窄容器里要能换行：基因页的标题行有标签+说明+两个按钮，挤在一行会溢出 */
+    flex-wrap: wrap;
     gap: 10px;
     align-items: center;
     justify-content: space-between;

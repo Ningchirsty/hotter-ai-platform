@@ -1891,7 +1891,16 @@ button {
   align-items: start;
 }
 
-.panel {
+/*
+ * 这两个是「侧栏 / 详情」容器，**刻意不要区块那 16px 内边距**（内边距由各自的
+ * `.panel-head` / 内容自己带）。第 33 轮把 `.panel` 的通用外观收进全局
+ * `creative-studio.scss` 之后，这里必须显式写 `padding: 0` **并用两个类**——
+ * 否则与全局 `.studio .panel` 权重相同（都是 2 个类），谁生效只取决于样式注入顺序，
+ * 开发态与打包后可能不一样。
+ */
+.panel.project-panel,
+.panel.detail-panel {
+  padding: 0;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 8px;

@@ -815,14 +815,23 @@
     }
   }
 
+  /*
+   * 第 33 轮：`.panel` / `.block-head` 的通用外观已收进全局 `creative-studio.scss`。
+   * 这一页与别处**刻意不同**的两点必须在这里显式写出来——否则会静默继承全局值，
+   * 而且与全局规则权重相同（都是 2 个类），谁生效取决于样式注入顺序（dev 与 build 可能不同）：
+   *   ① 面板之间不留间距（这一页靠自己的排布分隔）：`margin-bottom: 0`；
+   *   ② 区块头里标题与右侧操作**不要间隙**：`gap: 0`（全局是 10px）。
+   */
   .panel {
     padding: 16px;
+    margin-bottom: 0;
     background: var(--surface);
     border: 1px solid var(--line);
     border-radius: 8px;
   }
   .block-head {
     display: flex;
+    gap: 0;
     align-items: center;
     justify-content: space-between;
     margin-bottom: 8px;
