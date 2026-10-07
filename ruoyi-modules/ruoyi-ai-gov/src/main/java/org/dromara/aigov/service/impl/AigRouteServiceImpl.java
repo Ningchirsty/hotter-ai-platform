@@ -38,11 +38,18 @@ import java.util.Map;
  *     <li>{@code decide} 内「// 步骤1」：能力不存在或 status≠'0' → {@code DENIED}</li>
  *     <li>「// 步骤2」：无 {@code aig_route_policy(能力,数据等级)} → {@code DENIED}（默认拒绝）</li>
  *     <li>「// 步骤3」：{@code allowExternal='N'} 时候选模型仅限非外部部署</li>
- *     <li>「// 步骤4」：{@link #isCandidateUsable} 逐项校验生命周期 / 数据等级 / 启用 / 外发</li>
+ *     <li>「// 步骤4」：{@link #isCandidateUsable} 逐项校验生命周期 / 数据等级 / 启用 / 健康 / 外发</li>
  *     <li>「// 步骤5」：{@link #orderBindings} 按 PRIMARY→GRAY→FALLBACK 再按 priority 升序</li>
  *     <li>「// 步骤6」：无命中 → {@code fallbackToManual='Y'} 转 {@code MANUAL}，否则 {@code DENIED}</li>
  *     <li>「// 步骤7」：因 {@code allowExternal='N'} 被排除的外部模型写入 {@code policyHits}</li>
  * </ol>
+ *
+ * <p><b>本实现相对 SPEC 的两处加固</b>（都只收紧、不放松）：</p>
+ * <ul>
+ *     <li>数据等级 {@code STRICT} 时强制 {@code allowExternal=false}——外发禁令不依赖策略行是否正确；</li>
+ *     <li>健康状态为 {@code DOWN} 的模型直接排除——但**只在明确 DOWN 时排除**，
+ *         未测过(null)与 DEGRADED 一律放行，避免把「没测过」判成不可用。</li>
+ * </ul>
  *
  * @author ai-gov
  */
@@ -60,6 +67,11 @@ public class AigRouteServiceImpl implements IAigRouteService {
      * 允许外发。
      */
     private static final String YES = "Y";
+
+    /**
+     * 健康检查结果：不可用（由连通性测试写入，见 AigModelGovernanceServiceImpl#testConnection）。
+     */
+    private static final String HEALTH_DOWN = "DOWN";
 
     /**
      * 能力模板 Mapper。
@@ -289,6 +301,17 @@ public class AigRouteServiceImpl implements IAigRouteService {
         AigDeploymentTypeEnum deployment = AigDeploymentTypeEnum.find(governance.getDeploymentType());
         if (deployment == null) {
             decision.addHit("排除 " + modelLabel + "：部署类型非法（" + governance.getDeploymentType() + "）");
+            return null;
+        }
+        // 4.5 健康状态：**只在明确 DOWN 时排除**。
+        // 为什么不是「要求 UP」：health_status 由连通性测试（人工点一下）写入，
+        // 绝大多数模型从未测过（null）。若要求 UP，等于把「没测过」判成不可用，
+        // 会让所有既有路由瞬间失效——那是比「可能调到坏模型」严重得多的回归。
+        // 因此口径是：测出 DOWN 才拦，未知(DEGRADED/null)一律放行。
+        if (HEALTH_DOWN.equalsIgnoreCase(governance.getHealthStatus())) {
+            decision.addHit("排除 " + modelLabel + "（modelKey=" + model.getModelKey()
+                + "）：最近一次健康检查为 DOWN（healthTime=" + governance.getHealthTime() + "），"
+                + "暂不参与路由，避免把预算花在已知不可用的模型上");
             return null;
         }
         // 4.4 / 步骤3 / 步骤7：allowExternal='N' 时排除外部部署类型，并记录该原因

@@ -9,6 +9,7 @@ import org.dromara.aigov.domain.vo.AigModelVo;
 import org.dromara.aigov.domain.vo.AigRouteDecision;
 import org.dromara.aigov.enums.AigDataLevelEnum;
 import org.dromara.aigov.enums.AigDeploymentTypeEnum;
+import org.dromara.aigov.enums.AigErrorClassEnum;
 import org.dromara.aigov.enums.AigInvokeResultEnum;
 import org.dromara.aigov.enums.AigManualDecisionEnum;
 import org.dromara.aigov.enums.AigRouteDecisionEnum;
@@ -116,9 +117,11 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
             audit.setModelVersion(result.getModelVersion());
             AigInvokeVo vo = toVo(traceId, decision, result.getLatencyMs(), null);
             if (!result.isSuccess()) {
+                AigErrorClassEnum errorClass = invoker.classifyError(result);
                 audit.setResult(AigInvokeResultEnum.FAILED.getCode());
                 audit.setErrorSummary(StringUtils.blankToDefault(result.getErrorSummary(), "模型调用失败"));
                 vo.setReason(StringUtils.blankToDefault(result.getErrorSummary(), "模型调用失败"));
+                recordErrorClass(audit, decision, errorClass);
                 return vo;
             }
             // 7. 输出必须符合能力输出模板，否则不视为成功
@@ -126,6 +129,8 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
                 audit.setResult(AigInvokeResultEnum.FAILED.getCode());
                 audit.setErrorSummary(AigOutputSchemaValidator.MISMATCH_MESSAGE);
                 vo.setReason(AigOutputSchemaValidator.MISMATCH_MESSAGE);
+                // 「输出不符合 Schema」重试多少次都是同一个结果，必须转人工补正
+                recordErrorClass(audit, decision, AigErrorClassEnum.INVALID_REQUEST);
                 return vo;
             }
             audit.setResult(AigInvokeResultEnum.SUCCESS.getCode());
@@ -135,6 +140,34 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
             return vo;
         } finally {
             auditRecorder.record(audit);
+        }
+    }
+
+    /**
+     * 把错误分类落进审计，并据此决定处置。
+     *
+     * <p><b>刻意不改动 {@code reason} 文案</b>：内容域与创作域已有基于失败原因文本的
+     * 判断与断言（例如 {@code cp_output_check.failure_reason} 会原样展示给用户），
+     * 在这条链路上改文案会波及它们。分类信息写进 {@code policyHits}（调用方与审计都能看到），
+     * 处置写进 {@code manualDecision}。</p>
+     *
+     * @param audit      审计上下文
+     * @param decision   路由决策
+     * @param errorClass 错误分类
+     */
+    private void recordErrorClass(AigAuditContext audit, AigRouteDecision decision, AigErrorClassEnum errorClass) {
+        audit.getPolicyHits().add("错误分类=" + errorClass.getCode() + "（" + errorClass.getDesc() + "）"
+            + "，允许自动重试=" + (errorClass.isRetryable() ? "是" : "否")
+            + "，需转人工=" + (errorClass.isNeedsHuman() ? "是" : "否"));
+        if (errorClass.isNeedsHuman()) {
+            // 设计 §13.3：不可重试的错误必须转人工，不能被当成「偶发失败」悄悄吞掉
+            audit.setManualDecision(AigManualDecisionEnum.PENDING.getCode());
+        }
+        if (errorClass.isCircuitBreak()) {
+            // 鉴权失败：继续调用只会把账号打到风控，因此立刻告警并建议熔断
+            log.error("Provider 鉴权失败，应立刻熔断该 Provider：traceId={}, capability={}, modelKey={}, reason={}",
+                audit.getTraceId(), audit.getCapabilityCode(), decision.getModelKey(), audit.getErrorSummary());
+            audit.getPolicyHits().add("熔断建议：鉴权失败，在密钥修正前不应继续调用该 Provider");
         }
     }
 

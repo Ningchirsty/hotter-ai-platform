@@ -1,6 +1,7 @@
 package org.dromara.aigov.service.invoker;
 
 import org.dromara.aigov.enums.AigDeploymentTypeEnum;
+import org.dromara.aigov.enums.AigErrorClassEnum;
 
 /**
  * 模型调用 SPI。
@@ -71,6 +72,27 @@ public interface ModelInvoker {
      */
     default String invokerName() {
         return getClass().getSimpleName();
+    }
+
+    /**
+     * 归类一次失败的调用结果。
+     *
+     * <p><b>默认实现直接委托给 {@code AigErrorClassEnum.classify}</b>（errorCode → HTTP 状态 →
+     * 文本兜底）。调用器只有在「自己知道得比通用规则更准」时才需要覆写——
+     * 例如直连调用器明确拿到 429 时，比起让通用规则去猜文案，直接把
+     * {@code ModelInvokeResult.errorCode/httpStatus} 填上即可，无需覆写本方法。</p>
+     *
+     * <p>这决定了后续是「退避重试」「转人工」还是「熔断 Provider」，
+     * 因此实现必须诚实：**认不出就返回 UNKNOWN，不要猜成可重试**。</p>
+     *
+     * @param result 调用结果（应为失败结果；成功结果也会被安全处理）
+     * @return 错误分类，恒不为 null
+     */
+    default AigErrorClassEnum classifyError(ModelInvokeResult result) {
+        if (result == null) {
+            return AigErrorClassEnum.UNKNOWN;
+        }
+        return AigErrorClassEnum.classify(result.getErrorCode(), result.getHttpStatus(), result.getErrorSummary());
     }
 
 }
