@@ -9,7 +9,7 @@ export interface AigRoutePolicyVO extends BaseEntity {
   capabilityCode?: string;
   /** 关联能力名称（后端联表冗余，可能为空） */
   capabilityName?: string;
-  /** 数据等级 PUBLIC/INTERNAL/RESTRICTED */
+  /** 数据等级 PUBLIC/INTERNAL/RESTRICTED/STRICT（STRICT = 任何策略都不允许外发） */
   dataLevel?: string;
   /** 优先部署类型 LOCAL/GROUP/EXTERNAL_ENTERPRISE/EXTERNAL_API */
   preferredDeployment?: string;
@@ -43,6 +43,53 @@ export interface AigRoutePolicyQuery extends PageQuery {
   dataLevel?: string;
   preferredDeployment?: string;
   allowExternal?: string;
+  status?: string;
+  params?: Record<string, any>;
+}
+
+/**
+ * 场景强制绑定列表行（对齐后端 AigRouteScenarioBindingVo）
+ *
+ * 对应设计 §4.4 路由算法第 4 步「若场景强制绑定 Provider，则仅保留指定 Provider」。
+ * **语义只收紧**：命中绑定后，候选集合被收窄为「只保留指定供应商下的模型」；
+ * 它不会让任何被治理策略/数据等级/生命周期/健康状态排除的模型变得可用。
+ */
+export interface AigRouteScenarioBindingVO extends BaseEntity {
+  bindId?: string | number;
+  /** 场景编码（LONG_PAGE、POSTER、MULTI_IMAGE 等） */
+  scenarioCode?: string;
+  capabilityCode?: string;
+  /** 关联能力名称（后端回填） */
+  capabilityName?: string;
+  /** 强制使用的供应商ID */
+  providerId?: string | number;
+  /** 供应商名称（后端回填） */
+  providerName?: string;
+  /** 同一场景×能力下多个供应商时的优先序（仅用于稳定排序） */
+  priority?: number;
+  /** 状态（0正常 1停用） */
+  status?: string;
+  remark?: string;
+}
+
+/** 场景强制绑定新增/编辑表单 */
+export interface AigRouteScenarioBindingForm {
+  bindId?: string | number;
+  scenarioCode?: string;
+  capabilityCode?: string;
+  providerId?: string | number;
+  priority?: number;
+  status?: string;
+  remark?: string;
+}
+
+/** 场景强制绑定查询条件 */
+export interface AigRouteScenarioBindingQuery extends PageQuery {
+  scenarioCode?: string;
+  /** 场景编码模糊匹配 */
+  scenarioCodeLike?: string;
+  capabilityCode?: string;
+  providerId?: string | number;
   status?: string;
   params?: Record<string, any>;
 }

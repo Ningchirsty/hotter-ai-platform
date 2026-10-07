@@ -40,10 +40,17 @@ public class AigRoutePolicyBo implements Serializable {
     private String capabilityCode;
 
     /**
-     * 数据等级（PUBLIC/INTERNAL/RESTRICTED）
+     * 数据等级（PUBLIC/INTERNAL/RESTRICTED/STRICT）
+     *
+     * <p><b>必须包含 STRICT</b>：严格级的语义是「任何策略都不允许外发」，而不是「不允许调用」。
+     * 严格级数据仍应能路由到本地模型（见 {@code AigDataLevelEnum#externalForbidden}）。
+     * 若这里把 STRICT 判为非法，就再也建不出严格级的策略行——而路由是
+     * 「无策略即拒绝」，于是所有严格级调用一律被拒，业务域只能放弃调用或把等级标低，
+     * 后者正是 STRICT 要防的事，且从请求上看不出发生过。</p>
      */
     @NotBlank(message = "数据等级不能为空", groups = {AddGroup.class, EditGroup.class})
-    @Pattern(regexp = "^(PUBLIC|INTERNAL|RESTRICTED)$", message = "数据等级只能为 PUBLIC/INTERNAL/RESTRICTED",
+    @Pattern(regexp = "^(PUBLIC|INTERNAL|RESTRICTED|STRICT)$",
+        message = "数据等级只能为 PUBLIC/INTERNAL/RESTRICTED/STRICT",
         groups = {AddGroup.class, EditGroup.class})
     private String dataLevel;
 

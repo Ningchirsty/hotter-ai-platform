@@ -70,6 +70,13 @@ public interface AigConstants {
      */
     String PERM_ROUTE_REMOVE = "aig:route:remove";
     /**
+     * 场景强制绑定-维护（新增/修改/删除）
+     * <p>与 {@code aig:route:edit} 分开：路由策略管的是「能不能外发」这类治理口径，
+     * 场景绑定只决定「在已允许的候选里先试谁」。把两者合成一个权限，等于让
+     * 「改首选供应商」的人顺带获得「开外发」的能力。</p>
+     */
+    String PERM_ROUTE_BINDING = "aig:route:binding";
+    /**
      * 调用审计-列表
      */
     String PERM_AUDIT_LIST = "aig:audit:list";

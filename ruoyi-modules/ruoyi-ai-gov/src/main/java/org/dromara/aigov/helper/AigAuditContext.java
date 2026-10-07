@@ -49,6 +49,13 @@ public class AigAuditContext implements Serializable {
     private String dataLevel;
 
     /**
+     * 场景编码（可为空）
+     * <p>记录「这次调用属于哪个业务场景」。场景会影响候选收窄（§4.4 第 4 步），
+     * 事后只看到「用的是哪家」而不知道「为什么是这家」时，这一列是唯一的线索。</p>
+     */
+    private String scenarioCode;
+
+    /**
      * 模型ID
      */
     private Long modelId;

@@ -72,6 +72,7 @@ public class AigAuditRecorder {
             audit.setCallerId(ctx.getCallerId() == null ? LoginHelper.getUserId() : ctx.getCallerId());
             audit.setCallerName(StringUtils.isBlank(ctx.getCallerName()) ? LoginHelper.getUsername() : ctx.getCallerName());
             audit.setDataLevel(ctx.getDataLevel());
+            audit.setScenarioCode(ctx.getScenarioCode());
             audit.setModelId(ctx.getModelId());
             audit.setModelKey(ctx.getModelKey());
             audit.setModelVersion(ctx.getModelVersion());

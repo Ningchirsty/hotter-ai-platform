@@ -8,6 +8,7 @@ import org.dromara.aigov.domain.AigCapability;
 import org.dromara.aigov.domain.AigCapabilityModel;
 import org.dromara.aigov.domain.AigModelGovernance;
 import org.dromara.aigov.domain.AigRoutePolicy;
+import org.dromara.aigov.domain.AigRouteScenarioBinding;
 import org.dromara.aigov.domain.vo.AigModelVo;
 import org.dromara.aigov.domain.vo.AigRouteDecision;
 import org.dromara.aigov.enums.AigDataLevelEnum;
@@ -19,10 +20,12 @@ import org.dromara.aigov.mapper.AigCapabilityModelMapper;
 import org.dromara.aigov.mapper.AigModelGovernanceMapper;
 import org.dromara.aigov.mapper.AigModelViewMapper;
 import org.dromara.aigov.mapper.AigRoutePolicyMapper;
+import org.dromara.aigov.mapper.AigRouteScenarioBindingMapper;
 import org.dromara.aigov.service.invoker.ModelInvoker;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -59,11 +62,17 @@ abstract class AigRouteServiceTestSupport {
      */
     protected static final String CAPABILITY = "deliverable_consistency";
 
+    /**
+     * 场景强制绑定用例使用的场景编码。
+     */
+    protected static final String SCENARIO = "LONG_PAGE";
+
     protected AigCapabilityMapper capabilityMapper;
     protected AigRoutePolicyMapper routePolicyMapper;
     protected AigCapabilityModelMapper capabilityModelMapper;
     protected AigModelGovernanceMapper modelGovernanceMapper;
     protected AigModelViewMapper modelViewMapper;
+    protected AigRouteScenarioBindingMapper bindingMapper;
 
     /**
      * 路由行为配置（能力标签严格模式开关）。
@@ -90,6 +99,7 @@ abstract class AigRouteServiceTestSupport {
         TableInfoHelper.initTableInfo(assistant, AigRoutePolicy.class);
         TableInfoHelper.initTableInfo(assistant, AigCapabilityModel.class);
         TableInfoHelper.initTableInfo(assistant, AigModelGovernance.class);
+        TableInfoHelper.initTableInfo(assistant, AigRouteScenarioBinding.class);
     }
 
     @BeforeEach
@@ -99,13 +109,17 @@ abstract class AigRouteServiceTestSupport {
         capabilityModelMapper = mock(AigCapabilityModelMapper.class);
         modelGovernanceMapper = mock(AigModelGovernanceMapper.class);
         modelViewMapper = mock(AigModelViewMapper.class);
+        bindingMapper = mock(AigRouteScenarioBindingMapper.class);
+        // 默认「该场景 × 能力无强制绑定」：不带场景的用例根本不查这张表，
+        // 带场景的用例若未显式桩绑定，也应表现为「未配置绑定 → 不收窄」。
+        when(bindingMapper.selectList(any())).thenReturn(List.of());
         // 默认放行未声明标签的模型（生产默认值）；严格模式的用例自行打开开关
         routeProperties = new AigRouteProperties();
         // 调用器列表留空：这些测试只关心「路由是否把不该用的模型排除」，
         // 与调用器挑选无关；留空时 invoker=null，命中候选时决策仍是 MODEL。
         List<ModelInvoker> invokers = List.of();
         routeService = new AigRouteServiceImpl(capabilityMapper, routePolicyMapper, capabilityModelMapper,
-            modelGovernanceMapper, modelViewMapper, invokers, routeProperties);
+            modelGovernanceMapper, modelViewMapper, bindingMapper, invokers, routeProperties);
     }
 
     /**
@@ -119,7 +133,65 @@ abstract class AigRouteServiceTestSupport {
      */
     protected void useInvokers(List<ModelInvoker> invokers) {
         routeService = new AigRouteServiceImpl(capabilityMapper, routePolicyMapper, capabilityModelMapper,
-            modelGovernanceMapper, modelViewMapper, invokers, routeProperties);
+            modelGovernanceMapper, modelViewMapper, bindingMapper, invokers, routeProperties);
+    }
+
+    /**
+     * 桩：指定场景 × 能力下的强制绑定供应商。
+     *
+     * @param providerIds 允许的供应商ID
+     */
+    protected void stubScenarioBinding(Long... providerIds) {
+        List<AigRouteScenarioBinding> bindings = new ArrayList<>();
+        int priority = 0;
+        for (Long providerId : providerIds) {
+            AigRouteScenarioBinding binding = new AigRouteScenarioBinding();
+            binding.setBindId(++priority + 1000L);
+            binding.setScenarioCode(SCENARIO);
+            binding.setCapabilityCode(CAPABILITY);
+            binding.setProviderId(providerId);
+            binding.setPriority(priority);
+            binding.setStatus("0");
+            bindings.add(binding);
+        }
+        when(bindingMapper.selectList(any())).thenReturn(bindings);
+    }
+
+    /**
+     * 桩：存在绑定行、但没写供应商（用于验证「配置不全 ≠ 不允许任何供应商」）。
+     */
+    protected void stubScenarioBindingWithoutProvider() {
+        AigRouteScenarioBinding binding = new AigRouteScenarioBinding();
+        binding.setBindId(1001L);
+        binding.setScenarioCode(SCENARIO);
+        binding.setCapabilityCode(CAPABILITY);
+        binding.setProviderId(null);
+        binding.setStatus("0");
+        when(bindingMapper.selectList(any())).thenReturn(List.of(binding));
+    }
+
+    /**
+     * 桩：两个可用候选（外部 + 本地），分别属于供应商 {@code providerA} / {@code providerB}。
+     *
+     * <p>场景收窄必须有「两个不同供应商的候选」才谈得上收窄——只有一个候选时，
+     * 「收窄后命中它」和「压根没收窄」在结果上不可区分，测试就会恒真。</p>
+     *
+     * @param providerA 外部候选的供应商ID
+     * @param providerB 本地候选的供应商ID
+     */
+    protected void stubTwoCandidatesTwoProviders(long providerA, long providerB) {
+        when(capabilityModelMapper.selectList(any()))
+            .thenReturn(List.of(binding(EXTERNAL_MODEL_ID, AigUsageTypeEnum.PRIMARY, 1),
+                binding(LOCAL_MODEL_ID, AigUsageTypeEnum.FALLBACK, 2)));
+        AigModelVo outer = model(EXTERNAL_MODEL_ID, "vendor/cloud-model");
+        outer.setProviderId(providerA);
+        AigModelVo local = model(LOCAL_MODEL_ID, "internal/local-model");
+        local.setProviderId(providerB);
+        when(modelViewMapper.selectModelListByIds(anyList())).thenReturn(List.of(outer, local));
+        when(modelGovernanceMapper.selectList(any()))
+            .thenReturn(List.of(
+                governance(EXTERNAL_MODEL_ID, AigDeploymentTypeEnum.EXTERNAL_API.getCode()),
+                governance(LOCAL_MODEL_ID, AigDeploymentTypeEnum.LOCAL.getCode())));
     }
 
     /**

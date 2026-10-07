@@ -1,5 +1,6 @@
 package org.dromara.aigov.service.impl;
 
+import cn.hutool.core.collection.CollUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -8,6 +9,7 @@ import org.dromara.aigov.domain.AigCapability;
 import org.dromara.aigov.domain.AigCapabilityModel;
 import org.dromara.aigov.domain.AigModelGovernance;
 import org.dromara.aigov.domain.AigRoutePolicy;
+import org.dromara.aigov.domain.AigRouteScenarioBinding;
 import org.dromara.aigov.domain.vo.AigModelVo;
 import org.dromara.aigov.domain.vo.AigRouteCandidate;
 import org.dromara.aigov.domain.vo.AigRouteDecision;
@@ -22,6 +24,7 @@ import org.dromara.aigov.mapper.AigCapabilityModelMapper;
 import org.dromara.aigov.mapper.AigModelGovernanceMapper;
 import org.dromara.aigov.mapper.AigModelViewMapper;
 import org.dromara.aigov.mapper.AigRoutePolicyMapper;
+import org.dromara.aigov.mapper.AigRouteScenarioBindingMapper;
 import org.dromara.aigov.service.IAigRouteService;
 import org.dromara.aigov.service.invoker.ModelInvoker;
 import org.dromara.common.core.utils.StringUtils;
@@ -30,8 +33,10 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 路由引擎实现。
@@ -41,6 +46,7 @@ import java.util.Map;
  *     <li>{@code decide} 内「// 步骤1」：能力不存在或 status≠'0' → {@code DENIED}</li>
  *     <li>「// 步骤2」：无 {@code aig_route_policy(能力,数据等级)} → {@code DENIED}（默认拒绝）</li>
  *     <li>「// 步骤3」：{@code allowExternal='N'} 时候选模型仅限非外部部署</li>
+ *     <li>「// 步骤4」：{@link #narrowByScenario} 若场景强制绑定了供应商，先把候选收窄到这些供应商</li>
  *     <li>「// 步骤4」：{@link #isCandidateUsable} 逐项校验生命周期 / 数据等级 / 启用 / 健康 / 外发</li>
  *     <li>「// 步骤5」：{@link #orderBindings} 按 PRIMARY→GRAY→FALLBACK 再按 priority 升序</li>
  *     <li>「// 步骤6」：无命中 → {@code fallbackToManual='Y'} 转 {@code MANUAL}，否则 {@code DENIED}</li>
@@ -102,6 +108,11 @@ public class AigRouteServiceImpl implements IAigRouteService {
     private final AigModelViewMapper modelViewMapper;
 
     /**
+     * 场景强制绑定 Mapper（设计 §4.4 步骤 4）。
+     */
+    private final AigRouteScenarioBindingMapper bindingMapper;
+
+    /**
      * 可插拔调用器（SPI）。
      */
     private final List<ModelInvoker> invokers;
@@ -112,23 +123,23 @@ public class AigRouteServiceImpl implements IAigRouteService {
     private final AigRouteProperties routeProperties;
 
     @Override
-    public AigRouteDecision decide(String capabilityCode, AigDataLevelEnum dataLevel) {
+    public AigRouteDecision decide(String capabilityCode, AigDataLevelEnum dataLevel, String scenarioCode) {
         AigRouteDecision decision = new AigRouteDecision();
         decision.setCapabilityCode(capabilityCode);
         try {
-            return doDecide(decision, capabilityCode, dataLevel);
+            return doDecide(decision, capabilityCode, dataLevel, scenarioCode);
         } catch (Exception e) {
             // 路由引擎不抛异常：任何异常都以 DENIED 表达
-            log.error("路由决策异常, capabilityCode={}, dataLevel={}", capabilityCode,
-                dataLevel == null ? null : dataLevel.getCode(), e);
+            log.error("路由决策异常, capabilityCode={}, dataLevel={}, scenarioCode={}", capabilityCode,
+                dataLevel == null ? null : dataLevel.getCode(), scenarioCode, e);
             decision.addHit("路由决策异常：" + e.getClass().getSimpleName());
             return denied(decision, "路由决策异常，已按拒绝处理");
         }
     }
 
     @Override
-    public List<String> explain(String capabilityCode, AigDataLevelEnum dataLevel) {
-        AigRouteDecision decision = decide(capabilityCode, dataLevel);
+    public List<String> explain(String capabilityCode, AigDataLevelEnum dataLevel, String scenarioCode) {
+        AigRouteDecision decision = decide(capabilityCode, dataLevel, scenarioCode);
         List<String> lines = new ArrayList<>();
         lines.add("决策=" + decision.getDecision()
             + "，modelId=" + decision.getModelId()
@@ -145,9 +156,11 @@ public class AigRouteServiceImpl implements IAigRouteService {
      * @param decision       决策对象
      * @param capabilityCode 能力编码
      * @param dataLevel      数据等级
+     * @param scenarioCode   场景编码（可为空，表示不做场景强制绑定收窄）
      * @return 决策结果
      */
-    private AigRouteDecision doDecide(AigRouteDecision decision, String capabilityCode, AigDataLevelEnum dataLevel) {
+    private AigRouteDecision doDecide(AigRouteDecision decision, String capabilityCode, AigDataLevelEnum dataLevel,
+                                     String scenarioCode) {
         // 步骤1：能力必须存在且 status='0' → 否则 DENIED
         if (StringUtils.isBlank(capabilityCode)) {
             return denied(decision, "能力不存在或已停用");
@@ -208,6 +221,18 @@ public class AigRouteServiceImpl implements IAigRouteService {
         }
         Map<Long, AigModelVo> modelMap = loadModels(ordered);
         Map<Long, AigModelGovernance> governanceMap = loadGovernance(ordered);
+        // 步骤4（设计 §4.4）：场景强制绑定 Provider —— 命中则把候选收窄为「仅指定供应商」。
+        // 放在逐项校验之前，是为了让「被场景排除」与「被治理排除」在 policyHits 里分成两类原因：
+        // 前者是业务约定，后者是安全/能力约束，混在一起会让排障时要读完整串才判断得出。
+        List<AigCapabilityModel> narrowed = narrowByScenario(decision, ordered, modelMap, scenarioCode, capabilityCode);
+        if (narrowed.isEmpty()) {
+            // ordered 此处必非空（上方已判空返回），故收窄后为空只可能是场景绑定筛掉的。
+            // 必须在这里收敛：若继续往下走，说明会退化成「能力未绑定任何模型」，
+            // 让人以为是没配绑定，而真实原因是场景把候选全排除了——方向完全不同的两个问题。
+            decision.addHit("场景强制绑定后无可用候选，按策略收敛（fallbackToManual=" + fallbackToManual + "）");
+            return noModel(decision, fallbackToManual);
+        }
+        ordered = narrowed;
         if (!allowExternal) {
             // 步骤3：候选模型仅限 deploymentType ∈ {LOCAL, GROUP}
             decision.addHit("策略 allowExternal='N'：本次调用仅允许本地/集团共享部署模型，外部部署模型将被排除");
@@ -285,6 +310,80 @@ public class AigRouteServiceImpl implements IAigRouteService {
 
         // 步骤6：无命中 → fallbackToManual='Y' → MANUAL，否则 DENIED
         return noModel(decision, fallbackToManual);
+    }
+
+    /**
+     * 步骤4：场景强制绑定 Provider（设计 §4.4 第 4 步）。
+     *
+     * <p><b>它只做减法</b>：把不属于指定供应商的候选从列表里去掉，<b>不新增</b>任何候选，
+     * 也不放宽任何治理条件。这意味着「绑定配错」的最坏后果是
+     * 「该场景无模型可用 → 转人工/拒绝」，而不会变成「数据被发给了不该发的地方」——
+     * 一个配置项如果错了就能把数据发出去，无论写多少文档都拦不住误操作。</p>
+     *
+     * <p><b>三种「不生效」都被显式记录</b>，因为这正是「配了以为生效、其实没生效」的高发区：</p>
+     * <ul>
+     *     <li>场景为空 → 不产生提示（没有场景概念的调用占绝大多数，刷一行无意义提示会淹没有效信息）；</li>
+     *     <li>该「场景 × 能力」没有绑定行 → 记录一行「未配置强制绑定，供应商不受场景限制」；</li>
+     *     <li>有绑定行但都没写供应商 → 记录「不做收窄，请补全配置」，
+     *         <b>刻意不</b>解释成「允许零个供应商」：那会把这个场景的调用全部掐死，
+     *         而管理员以为自己只是填漏了一格。</li>
+     * </ul>
+     *
+     * @param decision       决策对象（写入收窄说明与逐条排除原因）
+     * @param ordered        已按用途/优先级排好序的候选绑定
+     * @param modelMap       modelId → 模型主数据
+     * @param scenarioCode   本次场景编码（可空）
+     * @param capabilityCode 能力编码
+     * @return 收窄后的候选绑定（可能为空，表示全被场景排除）
+     */
+    private List<AigCapabilityModel> narrowByScenario(AigRouteDecision decision, List<AigCapabilityModel> ordered,
+                                                      Map<Long, AigModelVo> modelMap, String scenarioCode,
+                                                      String capabilityCode) {
+        if (StringUtils.isBlank(scenarioCode)) {
+            return ordered;
+        }
+        String scenario = scenarioCode.trim().toUpperCase();
+        List<AigRouteScenarioBinding> bindings = bindingMapper.selectList(
+            new LambdaQueryWrapper<AigRouteScenarioBinding>()
+                .eq(AigRouteScenarioBinding::getScenarioCode, scenario)
+                .eq(AigRouteScenarioBinding::getCapabilityCode, capabilityCode)
+                .eq(AigRouteScenarioBinding::getStatus, STATUS_NORMAL));
+        if (CollUtil.isEmpty(bindings)) {
+            decision.addHit("场景=" + scenario + " 未配置强制绑定，供应商不受场景限制");
+            return ordered;
+        }
+        Set<Long> allowed = new LinkedHashSet<>();
+        for (AigRouteScenarioBinding binding : bindings) {
+            if (binding != null && binding.getProviderId() != null) {
+                allowed.add(binding.getProviderId());
+            }
+        }
+        if (allowed.isEmpty()) {
+            decision.addHit("场景=" + scenario + " 的强制绑定未指定供应商，本次不做场景收窄；"
+                + "请补全配置（按当前口径，配置不全等同于未配置，而不是「不允许任何供应商」）");
+            return ordered;
+        }
+        decision.addHit("场景=" + scenario + " 强制绑定供应商 " + allowed
+            + "：仅保留这些供应商下的候选，其余候选将被排除");
+        List<AigCapabilityModel> narrowed = new ArrayList<>();
+        for (AigCapabilityModel binding : ordered) {
+            AigModelVo model = modelMap.get(binding.getModelId());
+            if (model == null) {
+                // 模型主数据缺失时无法判定它属于哪家：原样保留，让后续校验给出
+                // 「sai_model_config 不存在」这个准确原因，而不是伪造一个供应商不匹配的理由
+                narrowed.add(binding);
+                continue;
+            }
+            Long providerId = model.getProviderId();
+            if (providerId != null && allowed.contains(providerId)) {
+                narrowed.add(binding);
+                continue;
+            }
+            decision.addHit("排除 modelId=" + binding.getModelId()
+                + "（modelKey=" + model.getModelKey() + "，供应商=" + providerId
+                + "）：场景=" + scenario + " 强制绑定，仅允许供应商 " + allowed);
+        }
+        return narrowed;
     }
 
     /**

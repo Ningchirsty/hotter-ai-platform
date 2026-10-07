@@ -127,6 +127,33 @@ create table aig_route_policy (
 ) engine=innodb comment = 'AI路由策略表';
 
 -- ----------------------------
+-- 4.1 场景强制绑定（设计 §4.4 路由算法第 4 步：若场景强制绑定 Provider，则仅保留指定 Provider）
+--     刻意独立成表、不与 aig_route_policy 合并：策略表管「能不能外发」这类治理口径，
+--     本表只做「在已允许的候选里只保留指定供应商」——只收紧、不放宽。
+--     合并的话，为某个场景加一行绑定就得把 allow_external 等治理口径重述一遍，
+--     漏填/填错会让该场景的治理判定静默变成另一个结论。
+-- ----------------------------
+drop table if exists aig_route_scenario_binding;
+create table aig_route_scenario_binding (
+    bind_id          bigint(20)      not null                   comment '绑定ID',
+    scenario_code    varchar(64)     not null                   comment '场景编码（LONG_PAGE/POSTER/MULTI_IMAGE 等）',
+    capability_code  varchar(64)     not null                   comment '能力编码',
+    provider_id      bigint(20)      not null                   comment '强制使用的供应商ID（sai_model_provider.id）',
+    priority         int(11)         default 0                  comment '同一场景×能力下多个供应商时的优先序（升序，仅用于稳定排序）',
+    status           char(1)         default '0'                comment '状态（0正常 1停用）',
+    del_flag         char(1)         default '0'                comment '删除标志（0代表存在 1代表删除）',
+    create_dept      bigint(20)      default null               comment '创建部门',
+    create_by        bigint(20)      default null               comment '创建者',
+    create_time      datetime                                   comment '创建时间',
+    update_by        bigint(20)      default null               comment '更新者',
+    update_time      datetime                                   comment '更新时间',
+    remark           varchar(500)    default null               comment '备注（说明为什么钉死这家，便于事后复核）',
+    primary key (bind_id),
+    unique key uk_aig_scenario_cap_provider (scenario_code, capability_code, provider_id, del_flag),
+    key idx_aig_scenario_lookup (scenario_code, capability_code, status, del_flag)
+) engine=innodb comment = 'AI场景强制绑定表（只收窄候选，不放宽治理口径）';
+
+-- ----------------------------
 -- 5、逐次调用审计（设计 §10.2；追加型，不做逻辑删除）
 -- ----------------------------
 drop table if exists aig_invocation_audit;
@@ -137,6 +164,7 @@ create table aig_invocation_audit (
     caller_id        bigint(20)      default null               comment '调用人用户ID',
     caller_name      varchar(64)     default null               comment '调用人账号（冗余，便于离线审计）',
     data_level       varchar(16)     default null               comment '本次数据等级',
+    scenario_code    varchar(64)     default null               comment '本次场景编码（为空表示未做场景收窄）',
     model_id         bigint(20)      default null               comment '实际使用的模型ID（sai_model_config.id）',
     model_key        varchar(100)    default null               comment '模型键（内部标识）',
     model_version    varchar(64)     default null               comment '模型版本',

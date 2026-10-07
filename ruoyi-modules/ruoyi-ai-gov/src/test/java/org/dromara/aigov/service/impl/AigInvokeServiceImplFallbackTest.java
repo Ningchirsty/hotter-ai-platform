@@ -237,7 +237,8 @@ class AigInvokeServiceImplFallbackTest {
         decision.setModelKey(first.getModelKey());
         decision.setDeploymentType(first.getDeploymentType());
         decision.setInvoker(first.getInvoker());
-        when(routeService.decide(any(), any())).thenReturn(decision);
+        // 三参重载才是真实入口（两参是 default 方法，Mockito 不会代跑到它）
+        when(routeService.decide(any(), any(), any())).thenReturn(decision);
 
         AigInvokeServiceImpl service = new AigInvokeServiceImpl(routeService, auditRecorder,
             invokers, modelViewMapper, retryProperties);

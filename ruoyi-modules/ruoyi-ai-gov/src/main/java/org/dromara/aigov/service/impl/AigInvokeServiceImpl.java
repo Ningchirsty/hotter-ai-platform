@@ -80,7 +80,7 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
     @Override
     public AigInvokeVo dryRun(AigInvokeBo bo) {
         AigDataLevelEnum dataLevel = parseDataLevel(bo);
-        AigRouteDecision decision = routeService.decide(bo.getCapabilityCode(), dataLevel);
+        AigRouteDecision decision = routeService.decide(bo.getCapabilityCode(), dataLevel, bo.getScenarioCode());
         // dryRun 只做决策预览，不产生审计记录，因此不生成 traceId
         return toVo(null, decision, null, decision.getReason());
     }
@@ -90,8 +90,8 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
         // 1. 生成 traceId
         String traceId = IdUtil.fastSimpleUUID();
         AigDataLevelEnum dataLevel = parseDataLevel(bo);
-        // 2. 路由决策（不抛异常）
-        AigRouteDecision decision = routeService.decide(bo.getCapabilityCode(), dataLevel);
+        // 2. 路由决策（不抛异常）；带场景：命中强制绑定时候选被收窄为指定供应商
+        AigRouteDecision decision = routeService.decide(bo.getCapabilityCode(), dataLevel, bo.getScenarioCode());
         // 3. 组装审计上下文；无论成败都在 finally 落库
         AigAuditContext audit = buildAuditContext(traceId, bo, dataLevel, decision);
         try {
@@ -363,6 +363,7 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
         audit.setTraceId(traceId);
         audit.setCapabilityCode(bo.getCapabilityCode());
         audit.setDataLevel(dataLevel.getCode());
+        audit.setScenarioCode(bo.getScenarioCode());
         audit.setModelId(decision.getModelId());
         audit.setModelKey(decision.getModelKey());
         audit.setDeploymentType(decision.getDeploymentType());

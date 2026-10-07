@@ -57,6 +57,13 @@ public class AigInvocationAudit implements Serializable {
     private String dataLevel;
 
     /**
+     * 场景编码（可为空）
+     * <p>场景强制绑定会收窄候选（设计 §4.4 第 4 步）。审计里只留下「最终用了哪家」、
+     * 不留「因为哪个场景才只剩这家」的话，事后无法回答「为什么这次没走默认首选」。</p>
+     */
+    private String scenarioCode;
+
+    /**
      * 实际使用的模型ID（sai_model_config.id）
      */
     private Long modelId;
