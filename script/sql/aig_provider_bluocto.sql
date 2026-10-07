@@ -151,9 +151,11 @@ UPDATE aig_model_governance g
 -- A 段：登记能力 image_generation（设计文档 §4.1 的 IMAGE 类型落点）
 --
 --   required_tags='IMAGE'：与 aig_capability 的标签口径一致（TEXT/VISION/OCR/IMAGE/
---     VIDEO/EMBEDDING/RERANK/AGENT）。注意该列目前**只登记、不参与模型匹配**——
---     把文本模型绑到 IMAGE 能力上系统不会报错（已知隐患，见方案 WP1 待办）。
---     本脚本靠「只给这 7 个图像模型建绑定」来避免踩它，而不是靠代码拦。
+--     VIDEO/EMBEDDING/RERANK/AGENT）。该列**现在真的参与模型匹配**了：
+--     WP1 已新增 aig_model_governance.capability_tags 并在路由里比对
+--     （模型已声明标签时必须覆盖 required_tags，缺一即排除并写明缺哪个）。
+--     本脚本同时给这 7 个模型声明了 capability_tags='IMAGE'。
+--     未声明标签的模型默认放行并写可见提示（aigov.route.require-model-tags=true 可转严格）。
 --
 --   output_schema 与适配器返回的 JSON 信封对齐（mimeType/sizeBytes/sha256/b64）：
 --     写具体字段，输出校验才真正生效；留空只会退化成「是合法 JSON 就行」。
@@ -178,8 +180,26 @@ SELECT 1764000000000000050, 'image_generation', '图像生成（外部聚合网�
 -- ============================================================================
 -- B 段：绑定与路由策略（**本段默认启用** —— 图像通路是本次接入的既定目标）
 --
--- 🛑🛑 【重要】截至 2026-10-07，本段登记的图像通路**还不能真正调用**。
---   下面这些登记是「配置到位」，但**传输协议未解决**，原因如下（实测量）：
+-- ✅ 【2026-10-07 已实测通】本段登记的图像通路**可以真正调用**——已用治理层的真实调用器
+--   跑通端到端出图（真 SM4 解密 → 真 HTTP → 真下载 → 魔术字校验 → 重算 sha256），
+--   产出一张 2048×2048 的真实 PNG。可用请求形态：
+--     POST https://bluocto.com/v1/images/generations
+--     Authorization: Bearer <token>；Content-Type: application/json
+--     {"model":"qwen-image-3.0-pro","prompt":"…","n":1,"response_format":"url"}
+--   同步返回、无需轮询；response_format 默认取 aigov.external-api.image-response-format（=url）。
+--
+-- ⚠️⚠️ 【下面到本段结束前的那一大段是「已作废」的判定过程，保留仅为追溯】
+--   此前这里写着「试了六种请求体形态全部 400 Invalid task protocol request，
+--   判定这些模型走 New API Task Plugin、是任务型、端点由渠道插件注册、公开文档推导不出」。
+--   **那个判定是错的。** 真因是当时经 PowerShell 传 JSON 时 body 被改写
+--   （`-d` 外层必须用单引号、body 必须是双引号合法 JSON）。同一批模型在正确形态下
+--   直接同步出图。
+--
+--   教训比结论重要：**「我试了好几种都失败」不等于「这条路不存在」**——
+--   当失败形态高度一致（同一条报错、与请求内容无关）时，先怀疑自己的传参链路，
+--   再怀疑对方的协议。当时的正确动作是把 request body 原样打出来看一眼。
+--
+-- 【以下为已作废的原始记录】
 --
 --   POST https://bluocto.com/v1/images/generations  （附 Authorization: Bearer <token>）
 --     · 按 New API 官方文档的 OpenAI 原生格式构造请求体（model/prompt/n，
@@ -196,12 +216,10 @@ SELECT 1764000000000000050, 'image_generation', '图像生成（外部聚合网�
 --   文档侧栏也确实把「图像」分成「原生OpenAI格式 / 原生Gemini格式 / 通义千问OpenAI格式」，
 --   说明不同上游走不同协议。
 --
---   因此：**这 7 个模型到底怎么调，需要向 bluocto 的运维/文档确认**。要问的就三件事：
---     ① 调用端点是哪个（是否仍是 /v1/images/generations）；
---     ② 同步还是异步任务？若异步：提交返回的 task_id 字段名、查询端点与状态机、
---        结果以 URL 还是 base64 返回；
---     ③ 请求体必填字段（是否像火山系那样需要 req_key 之类的渠道参数）。
---   一条**能跑通的 curl 示例**就够，我据此把适配器改成对应协议。
+--   【已答，2026-10-07】以下是当时准备要问的问题，答案已拿到，留档备查：
+--     ① 调用端点 → 仍是 POST /v1/images/generations；
+--     ② 同步还是异步 → **同步**，无需轮询，结果默认以 url 返回（b64_json 也兼容）；
+--     ③ 请求体必填字段 → model + prompt（示例另带 n:1、response_format:"url"）。
 --
 --   补充实测（同一天，进一步排除猜测空间）：
 --     · 「后缀带尾斜杠」不是解法：POST /v1/images/generations/ 返回 **307**，
@@ -218,9 +236,9 @@ SELECT 1764000000000000050, 'image_generation', '图像生成（外部聚合网�
 --       故提交任务走的不是 /v1/tasks，而是**由渠道插件注册的自有路由**
 --       （New API Task Plugin 的 `meta.routes`），公开文档推导不出。
 --
---   在此之前，B 段保持启用（配置本身无害且已实测通过），但**不要**以为调用能通：
---   真实调用会以 400 结束，并被错误分类判为「入参问题 → 转人工」。这比伪装成功好，
---   但仍需上面那份协议才能变成可用通路。
+--   【更正】上面那句「真实调用会以 400 结束」是**错的**，见本段开头的实测结论：
+--   正确形态下同步出图成功。B 段这些登记（绑定 + 策略）本身就是可用的配置，
+--   不需要额外改任何东西。
 --
 -- 【仍然做不到的两类能力，别再试】（2026-10-07 实测）
 --   · 文本能力（creative_direction_draft / creative_storyboard_draft）：
