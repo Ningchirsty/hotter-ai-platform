@@ -3,6 +3,7 @@ package org.dromara.aigov.service.impl;
 import cn.hutool.core.util.IdUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.dromara.aigov.config.AigRetryProperties;
 import org.dromara.aigov.domain.bo.AigInvokeBo;
 import org.dromara.aigov.domain.vo.AigInvokeVo;
 import org.dromara.aigov.domain.vo.AigModelVo;
@@ -70,6 +71,11 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
      */
     private final AigModelViewMapper modelViewMapper;
 
+    /**
+     * 失败自动重试配置（只对可重试的错误分类生效）。
+     */
+    private final AigRetryProperties retryProperties;
+
     @Override
     public AigInvokeVo dryRun(AigInvokeBo bo) {
         AigDataLevelEnum dataLevel = parseDataLevel(bo);
@@ -111,13 +117,43 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
                 return toVo(traceId, decision, null, "路由命中模型但无可用调用器（invoker）");
             }
             AigModelVo model = modelViewMapper.selectModelById(decision.getModelId());
-            ModelInvokeResult result = invoker.invoke(buildRequest(bo, decision, deployment, model));
-            audit.setLatencyMs((int) Math.min(result.getLatencyMs(), Integer.MAX_VALUE));
+            ModelInvokeRequest request = buildRequest(bo, decision, deployment, model);
+            // 6.1 按错误分类决定是否退避重试：只对可重试类（限流/超时/不可用）生效
+            long startedAt = System.currentTimeMillis();
+            int maxAttempts = retryProperties.isEnabled() ? Math.max(1, retryProperties.getMaxAttempts()) : 1;
+            ModelInvokeResult result;
+            AigErrorClassEnum errorClass = null;
+            int attempts = 0;
+            while (true) {
+                attempts++;
+                result = invoker.invoke(request);
+                if (result.isSuccess()) {
+                    break;
+                }
+                errorClass = safeClassify(invoker, result);
+                if (!errorClass.isRetryable() || attempts >= maxAttempts) {
+                    break;
+                }
+                long backoff = backoffMs(attempts);
+                // 退避原因写进 hits：否则事后只看「这次调用花了 3 秒」无法解释为什么
+                audit.getPolicyHits().add("第 " + attempts + " 次尝试失败（" + errorClass.getCode()
+                    + "：" + errorClass.getDesc() + "），" + backoff + "ms 后重试第 "
+                    + (attempts + 1) + "/" + maxAttempts + " 次");
+                if (!sleepQuietly(backoff)) {
+                    // 线程被中断：不再重试，按当前失败结果收敛
+                    audit.getPolicyHits().add("重试等待被中断，按当前失败结果收敛");
+                    break;
+                }
+            }
+            // 耗时按「端到端」记：含退避等待，因为那是调用方真实等待的时间。
+            // 单次尝试的耗时留在 ModelInvokeResult 里，需要时可从 hits 与日志追溯。
+            long elapsedMs = System.currentTimeMillis() - startedAt;
+            audit.setRetryCount(attempts - 1);
+            audit.setLatencyMs((int) Math.min(elapsedMs, Integer.MAX_VALUE));
             audit.setCost(result.getCost());
             audit.setModelVersion(result.getModelVersion());
-            AigInvokeVo vo = toVo(traceId, decision, result.getLatencyMs(), null);
+            AigInvokeVo vo = toVo(traceId, decision, elapsedMs, null);
             if (!result.isSuccess()) {
-                AigErrorClassEnum errorClass = invoker.classifyError(result);
                 audit.setResult(AigInvokeResultEnum.FAILED.getCode());
                 audit.setErrorSummary(StringUtils.blankToDefault(result.getErrorSummary(), "模型调用失败"));
                 vo.setReason(StringUtils.blankToDefault(result.getErrorSummary(), "模型调用失败"));
@@ -140,6 +176,54 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
             return vo;
         } finally {
             auditRecorder.record(audit);
+        }
+    }
+
+    /**
+     * 归类失败，并对「调用器返回 null」兜底。
+     *
+     * <p>为什么需要兜底：{@code classifyError} 是带默认实现的方法，但调用器可以覆写它。
+     * 一个返回 null 的覆写（或单测里未打桩的 mock）会让后续取 {@code getCode()}
+     * 直接 NPE——而「分类这一步失败」绝不该让一次模型调用以异常收场。
+     * 退化成 UNKNOWN（不可重试、不自动转人工）是更安全的行为。</p>
+     *
+     * @param invoker 调用器
+     * @param result  失败结果
+     * @return 错误分类，恒不为 null
+     */
+    private AigErrorClassEnum safeClassify(ModelInvoker invoker, ModelInvokeResult result) {
+        AigErrorClassEnum errorClass = invoker.classifyError(result);
+        return errorClass == null ? AigErrorClassEnum.UNKNOWN : errorClass;
+    }
+
+    /**
+     * 指数退避时长：base, base*2, base*4 … 且不超过上限。
+     *
+     * @param attempt 已失败的尝试次数（1 起）
+     * @return 退避毫秒数
+     */
+    private long backoffMs(int attempt) {
+        long base = Math.max(1L, retryProperties.getBaseBackoffMs());
+        long ceiling = Math.max(base, retryProperties.getMaxBackoffMs());
+        long shift = Math.min(attempt - 1, 16);
+        long value = base << shift;
+        return value <= 0 ? ceiling : Math.min(value, ceiling);
+    }
+
+    /**
+     * 退避等待；不抛异常，改为返回是否完整睡完。
+     *
+     * @param millis 等待毫秒数
+     * @return true 正常等待结束；false 线程在等待中被中断
+     */
+    private boolean sleepQuietly(long millis) {
+        try {
+            Thread.sleep(millis);
+            return true;
+        } catch (InterruptedException e) {
+            // 恢复中断标记：吞掉中断信号会让上层再也感知不到取消请求
+            Thread.currentThread().interrupt();
+            return false;
         }
     }
 

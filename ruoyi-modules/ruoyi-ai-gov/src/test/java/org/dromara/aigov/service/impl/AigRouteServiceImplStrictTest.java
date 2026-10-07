@@ -95,4 +95,20 @@ class AigRouteServiceImplStrictTest extends AigRouteServiceTestSupport {
         assertEquals(AigDeploymentTypeEnum.LOCAL.getCode(), decision.getDeploymentType());
     }
 
+    @Test
+    @DisplayName("STRICT + SELF：本平台自身部署不是外发，禁止外发不该拦它")
+    void strictStillAllowsSelfDeployment() {
+        stubCapability();
+        // 策略允许外发会被 STRICT 强制覆盖为不允许——正是要看 SELF 在这种情形下是否仍可用
+        stubPolicy(AigDataLevelEnum.STRICT, "Y", "N");
+        stubSingleCandidate(AigDeploymentTypeEnum.SELF.getCode());
+
+        AigRouteDecision decision = routeService.decide(CAPABILITY, AigDataLevelEnum.STRICT);
+
+        assertEquals(AigRouteDecisionEnum.MODEL.getCode(), decision.getDecision(),
+            "SELF 是本平台自身部署（数据不出环境），STRICT 的禁止外发不该把它一起拦掉；"
+                + "实际=" + describe(decision));
+        assertEquals(AigDeploymentTypeEnum.SELF.getCode(), decision.getDeploymentType());
+    }
+
 }

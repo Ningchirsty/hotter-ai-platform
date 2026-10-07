@@ -145,13 +145,35 @@ abstract class AigRouteServiceTestSupport {
      * @param healthStatus 健康状态（null 表示从未测过）
      */
     protected void stubExternalOnlyCandidates(String healthStatus) {
+        stubSingleCandidate(AigDeploymentTypeEnum.EXTERNAL_API.getCode(), healthStatus);
+    }
+
+    /**
+     * 桩：只绑定一个指定部署类型的候选，其它维度全部可用。
+     *
+     * @param deploymentType 部署类型编码
+     */
+    protected void stubSingleCandidate(String deploymentType) {
+        stubSingleCandidate(deploymentType, null);
+    }
+
+    /**
+     * 桩：只绑定一个指定部署类型的候选，其它维度全部可用。
+     *
+     * <p>数据等级给到最高（STRICT）以便隔离变量：这样「被排除」只可能来自
+     * 本用例要验证的那一条约束，而不是等级不够——否则测试会因为另一个原因通过，
+     * 证明不了想证明的事。</p>
+     *
+     * @param deploymentType 部署类型编码
+     * @param healthStatus   健康状态（null 表示从未测过）
+     */
+    protected void stubSingleCandidate(String deploymentType, String healthStatus) {
         when(capabilityModelMapper.selectList(any()))
             .thenReturn(List.of(binding(EXTERNAL_MODEL_ID, AigUsageTypeEnum.PRIMARY, 1)));
         when(modelViewMapper.selectModelListByIds(anyList()))
             .thenReturn(List.of(model(EXTERNAL_MODEL_ID, "vendor/cloud-model")));
         when(modelGovernanceMapper.selectList(any()))
-            .thenReturn(List.of(governance(EXTERNAL_MODEL_ID, AigDeploymentTypeEnum.EXTERNAL_API.getCode(),
-                healthStatus)));
+            .thenReturn(List.of(governance(EXTERNAL_MODEL_ID, deploymentType, healthStatus)));
     }
 
     /**
