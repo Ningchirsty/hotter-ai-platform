@@ -422,21 +422,15 @@
             >
               <el-icon><Close /></el-icon>
             </button>
-            <!--
-              终态失败/超时/被取消的任务可以一键重新执行。
-              提示语一直写着「请重新执行该任务」，但过去没有这个入口，用户只能手动重建一条。
-            -->
             <button
-              v-if="retryable(task)"
+              v-if="recoverable(task)"
               type="button"
-              class="recreate"
-              :disabled="retryingId === String(task.id)"
-              title="按原参数重新执行"
-              aria-label="重新执行"
-              @click="retryTask(task)"
+              :disabled="recoveringIds.has(String(task.id))"
+              :aria-label="task.status === 'QUEUED' ? '再次执行' : '重新执行'"
+              @click="recoverTask(task)"
             >
               <el-icon><RefreshRight /></el-icon>
-              {{ retryingId === String(task.id) ? '重新执行中…' : '重新执行' }}
+              {{ recoveringIds.has(String(task.id)) ? '提交中…' : task.status === 'QUEUED' ? '再次执行' : '重新执行' }}
             </button>
             <button v-if="task.status === 'SUCCEEDED'" type="button" class="recreate" @click="recreateTask(task)">
               <el-icon><RefreshRight /></el-icon>
@@ -450,6 +444,13 @@
         <b>没有匹配的任务</b>
         <span>调整搜索条件，或创建一个新的视频任务。</span>
       </div>
+      <pagination
+        v-if="taskTotal > 0"
+        v-model:page="taskPage.pageNum"
+        v-model:limit="taskPage.pageSize"
+        :total="taskTotal"
+        @pagination="loadTasks()"
+      />
     </section>
 
     <section v-else class="content-view">
@@ -494,6 +495,13 @@
         <b>素材库还是空的</b>
         <span>添加图片后，即可在创建任务时使用。</span>
       </div>
+      <pagination
+        v-if="assetTotal > 0"
+        v-model:page="assetPage.pageNum"
+        v-model:limit="assetPage.pageSize"
+        :total="assetTotal"
+        @pagination="loadAssets()"
+      />
     </section>
 
     <!--
@@ -577,6 +585,7 @@ import type {
   VideoAssetVO,
   VideoCapabilityCode,
   VideoTaskVO,
+  VideoTaskDetailVO,
   VideoTaskStatus,
   VideoWorkersVO,
   VideoWorkflowVO
@@ -596,6 +605,7 @@ import {
   retryVideoTask,
   uploadVideoAsset
 } from '@/api/video';
+import Pagination from '@/components/Pagination/index.vue';
 import CloudGenerationForm from '@/components/CreativeInspiration/CloudGenerationForm.vue';
 import GenerationSource from '@/components/CreativeInspiration/GenerationSource.vue';
 import CreativeInspiration from '@/components/CreativeInspiration/index.vue';
@@ -606,6 +616,7 @@ import {
   type InspirationRoute
 } from '@/components/CreativeInspiration/types';
 import { extractErrorMessage } from '@/utils/request';
+import { createTaskPoller } from '@/utils/task-polling';
 import {
   COMPLETED_VIDEOS,
   PROMPT_CHIPS,
@@ -752,6 +763,14 @@ const tasks = ref<VideoTaskVO[]>([]);
 const assets = ref<VideoAssetVO[]>([]);
 const assetTotal = ref(0);
 
+const taskTotal = ref(0);
+const taskPage = reactive({ pageNum: 1, pageSize: 20 });
+const assetPage = reactive({ pageNum: 1, pageSize: 20 });
+let taskRequestSequence = 0;
+let assetRequestSequence = 0;
+let searchTimer: ReturnType<typeof setTimeout> | undefined;
+const recoveringIds = reactive(new Set<string>());
+
 const taskKeyword = ref('');
 const taskFilter = ref<TaskFilterKey>('all');
 const taskFilters = [
@@ -759,7 +778,9 @@ const taskFilters = [
   { key: 'QUEUED', label: '排队中' },
   { key: 'RUNNING', label: '生成中' },
   { key: 'SUCCEEDED', label: '已完成' },
-  { key: 'FAILED', label: '失败' }
+  { key: 'FAILED', label: '失败' },
+  { key: 'TIMEOUT', label: '超时' },
+  { key: 'CANCELED', label: '已取消' }
 ] as const;
 
 const moduleIcons: Record<string, Component> = {
@@ -938,16 +959,20 @@ const versionPill = computed(() => {
     : `${currentModule.value.fixedWorkflow!.name} · ${currentModule.value.fixedWorkflow!.version}`;
 });
 
-const filteredTasks = computed(() => {
-  const keyword = taskKeyword.value.trim().toLowerCase();
-  return tasks.value.filter(task => {
-    const matchesFilter = taskFilter.value === 'all' || task.status === taskFilter.value;
-    const matchesKeyword = !keyword || `${task.taskNo ?? ''} ${task.taskName ?? ''}`.toLowerCase().includes(keyword);
-    return matchesFilter && matchesKeyword;
-  });
+const filteredTasks = computed(() => tasks.value);
+
+function searchTasks() {
+  taskPage.pageNum = 1;
+  void loadTasks();
+}
+watch(taskFilter, searchTasks);
+watch(taskKeyword, () => {
+  if (searchTimer !== undefined) clearTimeout(searchTimer);
+  searchTimer = setTimeout(searchTasks, 300);
 });
 
 onMounted(() => {
+  void loadWorkerStatus();
   void loadWorkflows();
   void loadTasks();
   void loadAssets();
@@ -962,38 +987,44 @@ async function loadWorkflows() {
   }
 }
 
-async function loadTasks() {
-  loadingTasks.value = true;
+async function loadTasks(silent = false) {
+  const sequence = ++taskRequestSequence;
+  if (!silent) loadingTasks.value = true;
   try {
-    const res = await listVideoTasks({ pageNum: 1, pageSize: 50 });
+    const res = await listVideoTasks({
+      ...taskPage,
+      status: taskFilter.value === 'all' ? undefined : taskFilter.value,
+      keyword: taskKeyword.value.trim() || undefined
+    });
+    if (sequence !== taskRequestSequence) return;
     tasks.value = res.data?.rows ?? [];
-    // 页面刷新/重新进来时，之前提交的任务仍在后台跑（执行在服务端，和这个页面无关）。
-    // 必须把它们纳入轮询，否则任务状态和 GPU 队列行会一直停在打开页面那一刻的值——
-    // 用户刷新一次就会看到「明明在生成却显示 0/2、任务一直排队中」。
+    taskTotal.value = res.data?.total ?? tasks.value.length;
+    const lastPage = Math.max(1, Math.ceil(taskTotal.value / taskPage.pageSize));
+    if (taskPage.pageNum > lastPage) { taskPage.pageNum = lastPage; await loadTasks(silent); return; }
     for (const task of tasks.value) {
-      if (!TERMINAL_STATUSES.includes(task.status)) {
-        startTaskPolling(task.id);
-      }
+      if (!TERMINAL_STATUSES.includes(task.status)) startTaskPolling(task.id);
     }
   } catch (error) {
-    ElMessage.error((await extractErrorMessage(error)) ?? '读取任务列表失败');
+    if (!silent) ElMessage.error((await extractErrorMessage(error)) ?? '读取任务列表失败');
   } finally {
-    loadingTasks.value = false;
-    // 顺带刷新 GPU 队列状态：任务列表是用户唯一能看到"还要等多久"的地方。
-    void loadWorkerStatus();
+    if (sequence === taskRequestSequence) loadingTasks.value = false;
   }
 }
 
 async function loadAssets() {
+  const sequence = ++assetRequestSequence;
   loadingAssets.value = true;
   try {
-    const res = await listVideoAssets({ pageNum: 1, pageSize: 60 });
+    const res = await listVideoAssets({ ...assetPage });
+    if (sequence !== assetRequestSequence) return;
     assets.value = res.data?.rows ?? [];
     assetTotal.value = res.data?.total ?? assets.value.length;
+    const lastPage = Math.max(1, Math.ceil(assetTotal.value / assetPage.pageSize));
+    if (assetPage.pageNum > lastPage) { assetPage.pageNum = lastPage; await loadAssets(); return; }
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '读取素材库失败');
   } finally {
-    loadingAssets.value = false;
+    if (sequence === assetRequestSequence) loadingAssets.value = false;
   }
 }
 
@@ -1184,12 +1215,19 @@ async function submitTask() {
       return;
     }
     ElMessage.success('任务已创建，正在提交生成…');
+    taskPage.pageNum = 1;
+    taskFilter.value = 'all';
+    taskKeyword.value = '';
     activeView.value = 'tasks';
+    startTaskPolling(taskId);
     await loadTasks();
 
     const executed = await executeVideoTask(taskId);
     const exec = executed.data;
-    if (exec?.accepted === false) {
+    if (exec?.outcome === 'QUEUE_FULL') {
+      ElMessage.warning('执行队列已满，任务已保留；稍后在我的任务点击「再次执行」');
+      startTaskPolling(taskId);
+    } else if (exec?.accepted === false) {
       // 任务已经在跑（多半是重复点击），不重复执行，接着轮询即可。
       ElMessage.info(`任务已在${taskStatusText(exec.status)}，将自动刷新结果`);
       startTaskPolling(taskId);
@@ -1238,65 +1276,47 @@ async function loadWorkerStatus() {
   }
 }
 
-/** 正在轮询的任务 id。后台执行 + 轮询是生成结果的唯一回传通道。 */
-const pollingTaskIds = new Set<string>();
-let pollTimer: ReturnType<typeof setInterval> | undefined;
+const taskPoller = createTaskPoller<VideoTaskDetailVO>({
+  intervalMs: POLL_INTERVAL_MS,
+  fetch: async id => (await getVideoTask(id)).data,
+  onUpdate: (id, task) => {
+    tasks.value = tasks.value.map(row => String(row.id) === id ? { ...row, ...task } : row);
+  },
+  onTerminal: (_id, task) => {
+    if (task.status === 'SUCCEEDED') ElMessage.success('任务 ' + task.taskNo + ' 已完成');
+    else ElMessage.warning(task.errorMessage || '任务已' + taskStatusText(task.status));
+  },
+  onCycle: async finished => {
+    await loadTasks(true);
+    await loadWorkerStatus();
+    if (finished) await loadAssets();
+  }
+});
 
-/** 开始轮询某个任务，直到它进入终态。 */
-function startTaskPolling(taskId: number | string) {
-  pollingTaskIds.add(String(taskId));
-  if (pollTimer !== undefined) return;
-  pollTimer = setInterval(() => void pollPendingTasks(), POLL_INTERVAL_MS);
+function startTaskPolling(taskId: number | string) { taskPoller.start(taskId); }
+
+function recoverable(task: VideoTaskVO) {
+  return ['QUEUED', 'FAILED', 'TIMEOUT', 'CANCELED'].includes(task.status);
 }
 
-function stopTaskPolling() {
-  if (pollTimer !== undefined) {
-    clearInterval(pollTimer);
-    pollTimer = undefined;
-  }
-}
-
-/**
- * 拉取所有在途任务的状态。
- *
- * <p>任务在服务端后台线程里跑，HTTP 连接、页面刷新都不影响它——所以这里只需要
- * 定期问「好了没」，失败一次也不该打断整个轮询。</p>
- */
-async function pollPendingTasks() {
-  if (pollingTaskIds.size === 0) {
-    stopTaskPolling();
-    return;
-  }
-  // 顺手刷新 GPU 队列状态：这两件事的节奏完全一致（都在等同一批任务）。
-  void loadWorkerStatus();
-  // 先收集、循环结束后再删：避免在遍历 Set 的过程中改它。
-  const finished: Array<{ id: string; status: VideoTaskStatus; message?: string }> = [];
-  for (const id of pollingTaskIds) {
-    try {
-      const detail = await getVideoTask(id);
-      const status = detail.data?.status;
-      if (!status || !TERMINAL_STATUSES.includes(status)) continue;
-      finished.push({ id, status, message: detail.data?.errorMessage });
-    } catch {
-      // 单次查询失败不影响后续轮询（网络抖动、页面切后台都可能发生）。
-    }
-  }
-
-  for (const item of finished) {
-    pollingTaskIds.delete(item.id);
-    if (item.status === 'SUCCEEDED') {
-      ElMessage.success('成片已生成，可在「我的任务」查看');
+async function recoverTask(task: VideoTaskVO) {
+  const id = String(task.id);
+  if (recoveringIds.has(id)) return;
+  recoveringIds.add(id);
+  try {
+    const res = task.status === 'QUEUED' ? await executeVideoTask(task.id) : await retryVideoTask(task.id);
+    if (res.data?.outcome === 'QUEUE_FULL') {
+      ElMessage.warning('执行队列已满，任务已保留；稍后点击「再次执行」');
     } else {
-      ElMessage.warning(item.message ?? `任务${taskStatusText(item.status)}，请查看任务详情`);
+      ElMessage.success('任务已受理，将自动刷新状态');
     }
+    startTaskPolling(task.id);
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '执行请求失败；任务已保留，请刷新后重试');
+  } finally {
+    recoveringIds.delete(id);
+    await loadTasks();
   }
-
-  await loadTasks();
-  if (finished.length) {
-    await loadAssets();
-    if (finished.some(item => item.status === 'SUCCEEDED')) void loadTaskCovers();
-  }
-  if (pollingTaskIds.size === 0) stopTaskPolling();
 }
 
 function taskStatusText(status: VideoTaskStatus) {
@@ -1415,8 +1435,10 @@ watch(assets, () => void loadAssetThumbnails());
 
 /** 组件卸载时释放所有 blob URL，避免内存泄漏。 */
 onBeforeUnmount(() => {
-  stopTaskPolling();
-  pollingTaskIds.clear();
+  if (searchTimer !== undefined) clearTimeout(searchTimer);
+  taskRequestSequence++;
+  assetRequestSequence++;
+  taskPoller.dispose();
   releasePreviewUrl();
   Object.values(coverUrls.value).forEach(URL.revokeObjectURL);
   Object.values(imageUrls.value).forEach(URL.revokeObjectURL);
@@ -1527,39 +1549,6 @@ function recreateTask(task: VideoTaskVO) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-/** 终态且非成功的任务可重新执行（与后端 retry 的状态门禁一致）。 */
-function retryable(task: VideoTaskVO) {
-  return ['FAILED', 'TIMEOUT', 'CANCELED'].includes(task.status);
-}
-
-/** 正在重新执行的任务 id，用于按钮 loading 态（同一条只允许点一次）。 */
-const retryingId = ref('');
-
-/**
- * 重新执行：后端把终态退回 QUEUED 再认领入队，成功后就地开始轮询。
- *
- * <p>为什么需要它：进程重启会把 RUNNING 收敛为 FAILED 并提示「请重新执行该任务」，
- * 但此前没有这个入口——用户按提示做却点不动，只能手动重建一条。</p>
- */
-async function retryTask(task: VideoTaskVO) {
-  const id = String(task.id);
-  retryingId.value = id;
-  try {
-    const res = await retryVideoTask(task.id);
-    if (res.data?.accepted === false) {
-      ElMessage.info('该任务已经在执行队列中');
-    } else {
-      ElMessage.success('已重新提交执行');
-    }
-    await loadTasks();
-    startTaskPolling(String(task.id));
-  } catch (error) {
-    ElMessage.error((await extractErrorMessage(error)) ?? '重新执行失败');
-  } finally {
-    retryingId.value = '';
-  }
-}
-
 function applyCreativeInspiration(route: InspirationRoute, title: string) {
   if (route.media !== 'video' || uploading.value || submitting.value || !isRouteAvailable(route, workflows.value))
     return;
@@ -1651,6 +1640,8 @@ function modelName(code?: string | null) {
 
 <style scoped lang="scss">
 @use '@/assets/styles/tokens-studio.scss';
+
+:deep(.pagination-container) { padding: 16px 0; background: transparent; }
 
 .studio {
   min-height: calc(100vh - 135px);

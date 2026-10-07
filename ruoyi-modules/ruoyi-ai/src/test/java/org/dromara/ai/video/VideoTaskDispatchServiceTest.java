@@ -56,6 +56,16 @@ class VideoTaskDispatchServiceTest {
     }
 
     @Test
+    @DisplayName("构造上下文失败时回退 QUEUED，保留再次执行入口")
+    void contextFailureRollsBack() {
+        when(repository.transition(TASK_ID, VideoTaskStatus.QUEUED, VideoTaskStatus.RUNNING, null, null)).thenReturn(1);
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+            () -> dispatch.dispatch(TASK_ID, () -> { throw new IllegalArgumentException("invalid context"); }));
+        verify(repository).transition(TASK_ID, VideoTaskStatus.RUNNING, VideoTaskStatus.QUEUED, null, null);
+        verify(executionService, never()).submit(any());
+    }
+
+    @Test
     @DisplayName("认领成功并入队：返回 ACCEPTED")
     void acceptsAndSubmits() {
         when(repository.transition(eq(TASK_ID), eq(VideoTaskStatus.QUEUED),

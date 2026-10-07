@@ -25,6 +25,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ImageTaskDispatchServiceTest {
 
     @Test
+    @DisplayName("构造上下文失败时回退 QUEUED，保留再次执行入口")
+    void contextFailureRollsBack() {
+        RecordingRepository repository = new RecordingRepository(1);
+        ImageTaskExecutionService executor = new ImageTaskExecutionService(context -> null, 4, 1);
+        try {
+            ImageTaskDispatchService service = new ImageTaskDispatchService(repository, executor);
+            org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> service.dispatch(1L, () -> { throw new IllegalArgumentException("invalid context"); }));
+            assertTrue(repository.transitions().contains("RUNNING->QUEUED"));
+        } finally { executor.shutdown(); }
+    }
+
+    @Test
     @DisplayName("正常派发：认领成功并执行")
     void accepted() throws Exception {
         RecordingRepository repository = new RecordingRepository(1);
@@ -106,6 +119,9 @@ class ImageTaskDispatchServiceTest {
      * 只实现派发用到的两个动作。
      */
     static class RecordingRepository implements ImageTaskRepository {
+        @Override
+        public int reopen(long taskId, String tenantId, long userId, ImageTaskStatus expectedFrom) { return 0; }
+
         private final int claimResult;
         private final List<String> transitions = new ArrayList<>();
         private final AtomicInteger executed = new AtomicInteger();

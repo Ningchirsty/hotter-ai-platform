@@ -130,6 +130,7 @@ export interface ImageTaskCreateForm {
 
 /** 执行结果。 */
 export interface ImageTaskExecutionResult {
+  outcome?: 'ACCEPTED' | 'ALREADY_CLAIMED' | 'QUEUE_FULL';
   taskId: number | string;
   status: ImageTaskStatus;
   accepted?: boolean;

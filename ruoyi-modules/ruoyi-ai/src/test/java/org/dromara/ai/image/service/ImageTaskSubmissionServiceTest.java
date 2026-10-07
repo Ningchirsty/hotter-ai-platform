@@ -76,6 +76,55 @@ class ImageTaskSubmissionServiceTest {
     }
 
     @Test
+    @DisplayName("失败/超时/取消任务按归属原子重开，队列满仍可再次执行")
+    void retryTerminalStates() {
+        for (ImageTaskStatus state : List.of(ImageTaskStatus.FAILED, ImageTaskStatus.TIMEOUT, ImageTaskStatus.CANCELED)) {
+            Map<String, Object> old = new java.util.HashMap<>(taskRow());
+            old.put("status", state.name());
+            when(repository.requireOwnedTask(7001L, "000000", 42L)).thenReturn(old, taskRow());
+            when(repository.reopen(7001L, "000000", 42L, state)).thenReturn(1);
+            when(dispatchService.dispatch(anyLong(), any())).thenReturn(ImageTaskDispatchService.Outcome.QUEUE_FULL);
+            assertEquals("QUEUE_FULL", service.retryOwned(7001L, "000000", 42L));
+            verify(repository).reopen(7001L, "000000", 42L, state);
+        }
+    }
+
+    @Test
+    @DisplayName("并发重试只允许一个请求重开并派发")
+    void concurrentRetryDoesNotDispatchTwice() {
+        Map<String, Object> old = new java.util.HashMap<>(taskRow());
+        old.put("status", "FAILED");
+        when(repository.requireOwnedTask(7001L, "000000", 42L)).thenReturn(old);
+        when(repository.reopen(7001L, "000000", 42L, ImageTaskStatus.FAILED)).thenReturn(0);
+        assertEquals("ALREADY_CLAIMED", service.retryOwned(7001L, "000000", 42L));
+        verify(dispatchService, never()).dispatch(anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("成功任务不能重试，不存在/越权任务先拒绝，均不能派发")
+    void retryRejectsSuccessAndForeignTasks() {
+        Map<String, Object> done = new java.util.HashMap<>(taskRow());
+        done.put("status", "SUCCEEDED");
+        when(repository.requireOwnedTask(7001L, "000000", 42L)).thenReturn(done);
+        org.junit.jupiter.api.Assertions.assertThrows(org.dromara.ai.image.exception.ImageTaskException.class,
+            () -> service.retryOwned(7001L, "000000", 42L));
+        when(repository.requireOwnedTask(7001L, "other-tenant", 43L))
+            .thenThrow(new org.dromara.ai.image.exception.ImageTaskException("TASK_NOT_FOUND", "任务不存在或无权访问"));
+        org.junit.jupiter.api.Assertions.assertThrows(org.dromara.ai.image.exception.ImageTaskException.class,
+            () -> service.retryOwned(7001L, "other-tenant", 43L));
+        verify(dispatchService, never()).dispatch(anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("排队/运行中的重复请求沿用原子派发，不重开终态")
+    void activeRetryUsesExistingClaim() {
+        when(repository.requireOwnedTask(7001L, "000000", 42L)).thenReturn(taskRow());
+        when(dispatchService.dispatch(anyLong(), any())).thenReturn(ImageTaskDispatchService.Outcome.ALREADY_CLAIMED);
+        assertEquals("ALREADY_CLAIMED", service.retryOwned(7001L, "000000", 42L));
+        verify(repository, never()).reopen(anyLong(), any(), anyLong(), any());
+    }
+
+    @Test
     @DisplayName("有事务时不立即派发，提交后才派发（避免执行线程读不到未提交素材）")
     void dispatchesOnlyAfterCommit() {
         when(dispatchService.dispatch(anyLong(), any()))

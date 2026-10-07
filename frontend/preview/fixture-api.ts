@@ -84,6 +84,7 @@ export const deleteVideoAsset = blocked;
 export const createVideoTask = blocked;
 export const executeVideoTask = blocked;
 export const retryVideoTask = blocked;
+export const retryImageTask = blocked;
 export const cancelVideoTask = blocked;
 export const uploadImageAsset = blocked;
 export const deleteImageAsset = blocked;

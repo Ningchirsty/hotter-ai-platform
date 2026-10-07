@@ -566,12 +566,10 @@ public class VideoCreationController extends BaseController {
 
         VideoTaskDispatchService.Outcome outcome = dispatchService.dispatch(taskId,
             () -> buildContext(task, tenantId, userId));
-        if (outcome == VideoTaskDispatchService.Outcome.QUEUE_FULL) {
-            throw VideoTaskException.invalidContract("执行队列已满，请稍后重试");
-        }
 
         Map<String, Object> body = new HashMap<>();
         body.put("taskId", taskId);
+        body.put("outcome", outcome.name());
         if (outcome == VideoTaskDispatchService.Outcome.ACCEPTED) {
             body.put("status", VideoTaskStatus.RUNNING.name());
             body.put("accepted", true);
@@ -604,6 +602,9 @@ public class VideoCreationController extends BaseController {
         Map<String, Object> task = repository.requireOwnedTask(taskId, tenantId, userId);
         String status = String.valueOf(task.get("status"));
         VideoTaskStatus from = VideoTaskStatus.valueOf(status);
+        if (from == VideoTaskStatus.QUEUED || from == VideoTaskStatus.RUNNING) {
+            return executeTask(taskId);
+        }
         if (!from.isTerminal() || VideoTaskStatus.SUCCEEDED == from) {
             throw VideoTaskException.invalidContract("只有失败/超时/已取消的任务可以重新执行，当前：" + status);
         }
@@ -621,12 +622,8 @@ public class VideoCreationController extends BaseController {
 
         VideoTaskDispatchService.Outcome outcome = dispatchService.dispatch(taskId,
             () -> buildContext(task, tenantId, userId));
-        if (outcome == VideoTaskDispatchService.Outcome.QUEUE_FULL) {
-            // 队列满：状态已被 dispatch 回滚为 QUEUED，用户可稍后再点一次重新执行。
-            throw VideoTaskException.invalidContract("执行队列已满，请稍后重试");
-        }
-        body.put("status", outcome == VideoTaskDispatchService.Outcome.ACCEPTED
-            ? VideoTaskStatus.RUNNING.name() : VideoTaskStatus.QUEUED.name());
+        body.put("outcome", outcome.name());
+        body.put("status", String.valueOf(repository.requireOwnedTask(taskId, tenantId, userId).get("status")));
         body.put("accepted", outcome == VideoTaskDispatchService.Outcome.ACCEPTED);
         return R.ok(body);
     }
@@ -660,11 +657,12 @@ public class VideoCreationController extends BaseController {
     @GetMapping("/tasks")
     @SaCheckPermission("video:creation:view")
     public R<PageResult<Map<String, Object>>> listTasks(PageQuery pageQuery,
-                                                       @RequestParam(value = "status", required = false) String status) {
+                                                       @RequestParam(value = "status", required = false) String status,
+                                                       @RequestParam(value = "keyword", required = false) String keyword) {
         String tenantId = requireTenantId();
         long userId = LoginHelper.getUserId();
-        long total = repository.countOwnedTasks(tenantId, userId, status);
-        List<Map<String, Object>> rows = repository.listOwnedTasks(tenantId, userId, status,
+        long total = repository.countOwnedTasks(tenantId, userId, status, keyword);
+        List<Map<String, Object>> rows = repository.listOwnedTasks(tenantId, userId, status, keyword,
             offset(pageQuery), size(pageQuery));
         return R.ok(new PageResult<>(CamelCase.rows(rows), total));
     }
