@@ -18,6 +18,13 @@
 --   4. 回调幂等：aig_callback 对 (provider_code, event_id) 唯一。
 --   5. 业务表只存资产 ID / 对象引用，不存服务器本地路径。
 --   6. 幂等建表（create table if not exists），可安全重复执行。
+--   7. 状态取值比设计 §9.2 多一个 CANCEL_REQUESTED（设计原文的异常分支里提到它，
+--      但列注释此前漏了）。取消之所以要两阶段：异步作业一旦提交，取消不是本地能立刻
+--      完成的——对方可能已在生成并继续计费。直接置 CANCELLED 会出现「账上已取消、
+--      对方仍在跑、费用照样产生」，事后无从对账。
+--      状态图的权威定义在 Java 侧（AigTaskStateMachine），它对 §9.2 补了若干条必要边
+--      （如 DISPATCHED→FAILED 提交失败出口、CANCEL_REQUESTED→RUNNING 取消被拒），
+--      补边的唯一判据是「任何非终态都必须至少有一条出边」，并有穷举用例守着。
 -- ----------------------------------------------------------------------------
 
 -- ----------------------------
@@ -34,7 +41,7 @@ create table if not exists aig_task (
     agent_version_id   bigint(20)      default null               comment '发起该任务的 Agent 版本ID（人工直接发起时为空）',
     data_level         varchar(16)     not null default 'INTERNAL' comment '数据等级（PUBLIC/INTERNAL/RESTRICTED/STRICT）',
     allow_external     char(1)         not null default 'N'       comment '业务侧是否允许外发（Y/N）；与路由策略取与，两者都允许才可能外发',
-    status             varchar(24)     not null default 'DRAFT'   comment '状态（DRAFT/POLICY_CHECKING/QUEUED/DISPATCHED/RUNNING/SUCCEEDED/REVIEW_PENDING/APPROVED/REJECTED/FAILED/RETRY_WAIT/CANCELLED/NEED_HUMAN）',
+    status             varchar(24)     not null default 'DRAFT'   comment '状态（DRAFT/POLICY_CHECKING/QUEUED/DISPATCHED/RUNNING/SUCCEEDED/REVIEW_PENDING/APPROVED/REJECTED/FAILED/RETRY_WAIT/CANCEL_REQUESTED/CANCELLED/NEED_HUMAN）',
     attempt_no         int(11)         not null default 0         comment '已尝试次数（幂等键的一半）',
     max_attempt        int(11)         not null default 3         comment '最大自动重试次数（默认3，是否重试由错误分类决定）',
     idempotency_key    varchar(128)    default null               comment '外部提交幂等键（同一提交人+键只建一个任务）',
