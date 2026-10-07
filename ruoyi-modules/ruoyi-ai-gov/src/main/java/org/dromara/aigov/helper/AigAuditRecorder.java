@@ -49,6 +49,18 @@ public class AigAuditRecorder {
     private static final int OUTPUT_REF_MAX = 500;
 
     /**
+     * input_snapshot_ref 列长度上限（varchar(500)）。
+     */
+    private static final int SNAPSHOT_REF_MAX = 500;
+
+    /**
+     * usage_json 列长度上限（varchar(1000)）。
+     * <p>给得比 error_summary 宽：用量回执是结构化内容，且是费用对账的唯一依据，
+     * 截断掉就不能用于审计。当前组装结果只有几十字节，留足扩展余量。</p>
+     */
+    private static final int USAGE_JSON_MAX = 1000;
+
+    /**
      * 审计 Mapper。
      */
     private final AigInvocationAuditMapper auditMapper;
@@ -74,6 +86,7 @@ public class AigAuditRecorder {
             audit.setDataLevel(ctx.getDataLevel());
             audit.setScenarioCode(ctx.getScenarioCode());
             audit.setModelId(ctx.getModelId());
+            audit.setProviderId(ctx.getProviderId());
             audit.setModelKey(ctx.getModelKey());
             audit.setModelVersion(ctx.getModelVersion());
             audit.setDeploymentType(ctx.getDeploymentType());
@@ -83,6 +96,7 @@ public class AigAuditRecorder {
             audit.setInputHash(AigInputSanitizer.hashInput(ctx.getCapabilityCode(), ctx.getDataLevel(),
                 ctx.getPrompt(), ctx.getPayload()));
             audit.setInputSummary(resolveSummary(ctx));
+            audit.setInputSnapshotRef(AigInputSanitizer.truncate(ctx.getInputSnapshotRef(), SNAPSHOT_REF_MAX));
             audit.setOutputRef(AigInputSanitizer.truncate(ctx.getOutputRef(), OUTPUT_REF_MAX));
             audit.setResult(StringUtils.isBlank(ctx.getResult())
                 ? AigInvokeResultEnum.FAILED.getCode() : ctx.getResult());
@@ -90,6 +104,7 @@ public class AigAuditRecorder {
                 AigInputSanitizer.mask(ctx.getErrorSummary()), ERROR_MAX));
             audit.setLatencyMs(ctx.getLatencyMs());
             audit.setCost(ctx.getCost());
+            audit.setUsageJson(AigInputSanitizer.truncate(ctx.getUsageJson(), USAGE_JSON_MAX));
             audit.setRetryCount(ctx.getRetryCount() == null ? 0 : ctx.getRetryCount());
             audit.setManualDecision(StringUtils.isBlank(ctx.getManualDecision())
                 ? AigManualDecisionEnum.NOT_REQUIRED.getCode() : ctx.getManualDecision());

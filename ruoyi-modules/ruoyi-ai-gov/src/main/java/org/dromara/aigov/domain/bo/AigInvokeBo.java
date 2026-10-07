@@ -61,4 +61,14 @@ public class AigInvokeBo implements Serializable {
      */
     private Map<String, Object> payload;
 
+    /**
+     * 不可变输入快照引用（可选，设计 §4.3）
+     *
+     * <p>只填<b>引用</b>（对象键 / 业务ID），不要填快照本身。审计会原样落库，
+     * 因此这是事后复现一次结论的唯一入口：同一个 traceId 只看到「用了什么模型」，
+     * 看不到「当时喂进去的是什么」，就无法判断当时的输出是否合理。</p>
+     */
+    @Size(max = 500, message = "输入快照引用长度不能超过 500")
+    private String inputSnapshotRef;
+
 }

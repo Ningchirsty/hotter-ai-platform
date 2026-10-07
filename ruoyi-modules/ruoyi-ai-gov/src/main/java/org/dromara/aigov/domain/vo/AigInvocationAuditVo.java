@@ -71,6 +71,16 @@ public class AigInvocationAuditVo implements Serializable {
     private Long modelId;
 
     /**
+     * 实际使用的供应商ID（当时那一次的归属；模型改归属后它不跟着变）
+     */
+    private Long providerId;
+
+    /**
+     * 供应商名称（展示用，由服务层回填）
+     */
+    private String providerName;
+
+    /**
      * 模型键
      */
     private String modelKey;
@@ -112,6 +122,11 @@ public class AigInvocationAuditVo implements Serializable {
     private String inputSummary;
 
     /**
+     * 不可变输入快照引用（只存引用，不存副本）
+     */
+    private String inputSnapshotRef;
+
+    /**
      * 输出引用
      */
     private String outputRef;
@@ -135,6 +150,11 @@ public class AigInvocationAuditVo implements Serializable {
      * 本次成本
      */
     private BigDecimal cost;
+
+    /**
+     * 模型用量回执（JSON，如 {"tokensUsed":123}）；为空表示该次未拿到用量
+     */
+    private String usageJson;
 
     /**
      * 重试次数

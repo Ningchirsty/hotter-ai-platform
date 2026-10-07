@@ -140,6 +140,10 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
                 applyCandidate(decision, audit, candidate);
                 AigDeploymentTypeEnum deployment = AigDeploymentTypeEnum.find(candidate.getDeploymentType());
                 AigModelVo model = modelViewMapper.selectModelById(candidate.getModelId());
+                // 供应商维度同样必须跟着「这次真正要试的候选」：审计漏了它，
+                // 「这家供应商这个月花了多少、外发了多少次」就只能靠模型ID join 现查，
+                // 而 join 出来的是今天的归属，不是当时那次的。
+                audit.setProviderId(model == null ? null : model.getProviderId());
                 ModelInvoker invoker = resolveInvoker(candidate.getInvoker(), deployment,
                     model == null ? null : model.getModelType());
                 if (invoker == null) {
@@ -209,6 +213,9 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
             audit.setLatencyMs((int) Math.min(elapsedMs, Integer.MAX_VALUE));
             audit.setCost(result.getCost());
             audit.setModelVersion(result.getModelVersion());
+            // 用量回执：调用器解析出来的 tokens 此前只活在 ModelInvokeResult 里，
+            // 出了这次方法调用就丢了——而「这家用了多少」是费用对账与限流的基础。
+            audit.setUsageJson(buildUsageJson(result));
             AigInvokeVo vo = toVo(traceId, decision, elapsedMs, null);
             if (!succeeded) {
                 audit.setResult(AigInvokeResultEnum.FAILED.getCode());
@@ -253,6 +260,38 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
         audit.setDeploymentType(candidate.getDeploymentType());
         AigDeploymentTypeEnum deployment = AigDeploymentTypeEnum.find(candidate.getDeploymentType());
         audit.setExternalCall(deployment != null && deployment.isExternal());
+    }
+
+    /**
+     * 把调用器回填的用量组装成审计用的 JSON。
+     *
+     * <p><b>为什么手工拼而不走序列化器</b>：这里只可能是「若干个数字键值对」，
+     * 没有字符串、没有嵌套、没有需要转义的内容，因此不存在拼接注入或转义遗漏的风险；
+     * 而引入 {@code JsonMapper} 会让本类多一个构造参数，把「用量怎么序列化」这种
+     * 边缘关注点渗进调用编排的装配里。真正的扩展点在列：不同供应商回执的用量字段
+     * 差异很大，将来按供应商归一化时在这里补键即可。</p>
+     *
+     * <p>两个值都为空时返回 {@code null} 而不是 {@code {}}：图像模型普遍不回执 token，
+     * 给每次出图都写一个空对象会把这一列变成噪音，也让「没有用量」和「用量为零」混为一谈。</p>
+     *
+     * @param result 最后一次尝试的结果（可为 null）
+     * @return 用量 JSON，无任何用量时返回 null
+     */
+    private String buildUsageJson(ModelInvokeResult result) {
+        if (result == null || (result.getTokensUsed() == null && result.getCost() == null)) {
+            return null;
+        }
+        StringBuilder json = new StringBuilder(48).append('{');
+        if (result.getTokensUsed() != null) {
+            json.append("\"tokensUsed\":").append(result.getTokensUsed());
+        }
+        if (result.getCost() != null) {
+            if (json.length() > 1) {
+                json.append(',');
+            }
+            json.append("\"cost\":").append(result.getCost().toPlainString());
+        }
+        return json.append('}').toString();
     }
 
     /**
@@ -364,6 +403,7 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
         audit.setCapabilityCode(bo.getCapabilityCode());
         audit.setDataLevel(dataLevel.getCode());
         audit.setScenarioCode(bo.getScenarioCode());
+        audit.setInputSnapshotRef(bo.getInputSnapshotRef());
         audit.setModelId(decision.getModelId());
         audit.setModelKey(decision.getModelKey());
         audit.setDeploymentType(decision.getDeploymentType());

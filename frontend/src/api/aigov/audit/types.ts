@@ -16,11 +16,19 @@ export interface AigInvocationAuditVO {
   callerId?: string | number;
   /** 调用人账号（冗余，便于离线审计） */
   callerName?: string;
-  /** 本次数据等级 PUBLIC/INTERNAL/RESTRICTED */
+  /** 本次数据等级 PUBLIC/INTERNAL/RESTRICTED/STRICT */
   dataLevel?: string;
   modelId?: string | number;
   modelKey?: string;
   modelVersion?: string;
+  /** 实际使用的供应商ID（当时那一次的归属；模型改归属后它不跟着变） */
+  providerId?: string | number;
+  /** 供应商名称（后端回填） */
+  providerName?: string;
+  /** 模型用量回执（JSON，如 {"tokensUsed":123}）；为空表示该次未拿到用量 */
+  usageJson?: string;
+  /** 不可变输入快照引用（只存引用，不存副本） */
+  inputSnapshotRef?: string;
   /** 部署类型 LOCAL/GROUP/EXTERNAL_ENTERPRISE/EXTERNAL_API */
   deploymentType?: string;
   /** 是否外发（Y是 N否） */
@@ -48,6 +56,8 @@ export interface AigInvocationAuditQuery extends PageQuery {
   dataLevel?: string;
   externalCall?: string;
   modelKey?: string;
+  /** 按供应商对账：查这家供应商实际执行过的调用 */
+  providerId?: string | number;
   result?: string;
   callerName?: string;
   params?: Record<string, any>;

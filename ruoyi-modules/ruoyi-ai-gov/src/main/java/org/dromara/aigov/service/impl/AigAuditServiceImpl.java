@@ -9,8 +9,10 @@ import org.dromara.aigov.domain.AigCapability;
 import org.dromara.aigov.domain.AigInvocationAudit;
 import org.dromara.aigov.domain.bo.AigAuditQueryBo;
 import org.dromara.aigov.domain.vo.AigInvocationAuditVo;
+import org.dromara.aigov.domain.vo.AigModelProviderVo;
 import org.dromara.aigov.mapper.AigCapabilityMapper;
 import org.dromara.aigov.mapper.AigInvocationAuditMapper;
+import org.dromara.aigov.mapper.AigModelConfigMapper;
 import org.dromara.aigov.service.IAigAuditService;
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.core.utils.StringUtils;
@@ -56,6 +58,11 @@ public class AigAuditServiceImpl implements IAigAuditService {
      */
     private final AigCapabilityMapper capabilityMapper;
 
+    /**
+     * 模型/供应商 Mapper（回填 providerName 展示字段）。
+     */
+    private final AigModelConfigMapper modelConfigMapper;
+
     @Override
     public PageResult<AigInvocationAuditVo> queryPage(AigAuditQueryBo bo, PageQuery pageQuery) {
         AigAuditQueryBo query = bo == null ? new AigAuditQueryBo() : bo;
@@ -68,6 +75,7 @@ public class AigAuditServiceImpl implements IAigAuditService {
             .like(StringUtils.isNotBlank(query.getCallerName()), AigInvocationAudit::getCallerName, query.getCallerName())
             .eq(StringUtils.isNotBlank(query.getDataLevel()), AigInvocationAudit::getDataLevel, query.getDataLevel())
             .eq(query.getModelId() != null, AigInvocationAudit::getModelId, query.getModelId())
+            .eq(query.getProviderId() != null, AigInvocationAudit::getProviderId, query.getProviderId())
             .eq(StringUtils.isNotBlank(query.getModelKey()), AigInvocationAudit::getModelKey, query.getModelKey())
             .eq(StringUtils.isNotBlank(query.getExternalCall()), AigInvocationAudit::getExternalCall, query.getExternalCall())
             .eq(StringUtils.isNotBlank(query.getResult()), AigInvocationAudit::getResult, query.getResult())
@@ -78,6 +86,7 @@ public class AigAuditServiceImpl implements IAigAuditService {
         Page<AigInvocationAuditVo> voPage = auditMapper.selectVoPage(pageQuery.build(), wrapper);
         List<AigInvocationAuditVo> rows = voPage.getRecords();
         fillCapabilityName(rows);
+        fillProviderName(rows);
         return PageResult.build(rows, voPage.getTotal());
     }
 
@@ -134,6 +143,35 @@ public class AigAuditServiceImpl implements IAigAuditService {
         }
         for (AigInvocationAuditVo row : rows) {
             row.setCapabilityName(nameMap.get(row.getCapabilityCode()));
+        }
+    }
+
+    /**
+     * 回填供应商名称。
+     * <p>供应商表很小（内置 7 家 + 自建），整体取回再映射，避免按 ID 逐条查的 N+1。</p>
+     *
+     * @param rows 审计视图列表
+     */
+    private void fillProviderName(List<AigInvocationAuditVo> rows) {
+        if (CollUtil.isEmpty(rows)) {
+            return;
+        }
+        boolean anyProvider = rows.stream().anyMatch(row -> row.getProviderId() != null);
+        if (!anyProvider) {
+            return;
+        }
+        List<AigModelProviderVo> providers = modelConfigMapper.selectAllProviders();
+        if (CollUtil.isEmpty(providers)) {
+            return;
+        }
+        Map<Long, String> nameMap = new HashMap<>();
+        for (AigModelProviderVo provider : providers) {
+            if (provider != null && provider.getProviderId() != null) {
+                nameMap.put(provider.getProviderId(), provider.getProviderName());
+            }
+        }
+        for (AigInvocationAuditVo row : rows) {
+            row.setProviderName(nameMap.get(row.getProviderId()));
         }
     }
 
