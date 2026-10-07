@@ -330,14 +330,40 @@ create table if not exists aig_evaluation_run (
 ) engine=innodb comment = 'AI 评测运行（打分与人工复核）';
 
 -- ----------------------------
--- 11、核对
+-- 11、版本发布事件账本（追加型；三类版本共用）
+-- ----------------------------
+-- 为什么需要它：状态机注释里写明「DISABLED → STABLE（重新启用/回滚复位）必须由服务层
+-- 证明该版本**曾经 STABLE 过**」，否则「先停用再启用」就能把从未发布过的版本推成 STABLE。
+-- 而 aig_package_install_log 只覆盖 Package 版本，Agent/Skill 版本没有任何发布记录 →
+-- 那条不变式无从实现。本表是三类版本共用的发布账本：既作审计（谁在何时把哪个版本推到哪），
+-- 也是「曾 STABLE 过」的**唯一**证据来源。
+--
+-- 追加型：一行一次迁移，不更新、不删除、不带 del_flag。
+create table if not exists aig_release_event (
+    event_id           bigint(20)      not null                   comment '发布事件ID',
+    target_type        varchar(32)     not null                   comment '对象类型（AGENT_VERSION/SKILL_VERSION/PACKAGE_VERSION）',
+    target_version_id  bigint(20)      not null                   comment '对象版本ID',
+    from_status        varchar(24)     default null               comment '源发布状态（首次记录可为空）',
+    to_status          varchar(24)     not null                   comment '目标发布状态',
+    passed_gates       varchar(500)    default null               comment '本次推进所依据的门槛（逗号分隔；停用/归档这类运维动作为空）',
+    operator_id        bigint(20)      default null               comment '操作人（系统触发为空）',
+    detail             varchar(500)    default null               comment '说明',
+    operate_time       datetime        not null                   comment '操作时间',
+    primary key (event_id),
+    key idx_aig_release_target (target_type, target_version_id, operate_time),
+    key idx_aig_release_to (to_status)
+) engine=innodb comment = 'AI 版本发布事件账本（审计 + 曾 STABLE 过的证据）';
+
+-- ----------------------------
+-- 12、核对
 -- ----------------------------
 select table_name, table_comment
   from information_schema.tables
  where table_schema = database()
    and table_name in ('aig_package', 'aig_package_version', 'aig_agent', 'aig_agent_version',
                       'aig_skill', 'aig_skill_version', 'aig_agent_binding',
-                      'aig_package_install_log', 'aig_evaluation_case', 'aig_evaluation_run')
+                      'aig_package_install_log', 'aig_evaluation_case', 'aig_evaluation_run',
+                      'aig_release_event')
  order by table_name;
 
 select 'AIG_AGENT_REGISTRY_DDL_DONE' as marker;
