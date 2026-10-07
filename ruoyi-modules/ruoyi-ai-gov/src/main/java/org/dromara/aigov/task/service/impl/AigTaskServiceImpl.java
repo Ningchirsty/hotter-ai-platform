@@ -1,8 +1,11 @@
 package org.dromara.aigov.task.service.impl;
 
+import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.crypto.digest.DigestUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.aigov.enums.AigDataLevelEnum;
@@ -15,9 +18,15 @@ import org.dromara.aigov.task.domain.AigTaskResult;
 import org.dromara.aigov.task.domain.AigTaskSnapshot;
 import org.dromara.aigov.task.domain.bo.AigTaskCallbackBo;
 import org.dromara.aigov.task.domain.bo.AigTaskCreateBo;
+import org.dromara.aigov.task.domain.bo.AigTaskQueryBo;
 import org.dromara.aigov.task.domain.bo.AigTaskResultBo;
 import org.dromara.aigov.task.domain.bo.AigTaskReviewBo;
 import org.dromara.aigov.task.domain.vo.AigCallbackVo;
+import org.dromara.aigov.task.domain.vo.AigTaskDetailVo;
+import org.dromara.aigov.task.domain.vo.AigTaskEventVo;
+import org.dromara.aigov.task.domain.vo.AigTaskResultVo;
+import org.dromara.aigov.task.domain.vo.AigTaskSnapshotVo;
+import org.dromara.aigov.task.domain.vo.AigTaskVo;
 import org.dromara.aigov.task.enums.AigCandidateStatusEnum;
 import org.dromara.aigov.task.enums.AigTaskEventTypeEnum;
 import org.dromara.aigov.task.enums.AigTaskStatusEnum;
@@ -31,8 +40,10 @@ import org.dromara.aigov.task.mapper.AigTaskResultMapper;
 import org.dromara.aigov.task.mapper.AigTaskSnapshotMapper;
 import org.dromara.aigov.task.service.IAigTaskService;
 import org.dromara.aigov.task.state.AigTaskStateMachine;
+import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
+import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.common.satoken.utils.LoginHelper;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
@@ -40,6 +51,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 /**
  * AI 统一任务编排服务实现（设计 §9）。
@@ -79,6 +91,137 @@ public class AigTaskServiceImpl implements IAigTaskService {
     private final AigTaskCallbackSigner callbackSigner;
     private final AigCallbackProperties callbackProperties;
     private final AigTaskActorProvider actorProvider;
+
+    /**
+     * 时间范围在 params 中的键。
+     */
+    private static final String KEY_BEGIN_TIME = "beginTime";
+
+    /**
+     * 时间范围在 params 中的键。
+     */
+    private static final String KEY_END_TIME = "endTime";
+
+    @Override
+    public PageResult<AigTaskVo> queryPage(AigTaskQueryBo bo, PageQuery pageQuery) {
+        AigTaskQueryBo query = bo == null ? new AigTaskQueryBo() : bo;
+        Object beginTime = resolveRange(query, KEY_BEGIN_TIME, query.getBeginTime());
+        Object endTime = resolveRange(query, KEY_END_TIME, query.getEndTime());
+        LambdaQueryWrapper<AigTask> wrapper = new LambdaQueryWrapper<AigTask>()
+            .eq(StringUtils.isNotBlank(query.getTaskType()), AigTask::getTaskType, query.getTaskType())
+            .eq(StringUtils.isNotBlank(query.getProjectType()), AigTask::getProjectType, query.getProjectType())
+            .eq(query.getProjectId() != null, AigTask::getProjectId, query.getProjectId())
+            .eq(StringUtils.isNotBlank(query.getStatus()), AigTask::getStatus, query.getStatus())
+            .eq(StringUtils.isNotBlank(query.getCapabilityCode()), AigTask::getCapabilityCode,
+                query.getCapabilityCode())
+            .eq(StringUtils.isNotBlank(query.getScenarioCode()), AigTask::getScenarioCode, query.getScenarioCode())
+            .eq(StringUtils.isNotBlank(query.getDataLevel()), AigTask::getDataLevel, query.getDataLevel())
+            .eq(StringUtils.isNotBlank(query.getExternalCall()), AigTask::getExternalCall, query.getExternalCall())
+            .eq(StringUtils.isNotBlank(query.getProviderCode()), AigTask::getProviderCode, query.getProviderCode())
+            .eq(StringUtils.isNotBlank(query.getTraceId()), AigTask::getTraceId, query.getTraceId())
+            .eq(query.getCreateBy() != null, AigTask::getCreateBy, query.getCreateBy())
+            .eq(StringUtils.isNotBlank(query.getReviewStatus()), AigTask::getReviewStatus, query.getReviewStatus())
+            .eq(StringUtils.isNotBlank(query.getTaskNo()), AigTask::getTaskNo, query.getTaskNo())
+            .ge(beginTime != null, AigTask::getCreateTime, beginTime)
+            .le(endTime != null, AigTask::getCreateTime, endTime)
+            .orderByDesc(AigTask::getCreateTime);
+        Page<AigTaskVo> voPage = taskMapper.selectVoPage(pageQuery.build(), wrapper);
+        List<AigTaskVo> rows = voPage.getRecords();
+        fillLabels(rows);
+        return PageResult.build(rows, voPage.getTotal());
+    }
+
+    @Override
+    public AigTaskDetailVo getDetail(Long taskId) {
+        if (taskId == null) {
+            throw new ServiceException("任务ID不能为空");
+        }
+        AigTask task = loadTask(taskId);
+        AigTaskDetailVo detail = new AigTaskDetailVo();
+        AigTaskVo taskVo = new AigTaskVo();
+        BeanUtil.copyProperties(task, taskVo);
+        fillLabels(List.of(taskVo));
+        detail.setTask(taskVo);
+
+        if (task.getInputSnapshotId() != null) {
+            AigTaskSnapshot snapshot = snapshotMapper.selectById(task.getInputSnapshotId());
+            if (snapshot != null) {
+                AigTaskSnapshotVo snapshotVo = new AigTaskSnapshotVo();
+                BeanUtil.copyProperties(snapshot, snapshotVo);
+                detail.setSnapshot(snapshotVo);
+            }
+        }
+        // 事件流按序号升序：排障看的是「先后」，倒序会让因果读起来是反的
+        List<AigTaskEvent> events = eventMapper.selectList(new LambdaQueryWrapper<AigTaskEvent>()
+            .eq(AigTaskEvent::getTaskId, taskId)
+            .orderByAsc(AigTaskEvent::getSequence));
+        if (CollUtil.isNotEmpty(events)) {
+            for (AigTaskEvent event : events) {
+                AigTaskEventVo eventVo = new AigTaskEventVo();
+                BeanUtil.copyProperties(event, eventVo);
+                AigTaskEventTypeEnum type = AigTaskEventTypeEnum.find(event.getEventType());
+                eventVo.setEventTypeLabel(type == null ? event.getEventType() : type.getDesc());
+                detail.getEvents().add(eventVo);
+            }
+        }
+        List<AigTaskResult> results = resultMapper.selectList(new LambdaQueryWrapper<AigTaskResult>()
+            .eq(AigTaskResult::getTaskId, taskId)
+            .orderByDesc(AigTaskResult::getCreateTime));
+        if (CollUtil.isNotEmpty(results)) {
+            for (AigTaskResult result : results) {
+                AigTaskResultVo resultVo = new AigTaskResultVo();
+                BeanUtil.copyProperties(result, resultVo);
+                AigCandidateStatusEnum candidate = AigCandidateStatusEnum.find(result.getCandidateStatus());
+                resultVo.setCandidateStatusLabel(candidate == null ? null : candidate.getDesc());
+                detail.getResults().add(resultVo);
+            }
+        }
+        return detail;
+    }
+
+    /**
+     * 回填状态/类型等展示标签。
+     *
+     * <p>在服务端回填而不是让前端各维护一份枚举映射：同一个状态在任务列表、任务详情、
+     * 审计页都要显示，三处各写一份映射迟早会不一致（而「已取消」显示成「已完成」
+     * 是会被当真的）。</p>
+     *
+     * @param rows 任务视图列表
+     */
+    private void fillLabels(List<AigTaskVo> rows) {
+        if (CollUtil.isEmpty(rows)) {
+            return;
+        }
+        for (AigTaskVo row : rows) {
+            AigTaskStatusEnum status = AigTaskStatusEnum.find(row.getStatus());
+            row.setStatusLabel(status == null ? row.getStatus() : status.getDesc());
+            AigTaskTypeEnum type = AigTaskTypeEnum.find(row.getTaskType());
+            row.setTaskTypeLabel(type == null ? row.getTaskType() : type.getDesc());
+        }
+    }
+
+    /**
+     * 解析时间范围：优先取显式字段，其次取 {@code params} 中的平台惯例键。
+     *
+     * @param query         查询条件
+     * @param key           params 中的键
+     * @param explicitValue 显式字段值（可为 null）
+     * @return 时间值，无值时返回 null
+     */
+    private Object resolveRange(AigTaskQueryBo query, String key, Object explicitValue) {
+        if (explicitValue != null) {
+            return explicitValue;
+        }
+        Map<String, Object> params = query.getParams();
+        if (params == null || params.isEmpty()) {
+            return null;
+        }
+        Object value = params.get(key);
+        if (value == null || StringUtils.isBlank(String.valueOf(value))) {
+            return null;
+        }
+        return value;
+    }
 
     @Override
     @Transactional(rollbackFor = Exception.class)

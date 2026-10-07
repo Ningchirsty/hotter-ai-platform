@@ -2,6 +2,7 @@ package org.dromara.aigov.task.mapper;
 
 import org.apache.ibatis.annotations.Mapper;
 import org.dromara.aigov.task.domain.AigTaskEvent;
+import org.dromara.aigov.task.domain.vo.AigTaskEventVo;
 import org.dromara.common.mybatis.core.mapper.BaseMapperPlus;
 
 /**
@@ -13,6 +14,6 @@ import org.dromara.common.mybatis.core.mapper.BaseMapperPlus;
  * @author ai-gov
  */
 @Mapper
-public interface AigTaskEventMapper extends BaseMapperPlus<AigTaskEvent, AigTaskEvent> {
+public interface AigTaskEventMapper extends BaseMapperPlus<AigTaskEvent, AigTaskEventVo> {
 
 }

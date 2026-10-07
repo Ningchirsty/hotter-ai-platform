@@ -90,6 +90,13 @@ insert into sys_menu values(1763000000000001305, '场景强制绑定', 176300000
 -- 调用审计
 insert into sys_menu values(1763000000000000104, '调用审计', 1763000000000000001, 4, 'audit', 'aigov/audit/index', '', 'N', 'Y', 'C', '0', '0', 'aig:audit:list', 'monitor', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '逐次调用审计：模型、数据等级、是否外发、策略命中');
 
+-- AI任务（设计 §9 统一任务编排）
+insert into sys_menu values(1763000000000000105, 'AI任务', 1763000000000000001, 5, 'task', 'aigov/task/index', '', 'N', 'Y', 'C', '0', '0', 'aig:task:list', 'job', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '统一任务编排：状态机、输入快照、事件流、候选结果、失败原因与重试');
+-- 任务详情：排障主视图（任务+快照+事件流+候选结果）
+insert into sys_menu values(1763000000000001401, '任务详情', 1763000000000000105, 1, '', '', '', 'N', 'Y', 'F', '0', '0', 'aig:task:query', '#', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '');
+-- 任务操作：取消/复核/手动触发调度扫描。与「只看」分开——这些动作会改变状态或触发计费
+insert into sys_menu values(1763000000000001402, '任务操作', 1763000000000000105, 2, '', '', '', 'N', 'Y', 'F', '0', '0', 'aig:task:operate', '#', '', '', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '');
+
 -- ----------------------------
 -- 五、角色-菜单绑定
 -- ----------------------------
@@ -112,6 +119,9 @@ insert into sys_role_menu values (1763100000000000001, 1763000000000001303);
 insert into sys_role_menu values (1763100000000000001, 1763000000000001304);
 insert into sys_role_menu values (1763100000000000001, 1763000000000001305);
 insert into sys_role_menu values (1763100000000000001, 1763000000000000104);
+insert into sys_role_menu values (1763100000000000001, 1763000000000000105);
+insert into sys_role_menu values (1763100000000000001, 1763000000000001401);
+insert into sys_role_menu values (1763100000000000001, 1763000000000001402);
 
 -- 信息安全授权人：模型注册（含新增模型与密钥引用）+ 调用审计 + 只读能力/策略
 insert into sys_role_menu values (1763100000000000002, 1763000000000000001);
@@ -124,6 +134,9 @@ insert into sys_role_menu values (1763100000000000002, 1763000000000001204);
 insert into sys_role_menu values (1763100000000000002, 1763000000000000103);
 insert into sys_role_menu values (1763100000000000002, 1763000000000001301);
 insert into sys_role_menu values (1763100000000000002, 1763000000000000104);
+-- 安全授权人：任务只读（看得到谁在什么数据等级下跑了什么，但不代为取消/重试）
+insert into sys_role_menu values (1763100000000000002, 1763000000000000105);
+insert into sys_role_menu values (1763100000000000002, 1763000000000001401);
 
 -- AI能力查看者：全模块只读，但看不到端点与密钥引用
 -- 只读 = list/query；不授 model:secret（字段脱敏的验证角色），不授任何 add/edit/remove。
@@ -137,3 +150,6 @@ insert into sys_role_menu values (1763100000000000003, 1763000000000001201);
 insert into sys_role_menu values (1763100000000000003, 1763000000000000103);
 insert into sys_role_menu values (1763100000000000003, 1763000000000001301);
 insert into sys_role_menu values (1763100000000000003, 1763000000000000104);
+-- 查看者：任务只读（列表 + 详情；不授 operate）
+insert into sys_role_menu values (1763100000000000003, 1763000000000000105);
+insert into sys_role_menu values (1763100000000000003, 1763000000000001401);

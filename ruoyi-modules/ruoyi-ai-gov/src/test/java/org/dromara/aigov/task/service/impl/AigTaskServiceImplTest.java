@@ -1,7 +1,9 @@
 package org.dromara.aigov.task.service.impl;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.dromara.aigov.enums.AigErrorClassEnum;
 import org.dromara.aigov.task.config.AigCallbackProperties;
@@ -12,9 +14,12 @@ import org.dromara.aigov.task.domain.AigTaskResult;
 import org.dromara.aigov.task.domain.AigTaskSnapshot;
 import org.dromara.aigov.task.domain.bo.AigTaskCallbackBo;
 import org.dromara.aigov.task.domain.bo.AigTaskCreateBo;
+import org.dromara.aigov.task.domain.bo.AigTaskQueryBo;
 import org.dromara.aigov.task.domain.bo.AigTaskResultBo;
 import org.dromara.aigov.task.domain.bo.AigTaskReviewBo;
 import org.dromara.aigov.task.domain.vo.AigCallbackVo;
+import org.dromara.aigov.task.domain.vo.AigTaskDetailVo;
+import org.dromara.aigov.task.domain.vo.AigTaskVo;
 import org.dromara.aigov.task.enums.AigTaskStatusEnum;
 import org.dromara.aigov.task.helper.AigTaskActorProvider;
 import org.dromara.aigov.task.helper.AigTaskCallbackSigner;
@@ -23,7 +28,9 @@ import org.dromara.aigov.task.mapper.AigTaskEventMapper;
 import org.dromara.aigov.task.mapper.AigTaskMapper;
 import org.dromara.aigov.task.mapper.AigTaskResultMapper;
 import org.dromara.aigov.task.mapper.AigTaskSnapshotMapper;
+import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.core.exception.ServiceException;
+import org.dromara.common.mybatis.core.page.PageQuery;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -31,9 +38,12 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -132,6 +142,18 @@ class AigTaskServiceImplTest {
         bo.setIdempotencyKey(idempotencyKey);
         bo.setSnapshotJson("{\"facts\":\"v1\"}");
         return bo;
+    }
+
+    /**
+     * 造一个分页参数。
+     *
+     * @return 分页参数
+     */
+    private static PageQuery pageQuery() {
+        PageQuery pageQuery = new PageQuery();
+        pageQuery.setPageNum(1);
+        pageQuery.setPageSize(10);
+        return pageQuery;
     }
 
     private static AigTask task(long taskId, String status, int attemptNo, int version) {
@@ -239,6 +261,120 @@ class AigTaskServiceImplTest {
         assertTrue(ex.getMessage().contains("快照"), "实际=" + ex.getMessage());
 
         verify(taskMapper, never()).insert(any(AigTask.class));
+    }
+
+    // ------------------------------------------------------------------ 查询
+
+    @Test
+    @DisplayName("查询：回填状态与类型描述，且过滤条件真的进 where")
+    void queryPageFillsLabelsAndFilters() {
+        AigTaskVo row = new AigTaskVo();
+        row.setTaskId(1L);
+        row.setStatus("REVIEW_PENDING");
+        row.setTaskType("IMAGE_GENERATION");
+        Page<AigTaskVo> page = new Page<>(1, 10);
+        page.setRecords(List.of(row));
+        page.setTotal(1);
+        when(taskMapper.selectVoPage(any(), any())).thenReturn(page);
+
+        AigTaskQueryBo query = new AigTaskQueryBo();
+        query.setStatus("REVIEW_PENDING");
+        query.setProjectType("CREATIVE");
+
+        PageResult<AigTaskVo> result = service.queryPage(query, pageQuery());
+
+        assertEquals(1, result.getTotal());
+        AigTaskVo filled = result.getRows().iterator().next();
+        assertEquals("待人工复核", filled.getStatusLabel(),
+            "状态描述要在服务端回填：同一个状态在三处界面各写一份映射迟早会不一致，"
+                + "而「已取消」显示成「已完成」是会被当真的");
+        assertEquals("图像生成", filled.getTaskTypeLabel());
+
+        ArgumentCaptor<LambdaQueryWrapper<AigTask>> captor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(taskMapper).selectVoPage(any(), captor.capture());
+        String sql = captor.getValue().getCustomSqlSegment();
+        assertTrue(sql.contains("status"), "状态过滤必须进 where；实际=" + sql);
+        assertTrue(sql.contains("project_type"), "业务域过滤必须进 where；实际=" + sql);
+    }
+
+    @Test
+    @DisplayName("查询：不传条件时不加任何条件（避免把「不筛」写成「筛空值」）")
+    void queryPageWithoutFilters() {
+        Page<AigTaskVo> page = new Page<>(1, 10);
+        page.setRecords(new ArrayList<>());
+        page.setTotal(0);
+        when(taskMapper.selectVoPage(any(), any())).thenReturn(page);
+
+        service.queryPage(new AigTaskQueryBo(), pageQuery());
+
+        ArgumentCaptor<LambdaQueryWrapper<AigTask>> captor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(taskMapper).selectVoPage(any(), captor.capture());
+        String sql = captor.getValue().getCustomSqlSegment();
+        assertFalse(sql.contains("status"), "不传状态就不该出现该条件；实际=" + sql);
+        assertFalse(sql.contains("project_type"), "实际=" + sql);
+    }
+
+    @Test
+    @DisplayName("查询：平台惯例的 params[beginTime/endTime] 也要生效（前端 addDateRange 走这条）")
+    void queryPageHonoursParamsDateRange() {
+        Page<AigTaskVo> page = new Page<>(1, 10);
+        page.setRecords(new ArrayList<>());
+        page.setTotal(0);
+        when(taskMapper.selectVoPage(any(), any())).thenReturn(page);
+        AigTaskQueryBo query = new AigTaskQueryBo();
+        query.setParams(Map.of("beginTime", "2026-10-01 00:00:00", "endTime", "2026-10-07 23:59:59"));
+
+        service.queryPage(query, pageQuery());
+
+        ArgumentCaptor<LambdaQueryWrapper<AigTask>> captor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(taskMapper).selectVoPage(any(), captor.capture());
+        String sql = captor.getValue().getCustomSqlSegment();
+        assertTrue(sql.contains("create_time"), "时间范围必须进 where；实际=" + sql);
+    }
+
+    @Test
+    @DisplayName("详情：任务+快照+事件流+候选结果一次给全，事件按序号升序")
+    void getDetailAssemblesEverything() {
+        AigTask current = task(1L, "RUNNING", 1, 4);
+        current.setInputSnapshotId(77L);
+        when(taskMapper.selectById(1L)).thenReturn(current);
+
+        AigTaskSnapshot snapshot = new AigTaskSnapshot();
+        snapshot.setSnapshotId(77L);
+        snapshot.setSnapshotJson("{\"facts\":\"v1\"}");
+        snapshot.setSnapshotHash("hash-abc");
+        when(snapshotMapper.selectById(77L)).thenReturn(snapshot);
+
+        AigTaskEvent first = new AigTaskEvent();
+        first.setSequence(1);
+        first.setEventType("AI_TASK_CREATED");
+        AigTaskEvent second = new AigTaskEvent();
+        second.setSequence(2);
+        second.setEventType("AI_TASK_STATUS_CHANGED");
+        when(eventMapper.selectList(any())).thenReturn(List.of(first, second));
+
+        AigTaskResult candidate = new AigTaskResult();
+        candidate.setResultId(9L);
+        candidate.setCandidateStatus("CANDIDATE");
+        when(resultMapper.selectList(any())).thenReturn(List.of(candidate));
+
+        AigTaskDetailVo detail = service.getDetail(1L);
+
+        assertEquals("执行中", detail.getTask().getStatusLabel());
+        assertEquals("hash-abc", detail.getSnapshot().getSnapshotHash(), "快照哈希要与原文一起给出，视图才可自证");
+        assertEquals(2, detail.getEvents().size());
+        assertEquals(1, detail.getEvents().get(0).getSequence(), "事件必须按序号升序（倒序会让因果读起来是反的）");
+        assertEquals("任务创建", detail.getEvents().get(0).getEventTypeLabel());
+        assertEquals("候选（待人工选定）", detail.getResults().get(0).getCandidateStatusLabel());
+    }
+
+    @Test
+    @DisplayName("详情：任务不存在时报错而不是返回空壳")
+    void getDetailRejectsMissingTask() {
+        when(taskMapper.selectById(404L)).thenReturn(null);
+
+        assertThrows(ServiceException.class, () -> service.getDetail(404L));
+        assertThrows(ServiceException.class, () -> service.getDetail(null));
     }
 
     // ------------------------------------------------------------------ 状态迁移

@@ -80,6 +80,20 @@ public interface AigConstants {
      * 调用审计-列表
      */
     String PERM_AUDIT_LIST = "aig:audit:list";
+    /**
+     * AI任务-列表
+     */
+    String PERM_TASK_LIST = "aig:task:list";
+    /**
+     * AI任务-详情
+     */
+    String PERM_TASK_QUERY = "aig:task:query";
+    /**
+     * AI任务-操作（人工取消/复核/手动触发调度扫描）
+     * <p>与「只看」分开：这些操作会改变任务状态或触发重试与计费，
+     * 而查看任务只是读。合并的话，一个只该看进度的人就能替所有人取消在跑的任务。</p>
+     */
+    String PERM_TASK_OPERATE = "aig:task:operate";
 
     /**
      * 阶段1 首个能力编码：人才能力匹配

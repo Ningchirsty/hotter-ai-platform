@@ -4,10 +4,15 @@ import org.dromara.aigov.enums.AigErrorClassEnum;
 import org.dromara.aigov.task.domain.AigTask;
 import org.dromara.aigov.task.domain.bo.AigTaskCallbackBo;
 import org.dromara.aigov.task.domain.bo.AigTaskCreateBo;
+import org.dromara.aigov.task.domain.bo.AigTaskQueryBo;
 import org.dromara.aigov.task.domain.bo.AigTaskResultBo;
 import org.dromara.aigov.task.domain.bo.AigTaskReviewBo;
 import org.dromara.aigov.task.domain.vo.AigCallbackVo;
+import org.dromara.aigov.task.domain.vo.AigTaskDetailVo;
+import org.dromara.aigov.task.domain.vo.AigTaskVo;
 import org.dromara.aigov.task.enums.AigTaskStatusEnum;
+import org.dromara.common.core.domain.PageResult;
+import org.dromara.common.mybatis.core.page.PageQuery;
 
 /**
  * AI 统一任务编排服务（设计 §9）。
@@ -103,6 +108,23 @@ public interface IAigTaskService {
      * @return 复核后的任务
      */
     AigTask review(AigTaskReviewBo bo);
+
+    /**
+     * 分页查询任务（只读列表视图，不含快照原文与事件流）。
+     *
+     * @param bo        查询条件
+     * @param pageQuery 分页参数
+     * @return 任务分页结果
+     */
+    PageResult<AigTaskVo> queryPage(AigTaskQueryBo bo, PageQuery pageQuery);
+
+    /**
+     * 取任务详情：任务 + 输入快照 + 事件流 + 候选结果（一次给全）。
+     *
+     * @param taskId 任务ID
+     * @return 详情
+     */
+    AigTaskDetailVo getDetail(Long taskId);
 
     /**
      * 处理 Provider 回调：验签 → 幂等 → 定位任务 → 按状态机推进 → 记账。
