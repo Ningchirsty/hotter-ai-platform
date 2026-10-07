@@ -93,7 +93,7 @@ public class AigAgentRegistryController {
      * @return 详情
      */
     @SaCheckPermission(AigConstants.PERM_AGENT_QUERY)
-    @GetMapping("/{agentId}")
+    @GetMapping("/{agentId:\\d+}")
     public R<AigAgentVo> getAgent(@NotNull(message = "Agent ID不能为空") @PathVariable Long agentId) {
         return R.ok(queryService.getAgent(agentId));
     }
@@ -119,7 +119,7 @@ public class AigAgentRegistryController {
      * @return 详情
      */
     @SaCheckPermission(AigConstants.PERM_AGENT_QUERY)
-    @GetMapping("/version/{agentVersionId}")
+    @GetMapping("/version/{agentVersionId:\\d+}")
     public R<AigAgentVersionVo> getVersion(
         @NotNull(message = "Agent 版本ID不能为空") @PathVariable Long agentVersionId) {
         return R.ok(queryService.getAgentVersion(agentVersionId));
@@ -220,7 +220,7 @@ public class AigAgentRegistryController {
      * @return 详情
      */
     @SaCheckPermission(AigConstants.PERM_PACKAGE_QUERY)
-    @GetMapping("/package/{packageId}")
+    @GetMapping("/package/{packageId:\\d+}")
     public R<AigPackageVo> getPackage(
         @NotNull(message = "Package ID不能为空") @PathVariable Long packageId) {
         return R.ok(queryService.getPackage(packageId));
@@ -248,7 +248,7 @@ public class AigAgentRegistryController {
      * @return 详情
      */
     @SaCheckPermission(AigConstants.PERM_PACKAGE_QUERY)
-    @GetMapping("/package/version/{packageVersionId}")
+    @GetMapping("/package/version/{packageVersionId:\\d+}")
     public R<AigPackageVersionVo> getPackageVersion(
         @NotNull(message = "Package 版本ID不能为空") @PathVariable Long packageVersionId) {
         return R.ok(queryService.getPackageVersion(packageVersionId));
@@ -262,7 +262,7 @@ public class AigAgentRegistryController {
      */
     @SaCheckPermission(AigConstants.PERM_PACKAGE_SCAN)
     @RepeatSubmit
-    @PostMapping("/package/version/{packageVersionId}/scan")
+    @PostMapping("/package/version/{packageVersionId:\\d+}/scan")
     public R<AigManifestScanResult> scanManifest(
         @NotNull(message = "Package 版本ID不能为空") @PathVariable Long packageVersionId) {
         return R.ok(registryService.scanStoredManifest(packageVersionId));
