@@ -12,6 +12,8 @@ import org.dromara.aigov.agent.domain.AigPackageVersion;
 import org.dromara.aigov.agent.domain.AigSkill;
 import org.dromara.aigov.agent.domain.AigSkillVersion;
 import org.dromara.aigov.agent.domain.bo.AigPackageUploadBo;
+import org.dromara.aigov.agent.domain.bo.AigReleaseAdvanceBo;
+import org.dromara.aigov.agent.domain.vo.AigPackageDisableVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageInstallVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageRegisterVo;
 import org.dromara.aigov.agent.manifest.AigPackageManifestValidator;
@@ -22,6 +24,7 @@ import org.dromara.aigov.agent.mapper.AigPackageMapper;
 import org.dromara.aigov.agent.mapper.AigPackageVersionMapper;
 import org.dromara.aigov.agent.mapper.AigSkillMapper;
 import org.dromara.aigov.agent.mapper.AigSkillVersionMapper;
+import org.dromara.aigov.agent.service.IAigAgentRegistryService;
 import org.dromara.common.core.exception.ServiceException;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -94,6 +97,7 @@ class AigPackageServiceImplTest {
     private AigAgentVersionMapper agentVersionMapper;
     private AigSkillMapper skillMapper;
     private AigSkillVersionMapper skillVersionMapper;
+    private IAigAgentRegistryService registryService;
     private AigPackageServiceImpl service;
 
     @BeforeAll
@@ -118,10 +122,11 @@ class AigPackageServiceImplTest {
         agentVersionMapper = mock(AigAgentVersionMapper.class);
         skillMapper = mock(AigSkillMapper.class);
         skillVersionMapper = mock(AigSkillVersionMapper.class);
+        registryService = mock(IAigAgentRegistryService.class);
         service = new AigPackageServiceImpl(packageMapper, packageVersionMapper, installLogMapper,
             agentMapper, agentVersionMapper, skillMapper, skillVersionMapper,
             new AigPackageManifestValidator(JsonMapper.builder().build()),
-            JsonMapper.builder().build());
+            registryService, JsonMapper.builder().build());
 
         when(packageMapper.insert(any(AigPackage.class))).thenAnswer(invocation -> {
             invocation.<AigPackage>getArgument(0).setPackageId(PKG_ID);
@@ -467,6 +472,185 @@ class AigPackageServiceImplTest {
         when(packageVersionMapper.selectById(99999L)).thenReturn(null);
         assertTrue(assertThrows(ServiceException.class, () -> service.install(99999L, 7L))
             .getMessage().contains("不存在"));
+    }
+
+    // ---------------------------------------------------------------- 停用
+
+    @Test
+    @DisplayName("停用：带进来的版本逐个交给发布唯一写入口下线，并如实记下停用前状态")
+    void disableDelegatesToReleaseEntry() {
+        stubDisableContext();
+        when(agentVersionMapper.selectList(any()))
+            .thenReturn(List.of(agentVersion(AGENT_VERSION_ID, "DRAFT")));
+        when(skillVersionMapper.selectList(any()))
+            .thenReturn(List.of(skillVersion(SKILL_VERSION_ID, "STABLE")));
+
+        AigPackageDisableVo vo = service.disable(PKG_VERSION_ID, 7L);
+
+        assertFalse(vo.alreadyDisabled());
+        assertEquals(2, vo.disabled().size());
+        assertTrue(vo.skipped().isEmpty());
+
+        ArgumentCaptor<AigReleaseAdvanceBo> captor = ArgumentCaptor.forClass(AigReleaseAdvanceBo.class);
+        verify(registryService, times(2)).advanceRelease(captor.capture());
+        List<AigReleaseAdvanceBo> bos = captor.getAllValues();
+        assertEquals("AGENT_VERSION", bos.get(0).getTargetType());
+        assertEquals("DRAFT", bos.get(0).getExpectedStatus(), "expectedStatus 必须取库中当前状态（CAS 的前提）");
+        assertEquals("DISABLED", bos.get(0).getToStatus());
+        assertEquals("SKILL_VERSION", bos.get(1).getTargetType());
+        assertEquals("STABLE", bos.get(1).getExpectedStatus(),
+            "把一个 STABLE 版本下线时，expectedStatus 也必须是它当前的状态");
+        assertEquals(7L, bos.get(0).getOperatorId());
+        assertTrue(bos.get(1).getDetail().contains("STABLE"), bos.get(1).getDetail());
+
+        // 停用前状态要如实上报：STABLE 下线与 DRAFT 下线的影响面不是一回事
+        assertEquals("DRAFT", vo.disabled().get(0).fromStatus());
+        assertEquals("STABLE", vo.disabled().get(1).fromStatus());
+
+        ArgumentCaptor<AigPackageInstallLog> log = ArgumentCaptor.forClass(AigPackageInstallLog.class);
+        verify(installLogMapper).insert(log.capture());
+        assertEquals("DISABLE", log.getValue().getAction());
+        assertEquals("PASS", log.getValue().getResult());
+        assertTrue(log.getValue().getDetail().contains("STABLE→DISABLED"), log.getValue().getDetail());
+    }
+
+    @Test
+    @DisplayName("停用幂等：带进来的版本都已在停用状态时，不改库也不写账本")
+    void disableIsIdempotent() {
+        stubDisableContext();
+        when(agentVersionMapper.selectList(any()))
+            .thenReturn(List.of(agentVersion(AGENT_VERSION_ID, "DISABLED")));
+        when(skillVersionMapper.selectList(any()))
+            .thenReturn(List.of(skillVersion(SKILL_VERSION_ID, "DISABLED")));
+
+        AigPackageDisableVo vo = service.disable(PKG_VERSION_ID, 7L);
+
+        assertTrue(vo.alreadyDisabled());
+        assertTrue(vo.disabled().isEmpty());
+        assertEquals(2, vo.skipped().size());
+        verify(registryService, never()).advanceRelease(any());
+        verify(installLogMapper, never()).insert(any(AigPackageInstallLog.class));
+    }
+
+    @Test
+    @DisplayName("从没装过就停用：报「没有安装出任何版本」，而不是静默成功一条账")
+    void disableRequiresInstalled() {
+        stubDisableContext();
+        when(agentVersionMapper.selectList(any())).thenReturn(List.of());
+        when(skillVersionMapper.selectList(any())).thenReturn(List.of());
+
+        ServiceException error = assertThrows(ServiceException.class,
+            () -> service.disable(PKG_VERSION_ID, 7L));
+
+        assertTrue(error.getMessage().contains("没有安装出任何版本"), error.getMessage());
+        verify(installLogMapper, never()).insert(any(AigPackageInstallLog.class));
+    }
+
+    @Test
+    @DisplayName("归档版本跳过并说明原因（不阻断其余版本）；全归档到一条也停不了才报错")
+    void disableSkipsArchived() {
+        stubDisableContext();
+        // 一个 DRAFT + 一个 ARCHIVED：只停 DRAFT，归档的进 skipped 带原因
+        when(agentVersionMapper.selectList(any()))
+            .thenReturn(List.of(agentVersion(AGENT_VERSION_ID, "ARCHIVED")));
+        when(skillVersionMapper.selectList(any()))
+            .thenReturn(List.of(skillVersion(SKILL_VERSION_ID, "DRAFT")));
+
+        AigPackageDisableVo vo = service.disable(PKG_VERSION_ID, 7L);
+
+        assertFalse(vo.alreadyDisabled());
+        assertEquals(1, vo.disabled().size());
+        assertEquals(SKILL_VERSION_ID, vo.disabled().get(0).versionId());
+        assertEquals(1, vo.skipped().size());
+        assertTrue(vo.skipped().get(0).reason().contains("终态"),
+            "跳过必须带可读原因：" + vo.skipped().get(0).reason());
+        // 归档的那个不该被交给发布服务（它根本不可迁移）
+        verify(registryService, times(1)).advanceRelease(any());
+        // 但这次确实停了一个，所以账本要有一行
+        verify(installLogMapper, times(1)).insert(any(AigPackageInstallLog.class));
+    }
+
+    @Test
+    @DisplayName("全部归档：一条也停不了 → 报错，不写账本（不能记一条没做任何事的 DISABLE）")
+    void disableFailsWhenAllArchived() {
+        stubDisableContext();
+        when(agentVersionMapper.selectList(any()))
+            .thenReturn(List.of(agentVersion(AGENT_VERSION_ID, "ARCHIVED")));
+        when(skillVersionMapper.selectList(any())).thenReturn(List.of());
+
+        ServiceException error = assertThrows(ServiceException.class,
+            () -> service.disable(PKG_VERSION_ID, 7L));
+
+        assertTrue(error.getMessage().contains("一条也停不了"), error.getMessage());
+        verify(registryService, never()).advanceRelease(any());
+        verify(installLogMapper, never()).insert(any(AigPackageInstallLog.class));
+    }
+
+    @Test
+    @DisplayName("停用入参：空版本ID、版本不存在都报可读错误")
+    void disableValidatesInput() {
+        assertTrue(assertThrows(ServiceException.class, () -> service.disable(null, 7L))
+            .getMessage().contains("不能为空"));
+        when(packageVersionMapper.selectById(99999L)).thenReturn(null);
+        assertTrue(assertThrows(ServiceException.class, () -> service.disable(99999L, 7L))
+            .getMessage().contains("不存在"));
+    }
+
+    /**
+     * 停用用例的公共桩：Package 版本在、包在、父记录在。
+     */
+    private void stubDisableContext() {
+        when(packageVersionMapper.selectById(PKG_VERSION_ID))
+            .thenReturn(packageVersion("PASS", defaultManifest()));
+        when(packageMapper.selectById(PKG_ID)).thenReturn(existingPackage());
+        when(agentMapper.selectById(AGENT_ID)).thenReturn(existingAgent());
+        when(skillMapper.selectById(SKILL_ID)).thenReturn(existingSkill());
+    }
+
+    /**
+     * 造一个 Agent 版本。
+     *
+     * @param versionId 版本ID
+     * @param status    发布状态
+     * @return 版本
+     */
+    private static AigAgentVersion agentVersion(long versionId, String status) {
+        AigAgentVersion version = new AigAgentVersion();
+        version.setAgentVersionId(versionId);
+        version.setAgentId(AGENT_ID);
+        version.setVersion("1.0.0");
+        version.setReleaseStatus(status);
+        version.setPackageVersionId(PKG_VERSION_ID);
+        return version;
+    }
+
+    /**
+     * 造一个 Skill 版本。
+     *
+     * @param versionId 版本ID
+     * @param status    发布状态
+     * @return 版本
+     */
+    private static AigSkillVersion skillVersion(long versionId, String status) {
+        AigSkillVersion version = new AigSkillVersion();
+        version.setSkillVersionId(versionId);
+        version.setSkillId(SKILL_ID);
+        version.setVersion("1.0.0");
+        version.setReleaseStatus(status);
+        version.setPackageVersionId(PKG_VERSION_ID);
+        return version;
+    }
+
+    /**
+     * 造一个已存在的 Agent。
+     *
+     * @return Agent
+     */
+    private static AigAgent existingAgent() {
+        AigAgent agent = new AigAgent();
+        agent.setAgentId(AGENT_ID);
+        agent.setAgentCode("vision-planner");
+        return agent;
     }
 
     /**

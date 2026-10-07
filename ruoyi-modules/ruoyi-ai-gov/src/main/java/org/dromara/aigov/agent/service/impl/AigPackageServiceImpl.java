@@ -12,11 +12,14 @@ import org.dromara.aigov.agent.domain.AigPackageVersion;
 import org.dromara.aigov.agent.domain.AigSkill;
 import org.dromara.aigov.agent.domain.AigSkillVersion;
 import org.dromara.aigov.agent.domain.bo.AigPackageUploadBo;
+import org.dromara.aigov.agent.domain.bo.AigReleaseAdvanceBo;
+import org.dromara.aigov.agent.domain.vo.AigPackageDisableVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageInstallLogVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageInstallVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageRegisterVo;
 import org.dromara.aigov.agent.enums.AigPackageInstallActionEnum;
 import org.dromara.aigov.agent.enums.AigReleaseStatusEnum;
+import org.dromara.aigov.agent.enums.AigReleaseTargetTypeEnum;
 import org.dromara.aigov.agent.manifest.AigManifestAgentSpec;
 import org.dromara.aigov.agent.manifest.AigManifestScanResult;
 import org.dromara.aigov.agent.manifest.AigManifestSkillSpec;
@@ -29,7 +32,9 @@ import org.dromara.aigov.agent.mapper.AigPackageMapper;
 import org.dromara.aigov.agent.mapper.AigPackageVersionMapper;
 import org.dromara.aigov.agent.mapper.AigSkillMapper;
 import org.dromara.aigov.agent.mapper.AigSkillVersionMapper;
+import org.dromara.aigov.agent.service.IAigAgentRegistryService;
 import org.dromara.aigov.agent.service.IAigPackageService;
+import org.dromara.aigov.agent.state.AigReleaseStateMachine;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
 import org.springframework.stereotype.Service;
@@ -43,7 +48,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Package 上传登记与安装实现（设计 §6.1、§6.3）。
+ * Package 上传登记、安装与停用实现（设计 §6.1、§6.3）。
  *
  * <h3>两处必须写清楚的落库口径（Manifest 有、表里没有对应列）</h3>
  * <ol>
@@ -122,6 +127,12 @@ public class AigPackageServiceImpl implements IAigPackageService {
     private final AigSkillVersionMapper skillVersionMapper;
 
     private final AigPackageManifestValidator manifestValidator;
+
+    /**
+     * 发布状态的唯一写入口。停用<b>不直接改</b>版本的 {@code release_status}，
+     * 而是逐个交给它——那里才有状态机边判定、CAS 并发保护与发布事件账本。
+     */
+    private final IAigAgentRegistryService registryService;
 
     private final JsonMapper jsonMapper;
 
@@ -287,6 +298,191 @@ public class AigPackageServiceImpl implements IAigPackageService {
             codes(agents), codes(skills));
         return new AigPackageInstallVo(pkg.getPackageId(), packageVersionId, false, agents, skills,
             "安装出的版本一律为 DRAFT：安装不等于发布，发布门槛照旧要逐道过");
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public AigPackageDisableVo disable(Long packageVersionId, Long operatorId) {
+        if (packageVersionId == null) {
+            throw new ServiceException("Package 版本ID不能为空");
+        }
+        AigPackageVersion pkgVersion = packageVersionMapper.selectById(packageVersionId);
+        if (pkgVersion == null) {
+            throw new ServiceException("Package 版本不存在：" + packageVersionId);
+        }
+        AigPackage pkg = packageMapper.selectById(pkgVersion.getPackageId());
+        if (pkg == null) {
+            throw new ServiceException("Package 主记录不存在：" + pkgVersion.getPackageId());
+        }
+
+        // 停用对象 = **回指该 Package 版本**的版本行（与安装的幂等判据同源）。
+        // 用 package_version_id 精确定位，绝不按 agent_code 连坐：同一个 Agent 的其它版本
+        // 可能来自别的包或是平台内置，而且很可能正在被业务使用。
+        List<AigAgentVersion> agents = agentVersionMapper.selectList(
+            new LambdaQueryWrapper<AigAgentVersion>()
+                .eq(AigAgentVersion::getPackageVersionId, packageVersionId));
+        List<AigSkillVersion> skills = skillVersionMapper.selectList(
+            new LambdaQueryWrapper<AigSkillVersion>()
+                .eq(AigSkillVersion::getPackageVersionId, packageVersionId));
+        if (agents.isEmpty() && skills.isEmpty()) {
+            throw new ServiceException("该 Package 版本没有安装出任何版本，没有可停用的对象：Package 版本 #"
+                + packageVersionId + "。停用是「把装出来的东西下线」，请先安装；"
+                + "若目的是「这个包以后不要再装新版本」，那是包级停用，不是本接口");
+        }
+
+        List<AigPackageDisableVo.DisabledItem> disabled = new ArrayList<>();
+        List<AigPackageDisableVo.SkippedItem> skipped = new ArrayList<>();
+        for (AigAgentVersion item : agents) {
+            AigAgent agent = agentMapper.selectById(item.getAgentId());
+            disableOne(AigReleaseTargetTypeEnum.AGENT_VERSION,
+                agent == null ? null : agent.getAgentCode(), item.getAgentId(),
+                item.getAgentVersionId(), item.getVersion(), item.getReleaseStatus(),
+                packageVersionId, operatorId, disabled, skipped);
+        }
+        for (AigSkillVersion item : skills) {
+            AigSkill skill = skillMapper.selectById(item.getSkillId());
+            disableOne(AigReleaseTargetTypeEnum.SKILL_VERSION,
+                skill == null ? null : skill.getSkillCode(), item.getSkillId(),
+                item.getSkillVersionId(), item.getVersion(), item.getReleaseStatus(),
+                packageVersionId, operatorId, disabled, skipped);
+        }
+
+        long already = 0L;
+        for (AigPackageDisableVo.SkippedItem item : skipped) {
+            if (AigReleaseStatusEnum.DISABLED.getCode().equals(item.fromStatus())) {
+                already++;
+            }
+        }
+        if (disabled.isEmpty()) {
+            if (already > 0L) {
+                // 幂等命中：不改任何东西，也不写账本（账本记的是发生过的动作，不是重复的意图）
+                log.info("Package 停用幂等命中, packageVersionId={}, 带进来的版本均已在停用状态",
+                    packageVersionId);
+                return new AigPackageDisableVo(pkg.getPackageId(), packageVersionId, true,
+                    disabled, skipped, "该 Package 版本带进来的 " + (agents.size() + skills.size())
+                        + " 个版本都已在停用状态，本次未做任何改动（幂等）");
+            }
+            throw new ServiceException("该 Package 版本带进来的版本一条也停不了："
+                + skipReasons(skipped) + "（归档是终态，要改请出新版本）");
+        }
+
+        writeLog(packageVersionId, AigPackageInstallActionEnum.DISABLE, "PASS",
+            "停用 " + disabled.size() + " 个版本（跳过 " + skipped.size() + " 个）："
+                + disabledSummary(disabled) + skippedSummary(skipped), operatorId);
+        log.info("Package 停用完成, packageVersionId={}, disabled={}, skipped={}", packageVersionId,
+            disabled.size(), skipped.size());
+        return new AigPackageDisableVo(pkg.getPackageId(), packageVersionId, false, disabled, skipped,
+            "已停用 " + disabled.size() + " 个版本。停用只改发布状态、不动版本内容；"
+                + "重新启用走发布推进（DISABLED → STABLE 需证明该版本曾 STABLE 过）");
+    }
+
+    /**
+     * 停用一个版本，或如实记下为什么没停。
+     *
+     * <p>状态迁移<b>不在这里直接写库</b>：交给 {@link IAigAgentRegistryService#advanceRelease}，
+     * 由它做状态机边判定、CAS 更新与发布事件留痕。本方法只负责判定「能不能停」并翻译成可读结果。</p>
+     *
+     * @param type            对象类型
+     * @param code            编码（可能取不到——父记录缺失时如实留 null，不编造）
+     * @param parentId        父记录ID
+     * @param versionId       版本ID
+     * @param version         版本号
+     * @param rawStatus       库中发布状态（原始值）
+     * @param packageVersionId Package 版本ID（写进发布事件说明）
+     * @param operatorId      操作人
+     * @param disabled        收集器：真正被停用的
+     * @param skipped         收集器：未改动的
+     */
+    private void disableOne(AigReleaseTargetTypeEnum type, String code, Long parentId, Long versionId,
+                            String version, String rawStatus, Long packageVersionId, Long operatorId,
+                            List<AigPackageDisableVo.DisabledItem> disabled,
+                            List<AigPackageDisableVo.SkippedItem> skipped) {
+        AigReleaseStatusEnum from = AigReleaseStatusEnum.find(rawStatus);
+        if (from == AigReleaseStatusEnum.DISABLED) {
+            skipped.add(new AigPackageDisableVo.SkippedItem(type.getCode(), code, parentId, versionId,
+                version, rawStatus, "已在停用状态"));
+            return;
+        }
+        if (from == null) {
+            // 不猜、不顺手改成 DISABLED：状态读不出来时改动可能掩盖真正的数据问题
+            skipped.add(new AigPackageDisableVo.SkippedItem(type.getCode(), code, parentId, versionId,
+                version, rawStatus, "库中发布状态为空或非法（" + rawStatus + "），需人工确认，未改动"));
+            return;
+        }
+        if (!AigReleaseStateMachine.canTransition(from, AigReleaseStatusEnum.DISABLED)) {
+            skipped.add(new AigPackageDisableVo.SkippedItem(type.getCode(), code, parentId, versionId,
+                version, rawStatus, "当前状态 " + from.getCode() + " 不能停用——"
+                    + AigReleaseStateMachine.describeAllowed(from)));
+            return;
+        }
+
+        AigReleaseAdvanceBo bo = new AigReleaseAdvanceBo();
+        bo.setTargetType(type.getCode());
+        bo.setTargetVersionId(versionId);
+        bo.setExpectedStatus(from.getCode());
+        bo.setToStatus(AigReleaseStatusEnum.DISABLED.getCode());
+        bo.setOperatorId(operatorId);
+        bo.setDetail("停用 Package 版本 #" + packageVersionId + " 带入的 " + type.getDesc()
+            + " " + (code == null ? String.valueOf(versionId) : code) + "（停用前 " + from.getCode() + "）");
+        registryService.advanceRelease(bo);
+        disabled.add(new AigPackageDisableVo.DisabledItem(type.getCode(), code, parentId, versionId,
+            version, from.getCode()));
+    }
+
+    /**
+     * 被停用版本的摘要（写明停用前状态：STABLE 下线与 DRAFT 下线的影响面不是一回事）。
+     *
+     * @param items 停用项
+     * @return 摘要文本
+     */
+    private static String disabledSummary(List<AigPackageDisableVo.DisabledItem> items) {
+        StringBuilder sb = new StringBuilder();
+        for (AigPackageDisableVo.DisabledItem item : items) {
+            if (sb.length() > 0) {
+                sb.append('、');
+            }
+            sb.append(item.code()).append('(').append(item.fromStatus()).append("→DISABLED)");
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 跳过项摘要。
+     *
+     * @param items 跳过项
+     * @return 摘要文本（无跳过时为空串）
+     */
+    private static String skippedSummary(List<AigPackageDisableVo.SkippedItem> items) {
+        if (items.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder("；跳过：");
+        boolean first = true;
+        for (AigPackageDisableVo.SkippedItem item : items) {
+            if (!first) {
+                sb.append('、');
+            }
+            sb.append(item.code()).append('(').append(item.reason()).append('）');
+            first = false;
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 跳过原因汇总（全部跳不过去时报错用，必须能看出是为什么）。
+     *
+     * @param items 跳过项
+     * @return 原因文本
+     */
+    private static String skipReasons(List<AigPackageDisableVo.SkippedItem> items) {
+        StringBuilder sb = new StringBuilder();
+        for (AigPackageDisableVo.SkippedItem item : items) {
+            if (sb.length() > 0) {
+                sb.append('；');
+            }
+            sb.append(item.code()).append("：").append(item.reason());
+        }
+        return sb.toString();
     }
 
     @Override

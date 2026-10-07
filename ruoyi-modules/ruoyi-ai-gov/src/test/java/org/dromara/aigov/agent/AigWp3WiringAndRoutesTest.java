@@ -198,6 +198,11 @@ class AigWp3WiringAndRoutesTest {
             .andExpect(status().isOk());
         verify(packageService).install(eq(7L), any());
 
+        // 停用（把该包带进来的版本下线）：走同一个控制器的第三个写接口
+        mockMvc.perform(post("/aigov/agent/package/version/7/disable"))
+            .andExpect(status().isOk());
+        verify(packageService).disable(eq(7L), any());
+
         mockMvc.perform(get("/aigov/agent/package/version/7/install-log"))
             .andExpect(status().isOk());
         verify(packageService).listInstallLog(7L);
@@ -344,10 +349,11 @@ class AigWp3WiringAndRoutesTest {
                                           AigSkillMapper skillMapper,
                                           AigSkillVersionMapper skillVersionMapper,
                                           AigPackageManifestValidator manifestValidator,
+                                          IAigAgentRegistryService registryService,
                                           JsonMapper jsonMapper) {
             return new AigPackageServiceImpl(packageMapper, packageVersionMapper, installLogMapper,
                 agentMapper, agentVersionMapper, skillMapper, skillVersionMapper, manifestValidator,
-                jsonMapper);
+                registryService, jsonMapper);
         }
 
         @Bean

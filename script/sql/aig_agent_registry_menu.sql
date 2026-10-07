@@ -6,15 +6,18 @@
 --       以及 script/sql/aig_agent_registry.sql（WP3 的表）
 --
 -- 【为什么只有权限行（menu_type='F'），没有页面菜单（'C'）】
--- 这次交付的是 API（Controller），治理台页面还没做。若现在就种『页面菜单』，用户点进去会 404 ——
--- 那比"菜单里暂时看不到"更糟。权限行是接口鉴权真正需要的东西（Sa-Token 按 perms 判定），
--- 因此先种权限、把页面菜单留到前端落地时一起加（届时只需补 menu_type='C' 的父级行并让它们指向
--- 本文件的权限行作为下级）。
+-- 本文件只种**权限行**，页面菜单在 `aig_agent_registry_pages.sql`。分成两份的理由是落地顺序：
+-- 权限行是接口鉴权真正需要的东西（Sa-Token 按 perms 判定），后端先上线就得先有；
+-- 而页面菜单必须等页面存在（种早了用户点进去 404，比"菜单里暂时看不到"更糟）。
+-- 两份都可重放，**menu 先跑、pages 后跑**。
 --
--- 【为什么三个写权限独立于读权限】
---   aig:agent:release —— 推进发布状态（唯一写入口，能把版本放给业务用）；
---   aig:package:scan  —— Manifest 扫描（结论是「Manifest 校验」门槛的唯一证据）；
---   aig:agent:binding —— 版本绑定范围（决定受限通道发布后谁能看见）；
+-- 【为什么这些写权限独立于读权限】
+--   aig:agent:release   —— 推进发布状态（唯一写入口，能把版本放给业务用）；
+--   aig:package:scan    —— Manifest 扫描（结论是「Manifest 校验」门槛的唯一证据）；
+--   aig:package:upload  —— 上传登记（携包体，会落包与版本行）；
+--   aig:package:install —— 安装（真的建出 Agent/Skill 版本行）；
+--   aig:package:disable —— 停用（把该包带进来的版本批量下线，可能撤下正在被业务使用的版本）；
+--   aig:agent:binding   —— 版本绑定范围（决定受限通道发布后谁能看见）；
 --   aig:evaluation:run / aig:evaluation:review —— 跑评测（可能产生外部成本）与人工复核（放行链条上的一环）。
 -- 它们都会改变别人能看到什么，或产生费用，因此不与「查看清单」共用一个权限。
 --
@@ -200,11 +203,21 @@ select 1768000000000000025, 'Package安装', 1763000000000000001, 105, '', '', '
     and not exists (select 1 from (select perms from sys_menu) p
                      where p.perms = 'aig:package:install');
 
+insert into sys_menu (menu_id, menu_name, parent_id, order_num, path, component, is_frame, is_cache,
+                      menu_type, visible, status, perms, icon, create_dept, create_by, create_time, remark)
+select 1768000000000000026, 'Package停用', 1763000000000000001, 106, '', '', 'N', 'Y', 'F', '0', '0',
+       'aig:package:disable', '#', 1761000000000000103, 1761100000000000001, sysdate(),
+       'WP3 §6.3：把该 Package 版本带进来的 Agent/Skill 版本批量下线（走发布状态唯一写入口，逐版本 CAS + 留发布事件）'
+  where not exists (select 1 from (select menu_id from sys_menu) t
+                     where t.menu_id = 1768000000000000026)
+    and not exists (select 1 from (select perms from sys_menu) p
+                     where p.perms = 'aig:package:disable');
+
 -- ----------------------------
 -- 四、角色授权
---   · aig_admin（AI数智化管理员）：全部（含推进发布、定义用例、跑评测、复核）
+--   · aig_admin（AI数智化管理员）：全部（含推进发布、定义用例、跑评测、复核、停用）
 --   · aig_security（信息安全授权人）：读 + Manifest 扫描（扫描是安全关口），
---     但不给发布推进/跑评测/复核——那些是会改变业务可见性或产生费用的动作
+--     但不给发布推进/跑评测/复核/停用——那些会改变业务可见性或产生费用的动作
 --   · aig_viewer（AI能力查看者）：只读
 -- 用 insert ignore：sys_role_menu 是 (role_id, menu_id) 复合主键，重复授权是幂等的；
 -- 而 menu_id 取自 sys_menu 的 perms 反查，避免写死 ID 与权限行不同步。
@@ -214,7 +227,7 @@ select 1763100000000000001, menu_id from sys_menu
  where perms in ('aig:agent:list', 'aig:agent:query', 'aig:agent:release', 'aig:agent:binding',
                  'aig:skill:list', 'aig:skill:query',
                  'aig:package:list', 'aig:package:query', 'aig:package:scan',
-                 'aig:package:upload', 'aig:package:install',
+                 'aig:package:upload', 'aig:package:install', 'aig:package:disable',
                  'aig:evaluation:list', 'aig:evaluation:query', 'aig:evaluation:define',
                  'aig:evaluation:run', 'aig:evaluation:review');
 

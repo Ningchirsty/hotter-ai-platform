@@ -200,6 +200,15 @@ public interface AigConstants {
     String PERM_PACKAGE_INSTALL = "aig:package:install";
 
     /**
+     * Package 停用（把该包带进来的 Agent/Skill 版本批量下线）
+     *
+     * <p>与安装分开的理由与「上传 vs 安装」同源：安装是<b>带进来</b>，停用是<b>撤下去</b>。
+     * 停用会把已经发布出去、正在被业务使用的版本下线，影响面与安装完全不同，
+     * 因此单独授权——只给能承担这个影响面的人。</p>
+     */
+    String PERM_PACKAGE_DISABLE = "aig:package:disable";
+
+    /**
      * 系统提交者ID：任务由调度器/Agent 发起（无登录上下文）时，{@code create_by} 用它占位。
      *
      * <p><b>为什么不能留 NULL</b>：{@code aig_task.create_by} 同时是幂等唯一键

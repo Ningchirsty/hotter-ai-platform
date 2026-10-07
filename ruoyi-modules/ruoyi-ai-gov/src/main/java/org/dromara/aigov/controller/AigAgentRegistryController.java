@@ -18,6 +18,7 @@ import org.dromara.aigov.agent.domain.bo.AigSkillVersionQueryBo;
 import org.dromara.aigov.agent.domain.vo.AigAgentBindingVo;
 import org.dromara.aigov.agent.domain.vo.AigAgentVersionVo;
 import org.dromara.aigov.agent.domain.vo.AigAgentVo;
+import org.dromara.aigov.agent.domain.vo.AigPackageDisableVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageInstallLogVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageInstallVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageRegisterVo;
@@ -322,6 +323,25 @@ public class AigAgentRegistryController {
     public R<AigPackageInstallVo> installPackage(
         @NotNull(message = "Package 版本ID不能为空") @PathVariable Long packageVersionId) {
         return R.ok(packageService.install(packageVersionId, LoginHelper.getUserId()));
+    }
+
+    /**
+     * 停用 Package 版本带进来的 Agent/Skill 版本（批量下线）。
+     *
+     * <p><b>停的是「这个包带进来的」</b>：以版本行的 {@code package_version_id} 精确定位，
+     * 同一个 Agent 的其它版本（别的包、或平台内置）一律不动。停用走发布状态的唯一写入口，
+     * 因此每个版本都会按状态机判定、CAS 更新并留一条发布事件；已在停用状态的按幂等处理，
+     * 已归档的跳过并说明原因（不让一个归档版本阻断其余版本下线）。</p>
+     *
+     * @param packageVersionId Package 版本ID
+     * @return 停用结果（成功项与跳过项分开）
+     */
+    @SaCheckPermission(AigConstants.PERM_PACKAGE_DISABLE)
+    @RepeatSubmit
+    @PostMapping("/package/version/{packageVersionId:\\d+}/disable")
+    public R<AigPackageDisableVo> disablePackage(
+        @NotNull(message = "Package 版本ID不能为空") @PathVariable Long packageVersionId) {
+        return R.ok(packageService.disable(packageVersionId, LoginHelper.getUserId()));
     }
 
     /**

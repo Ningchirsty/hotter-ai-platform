@@ -102,15 +102,12 @@
             <el-button v-hasPermi="['aig:package:scan']" link type="primary" icon="Search" @click="handleScan(scope.row)">
               扫描
             </el-button>
-            <el-button
-              v-hasPermi="['aig:package:install']"
-              link
-              type="success"
-              icon="Download"
-              :disabled="scope.row.scanResult !== 'PASS'"
-              @click="handleInstall(scope.row)"
-            >
+            <el-button v-hasPermi="['aig:package:install']" link type="success" icon="Download"
+              :disabled="scope.row.scanResult !== 'PASS'" @click="handleInstall(scope.row)">
               安装
+            </el-button>
+            <el-button v-hasPermi="['aig:package:disable']" link type="danger" icon="CircleClose" @click="handleDisable(scope.row)">
+              停用
             </el-button>
             <el-button v-hasPermi="['aig:package:query']" link icon="List" @click="openLog(scope.row)">账本</el-button>
           </template>
@@ -119,6 +116,9 @@
       <el-alert type="warning" :closable="false" class="mt-2">
         「安装」只对 <b>scan_result=PASS</b> 的版本开放（服务层查库里的证据，不看页面按钮状态）。
         安装出来的 Agent/Skill 版本一律是 DRAFT：安装不等于发布，发布门槛照旧要逐道过。
+        <br />
+        「停用」停的是<b>这个包带进来的</b>版本（按版本行的来源包精确判定，同一 Agent 的其它版本不动）：
+        如果其中已有 <b>STABLE</b> 版本正在被业务使用，停用会立即影响线上；停用只改发布状态、不删版本内容。
       </el-alert>
     </el-dialog>
 
@@ -171,11 +171,46 @@
         <el-table-column label="时间" align="center" prop="operateTime" width="180" />
       </el-table>
     </el-dialog>
+
+    <!-- 停用结果 -->
+    <el-dialog v-model="disableVisible" title="停用结果" width="880px" append-to-body>
+      <el-alert :type="disableResult?.alreadyDisabled ? 'info' : 'success'" :closable="false" class="mb-2">
+        {{ disableResult?.note }}
+      </el-alert>
+
+      <div v-if="disableResult?.disabled?.length">
+        <div class="mb-1"><b>已停用</b>（{{ disableResult.disabled.length }} 个）</div>
+        <el-table border :data="disableResult.disabled" size="small">
+          <el-table-column label="类型" align="center" prop="targetType" width="150" />
+          <el-table-column label="编码" align="center" prop="code" show-overflow-tooltip />
+          <el-table-column label="版本" align="center" prop="version" width="120" />
+          <el-table-column label="停用前状态" align="center" width="140">
+            <template #default="scope">
+              <el-tag :type="scope.row.fromStatus === 'STABLE' ? 'danger' : 'info'">
+                {{ scope.row.fromStatus }}
+              </el-tag>
+              → DISABLED
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+
+      <div v-if="disableResult?.skipped?.length" class="mt-3">
+        <div class="mb-1"><b>未改动</b>（{{ disableResult.skipped.length }} 个，原因如下）</div>
+        <el-table border :data="disableResult.skipped" size="small">
+          <el-table-column label="类型" align="center" prop="targetType" width="150" />
+          <el-table-column label="编码" align="center" prop="code" show-overflow-tooltip />
+          <el-table-column label="当前状态" align="center" prop="fromStatus" width="120" />
+          <el-table-column label="原因" align="center" prop="reason" show-overflow-tooltip />
+        </el-table>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import {
+  disablePackage,
   installPackage,
   listInstallLog,
   listPackage,
@@ -184,6 +219,7 @@ import {
   uploadPackage
 } from '@/api/aigov/package';
 import type {
+  AigPackageDisableVO,
   AigPackageInstallLogVO,
   AigPackageQuery,
   AigPackageRegisterVO,
@@ -210,6 +246,8 @@ const total = ref(0);
 const queryFormRef = ref<ElFormInstance>();
 const versionVisible = ref(false);
 const uploadVisible = ref(false);
+const disableVisible = ref(false);
+const disableResult = ref<AigPackageDisableVO>();
 const logVisible = ref(false);
 const bodyFile = ref<File>();
 const uploadResultText = ref('');
@@ -291,6 +329,25 @@ const handleInstall = async (row: AigPackageVersionVO) => {
       ' 个'
   );
   await openVersions(currentPackage.value as AigPackageVO);
+};
+
+/**
+ * 停用：把该 Package 版本带进来的版本批量下线。
+ *
+ * 确认框必须把影响面说清楚——这里面可能有正在被业务使用的 STABLE 版本。
+ * 结果里成功项与跳过项分开显示：跳过项都带原因，页面要能回答「为什么这个没停掉」。
+ */
+const handleDisable = async (row: AigPackageVersionVO) => {
+  await modal.confirm(
+    '确认停用该 Package 版本带进来的 Agent/Skill 版本？' +
+      '会把这些版本批量下线：如果其中已有 STABLE 版本正在被业务使用，会立即影响线上使用。' +
+      '停用只改发布状态、不删版本内容（重新启用走发布推进，且需证明该版本曾 STABLE 过）。'
+  );
+  const res = await disablePackage(row.packageVersionId as string | number);
+  // 先刷新版本表（状态已经变了），再弹结果说明
+  await openVersions(currentPackage.value as AigPackageVO);
+  disableResult.value = res.data || {};
+  disableVisible.value = true;
 };
 
 /** 打开安装账本 */

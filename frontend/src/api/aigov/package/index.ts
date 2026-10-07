@@ -3,6 +3,7 @@ import type { AxiosPromise } from '@/utils/api-types';
 import request from '@/utils/request';
 import type {
   AigManifestScanVO,
+  AigPackageDisableVO,
   AigPackageInstallLogVO,
   AigPackageInstallVO,
   AigPackageQuery,
@@ -91,5 +92,18 @@ export function listInstallLog(packageVersionId: string | number): AxiosPromise<
   return request({
     url: '/aigov/agent/package/version/' + packageVersionId + '/install-log',
     method: 'get'
+  });
+}
+
+/**
+ * 停用：把该 Package 版本带进来的 Agent/Skill 版本批量下线。
+ *
+ * 停的是「这个包带进来的」（按 `package_version_id` 精确判定），同一个 Agent 的其它版本不动。
+ * 已在停用状态的按幂等处理；已归档的跳过并给出原因（不让一个归档版本阻断其余版本下线）。
+ */
+export function disablePackage(packageVersionId: string | number): AxiosPromise<AigPackageDisableVO> {
+  return request({
+    url: '/aigov/agent/package/version/' + packageVersionId + '/disable',
+    method: 'post'
   });
 }

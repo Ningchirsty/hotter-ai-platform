@@ -123,6 +123,41 @@ export interface AigPackageInstallLogVO {
   operateTime?: string;
 }
 
+/** 停用结果（把该 Package 版本带进来的版本批量下线） */
+export interface AigPackageDisableVO {
+  packageId?: string | number;
+  packageVersionId?: string | number;
+  /** 幂等命中：带进来的版本全都已在停用状态，本次未改动 */
+  alreadyDisabled?: boolean;
+  disabled?: AigPackageDisabledItem[];
+  /** 未改动的版本——每一项都带原因，页面要能回答「为什么这个没停掉」 */
+  skipped?: AigPackageSkippedItem[];
+  note?: string;
+}
+
+/** 被停用的一个版本 */
+export interface AigPackageDisabledItem {
+  /** AGENT_VERSION / SKILL_VERSION */
+  targetType?: string;
+  code?: string;
+  parentId?: string | number;
+  versionId?: string | number;
+  version?: string;
+  /** 停用前的状态（STABLE 下线与 DRAFT 下线的影响面不同，页面要显示出来） */
+  fromStatus?: string;
+}
+
+/** 未改动的一个版本 */
+export interface AigPackageSkippedItem {
+  targetType?: string;
+  code?: string;
+  parentId?: string | number;
+  versionId?: string | number;
+  version?: string;
+  fromStatus?: string;
+  reason?: string;
+}
+
 /** Manifest 扫描结论（后端 AigManifestScanResult） */
 export interface AigManifestScanVO {
   pass?: boolean;
