@@ -54,6 +54,13 @@ export interface AigModelGovernanceVO extends BaseEntity {
   outputLimits?: string;
   /** 成本与配额：单次/单项目/单日预算与限流规则 */
   costLimit?: string;
+  /**
+   * 单次成本上限（机器可判定的数值，元）；为空=未声明。
+   *
+   * 与上方的 `costLimit` 分工：`costLimit` 是给人读的配额规则说明，本字段是路由真正
+   * 用来判定的「一次调用最多允许花多少」——调用方传了本次预算时，声明上限高于预算的模型会被排除。
+   */
+  costLimitAmount?: number;
   /** 技术负责人 */
   ownerTech?: string;
   /** 业务负责人 */
@@ -83,6 +90,13 @@ export interface AigModelGovernanceForm {
   inputLimits?: string;
   outputLimits?: string;
   costLimit?: string;
+  /**
+   * 单次成本上限（机器可判定的数值，元）；为空=未声明。
+   *
+   * 与上方的 `costLimit` 分工：`costLimit` 是给人读的配额规则说明，本字段是路由真正
+   * 用来判定的「一次调用最多允许花多少」——调用方传了本次预算时，声明上限高于预算的模型会被排除。
+   */
+  costLimitAmount?: number;
   ownerTech?: string;
   ownerBiz?: string;
   ownerSecurity?: string;
@@ -225,6 +239,13 @@ export interface AigModelCreateForm {
   lifecycleStatus?: string;
   secretRef?: string;
   costLimit?: string;
+  /**
+   * 单次成本上限（机器可判定的数值，元）；为空=未声明。
+   *
+   * 与上方的 `costLimit` 分工：`costLimit` 是给人读的配额规则说明，本字段是路由真正
+   * 用来判定的「一次调用最多允许花多少」——调用方传了本次预算时，声明上限高于预算的模型会被排除。
+   */
+  costLimitAmount?: number;
   ownerTech?: string;
   ownerBiz?: string;
   ownerSecurity?: string;

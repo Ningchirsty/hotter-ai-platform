@@ -7,6 +7,7 @@ import jakarta.validation.ValidatorFactory;
 import org.dromara.aigov.config.AigRetryProperties;
 import org.dromara.aigov.domain.bo.AigInvokeBo;
 import org.dromara.aigov.domain.vo.AigRouteDecision;
+import org.dromara.aigov.domain.vo.AigRouteHint;
 import org.dromara.aigov.enums.AigDataLevelEnum;
 import org.dromara.aigov.enums.AigRouteDecisionEnum;
 import org.dromara.aigov.helper.AigAuditContext;
@@ -22,10 +23,12 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -82,6 +85,23 @@ class AigInvokeServiceImplScenarioTest {
             modelViewMapper, new AigRetryProperties());
     }
 
+    /**
+     * 取送到路由引擎的路由提示。
+     *
+     * <p>断言直接读入参对象，而不是拿 {@code eq(...)} 去匹配：路由提示是值对象，
+     * 只有读出内容才能同时钉住「场景没丢」和「预算没丢」——用 {@code eq} 匹配时，
+     * 一旦在提示里多塞一个字段，断言仍然会过，而那正是最容易出错的改动。</p>
+     *
+     * @return 路由提示
+     */
+    private AigRouteHint routeHintOf() {
+        ArgumentCaptor<AigRouteHint> captor = ArgumentCaptor.forClass(AigRouteHint.class);
+        verify(routeService).decide(eq(CAPABILITY), any(), captor.capture());
+        AigRouteHint hint = captor.getValue();
+        assertNotNull(hint, "送入路由的路由提示不应为 null（至少含场景或预算之一）");
+        return hint;
+    }
+
     private static AigInvokeBo bo(String scenarioCode) {
         AigInvokeBo bo = new AigInvokeBo();
         bo.setCapabilityCode(CAPABILITY);
@@ -103,27 +123,53 @@ class AigInvokeServiceImplScenarioTest {
     @Test
     @DisplayName("dryRun：场景编码必须原样送到路由引擎（而不是走两参重载被丢弃）")
     void dryRunPassesScenarioToRouter() {
-        when(routeService.decide(eq(CAPABILITY), any(), eq(SCENARIO))).thenReturn(deniedDecision());
+        when(routeService.decide(eq(CAPABILITY), any(), any(AigRouteHint.class))).thenReturn(deniedDecision());
 
         service().dryRun(bo(SCENARIO));
 
-        verify(routeService).decide(eq(CAPABILITY), any(), eq(SCENARIO));
+        assertEquals(SCENARIO, routeHintOf().getScenarioCode(),
+            "场景编码必须原样送到路由引擎；丢了它，场景强制绑定就永远不生效");
     }
 
     @Test
     @DisplayName("invoke：场景编码必须原样送到路由引擎")
     void invokePassesScenarioToRouter() {
-        when(routeService.decide(eq(CAPABILITY), any(), eq(SCENARIO))).thenReturn(deniedDecision());
+        when(routeService.decide(eq(CAPABILITY), any(), any(AigRouteHint.class))).thenReturn(deniedDecision());
 
         service().invoke(bo(SCENARIO));
 
-        verify(routeService).decide(eq(CAPABILITY), any(), eq(SCENARIO));
+        assertEquals(SCENARIO, routeHintOf().getScenarioCode(), "场景编码必须原样送到路由引擎");
+    }
+
+    @Test
+    @DisplayName("预算：本次预算必须原样送到路由引擎（丢了它，超预算的模型照样会被选中）")
+    void invokePassesBudgetToRouter() {
+        when(routeService.decide(eq(CAPABILITY), any(), any(AigRouteHint.class))).thenReturn(deniedDecision());
+        AigInvokeBo bo = bo(null);
+        bo.setMaxCost(new BigDecimal("0.5"));
+
+        service().invoke(bo);
+
+        BigDecimal maxCost = routeHintOf().getMaxCost();
+        assertNotNull(maxCost, "预算必须送到路由；否则路由以为「调用方没有预算约束」，超预算的候选不会被排除");
+        assertEquals(0, new BigDecimal("0.5").compareTo(maxCost), "预算金额必须原样传递，不能被舍入或换算");
+    }
+
+    @Test
+    @DisplayName("两者都为空时传 null 提示，而不是一个空壳对象")
+    void noHintWhenNothingRequested() {
+        when(routeService.decide(eq(CAPABILITY), any(), isNull(AigRouteHint.class))).thenReturn(deniedDecision());
+
+        service().invoke(bo(null));
+
+        // isNull() 打桩命中即说明传的是 null；这里再断言一次「没有凭空造提示」
+        verify(routeService).decide(eq(CAPABILITY), any(), isNull(AigRouteHint.class));
     }
 
     @Test
     @DisplayName("审计留痕：场景编码必须落进审计上下文，否则事后无法解释「为什么不是默认首选」")
     void auditCarriesScenario() {
-        when(routeService.decide(eq(CAPABILITY), any(), eq(SCENARIO))).thenReturn(deniedDecision());
+        when(routeService.decide(eq(CAPABILITY), any(), any(AigRouteHint.class))).thenReturn(deniedDecision());
 
         service().invoke(bo(SCENARIO));
 
@@ -136,7 +182,7 @@ class AigInvokeServiceImplScenarioTest {
     @Test
     @DisplayName("不带场景：不得凭空写入任何场景值")
     void auditHasNoScenarioWhenRequestHasNone() {
-        when(routeService.decide(eq(CAPABILITY), any(), isNull())).thenReturn(deniedDecision());
+        when(routeService.decide(eq(CAPABILITY), any(), isNull(AigRouteHint.class))).thenReturn(deniedDecision());
 
         service().invoke(bo(null));
 

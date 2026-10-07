@@ -6,6 +6,7 @@ import org.dromara.common.translation.constant.TransConstant;
 
 import java.io.Serial;
 import java.io.Serializable;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
@@ -166,6 +167,12 @@ public class AigModelVo implements Serializable {
      * 成本与配额
      */
     private String costLimit;
+
+    /**
+     * 单次成本上限（机器可判定的数值；为空=未声明）
+     * <p>模型清单要显示它，否则「为什么这家有预算、那家没有」只能去治理表里翻。</p>
+     */
+    private BigDecimal costLimitAmount;
 
     /**
      * 技术负责人

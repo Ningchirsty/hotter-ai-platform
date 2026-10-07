@@ -8,6 +8,7 @@ import org.dromara.common.translation.constant.TransConstant;
 
 import java.io.Serial;
 import java.io.Serializable;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
@@ -83,9 +84,14 @@ public class AigModelGovernanceVo implements Serializable {
     private String outputLimits;
 
     /**
-     * 成本与配额
+     * 成本与配额（人读描述）
      */
     private String costLimit;
+
+    /**
+     * 单次成本上限（机器可判定的数值；为空=未声明，路由会放行并提示）
+     */
+    private BigDecimal costLimitAmount;
 
     /**
      * 技术负责人

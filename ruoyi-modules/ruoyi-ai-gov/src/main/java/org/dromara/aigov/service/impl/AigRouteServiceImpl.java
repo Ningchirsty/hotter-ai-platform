@@ -13,6 +13,7 @@ import org.dromara.aigov.domain.AigRouteScenarioBinding;
 import org.dromara.aigov.domain.vo.AigModelVo;
 import org.dromara.aigov.domain.vo.AigRouteCandidate;
 import org.dromara.aigov.domain.vo.AigRouteDecision;
+import org.dromara.aigov.domain.vo.AigRouteHint;
 import org.dromara.aigov.enums.AigDataLevelEnum;
 import org.dromara.aigov.enums.AigDeploymentTypeEnum;
 import org.dromara.aigov.enums.AigLifecycleStatusEnum;
@@ -30,6 +31,7 @@ import org.dromara.aigov.service.invoker.ModelInvoker;
 import org.dromara.common.core.utils.StringUtils;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -123,23 +125,23 @@ public class AigRouteServiceImpl implements IAigRouteService {
     private final AigRouteProperties routeProperties;
 
     @Override
-    public AigRouteDecision decide(String capabilityCode, AigDataLevelEnum dataLevel, String scenarioCode) {
+    public AigRouteDecision decide(String capabilityCode, AigDataLevelEnum dataLevel, AigRouteHint hint) {
         AigRouteDecision decision = new AigRouteDecision();
         decision.setCapabilityCode(capabilityCode);
         try {
-            return doDecide(decision, capabilityCode, dataLevel, scenarioCode);
+            return doDecide(decision, capabilityCode, dataLevel, hint);
         } catch (Exception e) {
             // 路由引擎不抛异常：任何异常都以 DENIED 表达
-            log.error("路由决策异常, capabilityCode={}, dataLevel={}, scenarioCode={}", capabilityCode,
-                dataLevel == null ? null : dataLevel.getCode(), scenarioCode, e);
+            log.error("路由决策异常, capabilityCode={}, dataLevel={}, hint={}", capabilityCode,
+                dataLevel == null ? null : dataLevel.getCode(), hint, e);
             decision.addHit("路由决策异常：" + e.getClass().getSimpleName());
             return denied(decision, "路由决策异常，已按拒绝处理");
         }
     }
 
     @Override
-    public List<String> explain(String capabilityCode, AigDataLevelEnum dataLevel, String scenarioCode) {
-        AigRouteDecision decision = decide(capabilityCode, dataLevel, scenarioCode);
+    public List<String> explain(String capabilityCode, AigDataLevelEnum dataLevel, AigRouteHint hint) {
+        AigRouteDecision decision = decide(capabilityCode, dataLevel, hint);
         List<String> lines = new ArrayList<>();
         lines.add("决策=" + decision.getDecision()
             + "，modelId=" + decision.getModelId()
@@ -156,11 +158,11 @@ public class AigRouteServiceImpl implements IAigRouteService {
      * @param decision       决策对象
      * @param capabilityCode 能力编码
      * @param dataLevel      数据等级
-     * @param scenarioCode   场景编码（可为空，表示不做场景强制绑定收窄）
+     * @param hint           路由提示（场景 / 本次预算；可为 null）
      * @return 决策结果
      */
     private AigRouteDecision doDecide(AigRouteDecision decision, String capabilityCode, AigDataLevelEnum dataLevel,
-                                     String scenarioCode) {
+                                     AigRouteHint hint) {
         // 步骤1：能力必须存在且 status='0' → 否则 DENIED
         if (StringUtils.isBlank(capabilityCode)) {
             return denied(decision, "能力不存在或已停用");
@@ -224,7 +226,8 @@ public class AigRouteServiceImpl implements IAigRouteService {
         // 步骤4（设计 §4.4）：场景强制绑定 Provider —— 命中则把候选收窄为「仅指定供应商」。
         // 放在逐项校验之前，是为了让「被场景排除」与「被治理排除」在 policyHits 里分成两类原因：
         // 前者是业务约定，后者是安全/能力约束，混在一起会让排障时要读完整串才判断得出。
-        List<AigCapabilityModel> narrowed = narrowByScenario(decision, ordered, modelMap, scenarioCode, capabilityCode);
+        List<AigCapabilityModel> narrowed = narrowByScenario(decision, ordered, modelMap,
+            hint == null ? null : hint.getScenarioCode(), capabilityCode);
         if (narrowed.isEmpty()) {
             // ordered 此处必非空（上方已判空返回），故收窄后为空只可能是场景绑定筛掉的。
             // 必须在这里收敛：若继续往下走，说明会退化成「能力未绑定任何模型」，
@@ -232,7 +235,16 @@ public class AigRouteServiceImpl implements IAigRouteService {
             decision.addHit("场景强制绑定后无可用候选，按策略收敛（fallbackToManual=" + fallbackToManual + "）");
             return noModel(decision, fallbackToManual);
         }
-        ordered = narrowed;
+        // 步骤3（设计 §4.4「过滤…超过预算…的 Provider」）：本次声明了预算时，
+        // 排除单次成本上限高于预算的候选。与场景收窄一样只做减法。
+        List<AigCapabilityModel> affordable = excludeOverBudget(decision, narrowed, governanceMap,
+            hint == null ? null : hint.getMaxCost());
+        if (affordable.isEmpty()) {
+            decision.addHit("按本次预算过滤后无可用候选，按策略收敛（fallbackToManual="
+                + fallbackToManual + "）");
+            return noModel(decision, fallbackToManual);
+        }
+        ordered = affordable;
         if (!allowExternal) {
             // 步骤3：候选模型仅限 deploymentType ∈ {LOCAL, GROUP}
             decision.addHit("策略 allowExternal='N'：本次调用仅允许本地/集团共享部署模型，外部部署模型将被排除");
@@ -384,6 +396,73 @@ public class AigRouteServiceImpl implements IAigRouteService {
                 + "）：场景=" + scenario + " 强制绑定，仅允许供应商 " + allowed);
         }
         return narrowed;
+    }
+
+    /**
+     * 步骤3：按本次预算排除「单次成本上限高于预算」的候选（设计 §4.4「过滤…超过预算…的 Provider」）。
+     *
+     * <p><b>为什么比对的是「模型声明的单次上限」而不是「实际花了多少」</b>：路由发生在调用<b>之前</b>，
+     * 此时没有任何实际费用可依；而多数外部供应商根本不回执费用（审计 {@code cost} 列常为空）。
+     * 用「声明的单次上限 vs 本次预算」是唯一在调用前可判定的口径，且它是保守的：
+     * 声明上限高于预算就直接不选，而不是「先花了再说」。
+     * 累计预算（单项目/单日）刻意不在这里做——它需要真实费用回执做账，
+     * 没有账本只会做出一个对不上的假预算。</p>
+     *
+     * <p><b>未声明上限时默认放行并提示</b>（{@code aigov.route.require-model-cost=true} 可改为严格排除）：
+     * 本列是新加的，既有模型全是 NULL；默认严格会让「带预算的调用」在既有模型上一律挑不出候选——
+     * 看起来更安全，实际是把功能一次掐死。与能力标签同一取舍。</p>
+     *
+     * <p>提示刻意<b>聚合成一条</b>而不是每个模型一条：与「逐条排除原因」不同，
+     * 「这些模型没声明上限」是同一件事，7 个模型各刷一行会把真正有用的排除原因淹掉。</p>
+     *
+     * @param decision      决策对象（写入预算过滤说明）
+     * @param ordered       候选绑定
+     * @param governanceMap modelId → 治理属性
+     * @param maxCost       本次预算；为空表示调用方没有预算约束（不做过滤、不产生提示）
+     * @return 预算内的候选
+     */
+    private List<AigCapabilityModel> excludeOverBudget(AigRouteDecision decision, List<AigCapabilityModel> ordered,
+                                                       Map<Long, AigModelGovernance> governanceMap,
+                                                       BigDecimal maxCost) {
+        if (maxCost == null) {
+            // 调用方没提预算 → 不产生任何提示：大多数调用都没有预算概念，刷一行只会淹没有效信息
+            return ordered;
+        }
+        List<AigCapabilityModel> affordable = new ArrayList<>();
+        List<Long> undeclared = new ArrayList<>();
+        for (AigCapabilityModel binding : ordered) {
+            AigModelGovernance governance = governanceMap.get(binding.getModelId());
+            if (governance == null) {
+                // 治理属性缺失时无法判定：原样保留，让后续校验给出「未登记治理属性」这个准确原因
+                affordable.add(binding);
+                continue;
+            }
+            BigDecimal declared = governance.getCostLimitAmount();
+            if (declared == null) {
+                undeclared.add(binding.getModelId());
+                if (routeProperties.isRequireModelCost()) {
+                    decision.addHit("排除 modelId=" + binding.getModelId()
+                        + "：未声明单次成本上限（cost_limit_amount），"
+                        + "且 aigov.route.require-model-cost=true（严格模式不允许未声明）");
+                    continue;
+                }
+                affordable.add(binding);
+                continue;
+            }
+            if (declared.compareTo(maxCost) > 0) {
+                decision.addHit("排除 modelId=" + binding.getModelId()
+                    + "：声明的单次成本上限=" + declared.toPlainString()
+                    + " 高于本次预算=" + maxCost.toPlainString() + "，按预算跳过该候选");
+                continue;
+            }
+            affordable.add(binding);
+        }
+        if (!undeclared.isEmpty()) {
+            decision.addHit("注意：modelId=" + undeclared + " 未声明单次成本上限，"
+                + "**无法校验是否超预算**（当前放行）。本次预算=" + maxCost.toPlainString()
+                + "；建议在治理台补齐 cost_limit_amount，并可开 aigov.route.require-model-cost=true 彻底拦掉");
+        }
+        return affordable;
     }
 
     /**

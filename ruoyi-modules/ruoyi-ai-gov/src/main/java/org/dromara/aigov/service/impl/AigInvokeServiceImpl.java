@@ -9,6 +9,7 @@ import org.dromara.aigov.domain.vo.AigInvokeVo;
 import org.dromara.aigov.domain.vo.AigModelVo;
 import org.dromara.aigov.domain.vo.AigRouteCandidate;
 import org.dromara.aigov.domain.vo.AigRouteDecision;
+import org.dromara.aigov.domain.vo.AigRouteHint;
 import org.dromara.aigov.enums.AigDataLevelEnum;
 import org.dromara.aigov.enums.AigDeploymentTypeEnum;
 import org.dromara.aigov.enums.AigErrorClassEnum;
@@ -80,7 +81,7 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
     @Override
     public AigInvokeVo dryRun(AigInvokeBo bo) {
         AigDataLevelEnum dataLevel = parseDataLevel(bo);
-        AigRouteDecision decision = routeService.decide(bo.getCapabilityCode(), dataLevel, bo.getScenarioCode());
+        AigRouteDecision decision = routeService.decide(bo.getCapabilityCode(), dataLevel, routeHint(bo));
         // dryRun 只做决策预览，不产生审计记录，因此不生成 traceId
         return toVo(null, decision, null, decision.getReason());
     }
@@ -90,8 +91,9 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
         // 1. 生成 traceId
         String traceId = IdUtil.fastSimpleUUID();
         AigDataLevelEnum dataLevel = parseDataLevel(bo);
-        // 2. 路由决策（不抛异常）；带场景：命中强制绑定时候选被收窄为指定供应商
-        AigRouteDecision decision = routeService.decide(bo.getCapabilityCode(), dataLevel, bo.getScenarioCode());
+        // 2. 路由决策（不抛异常）；带路由提示：场景命中强制绑定时候选收窄为指定供应商、
+        //    声明了本次预算时排除单次上限高于预算的模型。两者都只收窄，不放宽治理口径。
+        AigRouteDecision decision = routeService.decide(bo.getCapabilityCode(), dataLevel, routeHint(bo));
         // 3. 组装审计上下文；无论成败都在 finally 落库
         AigAuditContext audit = buildAuditContext(traceId, bo, dataLevel, decision);
         try {
@@ -260,6 +262,16 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
         audit.setDeploymentType(candidate.getDeploymentType());
         AigDeploymentTypeEnum deployment = AigDeploymentTypeEnum.find(candidate.getDeploymentType());
         audit.setExternalCall(deployment != null && deployment.isExternal());
+    }
+
+    /**
+     * 把入参里的场景与预算组装成路由提示。
+     *
+     * @param bo 调用入参
+     * @return 路由提示；两者都为空时返回 null（路由按「无提示」快路径处理）
+     */
+    private AigRouteHint routeHint(AigInvokeBo bo) {
+        return AigRouteHint.of(bo.getScenarioCode(), bo.getMaxCost());
     }
 
     /**

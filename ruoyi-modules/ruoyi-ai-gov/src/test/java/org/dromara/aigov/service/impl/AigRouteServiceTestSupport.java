@@ -22,6 +22,7 @@ import org.dromara.aigov.mapper.AigModelViewMapper;
 import org.dromara.aigov.mapper.AigRoutePolicyMapper;
 import org.dromara.aigov.mapper.AigRouteScenarioBindingMapper;
 import org.dromara.aigov.service.invoker.ModelInvoker;
+import org.dromara.common.core.utils.StringUtils;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 
@@ -134,6 +135,54 @@ abstract class AigRouteServiceTestSupport {
     protected void useInvokers(List<ModelInvoker> invokers) {
         routeService = new AigRouteServiceImpl(capabilityMapper, routePolicyMapper, capabilityModelMapper,
             modelGovernanceMapper, modelViewMapper, bindingMapper, invokers, routeProperties);
+    }
+
+    /**
+     * 桩：两个可用候选（外部 + 本地），分别声明给定的单次成本上限。
+     *
+     * <p>预算过滤必须有「上限不同」的两个候选才谈得上过滤：只有一家时，
+     * 「被预算排除了」与「压根没过滤」在结果上不可区分。</p>
+     *
+     * @param externalAmount 外部候选声明的单次上限（null/空 = 未声明）
+     * @param localAmount    本地候选声明的单次上限（null/空 = 未声明）
+     */
+    protected void stubTwoCandidatesWithCostLimit(String externalAmount, String localAmount) {
+        when(capabilityModelMapper.selectList(any()))
+            .thenReturn(List.of(binding(EXTERNAL_MODEL_ID, AigUsageTypeEnum.PRIMARY, 1),
+                binding(LOCAL_MODEL_ID, AigUsageTypeEnum.FALLBACK, 2)));
+        when(modelViewMapper.selectModelListByIds(anyList()))
+            .thenReturn(List.of(model(EXTERNAL_MODEL_ID, "vendor/cloud-model"),
+                model(LOCAL_MODEL_ID, "internal/local-model")));
+        AigModelGovernance outer = governance(EXTERNAL_MODEL_ID, AigDeploymentTypeEnum.EXTERNAL_API.getCode());
+        outer.setCostLimitAmount(amount(externalAmount));
+        AigModelGovernance local = governance(LOCAL_MODEL_ID, AigDeploymentTypeEnum.LOCAL.getCode());
+        local.setCostLimitAmount(amount(localAmount));
+        when(modelGovernanceMapper.selectList(any())).thenReturn(List.of(outer, local));
+    }
+
+    /**
+     * 桩：只绑定一个可用候选（外部），声明给定的单次成本上限。
+     *
+     * @param amount 声明的单次上限（null/空 = 未声明）
+     */
+    protected void stubSingleCandidateWithCostLimit(String amount) {
+        when(capabilityModelMapper.selectList(any()))
+            .thenReturn(List.of(binding(EXTERNAL_MODEL_ID, AigUsageTypeEnum.PRIMARY, 1)));
+        when(modelViewMapper.selectModelListByIds(anyList()))
+            .thenReturn(List.of(model(EXTERNAL_MODEL_ID, "vendor/cloud-model")));
+        AigModelGovernance governance = governance(EXTERNAL_MODEL_ID, AigDeploymentTypeEnum.EXTERNAL_API.getCode());
+        governance.setCostLimitAmount(amount(amount));
+        when(modelGovernanceMapper.selectList(any())).thenReturn(List.of(governance));
+    }
+
+    /**
+     * 解析金额字符串（空白视为未声明）。
+     *
+     * @param raw 金额字符串
+     * @return 金额，未声明返回 null
+     */
+    private static java.math.BigDecimal amount(String raw) {
+        return StringUtils.isBlank(raw) ? null : new java.math.BigDecimal(raw);
     }
 
     /**

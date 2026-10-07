@@ -1,6 +1,8 @@
 package org.dromara.aigov.domain.bo;
 
 import io.github.linpeilie.annotations.AutoMapper;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -13,6 +15,7 @@ import org.dromara.common.core.validate.QueryGroup;
 
 import java.io.Serial;
 import java.io.Serializable;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 
 /**
@@ -100,10 +103,23 @@ public class AigModelGovernanceBo implements Serializable {
     private String outputLimits;
 
     /**
-     * 成本与配额：单次/单项目/单日预算与限流规则
+     * 成本与配额：单次/单项目/单日预算与限流规则（人读描述，不参与路由判定）
      */
     @Size(max = 255, message = "成本限制长度不能超过 255", groups = {AddGroup.class, EditGroup.class})
     private String costLimit;
+
+    /**
+     * 单次成本上限（机器可判定的数值；为空=未声明）
+     *
+     * <p>与 {@link #costLimit} 分工：文本列写规则，本列写「一次调用最多允许花多少」。
+     * 校验上限 0 且最多 8 位小数（与列 {@code decimal(18,8)} 对齐）——
+     * 负数会让「成本上限」变成「倒贴」，而小数位超限会被数据库静默舍入，
+     * 于是治理台显示的值与实际参与判定的值不一致。</p>
+     */
+    @DecimalMin(value = "0", message = "单次成本上限不能为负数", groups = {AddGroup.class, EditGroup.class})
+    @Digits(integer = 10, fraction = 8, message = "单次成本上限整数位最多 10 位、小数位最多 8 位",
+        groups = {AddGroup.class, EditGroup.class})
+    private BigDecimal costLimitAmount;
 
     /**
      * 技术负责人

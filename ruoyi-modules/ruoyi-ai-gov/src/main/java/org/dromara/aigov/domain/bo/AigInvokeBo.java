@@ -1,5 +1,7 @@
 package org.dromara.aigov.domain.bo;
 
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -7,6 +9,7 @@ import lombok.Data;
 
 import java.io.Serial;
 import java.io.Serializable;
+import java.math.BigDecimal;
 import java.util.Map;
 
 /**
@@ -70,5 +73,17 @@ public class AigInvokeBo implements Serializable {
      */
     @Size(max = 500, message = "输入快照引用长度不能超过 500")
     private String inputSnapshotRef;
+
+    /**
+     * 本次调用可接受的最高成本（单次，可选；单位由部署方统一，本平台按元）
+     *
+     * <p>与模型治理的 {@code cost_limit_amount} 比对：声明上限高于本次预算的候选会被排除
+     * （设计 §4.4 第 3 步「过滤…超过预算…的 Provider」）。
+     * <b>留空表示没有预算约束</b>，此时不做过滤也不产生提示——
+     * 把「没提要求」当成「预算为零」会把所有候选排除干净。</p>
+     */
+    @DecimalMin(value = "0", message = "本次预算不能为负数")
+    @Digits(integer = 10, fraction = 8, message = "本次预算整数位最多 10 位、小数位最多 8 位")
+    private BigDecimal maxCost;
 
 }

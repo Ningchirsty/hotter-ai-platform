@@ -5,6 +5,7 @@ import org.dromara.aigov.domain.bo.AigInvokeBo;
 import org.dromara.aigov.domain.vo.AigModelVo;
 import org.dromara.aigov.domain.vo.AigRouteCandidate;
 import org.dromara.aigov.domain.vo.AigRouteDecision;
+import org.dromara.aigov.domain.vo.AigRouteHint;
 import org.dromara.aigov.enums.AigDataLevelEnum;
 import org.dromara.aigov.enums.AigDeploymentTypeEnum;
 import org.dromara.aigov.enums.AigRouteDecisionEnum;
@@ -28,6 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -127,7 +129,10 @@ class AigInvokeServiceImplAuditColumnsTest {
         decision.setModelId(PRIMARY_MODEL_ID);
         decision.setModelKey("modelA");
         decision.setDeploymentType(AigDeploymentTypeEnum.EXTERNAL_API.getCode());
-        when(routeService.decide(any(), any(), any())).thenReturn(decision);
+        // 带 AigRouteHint 的重载才是真实入口（String 那个是 default 方法，Mockito 不会代跑到它）。
+        // 用 nullable 而不是 any(Class)：这些用例没有场景也没有预算，提示就是 null，
+        // 而 any(Class) 走的是 instanceof 语义、**不匹配 null**，会静默打不中桩。
+        when(routeService.decide(any(), any(), nullable(AigRouteHint.class))).thenReturn(decision);
 
         AigInvokeServiceImpl service = new AigInvokeServiceImpl(routeService, auditRecorder,
             invokers, modelViewMapper, retryProperties);
@@ -267,3 +272,4 @@ class AigInvokeServiceImplAuditColumnsTest {
     }
 
 }
+

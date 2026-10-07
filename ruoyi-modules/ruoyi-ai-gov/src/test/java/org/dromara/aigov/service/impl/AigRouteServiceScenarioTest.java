@@ -1,6 +1,7 @@
 package org.dromara.aigov.service.impl;
 
 import org.dromara.aigov.domain.vo.AigRouteDecision;
+import org.dromara.aigov.domain.vo.AigRouteHint;
 import org.dromara.aigov.enums.AigDataLevelEnum;
 import org.dromara.aigov.enums.AigRouteDecisionEnum;
 import org.junit.jupiter.api.DisplayName;
@@ -185,7 +186,8 @@ class AigRouteServiceScenarioTest extends AigRouteServiceTestSupport {
         stubTwoCandidatesTwoProviders(PROVIDER_EXTERNAL, PROVIDER_LOCAL);
 
         AigRouteDecision viaOverload = routeService.decide(CAPABILITY, AigDataLevelEnum.INTERNAL);
-        AigRouteDecision viaExplicitNull = routeService.decide(CAPABILITY, AigDataLevelEnum.INTERNAL, null);
+        AigRouteDecision viaExplicitNull = routeService.decide(CAPABILITY, AigDataLevelEnum.INTERNAL,
+            (AigRouteHint) null);
 
         assertEquals(viaExplicitNull.getModelId(), viaOverload.getModelId(),
             "两参重载不能悄悄改变既有调用方的决策结果");

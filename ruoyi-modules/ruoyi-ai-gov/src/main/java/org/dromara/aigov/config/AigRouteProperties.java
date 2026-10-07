@@ -26,4 +26,14 @@ public class AigRouteProperties {
      */
     private boolean requireModelTags = false;
 
+    /**
+     * 是否要求模型必须声明单次成本上限（{@code aig_model_governance.cost_limit_amount}）。
+     *
+     * <p><b>默认 false（放行但提示）</b>，与 {@link #requireModelTags} 同一取舍：
+     * 本列是新加的，既有模型全是 NULL。默认严格会让「带预算的调用」在既有模型上
+     * 一律挑不出候选——看起来更安全，实际是把功能一次掐死。未声明时放行并写入可见提示，
+     * 等治理台补齐后再打开这个开关。</p>
+     */
+    private boolean requireModelCost = false;
+
 }

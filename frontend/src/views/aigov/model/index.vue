@@ -182,6 +182,16 @@
           </template>
         </el-table-column>
         <el-table-column label="成本限额" align="center" prop="costLimit" show-overflow-tooltip />
+        <!-- 单次上限是路由真正用来判定的那一列，与左边的「规则说明」区分显示；
+             为空时写明「未声明」——路由会放行但提示，不是「不许调用」 -->
+        <el-table-column label="单次成本上限" align="center" width="130">
+          <template #default="scope">
+            <span v-if="scope.row.costLimitAmount !== null && scope.row.costLimitAmount !== undefined">
+              {{ scope.row.costLimitAmount }}
+            </span>
+            <span v-else class="cost-undeclared">未声明</span>
+          </template>
+        </el-table-column>
         <el-table-column label="责任人" align="center" width="200">
           <template #default="scope">
             <div class="owner-cell">
@@ -318,6 +328,20 @@
         </el-form-item>
         <el-form-item label="成本限额" prop="costLimit">
           <el-input v-model="form.costLimit" placeholder="单次/单项目/单日预算与限流规则" />
+        </el-form-item>
+        <el-form-item label="单次成本上限" prop="costLimitAmount">
+          <el-input-number
+            v-model="form.costLimitAmount"
+            :min="0"
+            :precision="8"
+            :step="0.01"
+            controls-position="right"
+            style="width: 220px"
+            placeholder="留空=未声明"
+          />
+          <div class="form-tip">
+            路由在调用前用它比对调用方的本次预算：本值高于预算的模型会被跳过。留空表示未声明，路由会放行但写入提示。
+          </div>
         </el-form-item>
         <el-row :gutter="16">
           <el-col :span="8">
@@ -513,6 +537,20 @@
         </el-form-item>
         <el-form-item label="成本限额" prop="costLimit">
           <el-input v-model="createForm.costLimit" placeholder="单次/单项目/单日预算与限流规则" />
+        </el-form-item>
+        <el-form-item label="单次成本上限" prop="costLimitAmount">
+          <el-input-number
+            v-model="createForm.costLimitAmount"
+            :min="0"
+            :precision="8"
+            :step="0.01"
+            controls-position="right"
+            style="width: 220px"
+            placeholder="留空=未声明"
+          />
+          <div class="form-tip">
+            路由在调用前用它比对调用方的本次预算：本值高于预算的模型会被跳过。可稍后在治理属性里补。
+          </div>
         </el-form-item>
         <el-row :gutter="16">
           <el-col :span="8">
@@ -932,6 +970,7 @@ const initFormData: AigModelGovernanceForm = {
   inputLimits: '',
   outputLimits: '',
   costLimit: '',
+  costLimitAmount: undefined,
   ownerTech: '',
   ownerBiz: '',
   ownerSecurity: '',
@@ -1020,6 +1059,10 @@ const handleGovernance = async (row?: Partial<AigModelGovernanceVO>) => {
   form.value.inputLimits = res.data?.inputLimits || '';
   form.value.outputLimits = res.data?.outputLimits || '';
   form.value.costLimit = res.data?.costLimit || '';
+  // 数值列：0 是合法值（「不许花钱」），用 ?? 而不是 || 才不会把 0 当成空；
+  // 顺手 Number() 归一，避免后端把 decimal 下发成字符串时 el-input-number 拿到非数值
+  const rawCostCap = res.data?.costLimitAmount;
+  form.value.costLimitAmount = rawCostCap === null || rawCostCap === undefined ? undefined : Number(rawCostCap);
   form.value.ownerTech = res.data?.ownerTech || '';
   form.value.ownerBiz = res.data?.ownerBiz || '';
   form.value.ownerSecurity = res.data?.ownerSecurity || '';
@@ -1078,6 +1121,7 @@ const initCreateForm = (): AigModelCreateForm => ({
   lifecycleStatus: 'CANDIDATE',
   secretRef: '',
   costLimit: '',
+  costLimitAmount: undefined,
   ownerTech: '',
   ownerBiz: '',
   ownerSecurity: '',

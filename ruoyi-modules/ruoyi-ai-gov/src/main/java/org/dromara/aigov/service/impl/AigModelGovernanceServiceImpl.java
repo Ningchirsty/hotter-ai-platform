@@ -242,6 +242,8 @@ public class AigModelGovernanceServiceImpl implements IAigModelGovernanceService
         entity.setLifecycleStatus(lifecycle.getCode());
         entity.setSecretRef(bo.getSecretRef());
         entity.setCostLimit(bo.getCostLimit());
+        // 单次成本上限（机器可判定的数值）与文本规则一并写入：前者供路由在调用前比对预算
+        entity.setCostLimitAmount(bo.getCostLimitAmount());
         entity.setOwnerTech(bo.getOwnerTech());
         entity.setOwnerBiz(bo.getOwnerBiz());
         entity.setOwnerSecurity(bo.getOwnerSecurity());

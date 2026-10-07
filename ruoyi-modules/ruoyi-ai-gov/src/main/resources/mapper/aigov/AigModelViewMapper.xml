@@ -36,6 +36,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         g.input_limits      as input_limits,
         g.output_limits     as output_limits,
         g.cost_limit        as cost_limit,
+        g.cost_limit_amount as cost_limit_amount,
         g.owner_tech        as owner_tech,
         g.owner_biz         as owner_biz,
         g.owner_security    as owner_security,
