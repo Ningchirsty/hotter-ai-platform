@@ -1,0 +1,87 @@
+package org.dromara.aigov.task.domain.bo;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+import lombok.Data;
+
+import java.io.Serial;
+import java.io.Serializable;
+
+/**
+ * Provider 回调入参。
+ *
+ * <p><b>{@link #rawPayload} 必须是「收到的原始字节」的字符串形式</b>，不要先解析再传：
+ * 验签是对原始字节算 HMAC 的，任何重新序列化（字段顺序、空格、数字格式）都会让
+ * 同一个载荷算出不同签名，于是真回调被误判为伪造——而伪造的反而偶尔能通过。</p>
+ *
+ * @author ai-gov
+ */
+@Data
+public class AigTaskCallbackBo implements Serializable {
+
+    @Serial
+    private static final long serialVersionUID = 1L;
+
+    /**
+     * Provider 编码
+     */
+    @NotBlank(message = "Provider 编码不能为空")
+    @Size(max = 64, message = "Provider 编码长度不能超过 64")
+    private String providerCode;
+
+    /**
+     * 外部作业ID（据此定位任务）
+     */
+    @Size(max = 128, message = "作业ID长度不能超过 128")
+    private String providerJobId;
+
+    /**
+     * 外部事件ID（与 providerCode 组成幂等键）
+     */
+    @Size(max = 128, message = "事件ID长度不能超过 128")
+    private String eventId;
+
+    /**
+     * 回调声明的签名算法（如 HMAC-SHA256）
+     */
+    @Size(max = 32, message = "签名算法长度不能超过 32")
+    private String signAlgorithm;
+
+    /**
+     * 回调携带的签名
+     */
+    @Size(max = 256, message = "签名长度不能超过 256")
+    private String signature;
+
+    /**
+     * 收到的原始载荷（验签与哈希都基于它）
+     */
+    @NotBlank(message = "回调载荷不能为空")
+    private String rawPayload;
+
+    /**
+     * 回调声明的目标状态（必填）。
+     *
+     * <p><b>为什么由适配层负责映射、而不是本层猜</b>：各家 Provider 的完成语义写法不同
+     * （{@code finished}/{@code success}/{@code state=2}…）。把「协议 → 我们的状态」
+     * 这一步放在适配层（控制器/插件）是唯一正确的分层：协议知识属于对接方，
+     * 若让本层去猜，猜错的方向是「把失败当成功」——那是会把坏结果交付出去的错。
+     * 因此这里必填，本层只在「当前状态能否走到它」上做判断。</p>
+     */
+    @NotBlank(message = "回调目标状态不能为空（协议映射由回调适配层负责）")
+    @Size(max = 24, message = "状态长度不能超过 24")
+    private String toStatus;
+
+    /**
+     * 回调声明的错误码（失败回调时由上层归类）
+     */
+    @Size(max = 64, message = "错误码长度不能超过 64")
+    private String errorCode;
+
+    /**
+     * 可读说明
+     */
+    @Size(max = 1000, message = "说明长度不能超过 1000")
+    private String detail;
+
+}
