@@ -37,10 +37,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * {@link ImageTaskOrchestrator} / {@link ImageWorkflowContractRegistry} 负责。
  * 它只做三件事：校验（能力/契约/字段/素材归属）、入库（image_asset / image_task）、派发（QUEUED→RUNNING）。</p>
  *
- * <p><b>与控制器重复的部分</b>：{@code ImageCreationController.createTask} 里有一套同样的装配逻辑。
- * 本次以「纯新增」方式落地（不改动线上图像页的控制器，避免把在用的功能一起改坏），
- * 两处重复是<b>已知技术债</b>，计划在视觉工厂 R1 把控制器改为委托本服务，收敛为一处。
- * 语义对齐由 {@code ImageTaskSubmissionServiceTest} 钉住。</p>
+ * <p>图像控制器与视觉工厂统一复用本服务的任务装配与派发规则。</p>
  *
  * <p><b>启用条件</b>：与 {@link org.dromara.ai.image.config.ImageModuleConfiguration} 一致，
  * 仅在 {@code image.enabled=true} 时注册——否则它依赖的 AssetStore/Orchestrator 等 Bean 并不存在。

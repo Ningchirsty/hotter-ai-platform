@@ -65,7 +65,14 @@ public class VideoTaskDispatchService {
             log.info("任务 {} 已被认领（重复提交），不再重复执行", taskId);
             return Outcome.ALREADY_CLAIMED;
         }
-        if (!executionService.submit(contextFactory.get())) {
+        boolean accepted;
+        try {
+            accepted = executionService.submit(contextFactory.get());
+        } catch (RuntimeException e) {
+            repository.transition(taskId, VideoTaskStatus.RUNNING, VideoTaskStatus.QUEUED, null, null);
+            throw e;
+        }
+        if (!accepted) {
             int rolledBack = repository.transition(taskId, VideoTaskStatus.RUNNING,
                 VideoTaskStatus.QUEUED, null, null);
             log.warn("任务 {} 因执行队列已满被拒，状态回滚影响行数={}", taskId, rolledBack);
