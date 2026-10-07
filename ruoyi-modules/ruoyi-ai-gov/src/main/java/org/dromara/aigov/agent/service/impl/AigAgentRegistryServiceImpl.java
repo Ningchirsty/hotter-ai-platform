@@ -16,6 +16,7 @@ import org.dromara.aigov.agent.enums.AigReleaseChannelEnum;
 import org.dromara.aigov.agent.enums.AigReleaseGateEnum;
 import org.dromara.aigov.agent.enums.AigReleaseStatusEnum;
 import org.dromara.aigov.agent.enums.AigReleaseTargetTypeEnum;
+import org.dromara.aigov.agent.evaluation.AigGoldenCaseEvidence;
 import org.dromara.aigov.agent.manifest.AigManifestScanResult;
 import org.dromara.aigov.agent.manifest.AigPackageIdentity;
 import org.dromara.aigov.agent.manifest.AigPackageManifestValidator;
@@ -26,6 +27,7 @@ import org.dromara.aigov.agent.mapper.AigPackageVersionMapper;
 import org.dromara.aigov.agent.mapper.AigReleaseEventMapper;
 import org.dromara.aigov.agent.mapper.AigSkillVersionMapper;
 import org.dromara.aigov.agent.service.IAigAgentRegistryService;
+import org.dromara.aigov.agent.service.IAigEvaluationService;
 import org.dromara.aigov.agent.state.AigReleaseStateMachine;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
@@ -80,6 +82,8 @@ public class AigAgentRegistryServiceImpl implements IAigAgentRegistryService {
     private final AigPackageMapper packageMapper;
 
     private final AigPackageManifestValidator manifestValidator;
+
+    private final IAigEvaluationService evaluationService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -140,6 +144,10 @@ public class AigAgentRegistryServiceImpl implements IAigAgentRegistryService {
         // 其余门槛的证据各在别处（人工批准落 approved_by、曾 STABLE 过查发布事件账本），
         // 唯独这一条以前是「调用方说过了就过了」——那正是「不生效也不会报错」的那一类。
         assertManifestScanEvidence(type, row.scanResult(), passed);
+
+        // 同理，「黄金用例通过」也不能只凭声明：证据是评测账本（§13.2）。
+        // 判据只实现一次（IAigEvaluationService#goldenCaseEvidence），这里只消费结论。
+        assertGoldenCaseEvidence(type, bo.getTargetVersionId(), passed);
 
         // 后门：DISABLED → STABLE 必须能证明该版本曾经 STABLE 过（状态机看不到历史，只能在这里兜）
         if (from == AigReleaseStatusEnum.DISABLED && to == AigReleaseStatusEnum.STABLE
@@ -268,6 +276,33 @@ public class AigAgentRegistryServiceImpl implements IAigAgentRegistryService {
         log.info("新增 Agent 版本绑定, bindingId={}, agentVersionId={}, brandId={}, channel={}",
             binding.getBindingId(), bo.getAgentVersionId(), bo.getBrandId(), channel);
         return binding.getBindingId();
+    }
+
+    /**
+     * 落实「黄金用例」这道门槛的证据要求（设计 §5.4、§13.2）。
+     *
+     * <p>对三类版本一视同仁：评测对象本来就分 Agent/Skill/Package 三种，而「用没用过评测」
+     * 与对象类型无关。声明了这道门槛就必须拿得出评测账本里的结论——否则「黄金用例通过」
+     * 这句声明的实际含义只是「调用方这么认为」。</p>
+     *
+     * @param type   对象类型
+     * @param id     对象版本ID
+     * @param passed 本次声明的已通过门槛
+     */
+    private void assertGoldenCaseEvidence(AigReleaseTargetTypeEnum type, Long id,
+                                         Set<AigReleaseGateEnum> passed) {
+        if (!passed.contains(AigReleaseGateEnum.GOLDEN_CASE)) {
+            return;
+        }
+        AigGoldenCaseEvidence evidence = evaluationService.goldenCaseEvidence(type.getCode(), id);
+        if (evidence != null && evidence.satisfied()) {
+            return;
+        }
+        String reason = evidence == null ? "评测证据不可用" : evidence.reason();
+        String verdicts = evidence == null ? "" : "逐用例结论：" + evidence.verdictSummary() + "。";
+        throw new ServiceException("不允许声明「黄金用例已通过」而库里没有证据：" + reason + "。"
+            + verdicts + "请先对版本声明的黄金用例集合跑一遍评测并取得通过"
+            + "（对象 " + type.getCode() + " #" + id + "）");
     }
 
     /**

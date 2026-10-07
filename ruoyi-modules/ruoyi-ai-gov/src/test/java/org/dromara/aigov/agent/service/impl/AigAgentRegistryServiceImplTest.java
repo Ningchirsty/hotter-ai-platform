@@ -16,6 +16,7 @@ import org.dromara.aigov.agent.enums.AigPackageRejectRuleEnum;
 import org.dromara.aigov.agent.enums.AigReleaseGateEnum;
 import org.dromara.aigov.agent.enums.AigReleaseStatusEnum;
 import org.dromara.aigov.agent.enums.AigReleaseTargetTypeEnum;
+import org.dromara.aigov.agent.evaluation.AigGoldenCaseEvidence;
 import org.dromara.aigov.agent.manifest.AigManifestScanResult;
 import org.dromara.aigov.agent.manifest.AigPackageManifestValidator;
 import org.dromara.aigov.agent.mapper.AigAgentBindingMapper;
@@ -24,6 +25,7 @@ import org.dromara.aigov.agent.mapper.AigPackageMapper;
 import org.dromara.aigov.agent.mapper.AigPackageVersionMapper;
 import org.dromara.aigov.agent.mapper.AigReleaseEventMapper;
 import org.dromara.aigov.agent.mapper.AigSkillVersionMapper;
+import org.dromara.aigov.agent.service.IAigEvaluationService;
 import org.dromara.common.core.exception.ServiceException;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,6 +36,7 @@ import org.mockito.ArgumentCaptor;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -100,6 +103,7 @@ class AigAgentRegistryServiceImplTest {
     private AigReleaseEventMapper releaseEventMapper;
     private AigAgentBindingMapper bindingMapper;
     private AigPackageMapper packageMapper;
+    private IAigEvaluationService evaluationService;
     private AigAgentRegistryServiceImpl service;
 
     @BeforeAll
@@ -121,9 +125,13 @@ class AigAgentRegistryServiceImplTest {
         releaseEventMapper = mock(AigReleaseEventMapper.class);
         bindingMapper = mock(AigAgentBindingMapper.class);
         packageMapper = mock(AigPackageMapper.class);
+        evaluationService = mock(IAigEvaluationService.class);
         service = new AigAgentRegistryServiceImpl(agentVersionMapper, skillVersionMapper,
             packageVersionMapper, releaseEventMapper, bindingMapper, packageMapper,
-            new AigPackageManifestValidator(JsonMapper.builder().build()));
+            new AigPackageManifestValidator(JsonMapper.builder().build()), evaluationService);
+        // 默认：黄金用例证据「已满足」（需要它的用例各自再覆盖）
+        when(evaluationService.goldenCaseEvidence(any(), any()))
+            .thenReturn(AigGoldenCaseEvidence.satisfied(List.of(), Map.of()));
         // 默认：条件更新命中 1 行、事件写入成功
         when(agentVersionMapper.update(isNull(), any())).thenReturn(1);
         when(packageVersionMapper.update(isNull(), any())).thenReturn(1);
@@ -552,6 +560,29 @@ class AigAgentRegistryServiceImplTest {
                 List.of(AigReleaseGateEnum.MANIFEST_VALIDATION.getCode()))));
         verify(packageVersionMapper).update(isNull(), any());
         verify(releaseEventMapper).insert(any(AigReleaseEvent.class));
+    }
+
+    @Test
+    @DisplayName("「黄金用例」这道门槛也吃评测账本：没有通过的评测就不许声明已通过")
+    void goldenCaseGateNeedsEvaluationEvidence() {
+        stubVersion("SANDBOX_TESTED", "GENERAL");
+
+        // 没声明这把门槛 → 报「还差」，且压根不去查评测（被检查的是「声明了的门槛」）
+        ServiceException missing = assertThrows(ServiceException.class, () -> service.advanceRelease(
+            bo("SANDBOX_TESTED", "CANDIDATE", List.of(AigReleaseGateEnum.HUMAN_APPROVAL.getCode()))));
+        assertTrue(missing.getMessage().contains("还差"), missing.getMessage());
+        verify(evaluationService, never()).goldenCaseEvidence(any(), any());
+
+        // 声明了 → 必须拿得出证据
+        when(evaluationService.goldenCaseEvidence(any(), any())).thenReturn(
+            AigGoldenCaseEvidence.blocked(List.of("case-a"), Map.of("case-a", "NO_RUN"),
+                "用例 case-a 还没有任何评测运行"));
+        ServiceException error = assertThrows(ServiceException.class, () -> service.advanceRelease(
+            bo("SANDBOX_TESTED", "CANDIDATE", List.of(AigReleaseGateEnum.GOLDEN_CASE.getCode(),
+                AigReleaseGateEnum.HUMAN_APPROVAL.getCode()))));
+        assertTrue(error.getMessage().contains("没有证据"), error.getMessage());
+        assertTrue(error.getMessage().contains("case-a"), "要说清是哪条用例挡住了：" + error.getMessage());
+        verify(agentVersionMapper, never()).update(isNull(), any());
     }
 
 }
