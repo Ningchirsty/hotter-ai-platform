@@ -4,6 +4,7 @@ import org.dromara.aigov.domain.bo.AigModelBaseBo;
 import org.dromara.aigov.domain.bo.AigModelCreateBo;
 import org.dromara.aigov.domain.bo.AigModelGovernanceBo;
 import org.dromara.aigov.domain.bo.AigModelProviderBo;
+import org.dromara.aigov.domain.bo.AigModelSecretBatchBo;
 import org.dromara.aigov.domain.bo.AigModelSecretBo;
 import org.dromara.aigov.domain.vo.AigModelProviderVo;
 import org.dromara.aigov.domain.vo.AigModelTestVo;
@@ -100,6 +101,27 @@ public interface IAigModelGovernanceService {
      * @return 影响行数
      */
     int updateModelSecret(AigModelSecretBo bo);
+
+    /**
+     * 供应商维度批量写入/清除模型密钥（{@code sai_model_config.api_key}，仍只更新该列）。
+     *
+     * <p><b>为什么需要它</b>：同一家供应商下的模型通常共用一把 Key。逐个模型录入
+     * 要求管理员把同一串明文粘贴 N 次，既易贴错也易漏贴，而漏贴从 {@code api_key}
+     * 列上看不出来。本方法把「一把 Key 覆盖一组模型」变成一个原子动作。</p>
+     *
+     * <p><b>加密一次、复用密文</b>：明文只经 {@link AigModelSecretCipher#encrypt}
+     * 处理一次，同一段密文写入每一行。这不是偷懒——SM4/CBC 用的是固定 IV，
+     * 确定性加密下「逐行加密」与「加密一次再复制」产出的密文逐字节相同，
+     * 因此没有引入任何新的密文形态，snail-ai 侧兼容性不变。</p>
+     *
+     * <p><b>范围</b>：{@code modelIds} 为空作用于该供应商下全部已登记模型（含停用）；
+     * 显式传入时，列表中若有不属于该供应商的模型则<b>整批拒绝</b>，
+     * 避免「以为在改 A 家、实际覆盖了 B 家凭据」。</p>
+     *
+     * @param bo 批量密钥参数（{@code clearKey=true} 时忽略 {@code apiKey} 并置空）
+     * @return 实际影响的模型行数
+     */
+    int applyProviderSecret(AigModelSecretBatchBo bo);
 
     /**
      * 供应商下拉选项（仅启用项，不含任何凭据）。

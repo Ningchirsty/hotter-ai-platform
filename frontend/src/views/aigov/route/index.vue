@@ -62,6 +62,17 @@
             <el-button v-hasPermi="['aig:route:add']" type="primary" plain icon="Plus" @click="handleAdd">
               新增
             </el-button>
+            <!-- 场景强制绑定：设计 §4.4 第 4 步。权限与策略编辑分开——
+                 能改外发禁令与能钉首选供应商，不是同一件事 -->
+            <el-button
+              v-hasPermi="['aig:route:list']"
+              type="warning"
+              plain
+              icon="Star"
+              @click="bindingVisible = true"
+            >
+              场景强制绑定
+            </el-button>
             <el-button
               v-hasPermi="['aig:route:edit']"
               type="success"
@@ -249,6 +260,9 @@
         </div>
       </template>
     </el-dialog>
+
+    <!-- 场景强制绑定：只收窄候选，不放宽治理口径（设计 §4.4 第 4 步） -->
+    <ScenarioBindingDialog v-model="bindingVisible" />
   </div>
 </template>
 
@@ -271,6 +285,7 @@ import { useTableSelection } from '@/hooks/table/useTableSelection';
 import modal from '@/plugins/modal';
 import { useDict } from '@/utils/dict';
 import { checkPermi } from '@/utils/permission';
+import ScenarioBindingDialog from './components/ScenarioBindingDialog.vue';
 
 defineOptions({ name: 'AigRoutePolicy' });
 
@@ -284,6 +299,8 @@ const { loading, withLoading } = useLoading(true);
 const { showSearch } = useSearchToggle();
 const { ids, single, multiple, handleSelectionChange } = useTableSelection<AigRoutePolicyVO>(item => item.policyId!);
 const total = ref(0);
+/** 场景强制绑定弹窗（独立的 CRUD 组件，权限为 aig:route:binding） */
+const bindingVisible = ref(false);
 const policyFormRef = ref<ElFormInstance>();
 const queryFormRef = ref<ElFormInstance>();
 

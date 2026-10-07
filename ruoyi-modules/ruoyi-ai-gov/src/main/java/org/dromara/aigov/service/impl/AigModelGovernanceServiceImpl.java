@@ -12,6 +12,7 @@ import org.dromara.aigov.domain.bo.AigModelBaseBo;
 import org.dromara.aigov.domain.bo.AigModelCreateBo;
 import org.dromara.aigov.domain.bo.AigModelGovernanceBo;
 import org.dromara.aigov.domain.bo.AigModelProviderBo;
+import org.dromara.aigov.domain.bo.AigModelSecretBatchBo;
 import org.dromara.aigov.domain.bo.AigModelSecretBo;
 import org.dromara.aigov.domain.vo.AigModelProviderVo;
 import org.dromara.aigov.domain.vo.AigModelTestTargetVo;
@@ -241,6 +242,8 @@ public class AigModelGovernanceServiceImpl implements IAigModelGovernanceService
         entity.setLifecycleStatus(lifecycle.getCode());
         entity.setSecretRef(bo.getSecretRef());
         entity.setCostLimit(bo.getCostLimit());
+        // 单次成本上限（机器可判定的数值）与文本规则一并写入：前者供路由在调用前比对预算
+        entity.setCostLimitAmount(bo.getCostLimitAmount());
         entity.setOwnerTech(bo.getOwnerTech());
         entity.setOwnerBiz(bo.getOwnerBiz());
         entity.setOwnerSecurity(bo.getOwnerSecurity());
@@ -321,6 +324,54 @@ public class AigModelGovernanceServiceImpl implements IAigModelGovernanceService
         // 日志只记长度，绝不记密钥本身（连掩码形式都不要）
         log.info("写入模型密钥, modelId={}, plainLen={}, cipherLen={}, rows={}",
             bo.getModelId(), bo.getApiKey().length(), cipherText == null ? 0 : cipherText.length(), rows);
+        return rows;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int applyProviderSecret(AigModelSecretBatchBo bo) {
+        if (bo == null || bo.getProviderId() == null) {
+            throw new ServiceException("供应商ID不能为空");
+        }
+        // 服务层再校验一次：控制器上的 @SaCheckPermission 只覆盖 HTTP 入口，
+        // 而本方法是接口公开能力，内部调用同样不得绕过。
+        if (!permissionHelper.canViewModelSecret()) {
+            throw new ServiceException("无权修改模型密钥（aig:model:secret）");
+        }
+        if (modelConfigMapper.countProvider(bo.getProviderId()) <= 0) {
+            throw new ServiceException("供应商不存在：" + bo.getProviderId());
+        }
+        // 作用范围一律以「该供应商下的模型」为准，请求里列出的模型只能是从中挑子集，
+        // 不能是范围之外的模型——否则一次误传就能把别家的凭据覆盖掉。
+        List<Long> ownedIds = modelConfigMapper.selectModelIdsByProvider(bo.getProviderId());
+        if (CollUtil.isEmpty(ownedIds)) {
+            throw new ServiceException("该供应商下没有已登记的模型，无密钥可写；请先在其下登记模型");
+        }
+        List<Long> targetIds = ownedIds;
+        if (CollUtil.isNotEmpty(bo.getModelIds())) {
+            targetIds = bo.getModelIds().stream().filter(ownedIds::contains).toList();
+            if (targetIds.size() != bo.getModelIds().size()) {
+                List<Long> foreign = bo.getModelIds().stream().filter(id -> !ownedIds.contains(id)).toList();
+                throw new ServiceException("以下模型不属于该供应商，已整批拒绝：" + foreign);
+            }
+        }
+        if (Boolean.TRUE.equals(bo.getClearKey())) {
+            int rows = modelConfigMapper.updateModelApiKeyBatch(targetIds, null);
+            log.info("批量清除模型密钥, providerId={}, targetCount={}, rows={}",
+                bo.getProviderId(), targetIds.size(), rows);
+            return rows;
+        }
+        if (StringUtils.isBlank(bo.getApiKey())) {
+            throw new ServiceException("密钥不能为空；如需清除已有密钥，请显式选择「清除密钥」");
+        }
+        // 明文只在此处存活一个局部变量的生存期；加密一次后立刻丢弃。
+        // 复用同一段密文是安全的：CBC 用固定 IV，确定性加密下逐行加密与本写法等价。
+        String cipherText = secretCipher.encrypt(bo.getApiKey());
+        int rows = modelConfigMapper.updateModelApiKeyBatch(targetIds, cipherText);
+        // 日志只记长度与条数，绝不记密钥本身（连掩码形式都不要）
+        log.info("批量写入模型密钥, providerId={}, targetCount={}, plainLen={}, cipherLen={}, rows={}",
+            bo.getProviderId(), targetIds.size(), bo.getApiKey().length(),
+            cipherText == null ? 0 : cipherText.length(), rows);
         return rows;
     }
 

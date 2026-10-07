@@ -57,9 +57,25 @@ public class AigInvocationAudit implements Serializable {
     private String dataLevel;
 
     /**
+     * 场景编码（可为空）
+     * <p>场景强制绑定会收窄候选（设计 §4.4 第 4 步）。审计里只留下「最终用了哪家」、
+     * 不留「因为哪个场景才只剩这家」的话，事后无法回答「为什么这次没走默认首选」。</p>
+     */
+    private String scenarioCode;
+
+    /**
      * 实际使用的模型ID（sai_model_config.id）
      */
     private Long modelId;
+
+    /**
+     * 实际使用的供应商ID（sai_model_config.provider_id）
+     * <p><b>为什么必须单独存一份</b>：模型会换归属（同一家网关把模型迁到另一个供应商、
+     * 或模型下架后重建）。若审计只记模型ID，「这家供应商这个月花了多少、外发了多少次」
+     * 只能靠 join 现查，而 join 出来的是<b>今天</b>的归属，不是当时那次的。
+     * 费用与合规口径必须按「当时是谁」算。</p>
+     */
+    private Long providerId;
 
     /**
      * 模型键（内部标识）
@@ -92,6 +108,15 @@ public class AigInvocationAudit implements Serializable {
     private String inputHash;
 
     /**
+     * 不可变输入快照引用（设计 §4.3 {@code input_snapshot_ref}）
+     * <p>只存<b>引用</b>（对象键/业务ID），不存快照副本——审计表是逐次追加的，
+     * 塞副本会让它迅速膨胀，且与「输入原文不落库」的原则冲突。
+     * 它是事后复现一次结论的唯一入口：没有它，同一个 traceId 只能看到「用了什么模型」，
+     * 看不到「当时喂进去的是什么」。</p>
+     */
+    private String inputSnapshotRef;
+
+    /**
      * 输入摘要（仅在审计等级允许时写入，禁止写入人才个人资料）
      */
     private String inputSummary;
@@ -119,7 +144,21 @@ public class AigInvocationAudit implements Serializable {
     /**
      * 本次成本
      */
+    /**
+     * 成本（由调用器回填；多数外部供应商不回执费用，为空表示未知而非免费）
+     */
     private BigDecimal cost;
+
+    /**
+     * 模型用量回执（JSON；当前为 {@code {"tokensUsed":N,"cost":X}}）
+     * <p><b>为什么不拆成列</b>：不同供应商回执的用量字段差别很大（总 token、
+     * 输入/输出 token、图像张数、视频秒数、阶梯单价…）。每来一家就加一列，
+     * 迁移会失控；而审计的读取方式是「按 traceId 取一行给人看」，不是按用量列聚合。
+     * 恒为数字键值对，无字符串拼接与转义问题。</p>
+     * <p>为空表示<b>该次调用没有拿到任何用量</b>（例如图像模型不回执 token），
+     * 与「用量为 0」是两件事。</p>
+     */
+    private String usageJson;
 
     /**
      * 重试次数

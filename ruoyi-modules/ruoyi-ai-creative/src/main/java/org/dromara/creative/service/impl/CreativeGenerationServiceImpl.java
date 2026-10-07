@@ -388,6 +388,39 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
         return PageResult.build(rows, page.getTotal());
     }
 
+    @Override
+    public PageResult<DpGenerationVo> queryReadOnlyPage(Long taskId, String status, PageQuery pageQuery) {
+        // 与 queryPage 的关键差别：**不调 refreshRows**。
+        // refreshRows 会 updateById、会写项目事件，对 QUEUED 的候选还会 dispatchQueued——
+        // 也就是「看一眼列表」可能真的把出图跑起来并计费。只读镜像不能有这个副作用。
+        Page<DpGeneration> page = generationMapper.selectPage(pageQuery.build(),
+            new LambdaQueryWrapper<DpGeneration>()
+                .eq(taskId != null, DpGeneration::getTaskId, taskId)
+                .eq(StringUtils.isNotBlank(status), DpGeneration::getStatus, status)
+                .orderByDesc(DpGeneration::getId));
+        List<DpGenerationVo> rows = new ArrayList<>();
+        for (DpGeneration row : page.getRecords()) {
+            DpGenerationVo vo = toVo(row);
+            vo.setTaskName(stageMapper.selectTaskName(row.getTaskId()));
+            rows.add(vo);
+        }
+        return PageResult.build(rows, page.getTotal());
+    }
+
+    @Override
+    public DpGenerationVo getReadOnly(Long generationId) {
+        if (generationId == null) {
+            return null;
+        }
+        DpGeneration row = generationMapper.selectById(generationId);
+        if (row == null) {
+            return null;
+        }
+        DpGenerationVo vo = toVo(row);
+        vo.setTaskName(stageMapper.selectTaskName(row.getTaskId()));
+        return vo;
+    }
+
     /**
      * 批量刷新候选状态。
      *

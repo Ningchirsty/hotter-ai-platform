@@ -49,9 +49,23 @@ public class AigAuditContext implements Serializable {
     private String dataLevel;
 
     /**
+     * 场景编码（可为空）
+     * <p>记录「这次调用属于哪个业务场景」。场景会影响候选收窄（§4.4 第 4 步），
+     * 事后只看到「用的是哪家」而不知道「为什么是这家」时，这一列是唯一的线索。</p>
+     */
+    private String scenarioCode;
+
+    /**
      * 模型ID
      */
     private Long modelId;
+
+    /**
+     * 供应商ID（必须跟着「本次实际执行的候选」走）
+     * <p>有序 fallback 之后真正跑的是备选模型，供应商可能完全不同；
+     * 审计若仍记主候选的供应商，就成了假账——费用与合规口径都会按错的供应商统计。</p>
+     */
+    private Long providerId;
 
     /**
      * 模型键
@@ -107,6 +121,16 @@ public class AigAuditContext implements Serializable {
      * 本次成本
      */
     private BigDecimal cost;
+
+    /**
+     * 模型用量回执（JSON，由调用编排按调用器回填的 tokens/cost 组装）
+     */
+    private String usageJson;
+
+    /**
+     * 不可变输入快照引用（只存引用，不存副本）
+     */
+    private String inputSnapshotRef;
 
     /**
      * 重试次数

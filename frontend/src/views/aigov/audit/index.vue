@@ -39,6 +39,17 @@
               <el-option label="未外发" value="N" />
             </el-select>
           </el-form-item>
+          <!-- 按供应商对账：这一列记的是「当时那一次」的归属，不随模型改归属而变 -->
+          <el-form-item label="供应商" prop="providerId">
+            <el-select v-model="queryParams.providerId" placeholder="请选择供应商" clearable filterable style="width: 200px">
+              <el-option
+                v-for="item in providerOptions"
+                :key="item.providerId"
+                :label="item.providerName || String(item.providerId)"
+                :value="item.providerId!"
+              />
+            </el-select>
+          </el-form-item>
           <el-form-item label="调用人" prop="callerName">
             <el-input
               v-model="queryParams.callerName"
@@ -88,13 +99,31 @@
       </template>
 
       <el-table v-loading="loading" border class="data-table" :data="auditList">
-        <el-table-column label="traceId" align="center" prop="traceId" width="220" show-overflow-tooltip />
+        <el-table-column label="traceId" align="center" width="220" show-overflow-tooltip>
+          <template #default="scope">
+            <!-- 输入快照引用：只存引用不存副本，且不是每次调用都有，
+                 因此挂在 traceId 上做提示，而不是单开一列（大多数行为空） -->
+            <el-tooltip v-if="scope.row.inputSnapshotRef" placement="top"
+                        :content="'输入快照：' + scope.row.inputSnapshotRef">
+              <span class="trace-with-snapshot">{{ scope.row.traceId }}</span>
+            </el-tooltip>
+            <span v-else>{{ scope.row.traceId }}</span>
+          </template>
+        </el-table-column>
         <el-table-column label="能力" align="center" width="180" show-overflow-tooltip>
           <template #default="scope">{{ capabilityLabel(scope.row) }}</template>
         </el-table-column>
         <el-table-column label="调用人" align="center" prop="callerName" width="120" />
         <el-table-column label="模型" align="center" width="160" show-overflow-tooltip>
           <template #default="scope">{{ scope.row.modelKey || '-' }}</template>
+        </el-table-column>
+        <!-- 供应商：当时那一次的归属。缺了它，费用与合规只能靠模型ID join 现查，查到的是今天的归属 -->
+        <el-table-column label="供应商" align="center" width="140" show-overflow-tooltip>
+          <template #default="scope">
+            <span v-if="scope.row.providerName">{{ scope.row.providerName }}</span>
+            <span v-else-if="scope.row.providerId">{{ scope.row.providerId }}</span>
+            <span v-else class="usage-absent">-</span>
+          </template>
         </el-table-column>
         <el-table-column label="部署类型" align="center" width="130">
           <template #default="scope">
@@ -119,6 +148,13 @@
         </el-table-column>
         <el-table-column label="成本" align="center" width="110">
           <template #default="scope">{{ scope.row.cost ?? '-' }}</template>
+        </el-table-column>
+        <!-- 用量回执：为空表示该次未拿到用量（图像模型普遍不回执 token），与「用量为零」是两件事 -->
+        <el-table-column label="用量" align="center" width="170" show-overflow-tooltip>
+          <template #default="scope">
+            <span v-if="scope.row.usageJson">{{ scope.row.usageJson }}</span>
+            <span v-else class="usage-absent">未采集</span>
+          </template>
         </el-table-column>
         <el-table-column label="结果" align="center" width="180">
           <template #default="scope">
@@ -149,6 +185,8 @@ import { listCapability } from '@/api/aigov/capability';
 import type { AigCapabilityVO } from '@/api/aigov/capability/types';
 import { listInvocationAudit } from '@/api/aigov/audit';
 import type { AigInvocationAuditQuery, AigInvocationAuditVO } from '@/api/aigov/audit/types';
+import type { AigModelProviderOption } from '@/api/aigov/model/types';
+import { listAllModelProviders } from '@/api/aigov/model';
 import { useLoading } from '@/hooks/async/useLoading';
 import { useDateRangeQuery } from '@/hooks/form/useDateRangeQuery';
 import { useSearchReset } from '@/hooks/form/useSearchReset';
@@ -162,6 +200,7 @@ const { aig_data_level, aig_deployment_type } = toRefs<any>(useDict('aig_data_le
 
 const auditList = ref<AigInvocationAuditVO[]>([]);
 const capabilityOptions = ref<AigCapabilityVO[]>([]);
+const providerOptions = ref<AigModelProviderOption[]>([]);
 const { loading, withLoading } = useLoading(true);
 const { showSearch } = useSearchToggle();
 const total = ref(0);
@@ -176,6 +215,7 @@ const queryParams = ref<AigInvocationAuditQuery>({
   dataLevel: undefined,
   externalCall: undefined,
   callerName: undefined,
+  providerId: undefined,
   params: {}
 });
 
@@ -206,6 +246,12 @@ const getCapabilityOptions = async () => {
   capabilityOptions.value = res.data?.rows || [];
 };
 
+/** 加载供应商下拉用于「按供应商对账」检索 */
+const getProviderOptions = async () => {
+  const res = await listAllModelProviders();
+  providerOptions.value = res.data || [];
+};
+
 /** 搜索按钮操作 */
 const handleQuery = () => {
   queryParams.value.pageNum = 1;
@@ -214,6 +260,7 @@ const handleQuery = () => {
 
 onMounted(() => {
   getCapabilityOptions();
+  getProviderOptions();
   getList();
 });
 </script>
@@ -228,5 +275,17 @@ onMounted(() => {
   font-size: 12px;
   line-height: 1.4;
   color: var(--el-color-danger);
+}
+
+/* 「未采集」是正常状态（补列前的历史行、图像模型不回执 token），
+   用弱化色区分于真正的失败，避免被当成错误 */
+.usage-absent {
+  color: var(--el-text-color-placeholder);
+}
+
+/* 有输入快照引用的行给出可悬停提示，不额外占一列宽度 */
+.trace-with-snapshot {
+  border-bottom: 1px dashed var(--el-border-color);
+  cursor: help;
 }
 </style>

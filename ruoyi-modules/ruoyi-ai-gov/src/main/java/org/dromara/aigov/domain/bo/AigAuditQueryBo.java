@@ -42,7 +42,7 @@ public class AigAuditQueryBo implements Serializable {
     private String callerName;
 
     /**
-     * 本次数据等级（PUBLIC/INTERNAL/RESTRICTED）
+     * 本次数据等级（PUBLIC/INTERNAL/RESTRICTED/STRICT）
      */
     private String dataLevel;
 
@@ -50,6 +50,13 @@ public class AigAuditQueryBo implements Serializable {
      * 实际使用的模型ID
      */
     private Long modelId;
+
+    /**
+     * 实际使用的供应商ID
+     * <p>按供应商口径对账（这家这个月花了多少、外发了多少次）必须能直接过滤，
+     * 否则只能按模型ID join 现查，而 join 出来的是今天的归属。</p>
+     */
+    private Long providerId;
 
     /**
      * 模型键（精确匹配，前端按此过滤）

@@ -9,6 +9,7 @@ import type {
   AigModelProviderForm,
   AigModelProviderOption,
   AigModelQuery,
+  AigModelSecretBatchForm,
   AigModelSecretForm,
   AigModelTestResult
 } from './types';
@@ -107,6 +108,18 @@ export function updateModelBase(data: AigModelBaseForm) {
 export function updateModelSecret(data: AigModelSecretForm) {
   return request({
     url: '/aigov/model/secret',
+    method: 'put',
+    data: data
+  });
+}
+
+// 供应商维度批量写入/清除模型密钥（PUT /aigov/model/secret/batch）
+// 语义与单个模型完全一致，只是作用范围扩到「该供应商下的一组模型」。
+// 权限同样是 aig:model:secret —— 批量覆盖面更大，没有理由放宽。
+// 返回值是实际影响的行数，界面可直接据此提示「已写入 N 个模型」。
+export function applyProviderSecret(data: AigModelSecretBatchForm): AxiosPromise<number> {
+  return request({
+    url: '/aigov/model/secret/batch',
     method: 'put',
     data: data
   });

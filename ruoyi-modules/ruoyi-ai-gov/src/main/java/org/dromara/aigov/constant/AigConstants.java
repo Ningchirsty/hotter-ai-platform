@@ -70,9 +70,55 @@ public interface AigConstants {
      */
     String PERM_ROUTE_REMOVE = "aig:route:remove";
     /**
+     * 场景强制绑定-维护（新增/修改/删除）
+     * <p>与 {@code aig:route:edit} 分开：路由策略管的是「能不能外发」这类治理口径，
+     * 场景绑定只决定「在已允许的候选里先试谁」。把两者合成一个权限，等于让
+     * 「改首选供应商」的人顺带获得「开外发」的能力。</p>
+     */
+    String PERM_ROUTE_BINDING = "aig:route:binding";
+    /**
      * 调用审计-列表
      */
     String PERM_AUDIT_LIST = "aig:audit:list";
+    /**
+     * AI任务-列表
+     */
+    String PERM_TASK_LIST = "aig:task:list";
+    /**
+     * AI任务-详情
+     */
+    String PERM_TASK_QUERY = "aig:task:query";
+    /**
+     * AI任务-操作（人工取消/复核/手动触发调度扫描）
+     * <p>与「只看」分开：这些操作会改变任务状态或触发重试与计费，
+     * 而查看任务只是读。合并的话，一个只该看进度的人就能替所有人取消在跑的任务。</p>
+     */
+    String PERM_TASK_OPERATE = "aig:task:operate";
+    /**
+     * AI任务-选定交付物（人工选定候选资产）
+     * <p>与 {@link #PERM_TASK_OPERATE} 分开：「运维取消/重跑」与「决定交付哪一张」
+     * 是两类人做的决定，后者有业务后果且需要担责。合并的话，一个只负责重跑任务的人
+     * 就能替业务方敲定最终交付物。</p>
+     */
+    String PERM_TASK_SELECT = "aig:task:select";
+
+    /**
+     * 系统提交者ID：任务由调度器/Agent 发起（无登录上下文）时，{@code create_by} 用它占位。
+     *
+     * <p><b>为什么不能留 NULL</b>：{@code aig_task.create_by} 同时是幂等唯一键
+     * {@code uk_aig_task_idem (project_type, create_by, idempotency_key)} 的一段。
+     * 而 NULL 在唯一键里<b>不被约束</b>（MySQL/MariaDB 的唯一键不约束 NULL），
+     * 在等值查询里也永不成立（{@code create_by = NULL} 恒为 UNKNOWN）——
+     * 两处叠加的结果是「同一个 Agent 重复提交同一个幂等键会建出两个任务」，
+     * 于是变成两次真实模型调用、两次计费，而每一步单看都很正常。
+     * 实测（真实 MariaDB）：无登录上下文下重复提交同一键 → 库里两行。</p>
+     *
+     * <p>用一个稳定的非空哨兵值把「系统」变成一个真实的提交者身份，上述两处才都成立。
+     * 取值 0：RuoYi 的用户ID 从 1 起（admin=1），0 不会被真实用户占用；
+     * 这个位只用于<b>幂等作用域</b>，事件/审计里的 {@code actor_id}/{@code caller_id}
+     * 在系统触发时仍如实写 NULL——那里要表达的是「没有人操作」，与「谁提交的」不是同一件事。</p>
+     */
+    Long SYSTEM_SUBMITTER_ID = 0L;
 
     /**
      * 阶段1 首个能力编码：人才能力匹配

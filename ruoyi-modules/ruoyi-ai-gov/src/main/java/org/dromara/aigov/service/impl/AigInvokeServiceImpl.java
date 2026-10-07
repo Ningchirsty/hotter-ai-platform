@@ -3,12 +3,16 @@ package org.dromara.aigov.service.impl;
 import cn.hutool.core.util.IdUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.dromara.aigov.config.AigRetryProperties;
 import org.dromara.aigov.domain.bo.AigInvokeBo;
 import org.dromara.aigov.domain.vo.AigInvokeVo;
 import org.dromara.aigov.domain.vo.AigModelVo;
+import org.dromara.aigov.domain.vo.AigRouteCandidate;
 import org.dromara.aigov.domain.vo.AigRouteDecision;
+import org.dromara.aigov.domain.vo.AigRouteHint;
 import org.dromara.aigov.enums.AigDataLevelEnum;
 import org.dromara.aigov.enums.AigDeploymentTypeEnum;
+import org.dromara.aigov.enums.AigErrorClassEnum;
 import org.dromara.aigov.enums.AigInvokeResultEnum;
 import org.dromara.aigov.enums.AigManualDecisionEnum;
 import org.dromara.aigov.enums.AigRouteDecisionEnum;
@@ -69,10 +73,15 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
      */
     private final AigModelViewMapper modelViewMapper;
 
+    /**
+     * 失败自动重试配置（只对可重试的错误分类生效）。
+     */
+    private final AigRetryProperties retryProperties;
+
     @Override
     public AigInvokeVo dryRun(AigInvokeBo bo) {
         AigDataLevelEnum dataLevel = parseDataLevel(bo);
-        AigRouteDecision decision = routeService.decide(bo.getCapabilityCode(), dataLevel);
+        AigRouteDecision decision = routeService.decide(bo.getCapabilityCode(), dataLevel, routeHint(bo));
         // dryRun 只做决策预览，不产生审计记录，因此不生成 traceId
         return toVo(null, decision, null, decision.getReason());
     }
@@ -82,8 +91,9 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
         // 1. 生成 traceId
         String traceId = IdUtil.fastSimpleUUID();
         AigDataLevelEnum dataLevel = parseDataLevel(bo);
-        // 2. 路由决策（不抛异常）
-        AigRouteDecision decision = routeService.decide(bo.getCapabilityCode(), dataLevel);
+        // 2. 路由决策（不抛异常）；带路由提示：场景命中强制绑定时候选收窄为指定供应商、
+        //    声明了本次预算时排除单次上限高于预算的模型。两者都只收窄，不放宽治理口径。
+        AigRouteDecision decision = routeService.decide(bo.getCapabilityCode(), dataLevel, routeHint(bo));
         // 3. 组装审计上下文；无论成败都在 finally 落库
         AigAuditContext audit = buildAuditContext(traceId, bo, dataLevel, decision);
         try {
@@ -92,40 +102,138 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
                 audit.setResult(AigInvokeResultEnum.FAILED.getCode());
                 audit.setErrorSummary(decision.getReason());
                 audit.setManualDecision(AigManualDecisionEnum.NOT_REQUIRED.getCode());
-                return toVo(traceId, decision, null, decision.getReason());
+                return toVo(traceId, decision, null, decision.getReason(),
+                    AigErrorClassEnum.POLICY_DENIED.getCode());
             }
             if (AigRouteDecisionEnum.MANUAL.getCode().equals(decision.getDecision())) {
                 // 5. 转人工：标记待确认，不调用模型
                 audit.setResult(AigInvokeResultEnum.FAILED.getCode());
                 audit.setErrorSummary(decision.getReason());
                 audit.setManualDecision(AigManualDecisionEnum.PENDING.getCode());
-                return toVo(traceId, decision, null, decision.getReason());
+                // 转人工同样归为「策略类、不可重试」：重试还是同一个结论，只会重复打扰人
+                return toVo(traceId, decision, null, decision.getReason(),
+                    AigErrorClassEnum.POLICY_DENIED.getCode());
             }
-            // 6. 决策为 MODEL → 选调用器执行
-            AigDeploymentTypeEnum deployment = AigDeploymentTypeEnum.find(decision.getDeploymentType());
-            ModelInvoker invoker = resolveInvoker(decision.getInvoker(), deployment);
-            if (invoker == null) {
+            // 6. 决策为 MODEL → 按有序候选依次执行，失败则顺延（有序 fallback）
+            List<AigRouteCandidate> candidates = decision.getCandidates();
+            if (candidates.isEmpty()) {
+                // 兼容：决策未携带候选列表（旧调用方或手工构造）时退化为「单一模型」路径
+                AigRouteCandidate single = new AigRouteCandidate();
+                single.setOrder(1);
+                single.setModelId(decision.getModelId());
+                single.setModelKey(decision.getModelKey());
+                single.setDeploymentType(decision.getDeploymentType());
+                single.setInvoker(decision.getInvoker());
+                candidates = List.of(single);
+            }
+            int maxAttempts = retryProperties.isEnabled() ? Math.max(1, retryProperties.getMaxAttempts()) : 1;
+            long startedAt = System.currentTimeMillis();
+            int totalAttempts = 0;
+            boolean executed = false;
+            boolean succeeded = false;
+            ModelInvokeResult result = null;
+            AigErrorClassEnum errorClass = null;
+            String errorSummary = null;
+            for (int index = 0; index < candidates.size(); index++) {
+                AigRouteCandidate candidate = candidates.get(index);
+                boolean lastCandidate = index == candidates.size() - 1;
+                // 用循环下标而不是 candidate.getOrder() 拼消息：order 是我们自己填的展示字段，
+                // 外部构造的决策可能为 null，一旦参与算术就会 NPE 并把整次调用带崩。
+                int orderNo = index + 1;
+                // 决策与审计都指向「这次实际要试的候选」：fallback 之后真正跑的是备选模型，
+                // 审计若仍记主候选就是一笔假账，比没有审计更坏。
+                applyCandidate(decision, audit, candidate);
+                AigDeploymentTypeEnum deployment = AigDeploymentTypeEnum.find(candidate.getDeploymentType());
+                AigModelVo model = modelViewMapper.selectModelById(candidate.getModelId());
+                // 供应商维度同样必须跟着「这次真正要试的候选」：审计漏了它，
+                // 「这家供应商这个月花了多少、外发了多少次」就只能靠模型ID join 现查，
+                // 而 join 出来的是今天的归属，不是当时那次的。
+                audit.setProviderId(model == null ? null : model.getProviderId());
+                ModelInvoker invoker = resolveInvoker(candidate.getInvoker(), deployment,
+                    model == null ? null : model.getModelType());
+                if (invoker == null) {
+                    // 该候选没有可用调用器：跳过而不是整体失败——后面还有候选可试
+                    audit.getPolicyHits().add("候选 #" + orderNo + "（" + candidate.getModelKey()
+                        + "）无可用调用器，顺延下一候选");
+                    continue;
+                }
+                executed = true;
+                ModelInvokeRequest request = buildRequest(bo, decision, deployment, model);
+                // 6.1 同一候选内退避重试：只对可重试类（限流/超时/不可用）生效
+                int attempts = 0;
+                errorClass = null;
+                while (true) {
+                    attempts++;
+                    totalAttempts++;
+                    result = invoker.invoke(request);
+                    if (result.isSuccess()) {
+                        break;
+                    }
+                    errorClass = safeClassify(invoker, result);
+                    errorSummary = StringUtils.blankToDefault(result.getErrorSummary(), "模型调用失败");
+                    if (!errorClass.isRetryable() || attempts >= maxAttempts) {
+                        break;
+                    }
+                    long backoff = backoffMs(attempts);
+                    // 退避原因写进 hits：否则事后只看「这次调用花了 3 秒」无法解释为什么
+                    audit.getPolicyHits().add("候选 #" + orderNo + " 第 " + attempts
+                        + " 次尝试失败（" + errorClass.getCode() + "：" + errorClass.getDesc() + "），"
+                        + backoff + "ms 后重试第 " + (attempts + 1) + "/" + maxAttempts + " 次");
+                    if (!sleepQuietly(backoff)) {
+                        // 线程被中断：不再重试，按当前失败结果收敛
+                        audit.getPolicyHits().add("重试等待被中断，按当前失败结果收敛");
+                        break;
+                    }
+                }
+                if (result.isSuccess()) {
+                    // 7. 输出必须符合能力输出模板，否则不视为成功。
+                    // 但**不重试同一模型**：同样的输入与提示词，重试只会得到同样的输出；
+                    // 换一个模型才可能有帮助——故归类为「值得 fallback」的 OUTPUT_UNPARSABLE。
+                    if (AigOutputSchemaValidator.matches(decision.getOutputSchema(), result.getOutput())) {
+                        succeeded = true;
+                        break;
+                    }
+                    errorClass = AigErrorClassEnum.OUTPUT_UNPARSABLE;
+                    errorSummary = AigOutputSchemaValidator.MISMATCH_MESSAGE;
+                    result = ModelInvokeResult.failure(AigErrorClassEnum.OUTPUT_UNPARSABLE.getCode(), null,
+                        errorSummary, result.getLatencyMs());
+                }
+                // 6.2 候选级 fallback：只有「换个 Provider 可能有救」的错误才顺延。
+                // 入参类错误（换谁都一样被拒）继续顺延，只是把同一个失败乘以候选数。
+                if (!errorClass.isWorthFallback() || lastCandidate) {
+                    break;
+                }
+                audit.getPolicyHits().add("候选 #" + orderNo + "（" + candidate.getModelKey()
+                    + "）失败（" + errorClass.getCode() + "），按有序 fallback 顺延到候选 #"
+                    + (orderNo + 1));
+            }
+            // 耗时按「端到端」记：含退避等待与多候选尝试，因为那是调用方真实等待的时间。
+            long elapsedMs = System.currentTimeMillis() - startedAt;
+            if (!executed) {
                 audit.setResult(AigInvokeResultEnum.FAILED.getCode());
                 audit.setErrorSummary("无可用调用器");
-                return toVo(traceId, decision, null, "路由命中模型但无可用调用器（invoker）");
+                return toVo(traceId, decision, elapsedMs, "路由命中模型但无可用调用器（invoker）",
+                    AigErrorClassEnum.INVALID_REQUEST.getCode());
             }
-            AigModelVo model = modelViewMapper.selectModelById(decision.getModelId());
-            ModelInvokeResult result = invoker.invoke(buildRequest(bo, decision, deployment, model));
-            audit.setLatencyMs((int) Math.min(result.getLatencyMs(), Integer.MAX_VALUE));
+            audit.setRetryCount(Math.max(0, totalAttempts - 1));
+            audit.setLatencyMs((int) Math.min(elapsedMs, Integer.MAX_VALUE));
             audit.setCost(result.getCost());
             audit.setModelVersion(result.getModelVersion());
-            AigInvokeVo vo = toVo(traceId, decision, result.getLatencyMs(), null);
-            if (!result.isSuccess()) {
+            // 用量回执：调用器解析出来的 tokens 此前只活在 ModelInvokeResult 里，
+            // 出了这次方法调用就丢了——而「这家用了多少」是费用对账与限流的基础。
+            audit.setUsageJson(buildUsageJson(result));
+            AigInvokeVo vo = toVo(traceId, decision, elapsedMs, null);
+            if (!succeeded) {
                 audit.setResult(AigInvokeResultEnum.FAILED.getCode());
-                audit.setErrorSummary(StringUtils.blankToDefault(result.getErrorSummary(), "模型调用失败"));
-                vo.setReason(StringUtils.blankToDefault(result.getErrorSummary(), "模型调用失败"));
-                return vo;
-            }
-            // 7. 输出必须符合能力输出模板，否则不视为成功
-            if (!AigOutputSchemaValidator.matches(decision.getOutputSchema(), result.getOutput())) {
-                audit.setResult(AigInvokeResultEnum.FAILED.getCode());
-                audit.setErrorSummary(AigOutputSchemaValidator.MISMATCH_MESSAGE);
-                vo.setReason(AigOutputSchemaValidator.MISMATCH_MESSAGE);
+                audit.setErrorSummary(StringUtils.blankToDefault(errorSummary, "模型调用失败"));
+                vo.setReason(StringUtils.blankToDefault(errorSummary, "模型调用失败"));
+                if (errorClass == null) {
+                    errorClass = AigErrorClassEnum.UNKNOWN;
+                }
+                // 把内部已算好的错误分类下发：上层要据此决定「重试/换候选/转人工/停在失败」，
+                // 让它去解析 reason 文案等于把已确定的结论重新猜一遍（文案一改就错）
+                vo.setErrorCode(errorClass.getCode());
+                recordErrorClass(audit, decision, errorClass);
                 return vo;
             }
             audit.setResult(AigInvokeResultEnum.SUCCESS.getCode());
@@ -135,6 +243,153 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
             return vo;
         } finally {
             auditRecorder.record(audit);
+        }
+    }
+
+    /**
+     * 把决策与审计都指向「本次实际要试的候选」。
+     *
+     * <p>为什么必须做：有序 fallback 之后真正执行的是<b>备选</b>模型。若审计
+     * {@code model_id/model_key/deployment_type/external_call} 仍停留在主候选，
+     * 事后回看审计会以为一直是主候选在跑——那是**假账**，比没有审计更坏
+     * （尤其 {@code external_call}：主候选是本地、备选是外部时，假账会把「数据外发过」
+     * 记成「没外发」）。</p>
+     *
+     * @param decision  决策对象（使 toVo 下发的模型/调用器与实际一致）
+     * @param audit     审计上下文
+     * @param candidate 本次要试的候选
+     */
+    private void applyCandidate(AigRouteDecision decision, AigAuditContext audit, AigRouteCandidate candidate) {
+        decision.setModelId(candidate.getModelId());
+        decision.setModelKey(candidate.getModelKey());
+        decision.setDeploymentType(candidate.getDeploymentType());
+        decision.setInvoker(candidate.getInvoker());
+        audit.setModelId(candidate.getModelId());
+        audit.setModelKey(candidate.getModelKey());
+        audit.setDeploymentType(candidate.getDeploymentType());
+        AigDeploymentTypeEnum deployment = AigDeploymentTypeEnum.find(candidate.getDeploymentType());
+        audit.setExternalCall(deployment != null && deployment.isExternal());
+    }
+
+    /**
+     * 把入参里的场景与预算组装成路由提示。
+     *
+     * @param bo 调用入参
+     * @return 路由提示；两者都为空时返回 null（路由按「无提示」快路径处理）
+     */
+    private AigRouteHint routeHint(AigInvokeBo bo) {
+        return AigRouteHint.of(bo.getScenarioCode(), bo.getMaxCost());
+    }
+
+    /**
+     * 把调用器回填的用量组装成审计用的 JSON。
+     *
+     * <p><b>为什么手工拼而不走序列化器</b>：这里只可能是「若干个数字键值对」，
+     * 没有字符串、没有嵌套、没有需要转义的内容，因此不存在拼接注入或转义遗漏的风险；
+     * 而引入 {@code JsonMapper} 会让本类多一个构造参数，把「用量怎么序列化」这种
+     * 边缘关注点渗进调用编排的装配里。真正的扩展点在列：不同供应商回执的用量字段
+     * 差异很大，将来按供应商归一化时在这里补键即可。</p>
+     *
+     * <p>两个值都为空时返回 {@code null} 而不是 {@code {}}：图像模型普遍不回执 token，
+     * 给每次出图都写一个空对象会把这一列变成噪音，也让「没有用量」和「用量为零」混为一谈。</p>
+     *
+     * @param result 最后一次尝试的结果（可为 null）
+     * @return 用量 JSON，无任何用量时返回 null
+     */
+    private String buildUsageJson(ModelInvokeResult result) {
+        if (result == null || (result.getTokensUsed() == null && result.getCost() == null)) {
+            return null;
+        }
+        StringBuilder json = new StringBuilder(48).append('{');
+        if (result.getTokensUsed() != null) {
+            json.append("\"tokensUsed\":").append(result.getTokensUsed());
+        }
+        if (result.getCost() != null) {
+            if (json.length() > 1) {
+                json.append(',');
+            }
+            json.append("\"cost\":").append(result.getCost().toPlainString());
+        }
+        return json.append('}').toString();
+    }
+
+    /**
+     * 归类失败，并对「调用器返回 null」兜底。
+     *
+     * <p>为什么需要兜底：{@code classifyError} 是带默认实现的方法，但调用器可以覆写它。
+     * 一个返回 null 的覆写（或单测里未打桩的 mock）会让后续取 {@code getCode()}
+     * 直接 NPE——而「分类这一步失败」绝不该让一次模型调用以异常收场。
+     * 退化成 UNKNOWN（不可重试、不自动转人工）是更安全的行为。</p>
+     *
+     * @param invoker 调用器
+     * @param result  失败结果
+     * @return 错误分类，恒不为 null
+     */
+    private AigErrorClassEnum safeClassify(ModelInvoker invoker, ModelInvokeResult result) {
+        AigErrorClassEnum errorClass = invoker.classifyError(result);
+        return errorClass == null ? AigErrorClassEnum.UNKNOWN : errorClass;
+    }
+
+    /**
+     * 指数退避时长：base, base*2, base*4 … 且不超过上限。
+     *
+     * @param attempt 已失败的尝试次数（1 起）
+     * @return 退避毫秒数
+     */
+    private long backoffMs(int attempt) {
+        long base = Math.max(1L, retryProperties.getBaseBackoffMs());
+        long ceiling = Math.max(base, retryProperties.getMaxBackoffMs());
+        long shift = Math.min(attempt - 1, 16);
+        long value = base << shift;
+        return value <= 0 ? ceiling : Math.min(value, ceiling);
+    }
+
+    /**
+     * 退避等待；不抛异常，改为返回是否完整睡完。
+     *
+     * @param millis 等待毫秒数
+     * @return true 正常等待结束；false 线程在等待中被中断
+     */
+    private boolean sleepQuietly(long millis) {
+        try {
+            Thread.sleep(millis);
+            return true;
+        } catch (InterruptedException e) {
+            // 恢复中断标记：吞掉中断信号会让上层再也感知不到取消请求
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+
+    /**
+     * 把错误分类落进审计，并据此决定处置。
+     *
+     * <p><b>刻意不改动 {@code reason} 文案</b>：内容域与创作域已有基于失败原因文本的
+     * 判断与断言（例如 {@code cp_output_check.failure_reason} 会原样展示给用户），
+     * 在这条链路上改文案会波及它们。分类信息写进 {@code policyHits}（调用方与审计都能看到），
+     * 处置写进 {@code manualDecision}。</p>
+     *
+     * @param audit      审计上下文
+     * @param decision   路由决策
+     * @param errorClass 错误分类
+     */
+    private void recordErrorClass(AigAuditContext audit, AigRouteDecision decision, AigErrorClassEnum errorClass) {
+        audit.getPolicyHits().add("错误分类=" + errorClass.getCode() + "（" + errorClass.getDesc() + "）"
+            + "，允许自动重试=" + (errorClass.isRetryable() ? "是" : "否")
+            + "，需转人工=" + (errorClass.isNeedsHuman() ? "是" : "否"));
+        if (errorClass.isNeedsHuman()) {
+            // 设计 §13.3：不可重试的错误必须转人工，不能被当成「偶发失败」悄悄吞掉
+            audit.setManualDecision(AigManualDecisionEnum.PENDING.getCode());
+        }
+        if (errorClass.isCircuitBreak()) {
+            // 熔断不等于「鉴权失败」：额度/余额不足同样会熔断（继续调用必然同样失败）。
+            // 文案按分类拼，不写死——否则额度问题会被记成「鉴权失败」，
+            // 运维就会去找一把「更好的密钥」，而真正的动作在财务侧。
+            log.error("Provider 调用建议熔断：分类={}（{}）, traceId={}, capability={}, modelKey={}, reason={}",
+                errorClass.getCode(), errorClass.getDesc(), audit.getTraceId(), audit.getCapabilityCode(),
+                decision.getModelKey(), audit.getErrorSummary());
+            audit.getPolicyHits().add("熔断建议：" + errorClass.getDesc()
+                + "（" + errorClass.getCode() + "），处置完成前不应继续调用该 Provider");
         }
     }
 
@@ -170,6 +425,8 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
         audit.setTraceId(traceId);
         audit.setCapabilityCode(bo.getCapabilityCode());
         audit.setDataLevel(dataLevel.getCode());
+        audit.setScenarioCode(bo.getScenarioCode());
+        audit.setInputSnapshotRef(bo.getInputSnapshotRef());
         audit.setModelId(decision.getModelId());
         audit.setModelKey(decision.getModelKey());
         audit.setDeploymentType(decision.getDeploymentType());
@@ -215,19 +472,24 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
     }
 
     /**
-     * 挑选调用器：优先按决策记录的 invoker 名称匹配，其次按部署类型匹配。
+     * 挑选调用器：优先按决策记录的 invoker 名称匹配，其次按「部署类型 + 模型类型」匹配。
+     *
+     * <p>必须带 {@code modelType}：同一个 {@code EXTERNAL_API} 下对话模型与图像模型
+     * 属于两个不同调用器，只按部署类型兜底会派错（或被无谓地抢走）。</p>
      *
      * @param invokerName 决策记录的调用器名称（可为 null）
      * @param deployment  部署类型
+     * @param modelType   模型类型（{@code sai_model_config.model_type}，可为空）
      * @return 可用调用器，找不到返回 null
      */
-    private ModelInvoker resolveInvoker(String invokerName, AigDeploymentTypeEnum deployment) {
+    private ModelInvoker resolveInvoker(String invokerName, AigDeploymentTypeEnum deployment, String modelType) {
         if (invokers == null || deployment == null) {
             return null;
         }
         ModelInvoker fallback = null;
         for (ModelInvoker invoker : invokers) {
-            if (!invoker.supports(deployment) || !invoker.available()) {
+            if (!invoker.supports(deployment) || !invoker.available()
+                || !invoker.supportsModelType(modelType)) {
                 continue;
             }
             if (StringUtils.isNotBlank(invokerName) && invokerName.equals(invoker.invokerName())) {
@@ -250,6 +512,21 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
      * @return 返回视图
      */
     private AigInvokeVo toVo(String traceId, AigRouteDecision decision, Long latencyMs, String reason) {
+        return toVo(traceId, decision, latencyMs, reason, null);
+    }
+
+    /**
+     * 组装返回视图。
+     *
+     * @param traceId    调用链ID（dryRun 为空）
+     * @param decision   路由决策
+     * @param latencyMs  耗时（可空）
+     * @param reason     原因（可空，取决策里的）
+     * @param errorCode  错误分类编码（成功时为空）
+     * @return 返回视图
+     */
+    private AigInvokeVo toVo(String traceId, AigRouteDecision decision, Long latencyMs, String reason,
+                             String errorCode) {
         AigInvokeVo vo = new AigInvokeVo();
         vo.setTraceId(traceId);
         vo.setDecision(decision.getDecision());
@@ -265,6 +542,7 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
         vo.setReason(StringUtils.blankToDefault(reason, decision.getReason()));
         vo.setPolicyHits(decision.getPolicyHits());
         vo.setPendingConfirm(decision.getHumanConfirmPoints());
+        vo.setErrorCode(errorCode);
         return vo;
     }
 

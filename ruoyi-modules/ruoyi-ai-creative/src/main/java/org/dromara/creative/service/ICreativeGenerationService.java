@@ -122,4 +122,31 @@ public interface ICreativeGenerationService {
      */
     PageResult<DpGenerationVo> queryPage(String status, PageQuery pageQuery);
 
+    /**
+     * 纯只读分页（<b>不做内核状态刷新</b>），供治理层的只读镜像使用。
+     *
+     * <p><b>为什么不复用 {@link #queryPage}</b>：那个方法会「顺手刷新」——对未结束的候选
+     * 去内核取真实状态，状态变了就 {@code updateById} 落库、写项目事件，
+     * 对 {@code QUEUED} 的候选还会真的 {@code dispatchQueued}。
+     * 也就是说「打开生产中心看一眼」可能真的把出图跑起来并开始计费——那是该页面需要的读模型行为，
+     * 但<b>绝不能被只读镜像继承</b>：在治理台里浏览一次列表不该产生任何副作用。</p>
+     *
+     * <p>代价必须写明：本方法返回的是 {@code dp_generation} 的<b>已落库状态</b>，
+     * 不保证与图像内核的实时状态一致（没人刷新时它会滞后）。镜像层要在返回体里说明这一点。</p>
+     *
+     * @param taskId    项目ID（可空＝不筛）
+     * @param status    状态过滤（可空＝不筛）
+     * @param pageQuery 分页参数
+     * @return 分页结果
+     */
+    PageResult<DpGenerationVo> queryReadOnlyPage(Long taskId, String status, PageQuery pageQuery);
+
+    /**
+     * 纯只读单条（同样不刷新内核状态）。
+     *
+     * @param generationId 候选ID
+     * @return 候选视图；不存在返回 null
+     */
+    DpGenerationVo getReadOnly(Long generationId);
+
 }

@@ -54,6 +54,13 @@ export interface AigModelGovernanceVO extends BaseEntity {
   outputLimits?: string;
   /** 成本与配额：单次/单项目/单日预算与限流规则 */
   costLimit?: string;
+  /**
+   * 单次成本上限（机器可判定的数值，元）；为空=未声明。
+   *
+   * 与上方的 `costLimit` 分工：`costLimit` 是给人读的配额规则说明，本字段是路由真正
+   * 用来判定的「一次调用最多允许花多少」——调用方传了本次预算时，声明上限高于预算的模型会被排除。
+   */
+  costLimitAmount?: number;
   /** 技术负责人 */
   ownerTech?: string;
   /** 业务负责人 */
@@ -83,6 +90,13 @@ export interface AigModelGovernanceForm {
   inputLimits?: string;
   outputLimits?: string;
   costLimit?: string;
+  /**
+   * 单次成本上限（机器可判定的数值，元）；为空=未声明。
+   *
+   * 与上方的 `costLimit` 分工：`costLimit` 是给人读的配额规则说明，本字段是路由真正
+   * 用来判定的「一次调用最多允许花多少」——调用方传了本次预算时，声明上限高于预算的模型会被排除。
+   */
+  costLimitAmount?: number;
   ownerTech?: string;
   ownerBiz?: string;
   ownerSecurity?: string;
@@ -115,6 +129,28 @@ export interface AigModelSecretForm {
   /** 明文密钥；clearKey=true 时可省略 */
   apiKey?: string;
   /** 是否清除已有密钥 */
+  clearKey?: boolean;
+}
+
+/**
+ * 供应商维度批量写入密钥（PUT /aigov/model/secret/batch）
+ *
+ * 同一家供应商下的模型通常共用一把 Key（bluocto 的 7 个图像模型就是同一个
+ * token 分组）。逐个模型录入要求把同一串明文粘贴 N 次，漏贴一次从
+ * `api_key` 列上也看不出来；本入口把「一把 Key 覆盖一组模型」变成一个动作。
+ *
+ * - 后端把明文**只加密一次**再复用到每一行（固定 IV 的确定性加密，
+ *   与逐行加密逐字节等价），因此没有引入新的密文形态；
+ * - `modelIds` 省略表示该供应商下**全部已登记模型**（含停用模型——
+ *   停用只是路由不选它，凭据仍应保持一致）。
+ */
+export interface AigModelSecretBatchForm {
+  providerId: string | number;
+  /** 目标模型ID；省略表示该供应商下全部模型。后端会拒绝不属于该供应商的ID */
+  modelIds?: Array<string | number>;
+  /** 明文密钥；clearKey=true 时可省略 */
+  apiKey?: string;
+  /** 是否清除这些模型已有的密钥 */
   clearKey?: boolean;
 }
 
@@ -203,6 +239,13 @@ export interface AigModelCreateForm {
   lifecycleStatus?: string;
   secretRef?: string;
   costLimit?: string;
+  /**
+   * 单次成本上限（机器可判定的数值，元）；为空=未声明。
+   *
+   * 与上方的 `costLimit` 分工：`costLimit` 是给人读的配额规则说明，本字段是路由真正
+   * 用来判定的「一次调用最多允许花多少」——调用方传了本次预算时，声明上限高于预算的模型会被排除。
+   */
+  costLimitAmount?: number;
   ownerTech?: string;
   ownerBiz?: string;
   ownerSecurity?: string;

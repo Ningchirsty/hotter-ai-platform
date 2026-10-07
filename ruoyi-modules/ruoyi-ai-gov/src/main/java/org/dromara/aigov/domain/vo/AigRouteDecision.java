@@ -53,6 +53,17 @@ public class AigRouteDecision implements Serializable {
     private List<String> policyHits = new ArrayList<>();
 
     /**
+     * 有序候选列表（PRIMARY → GRAY → FALLBACK，同级按 priority 升序）。
+     *
+     * <p>第 1 项即上面 {@code modelId/modelKey/deploymentType/invoker} 记录的主候选；
+     * 主候选调用失败且错误分类允许 fallback 时，调用编排按序顺延到下一项。</p>
+     *
+     * <p>为空表示本次决策不是 {@code MODEL}（被拒绝或转人工），调用编排会退化为
+     * 「单一模型」路径，保持对旧调用方的兼容。</p>
+     */
+    private List<AigRouteCandidate> candidates = new ArrayList<>();
+
+    /**
      * 结论说明
      */
     private String reason;

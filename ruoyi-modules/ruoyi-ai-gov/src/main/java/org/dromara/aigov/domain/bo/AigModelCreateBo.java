@@ -1,5 +1,7 @@
 package org.dromara.aigov.domain.bo;
 
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -10,6 +12,7 @@ import org.dromara.common.core.validate.AddGroup;
 
 import java.io.Serial;
 import java.io.Serializable;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 
 /**
@@ -171,6 +174,16 @@ public class AigModelCreateBo implements Serializable {
      */
     @Size(max = 255, message = "成本限制长度不能超过 255", groups = {AddGroup.class})
     private String costLimit;
+
+    /**
+     * 单次成本上限（机器可判定的数值；为空=未声明）
+     * <p>与 {@code costLimit} 分工：文本列写规则，本列写「一次调用最多允许花多少」，
+     * 路由在调用前按它比对本次预算。</p>
+     */
+    @DecimalMin(value = "0", message = "单次成本上限不能为负数", groups = {AddGroup.class})
+    @Digits(integer = 10, fraction = 8, message = "单次成本上限整数位最多 10 位、小数位最多 8 位",
+        groups = {AddGroup.class})
+    private BigDecimal costLimitAmount;
 
     /**
      * 技术负责人

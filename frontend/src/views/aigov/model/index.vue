@@ -182,6 +182,16 @@
           </template>
         </el-table-column>
         <el-table-column label="成本限额" align="center" prop="costLimit" show-overflow-tooltip />
+        <!-- 单次上限是路由真正用来判定的那一列，与左边的「规则说明」区分显示；
+             为空时写明「未声明」——路由会放行但提示，不是「不许调用」 -->
+        <el-table-column label="单次成本上限" align="center" width="130">
+          <template #default="scope">
+            <span v-if="scope.row.costLimitAmount !== null && scope.row.costLimitAmount !== undefined">
+              {{ scope.row.costLimitAmount }}
+            </span>
+            <span v-else class="cost-undeclared">未声明</span>
+          </template>
+        </el-table-column>
         <el-table-column label="责任人" align="center" width="200">
           <template #default="scope">
             <div class="owner-cell">
@@ -318,6 +328,20 @@
         </el-form-item>
         <el-form-item label="成本限额" prop="costLimit">
           <el-input v-model="form.costLimit" placeholder="单次/单项目/单日预算与限流规则" />
+        </el-form-item>
+        <el-form-item label="单次成本上限" prop="costLimitAmount">
+          <el-input-number
+            v-model="form.costLimitAmount"
+            :min="0"
+            :precision="8"
+            :step="0.01"
+            controls-position="right"
+            style="width: 220px"
+            placeholder="留空=未声明"
+          />
+          <div class="form-tip">
+            路由在调用前用它比对调用方的本次预算：本值高于预算的模型会被跳过。留空表示未声明，路由会放行但写入提示。
+          </div>
         </el-form-item>
         <el-row :gutter="16">
           <el-col :span="8">
@@ -513,6 +537,20 @@
         </el-form-item>
         <el-form-item label="成本限额" prop="costLimit">
           <el-input v-model="createForm.costLimit" placeholder="单次/单项目/单日预算与限流规则" />
+        </el-form-item>
+        <el-form-item label="单次成本上限" prop="costLimitAmount">
+          <el-input-number
+            v-model="createForm.costLimitAmount"
+            :min="0"
+            :precision="8"
+            :step="0.01"
+            controls-position="right"
+            style="width: 220px"
+            placeholder="留空=未声明"
+          />
+          <div class="form-tip">
+            路由在调用前用它比对调用方的本次预算：本值高于预算的模型会被跳过。可稍后在治理属性里补。
+          </div>
         </el-form-item>
         <el-row :gutter="16">
           <el-col :span="8">
@@ -724,10 +762,22 @@
             <el-tag :type="scope.row.isEnabled ? 'success' : 'info'">{{ scope.row.isEnabled ? '启用' : '停用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" align="center" width="170" class-name="small-padding fixed-width">
+        <el-table-column label="操作" align="center" width="250" class-name="small-padding fixed-width">
           <template #default="scope">
             <el-button v-hasPermi="['aig:model:add']" link type="primary" icon="Edit" @click="openProviderForm(scope.row)">
               编辑
+            </el-button>
+            <!-- 批量配密钥：同一家供应商下的模型通常共用一把 Key，逐个模型录入
+                 要求把同一串明文粘贴 N 次，漏贴一次从列表上也看不出来 -->
+            <el-button
+              v-hasPermi="['aig:model:secret']"
+              link
+              type="primary"
+              icon="Key"
+              :disabled="!scope.row.modelCount"
+              @click="openBatchSecret(scope.row)"
+            >
+              批量配密钥
             </el-button>
             <el-button
               v-hasPermi="['aig:model:add']"
@@ -770,6 +820,55 @@
         <div class="dialog-footer">
           <el-button type="primary" :loading="providerSubmitting" @click="submitProvider">确 定</el-button>
           <el-button @click="providerFormVisible = false">取 消</el-button>
+        </div>
+      </template>
+    </el-dialog>
+
+    <!-- 供应商维度批量配置密钥 -->
+    <el-dialog v-model="batchSecretDialog.visible" title="批量配置模型密钥" width="640px" append-to-body>
+      <el-alert
+        class="dialog-alert"
+        type="info"
+        :closable="false"
+        show-icon
+        title="把这把 Key 一次性写入该供应商下的全部已登记模型。后端只加密一次再复用同一段密文，与逐个模型录入完全等价；明文提交后即销毁，任何界面都不回显。"
+      />
+      <el-form ref="batchSecretFormRef" :model="batchSecretForm" :rules="secretRules" label-width="110px">
+        <el-form-item label="供应商">
+          <el-input :model-value="currentBatchProvider.providerName" disabled placeholder="来自供应商清单" />
+        </el-form-item>
+        <el-form-item label="作用范围">
+          <el-tag type="warning">该供应商下全部 {{ currentBatchProvider.modelCount ?? 0 }} 个已登记模型</el-tag>
+          <span class="form-tip">
+            （含停用模型——停用只是路由不选它，凭据仍应保持一致，否则重新启用时会带着旧 Key 静默失败）
+          </span>
+        </el-form-item>
+        <el-form-item label="API 密钥" prop="apiKey">
+          <el-input
+            v-model="batchSecretForm.apiKey"
+            type="password"
+            show-password
+            clearable
+            maxlength="500"
+            placeholder="请输入供应商签发的 API Key；不填则什么都不改"
+          />
+          <div class="form-tip">
+            留空不会覆盖已有密钥（后端会直接拒绝空值），避免一次「忘了填」抹掉整组凭据。
+          </div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button type="primary" :loading="batchSecretSubmitting" @click="submitBatchSecret">写 入</el-button>
+          <el-button
+            type="danger"
+            plain
+            :loading="batchSecretSubmitting"
+            @click="submitClearBatchSecret"
+          >
+            清除本供应商全部密钥
+          </el-button>
+          <el-button @click="batchSecretDialog.visible = false">取 消</el-button>
         </div>
       </template>
     </el-dialog>
@@ -817,10 +916,12 @@ import type {
   AigModelProviderForm,
   AigModelProviderOption,
   AigModelQuery,
+  AigModelSecretBatchForm,
   AigModelSecretForm,
   AigModelTestResult
 } from '@/api/aigov/model/types';
 import {
+  applyProviderSecret,
   createModel,
   createModelProvider,
   getModel,
@@ -869,6 +970,7 @@ const initFormData: AigModelGovernanceForm = {
   inputLimits: '',
   outputLimits: '',
   costLimit: '',
+  costLimitAmount: undefined,
   ownerTech: '',
   ownerBiz: '',
   ownerSecurity: '',
@@ -957,6 +1059,10 @@ const handleGovernance = async (row?: Partial<AigModelGovernanceVO>) => {
   form.value.inputLimits = res.data?.inputLimits || '';
   form.value.outputLimits = res.data?.outputLimits || '';
   form.value.costLimit = res.data?.costLimit || '';
+  // 数值列：0 是合法值（「不许花钱」），用 ?? 而不是 || 才不会把 0 当成空；
+  // 顺手 Number() 归一，避免后端把 decimal 下发成字符串时 el-input-number 拿到非数值
+  const rawCostCap = res.data?.costLimitAmount;
+  form.value.costLimitAmount = rawCostCap === null || rawCostCap === undefined ? undefined : Number(rawCostCap);
   form.value.ownerTech = res.data?.ownerTech || '';
   form.value.ownerBiz = res.data?.ownerBiz || '';
   form.value.ownerSecurity = res.data?.ownerSecurity || '';
@@ -1015,6 +1121,7 @@ const initCreateForm = (): AigModelCreateForm => ({
   lifecycleStatus: 'CANDIDATE',
   secretRef: '',
   costLimit: '',
+  costLimitAmount: undefined,
   ownerTech: '',
   ownerBiz: '',
   ownerSecurity: '',
@@ -1218,6 +1325,77 @@ const submitClearSecret = async () => {
     await getList();
   } finally {
     secretSubmitting.value = false;
+  }
+};
+
+// ------------------------------------------------- 模型密钥（供应商维度批量）
+
+/** 当前正在批量配置密钥的供应商（只读回显，含 modelCount） */
+const currentBatchProvider = ref<AigModelProviderOption>({});
+const batchSecretDialog = ref({ visible: false });
+const batchSecretFormRef = ref<ElFormInstance>();
+const batchSecretSubmitting = ref(false);
+
+const batchSecretForm = ref<AigModelSecretBatchForm>({ providerId: '', apiKey: '' });
+
+/** 打开批量配密钥弹窗：明文输入框始终清空，绝不回显已有密钥 */
+const openBatchSecret = (row: AigModelProviderOption) => {
+  currentBatchProvider.value = row;
+  // 刻意不下发 modelIds：作用范围由后端解析为「该供应商下的全部模型」，
+  // 界面显示的数量与后端实际写入的那批模型指向同一个来源，不会各说各话。
+  batchSecretForm.value = { providerId: row.providerId!, apiKey: '' };
+  batchSecretDialog.value.visible = true;
+};
+
+/** 批量写入：明文只在这一个请求体里出现，后端加密一次后复用到每一行 */
+const submitBatchSecret = () => {
+  batchSecretFormRef.value?.validate(async (valid: boolean) => {
+    if (!valid) {
+      return;
+    }
+    if (!batchSecretForm.value.apiKey) {
+      modal.msgWarning('请输入 API 密钥；如需作废整组密钥请用「清除本供应商全部密钥」');
+      return;
+    }
+    batchSecretSubmitting.value = true;
+    try {
+      const res = await applyProviderSecret({
+        providerId: batchSecretForm.value.providerId,
+        apiKey: batchSecretForm.value.apiKey
+      });
+      modal.msgSuccess(`已为 ${res.data ?? 0} 个模型写入密钥（加密落库，界面不再回显）`);
+      // 用后即焚：避免明文停留在内存表单里
+      batchSecretForm.value.apiKey = '';
+      batchSecretDialog.value.visible = false;
+      await getList();
+    } finally {
+      batchSecretSubmitting.value = false;
+    }
+  });
+};
+
+/** 批量清除：二次确认里点明供应商，避免在错误的窗口里清掉整组凭据 */
+const submitClearBatchSecret = async () => {
+  const providerLabel = currentBatchProvider.value.providerName || currentBatchProvider.value.providerKey || '该供应商';
+  try {
+    await modal.confirm(
+      `将清除「${providerLabel}」下全部 ${currentBatchProvider.value.modelCount ?? 0} 个模型的密钥。清除后这些模型都无法再向供应商发起调用，直到重新配置。确定清除？`
+    );
+  } catch {
+    return;
+  }
+  batchSecretSubmitting.value = true;
+  try {
+    const res = await applyProviderSecret({
+      providerId: batchSecretForm.value.providerId,
+      clearKey: true
+    });
+    modal.msgSuccess(`已清除 ${res.data ?? 0} 个模型的密钥`);
+    batchSecretForm.value.apiKey = '';
+    batchSecretDialog.value.visible = false;
+    await getList();
+  } finally {
+    batchSecretSubmitting.value = false;
   }
 };
 

@@ -52,10 +52,12 @@ create table aig_model_governance (
     deployment_type   varchar(24)     not null default 'EXTERNAL_API' comment '部署类型（LOCAL本地私有 GROUP集团共享 EXTERNAL_ENTERPRISE外部企业服务 EXTERNAL_API外部API）',
     data_level_max    varchar(16)     not null default 'PUBLIC'  comment '允许处理的最高数据等级（PUBLIC公开 INTERNAL内部 RESTRICTED限制）',
     lifecycle_status  varchar(16)     not null default 'CANDIDATE' comment '可用状态（CANDIDATE候选 TRIAL试验 GRAY灰度 PRODUCTION生产 SUSPENDED暂停 RETIRED退役）',
+    capability_tags   varchar(255)    default null               comment '模型声明的能力标签（逗号分隔，如 IMAGE,VISION）；与 aig_capability.required_tags 逐项比对；NULL=未声明（默认放行并写入可见提示，aigov.route.require-model-tags=true 时改为严格排除）',
     secret_ref        varchar(255)    default null               comment '密钥引用（如 kms://ai/qwen），**禁止存明文密钥**',
     input_limits      varchar(500)    default null               comment '输入限制：文本长度/文件类型/图片视频大小/并发',
     output_limits     varchar(500)    default null               comment '输出限制：格式/时长/分辨率/结构化输出能力',
-    cost_limit        varchar(255)    default null               comment '成本与配额：单次/单项目/单日预算与限流规则',
+    cost_limit        varchar(255)    default null               comment '成本与配额：单次/单项目/单日预算与限流规则（人读描述，不参与判定）',
+    cost_limit_amount decimal(18,8)   default null               comment '单次成本上限（机器可判定）：路由在调用前与本次预算比对；NULL=未声明（默认放行并提示，aigov.route.require-model-cost=true 时严格排除）',
     owner_tech        varchar(64)     default null               comment '技术负责人',
     owner_biz         varchar(64)     default null               comment '业务负责人',
     owner_security    varchar(64)     default null               comment '安全审批人',
@@ -126,6 +128,33 @@ create table aig_route_policy (
 ) engine=innodb comment = 'AI路由策略表';
 
 -- ----------------------------
+-- 4.1 场景强制绑定（设计 §4.4 路由算法第 4 步：若场景强制绑定 Provider，则仅保留指定 Provider）
+--     刻意独立成表、不与 aig_route_policy 合并：策略表管「能不能外发」这类治理口径，
+--     本表只做「在已允许的候选里只保留指定供应商」——只收紧、不放宽。
+--     合并的话，为某个场景加一行绑定就得把 allow_external 等治理口径重述一遍，
+--     漏填/填错会让该场景的治理判定静默变成另一个结论。
+-- ----------------------------
+drop table if exists aig_route_scenario_binding;
+create table aig_route_scenario_binding (
+    bind_id          bigint(20)      not null                   comment '绑定ID',
+    scenario_code    varchar(64)     not null                   comment '场景编码（LONG_PAGE/POSTER/MULTI_IMAGE 等）',
+    capability_code  varchar(64)     not null                   comment '能力编码',
+    provider_id      bigint(20)      not null                   comment '强制使用的供应商ID（sai_model_provider.id）',
+    priority         int(11)         default 0                  comment '同一场景×能力下多个供应商时的优先序（升序，仅用于稳定排序）',
+    status           char(1)         default '0'                comment '状态（0正常 1停用）',
+    del_flag         char(1)         default '0'                comment '删除标志（0代表存在 1代表删除）',
+    create_dept      bigint(20)      default null               comment '创建部门',
+    create_by        bigint(20)      default null               comment '创建者',
+    create_time      datetime                                   comment '创建时间',
+    update_by        bigint(20)      default null               comment '更新者',
+    update_time      datetime                                   comment '更新时间',
+    remark           varchar(500)    default null               comment '备注（说明为什么钉死这家，便于事后复核）',
+    primary key (bind_id),
+    unique key uk_aig_scenario_cap_provider (scenario_code, capability_code, provider_id, del_flag),
+    key idx_aig_scenario_lookup (scenario_code, capability_code, status, del_flag)
+) engine=innodb comment = 'AI场景强制绑定表（只收窄候选，不放宽治理口径）';
+
+-- ----------------------------
 -- 5、逐次调用审计（设计 §10.2；追加型，不做逻辑删除）
 -- ----------------------------
 drop table if exists aig_invocation_audit;
@@ -136,19 +165,23 @@ create table aig_invocation_audit (
     caller_id        bigint(20)      default null               comment '调用人用户ID',
     caller_name      varchar(64)     default null               comment '调用人账号（冗余，便于离线审计）',
     data_level       varchar(16)     default null               comment '本次数据等级',
+    scenario_code    varchar(64)     default null               comment '本次场景编码（为空表示未做场景收窄）',
     model_id         bigint(20)      default null               comment '实际使用的模型ID（sai_model_config.id）',
+    provider_id      bigint(20)      default null               comment '实际使用的供应商ID（当时那一次的归属，不随模型改归属而变）',
     model_key        varchar(100)    default null               comment '模型键（内部标识）',
     model_version    varchar(64)     default null               comment '模型版本',
     deployment_type  varchar(24)     default null               comment '部署类型',
     external_call    char(1)         default 'N'                comment '是否外发（Y是 N否）',
     policy_hit       varchar(255)    default null               comment '命中的路由策略摘要',
     input_hash       varchar(64)     default null               comment '输入摘要哈希（不存原文）',
+    input_snapshot_ref varchar(500)  default null               comment '不可变输入快照引用（只存引用不存副本，事后复现的唯一入口）',
     input_summary    varchar(500)    default null               comment '输入摘要（仅在审计等级允许时写入）',
     output_ref       varchar(500)    default null               comment '输出引用（对象键/业务ID，不存完整输出副本）',
     result           char(1)         default '0'                comment '结果（0成功 1失败）',
     error_summary    varchar(500)    default null               comment '错误摘要',
     latency_ms       int(11)         default null               comment '耗时（毫秒）',
-    cost             decimal(18,8)   default null               comment '本次成本',
+    cost             decimal(18,8)   default null               comment '本次成本（供应商不回执时为空=未知，不等于免费）',
+    usage_json       varchar(1000)   default null               comment '模型用量回执（JSON，如 {"tokensUsed":123}）；为空表示未拿到用量',
     retry_count      int(11)         default 0                  comment '重试次数',
     manual_decision  varchar(16)     default 'PENDING'          comment '人工结论（PENDING/ACCEPTED/REJECTED/NOT_REQUIRED）',
     operate_time     datetime                                   comment '调用时间',

@@ -8,10 +8,12 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
       模型/供应商主数据写入口径。
       ⚠️ 安全约束：
         1. 除 api_key 外，写入路径的列全部显式白名单；
-        2. api_key 是唯一允许写的敏感列，且只允许 updateModelApiKey 单列更新，
-           绝不与其它列混在一次 UPDATE 里。写入值必须是**密文**——由
-           AigModelSecretCipher 按 snail-ai 的 SM4 口径产出；明文落库会让
-           snail-ai 运行时解密失败，模型静默不可用；
+        2. api_key 是唯一允许写的敏感列，且只允许 updateModelApiKey（单行）/
+            updateModelApiKeyBatch（多行）两条纯单列更新，绝不与其它列混在一次 UPDATE 里。
+            写入值必须是**密文**——由 AigModelSecretCipher 按 snail-ai 的 SM4 口径产出；
+            明文落库会让 snail-ai 运行时解密失败，模型静默不可用。
+            批量入口由 Service 加密一次后复用同一段密文：CBC 用固定 IV，
+            确定性加密下「逐行加密」与「加密一次再复制」逐字节相同，未引入新的密文形态；
         3. 模型主数据：INSERT（新增）与白名单 UPDATE（编辑），**没有 DELETE**——
            下架仍走 snail-ai。编辑的白名单里同样没有 api_key；
         4. 读 api_key 的只有 selectTestTarget（连通性测试需要它发请求），
@@ -59,6 +61,34 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             updated_dt = now()
         where id = #{modelId}
     </update>
+
+    <!--
+      批量写入/清除模型密钥：作用范围不同，口径与 updateModelApiKey 完全一致——
+      仍然只改 api_key 一列，仍然只接受 Service 加密好的密文。
+      空列表由 Service 拦截，不在此处兜底：where id in () 是语法错误，
+      真正的防御点是 Service 的「目标为空即拒绝」。
+    -->
+    <update id="updateModelApiKeyBatch">
+        update sai_model_config
+        set api_key    = #{apiKey,jdbcType=VARCHAR},
+            updated_dt = now()
+        where id in
+        <foreach collection="modelIds" item="modelId" open="(" separator="," close=")">
+            #{modelId}
+        </foreach>
+    </update>
+
+    <!--
+      某供应商下的全部模型ID（含停用）：批量密钥录入的作用范围解析。
+      刻意不过滤 is_enabled——停用只是路由不选它，凭据仍应保持一致，
+      否则重新启用时会带着旧 Key 静默失败。
+    -->
+    <select id="selectModelIdsByProvider" resultType="java.lang.Long">
+        select id
+        from sai_model_config
+        where provider_id = #{providerId}
+        order by id
+    </select>
 
     <select id="countByModelKey" resultType="int">
         select count(1) from sai_model_config where model_key = #{modelKey}

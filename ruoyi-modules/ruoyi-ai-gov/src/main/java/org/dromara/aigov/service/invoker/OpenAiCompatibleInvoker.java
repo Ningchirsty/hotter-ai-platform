@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.dromara.aigov.config.AigExternalApiProperties;
 import org.dromara.aigov.domain.vo.AigModelTestTargetVo;
 import org.dromara.aigov.enums.AigDeploymentTypeEnum;
+import org.dromara.aigov.enums.AigProviderTypeEnum;
 import org.dromara.aigov.helper.AigModelSecretCipher;
 import org.dromara.aigov.mapper.AigModelConfigMapper;
 import org.dromara.common.core.utils.StringUtils;
@@ -78,6 +79,22 @@ public class OpenAiCompatibleInvoker implements ModelInvoker {
         // 那两个类型是「集团共享 / 外部企业服务」，由集团侧统一接入，不是让治理层各自直连。
         // 这样切分是确定的：同一种部署类型只会有一个调用器认领，不依赖 Spring Bean 装配顺序。
         return deploymentType == AigDeploymentTypeEnum.EXTERNAL_API;
+    }
+
+    @Override
+    public boolean supportsModelType(String modelType) {
+        // 本调用器对接 /chat/completions，因此只认对话模型。
+        // 空值放行：与 invoke() 内部的校验同口径（历史数据可能没填 model_type），
+        // 若这里改成「必须等于 CHAT」，既有未填 model_type 的外部模型会突然全部落不到调用器上。
+        return StringUtils.isBlank(modelType) || "CHAT".equalsIgnoreCase(modelType);
+    }
+
+    @Override
+    public AigProviderTypeEnum providerType() {
+        // 标签给 TEXT：它的端点是 chat/completions。注意它也**能**处理图片输入
+        // （多模态 image_url），所以「视觉理解」能力也可以由它承担——那是能力标签
+        // （aig_capability.required_tags）要区分的事，不是本调用器能声明的。
+        return AigProviderTypeEnum.TEXT;
     }
 
     @Override
