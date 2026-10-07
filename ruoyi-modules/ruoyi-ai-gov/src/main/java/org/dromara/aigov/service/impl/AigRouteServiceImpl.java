@@ -3,6 +3,7 @@ package org.dromara.aigov.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.dromara.aigov.config.AigRouteProperties;
 import org.dromara.aigov.domain.AigCapability;
 import org.dromara.aigov.domain.AigCapabilityModel;
 import org.dromara.aigov.domain.AigModelGovernance;
@@ -103,6 +104,11 @@ public class AigRouteServiceImpl implements IAigRouteService {
      * 可插拔调用器（SPI）。
      */
     private final List<ModelInvoker> invokers;
+
+    /**
+     * 路由行为配置（能力标签是否必须声明）。
+     */
+    private final AigRouteProperties routeProperties;
 
     @Override
     public AigRouteDecision decide(String capabilityCode, AigDataLevelEnum dataLevel) {
@@ -210,7 +216,8 @@ public class AigRouteServiceImpl implements IAigRouteService {
         for (AigCapabilityModel binding : ordered) {
             AigModelVo model = modelMap.get(binding.getModelId());
             AigModelGovernance governance = governanceMap.get(binding.getModelId());
-            AigDeploymentTypeEnum deployment = isCandidateUsable(decision, binding, model, governance, dataLevel, allowExternal);
+            AigDeploymentTypeEnum deployment = isCandidateUsable(decision, binding, model, governance, dataLevel,
+                allowExternal, capability.getRequiredTags());
             if (deployment == null) {
                 continue;
             }
@@ -269,7 +276,9 @@ public class AigRouteServiceImpl implements IAigRouteService {
      *     <li>{@code lifecycle_status} 必须 {@code callable()}</li>
      *     <li>{@code data_level_max.rank() >= 本次 dataLevel.rank()} ← 核心：模型等级不够则不可用</li>
      *     <li>{@code sai_model_config.is_enabled = 1}</li>
+     *     <li>健康状态非明确 {@code DOWN}（DOWN 才拦，未测过/降级放行）</li>
      *     <li>部署类型 {@code external()==false} 或 {@code policy.allowExternal=='Y'}</li>
+     *     <li>能力标签覆盖 {@code requiredTags}（未声明默认放行并提示，见 {@link #isTagMismatch}）</li>
      * </ol>
      *
      * @param decision      决策对象（写入过滤原因）
@@ -278,11 +287,13 @@ public class AigRouteServiceImpl implements IAigRouteService {
      * @param governance    治理属性（可为 null）
      * @param dataLevel     本次数据等级
      * @param allowExternal 策略是否允许外发
+     * @param requiredTags  能力要求的能力标签（逗号分隔，可空）
      * @return 可用的部署类型；不可用返回 null
      */
     private AigDeploymentTypeEnum isCandidateUsable(AigRouteDecision decision, AigCapabilityModel binding,
                                                     AigModelVo model, AigModelGovernance governance,
-                                                    AigDataLevelEnum dataLevel, boolean allowExternal) {
+                                                    AigDataLevelEnum dataLevel, boolean allowExternal,
+                                                    String requiredTags) {
         String modelLabel = "modelId=" + binding.getModelId();
         if (governance == null) {
             decision.addHit("排除 " + modelLabel + "：未登记治理属性（aig_model_governance）");
@@ -332,7 +343,93 @@ public class AigRouteServiceImpl implements IAigRouteService {
                 + "该模型部署类型=" + deployment.getCode() + " 属于外部调用，数据外发被策略禁止");
             return null;
         }
+        // 4.6 能力标签匹配：模型声明的能力标签必须覆盖能力要求的标签
+        if (isTagMismatch(decision, requiredTags, governance, model)) {
+            return null;
+        }
         return deployment;
+    }
+
+    /**
+     * 4.6 能力标签匹配。
+     *
+     * <p><b>它修的是什么</b>：{@code aig_capability.required_tags}（如 {@code 'VISION'}）此前
+     * 一直被登记却**从不与模型比对**，因为模型侧根本没有「我支持什么能力」这一列。
+     * 后果不是"少了个校验"，而是<b>静默出错</b>——把纯文本模型绑到「看图」能力上，
+     * 路由判 {@code MODEL} 并"成功返回"，产出的却是一份没看过图的结论，
+     * 外形与真实结论一模一样，事后无法区分。</p>
+     *
+     * <p><b>为什么未声明默认放行</b>：{@code capability_tags} 是新列，既有模型全为 NULL。
+     * 若默认严格，一次上线会把所有既有模型同时排除干净。因此：
+     * 未声明 → 放行 + 写入可见提示；配 {@code aigov.route.require-model-tags=true} 后严格排除。</p>
+     *
+     * <p><b>为什么不从 {@code model_type} 推导标签</b>：多模态对话模型（如 gpt-4o）在
+     * {@code model_type} 上同样是 {@code CHAT}，推导成 TEXT 会被「看图」能力<b>假排除</b>——
+     * 把本来能用的模型挡在外面，比漏拦更难查。标签只能显式声明。</p>
+     *
+     * @param decision     决策对象（写入提示或排除原因）
+     * @param requiredTags 能力要求的能力标签（逗号分隔，可空）
+     * @param governance   治理属性（读模型声明的标签）
+     * @param model        模型主数据（用于可读提示）
+     * @return 应排除返回 true
+     */
+    private boolean isTagMismatch(AigRouteDecision decision, String requiredTags,
+                                  AigModelGovernance governance, AigModelVo model) {
+        List<String> required = splitTags(requiredTags);
+        if (required.isEmpty()) {
+            // 能力没要求标签 → 无从比对，不产生任何提示（避免每行决策都刷无意义的噪音）
+            return false;
+        }
+        String modelLabel = "modelId=" + model.getModelId();
+        List<String> declared = splitTags(governance.getCapabilityTags());
+        if (declared.isEmpty()) {
+            if (routeProperties.isRequireModelTags()) {
+                decision.addHit("排除 " + modelLabel + "（modelKey=" + model.getModelKey()
+                    + "）：能力要求能力标签 " + required + "，但模型**未声明** capability_tags，"
+                    + "且 aigov.route.require-model-tags=true（严格模式不允许未声明）");
+                return true;
+            }
+            decision.addHit("注意 " + modelLabel + "（modelKey=" + model.getModelKey()
+                + "）：能力要求能力标签 " + required + "，但模型未声明 capability_tags，"
+                + "**无法校验是否具备该能力**（当前放行）。建议在治理台补齐该模型的 capability_tags；"
+                + "补齐后可开 aigov.route.require-model-tags=true 彻底拦掉不匹配的绑定");
+            return false;
+        }
+        List<String> missing = new ArrayList<>();
+        for (String tag : required) {
+            boolean hit = declared.stream().anyMatch(item -> item.equalsIgnoreCase(tag));
+            if (!hit) {
+                missing.add(tag);
+            }
+        }
+        if (missing.isEmpty()) {
+            return false;
+        }
+        decision.addHit("排除 " + modelLabel + "（modelKey=" + model.getModelKey()
+            + "）：能力要求能力标签 " + required + "，模型只声明了 " + declared
+            + "，缺少 " + missing + "。把模型绑到它不具备的能力上会产出看起来正常的错误结果，"
+            + "故在此拦下");
+        return true;
+    }
+
+    /**
+     * 解析能力标签：逗号/分号/顿号分隔，去空白与空项，保留原始大小写（比对时忽略大小写）。
+     *
+     * @param raw 原始文本（可空）
+     * @return 标签列表，无内容返回空列表
+     */
+    private List<String> splitTags(String raw) {
+        List<String> tags = new ArrayList<>();
+        if (StringUtils.isBlank(raw)) {
+            return tags;
+        }
+        for (String item : raw.split("[,;，；、]")) {
+            String tag = item.trim();
+            if (!tag.isEmpty() && !tags.contains(tag)) {
+                tags.add(tag);
+            }
+        }
+        return tags;
     }
 
     /**

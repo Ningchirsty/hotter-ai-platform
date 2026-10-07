@@ -54,7 +54,8 @@ public class AigModelGovernanceBo implements Serializable {
      * 允许处理的最高数据等级（PUBLIC/INTERNAL/RESTRICTED）
      */
     @NotBlank(message = "最高数据等级不能为空", groups = {AddGroup.class, EditGroup.class})
-    @Pattern(regexp = "^(PUBLIC|INTERNAL|RESTRICTED)$", message = "数据等级只能为 PUBLIC/INTERNAL/RESTRICTED",
+    @Pattern(regexp = "^(PUBLIC|INTERNAL|RESTRICTED|STRICT)$",
+        message = "数据等级只能为 PUBLIC/INTERNAL/RESTRICTED/STRICT",
         groups = {AddGroup.class, EditGroup.class})
     private String dataLevelMax;
 
@@ -66,6 +67,19 @@ public class AigModelGovernanceBo implements Serializable {
         message = "生命周期状态只能为 CANDIDATE/TRIAL/GRAY/PRODUCTION/SUSPENDED/RETIRED",
         groups = {AddGroup.class, EditGroup.class})
     private String lifecycleStatus;
+
+    /**
+     * 模型声明的能力标签（逗号分隔，如 {@code IMAGE,VISION}）。
+     *
+     * <p>与能力模板的 {@code required_tags} 逐项比对，模型必须**覆盖全部**要求标签。
+     * 留空 = 未声明：默认放行并在决策说明里提示；配置
+     * {@code aigov.route.require-model-tags=true} 后未声明即被排除。</p>
+     *
+     * <p>这里刻意不加 {@code @Pattern} 白名单：标签是与能力模板自由文本比对的，
+     * 将来新增能力类型（如 OCR、EMBEDDING）不该因为忘了改正则而登记不进去。</p>
+     */
+    @Size(max = 255, message = "能力标签长度不能超过 255", groups = {AddGroup.class, EditGroup.class})
+    private String capabilityTags;
 
     /**
      * 密钥引用（如 kms://ai/qwen），<b>禁止存明文密钥</b>

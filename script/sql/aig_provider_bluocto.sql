@@ -123,18 +123,29 @@ SELECT p.id, m.model_name, m.model_key, 'IMAGE', 'openai-compatible', m.descript
 --   真正生效的凭据是 sai_model_config.api_key。填个假的反而误导排障。
 -- ============================================================================
 INSERT IGNORE INTO aig_model_governance
-(governance_id, model_id, deployment_type, data_level_max, lifecycle_status, secret_ref,
+(governance_id, model_id, deployment_type, data_level_max, lifecycle_status, capability_tags, secret_ref,
  input_limits, output_limits, cost_limit, owner_tech, owner_biz, owner_security,
  valid_from, valid_to, health_status, health_time, status, del_flag,
  create_dept, create_by, create_time, remark)
-SELECT 1764100000000000000 + c.id, c.id, 'EXTERNAL_API', 'INTERNAL', 'GRAY', NULL,
+SELECT 1764100000000000000 + c.id, c.id, 'EXTERNAL_API', 'INTERNAL', 'GRAY', 'IMAGE', NULL,
        NULL, NULL, NULL, NULL, NULL, NULL,
        NULL, NULL, NULL, NULL, '0', '0',
        1761000000000000103, 1761100000000000001, NOW(),
-       CONCAT('bluocto 聚合网关（外部API）：最高 INTERNAL，外部不接触限制级数据')
+       CONCAT('bluocto 聚合网关（外部API）：最高 INTERNAL，外部不接触限制级数据；声明 IMAGE 能力标签')
   FROM sai_model_config c
   JOIN sai_model_provider p ON p.id = c.provider_id
  WHERE p.provider_key = 'bluocto';
+
+-- capability_tags 回填：上面用的是 INSERT IGNORE，对**已存在**的治理行不会更新。
+-- 本种子在列存在之前跑过一次的话，那些行的 capability_tags 仍是 NULL（=未声明，
+-- 路由只放行并提示、不拦）。这里显式补上，让「全部 7 个都是 IMAGE」这一事实成立。
+-- 只动 capability_tags 为空的 bluocto 行，不覆盖人工改过的值。
+UPDATE aig_model_governance g
+  JOIN sai_model_config c ON c.id = g.model_id
+  JOIN sai_model_provider p ON p.id = c.provider_id
+   SET g.capability_tags = 'IMAGE', g.update_by = 1761100000000000001, g.update_time = NOW()
+ WHERE p.provider_key = 'bluocto'
+   AND g.capability_tags IS NULL;
 
 -- ============================================================================
 -- A 段：登记能力 image_generation（设计文档 §4.1 的 IMAGE 类型落点）

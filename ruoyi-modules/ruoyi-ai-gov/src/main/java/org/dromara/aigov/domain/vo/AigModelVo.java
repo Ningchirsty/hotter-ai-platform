@@ -140,6 +140,14 @@ public class AigModelVo implements Serializable {
     private String lifecycleStatusLabel;
 
     /**
+     * 模型声明的能力标签（逗号分隔，如 IMAGE,VISION）。
+     *
+     * <p>路由据此与能力模板的 required_tags 比对；为空表示**未声明**（默认放行并提示）。
+     * 治理台展示它，运维才能看出「这个模型到底声明支持什么」。</p>
+     */
+    private String capabilityTags;
+
+    /**
      * 密钥引用（仅在有 aig:model:secret 权限时下发）
      */
     private String secretRef;

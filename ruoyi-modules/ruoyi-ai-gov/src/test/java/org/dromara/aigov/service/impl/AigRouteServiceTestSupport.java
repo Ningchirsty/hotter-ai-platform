@@ -3,6 +3,7 @@ package org.dromara.aigov.service.impl;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.dromara.aigov.config.AigRouteProperties;
 import org.dromara.aigov.domain.AigCapability;
 import org.dromara.aigov.domain.AigCapabilityModel;
 import org.dromara.aigov.domain.AigModelGovernance;
@@ -64,6 +65,11 @@ abstract class AigRouteServiceTestSupport {
     protected AigModelGovernanceMapper modelGovernanceMapper;
     protected AigModelViewMapper modelViewMapper;
 
+    /**
+     * 路由行为配置（能力标签严格模式开关）。
+     */
+    protected AigRouteProperties routeProperties;
+
     protected AigRouteServiceImpl routeService;
 
     /**
@@ -93,11 +99,13 @@ abstract class AigRouteServiceTestSupport {
         capabilityModelMapper = mock(AigCapabilityModelMapper.class);
         modelGovernanceMapper = mock(AigModelGovernanceMapper.class);
         modelViewMapper = mock(AigModelViewMapper.class);
+        // 默认放行未声明标签的模型（生产默认值）；严格模式的用例自行打开开关
+        routeProperties = new AigRouteProperties();
         // 调用器列表留空：这些测试只关心「路由是否把不该用的模型排除」，
         // 与调用器挑选无关；留空时 invoker=null，命中候选时决策仍是 MODEL。
         List<ModelInvoker> invokers = List.of();
         routeService = new AigRouteServiceImpl(capabilityMapper, routePolicyMapper, capabilityModelMapper,
-            modelGovernanceMapper, modelViewMapper, invokers);
+            modelGovernanceMapper, modelViewMapper, invokers, routeProperties);
     }
 
     /**
@@ -111,19 +119,29 @@ abstract class AigRouteServiceTestSupport {
      */
     protected void useInvokers(List<ModelInvoker> invokers) {
         routeService = new AigRouteServiceImpl(capabilityMapper, routePolicyMapper, capabilityModelMapper,
-            modelGovernanceMapper, modelViewMapper, invokers);
+            modelGovernanceMapper, modelViewMapper, invokers, routeProperties);
     }
 
     /**
-     * 桩：能力存在且启用。
+     * 桩：能力存在且启用，未要求任何能力标签。
      */
     protected void stubCapability() {
+        stubCapability(null);
+    }
+
+    /**
+     * 桩：能力存在且启用，并声明要求的能力标签。
+     *
+     * @param requiredTags 能力要求的能力标签（逗号分隔，可空）
+     */
+    protected void stubCapability(String requiredTags) {
         AigCapability capability = new AigCapability();
         capability.setCapabilityId(1L);
         capability.setCapabilityCode(CAPABILITY);
         capability.setCapabilityName("成品一致性检查");
         capability.setStatus("0");
         capability.setAuditLevel("SUMMARY");
+        capability.setRequiredTags(requiredTags);
         when(capabilityMapper.selectOne(any())).thenReturn(capability);
     }
 

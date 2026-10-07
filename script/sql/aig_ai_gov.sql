@@ -52,6 +52,7 @@ create table aig_model_governance (
     deployment_type   varchar(24)     not null default 'EXTERNAL_API' comment '部署类型（LOCAL本地私有 GROUP集团共享 EXTERNAL_ENTERPRISE外部企业服务 EXTERNAL_API外部API）',
     data_level_max    varchar(16)     not null default 'PUBLIC'  comment '允许处理的最高数据等级（PUBLIC公开 INTERNAL内部 RESTRICTED限制）',
     lifecycle_status  varchar(16)     not null default 'CANDIDATE' comment '可用状态（CANDIDATE候选 TRIAL试验 GRAY灰度 PRODUCTION生产 SUSPENDED暂停 RETIRED退役）',
+    capability_tags   varchar(255)    default null               comment '模型声明的能力标签（逗号分隔，如 IMAGE,VISION）；与 aig_capability.required_tags 逐项比对；NULL=未声明（默认放行并写入可见提示，aigov.route.require-model-tags=true 时改为严格排除）',
     secret_ref        varchar(255)    default null               comment '密钥引用（如 kms://ai/qwen），**禁止存明文密钥**',
     input_limits      varchar(500)    default null               comment '输入限制：文本长度/文件类型/图片视频大小/并发',
     output_limits     varchar(500)    default null               comment '输出限制：格式/时长/分辨率/结构化输出能力',

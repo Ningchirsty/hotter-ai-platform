@@ -55,6 +55,19 @@ public class AigModelGovernance extends BaseEntity implements Serializable {
     private String lifecycleStatus;
 
     /**
+     * 模型声明的能力标签（逗号分隔，如 IMAGE,VISION）。
+     *
+     * <p>与 {@code aig_capability.required_tags} 逐项比对：模型声明的标签必须覆盖能力要求的标签，
+     * 缺一个该模型就被排除。**NULL 表示「未声明」而不是「不支持」**——未声明默认放行并写入
+     * 可见提示（否则本列一上线会把所有既有模型一次性排除）；配置
+     * {@code aigov.route.require-model-tags=true} 后改为严格排除。</p>
+     *
+     * <p>刻意不从 {@code sai_model_config.model_type} 推导：多模态对话模型在 model_type 上
+     * 同样是 CHAT，推导成 TEXT 会被「看图」能力假排除，比漏拦更难查。</p>
+     */
+    private String capabilityTags;
+
+    /**
      * 密钥引用（如 kms://ai/qwen），**禁止存明文密钥**
      */
     private String secretRef;
