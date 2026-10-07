@@ -21,6 +21,15 @@ import lombok.Getter;
  * （如经 snail-ai 转发的调用）兜底的，因此刻意保守：**认不出就算 UNKNOWN，
  * 不猜「大概是限流吧」**——猜错会让不可重试的错误被反复重试。</p>
  *
+ * <p><b>三个处置维度</b>（每条都各有 {@code boolean} 开关，不靠调用方 if-else 猜语义）：</p>
+ * <ul>
+ *     <li>{@link #isRetryable()}：向<b>同一个</b> Provider 再要一次（可能重复计费）；</li>
+ *     <li>{@link #isWorthFallback()}：换到有序候选里的<b>下一个</b> Provider 试一次；</li>
+ *     <li>{@link #isNeedsHuman()}：转人工；{@link #isCircuitBreak()}：熔断。</li>
+ * </ul>
+ * <p>「重试」与「换候选」是两件事，取值刻意不同：前者要保守（重复计费且大概率同样失败），
+ * 后者正是 fallback 存在的意义——若认不出的错误也不换候选，备选模型永远不会被用到。</p>
+ *
  * @author ai-gov
  */
 @Getter
@@ -30,42 +39,49 @@ public enum AigErrorClassEnum {
     /**
      * 入参/输出 Schema 错误：不重试，转人工补正确输入（设计 §13.3）
      */
-    INVALID_REQUEST("INVALID_REQUEST", "参数或输出Schema错误", false, true, false),
+    INVALID_REQUEST("INVALID_REQUEST", "参数或输出Schema错误", false, true, false, false),
 
     /**
      * 权限、数据等级或外发策略拒绝：不重试，转人工走审批或改用本地 Provider（设计 §13.3）
      */
-    POLICY_DENIED("POLICY_DENIED", "权限或外发策略拒绝", false, true, false),
+    POLICY_DENIED("POLICY_DENIED", "权限或外发策略拒绝", false, true, false, false),
 
     /**
-     * 限流：指数退避后可重试
+     * 限流：指数退避后可重试；重试耗尽仍失败则值得换下一个候选
      */
-    RATE_LIMITED("RATE_LIMITED", "被限流", true, false, false),
+    RATE_LIMITED("RATE_LIMITED", "被限流", true, false, false, true),
 
     /**
-     * 超时：退避后可重试
+     * 超时：退避后可重试；重试耗尽仍失败则值得换下一个候选
      */
-    TIMEOUT("TIMEOUT", "调用超时", true, false, false),
+    TIMEOUT("TIMEOUT", "调用超时", true, false, false, true),
 
     /**
-     * 鉴权失败：不重试，**立即熔断**该 Provider 并告警（设计 §13.3）
+     * 鉴权失败：不重试，**立即熔断**该 Provider 并告警（设计 §13.3）。
+     * 值得换候选——密钥错的是这一家，换一家往往立刻可用。
      */
-    AUTH_FAILED("AUTH_FAILED", "鉴权失败", false, false, true),
+    AUTH_FAILED("AUTH_FAILED", "鉴权失败", false, false, true, true),
 
     /**
-     * 服务不可用/网络不通：可重试，达到上限后转人工
+     * 服务不可用/网络不通：可重试，达到上限后换下一个候选
      */
-    UNAVAILABLE("UNAVAILABLE", "服务不可用", true, false, false),
+    UNAVAILABLE("UNAVAILABLE", "服务不可用", true, false, false, true),
 
     /**
-     * 结果不可解析：不重试，只保存摘要并标记失败，**不得写入正式业务字段**（设计 §13.3）
+     * 结果不可解析：不重试同一模型（同样的输入与提示词，重试只会得到同样的输出），
+     * 但值得换一个模型——换个模型可能就按格式回了。仍需转人工确认（设计 §13.3）。
      */
-    OUTPUT_UNPARSABLE("OUTPUT_UNPARSABLE", "结果不可解析", false, true, false),
+    OUTPUT_UNPARSABLE("OUTPUT_UNPARSABLE", "结果不可解析", false, true, false, true),
 
     /**
-     * 未能归类：保守处理——不重试、不自动转人工（保持既有「失败即失败」的行为）
+     * 未能归类：不重试、不自动转人工；**值得换候选**。
+     *
+     * <p>这里的取舍与 {@link #retryable} 刻意不同：重试是向<b>同一个</b> Provider 再要一次
+     * （可能重复计费、且大概率同样失败），而换候选是去另一个<b>已通过策略审核</b>的
+     * Provider 试一次。前者要保守，后者正是 fallback 存在的意义——
+     * 认不出的错误若也不换候选，备选模型就永远不会被用到。</p>
      */
-    UNKNOWN("UNKNOWN", "未归类的错误", false, false, false);
+    UNKNOWN("UNKNOWN", "未归类的错误", false, false, false, true);
 
     /**
      * 编码（入库与日志口径）
@@ -87,6 +103,10 @@ public enum AigErrorClassEnum {
      * 是否应立即熔断该 Provider
      */
     private final boolean circuitBreak;
+    /**
+     * 是否值得换下一个候选（有序 fallback）
+     */
+    private final boolean worthFallback;
 
     /**
      * 按 code 查找，找不到返回 null。

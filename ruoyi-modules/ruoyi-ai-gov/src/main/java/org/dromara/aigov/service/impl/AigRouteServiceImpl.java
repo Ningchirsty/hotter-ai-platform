@@ -9,6 +9,7 @@ import org.dromara.aigov.domain.AigCapabilityModel;
 import org.dromara.aigov.domain.AigModelGovernance;
 import org.dromara.aigov.domain.AigRoutePolicy;
 import org.dromara.aigov.domain.vo.AigModelVo;
+import org.dromara.aigov.domain.vo.AigRouteCandidate;
 import org.dromara.aigov.domain.vo.AigRouteDecision;
 import org.dromara.aigov.enums.AigDataLevelEnum;
 import org.dromara.aigov.enums.AigDeploymentTypeEnum;
@@ -213,6 +214,8 @@ public class AigRouteServiceImpl implements IAigRouteService {
         }
 
         // 步骤4：逐项校验候选模型可用性；步骤7：记录因 allowExternal='N' 被排除的外部模型
+        // 注意：这里**不再命中即返回**，而是收集「全部可用候选」形成有序 fallback 链。
+        // 主候选调用失败时，调用编排按这个顺序顺延（见 AigRouteCandidate）。
         for (AigCapabilityModel binding : ordered) {
             AigModelVo model = modelMap.get(binding.getModelId());
             AigModelGovernance governance = governanceMap.get(binding.getModelId());
@@ -221,7 +224,25 @@ public class AigRouteServiceImpl implements IAigRouteService {
             if (deployment == null) {
                 continue;
             }
-            // 步骤5 命中第一个可用模型
+            // 派发按「部署类型 + 模型类型」双维度：同一个 EXTERNAL_API 下可能既有对话模型
+            // （/chat/completions）又有图像模型（/images/generations），只看部署类型会派错。
+            ModelInvoker invoker = resolveInvoker(deployment, capabilityCode, model.getModelType());
+            boolean primary = decision.getCandidates().isEmpty();
+            AigRouteCandidate candidate = buildCandidate(decision, binding, model, deployment, invoker);
+            decision.getCandidates().add(candidate);
+            if (!primary) {
+                // 备选候选只留一行摘要：主候选那段详细说明已够排障，
+                // 每个候选都铺一遍会把 policyHits 撑成读不下去的一坨。
+                decision.addHit("备选候选 #" + candidate.getOrder()
+                    + "：modelId=" + candidate.getModelId()
+                    + "，modelKey=" + candidate.getModelKey()
+                    + "，modelType=" + StringUtils.blankToDefault(candidate.getModelType(), "-")
+                    + "，usageType=" + candidate.getUsageType()
+                    + "，invoker=" + StringUtils.blankToDefault(candidate.getInvoker(), "(未找到)")
+                    + "——主候选重试耗尽或不可恢复时按序顺延");
+                continue;
+            }
+            // 步骤5 命中第一个可用模型：保持既有顶层字段与说明的形态（dryRun/审计/前端都读它们）
             decision.setDecision(AigRouteDecisionEnum.MODEL.getCode());
             decision.setModelId(binding.getModelId());
             decision.setModelKey(model.getModelKey());
@@ -234,9 +255,6 @@ public class AigRouteServiceImpl implements IAigRouteService {
                 + "，priority=" + binding.getPriority()
                 + "，deploymentType=" + deployment.getCode()
                 + "，dataLevelMax=" + governance.getDataLevelMax());
-            // 派发按「部署类型 + 模型类型」双维度：同一个 EXTERNAL_API 下可能既有对话模型
-            // （/chat/completions）又有图像模型（/images/generations），只看部署类型会派错。
-            ModelInvoker invoker = resolveInvoker(deployment, capabilityCode, model.getModelType());
             if (invoker == null) {
                 decision.addHit("未找到同时支持部署类型 " + deployment.getCode() + " 与模型类型 "
                     + StringUtils.blankToDefault(model.getModelType(), "(空)") + " 的可用调用器（invoker）");
@@ -260,11 +278,38 @@ public class AigRouteServiceImpl implements IAigRouteService {
                         + "治理层仅判定「该模型是否可用」");
                 }
             }
+        }
+        if (!decision.getCandidates().isEmpty()) {
             return decision;
         }
 
         // 步骤6：无命中 → fallbackToManual='Y' → MANUAL，否则 DENIED
         return noModel(decision, fallbackToManual);
+    }
+
+    /**
+     * 由绑定与模型组装一个有序候选。
+     *
+     * @param decision   决策对象（用其候选数量推导序号）
+     * @param binding    绑定记录
+     * @param model      模型主数据
+     * @param deployment 部署类型
+     * @param invoker    决策时解析出的调用器（可为 null）
+     * @return 候选
+     */
+    private AigRouteCandidate buildCandidate(AigRouteDecision decision, AigCapabilityModel binding,
+                                             AigModelVo model, AigDeploymentTypeEnum deployment,
+                                             ModelInvoker invoker) {
+        AigRouteCandidate candidate = new AigRouteCandidate();
+        candidate.setOrder(decision.getCandidates().size() + 1);
+        candidate.setModelId(binding.getModelId());
+        candidate.setModelKey(model.getModelKey());
+        candidate.setModelType(model.getModelType());
+        candidate.setDeploymentType(deployment.getCode());
+        candidate.setUsageType(binding.getUsageType());
+        candidate.setPriority(binding.getPriority());
+        candidate.setInvoker(invoker == null ? null : invoker.invokerName());
+        return candidate;
     }
 
     /**

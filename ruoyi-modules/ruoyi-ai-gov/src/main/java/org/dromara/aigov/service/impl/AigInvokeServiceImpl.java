@@ -7,6 +7,7 @@ import org.dromara.aigov.config.AigRetryProperties;
 import org.dromara.aigov.domain.bo.AigInvokeBo;
 import org.dromara.aigov.domain.vo.AigInvokeVo;
 import org.dromara.aigov.domain.vo.AigModelVo;
+import org.dromara.aigov.domain.vo.AigRouteCandidate;
 import org.dromara.aigov.domain.vo.AigRouteDecision;
 import org.dromara.aigov.enums.AigDataLevelEnum;
 import org.dromara.aigov.enums.AigDeploymentTypeEnum;
@@ -108,68 +109,115 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
                 audit.setManualDecision(AigManualDecisionEnum.PENDING.getCode());
                 return toVo(traceId, decision, null, decision.getReason());
             }
-            // 6. 决策为 MODEL → 选调用器执行
-            AigDeploymentTypeEnum deployment = AigDeploymentTypeEnum.find(decision.getDeploymentType());
-            // 先取模型主数据：派发需要它的 model_type（同一个 EXTERNAL_API 下
-            // 对话模型与图像模型是两个不同的调用器，只看部署类型会派错）
-            AigModelVo model = modelViewMapper.selectModelById(decision.getModelId());
-            ModelInvoker invoker = resolveInvoker(decision.getInvoker(), deployment,
-                model == null ? null : model.getModelType());
-            if (invoker == null) {
+            // 6. 决策为 MODEL → 按有序候选依次执行，失败则顺延（有序 fallback）
+            List<AigRouteCandidate> candidates = decision.getCandidates();
+            if (candidates.isEmpty()) {
+                // 兼容：决策未携带候选列表（旧调用方或手工构造）时退化为「单一模型」路径
+                AigRouteCandidate single = new AigRouteCandidate();
+                single.setOrder(1);
+                single.setModelId(decision.getModelId());
+                single.setModelKey(decision.getModelKey());
+                single.setDeploymentType(decision.getDeploymentType());
+                single.setInvoker(decision.getInvoker());
+                candidates = List.of(single);
+            }
+            int maxAttempts = retryProperties.isEnabled() ? Math.max(1, retryProperties.getMaxAttempts()) : 1;
+            long startedAt = System.currentTimeMillis();
+            int totalAttempts = 0;
+            boolean executed = false;
+            boolean succeeded = false;
+            ModelInvokeResult result = null;
+            AigErrorClassEnum errorClass = null;
+            String errorSummary = null;
+            for (int index = 0; index < candidates.size(); index++) {
+                AigRouteCandidate candidate = candidates.get(index);
+                boolean lastCandidate = index == candidates.size() - 1;
+                // 用循环下标而不是 candidate.getOrder() 拼消息：order 是我们自己填的展示字段，
+                // 外部构造的决策可能为 null，一旦参与算术就会 NPE 并把整次调用带崩。
+                int orderNo = index + 1;
+                // 决策与审计都指向「这次实际要试的候选」：fallback 之后真正跑的是备选模型，
+                // 审计若仍记主候选就是一笔假账，比没有审计更坏。
+                applyCandidate(decision, audit, candidate);
+                AigDeploymentTypeEnum deployment = AigDeploymentTypeEnum.find(candidate.getDeploymentType());
+                AigModelVo model = modelViewMapper.selectModelById(candidate.getModelId());
+                ModelInvoker invoker = resolveInvoker(candidate.getInvoker(), deployment,
+                    model == null ? null : model.getModelType());
+                if (invoker == null) {
+                    // 该候选没有可用调用器：跳过而不是整体失败——后面还有候选可试
+                    audit.getPolicyHits().add("候选 #" + orderNo + "（" + candidate.getModelKey()
+                        + "）无可用调用器，顺延下一候选");
+                    continue;
+                }
+                executed = true;
+                ModelInvokeRequest request = buildRequest(bo, decision, deployment, model);
+                // 6.1 同一候选内退避重试：只对可重试类（限流/超时/不可用）生效
+                int attempts = 0;
+                errorClass = null;
+                while (true) {
+                    attempts++;
+                    totalAttempts++;
+                    result = invoker.invoke(request);
+                    if (result.isSuccess()) {
+                        break;
+                    }
+                    errorClass = safeClassify(invoker, result);
+                    errorSummary = StringUtils.blankToDefault(result.getErrorSummary(), "模型调用失败");
+                    if (!errorClass.isRetryable() || attempts >= maxAttempts) {
+                        break;
+                    }
+                    long backoff = backoffMs(attempts);
+                    // 退避原因写进 hits：否则事后只看「这次调用花了 3 秒」无法解释为什么
+                    audit.getPolicyHits().add("候选 #" + orderNo + " 第 " + attempts
+                        + " 次尝试失败（" + errorClass.getCode() + "：" + errorClass.getDesc() + "），"
+                        + backoff + "ms 后重试第 " + (attempts + 1) + "/" + maxAttempts + " 次");
+                    if (!sleepQuietly(backoff)) {
+                        // 线程被中断：不再重试，按当前失败结果收敛
+                        audit.getPolicyHits().add("重试等待被中断，按当前失败结果收敛");
+                        break;
+                    }
+                }
+                if (result.isSuccess()) {
+                    // 7. 输出必须符合能力输出模板，否则不视为成功。
+                    // 但**不重试同一模型**：同样的输入与提示词，重试只会得到同样的输出；
+                    // 换一个模型才可能有帮助——故归类为「值得 fallback」的 OUTPUT_UNPARSABLE。
+                    if (AigOutputSchemaValidator.matches(decision.getOutputSchema(), result.getOutput())) {
+                        succeeded = true;
+                        break;
+                    }
+                    errorClass = AigErrorClassEnum.OUTPUT_UNPARSABLE;
+                    errorSummary = AigOutputSchemaValidator.MISMATCH_MESSAGE;
+                    result = ModelInvokeResult.failure(AigErrorClassEnum.OUTPUT_UNPARSABLE.getCode(), null,
+                        errorSummary, result.getLatencyMs());
+                }
+                // 6.2 候选级 fallback：只有「换个 Provider 可能有救」的错误才顺延。
+                // 入参类错误（换谁都一样被拒）继续顺延，只是把同一个失败乘以候选数。
+                if (!errorClass.isWorthFallback() || lastCandidate) {
+                    break;
+                }
+                audit.getPolicyHits().add("候选 #" + orderNo + "（" + candidate.getModelKey()
+                    + "）失败（" + errorClass.getCode() + "），按有序 fallback 顺延到候选 #"
+                    + (orderNo + 1));
+            }
+            // 耗时按「端到端」记：含退避等待与多候选尝试，因为那是调用方真实等待的时间。
+            long elapsedMs = System.currentTimeMillis() - startedAt;
+            if (!executed) {
                 audit.setResult(AigInvokeResultEnum.FAILED.getCode());
                 audit.setErrorSummary("无可用调用器");
-                return toVo(traceId, decision, null, "路由命中模型但无可用调用器（invoker）");
+                return toVo(traceId, decision, elapsedMs, "路由命中模型但无可用调用器（invoker）");
             }
-            ModelInvokeRequest request = buildRequest(bo, decision, deployment, model);
-            // 6.1 按错误分类决定是否退避重试：只对可重试类（限流/超时/不可用）生效
-            long startedAt = System.currentTimeMillis();
-            int maxAttempts = retryProperties.isEnabled() ? Math.max(1, retryProperties.getMaxAttempts()) : 1;
-            ModelInvokeResult result;
-            AigErrorClassEnum errorClass = null;
-            int attempts = 0;
-            while (true) {
-                attempts++;
-                result = invoker.invoke(request);
-                if (result.isSuccess()) {
-                    break;
-                }
-                errorClass = safeClassify(invoker, result);
-                if (!errorClass.isRetryable() || attempts >= maxAttempts) {
-                    break;
-                }
-                long backoff = backoffMs(attempts);
-                // 退避原因写进 hits：否则事后只看「这次调用花了 3 秒」无法解释为什么
-                audit.getPolicyHits().add("第 " + attempts + " 次尝试失败（" + errorClass.getCode()
-                    + "：" + errorClass.getDesc() + "），" + backoff + "ms 后重试第 "
-                    + (attempts + 1) + "/" + maxAttempts + " 次");
-                if (!sleepQuietly(backoff)) {
-                    // 线程被中断：不再重试，按当前失败结果收敛
-                    audit.getPolicyHits().add("重试等待被中断，按当前失败结果收敛");
-                    break;
-                }
-            }
-            // 耗时按「端到端」记：含退避等待，因为那是调用方真实等待的时间。
-            // 单次尝试的耗时留在 ModelInvokeResult 里，需要时可从 hits 与日志追溯。
-            long elapsedMs = System.currentTimeMillis() - startedAt;
-            audit.setRetryCount(attempts - 1);
+            audit.setRetryCount(Math.max(0, totalAttempts - 1));
             audit.setLatencyMs((int) Math.min(elapsedMs, Integer.MAX_VALUE));
             audit.setCost(result.getCost());
             audit.setModelVersion(result.getModelVersion());
             AigInvokeVo vo = toVo(traceId, decision, elapsedMs, null);
-            if (!result.isSuccess()) {
+            if (!succeeded) {
                 audit.setResult(AigInvokeResultEnum.FAILED.getCode());
-                audit.setErrorSummary(StringUtils.blankToDefault(result.getErrorSummary(), "模型调用失败"));
-                vo.setReason(StringUtils.blankToDefault(result.getErrorSummary(), "模型调用失败"));
+                audit.setErrorSummary(StringUtils.blankToDefault(errorSummary, "模型调用失败"));
+                vo.setReason(StringUtils.blankToDefault(errorSummary, "模型调用失败"));
+                if (errorClass == null) {
+                    errorClass = AigErrorClassEnum.UNKNOWN;
+                }
                 recordErrorClass(audit, decision, errorClass);
-                return vo;
-            }
-            // 7. 输出必须符合能力输出模板，否则不视为成功
-            if (!AigOutputSchemaValidator.matches(decision.getOutputSchema(), result.getOutput())) {
-                audit.setResult(AigInvokeResultEnum.FAILED.getCode());
-                audit.setErrorSummary(AigOutputSchemaValidator.MISMATCH_MESSAGE);
-                vo.setReason(AigOutputSchemaValidator.MISMATCH_MESSAGE);
-                // 「输出不符合 Schema」重试多少次都是同一个结果，必须转人工补正
-                recordErrorClass(audit, decision, AigErrorClassEnum.INVALID_REQUEST);
                 return vo;
             }
             audit.setResult(AigInvokeResultEnum.SUCCESS.getCode());
@@ -180,6 +228,31 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
         } finally {
             auditRecorder.record(audit);
         }
+    }
+
+    /**
+     * 把决策与审计都指向「本次实际要试的候选」。
+     *
+     * <p>为什么必须做：有序 fallback 之后真正执行的是<b>备选</b>模型。若审计
+     * {@code model_id/model_key/deployment_type/external_call} 仍停留在主候选，
+     * 事后回看审计会以为一直是主候选在跑——那是**假账**，比没有审计更坏
+     * （尤其 {@code external_call}：主候选是本地、备选是外部时，假账会把「数据外发过」
+     * 记成「没外发」）。</p>
+     *
+     * @param decision  决策对象（使 toVo 下发的模型/调用器与实际一致）
+     * @param audit     审计上下文
+     * @param candidate 本次要试的候选
+     */
+    private void applyCandidate(AigRouteDecision decision, AigAuditContext audit, AigRouteCandidate candidate) {
+        decision.setModelId(candidate.getModelId());
+        decision.setModelKey(candidate.getModelKey());
+        decision.setDeploymentType(candidate.getDeploymentType());
+        decision.setInvoker(candidate.getInvoker());
+        audit.setModelId(candidate.getModelId());
+        audit.setModelKey(candidate.getModelKey());
+        audit.setDeploymentType(candidate.getDeploymentType());
+        AigDeploymentTypeEnum deployment = AigDeploymentTypeEnum.find(candidate.getDeploymentType());
+        audit.setExternalCall(deployment != null && deployment.isExternal());
     }
 
     /**

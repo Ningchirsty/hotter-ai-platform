@@ -71,6 +71,34 @@ class AigErrorClassEnumTest {
     }
 
     @Test
+    @DisplayName("换候选（fallback）集合：只有「入参类」不换——换谁都一样被拒")
+    void worthFallbackSetIsExact() {
+        List<AigErrorClassEnum> noFallback = Arrays.stream(AigErrorClassEnum.values())
+            .filter(item -> !item.isWorthFallback())
+            .toList();
+        assertEquals(List.of(AigErrorClassEnum.INVALID_REQUEST, AigErrorClassEnum.POLICY_DENIED), noFallback,
+            "入参错误与策略拒绝换候选只是把同一个失败乘以候选数；其余错误都应允许顺延备选");
+    }
+
+    @Test
+    @DisplayName("「重试」与「换候选」是两维：OUTPUT_UNPARSABLE 不重试但换候选，UNKNOWN 也不重试但换候选")
+    void retryAndFallbackAreIndependentDimensions() {
+        // 同样的输入与提示词，重试只会得到同样的输出 —— 但换个模型可能就合格了
+        assertFalse(AigErrorClassEnum.OUTPUT_UNPARSABLE.isRetryable());
+        assertTrue(AigErrorClassEnum.OUTPUT_UNPARSABLE.isWorthFallback());
+
+        // 认不出的错误向同一个 Provider 再要一次要保守，但去另一个已过审的 Provider 试一次是 fallback 的意义
+        assertFalse(AigErrorClassEnum.UNKNOWN.isRetryable());
+        assertTrue(AigErrorClassEnum.UNKNOWN.isWorthFallback(),
+            "UNKNOWN 若也不换候选，备选模型就永远不会被用到");
+
+        // 鉴权失败：不重试同一家（只会把账号打到风控），但换一家往往立刻可用
+        assertFalse(AigErrorClassEnum.AUTH_FAILED.isRetryable());
+        assertTrue(AigErrorClassEnum.AUTH_FAILED.isWorthFallback());
+        assertTrue(AigErrorClassEnum.AUTH_FAILED.isCircuitBreak());
+    }
+
+    @Test
     @DisplayName("结构化的错误码优先于 HTTP 状态与文本")
     void errorCodeWinsOverStatusAndText() {
         assertEquals(AigErrorClassEnum.TIMEOUT,
