@@ -30,6 +30,23 @@
             <artifactId>hutool-crypto</artifactId>
         </dependency>
 
+        <!-- SM4 的 JCE Provider：**hutool-crypto 自己不实现 SM4**，它只是把
+             SM4/CBC/PKCS5Padding 交给 JCE；而 JDK 21 的 SunJCE 里没有 SM4，
+             hutool 会优先用 BouncyCastle。少了它，AigModelSecretCipher 的
+             @PostConstruct 自检会抛异常、**整个应用起不来**（这是刻意设计，
+             但前提是 provider 真的在 classpath 上）。
+             与 ruoyi-common-encrypt 用同一对依赖（bcpkix + hutool-crypto），
+             bcprov/bcutil 由 bcpkix 传递引入。
+             为什么要显式声明：此前它只是被 ruoyi-system → ruoyi-common-encrypt
+             顺带带上来的——因为没有人触发过一次真实的 SM4，本模块的单测里
+             AigModelSecretCipher 一直被 mock，所以「本模块自己缺 provider」这件事
+             在自身的构建里完全看不见；一旦按设计把子包拆成微服务（§15），
+             或者部署时裁掉 ruoyi-system，启动就会失败在自检上。 -->
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcpkix-jdk18on</artifactId>
+        </dependency>
+
         <!-- api模块 -->
         <dependency>
             <groupId>org.dromara</groupId>
