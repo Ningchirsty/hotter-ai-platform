@@ -101,7 +101,7 @@ select 1765000000000000012, 1765000000000000002, '0.1.0', 'STABLE', 'GENERAL', n
        '{"fields":[{"name":"referenceImages"},{"name":"brandForbiddenItems"},{"name":"productConstraints"}]}',
        '{"fields":[{"name":"palette"},{"name":"composition"},{"name":"lighting"},{"name":"material"},{"name":"lens"},{"name":"sources"}]}',
        null,
-       '{"implementation":"org.dromara.creative.service.ICreativeDnaService + org.dromara.creative.helper.VisualBrainAdapter + ReferenceImageAnalyzer","note":"确定性分析优先，模型分析只在可用时叠加；来源逐字段标注，不复制具体场景"}',
+       '{"implementation":"org.dromara.creative.service.ICreativeDnaService + org.dromara.creative.helper.VisualBrainAdapter + ReferenceImageAnalyzer","golden_cases":["case-visual-dna-solid-bg"],"note":"确定性分析优先，模型分析只在可用时叠加；来源逐字段标注，不复制具体场景"}',
        null, 'shell,ssh,db-direct,docker-socket', 'visual_dna_extract', 'N', '0', '0',
        1761000000000000103, 1761100000000000001, now(),
        '外发许可为 N：继承 dp_creative_r8_dna_gov.sql 已做的安全决定（涉及产品图，一律本地）'
@@ -131,7 +131,7 @@ select 1765000000000000014, 1765000000000000004, '0.1.0', 'STABLE', 'GENERAL', n
        '{"fields":[{"name":"candidateAssets"},{"name":"facts"},{"name":"brandRules"}]}',
        '{"fields":[{"name":"defects"},{"name":"riskLevel"},{"name":"humanReviewAdvice"}]}',
        null,
-       '{"implementation":"org.dromara.creative.helper.CreativeImageRuleChecker + cp_output_check","note":"确定性像素度量优先；模型结论只作建议，自动 QA 只筛除、不放行"}',
+       '{"implementation":"org.dromara.creative.helper.CreativeImageRuleChecker + cp_output_check","golden_cases":["case-visual-qa-clean-800","case-visual-qa-not-square"],"note":"确定性像素度量优先；模型结论只作建议，自动 QA 只筛除、不放行"}',
        null, 'shell,ssh,db-direct,docker-socket', 'deliverable_consistency', 'N', '0', '0',
        1761000000000000103, 1761100000000000001, now(),
        '外发许可为 N：与视觉 DNA 同一安全决定；且「只筛除不放行」与自动 QA 口径一致'

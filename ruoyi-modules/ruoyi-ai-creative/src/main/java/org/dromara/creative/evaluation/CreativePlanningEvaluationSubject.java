@@ -58,11 +58,6 @@ public class CreativePlanningEvaluationSubject implements IAigEvaluationSubject 
     public static final String SUBJECT_CODE = "creative_planning";
 
     /**
-     * 输入快照前缀：内联 JSON
-     */
-    public static final String SNAPSHOT_INLINE_PREFIX = "inline:";
-
-    /**
      * Jackson 2 实例：必须与 Helper 用的同一代次（见类注释）
      */
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -172,28 +167,10 @@ public class CreativePlanningEvaluationSubject implements IAigEvaluationSubject 
      * @return 解析结果
      */
     private Snapshot parseSnapshot(String inputSnapshotRef) {
-        if (inputSnapshotRef == null || inputSnapshotRef.isBlank()) {
-            throw new ServiceException("用例没有输入快照（input_snapshot_ref 为空）：评测必须在确定的输入上跑");
-        }
-        String ref = inputSnapshotRef.trim();
-        if (!ref.startsWith(SNAPSHOT_INLINE_PREFIX)) {
-            throw new ServiceException("不支持的输入快照前缀：" + prefixOf(ref)
-                + "。本执行器只支持 " + SNAPSHOT_INLINE_PREFIX + "<json>（内联快照）；"
-                + "对象存储/业务ID 形式的快照尚未实现——认不出的前缀不会被当成某种默认输入");
-        }
-        JsonNode node;
-        try {
-            node = MAPPER.readTree(ref.substring(SNAPSHOT_INLINE_PREFIX.length()));
-        } catch (Exception e) {
-            throw new ServiceException("内联输入快照不是合法 JSON：" + e.getMessage());
-        }
-        if (node == null || !node.isObject()) {
-            throw new ServiceException("内联输入快照必须是 JSON 对象");
-        }
-        String productName = text(node, "product_name");
-        if (productName == null || productName.isBlank()) {
-            throw new ServiceException("内联输入快照缺少 product_name");
-        }
+        // 快照引用格式（inline:/classpath: 的边界与报错文案）统一由 CreativeEvaluationSnapshots 负责，
+        // 避免三个执行器各写一套、慢慢走样
+        JsonNode node = CreativeEvaluationSnapshots.readInlineJson(inputSnapshotRef);
+        String productName = CreativeEvaluationSnapshots.requireText(node, "product_name", "product_name");
         Map<String, String> facts = new LinkedHashMap<>();
         JsonNode factsNode = node.get("facts");
         if (factsNode != null && !factsNode.isNull()) {
@@ -301,45 +278,6 @@ public class CreativePlanningEvaluationSubject implements IAigEvaluationSubject 
      */
     private static Iterable<Map.Entry<String, JsonNode>> iterable(JsonNode node) {
         return () -> node.fields();
-    }
-
-    /**
-     * 取文本字段。
-     *
-     * @param node 节点
-     * @param key  字段
-     * @return 文本；缺失或非文本返回 null
-     */
-    private static String text(JsonNode node, String key) {
-        JsonNode value = node.get(key);
-        return value != null && value.isTextual() ? value.asText() : null;
-    }
-
-    /**
-     * 取快照引用的前缀（报错时告诉调用方平台看到了什么）。
-     *
-     * <p>只在冒号前那一段「像个 scheme」时才算前缀：否则一段没有前缀的 JSON
-     * （{@code {"product_name":"x"}}）里的冒号会被误当成前缀分隔符，报错信息会把整段 JSON
-     * 当成前缀回显——那既难看又误导。</p>
-     *
-     * @param ref 引用
-     * @return 前缀（含冒号）
-     */
-    private static String prefixOf(String ref) {
-        int index = ref.indexOf(':');
-        if (index <= 0) {
-            return "（没有前缀）";
-        }
-        String candidate = ref.substring(0, index);
-        for (int i = 0; i < candidate.length(); i++) {
-            char ch = candidate.charAt(i);
-            boolean schemeChar = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
-                || (ch >= '0' && ch <= '9') || ch == '+' || ch == '-' || ch == '.';
-            if (!schemeChar || i > 20) {
-                return "（没有前缀）";
-            }
-        }
-        return candidate + ":";
     }
 
     /**

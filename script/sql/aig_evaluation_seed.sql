@@ -56,3 +56,53 @@ select 1767000000000000002, 'case-plan-blank-levels', '策划 Agent·缺档位�
        '基因里缺饱和度/对比度/留白时必须写「未设置」：默认成某个档 = 平台替用户编了一个决定'
   where not exists (select 1 from (select case_code from aig_evaluation_case) t
                      where t.case_code = 'case-plan-blank-levels');
+
+-- ----------------------------
+-- 3、视觉 DNA Agent·参考图确定性实测
+-- ----------------------------
+insert into aig_evaluation_case
+(case_id, case_code, case_name, case_type, scenario_code, input_snapshot_ref, expected_json,
+ rubric_json, cost_min, cost_max, data_level, classification, status, del_flag,
+ create_dept, create_by, create_time, remark)
+select 1767000000000000003, 'case-visual-dna-solid-bg', '视觉 DNA·白底红块实测要对', 'VISUAL_DNA', null,
+       'inline:{"reference":"classpath:creative/eval/ref-red-block-200.png"}',
+       '{"required_paths":["values","recommendations","width","height","observed_ratio","recommendation_count"],"equals":{"width":200,"height":200,"values.colors.primary":"#FF0000","values.saturation":"HIGH","values.sceneType":"纯色底","deterministic_only":true,"model_part_evaluated":false},"min_items":{"recommendations":3}}',
+       null, 0.0000, 0.0000, 'INTERNAL', 'DETERMINISTIC_ANALYSIS', '0', '0',
+       1761000000000000103, 1761100000000000001, now(),
+       '只覆盖「参考图确定性实测」这一段：产出里 model_part_evaluated=false，模型分析那段不在本条用例范围；快照图随平台发布（classpath:creative/eval/）'
+  where not exists (select 1 from (select case_code from aig_evaluation_case) t
+                     where t.case_code = 'case-visual-dna-solid-bg');
+
+-- ----------------------------
+-- 4、视觉 QA Agent·合格交付图判过
+-- ----------------------------
+insert into aig_evaluation_case
+(case_id, case_code, case_name, case_type, scenario_code, input_snapshot_ref, expected_json,
+ rubric_json, cost_min, cost_max, data_level, classification, status, del_flag,
+ create_dept, create_by, create_time, remark)
+select 1767000000000000004, 'case-visual-qa-clean-800', '视觉 QA·合格图判过', 'IMAGE_QA', null,
+       'inline:{"artifact":"classpath:creative/eval/qa-clean-800.png","rules":{"schema":"screen-qa/1","square":true,"minSide":800,"alphaForbidden":true,"whiteBackground":{"enabled":true,"minEdgeWhiteness":0.90},"subjectRatio":{"enabled":true,"min":0.10},"edgeBleed":{"enabled":true,"maxRatio":0.05}}}',
+       '{"required_paths":["metrics","findings","verdict","failed_codes"],"equals":{"verdict":"PASS","passed":true,"configured":true,"metrics.width":800,"metrics.height":800},"min_items":{"findings":1}}',
+       null, 0.0000, 0.0000, 'INTERNAL', 'DETERMINISTIC_ANALYSIS', '0', '0',
+       1761000000000000103, 1761100000000000001, now(),
+       '规则写在用例里（rules_source=case_snapshot）：评审看用例行就知道这次按什么规则判的；规则随平台漂移不会改历史结论'
+  where not exists (select 1 from (select case_code from aig_evaluation_case) t
+                     where t.case_code = 'case-visual-qa-clean-800');
+
+-- ----------------------------
+-- 5、视觉 QA Agent·长方形图必须判不过
+-- ----------------------------
+-- 注意语义：这条用例的**运行结论是 PASS**——因为「检查器对这张图给出了预期的判定（判不过）」
+-- 就是用例要断言的事。不是「这张图合格」。用例通过 ≠ 产物合格。
+insert into aig_evaluation_case
+(case_id, case_code, case_name, case_type, scenario_code, input_snapshot_ref, expected_json,
+ rubric_json, cost_min, cost_max, data_level, classification, status, del_flag,
+ create_dept, create_by, create_time, remark)
+select 1767000000000000005, 'case-visual-qa-not-square', '视觉 QA·长方形图必须判不过', 'IMAGE_QA', null,
+       'inline:{"artifact":"classpath:creative/eval/qa-not-square-800x600.png","rules":{"schema":"screen-qa/1","square":true,"minSide":800,"alphaForbidden":true,"whiteBackground":{"enabled":true,"minEdgeWhiteness":0.90},"subjectRatio":{"enabled":true,"min":0.10},"edgeBleed":{"enabled":true,"maxRatio":0.05}}}',
+       '{"required_paths":["metrics","findings","verdict","failed_codes"],"equals":{"passed":false,"configured":true},"min_items":{"findings":1},"must_contain":["CANVAS_SQUARE"]}',
+       null, 0.0000, 0.0000, 'INTERNAL', 'DETERMINISTIC_ANALYSIS', '0', '0',
+       1761000000000000103, 1761100000000000001, now(),
+       '这条用例的期望是「判不过」：阈值到了就翻脸，否则检查器只是装饰。用例通过 ≠ 产物合格'
+  where not exists (select 1 from (select case_code from aig_evaluation_case) t
+                     where t.case_code = 'case-visual-qa-not-square');
