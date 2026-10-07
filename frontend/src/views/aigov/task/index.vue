@@ -186,6 +186,9 @@
       />
     </el-card>
 
+    <!-- 存量任务的只读镜像（新任务走统一任务层；存量只读呈现，操作仍回各业务域） -->
+    <TaskMirrorPanel />
+
     <!-- 任务详情：任务 + 快照 + 事件流 + 候选结果 -->
     <el-drawer v-model="detailVisible" title="任务详情" size="72%" append-to-body>
       <div v-loading="detailLoading" class="detail-body">
@@ -312,6 +315,7 @@ import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import modal from '@/plugins/modal';
 import { useDict } from '@/utils/dict';
 import { parseTime } from '@/utils/ruoyi';
+import TaskMirrorPanel from './components/TaskMirrorPanel.vue';
 
 defineOptions({ name: 'AigTask' });
 

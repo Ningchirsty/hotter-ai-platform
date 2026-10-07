@@ -154,3 +154,54 @@ export interface AigTaskSweepVO {
   skipped?: number;
   failures?: string[];
 }
+
+/** 只读镜像来源（由后端下发，前端不硬编码来源清单） */
+export interface AigTaskMirrorSourceVO {
+  source?: string;
+  label?: string;
+  /** 该来源的状态机口径与只读边界 */
+  description?: string;
+}
+
+/**
+ * 存量任务的只读镜像行。
+ *
+ * 两条口径要照着显示，否则页面会误导人：
+ * 1. `status/statusLabel` 是**来源自己的状态**原值（`stateMachine` 写明是哪一套），
+ *    刻意没有被映射成 `aig_task` 的状态——两套状态机的含义并不相同；
+ * 2. `readOnly` 恒为 true：镜像行不接受任何写操作，重试/选定/质检仍在来源自己的页面上。
+ */
+export interface AigTaskMirrorVO {
+  source?: string;
+  sourceLabel?: string;
+  refId?: string;
+  projectId?: string | number;
+  projectName?: string;
+  title?: string;
+  status?: string;
+  statusLabel?: string;
+  /** 是否终态（唯一被跨来源统一过的语义） */
+  terminal?: boolean;
+  stateMachine?: string;
+  candidateNo?: number;
+  selected?: boolean;
+  outputAssetId?: string | number;
+  errorCode?: string;
+  errorMessage?: string;
+  durationMs?: number;
+  createTime?: string;
+  /** 恒为 true */
+  readOnly?: boolean;
+}
+
+/**
+ * 镜像查询条件。
+ *
+ * `source` 必填：后端刻意不提供跨来源合并分页（各来源分页语义不同，
+ * 合成一页会让页码与总数都失真），所以页面必须让用户先选来源。
+ */
+export interface AigTaskMirrorQuery extends PageQuery {
+  source?: string;
+  status?: string;
+  projectId?: string | number;
+}

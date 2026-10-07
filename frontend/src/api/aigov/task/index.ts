@@ -1,7 +1,7 @@
 import type { PageResult } from '@/api/types';
 import type { AxiosPromise } from '@/utils/api-types';
 import request from '@/utils/request';
-import type { AigTaskDetailVO, AigTaskQuery, AigTaskSweepVO, AigTaskVO } from './types';
+import type { AigTaskDetailVO, AigTaskMirrorQuery, AigTaskMirrorSourceVO, AigTaskMirrorVO, AigTaskQuery, AigTaskSweepVO, AigTaskVO } from './types';
 
 // 任务列表（只读视图，不含快照原文与事件流）
 export function listAigTask(query: AigTaskQuery): AxiosPromise<PageResult<AigTaskVO>> {
@@ -67,5 +67,24 @@ export function sweepAigTask(): AxiosPromise<AigTaskSweepVO> {
   return request({
     url: '/aigov/task/scheduler/sweep',
     method: 'post'
+  });
+}
+
+// 存量任务的只读镜像（设计 §9：新任务走 aig_task，存量只读镜像）
+// 来源清单必须从后端取：后端要求列表必须指定来源，清单若只能靠读代码知道，
+// 那个「必填」就变成了使用障碍。
+export function listAigTaskMirrorSources(): AxiosPromise<AigTaskMirrorSourceVO[]> {
+  return request({
+    url: '/aigov/task/mirror/sources',
+    method: 'get'
+  });
+}
+
+// 分页查询某个来源的镜像行（来源必填；后端不提供跨来源合并分页）
+export function listAigTaskMirror(query: AigTaskMirrorQuery): AxiosPromise<PageResult<AigTaskMirrorVO>> {
+  return request({
+    url: '/aigov/task/mirror/list',
+    method: 'get',
+    params: query
   });
 }
