@@ -39,6 +39,17 @@ describe('云端候选能力与提交边界', () => {
     expect(cloudModelsFor('image')[0].capabilities).not.toContain('EDIT');
     expect(cloudModelsFor('video')[0].capabilities).not.toContain('FL2V');
   });
+  it('未联调的蓝章鱼型号不继承其他图像模型的尺寸与编辑参数', () => {
+    for (const model of cloudModelsFor('image')) {
+      expect(model.provider).toBe('蓝章鱼 BluOcto');
+      expect(model.parametersVerified).toBe(false);
+      expect(model.capabilities).toEqual(['T2I']);
+      expect(cloudOutputOptions(model, 'T2I')).toEqual([]);
+      expect(cloudOutputOptions(model, 'EDIT')).toEqual([]);
+      expect(createCloudDraft(model, 'T2I').output).toBe('');
+      expect(canSubmitLocal('cloud', { status: 'PUBLISHED', submittable: true })).toBe(false);
+    }
+  });
   it('各个模型能力的初始草稿使用有效输出组合且互相独立', () => {
     for (const media of ['video', 'image'] as const) {
       for (const model of cloudModelsFor(media)) {
@@ -46,7 +57,8 @@ describe('云端候选能力与提交边界', () => {
           const first = createCloudDraft(model, capability);
           first.prompt = '测试草稿';
           expect(createCloudDraft(model, capability).prompt).toBe('');
-          expect(cloudOutputOptions(model, capability).map(item => item.value)).toContain(first.output);
+          if (model.parametersVerified === false) expect(first.output).toBe('');
+          else expect(cloudOutputOptions(model, capability).map(item => item.value)).toContain(first.output);
           if (media === 'video') expect(cloudDurations(model, capability, first.output)).toContain(first.duration);
         }
       }

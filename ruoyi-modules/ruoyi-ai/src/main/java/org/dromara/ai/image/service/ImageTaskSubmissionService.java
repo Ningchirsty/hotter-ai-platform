@@ -364,6 +364,9 @@ public class ImageTaskSubmissionService {
             Long existing = repository.findByIdempotencyKey(tenantId, userId, idempotencyKey);
             if (existing != null) {
                 Map<String, Object> task = repository.requireOwnedTask(existing, tenantId, userId);
+                if (org.dromara.ai.image.cloud.ImageCloudService.isCloud(task)) {
+                    throw ImageTaskException.invalidContract("该提交幂等键已用于云端任务，请使用新的本地提交键");
+                }
                 return new Submission(existing, String.valueOf(task.get("task_no")), tenantId, userId,
                     String.valueOf(task.get("status")), false, "IDEMPOTENT", true);
             }
@@ -392,6 +395,9 @@ public class ImageTaskSubmissionService {
                 : repository.findByIdempotencyKey(tenantId, userId, idempotencyKey);
             if (existing != null) {
                 Map<String, Object> task = repository.requireOwnedTask(existing, tenantId, userId);
+                if (org.dromara.ai.image.cloud.ImageCloudService.isCloud(task)) {
+                    throw ImageTaskException.invalidContract("该提交幂等键已用于云端任务，请使用新的本地提交键");
+                }
                 return new Submission(existing, String.valueOf(task.get("task_no")), tenantId, userId,
                     String.valueOf(task.get("status")), false, "IDEMPOTENT", true);
             }
@@ -430,6 +436,9 @@ public class ImageTaskSubmissionService {
      */
     Submission dispatchTask(long taskId, String taskNo, String tenantId, long userId,
                             Map<String, Object> task) {
+        if (org.dromara.ai.image.cloud.ImageCloudService.isCloud(task)) {
+            throw ImageTaskException.invalidContract("云端任务须通过云端执行器派发");
+        }
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
@@ -483,6 +492,9 @@ public class ImageTaskSubmissionService {
      */
     public String dispatchQueued(long imageTaskId, String tenantId, long userId) {
         Map<String, Object> task = repository.requireOwnedTask(imageTaskId, tenantId, userId);
+        if (org.dromara.ai.image.cloud.ImageCloudService.isCloud(task)) {
+            throw ImageTaskException.invalidContract("云端任务须通过云端执行器派发");
+        }
         String status = String.valueOf(task.get("status"));
         if (!ImageTaskStatus.QUEUED.name().equals(status)) {
             return "INVALID_STATUS";
@@ -501,6 +513,9 @@ public class ImageTaskSubmissionService {
      */
     public String dispatchOwned(long imageTaskId, String tenantId, long userId) {
         Map<String, Object> task = repository.requireOwnedTask(imageTaskId, tenantId, userId);
+        if (org.dromara.ai.image.cloud.ImageCloudService.isCloud(task)) {
+            throw ImageTaskException.invalidContract("云端任务须通过云端执行器派发");
+        }
         String status = String.valueOf(task.get("status"));
         if (!ImageTaskStatus.QUEUED.name().equals(status) && !ImageTaskStatus.RUNNING.name().equals(status)) {
             throw new ImageTaskException("INVALID_CONTRACT", "任务当前状态不可执行：" + status);
@@ -513,6 +528,9 @@ public class ImageTaskSubmissionService {
      */
     public String retryOwned(long imageTaskId, String tenantId, long userId) {
         Map<String, Object> task = repository.requireOwnedTask(imageTaskId, tenantId, userId);
+        if (org.dromara.ai.image.cloud.ImageCloudService.isCloud(task)) {
+            throw ImageTaskException.invalidContract("云端任务须通过云端执行器派发");
+        }
         ImageTaskStatus status = ImageTaskStatus.valueOf(String.valueOf(task.get("status")));
         if (status == ImageTaskStatus.QUEUED || status == ImageTaskStatus.RUNNING) {
             return dispatchOwned(imageTaskId, tenantId, userId);

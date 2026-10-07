@@ -394,3 +394,11 @@ spring.ai.mcp:
             - -y
             - '@modelcontextprotocol/server-filesystem'
             - D:/data
+
+--- # 云端图像：默认关闭，密钥文件仅在后端读取，禁止写到前端环境变量。
+image:
+  cloud:
+    enabled: ${BLUOCTO_ENABLED:false}
+    api-key-file: ${BLUOCTO_API_KEY_FILE:}
+    timeout-seconds: ${BLUOCTO_TIMEOUT_SECONDS:600}
+    output-hosts: ${BLUOCTO_OUTPUT_HOSTS:bluocto.com,rolldek.com,dashscope-463f.oss-accelerate.aliyuncs.com,dashscope-7c2c.oss-accelerate.aliyuncs.com}

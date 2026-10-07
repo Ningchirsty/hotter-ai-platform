@@ -1,7 +1,8 @@
 <template>
   <div class="preview-notice" role="status">
-    <b>源码界面预览</b>
-    <span>复用真实 Vue 页面 · 参数／状态来自源码契约 · 任务／素材／GPU 为标注样例 · 不连接服务器</span>
+    <b>{{ live ? "本机云端真实联调" : "源码界面预览" }}</b>
+    <span v-if="live">云端图像提交会调用蓝章鱼 API 并可能计费 · 任务与素材保存在本机 · 本地 ComfyUI 与视频仍为样例展示</span>
+    <span v-else>复用真实 Vue 页面 · 参数／状态来自源码契约 · 任务／素材／GPU 为标注样例 · 不连接服务器</span>
   </div>
   <header class="platform-header">
     <a class="brand" href="#/ai-tools/video-creation">
@@ -19,6 +20,9 @@
   </header>
   <main><router-view /></main>
 </template>
+<script setup lang="ts">
+const live = import.meta.env.VITE_CLOUD_LOCAL_LIVE === "true";
+</script>
 <style>
 * {
   box-sizing: border-box;

@@ -46,6 +46,9 @@ public interface ImageTaskRepository {
 
     long countOwnedAssets(String tenantId, long userId);
 
+    /** 按租户、用户与任务读取全部未删除产出。 */
+    default List<Map<String,Object>> listTaskOutputs(long taskId, String tenantId, long userId) { return List.of(); }
+
     int softDeleteAsset(long assetId, String tenantId, long userId);
 
     /**

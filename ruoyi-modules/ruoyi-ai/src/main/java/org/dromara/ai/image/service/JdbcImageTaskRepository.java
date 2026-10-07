@@ -198,6 +198,11 @@ public class JdbcImageTaskRepository implements ImageTaskRepository {
     }
 
     @Override
+    public List<Map<String,Object>> listTaskOutputs(long taskId, String tenantId, long userId) {
+        return jdbc.queryForList("SELECT id, content_type, width, height, has_alpha, original_name FROM image_asset WHERE task_id=? AND tenant_id=? AND user_id=? AND source_kind='OUTPUT' AND del_flag='0' ORDER BY id", taskId,tenantId,userId);
+    }
+
+    @Override
     public long countOwnedAssets(String tenantId, long userId) {
         Long count = jdbc.queryForObject(
             "SELECT COUNT(*) FROM image_asset WHERE tenant_id = ? AND user_id = ? AND del_flag = '0'",

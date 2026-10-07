@@ -211,4 +211,19 @@ class ImageTaskSubmissionServiceTest {
         return task;
     }
 
+    @Test
+    void cloudTaskCannotEnterLocalComfyExecutor() {
+        when(repository.requireOwnedTask(7001L, "000000", 42L)).thenReturn(Map.of(
+            "workflow_code", org.dromara.ai.image.cloud.ImageCloudService.WORKFLOW, "status", "QUEUED"));
+        org.junit.jupiter.api.Assertions.assertThrows(org.dromara.ai.image.exception.ImageTaskException.class,
+            () -> service.dispatchOwned(7001L, "000000", 42L));
+        org.junit.jupiter.api.Assertions.assertThrows(org.dromara.ai.image.exception.ImageTaskException.class,
+            () -> service.retryOwned(7001L, "000000", 42L));
+        org.junit.jupiter.api.Assertions.assertThrows(org.dromara.ai.image.exception.ImageTaskException.class,
+            () -> service.dispatchQueued(7001L, "000000", 42L));
+        org.junit.jupiter.api.Assertions.assertThrows(org.dromara.ai.image.exception.ImageTaskException.class,
+            () -> service.dispatchTask(7001L, "IMAGE-1", "000000", 42L, Map.of(
+                "workflow_code", org.dromara.ai.image.cloud.ImageCloudService.WORKFLOW)));
+        org.mockito.Mockito.verifyNoInteractions(dispatchService);
+    }
 }

@@ -49,7 +49,10 @@ export const uploadImageAsset = (
 };
 
 /** 查询本人素材列表。 */
-export const listImageAssets = (query?: { pageNum?: number; pageSize?: number }): AxiosPromise<PageResult<ImageAssetVO>> => {
+export const listImageAssets = (query?: {
+  pageNum?: number;
+  pageSize?: number;
+}): AxiosPromise<PageResult<ImageAssetVO>> => {
   return request({
     url: '/image/assets',
     method: 'get',
@@ -164,3 +167,23 @@ export const fetchImageAssetThumbnailBlobUrl = async (assetId: number | string):
   });
   return toMediaBlobUrl(res.data, '缩略图');
 };
+
+/** 服务端云端配置状态，不包含密钥。 */
+export const listCloudImageModels = (): AxiosPromise<import('./types').CloudImageModelsVO> =>
+  request({ url: '/image/cloud/models', method: 'get' });
+
+/** 只读验证鉴权和可用模型，不产生生成费用。 */
+export const checkCloudImageModels = (): AxiosPromise<{ authorizedModels: string[]; generationVerified: boolean }> =>
+  request({ url: '/image/cloud/check', method: 'get' });
+
+export const createCloudImageTask = (data: {
+  output?: import('./types').CloudImageOutputParams;
+  capability?: string;
+  referenceAssetIds?: (number | string)[];
+  maskAssetId?: number | string;
+  model: string;
+  prompt: string;
+  taskName?: string;
+  idempotencyKey: string;
+}): AxiosPromise<{ taskId: number | string; taskNo: string; status: string; idempotent?: boolean }> =>
+  request({ url: '/image/cloud/tasks', method: 'post', data });

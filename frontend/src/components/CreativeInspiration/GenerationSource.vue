@@ -26,7 +26,7 @@
         <span>
           <b>
             云端生成
-            <em>待接入</em>
+            <em>{{ cloudLabel || '待接入' }}</em>
           </b>
           <small>外部 API 服务</small>
         </span>
@@ -38,7 +38,7 @@
 <script setup lang="ts">
 import { Cloudy, Cpu } from '@element-plus/icons-vue';
 import type { GenerationSource } from './types';
-defineProps<{ modelValue: GenerationSource; busy?: boolean }>();
+defineProps<{ modelValue: GenerationSource; busy?: boolean; cloudLabel?: string }>();
 defineEmits<{ 'update:modelValue': [value: GenerationSource] }>();
 </script>
 
