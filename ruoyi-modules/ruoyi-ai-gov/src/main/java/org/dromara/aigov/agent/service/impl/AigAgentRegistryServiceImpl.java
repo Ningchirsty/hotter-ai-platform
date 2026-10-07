@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.aigov.agent.domain.AigAgentBinding;
 import org.dromara.aigov.agent.domain.AigAgentVersion;
+import org.dromara.aigov.agent.domain.AigPackage;
 import org.dromara.aigov.agent.domain.AigPackageVersion;
 import org.dromara.aigov.agent.domain.AigReleaseEvent;
 import org.dromara.aigov.agent.domain.AigSkillVersion;
@@ -15,8 +16,12 @@ import org.dromara.aigov.agent.enums.AigReleaseChannelEnum;
 import org.dromara.aigov.agent.enums.AigReleaseGateEnum;
 import org.dromara.aigov.agent.enums.AigReleaseStatusEnum;
 import org.dromara.aigov.agent.enums.AigReleaseTargetTypeEnum;
+import org.dromara.aigov.agent.manifest.AigManifestScanResult;
+import org.dromara.aigov.agent.manifest.AigPackageIdentity;
+import org.dromara.aigov.agent.manifest.AigPackageManifestValidator;
 import org.dromara.aigov.agent.mapper.AigAgentBindingMapper;
 import org.dromara.aigov.agent.mapper.AigAgentVersionMapper;
+import org.dromara.aigov.agent.mapper.AigPackageMapper;
 import org.dromara.aigov.agent.mapper.AigPackageVersionMapper;
 import org.dromara.aigov.agent.mapper.AigReleaseEventMapper;
 import org.dromara.aigov.agent.mapper.AigSkillVersionMapper;
@@ -71,6 +76,10 @@ public class AigAgentRegistryServiceImpl implements IAigAgentRegistryService {
     private final AigReleaseEventMapper releaseEventMapper;
 
     private final AigAgentBindingMapper bindingMapper;
+
+    private final AigPackageMapper packageMapper;
+
+    private final AigPackageManifestValidator manifestValidator;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -127,6 +136,11 @@ public class AigAgentRegistryServiceImpl implements IAigAgentRegistryService {
                 + AigReleaseStateMachine.describeAllowed(from) + "，本次请求 " + to.getCode());
         }
 
+        // 门槛「Manifest 校验」不允许只凭调用方声明：Package 版本上有可查证据（scan_result）。
+        // 其余门槛的证据各在别处（人工批准落 approved_by、曾 STABLE 过查发布事件账本），
+        // 唯独这一条以前是「调用方说过了就过了」——那正是「不生效也不会报错」的那一类。
+        assertManifestScanEvidence(type, row.scanResult(), passed);
+
         // 后门：DISABLED → STABLE 必须能证明该版本曾经 STABLE 过（状态机看不到历史，只能在这里兜）
         if (from == AigReleaseStatusEnum.DISABLED && to == AigReleaseStatusEnum.STABLE
             && !wasEverStable(type.getCode(), bo.getTargetVersionId())) {
@@ -178,6 +192,47 @@ public class AigAgentRegistryServiceImpl implements IAigAgentRegistryService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public AigManifestScanResult scanStoredManifest(Long packageVersionId) {
+        if (packageVersionId == null) {
+            throw new ServiceException("Package 版本ID不能为空");
+        }
+        AigPackageVersion version = packageVersionMapper.selectById(packageVersionId);
+        if (version == null) {
+            throw new ServiceException("Package 版本不存在：" + packageVersionId);
+        }
+        if (AigReleaseStatusEnum.find(version.getReleaseStatus()) != AigReleaseStatusEnum.DRAFT) {
+            throw new ServiceException("Manifest 扫描只对 DRAFT 版本进行：该版本已处于 "
+                + version.getReleaseStatus() + "，库中的扫描结论是 DRAFT 阶段的历史记录，"
+                + "重算覆盖会让「当时凭什么放行」查不到（要复核请重新走一次新版本）");
+        }
+        AigPackage pkg = packageMapper.selectById(version.getPackageId());
+        if (pkg == null) {
+            throw new ServiceException("Package 主记录不存在：" + version.getPackageId());
+        }
+
+        AigPackageIdentity identity = new AigPackageIdentity(pkg.getPackageCode(), pkg.getPublisher(),
+            pkg.getLicenseCode(), pkg.getChecksum(), pkg.getPackageType(), version.getVersion(),
+            version.getManifestHash());
+        AigManifestScanResult result = manifestValidator.scan(version.getManifestJson(), identity);
+
+        // 只写结论与说明，刻意不写 manifest_hash：原文哈希与重算值不一致时结论是拒绝，
+        // 顺手把哈希改成新的恰好会抹掉「原文被动过」这个事实。
+        int rows = packageVersionMapper.update(null, new LambdaUpdateWrapper<AigPackageVersion>()
+            .eq(AigPackageVersion::getPackageVersionId, packageVersionId)
+            .eq(AigPackageVersion::getReleaseStatus, AigReleaseStatusEnum.DRAFT.getCode())
+            .set(AigPackageVersion::getScanResult, result.scanResult())
+            .set(AigPackageVersion::getScanDetail, result.getDetail()));
+        if (rows == 0) {
+            throw new ServiceException("Package 版本已离开 DRAFT（并发修改）：本次结论未落库，"
+                + "请刷新后重试。Package 版本 #" + packageVersionId);
+        }
+        log.info("Manifest 扫描完成, packageVersionId={}, scanResult={}, hitRules={}",
+            packageVersionId, result.scanResult(), result.hitRuleCodes());
+        return result;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public Long addBinding(AigAgentBindingBo bo) {
         if (bo == null || bo.getAgentVersionId() == null) {
             throw new ServiceException("Agent 版本ID不能为空");
@@ -213,6 +268,31 @@ public class AigAgentRegistryServiceImpl implements IAigAgentRegistryService {
         log.info("新增 Agent 版本绑定, bindingId={}, agentVersionId={}, brandId={}, channel={}",
             binding.getBindingId(), bo.getAgentVersionId(), bo.getBrandId(), channel);
         return binding.getBindingId();
+    }
+
+    /**
+     * 落实「Manifest 校验」这道门槛的证据要求。
+     *
+     * <p>只有 Package 版本有这条证据：{@code scan_result} 只存在于 {@code aig_package_version}
+     * （Agent / Skill 版本不带 Manifest，它们的内容物是平台内的配置记录）。</p>
+     *
+     * @param type       对象类型
+     * @param scanResult 版本行上的扫描结论（Agent/Skill 版本为 null）
+     * @param passed     本次声明的已通过门槛
+     */
+    private void assertManifestScanEvidence(AigReleaseTargetTypeEnum type, String scanResult,
+                                           Set<AigReleaseGateEnum> passed) {
+        if (type != AigReleaseTargetTypeEnum.PACKAGE_VERSION
+            || !passed.contains(AigReleaseGateEnum.MANIFEST_VALIDATION)) {
+            return;
+        }
+        if (AigManifestScanResult.PASS.equals(scanResult)) {
+            return;
+        }
+        throw new ServiceException("不允许声明「Manifest 校验已通过」而库里没有证据："
+            + "该 Package 版本的 scan_result=" + (StringUtils.isBlank(scanResult) ? "未扫描" : scanResult)
+            + "。请先执行 Manifest 扫描（scanStoredManifest）拿到 PASS 再推进"
+            + "（§6.2 的拒绝规则必须真的被执行，而不是被声明）");
     }
 
     /**
@@ -434,21 +514,21 @@ public class AigAgentRegistryServiceImpl implements IAigAgentRegistryService {
                 if (v == null) {
                     throw new ServiceException("Agent 版本不存在：" + id);
                 }
-                return new ReleaseRow(id, v.getReleaseStatus(), v.getReleaseChannel());
+                return new ReleaseRow(id, v.getReleaseStatus(), v.getReleaseChannel(), null);
             }
             case SKILL_VERSION: {
                 AigSkillVersion v = skillVersionMapper.selectById(id);
                 if (v == null) {
                     throw new ServiceException("Skill 版本不存在：" + id);
                 }
-                return new ReleaseRow(id, v.getReleaseStatus(), v.getReleaseChannel());
+                return new ReleaseRow(id, v.getReleaseStatus(), v.getReleaseChannel(), null);
             }
             case PACKAGE_VERSION: {
                 AigPackageVersion v = packageVersionMapper.selectById(id);
                 if (v == null) {
                     throw new ServiceException("Package 版本不存在：" + id);
                 }
-                return new ReleaseRow(id, v.getReleaseStatus(), v.getReleaseChannel());
+                return new ReleaseRow(id, v.getReleaseStatus(), v.getReleaseChannel(), v.getScanResult());
             }
             default:
                 throw new ServiceException("未支持的对象类型：" + type.getCode());
@@ -474,11 +554,12 @@ public class AigAgentRegistryServiceImpl implements IAigAgentRegistryService {
     /**
      * 版本行的关键列。
      *
-     * @param id      对象版本ID
-     * @param status  发布状态
-     * @param channel 发布通道
+     * @param id         对象版本ID
+     * @param status     发布状态
+     * @param channel    发布通道
+     * @param scanResult 扫描结论（仅 Package 版本有，其余为 null）
      */
-    private record ReleaseRow(Long id, String status, String channel) {
+    private record ReleaseRow(Long id, String status, String channel, String scanResult) {
     }
 
 }

@@ -52,7 +52,7 @@ create table if not exists aig_package (
     package_type       varchar(32)     not null                   comment '类型（AGENT/SKILL/MIXED；首期只支持声明式）',
     publisher          varchar(128)    not null                   comment '发布方（§6.1 身份）',
     license_code       varchar(64)     default null               comment '许可证（§6.2 许可证不明确即拒绝）',
-    checksum           char(64)        default null               comment '包体/Manifest SHA-256（§6.2 校验和不明确即拒绝）',
+    checksum           char(64)        default null               comment '包体 SHA-256（§6.2 校验和不明确即拒绝；Manifest 自身的哈希见 aig_package_version.manifest_hash——Manifest 无法声明自己的哈希，那是自指）',
     source_type        varchar(32)     default null               comment '来源类型（UPLOAD上传 / TRUSTED_SOURCE登记可信来源，§6.3-1）',
     source_ref         varchar(500)    default null               comment '来源引用（上传存储键或可信来源地址）',
     description        varchar(500)    default null               comment '说明',

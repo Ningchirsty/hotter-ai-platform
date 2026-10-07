@@ -1,18 +1,26 @@
 package org.dromara.aigov.agent.service.impl;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.dromara.aigov.agent.domain.AigAgentBinding;
 import org.dromara.aigov.agent.domain.AigAgentVersion;
+import org.dromara.aigov.agent.domain.AigPackage;
+import org.dromara.aigov.agent.domain.AigPackageVersion;
 import org.dromara.aigov.agent.domain.AigReleaseEvent;
 import org.dromara.aigov.agent.domain.bo.AigAgentBindingBo;
 import org.dromara.aigov.agent.domain.bo.AigReleaseAdvanceBo;
+import org.dromara.aigov.agent.enums.AigPackageRejectRuleEnum;
 import org.dromara.aigov.agent.enums.AigReleaseGateEnum;
 import org.dromara.aigov.agent.enums.AigReleaseStatusEnum;
 import org.dromara.aigov.agent.enums.AigReleaseTargetTypeEnum;
+import org.dromara.aigov.agent.manifest.AigManifestScanResult;
+import org.dromara.aigov.agent.manifest.AigPackageManifestValidator;
 import org.dromara.aigov.agent.mapper.AigAgentBindingMapper;
 import org.dromara.aigov.agent.mapper.AigAgentVersionMapper;
+import org.dromara.aigov.agent.mapper.AigPackageMapper;
 import org.dromara.aigov.agent.mapper.AigPackageVersionMapper;
 import org.dromara.aigov.agent.mapper.AigReleaseEventMapper;
 import org.dromara.aigov.agent.mapper.AigSkillVersionMapper;
@@ -23,9 +31,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -64,11 +74,32 @@ class AigAgentRegistryServiceImplTest {
 
     private static final long VERSION_ID = 7401L;
 
+    private static final long PACKAGE_VERSION_ID = 7601L;
+
+    private static final long PACKAGE_ID = 7701L;
+
+    private static final String PACKAGE_CHECKSUM = "a".repeat(64);
+
+    /**
+     * 一份合规的 Package Manifest（§6.1 最小字段集全齐，且与下面桩的包记录一致）
+     */
+    private static final String MANIFEST = """
+        {"package_code":"vision-planning-skill","name":"视觉规划 Skill","publisher":"design-center",
+         "version":"1.0.0","license":"Apache-2.0","checksum":"%s","package_type":"SKILL",
+         "capabilities":["CREATIVE_PLANNING"],"scenario_codes":["CREATIVE_DRAFT"],
+         "input_schema":{"type":"object"},"output_schema":{"type":"object"},
+         "min_platform_version":"6.0.0","dependencies":[],"required_tools":[],
+         "forbidden_tools":["shell","ssh","db-direct","docker-socket"],"roles":["aig_viewer"],
+         "data_level":"INTERNAL","network_access":"NONE","golden_cases":["case-1"],
+         "version_notes":"v1","upgrade_policy":"IN_PLACE","rollback_policy":"PREVIOUS_STABLE"}
+        """.formatted(PACKAGE_CHECKSUM);
+
     private AigAgentVersionMapper agentVersionMapper;
     private AigSkillVersionMapper skillVersionMapper;
     private AigPackageVersionMapper packageVersionMapper;
     private AigReleaseEventMapper releaseEventMapper;
     private AigAgentBindingMapper bindingMapper;
+    private AigPackageMapper packageMapper;
     private AigAgentRegistryServiceImpl service;
 
     @BeforeAll
@@ -78,6 +109,8 @@ class AigAgentRegistryServiceImplTest {
         TableInfoHelper.initTableInfo(assistant, AigAgentVersion.class);
         TableInfoHelper.initTableInfo(assistant, AigReleaseEvent.class);
         TableInfoHelper.initTableInfo(assistant, AigAgentBinding.class);
+        TableInfoHelper.initTableInfo(assistant, AigPackageVersion.class);
+        TableInfoHelper.initTableInfo(assistant, AigPackage.class);
     }
 
     @BeforeEach
@@ -87,10 +120,13 @@ class AigAgentRegistryServiceImplTest {
         packageVersionMapper = mock(AigPackageVersionMapper.class);
         releaseEventMapper = mock(AigReleaseEventMapper.class);
         bindingMapper = mock(AigAgentBindingMapper.class);
+        packageMapper = mock(AigPackageMapper.class);
         service = new AigAgentRegistryServiceImpl(agentVersionMapper, skillVersionMapper,
-            packageVersionMapper, releaseEventMapper, bindingMapper);
+            packageVersionMapper, releaseEventMapper, bindingMapper, packageMapper,
+            new AigPackageManifestValidator(JsonMapper.builder().build()));
         // 默认：条件更新命中 1 行、事件写入成功
         when(agentVersionMapper.update(isNull(), any())).thenReturn(1);
+        when(packageVersionMapper.update(isNull(), any())).thenReturn(1);
         when(releaseEventMapper.insert(any(AigReleaseEvent.class))).thenReturn(1);
     }
 
@@ -362,6 +398,160 @@ class AigAgentRegistryServiceImplTest {
         assertFalse(service.wasEverStable(AigReleaseTargetTypeEnum.AGENT_VERSION.getCode(), VERSION_ID));
         assertFalse(service.wasEverStable(null, null));
         verify(releaseEventMapper, times(2)).selectCount(any());
+    }
+
+    /**
+     * 造一个 Package 版本桩，以及与之一致的包记录桩。
+     *
+     * @param status     发布状态
+     * @param scanResult 扫描结论（模拟历史扫描；null = 未扫描）
+     * @param publisher  包记录的发布方（换个值就能造出「Manifest 与包记录不一致」）
+     */
+    private void stubPackageVersion(String status, String scanResult, String publisher) {
+        AigPackageVersion version = new AigPackageVersion();
+        version.setPackageVersionId(PACKAGE_VERSION_ID);
+        version.setPackageId(PACKAGE_ID);
+        version.setVersion("1.0.0");
+        version.setManifestJson(MANIFEST);
+        version.setManifestHash(AigPackageManifestValidator.manifestHash(MANIFEST));
+        version.setReleaseStatus(status);
+        version.setReleaseChannel("TESTING");
+        version.setScanResult(scanResult);
+        when(packageVersionMapper.selectById(PACKAGE_VERSION_ID)).thenReturn(version);
+
+        AigPackage pkg = new AigPackage();
+        pkg.setPackageId(PACKAGE_ID);
+        pkg.setPackageCode("vision-planning-skill");
+        pkg.setPublisher(publisher);
+        pkg.setLicenseCode("Apache-2.0");
+        pkg.setChecksum(PACKAGE_CHECKSUM);
+        pkg.setPackageType("SKILL");
+        when(packageMapper.selectById(PACKAGE_ID)).thenReturn(pkg);
+    }
+
+    /**
+     * 造一个 Package 版本的推进入参。
+     *
+     * @param from  期望的当前状态
+     * @param to    目标状态
+     * @param gates 已通过的门槛（可空）
+     * @return 入参
+     */
+    private static AigReleaseAdvanceBo packageBo(String from, String to, List<String> gates) {
+        AigReleaseAdvanceBo bo = new AigReleaseAdvanceBo();
+        bo.setTargetType(AigReleaseTargetTypeEnum.PACKAGE_VERSION.getCode());
+        bo.setTargetVersionId(PACKAGE_VERSION_ID);
+        bo.setExpectedStatus(from);
+        bo.setToStatus(to);
+        bo.setPassedGates(gates);
+        bo.setOperatorId(7L);
+        return bo;
+    }
+
+    @Test
+    @DisplayName("Manifest 扫描：DRAFT 版本落库 scan_result/scan_detail，且刻意不写 manifest_hash")
+    void scanStoredManifestRecordsVerdict() {
+        stubPackageVersion("DRAFT", null, "design-center");
+        AtomicReference<Wrapper<AigPackageVersion>> written = new AtomicReference<>();
+        when(packageVersionMapper.update(isNull(), any())).thenAnswer(invocation -> {
+            written.set(invocation.getArgument(1));
+            return 1;
+        });
+
+        AigManifestScanResult result = service.scanStoredManifest(PACKAGE_VERSION_ID);
+
+        assertTrue(result.isPass(), result.getDetail());
+        assertEquals(AigManifestScanResult.PASS, result.scanResult());
+        assertEquals(AigPackageManifestValidator.manifestHash(MANIFEST), result.getManifestHash());
+        assertNotNull(written.get());
+        LambdaUpdateWrapper<AigPackageVersion> wrapper =
+            (LambdaUpdateWrapper<AigPackageVersion>) written.get();
+        assertTrue(wrapper.getSqlSet().contains("scan_result"), wrapper.getSqlSet());
+        assertTrue(wrapper.getSqlSet().contains("scan_detail"), wrapper.getSqlSet());
+        assertTrue(wrapper.getParamNameValuePairs().containsValue("PASS"));
+        // 条件更新必须带「当前状态是 DRAFT」：否则会覆盖别人已经推进过的结论
+        assertTrue(wrapper.getSqlSegment().contains("release_status"), wrapper.getSqlSegment());
+        // 刻意不写 manifest_hash：原文对不上时结论是拒绝，顺手改哈希会抹掉「原文被动过」这件事
+        assertFalse(wrapper.getSqlSet().contains("manifest_hash"), wrapper.getSqlSet());
+    }
+
+    @Test
+    @DisplayName("Manifest 扫描只对 DRAFT：已推进的版本拒绝重算（历史结论不许被改写）")
+    void scanStoredManifestRejectsNonDraft() {
+        stubPackageVersion("VALIDATED", "PASS", "design-center");
+
+        ServiceException error = assertThrows(ServiceException.class,
+            () -> service.scanStoredManifest(PACKAGE_VERSION_ID));
+
+        assertTrue(error.getMessage().contains("只对 DRAFT"), error.getMessage());
+        verify(packageVersionMapper, never()).update(isNull(), any());
+    }
+
+    @Test
+    @DisplayName("Manifest 扫描落库带条件：影响 0 行时报并发冲突，不覆盖他人结论")
+    void scanStoredManifestReportsConflict() {
+        stubPackageVersion("DRAFT", null, "design-center");
+        when(packageVersionMapper.update(isNull(), any())).thenReturn(0);
+
+        ServiceException error = assertThrows(ServiceException.class,
+            () -> service.scanStoredManifest(PACKAGE_VERSION_ID));
+
+        assertTrue(error.getMessage().contains("并发"), error.getMessage());
+    }
+
+    @Test
+    @DisplayName("扫描会用包记录交叉核对：包记录说别人发布的，Manifest 就不可信（§6.2-4）")
+    void scanStoredManifestCrossChecksPackageRecord() {
+        stubPackageVersion("DRAFT", null, "someone-else");
+
+        AigManifestScanResult result = service.scanStoredManifest(PACKAGE_VERSION_ID);
+
+        assertFalse(result.isPass());
+        assertTrue(result.getHitRules().contains(AigPackageRejectRuleEnum.UNCLEAR_PROVENANCE),
+            result.getDetail());
+        assertTrue(result.getDetail().contains("someone-else"), result.getDetail());
+    }
+
+    @Test
+    @DisplayName("Manifest 扫描入参：空 ID / 版本不存在 / 包记录不存在都给可读错误")
+    void scanStoredManifestValidatesInput() {
+        assertTrue(assertThrows(ServiceException.class, () -> service.scanStoredManifest(null))
+            .getMessage().contains("不能为空"));
+
+        when(packageVersionMapper.selectById(99999L)).thenReturn(null);
+        assertTrue(assertThrows(ServiceException.class, () -> service.scanStoredManifest(99999L))
+            .getMessage().contains("不存在"));
+
+        stubPackageVersion("DRAFT", null, "design-center");
+        when(packageMapper.selectById(PACKAGE_ID)).thenReturn(null);
+        assertTrue(assertThrows(ServiceException.class,
+            () -> service.scanStoredManifest(PACKAGE_VERSION_ID)).getMessage().contains("主记录不存在"));
+    }
+
+    @Test
+    @DisplayName("「Manifest 校验」这道门槛吃库里的证据：scan_result 不是 PASS 就不许声明已通过")
+    void manifestGateNeedsDatabaseEvidence() {
+        stubPackageVersion("DRAFT", null, "design-center");
+        ServiceException notScanned = assertThrows(ServiceException.class, () -> service.advanceRelease(
+            packageBo("DRAFT", "VALIDATED",
+                List.of(AigReleaseGateEnum.MANIFEST_VALIDATION.getCode()))));
+        assertTrue(notScanned.getMessage().contains("没有证据"), notScanned.getMessage());
+        assertTrue(notScanned.getMessage().contains("未扫描"), notScanned.getMessage());
+
+        stubPackageVersion("DRAFT", AigManifestScanResult.REJECT, "design-center");
+        ServiceException rejected = assertThrows(ServiceException.class, () -> service.advanceRelease(
+            packageBo("DRAFT", "VALIDATED",
+                List.of(AigReleaseGateEnum.MANIFEST_VALIDATION.getCode()))));
+        assertTrue(rejected.getMessage().contains("REJECT"), rejected.getMessage());
+        verify(packageVersionMapper, never()).update(isNull(), any());
+
+        // 有证据则放行，并照常追加发布事件
+        stubPackageVersion("DRAFT", AigManifestScanResult.PASS, "design-center");
+        assertEquals(AigReleaseStatusEnum.VALIDATED, service.advanceRelease(
+            packageBo("DRAFT", "VALIDATED",
+                List.of(AigReleaseGateEnum.MANIFEST_VALIDATION.getCode()))));
+        verify(packageVersionMapper).update(isNull(), any());
+        verify(releaseEventMapper).insert(any(AigReleaseEvent.class));
     }
 
 }

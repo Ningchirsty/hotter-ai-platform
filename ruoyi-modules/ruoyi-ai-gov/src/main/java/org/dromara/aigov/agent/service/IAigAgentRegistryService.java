@@ -4,6 +4,7 @@ import org.dromara.aigov.agent.domain.bo.AigAgentBindingBo;
 import org.dromara.aigov.agent.domain.bo.AigReleaseAdvanceBo;
 import org.dromara.aigov.agent.enums.AigReleaseGateEnum;
 import org.dromara.aigov.agent.enums.AigReleaseStatusEnum;
+import org.dromara.aigov.agent.manifest.AigManifestScanResult;
 
 import java.util.Set;
 
@@ -60,6 +61,27 @@ public interface IAigAgentRegistryService {
      * @return 曾经 STABLE 过返回 true
      */
     boolean wasEverStable(String targetType, Long targetVersionId);
+
+    /**
+     * 扫描库中 Package 版本的 Manifest，并把结论落到该版本上（设计 §6.1、§6.2）。
+     *
+     * <p>这是「Manifest 校验」这道门槛的<b>证据来源</b>：{@link #advanceRelease} 不接受调用方
+     * 单方面声明「已通过 Manifest 校验」，只接受库里 {@code scan_result=PASS} 这一事实。</p>
+     *
+     * <p>三条约束：</p>
+     * <ol>
+     *     <li>只对 <b>DRAFT</b> 版本扫描并落库。版本一旦离开 DRAFT，库中的扫描结论就是
+     *         「当时凭什么放行」的历史记录，重算覆盖会把审计痕迹改掉；</li>
+     *     <li>只记录结论，<b>不覆盖</b> {@code manifest_hash}。原文哈希与重算值不一致时，
+     *         结论是拒绝（命中 §6.2-4），而不是「顺手把哈希改成新的」——后者恰好会抹掉
+     *         「原文被动过」这件事；</li>
+     *     <li>落库带「当前状态必须是 DRAFT」的条件，影响 0 行即报并发冲突，不覆盖他人结论。</li>
+     * </ol>
+     *
+     * @param packageVersionId Package 版本ID
+     * @return 扫描结论（同时已落库）
+     */
+    AigManifestScanResult scanStoredManifest(Long packageVersionId);
 
     /**
      * 新增一条 Agent 版本绑定。
