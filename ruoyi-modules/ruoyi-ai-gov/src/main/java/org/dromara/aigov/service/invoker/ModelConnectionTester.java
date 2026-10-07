@@ -223,11 +223,14 @@ public class ModelConnectionTester {
         }
         if (!snail.available()) {
             vo.setOk(false);
-            vo.setMessage("snail-ai 链路不可用：请在应用配置中启用 aigov.snail-ai.enabled 并配置 agent-id 与 OpenApiChatClient");
+            vo.setMessage("snail-ai 链路不可用：请在应用配置中启用 aigov.snail-ai.enabled 并确认 OpenApiChatClient 已装配");
             return;
         }
         ModelInvokeRequest request = new ModelInvokeRequest();
         request.setCapabilityCode(org.dromara.aigov.constant.AigConstants.CAP_TALENT_MATCH);
+        // modelId 必传：经 snail-ai 执行时按「模型 → Agent」映射（sai_agent.chat_model_id）选 Agent，
+        // 没有 modelId 就无法确定实际执行哪个模型，调用器会明确拒绝而不是随便挑一个 Agent 跑
+        request.setModelId(target.getModelId());
         request.setModelKey(target.getModelKey());
         request.setPrompt(PROBE_PROMPT);
         ModelInvokeResult result = snail.invoke(request);

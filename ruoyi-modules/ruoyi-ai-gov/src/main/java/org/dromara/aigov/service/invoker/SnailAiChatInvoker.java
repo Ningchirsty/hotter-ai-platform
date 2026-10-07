@@ -7,13 +7,18 @@ import com.aizuda.snail.ai.openapi.client.core.api.OpenApiChatClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.aigov.config.AigGovProperties;
+import org.dromara.aigov.domain.vo.AigSnailAgentVo;
 import org.dromara.aigov.enums.AigDeploymentTypeEnum;
+import org.dromara.aigov.mapper.AigSnailAgentMapper;
 import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.json.utils.JsonUtils;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -29,12 +34,17 @@ import java.util.Map;
  * Result             : status==1 表示成功（ok 置 1，fail 置 0）
  * </pre>
  *
- * <p><b>架构错配（阶段1 已知限制，非缺陷）</b>：snail-ai OpenAPI 聊天入口收的是
- * <b>Agent</b>（{@code agentId}），不是 {@code model_key}。也就是说走 snail-ai 时
- * <b>实际执行的模型由 Agent 决定</b>，治理层无法用它精确指定某个 {@code sai_model_config} 模型。
- * 路由引擎仍按 {@code sai_model_config} 选模型（用于「能不能用/等级够不够」的治理判定），
- * 但真正执行时以 Agent 绑定的模型为准；模型级精确路由需要后续建立「模型 ↔ Agent」映射，
- * 属于阶段2。</p>
+ * <p><b>「模型 ↔ Agent」精确映射（阶段2 已落地）</b>：snail-ai OpenAPI 聊天入口收的是
+ * <b>Agent</b>（{@code agentId}），不是 {@code model_key}。因此本调用器<b>不</b>使用任何静态
+ * agentId，而是<b>按路由选中的模型反查 Agent</b>：{@code sai_agent.chat_model_id = 本次模型ID}。</p>
+ * <ul>
+ *     <li>查到（取启用中、id 最小的那个）→ 用它发起调用，因此**实际执行的模型与治理层选中的模型一致**；</li>
+ *     <li>查不到 → <b>明确失败</b>并说明怎么办（在 snail-ai 里给该模型建 Agent，或把该模型改为直连部署类型）。
+ *         绝不退回到「随便找个 Agent 跑」——那正是「配的是 A、跑的是 B」的来源，
+ *         而且失败时调用方看不出任何异常；</li>
+ *     <li>一个模型对应多个 Agent → 取 id 最小者并记 WARN：模型一致了，但 Agent 自带的
+ *         instruction/skill/RAG 也会影响输出，因此映射最好保持一对一。</li>
+ * </ul>
  *
  * <p><b>tokensUsed / cost 恒为 null</b>：{@code OpenApiChatSyncResponse} 不返回 token 用量
  * 与费用，这里不编造数字，审计中这两列写 null。</p>
@@ -60,14 +70,24 @@ public class SnailAiChatInvoker implements ModelInvoker {
     private static final int SUCCESS_STATUS = 1;
 
     /**
+     * {@code sai_agent.status} 的活跃值（1-活跃 2-非活跃 3-已废弃 4-已禁用）。
+     */
+    private static final int ACTIVE_STATUS = 1;
+
+    /**
      * snail-ai OpenAPI 客户端（snail-ai.enabled=false 时不存在，故用 ObjectProvider 软依赖）。
      */
     private final ObjectProvider<OpenApiChatClient> chatClientProvider;
 
     /**
-     * 治理层配置（snail-ai Agent / openId / 超时）。
+     * 治理层配置（snail-ai 开关 / openId / 超时 / 应用作用域）。
      */
     private final AigGovProperties properties;
+
+    /**
+     * snail-ai Agent 只读 Mapper：模型 ↔ Agent 映射的来源。
+     */
+    private final AigSnailAgentMapper snailAgentMapper;
 
     @Override
     public boolean supports(AigDeploymentTypeEnum deploymentType) {
@@ -84,10 +104,11 @@ public class SnailAiChatInvoker implements ModelInvoker {
 
     @Override
     public boolean available() {
-        return chatClientProvider.getIfAvailable() != null
-            && properties.isEnabled()
-            && properties.getAgentId() != null
-            && properties.getAgentId() > 0;
+        // 只管「这条通道本身能不能用」：客户端在、开关开。
+        // 「本次这个模型在 snail-ai 里有没有对应的 Agent」是**逐次调用**的事实，
+        // 由 invoke 内部判定并给出可读原因——本方法没有模型参数，在这里猜只会把
+        // 路由阶段变成「静默排除」，用户看不到为什么。
+        return chatClientProvider.getIfAvailable() != null && properties.isEnabled();
     }
 
     @Override
@@ -102,10 +123,12 @@ public class SnailAiChatInvoker implements ModelInvoker {
         if (!properties.isEnabled()) {
             return ModelInvokeResult.failure("snail-ai 调用未启用（aigov.snail-ai.enabled=false）", 0L);
         }
-        Long agentId = properties.getAgentId();
-        if (agentId == null || agentId <= 0) {
-            return ModelInvokeResult.failure("snail-ai Agent 未配置（aigov.snail-ai.agent-id）", 0L);
+        // 模型 → Agent：查不到就失败，绝不换一个模型跑（见类注释）
+        AgentPick pick = resolveAgent(request);
+        if (pick.error() != null) {
+            return ModelInvokeResult.failure(pick.error(), 0L);
         }
+        Long agentId = pick.agentId();
         long start = System.currentTimeMillis();
         try {
             // 图片型载荷必须显式拒绝：snail-ai OpenAPI 只收文本 content，
@@ -140,6 +163,115 @@ public class SnailAiChatInvoker implements ModelInvoker {
                 request.getCapabilityCode(), request.getModelId(), agentId, e);
             return ModelInvokeResult.failure("snail-ai 调用异常：" + e.getClass().getSimpleName(), System.currentTimeMillis() - start);
         }
+    }
+
+    /**
+     * 一次「模型 → Agent」的选定结果：要么给出可用 Agent，要么给出可读的失败原因。
+     *
+     * @param agentId 选中的 Agent ID（失败时为 null）
+     * @param error   失败原因（成功时为 null）
+     */
+    private record AgentPick(Long agentId, String error) {
+
+        static AgentPick of(Long agentId) {
+            return new AgentPick(agentId, null);
+        }
+
+        static AgentPick fail(String error) {
+            return new AgentPick(null, error);
+        }
+    }
+
+    /**
+     * 按本次调用的模型反查应使用的 snail-ai Agent。
+     *
+     * <p>这是「模型 ↔ Agent 精确映射」的全部实现：判据是 {@code sai_agent.chat_model_id}
+     * 与本次 {@code modelId} 相等。任何一步不成立都返回可读原因，而不是换一个 Agent 继续——
+     * 后者会让「配的是 A、跑的是 B」重新出现，且调用方看不出异常。</p>
+     *
+     * @param request 调用请求
+     * @return 选定的 Agent 或失败原因
+     */
+    private AgentPick resolveAgent(ModelInvokeRequest request) {
+        Long modelId = request.getModelId();
+        if (modelId == null) {
+            return AgentPick.fail("snail-ai 调用缺少模型ID（modelId）：模型 → Agent 映射以"
+                + " sai_agent.chat_model_id 为准，没有模型ID就无法确定实际执行哪个模型。"
+                + "若这是连通性探测，请让探测请求带上 modelId（对象：" + request.getModelKey() + "）");
+        }
+        List<AigSnailAgentVo> agents = snailAgentMapper.selectByChatModelId(modelId);
+        if (agents == null || agents.isEmpty()) {
+            return AgentPick.fail("模型 #" + modelId + "（" + StringUtils.blankToDefault(request.getModelKey(), "未知标识")
+                + "）在 snail-ai 里没有关联的 Agent（sai_agent.chat_model_id 无匹配），"
+                + "无法经集团链路执行。处置：在 snail-ai 里为该模型建一个 Agent，"
+                + "或把该模型改用直连部署类型（EXTERNAL_API / LOCAL）");
+        }
+
+        // 作用域：配置了 appId 时，只接受「本地执行(app_id 为空)」或「就是我方应用」的 Agent。
+        // 否则请求可能被派给别的应用，表现为「发出去了但没人应答」。
+        List<AigSnailAgentVo> scoped = new ArrayList<>();
+        int foreignApp = 0;
+        for (AigSnailAgentVo agent : agents) {
+            if (StringUtils.isBlank(properties.getAppId())
+                || StringUtils.isBlank(agent.getAppId())
+                || properties.getAppId().equals(agent.getAppId())) {
+                scoped.add(agent);
+            } else {
+                foreignApp++;
+            }
+        }
+
+        List<AigSnailAgentVo> active = new ArrayList<>();
+        int inactive = 0;
+        for (AigSnailAgentVo agent : scoped) {
+            // status: 1-活跃 2-非活跃 3-已废弃 4-已禁用
+            if (agent.getStatus() != null && agent.getStatus() == ACTIVE_STATUS) {
+                active.add(agent);
+            } else {
+                inactive++;
+            }
+        }
+        if (active.isEmpty()) {
+            return AgentPick.fail("模型 #" + modelId + "（" + StringUtils.blankToDefault(request.getModelKey(), "未知标识")
+                + "）在 snail-ai 里没有**启用中**的 Agent，无法经集团链路执行：共匹配到 " + agents.size()
+                + " 个 Agent，其中状态非活跃/已废弃/已禁用 " + inactive + " 个"
+                + (foreignApp > 0 ? "、作用域属于其它应用 " + foreignApp + " 个" : "")
+                + "。处置：把其中一个设为活跃（status=1）"
+                + (StringUtils.isNotBlank(properties.getAppId())
+                    ? "，或确认 aigov.snail-ai.app-id 与它在同一作用域" : ""));
+        }
+
+        // 一对一最稳妥：Agent 自带的 instruction/skill/RAG 同样会影响输出，
+        // 多对一时「用哪个 Agent」治理层无从得知，因此取 id 最小者并留痕（不静默）。
+        // 排序在 Java 里做，不依赖「SQL 恰好按 id 排序」——那是另一处实现细节，
+        // 一旦有人改了 SQL 或换了调用方，「取哪个」就会悄悄变。
+        active.sort(Comparator.comparing(AigSnailAgentVo::getId, Comparator.nullsLast(Long::compareTo)));
+        AigSnailAgentVo chosen = active.get(0);
+        if (active.size() > 1) {
+            log.warn("模型 #{} 在 snail-ai 里关联了 {} 个启用中的 Agent（{}），本次取 id 最小的 #{}（{}）；"
+                    + "建议保持一对一映射：Agent 自带的系统指令/技能/RAG 也会影响输出",
+                modelId, active.size(), describeIds(active), chosen.getId(), chosen.getName());
+        }
+        log.debug("snail-ai 模型 → Agent 映射命中, modelId={}, agentId={}, appId={}, 候选数={}",
+            modelId, chosen.getId(), chosen.getAppId(), active.size());
+        return AgentPick.of(chosen.getId());
+    }
+
+    /**
+     * 列出候选 Agent 的 id（仅用于日志，不含可能较长的名称）。
+     *
+     * @param agents 候选
+     * @return 形如 {@code 12,15} 的文本
+     */
+    private static String describeIds(List<AigSnailAgentVo> agents) {
+        StringBuilder sb = new StringBuilder();
+        for (AigSnailAgentVo agent : agents) {
+            if (sb.length() > 0) {
+                sb.append(',');
+            }
+            sb.append(agent.getId());
+        }
+        return sb.toString();
     }
 
     /**

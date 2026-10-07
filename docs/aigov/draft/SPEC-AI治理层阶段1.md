@@ -149,7 +149,9 @@ public interface ModelInvoker {
    - `@Component` + `@ConditionalOnClass(OpenApiChatClient.class)`
    - `supports()` = `GROUP` 或 `EXTERNAL_ENTERPRISE`（**不含 `EXTERNAL_API`**，见上表）
    - `invoke()` 调 `chatSync(...)`，把 `Result` 转成 `ModelInvokeResult`；异常转失败结果，**不得抛出**
-   - `available()` = `OpenApiChatClient` 存在 && `aigov.snail-ai.enabled` && `agentId > 0`
+   - `available()` = `OpenApiChatClient` 存在 && `aigov.snail-ai.enabled`
+     （**阶段2 起不再包含 `agentId > 0`**：可用性只管通道本身；「本次这个模型有没有对应 Agent」
+     是逐次调用的事实，由 `invoke()` 判定并给出可读原因，见 §「架构错配」的处置口径）
 
 2. `LocalRuleModelInvoker implements ModelInvoker`
    - `@Component`，`supports()` 返回 `deploymentType == LOCAL`
@@ -363,26 +365,39 @@ String conversationId; String content;   // content = 模型输出
 Long durationMs;
 ```
 
-### ⚠️ 架构错配（必须写进代码注释与交付文档）
+### ⚠️ 模型 ↔ Agent 错配（阶段1 的已知限制 → **阶段2 已解决**）
 
-**snail-ai 的聊天入口收的是 `agentId`（Agent），不是 `model_key`（模型）。**
-即：经 snail-ai 调用时，**实际模型由 Agent 决定，治理层无法精确指定某个 `sai_model_config` 模型**。
+**snail-ai 的聊天入口收的是 `agentId`（Agent），不是 `model_key`（模型）**，
+而「这个 Agent 实际跑哪个模型」记在 `sai_agent.chat_model_id` 上。
 
-> **适用范围已收窄为 `GROUP` / `EXTERNAL_ENTERPRISE`**。原先 `SnailAiChatInvoker` 认领了
+> **适用范围收窄为 `GROUP` / `EXTERNAL_ENTERPRISE`**。原先 `SnailAiChatInvoker` 认领了
 > `deploymentType != LOCAL`（含 `EXTERNAL_API`），导致在治理台配好的外部 API 模型
 > 虽然会被路由选中、实际跑的却是 Agent 绑定的另一个模型——「配的是 A、跑的是 B」，
-> 是最难查的一类错配。现已把 `EXTERNAL_API` 交给 `OpenAiCompatibleInvoker` 直连，
-> 该路径**登记了什么就用什么**，本条错配不再适用。
+> 是最难查的一类错配。`EXTERNAL_API` 已交给 `OpenAiCompatibleInvoker` 直连，
+> 该路径**登记了什么就用什么**。
 
-处置口径：
-- `agentId` / `openId` / `timeout` 从配置取（`aigov.snail-ai.*`），**不从 `AigCapabilityModel.modelId` 强推**
-- `available()` = `openApiChatClient != null && aigov.snail-ai.enabled && agentId > 0`
+**阶段2 的处置（已落地）**：不再使用任何**静态** agentId，改为**按路由选中的模型反查 Agent**：
+
+- 判据：`sai_agent.chat_model_id = 本次 modelId`（`AigSnailAgentMapper` 只读该表）；
+- 命中（取启用中、**id 最小**者）→ 用它发起调用，**实际执行的模型与治理层选中的模型一致**；
+- **查不到 → 明确失败**并说明怎么办（在 snail-ai 里给该模型建 Agent，或把该模型改成直连部署类型），
+  **绝不退回到「随便找个 Agent 跑」**——那正是本条错配的来源，且失败时调用方看不出异常；
+- 一个模型对应多个 Agent → 取 id 最小者并记 WARN（模型一致了，但 Agent 自带的
+  instruction/skill/RAG 也会影响输出，因此**建议保持一对一映射**）；
+- 作用域：`aigov.snail-ai.app-id` 配置后，只接受 `sai_agent.app_id` 为空（本地执行）或与之相等的
+  Agent——否则请求可能派给**别的应用**，表现为「发出去了但没人应答」。
+
+处置口径（其余不变）：
+- `openId` / `timeout` 从配置取（`aigov.snail-ai.*`）；`modelId` 由调用编排传入
+  （**探针也必须传**，否则无法确定实际执行哪个模型）
+- `available()` = `openApiChatClient != null && aigov.snail-ai.enabled`（**不含 agentId 条件**）
 - `tokensUsed` 与 `cost` 保持 `null` —— 响应结构不返回 token 用量，**禁止编造**
-- 路由引擎仍按 `sai_model_config` 做「能不能用 / 等级够不够」的治理判定，
-  但走 snail-ai 路径时实际模型由 Agent 决定；`AigRouteDecision` 需保留该说明
-  （仅 `GROUP` / `EXTERNAL_ENTERPRISE`；`EXTERNAL_API` 的命中提示应写明「直连供应商」）
+- 路由引擎仍按 `sai_model_config` 做「能不能用 / 等级够不够」的治理判定；
+  `AigRouteDecision` 保留说明（仅 `GROUP` / `EXTERNAL_ENTERPRISE`；
+  `EXTERNAL_API` 的命中提示写明「直连供应商」）
 - `AigInvokeVo` 下发 `invoker`：部署类型只说明「哪一类模型」，调用器才说明「走的哪条链路」
-- 建立「模型 ↔ Agent」精确映射属于**阶段 2**
+- 配置项 `aigov.snail-ai.agent-id` **已删除**（仓库内没有任何 yml 配过它）
 
 ### 其余待办
-- `snail-ai.app-id` 的实际取值与 `sai_app` 表的对应关系（阶段1 不阻塞）
+- `snail-ai.app-id` 的实际取值与 `sai_app` 表的对应关系（**C2**：把它变成校验——
+  配置的 app-id 必须能在 `sai_app` 里找到且 token 一致，而不是靠人肉比对）
