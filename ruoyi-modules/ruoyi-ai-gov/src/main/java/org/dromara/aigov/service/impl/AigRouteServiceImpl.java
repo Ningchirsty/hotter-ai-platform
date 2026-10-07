@@ -158,6 +158,18 @@ public class AigRouteServiceImpl implements IAigRouteService {
         }
         boolean allowExternal = YES.equalsIgnoreCase(policy.getAllowExternal());
         boolean fallbackToManual = YES.equalsIgnoreCase(policy.getFallbackToManual());
+        // 严格级数据（STRICT）硬约束：任何路由策略都不允许外发。
+        // 刻意放在这里而不是只靠 isCandidateUsable 的 allowExternal 判断——
+        // 外发禁令不该依赖某一行策略配置是否正确：策略写错也必须拦得住。
+        if (dataLevel.externalForbidden()) {
+            if (allowExternal) {
+                decision.addHit("数据等级=" + dataLevel.getCode()
+                    + " 为严格级：策略 allowExternal='Y' 被忽略，本次仅允许非外部部署模型");
+            } else {
+                decision.addHit("数据等级=" + dataLevel.getCode() + " 为严格级：禁止外发");
+            }
+            allowExternal = false;
+        }
         decision.addHit("命中路由策略 policyId=" + policy.getPolicyId()
             + "，数据等级=" + dataLevel.getCode()
             + "，preferredDeployment=" + StringUtils.blankToDefault(policy.getPreferredDeployment(), "-")

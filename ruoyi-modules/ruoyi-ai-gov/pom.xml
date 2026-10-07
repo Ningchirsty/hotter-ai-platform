@@ -94,6 +94,14 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- 单元测试：路由引擎的数据等级硬约束（STRICT 禁止外发）必须有测试钉住，
+             否则「策略配错也能拦得住」这条不变式只存在于注释里。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
     </dependencies>
 
 </project>
