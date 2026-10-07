@@ -91,7 +91,7 @@ class OpenAiImageInvokerTest {
     }
 
     @Test
-    @DisplayName("请求体：model/prompt/n/response_format 必备；size 只在调用方给了才带")
+    @DisplayName("请求体与实测可用的 curl 逐字段对齐：model/prompt/n/response_format=url；size 只在调用方给了才带")
     void buildImageBodyOmitsSizeUnlessProvided() {
         ModelInvokeRequest bare = new ModelInvokeRequest();
         bare.setModelKey("flux-2-pro");
@@ -101,8 +101,10 @@ class OpenAiImageInvokerTest {
         assertEquals("flux-2-pro", body.get("model"));
         assertEquals("一只橙色的猫", body.get("prompt"));
         assertEquals(1, body.get("n"));
-        assertEquals("b64_json", body.get("response_format"),
-            "优先要 base64：URL 会过期，且会把资产留在第三方");
+        assertEquals("url", body.get("response_format"),
+            "默认必须与网关实测可用的取值一致（url）。曾经默认 b64_json 的理由是「URL 会过期、"
+                + "资产留在第三方」，但那个理由不该用请求字段去解：网关不支持时会直接 400，"
+                + "本该出图的一次调用什么都拿不到。拿到 URL 后立刻下载同样解决资产问题");
         assertFalse(body.containsKey("size"),
             "不臆测默认尺寸——不同上游支持的可选尺寸不同，猜一个会把本可成功的请求判成 400");
 
@@ -112,6 +114,24 @@ class OpenAiImageInvokerTest {
         sized.setPayload(Map.of("size", " 1024x1024 "));
         assertEquals("1024x1024", invoker.buildImageBody(sized).get("size"),
             "调用方给了尺寸才带，且去过空白");
+    }
+
+    @Test
+    @DisplayName("response_format：调用方显式指定优先，非法值回落默认（不能让它以为填的生效了）")
+    void responseFormatFollowsCallerWhenValid() {
+        ModelInvokeRequest wantsB64 = new ModelInvokeRequest();
+        wantsB64.setModelKey("flux-2-pro");
+        wantsB64.setPrompt("x");
+        wantsB64.setPayload(Map.of("response_format", " b64_json "));
+        assertEquals("b64_json", invoker.buildImageBody(wantsB64).get("response_format"),
+            "调用方明确要 base64 时应尊重（该网关或许支持，只是默认不敢赌）");
+
+        ModelInvokeRequest bogus = new ModelInvokeRequest();
+        bogus.setModelKey("flux-2-pro");
+        bogus.setPrompt("x");
+        bogus.setPayload(Map.of("response_format", "webp"));
+        assertEquals("url", invoker.buildImageBody(bogus).get("response_format"),
+            "非法取值应回落到默认，而不是原样透传给上游换一个 400");
     }
 
     @Test

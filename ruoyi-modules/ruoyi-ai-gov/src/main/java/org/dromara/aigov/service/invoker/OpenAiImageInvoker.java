@@ -40,7 +40,9 @@ import java.util.Map;
  *
  * <p><b>产出怎么交付</b>：结果以 JSON 信封返回（含 base64、字节数、SHA-256、MIME），
  * 由<b>调用方</b>负责落盘到资产库——治理层不持有资产存储，也不该为此反向依赖业务模块。
- * 优先要 {@code b64_json}：URL 会过期，且会把资产留在第三方。</p>
+ * 上游给 {@code url} 还是 {@code b64_json} 都能收：给 URL 时<b>立刻下载成字节</b>，
+ * 因此资产不会留在第三方，URL 过期也不再影响我们（这也是默认用 {@code url}
+ * 请求字段却依然不留资产在外部的原因）。</p>
  *
  * <p>SPI 约定：不向外抛异常，失败一律转成 {@code ModelInvokeResult.failure}，
  * 并把 HTTP 状态码带上，让错误分类（{@code AigErrorClassEnum}）能据此决定
@@ -260,6 +262,12 @@ public class OpenAiImageInvoker implements ModelInvoker {
     /**
      * 组装请求体。
      *
+     * <p>字段与实测可用的请求逐一对齐（bluocto / New API 网关）：
+     * {@code {"model":"…","prompt":"…","n":1,"response_format":"url"}}。
+     * 其中 {@code response_format} 默认 {@code url} 而不是 {@code b64_json}——
+     * 理由见 {@link AigExternalApiProperties#getImageResponseFormat()}：
+     * 拿不到图比「资产留在第三方」严重得多，而拿到 URL 后立刻下载就同时解决了后者。</p>
+     *
      * <p>刻意<b>不</b>带默认 {@code size}：不同上游支持的可选尺寸集合不同，
      * 我们臆测一个默认值会把本可成功的请求判成 400。只有调用方明确给了才带上。</p>
      *
@@ -275,9 +283,33 @@ public class OpenAiImageInvoker implements ModelInvoker {
         if (size instanceof String sizeText && StringUtils.isNotBlank(sizeText)) {
             body.put("size", sizeText.trim());
         }
-        // 优先要 base64：URL 会过期，且会把资产留在第三方
-        body.put("response_format", "b64_json");
+        body.put("response_format", resolveResponseFormat(request));
         return body;
+    }
+
+    /**
+     * 解析 {@code response_format}：调用方显式指定优先，否则用配置值。
+     *
+     * <p>只接受 {@code url} 与 {@code b64_json} 两个已知取值；其它值原样透传也没有意义
+     * （上游只会 400），而静默改写成默认值会让人以为「我填的生效了」。因此非法值一律<b>回落默认</b>
+     * 并记一条 warn——这里不抛错是因为它属于调用参数问题，应由归类为 INVALID_REQUEST 的路径处理，
+     * 而当前方法没有那个上下文。</p>
+     *
+     * @param request 调用请求
+     * @return 生效的 response_format
+     */
+    private String resolveResponseFormat(ModelInvokeRequest request) {
+        Object fromPayload = request.getPayload() == null ? null : request.getPayload().get("response_format");
+        if (fromPayload instanceof String text && StringUtils.isNotBlank(text)) {
+            String value = text.trim();
+            if ("url".equalsIgnoreCase(value) || "b64_json".equalsIgnoreCase(value)) {
+                return value.toLowerCase();
+            }
+            log.warn("忽略无法识别的 response_format={}，回落到默认值 {}（只支持 url / b64_json）",
+                value, properties.getImageResponseFormat());
+        }
+        String configured = properties.getImageResponseFormat();
+        return StringUtils.isBlank(configured) ? "url" : configured.trim().toLowerCase();
     }
 
     /**
