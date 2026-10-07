@@ -63,6 +63,25 @@ public enum AigErrorClassEnum {
     AUTH_FAILED("AUTH_FAILED", "鉴权失败", false, false, true, true),
 
     /**
+     * 额度/余额不足：不重试、**转人工**、立即熔断该 Provider、值得换候选。
+     *
+     * <p><b>为什么不能并入 {@link #AUTH_FAILED}</b>：这是实测撞出来的。bluocto 账号余额为 0 时，
+     * 上游回的是 <b>403</b> + 「用户额度不足, 剩余额度: ＄0.000000」——与鉴权失败走同一个状态码。
+     * 两者确实都该熔断、都不该重试，但<b>要人做的事情完全不同</b>：
+     * 鉴权失败要换/修密钥，额度耗尽要充值或申请预算。
+     * 判成「鉴权失败」会把运维引向「是不是密钥不对」这条错路，
+     * 而真正的动作在财务侧——诊断方向错了，比没有诊断更费时间。</p>
+     *
+     * <p>与 {@link #AUTH_FAILED} 的唯一处置差别是 {@code needsHuman=true}：
+     * 额度是能被外部动作<b>恢复</b>的资源，恢复后任务重排即可继续，
+     * 因此让它落到「待人工处理」这个有人盯着的池子更合适。</p>
+     *
+     * <p>为什么仍然熔断：额度没恢复前，对同一家继续调用必然同样失败，
+     * 熔断只是把「已经确定的结果」提前，省掉无意义的往返与告警噪音。</p>
+     */
+    QUOTA_EXCEEDED("QUOTA_EXCEEDED", "额度或余额不足", false, true, true, true),
+
+    /**
      * 服务不可用/网络不通：可重试，达到上限后换下一个候选
      */
     UNAVAILABLE("UNAVAILABLE", "服务不可用", true, false, false, true),
@@ -144,6 +163,16 @@ public enum AigErrorClassEnum {
         }
         // 2. HTTP 状态码（直连类调用器拿得到）
         if (httpStatus != null) {
+            // 402 Payment Required 语义唯一，不必再看文案
+            if (httpStatus == 402) {
+                return QUOTA_EXCEEDED;
+            }
+            // 401/403/429 都可能是「额度/余额」，也可能是「密钥」或「限流」：
+            // 先看文案再按状态兜底。顺序很关键——把计费问题判成鉴权问题会让人去换密钥
+            // （真正的动作在财务侧），判成限流问题会让系统对着一件不可能成功的事退避重试。
+            if ((httpStatus == 401 || httpStatus == 403 || httpStatus == 429) && looksLikeQuota(message)) {
+                return QUOTA_EXCEEDED;
+            }
             if (httpStatus == 401 || httpStatus == 403) {
                 return AUTH_FAILED;
             }
@@ -165,11 +194,18 @@ public enum AigErrorClassEnum {
             return UNKNOWN;
         }
         String text = message.toLowerCase();
-        // 鉴权/密钥类：先判，因为「api key 无效」里也可能出现 400
+        // 额度/计费要先判：它常与 403/429 一起出现，而且「quota」这个词本身也常出现在限流文案里。
+        // 判错的代价不对称——把额度判成限流会无意义地重试（烧时间与告警噪音），
+        // 把限流判成额度只是少试几次并让人来看一眼。
+        if (isQuotaText(text)) {
+            return QUOTA_EXCEEDED;
+        }
+        // 鉴权/密钥类
         if (containsAny(text, "unauthorized", "forbidden", "invalid api key", "api key", "鉴权", "密钥", "未授权")) {
             return AUTH_FAILED;
         }
-        if (containsAny(text, "rate limit", "too many requests", "限流", "quota")) {
+        // 注意这里刻意不含 "quota"：它属于额度/计费，已在上面判掉
+        if (containsAny(text, "rate limit", "too many requests", "限流")) {
             return RATE_LIMITED;
         }
         if (containsAny(text, "timeout", "timed out", "超时")) {
@@ -182,6 +218,35 @@ public enum AigErrorClassEnum {
             return UNAVAILABLE;
         }
         return UNKNOWN;
+    }
+
+    /**
+     * 文本是否含「额度/计费」特征（大小写不敏感）。
+     *
+     * <p>关键词取自真实上游文案与主流网关的固定错误串：实测 bluocto 返回
+     * 「用户额度不足, 剩余额度: ＄0.000000」；OpenAI 系为
+     * {@code insufficient_quota} / 「You exceeded your current quota」；
+     * 另有 {@code payment required}、{@code credit balance} 等形态。</p>
+     *
+     * <p>刻意把 {@code quota} 也收进来：它在限流文案里偶有出现，但把额度误判成限流的代价
+     * （对着一件不可能成功的事退避重试）大于反过来（少试几次、让人来看一眼）。</p>
+     *
+     * @param message 错误文本（可为 null）
+     * @return 命中返回 true
+     */
+    private static boolean looksLikeQuota(String message) {
+        return message != null && !message.isBlank() && isQuotaText(message.toLowerCase());
+    }
+
+    /**
+     * 文本（已转小写）是否含额度/计费特征。
+     *
+     * @param text 已转小写的文本
+     * @return 命中返回 true
+     */
+    private static boolean isQuotaText(String text) {
+        return containsAny(text, "额度", "余额", "欠费", "配额", "quota", "insufficient", "balance",
+            "billing", "payment required", "no credit", "out of credit");
     }
 
     /**

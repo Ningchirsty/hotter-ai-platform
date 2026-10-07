@@ -382,10 +382,14 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
             audit.setManualDecision(AigManualDecisionEnum.PENDING.getCode());
         }
         if (errorClass.isCircuitBreak()) {
-            // 鉴权失败：继续调用只会把账号打到风控，因此立刻告警并建议熔断
-            log.error("Provider 鉴权失败，应立刻熔断该 Provider：traceId={}, capability={}, modelKey={}, reason={}",
-                audit.getTraceId(), audit.getCapabilityCode(), decision.getModelKey(), audit.getErrorSummary());
-            audit.getPolicyHits().add("熔断建议：鉴权失败，在密钥修正前不应继续调用该 Provider");
+            // 熔断不等于「鉴权失败」：额度/余额不足同样会熔断（继续调用必然同样失败）。
+            // 文案按分类拼，不写死——否则额度问题会被记成「鉴权失败」，
+            // 运维就会去找一把「更好的密钥」，而真正的动作在财务侧。
+            log.error("Provider 调用建议熔断：分类={}（{}）, traceId={}, capability={}, modelKey={}, reason={}",
+                errorClass.getCode(), errorClass.getDesc(), audit.getTraceId(), audit.getCapabilityCode(),
+                decision.getModelKey(), audit.getErrorSummary());
+            audit.getPolicyHits().add("熔断建议：" + errorClass.getDesc()
+                + "（" + errorClass.getCode() + "），处置完成前不应继续调用该 Provider");
         }
     }
 

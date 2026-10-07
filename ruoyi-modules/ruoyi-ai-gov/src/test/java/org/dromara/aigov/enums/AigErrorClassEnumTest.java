@@ -41,25 +41,27 @@ class AigErrorClassEnumTest {
     }
 
     @Test
-    @DisplayName("处置矩阵：转人工只有参数/Schema、权限外发、结果不可解析三类")
+    @DisplayName("处置矩阵：转人工只有参数/Schema、权限外发、结果不可解析三类 + 额度不足")
     void needsHumanSetIsExact() {
         List<AigErrorClassEnum> needsHuman = Arrays.stream(AigErrorClassEnum.values())
             .filter(AigErrorClassEnum::isNeedsHuman)
             .toList();
         assertEquals(
             List.of(AigErrorClassEnum.INVALID_REQUEST, AigErrorClassEnum.POLICY_DENIED,
-                AigErrorClassEnum.OUTPUT_UNPARSABLE),
+                AigErrorClassEnum.QUOTA_EXCEEDED, AigErrorClassEnum.OUTPUT_UNPARSABLE),
             needsHuman,
-            "应转人工的集合即设计 §13.3「不重试、转 NEED_HUMAN」的三种情形");
+            "应转人工的集合即设计 §13.3「不重试、转 NEED_HUMAN」的三种情形，"
+                + "外加额度不足——它要人去做充值/申请预算这个具体动作，"
+                + "而且处置完成后任务可以重排继续");
     }
 
     @Test
-    @DisplayName("只有鉴权失败会熔断：密钥错了继续调用只会把账号打到风控")
-    void onlyAuthFailureCircuitBreaks() {
+    @DisplayName("会熔断的两类：密钥错了继续调用只会把账号打到风控；额度没恢复前调用必然同样失败")
+    void circuitBreakingClassesAreExact() {
         List<AigErrorClassEnum> breaking = Arrays.stream(AigErrorClassEnum.values())
             .filter(AigErrorClassEnum::isCircuitBreak)
             .toList();
-        assertEquals(List.of(AigErrorClassEnum.AUTH_FAILED), breaking);
+        assertEquals(List.of(AigErrorClassEnum.AUTH_FAILED, AigErrorClassEnum.QUOTA_EXCEEDED), breaking);
     }
 
     @Test
@@ -68,6 +70,46 @@ class AigErrorClassEnumTest {
         Arrays.stream(AigErrorClassEnum.values()).forEach(item -> assertFalse(
             item.isRetryable() && item.isNeedsHuman(),
             item.getCode() + " 同时可重试又需转人工，重试与转人工会互相抵消"));
+    }
+
+    @Test
+    @DisplayName("额度不足与鉴权失败必须分开：两者都走 403、都该熔断，但要人做的事完全不同")
+    void quotaIsNotAuthFailure() {
+        // 真实文案（bluocto 余额为 0 时的原话）：状态码是 403，但原因在计费侧
+        assertEquals(AigErrorClassEnum.QUOTA_EXCEEDED, AigErrorClassEnum.classify(
+                null, 403, "外部图像 API 返回 HTTP 403：用户额度不足, 剩余额度: ＄0.000000"));
+        // 402 Payment Required 语义唯一，不看文案
+        assertEquals(AigErrorClassEnum.QUOTA_EXCEEDED, AigErrorClassEnum.classify(null, 402, null));
+        // 429 + 额度文案：也不能因为状态码是限流就判成限流（那会无意义地退避重试）
+        assertEquals(AigErrorClassEnum.QUOTA_EXCEEDED,
+            AigErrorClassEnum.classify(null, 429, "insufficient_quota"));
+        // 401 + 额度文案同理
+        assertEquals(AigErrorClassEnum.QUOTA_EXCEEDED,
+            AigErrorClassEnum.classify(null, 401, "You exceeded your current quota"));
+        // 拿不到状态码时的文本兜底
+        assertEquals(AigErrorClassEnum.QUOTA_EXCEEDED,
+            AigErrorClassEnum.classify(null, null, "余额不足，请充值"));
+        assertEquals(AigErrorClassEnum.QUOTA_EXCEEDED,
+            AigErrorClassEnum.classify(null, null, "credit balance too low"));
+        // 调用器直接上报分类最可靠
+        assertEquals(AigErrorClassEnum.QUOTA_EXCEEDED,
+            AigErrorClassEnum.classify("QUOTA_EXCEEDED", 403, "whatever"));
+
+        // 反向：真正的鉴权失败与限流不能被额度规则抢走
+        assertEquals(AigErrorClassEnum.AUTH_FAILED, AigErrorClassEnum.classify(null, 403, "invalid api key"));
+        assertEquals(AigErrorClassEnum.AUTH_FAILED, AigErrorClassEnum.classify(null, 401, "unauthorized"));
+        assertEquals(AigErrorClassEnum.RATE_LIMITED,
+            AigErrorClassEnum.classify(null, 429, "too many requests"));
+        assertEquals(AigErrorClassEnum.RATE_LIMITED,
+            AigErrorClassEnum.classify(null, null, "请求过于频繁，已被限流"));
+
+        // 处置差别只有一处，但正是它决定任务落到哪：额度要人充值 → 待人工处理
+        assertTrue(AigErrorClassEnum.QUOTA_EXCEEDED.isNeedsHuman(), "额度耗尽是等人充值，不是偶发失败");
+        assertFalse(AigErrorClassEnum.AUTH_FAILED.isNeedsHuman(), "鉴权失败的既定口径保持不变，不在本次改动范围内");
+        assertFalse(AigErrorClassEnum.QUOTA_EXCEEDED.isRetryable(), "充值前重试必然同样失败");
+        assertTrue(AigErrorClassEnum.QUOTA_EXCEEDED.isCircuitBreak());
+        assertTrue(AigErrorClassEnum.QUOTA_EXCEEDED.isWorthFallback(),
+            "这一家没额度了，换一家往往立刻可用——正是 fallback 存在的意义");
     }
 
     @Test
