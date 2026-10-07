@@ -66,44 +66,39 @@ SELECT 'bluocto 聚合网关', 'bluocto',
 -- ============================================================================
 -- A 段：登记模型（一把 Key 通多种模型 → 每个要用的 model_key 一行）
 --
--- ⚠ 下面的列表**默认是空的**（WHERE 1 = 0），不会插入任何模型，因为编造 model_key
---   会让上游报「model not found」，那种失败最难查。
---   请把实际可用的模型标识填进来，或等 Key 到位后由我调 /v1/models 枚举生成。
+-- 清单来自实测 GET /v1/models（2026-10-07），**只登记网关明确声明了
+-- image-generation 端点的 7 个模型**。
 --
--- ⚠ 所有行都是 model_type='CHAT'：OpenAiCompatibleInvoker 只对接 /chat/completions，
---   embedding / rerank / 语音走的是别的端点，不能混用（代码会直接拒绝非 CHAT）。
---   **带视觉能力的多模态模型在这里同样是 CHAT**——「能不能看图」不是这一列表达的。
+-- ⚠ model_type 必须是 'IMAGE'：图像生成走 /v1/images/generations，与对话模型的
+--   /chat/completions 是两个端点。派发按 (部署类型, 模型类型) 双维度进行，
+--   写成 'CHAT' 会被派给对话调用器并直接失败（OpenAiCompatibleInvoker 拒绝非 CHAT）。
+--
+-- 刻意**不登记**下面这些（各有原因，不是遗漏）：
+--   · seedream-5-0-lite / seedream-5-0-pro：网关只声明了 'openai'，**没有**声明
+--     image-generation。名字像图像模型，但没有证据说明它走 /images/generations；
+--     登记成 IMAGE 后一旦上游不认，错会推迟到运行期才暴露。
+--     要接请先手动试一次该端点，确认支持后再照下面的写法补两行。
+--   · happyhorse-1.1-i2v / -r2v / -t2v：owned_by=task plugin，是**异步任务**型
+--     （图生视频 / 参考生视频 / 文生视频）。它们需要「提交任务 + 轮询或回调」，
+--     属 WP2 的 ai_task 范畴，不是本适配器能对接的形态。
+--
+-- 注：/v1/models 只返回**该 token 可用**的模型；若分组里本该有对话模型却没出现，
+--     那是网关侧分组/渠道问题，不是本脚本的问题。
 -- ============================================================================
 INSERT INTO sai_model_config
 (provider_id, model_name, model_key, model_type, adapter_key, description,
  api_key, api_endpoint, config_json, owner_id, scope, is_default, is_enabled, created_dt, updated_dt)
-SELECT p.id, m.model_name, m.model_key, 'CHAT', 'openai-compatible', m.description,
-       NULL, 'https://bluocto.com/v1', NULL, NULL, 'GLOBAL', 0, m.is_enabled, NOW(), NOW()
+SELECT p.id, m.model_name, m.model_key, 'IMAGE', 'openai-compatible', m.description,
+       NULL, 'https://bluocto.com/v1', NULL, NULL, 'GLOBAL', 0, 1, NOW(), NOW()
   FROM sai_model_provider p
   JOIN (
-        SELECT 'REPLACE_ME' AS model_key, '待填：模型显示名' AS model_name,
-               '待填：用途说明' AS description, 1 AS is_enabled
-         WHERE 1 = 0
-        -- ⚠ 实测（2026-10-07，GET /v1/models）：bluocto 只返回 12 个模型，
-        --   **全部是图像/视频「生成」模型，没有任何文本/对话模型**。因此：
-        --   1) 外层 INSERT 写死 model_type='CHAT' 只适用于对话模型；本网关的模型应为
-        --      'IMAGE'（/v1/images/generations）或走异步任务（视频）。在 IMAGE 适配器
-        --      落地前**不要启用下面任何一行**——登记成 CHAT 会被调用器直接拒绝。
-        --   2) 真实清单（model_key 即下行 id；endpoints 为网关声明）：
-        --      flux-2-pro              image-generation | openai
-        --      gpt-image-2.5-flare     image-generation | openai
-        --      gpt-image-2.5-sunburst  image-generation | openai
-        --      qwen-image-3.0          image-generation | openai
-        --      qwen-image-3.0-pro      image-generation | openai
-        --      wan2.7-image            image-generation | openai
-        --      wan2.7-image-pro        image-generation | openai
-        --      seedream-5-0-lite       openai
-        --      seedream-5-0-pro        openai
-        --      happyhorse-1.1-i2v      openai（owned_by=task plugin，疑为异步任务）
-        --      happyhorse-1.1-r2v      openai（同上）
-        --      happyhorse-1.1-t2v      openai（同上）
-        --   3) 注：/v1/models 只返回**该 token 可用**的模型。若你的令牌分组里本该有
-        --      对话模型却没出现，那是分组/渠道问题，不是本脚本的问题。
+        SELECT 'flux-2-pro' AS model_key, 'FLUX 2 Pro' AS model_name, '图像生成（通用）' AS description
+        UNION ALL SELECT 'gpt-image-2.5-flare',    'GPT Image 2.5 Flare',    '图像生成（OpenAI 系）'
+        UNION ALL SELECT 'gpt-image-2.5-sunburst', 'GPT Image 2.5 Sunburst', '图像生成（OpenAI 系，风格变体）'
+        UNION ALL SELECT 'qwen-image-3.0',         'Qwen Image 3.0',         '图像生成（对中文提示词友好）'
+        UNION ALL SELECT 'qwen-image-3.0-pro',     'Qwen Image 3.0 Pro',     '图像生成（中文友好，质量更高）'
+        UNION ALL SELECT 'wan2.7-image',           'Wan 2.7 Image',          '图像生成（通义万相）'
+        UNION ALL SELECT 'wan2.7-image-pro',       'Wan 2.7 Image Pro',      '图像生成（通义万相，质量更高）'
        ) m
  WHERE p.provider_key = 'bluocto'
    AND NOT EXISTS (SELECT 1 FROM (SELECT provider_id, model_key FROM sai_model_config) c
@@ -142,73 +137,89 @@ SELECT 1764100000000000000 + c.id, c.id, 'EXTERNAL_API', 'INTERNAL', 'GRAY', NUL
  WHERE p.provider_key = 'bluocto';
 
 -- ============================================================================
--- B 段（默认整段注释，需你确认后手动启用）
+-- A 段：登记能力 image_generation（设计文档 §4.1 的 IMAGE 类型落点）
 --
--- 这一段才会让数据真的出去。启用前请逐条读：
+--   required_tags='IMAGE'：与 aig_capability 的标签口径一致（TEXT/VISION/OCR/IMAGE/
+--     VIDEO/EMBEDDING/RERANK/AGENT）。注意该列目前**只登记、不参与模型匹配**——
+--     把文本模型绑到 IMAGE 能力上系统不会报错（已知隐患，见方案 WP1 待办）。
+--     本脚本靠「只给这 7 个图像模型建绑定」来避免踩它，而不是靠代码拦。
 --
--- B1 绑定模型到能力：用 usage_type='GRAY'
---      排序口径是 PRIMARY → GRAY → FALLBACK，所以 GRAY **不会挤掉** 已有的本地
---      PRIMARY 模型，而是「本地不行时再走外部」——与这些能力的 data_policy
---      LOCAL_FIRST 一致。
---      ⚠ 视觉能力（required_tags='VISION'，如 visual_dna_extract /
---        deliverable_consistency）**绝不可以绑文本模型**。治理数据里没有
---        「模型是否支持视觉」这一列，代码也不会替你拦（required_tags 目前只登记、
---        未与模型能力标签做匹配），绑错了会得到一份「没看过图」的结论却以模型
---        产出的样子出现。绑视觉能力前请先确认该 model_key 真的支持图片输入。
---
--- B2 放宽路由策略：把 allow_external 从 'N' 改成 'Y'
---      只对 PUBLIC / INTERNAL 放宽；RESTRICTED 与 STRICT **永不**放宽
---      （STRICT 即便误写成 'Y'，路由层也会强制覆盖为不允许）。
---      preferred_deployment 留 NULL：该列目前不参与过滤（只写入策略命中说明），
---      填了会让人误以为在生效。
---
--- ⚠⚠ 重大修正（2026-10-07 实测）：**「绑文本能力」这个方向对 bluocto 不成立。**
---   该网关 /v1/models 只返回 12 个模型，全部是图像/视频**生成**模型，没有对话模型：
---     · creative_direction_draft / creative_storyboard_draft（文本）→ **无法绑定**。
---       不是「暂时不绑」，是网关没有可用对话模型；要接文本得让网关侧换一个含对话
---       模型的令牌分组（/v1/models 只返回该 token 可用的模型）。
---     · visual_dna_extract / deliverable_consistency（**看图理解**）→ 同样**无法用**：
---       这里的模型是「能画图」，不是「能看图」。别把生成能力当理解能力。
---   正确落点是设计文档 §4.1 的 **IMAGE 类型 Provider**（本仓 IMAGE 目前只有 ComfyUI
---   一条路）。但需先有对接 /v1/images/generations 的调用器，且有两个前置约束：
---     · 现状 OpenAiCompatibleInvoker 只对接 /chat/completions，并**明确拒绝非 CHAT**
---       类型（代码里 !"CHAT".equals(modelType) 直接返回失败）——用它接图像模型必失败；
---     · 它认领了整个 EXTERNAL_API 部署类型；再写一个同样认领 EXTERNAL_API 的调用器
---       会破坏「每种部署类型只有一个调用器认领」的不变式，挑选将取决于 Bean 装配顺序。
---       解法是 WP1 的 ProviderType/Adapter SPI：**按模型类型分派，而不是按部署类型**。
---   在 IMAGE 适配器落地前，本段保持注释，**不要启用**。
--- ----------------------------------------------------------------------------
--- -- B1（待 IMAGE 适配器就绪后再启用；把能力编码换成本仓真实存在的图像能力）
--- INSERT IGNORE INTO aig_capability_model
--- (bind_id, capability_code, model_id, usage_type, priority, status, del_flag,
---  create_dept, create_by, create_time, remark)
--- SELECT 1764200000000000000 + c.id, 'REPLACE_WITH_IMAGE_CAPABILITY', c.id, 'GRAY', 500, '0', '0',
---        1761000000000000103, 1761100000000000001, NOW(),
---        'bluocto 聚合网关：图像生成的外部备选（本地 ComfyUI 排队/不可用时）'
---   FROM sai_model_config c
---   JOIN sai_model_provider p ON p.id = c.provider_id
---  WHERE p.provider_key = 'bluocto';
---
--- -- B2：只对 PUBLIC / INTERNAL 放宽外发（RESTRICTED/STRICT 不动）
--- UPDATE aig_route_policy
---    SET allow_external = 'Y', preferred_deployment = NULL,
---        update_by = 1761100000000000001, update_time = NOW(),
---        remark = CONCAT(IFNULL(remark, ''), ' | 已允许外发至 bluocto（仅 PUBLIC/INTERNAL）')
---  WHERE capability_code IN ('creative_direction_draft', 'creative_storyboard_draft')
---    AND data_level IN ('PUBLIC', 'INTERNAL')
---    AND del_flag = '0';
---
--- -- B3：（仅当确认该 model_key 支持图片输入后才执行）
--- -- INSERT IGNORE INTO aig_capability_model
--- -- (bind_id, capability_code, model_id, usage_type, priority, status, del_flag,
--- --  create_dept, create_by, create_time, remark)
--- -- SELECT 1764200000000000000 + c.id, 'visual_dna_extract', c.id, 'GRAY', 500, '0', '0',
--- --        1761000000000000103, 1761100000000000001, NOW(),
--- --        'bluocto：视觉模型，需人工确认支持图片输入'
--- --   FROM sai_model_config c
--- --   JOIN sai_model_provider p ON p.id = c.provider_id
--- --  WHERE p.provider_key = 'bluocto' AND c.model_key = 'REPLACE_ME_vision_model';
+--   output_schema 与适配器返回的 JSON 信封对齐（mimeType/sizeBytes/sha256/b64）：
+--     写具体字段，输出校验才真正生效；留空只会退化成「是合法 JSON 就行」。
 -- ============================================================================
+INSERT INTO aig_capability
+(capability_id, capability_code, capability_name, biz_goal, required_tags, input_schema, output_schema,
+ data_policy, human_confirm_points, quality_threshold, audit_level, status, del_flag,
+ create_dept, create_by, create_time, remark)
+SELECT 1764000000000000050, 'image_generation', '图像生成（外部聚合网关）',
+       '按提示词生成电商/宣传用图；作为本地 ComfyUI 之外的第二条出图通路',
+       'IMAGE',
+       '{"fields":[{"name":"prompt","type":"string"},{"name":"size","type":"string","optional":true,"note":"可选；不传则用上游默认尺寸"}]}',
+       '{"fields":[{"name":"mimeType","type":"string"},{"name":"sizeBytes","type":"number"},{"name":"sha256","type":"string"},{"name":"b64","type":"string"}],"note":"调用器返回的 JSON 信封；治理层不持有资产存储，由调用方据此落盘"}',
+       'LOCAL_FIRST',
+       '生成的图必须先落候选、由人选定后才进入正式资产；自动质检只筛除不放行',
+       '输出必须是合法 JSON 且含 mimeType/sizeBytes/sha256/b64；单图不得超过 aigov.external-api.image-max-bytes；超限或缺失一律判失败，不静默截断',
+       'SUMMARY', '0', '0', 1761000000000000103, 1761100000000000001, NOW(),
+       'bluocto 接入：能力编码 image_generation，对接 OpenAiImageInvoker（/images/generations）'
+  WHERE NOT EXISTS (SELECT 1 FROM (SELECT capability_code FROM aig_capability) t
+                     WHERE t.capability_code = 'image_generation');
+
+-- ============================================================================
+-- B 段：绑定与路由策略（**本段默认启用** —— 图像通路是本次接入的既定目标）
+--
+-- 【仍然做不到的两类能力，别再试】（2026-10-07 实测）
+--   · 文本能力（creative_direction_draft / creative_storyboard_draft）：
+--     网关 /v1/models 里**没有任何对话模型**。不是「暂时不绑」，是无模型可绑；
+--     要接文本需让网关侧换一个含对话模型的令牌分组。
+--   · 视觉理解能力（visual_dna_extract / deliverable_consistency）：
+--     这里的模型是**能画图**，不是**能看图**。别把生成能力当理解能力用。
+--
+-- 【本段在做什么】
+--   B1 绑定：只把 qwen-image-3.0-pro 绑到 image_generation，usage_type='FALLBACK'。
+--      · 为什么只绑一个：其余 6 个已登记为可用模型，但一次性全绑会让「路由选谁」
+--        看不出依据（同 usage_type 下只能靠 priority 排序，那是编出来的偏好）。
+--        需要时加一行绑定即可，模型行不必重来。
+--      · 为什么是 FALLBACK 而不是 PRIMARY：本地 ComfyUI 才是主通路，外部是备选。
+--        目前 ComfyUI 还**没有**在治理层登记为 provider，所以本绑定是唯一候选、
+--        照样会被选中（排序 PRIMARY→GRAY→FALLBACK 后取第一个可用）；
+--        将来把 ComfyUI 登记成 PRIMARY 时，顺序天然就对了，无需再改这一行。
+--      · 为什么选 qwen-image-3.0-pro：本项目是中文电商详情页，中文提示词友好度优先。
+--        这是**可改的默认值**，不是结论。
+--   B2 路由策略：image_generation × PUBLIC/INTERNAL 允许外发；RESTRICTED 不允许。
+--      · RESTRICTED 其实还有第二道保险：这些模型的治理属性是 data_level_max='INTERNAL'，
+--        等级比较在**代码层**就会把它们排除，不依赖策略行写对。这里显式写 'N' 是为了
+--        让「不允许」在数据里也可见，而不是只藏在另一张表里。
+--      · STRICT 不必写策略行：无策略即默认拒绝，且 STRICT 会被强制禁外发。
+--      · preferred_deployment 留 NULL：该列目前不参与过滤（只写入策略命中说明），
+--        填了会让人误以为在生效。
+-- ============================================================================
+
+-- B1：绑定图像模型（FALLBACK，不挤掉将来登记的本地主通路）
+INSERT IGNORE INTO aig_capability_model
+(bind_id, capability_code, model_id, usage_type, priority, status, del_flag,
+ create_dept, create_by, create_time, remark)
+SELECT 1764200000000000000 + c.id, 'image_generation', c.id, 'FALLBACK', 500, '0', '0',
+       1761000000000000103, 1761100000000000001, NOW(),
+       'bluocto 聚合网关：图像生成的外部备选（默认只绑 qwen-image-3.0-pro，可加行扩展）'
+  FROM sai_model_config c
+  JOIN sai_model_provider p ON p.id = c.provider_id
+ WHERE p.provider_key = 'bluocto' AND c.model_key = 'qwen-image-3.0-pro';
+
+-- B2：image_generation 的 PUBLIC / INTERNAL 允许外发，RESTRICTED 显式禁止
+INSERT IGNORE INTO aig_route_policy
+(policy_id, capability_code, data_level, preferred_deployment, allow_external, require_approval,
+ fallback_to_manual, status, del_flag, create_dept, create_by, create_time, remark)
+SELECT 1764300000000000000
+         + CASE lv.level WHEN 'PUBLIC' THEN 1 WHEN 'INTERNAL' THEN 2 ELSE 3 END AS policy_id,
+       'image_generation', lv.level, NULL,
+       CASE lv.level WHEN 'RESTRICTED' THEN 'N' ELSE 'Y' END, 'N', 'Y', '0', '0',
+       1761000000000000103, 1761100000000000001, NOW(),
+       CASE lv.level WHEN 'RESTRICTED'
+            THEN 'bluocto 接入：限制级数据禁止外发（另受 data_level_max=INTERNAL 的代码级保险）'
+            ELSE 'bluocto 接入：允许外发到外部图像网关' END
+  FROM (SELECT 'PUBLIC' AS level UNION ALL SELECT 'INTERNAL' UNION ALL SELECT 'RESTRICTED') lv
+ WHERE NOT EXISTS (SELECT 1 FROM (SELECT capability_code, data_level FROM aig_route_policy) r
+                    WHERE r.capability_code = 'image_generation' AND r.data_level = lv.level);
 
 -- ============================================================================
 -- 核对
@@ -231,17 +242,30 @@ SELECT g.governance_id, c.model_key, g.deployment_type, g.data_level_max,
  WHERE p.provider_key = 'bluocto'
  ORDER BY c.id;
 
--- 3) 绑定与策略现状（默认应全部为空/仍为 N —— 证明 A 段不产生任何外发路径）
-SELECT c.model_key, b.capability_code, b.usage_type, b.priority
+-- 3) 能力登记（应看到 image_generation / required_tags=IMAGE / data_policy=LOCAL_FIRST）
+SELECT capability_code, capability_name, required_tags, data_policy, status
+  FROM aig_capability
+ WHERE capability_code = 'image_generation';
+
+-- 4) 绑定（应只有一条：qwen-image-3.0-pro → image_generation，usage_type=FALLBACK）
+SELECT c.model_key, c.model_type, b.capability_code, b.usage_type, b.priority
   FROM aig_capability_model b
   JOIN sai_model_config c ON c.id = b.model_id
   JOIN sai_model_provider p ON p.id = c.provider_id
  WHERE p.provider_key = 'bluocto';
 
+-- 5) 路由策略（image_generation：PUBLIC/INTERNAL=Y，RESTRICTED 必须为 N）
 SELECT capability_code, data_level, preferred_deployment, allow_external, fallback_to_manual
   FROM aig_route_policy
- WHERE capability_code IN ('creative_direction_draft', 'creative_storyboard_draft',
-                           'visual_dna_extract', 'deliverable_consistency')
- ORDER BY capability_code, data_level;
+ WHERE capability_code = 'image_generation'
+ ORDER BY data_level;
+
+-- 6) 端到端可用性自检（干跑：只做路由决策，不真调模型）
+--    期望：decision=MODEL、modelKey=qwen-image-3.0-pro、invoker=OpenAiImageInvoker。
+--    用接口验更真实：POST /aigov/invoke/dryRun
+--      {"capabilityCode":"image_generation","dataLevel":"INTERNAL"}
+--    dryRun 不产生审计记录，可以随便跑；真实调用（POST /aigov/invoke/image_generation）
+--    需要 sai_model_config.api_key 已录入，否则上游会返回 401 → 记为鉴权失败并建议熔断
+--    （这是正确行为：没有凭据就该明确失败，而不是伪装成成功）。
 
 SELECT 'AIG_PROVIDER_BLUOCTO_DONE' AS marker;
