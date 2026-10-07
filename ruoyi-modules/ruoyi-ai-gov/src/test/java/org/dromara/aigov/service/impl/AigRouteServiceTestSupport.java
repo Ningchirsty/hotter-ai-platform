@@ -101,6 +101,20 @@ abstract class AigRouteServiceTestSupport {
     }
 
     /**
+     * 用指定的调用器列表重建路由服务。
+     *
+     * <p>默认装置刻意留空调用器列表（多数用例只关心「候选模型是否被排除」）。
+     * 要验证<b>派发</b>逻辑的用例（按部署类型 + 模型类型挑调用器）必须显式注入调用器，
+     * 否则挑不出东西、断言会退化成「null == null」。</p>
+     *
+     * @param invokers 调用器列表
+     */
+    protected void useInvokers(List<ModelInvoker> invokers) {
+        routeService = new AigRouteServiceImpl(capabilityMapper, routePolicyMapper, capabilityModelMapper,
+            modelGovernanceMapper, modelViewMapper, invokers);
+    }
+
+    /**
      * 桩：能力存在且启用。
      */
     protected void stubCapability() {

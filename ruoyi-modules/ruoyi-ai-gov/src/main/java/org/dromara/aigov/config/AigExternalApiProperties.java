@@ -50,4 +50,23 @@ public class AigExternalApiProperties {
      */
     private boolean jsonResponseFormat = false;
 
+    /**
+     * 图像生成单次调用超时（毫秒）。
+     *
+     * <p><b>为什么与 {@link #timeoutMs} 分开</b>：对话补全通常几秒返回，而图像生成
+     * 常要几十秒到几分钟（尤其高分辨率/多模型排队）。若共用 60 秒的对话超时，
+     * 图像任务会在正常出图前就被判超时——表现是「偶尔成功、多数超时」，
+     * 而其根因只是预算给错了地方。</p>
+     */
+    private long imageTimeoutMs = 180000L;
+
+    /**
+     * 图像结果的最大字节数（默认 8MB）。
+     *
+     * <p>图像会以 base64 内联在返回结果里交给调用方落盘，因此必须设上限：
+     * 单个响应体过大既会撑爆内存，也会让审计与日志链路变成事故现场。
+     * 超限一律显式失败并报出实际大小，<b>不静默截断</b>（截断后的图会被当成正常产物）。</p>
+     */
+    private long imageMaxBytes = 8L * 1024 * 1024;
+
 }

@@ -110,13 +110,16 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
             }
             // 6. 决策为 MODEL → 选调用器执行
             AigDeploymentTypeEnum deployment = AigDeploymentTypeEnum.find(decision.getDeploymentType());
-            ModelInvoker invoker = resolveInvoker(decision.getInvoker(), deployment);
+            // 先取模型主数据：派发需要它的 model_type（同一个 EXTERNAL_API 下
+            // 对话模型与图像模型是两个不同的调用器，只看部署类型会派错）
+            AigModelVo model = modelViewMapper.selectModelById(decision.getModelId());
+            ModelInvoker invoker = resolveInvoker(decision.getInvoker(), deployment,
+                model == null ? null : model.getModelType());
             if (invoker == null) {
                 audit.setResult(AigInvokeResultEnum.FAILED.getCode());
                 audit.setErrorSummary("无可用调用器");
                 return toVo(traceId, decision, null, "路由命中模型但无可用调用器（invoker）");
             }
-            AigModelVo model = modelViewMapper.selectModelById(decision.getModelId());
             ModelInvokeRequest request = buildRequest(bo, decision, deployment, model);
             // 6.1 按错误分类决定是否退避重试：只对可重试类（限流/超时/不可用）生效
             long startedAt = System.currentTimeMillis();
@@ -332,19 +335,24 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
     }
 
     /**
-     * 挑选调用器：优先按决策记录的 invoker 名称匹配，其次按部署类型匹配。
+     * 挑选调用器：优先按决策记录的 invoker 名称匹配，其次按「部署类型 + 模型类型」匹配。
+     *
+     * <p>必须带 {@code modelType}：同一个 {@code EXTERNAL_API} 下对话模型与图像模型
+     * 属于两个不同调用器，只按部署类型兜底会派错（或被无谓地抢走）。</p>
      *
      * @param invokerName 决策记录的调用器名称（可为 null）
      * @param deployment  部署类型
+     * @param modelType   模型类型（{@code sai_model_config.model_type}，可为空）
      * @return 可用调用器，找不到返回 null
      */
-    private ModelInvoker resolveInvoker(String invokerName, AigDeploymentTypeEnum deployment) {
+    private ModelInvoker resolveInvoker(String invokerName, AigDeploymentTypeEnum deployment, String modelType) {
         if (invokers == null || deployment == null) {
             return null;
         }
         ModelInvoker fallback = null;
         for (ModelInvoker invoker : invokers) {
-            if (!invoker.supports(deployment) || !invoker.available()) {
+            if (!invoker.supports(deployment) || !invoker.available()
+                || !invoker.supportsModelType(modelType)) {
                 continue;
             }
             if (StringUtils.isNotBlank(invokerName) && invokerName.equals(invoker.invokerName())) {

@@ -2,6 +2,7 @@ package org.dromara.aigov.service.invoker;
 
 import org.dromara.aigov.enums.AigDeploymentTypeEnum;
 import org.dromara.aigov.enums.AigErrorClassEnum;
+import org.dromara.aigov.enums.AigProviderTypeEnum;
 
 /**
  * 模型调用 SPI。
@@ -93,6 +94,43 @@ public interface ModelInvoker {
             return AigErrorClassEnum.UNKNOWN;
         }
         return AigErrorClassEnum.classify(result.getErrorCode(), result.getHttpStatus(), result.getErrorSummary());
+    }
+
+    /**
+     * 声明本调用器认领哪些 <b>模型类型</b>（{@code sai_model_config.model_type}）。
+     *
+     * <p><b>为什么需要它</b>：{@link #supports(AigDeploymentTypeEnum)} 只按部署类型认领，
+     * 而每种部署类型只能有一个认领者。外部聚合网关打破了这条前提——同一个
+     * {@code EXTERNAL_API} 下既有对话模型（{@code /v1/chat/completions}）又有图像模型
+     * （{@code /v1/images/generations}），端点与请求体都不同。若再写一个也认领
+     * {@code EXTERNAL_API} 的调用器，挑选结果就取决于 Spring Bean 装配顺序了。</p>
+     *
+     * <p>加上这一维后，不变式放宽为「每种 <b>(部署类型, 模型类型)</b> 只有一个认领者」，
+     * 既仍确定，又能容纳同一网关下的多种能力。</p>
+     *
+     * <p><b>默认实现返回 true（全部放行）</b>，以保证既有调用器一行不改仍然工作；
+     * 需要区分的调用器（对话 vs 图像）必须显式覆写。注意默认放行意味着
+     * 「多个调用器都可能认领同一种模型类型」，因此<b>凡是要与其它调用器共处同一部署类型的
+     * 新调用器，都必须覆写本方法</b>，否则不确定性会重新出现。</p>
+     *
+     * @param modelType 模型类型（可为空；调用器需自行决定空值是否放行）
+     * @return 是否认领
+     */
+    default boolean supportsModelType(String modelType) {
+        return true;
+    }
+
+    /**
+     * Provider 能力类型（用于决策说明与排障展示，不参与派发）。
+     *
+     * <p>派发依据是 {@link #supportsModelType(String)}——它对应数据库里真实存在的
+     * {@code model_type} 列；本方法只是给人看的一句话标签，默认 {@code UNKNOWN}
+     * 表示「该调用器未声明」，不影响任何行为。</p>
+     *
+     * @return Provider 类型
+     */
+    default AigProviderTypeEnum providerType() {
+        return AigProviderTypeEnum.UNKNOWN;
     }
 
 }

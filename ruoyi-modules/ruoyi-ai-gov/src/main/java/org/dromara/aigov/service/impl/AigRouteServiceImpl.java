@@ -12,6 +12,7 @@ import org.dromara.aigov.domain.vo.AigRouteDecision;
 import org.dromara.aigov.enums.AigDataLevelEnum;
 import org.dromara.aigov.enums.AigDeploymentTypeEnum;
 import org.dromara.aigov.enums.AigLifecycleStatusEnum;
+import org.dromara.aigov.enums.AigProviderTypeEnum;
 import org.dromara.aigov.enums.AigRouteDecisionEnum;
 import org.dromara.aigov.enums.AigUsageTypeEnum;
 import org.dromara.aigov.mapper.AigCapabilityMapper;
@@ -221,15 +222,26 @@ public class AigRouteServiceImpl implements IAigRouteService {
             decision.setReason("命中模型 " + model.getModelKey() + "（" + deployment.getDesc() + "）");
             decision.addHit("选中模型：modelId=" + binding.getModelId()
                 + "，modelKey=" + model.getModelKey()
+                + "，modelType=" + StringUtils.blankToDefault(model.getModelType(), "-")
                 + "，usageType=" + binding.getUsageType()
                 + "，priority=" + binding.getPriority()
                 + "，deploymentType=" + deployment.getCode()
                 + "，dataLevelMax=" + governance.getDataLevelMax());
-            ModelInvoker invoker = resolveInvoker(deployment, capabilityCode);
+            // 派发按「部署类型 + 模型类型」双维度：同一个 EXTERNAL_API 下可能既有对话模型
+            // （/chat/completions）又有图像模型（/images/generations），只看部署类型会派错。
+            ModelInvoker invoker = resolveInvoker(deployment, capabilityCode, model.getModelType());
             if (invoker == null) {
-                decision.addHit("未找到支持 " + deployment.getCode() + " 且可用的调用器（invoker）");
+                decision.addHit("未找到同时支持部署类型 " + deployment.getCode() + " 与模型类型 "
+                    + StringUtils.blankToDefault(model.getModelType(), "(空)") + " 的可用调用器（invoker）");
             } else {
                 decision.setInvoker(invoker.invokerName());
+                // providerType 是可覆写的 SPI 方法，覆写有缺陷时可能返回 null；
+                // 若在这里直接 .getCode() 会 NPE，而 decide() 会把异常收敛成 DENIED——
+                // 表现是「候选模型明明可用却整条路由被拒」，最难查。故显式兜底。
+                AigProviderTypeEnum providerType = invoker.providerType();
+                decision.addHit("调用器=" + invoker.invokerName()
+                    + "，Provider类型=" + (providerType == null
+                    ? AigProviderTypeEnum.UNKNOWN.getCode() : providerType.getCode()));
                 if (deployment == AigDeploymentTypeEnum.EXTERNAL_API) {
                     // EXTERNAL_API 由治理层直连供应商端点：登记了什么就用什么，
                     // 不存在「实际模型由别人决定」这回事，提示必须说清楚。
@@ -442,24 +454,35 @@ public class AigRouteServiceImpl implements IAigRouteService {
      * 只能取「列表里第一个可用的」，结果取决于 Spring Bean 装配顺序——不确定，
      * 会出现「资料解析被派给了人才匹配的调用器」这类错配。</p>
      *
+     * <p>为什么还要看 <b>模型类型</b>：同一个 {@code EXTERNAL_API} 下可能既有对话模型
+     * （{@code /chat/completions}）又有图像模型（{@code /images/generations}）——
+     * 端点和请求体都不同。只看部署类型会让二者互相抢，而「模型类型」是数据库里
+     * 真实存在的 {@code sai_model_config.model_type}，据此派发既确定又准确。</p>
+     *
+     * <p><b>刻意没有「忽略模型类型」的第三段兜底</b>：那样会让图像调用器抓到对话模型。
+     * 模型类型不匹配时如实返回 {@code null}，由调用方给出「无可用调用器」的明确失败。</p>
+     *
      * @param deployment     部署类型
      * @param capabilityCode 业务能力编码
+     * @param modelType      模型类型（{@code sai_model_config.model_type}，可为空）
      * @return 可用调用器，找不到返回 null
      */
-    private ModelInvoker resolveInvoker(AigDeploymentTypeEnum deployment, String capabilityCode) {
+    private ModelInvoker resolveInvoker(AigDeploymentTypeEnum deployment, String capabilityCode, String modelType) {
         if (invokers == null) {
             return null;
         }
-        // 第一段：声明处理该能力的调用器优先
+        // 第一段：声明处理该能力 且 认领该模型类型的调用器优先
         for (ModelInvoker invoker : invokers) {
             if (invoker.supports(deployment) && invoker.available()
-                && invoker.supportsCapability(capabilityCode)) {
+                && invoker.supportsCapability(capabilityCode)
+                && invoker.supportsModelType(modelType)) {
                 return invoker;
             }
         }
-        // 第二段：兜底——只按部署类型匹配（保持既有行为，snail-ai 等通用调用器走这里）
+        // 第二段：兜底——只按部署类型 + 模型类型匹配（snail-ai 等通用调用器走这里）
         for (ModelInvoker invoker : invokers) {
-            if (invoker.supports(deployment) && invoker.available()) {
+            if (invoker.supports(deployment) && invoker.available()
+                && invoker.supportsModelType(modelType)) {
                 return invoker;
             }
         }
