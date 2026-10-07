@@ -44,6 +44,8 @@ import java.util.List;
  * @param knowledgeScope  知识范围
  * @param upgradePolicy   升级策略
  * @param rollbackPolicy  回滚策略
+ * @param agents          声明的 Agent 清单（安装时据此建 aig_agent + 版本）
+ * @param skills          声明的 Skill 清单（安装时据此建 aig_skill + 版本）
  * @author ai-gov
  */
 public record AigPackageManifest(
@@ -67,7 +69,9 @@ public record AigPackageManifest(
     List<String> networkHosts,
     List<String> knowledgeScope,
     String upgradePolicy,
-    String rollbackPolicy
+    String rollbackPolicy,
+    List<AigManifestAgentSpec> agents,
+    List<AigManifestSkillSpec> skills
 ) {
 
     /**
@@ -101,8 +105,82 @@ public record AigPackageManifest(
             textList(root, "network_hosts"),
             textList(root, "knowledge_scope"),
             text(root, "upgrade_policy"),
-            text(root, "rollback_policy")
+            text(root, "rollback_policy"),
+            readAgents(root),
+            readSkills(root)
         );
+    }
+
+    /**
+     * 读声明的 Agent 清单（元素必须是对象；缺字段读成 null，由校验器负责报告）。
+     *
+     * @param root 根节点
+     * @return Agent 声明清单
+     */
+    private static List<AigManifestAgentSpec> readAgents(JsonNode root) {
+        List<AigManifestAgentSpec> specs = new ArrayList<>();
+        JsonNode array = root.get("agents");
+        if (array == null || !array.isArray()) {
+            return specs;
+        }
+        for (JsonNode item : array) {
+            if (!item.isObject()) {
+                continue;
+            }
+            specs.add(new AigManifestAgentSpec(
+                text(item, "code"),
+                text(item, "name"),
+                text(item, "category"),
+                text(item, "scenario_code"),
+                text(item, "prompt_template"),
+                rawText(item, "input_schema"),
+                rawText(item, "output_schema"),
+                text(item, "provider_capability"),
+                text(item, "allow_external"),
+                textList(item, "golden_cases")));
+        }
+        return specs;
+    }
+
+    /**
+     * 读声明的 Skill 清单。
+     *
+     * @param root 根节点
+     * @return Skill 声明清单
+     */
+    private static List<AigManifestSkillSpec> readSkills(JsonNode root) {
+        List<AigManifestSkillSpec> specs = new ArrayList<>();
+        JsonNode array = root.get("skills");
+        if (array == null || !array.isArray()) {
+            return specs;
+        }
+        for (JsonNode item : array) {
+            if (!item.isObject()) {
+                continue;
+            }
+            specs.add(new AigManifestSkillSpec(
+                text(item, "code"),
+                text(item, "name"),
+                textList(item, "capabilities"),
+                rawText(item, "input_schema"),
+                rawText(item, "output_schema"),
+                rawText(item, "tool_policy_json"),
+                text(item, "provider_capability"),
+                text(item, "allow_external")));
+        }
+        return specs;
+    }
+
+    /**
+     * 取节点原文（对象/数组等结构化字段要原样入库，不能拆成字符串清单）。
+     *
+     * @param node 节点
+     * @param key  字段
+     * @return 原文；缺失或非结构化返回 null
+     */
+    private static String rawText(JsonNode node, String key) {
+        JsonNode value = node.get(key);
+        return value == null || value.isNull() ? null : value.toString();
     }
 
     /**

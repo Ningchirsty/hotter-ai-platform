@@ -82,6 +82,15 @@ public class AigSkillVersion extends BaseEntity implements Serializable {
     private String allowExternal;
 
     /**
+     * 来源 Package 版本（第三方 Package 带入时指向 {@code aig_package_version}；内置 Skill 为空）
+     *
+     * <p>Agent 版本一早就带这一列，Skill 版本原先没有——这是本组表自身的不一致：
+     * 同一次安装带进来的两类对象，一类能回溯来源包、另一类不能。安装的幂等判据也要用它
+     * （「这个 Package 版本装过没有」应当能直接查出来，而不是去翻安装日志）。</p>
+     */
+    private Long packageVersionId;
+
+    /**
      * 输入 Schema
      */
     private String inputSchema;

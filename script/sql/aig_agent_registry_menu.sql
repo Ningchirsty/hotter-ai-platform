@@ -175,6 +175,32 @@ select 1768000000000000035, '评测人工复核', 1763000000000000001, 103, '', 
                      where p.perms = 'aig:evaluation:review');
 
 -- ----------------------------
+-- 三点五、Package 上传与安装（本轮新增）
+--   上传：携包体登记包与版本（包体哈希由服务端算并与 Manifest 声明比对）；
+--   安装：按 Manifest 声明的 agents/skills 建出 DRAFT 版本。
+--   两个都是写动作——尤其安装会真的建出 Agent/Skill 版本行，因此独立授权。
+-- ----------------------------
+insert into sys_menu (menu_id, menu_name, parent_id, order_num, path, component, is_frame, is_cache,
+                      menu_type, visible, status, perms, icon, create_dept, create_by, create_time, remark)
+select 1768000000000000024, 'Package上传', 1763000000000000001, 104, '', '', 'N', 'Y', 'F', '0', '0',
+       'aig:package:upload', '#', 1761000000000000103, 1761100000000000001, sysdate(),
+       'WP3 §6.1/§6.3：上传登记（包体校验和由服务端核对，包体不入库）'
+  where not exists (select 1 from (select menu_id from sys_menu) t
+                     where t.menu_id = 1768000000000000024)
+    and not exists (select 1 from (select perms from sys_menu) p
+                     where p.perms = 'aig:package:upload');
+
+insert into sys_menu (menu_id, menu_name, parent_id, order_num, path, component, is_frame, is_cache,
+                      menu_type, visible, status, perms, icon, create_dept, create_by, create_time, remark)
+select 1768000000000000025, 'Package安装', 1763000000000000001, 105, '', '', 'N', 'Y', 'F', '0', '0',
+       'aig:package:install', '#', 1761000000000000103, 1761100000000000001, sysdate(),
+       'WP3 §6.3：按 Manifest 声明建出 Agent/Skill 版本（均为 DRAFT，不跳发布门槛）'
+  where not exists (select 1 from (select menu_id from sys_menu) t
+                     where t.menu_id = 1768000000000000025)
+    and not exists (select 1 from (select perms from sys_menu) p
+                     where p.perms = 'aig:package:install');
+
+-- ----------------------------
 -- 四、角色授权
 --   · aig_admin（AI数智化管理员）：全部（含推进发布、定义用例、跑评测、复核）
 --   · aig_security（信息安全授权人）：读 + Manifest 扫描（扫描是安全关口），
@@ -188,6 +214,7 @@ select 1763100000000000001, menu_id from sys_menu
  where perms in ('aig:agent:list', 'aig:agent:query', 'aig:agent:release', 'aig:agent:binding',
                  'aig:skill:list', 'aig:skill:query',
                  'aig:package:list', 'aig:package:query', 'aig:package:scan',
+                 'aig:package:upload', 'aig:package:install',
                  'aig:evaluation:list', 'aig:evaluation:query', 'aig:evaluation:define',
                  'aig:evaluation:run', 'aig:evaluation:review');
 

@@ -461,4 +461,103 @@ class AigPackageManifestValidatorTest {
             "认不出的元素不猜，但个数要如实反映");
     }
 
+    @Test
+    @DisplayName("内容物声明：agents/skills 允许出现并被解析；不声明也仍然通过（内容缺失留给安装那一步报）")
+    void readsDeclaredContent() {
+        Map<String, Object> manifest = baseManifest();
+        manifest.put("package_type", "SKILL");
+        manifest.put("skills", List.of(Map.of(
+            "code", "image-fitter",
+            "name", "图像适配",
+            "capabilities", List.of("image_generation"),
+            "allow_external", "N")));
+
+        AigManifestScanResult result = validator.scan(json(manifest));
+
+        assertTrue(result.isPass(), result.getDetail());
+        assertEquals(1, result.getManifest().skills().size());
+        assertEquals("image-fitter", result.getManifest().skills().get(0).code());
+        assertEquals(List.of("image_generation"), result.getManifest().skills().get(0).capabilities());
+
+        // 不声明内容物：扫描仍然通过（§6.1 最小字段集本来没有它），
+        // 「没有内容可安装」由安装那一步明确报出来
+        assertTrue(validator.scan(json(baseManifest())).isPass());
+    }
+
+    @Test
+    @DisplayName("内容物条目内部同样白名单：出现未声明子字段即拒绝")
+    void rejectsUnknownSubField() {
+        Map<String, Object> manifest = baseManifest();
+        manifest.put("skills", List.of(Map.of("code", "s1", "name", "S1", "entrypoint", "install.sh")));
+
+        AigManifestScanResult result = validator.scan(json(manifest));
+
+        assertEquals(List.of(AigPackageRejectRuleEnum.UNBOUNDED_CODE_EXECUTION), result.getHitRules(),
+            result.getDetail());
+        assertTrue(result.getDetail().contains("entrypoint"), result.getDetail());
+    }
+
+    @Test
+    @DisplayName("内容物条目必填子字段：skills 缺 name、agents 缺 category 都拒绝")
+    void rejectsMissingSubField() {
+        Map<String, Object> skillCase = baseManifest();
+        skillCase.put("skills", List.of(Map.of("code", "s1")));
+        assertTrue(validator.scan(json(skillCase)).getDetail().contains("skills[0].name"),
+            validator.scan(json(skillCase)).getDetail());
+
+        Map<String, Object> agentCase = baseManifest();
+        agentCase.put("package_type", "AGENT");
+        agentCase.put("agents", List.of(Map.of("code", "a1", "name", "A1")));
+        assertTrue(validator.scan(json(agentCase)).getDetail().contains("agents[0].category"),
+            validator.scan(json(agentCase)).getDetail());
+    }
+
+    @Test
+    @DisplayName("内容物取值：category 必须是已知类别、allow_external 只能是 Y/N、编码不得重复")
+    void rejectsBadSubValues() {
+        Map<String, Object> badCategory = baseManifest();
+        badCategory.put("package_type", "AGENT");
+        badCategory.put("agents", List.of(Map.of("code", "a1", "name", "A1", "category", "NOPE")));
+        assertTrue(validator.scan(json(badCategory)).getDetail().contains("NOPE"));
+
+        Map<String, Object> badFlag = baseManifest();
+        badFlag.put("skills", List.of(Map.of("code", "s1", "name", "S1", "allow_external", "MAYBE")));
+        assertTrue(validator.scan(json(badFlag)).getDetail().contains("allow_external"));
+
+        Map<String, Object> duplicated = baseManifest();
+        duplicated.put("skills", List.of(Map.of("code", "s1", "name", "S1"),
+            Map.of("code", "s1", "name", "S1 重复")));
+        assertTrue(validator.scan(json(duplicated)).getDetail().contains("重复"),
+            validator.scan(json(duplicated)).getDetail());
+    }
+
+    @Test
+    @DisplayName("包类型与内容物必须一致：AGENT 不能带 skills、SKILL 不能带 agents、MIXED 两者都要有")
+    void rejectsIncoherentPackageType() {
+        Map<String, Object> skillWithAgents = baseManifest();
+        skillWithAgents.put("package_type", "SKILL");
+        skillWithAgents.put("agents", List.of(Map.of("code", "a1", "name", "A1", "category", "QA")));
+        assertTrue(validator.scan(json(skillWithAgents)).getDetail().contains("不一致"),
+            validator.scan(json(skillWithAgents)).getDetail());
+
+        Map<String, Object> agentWithoutAgents = baseManifest();
+        agentWithoutAgents.put("package_type", "AGENT");
+        agentWithoutAgents.put("skills", List.of(Map.of("code", "s1", "name", "S1")));
+        assertTrue(validator.scan(json(agentWithoutAgents)).getDetail().contains("不一致"),
+            validator.scan(json(agentWithoutAgents)).getDetail());
+
+        Map<String, Object> mixedIncomplete = baseManifest();
+        mixedIncomplete.put("package_type", "MIXED");
+        mixedIncomplete.put("agents", List.of(Map.of("code", "a1", "name", "A1", "category", "QA")));
+        assertTrue(validator.scan(json(mixedIncomplete)).getDetail().contains("MIXED"),
+            validator.scan(json(mixedIncomplete)).getDetail());
+
+        // 一致则通过
+        Map<String, Object> mixed = baseManifest();
+        mixed.put("package_type", "MIXED");
+        mixed.put("agents", List.of(Map.of("code", "a1", "name", "A1", "category", "QA")));
+        mixed.put("skills", List.of(Map.of("code", "s1", "name", "S1")));
+        assertTrue(validator.scan(json(mixed)).isPass(), validator.scan(json(mixed)).getDetail());
+    }
+
 }

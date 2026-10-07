@@ -3,6 +3,7 @@ package org.dromara.aigov.agent.manifest;
 import cn.hutool.crypto.digest.DigestUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.dromara.aigov.agent.enums.AigAgentCategoryEnum;
 import org.dromara.aigov.agent.enums.AigNetworkAccessEnum;
 import org.dromara.aigov.agent.enums.AigPackageRejectRuleEnum;
 import org.dromara.aigov.agent.enums.AigPackageTypeEnum;
@@ -81,6 +82,26 @@ public class AigPackageManifestValidator {
     private static final Map<String, Kind> OPTIONAL_FIELDS = new LinkedHashMap<>();
 
     /**
+     * {@code agents[]} 条目内部允许的字段
+     */
+    private static final Map<String, Kind> AGENT_SUB_FIELDS = new LinkedHashMap<>();
+
+    /**
+     * {@code skills[]} 条目内部允许的字段
+     */
+    private static final Map<String, Kind> SKILL_SUB_FIELDS = new LinkedHashMap<>();
+
+    /**
+     * {@code agents[]} 条目的必填子字段（category 决定这个 Agent 的语义类别）
+     */
+    private static final List<String> AGENT_REQUIRED = List.of("code", "name", "category");
+
+    /**
+     * {@code skills[]} 条目的必填子字段
+     */
+    private static final List<String> SKILL_REQUIRED = List.of("code", "name");
+
+    /**
      * 平台禁止的工具（§6.2-1）。取值按小写、分隔符统一为「-」后比对。
      *
      * <p>与 {@code aig_agent_registry_seed.sql} 里四个内置 Agent 的 {@code forbidden_tools}
@@ -125,6 +146,31 @@ public class AigPackageManifestValidator {
         OPTIONAL_FIELDS.put("workflow", Kind.STRUCTURE);
         OPTIONAL_FIELDS.put("knowledge_scope", Kind.ARRAY);
         OPTIONAL_FIELDS.put("network_hosts", Kind.ARRAY);
+        // 内容物声明（安装时据此建 Agent/Skill）——见 AigManifestAgentSpec 的注释：
+        // 没有这两项，「Package 安装」在实现时会发现无物可建
+        OPTIONAL_FIELDS.put("agents", Kind.ARRAY);
+        OPTIONAL_FIELDS.put("skills", Kind.ARRAY);
+
+        // agents[] / skills[] 条目内部的允许字段（同样白名单）
+        AGENT_SUB_FIELDS.put("code", Kind.TEXT);
+        AGENT_SUB_FIELDS.put("name", Kind.TEXT);
+        AGENT_SUB_FIELDS.put("category", Kind.TEXT);
+        AGENT_SUB_FIELDS.put("scenario_code", Kind.TEXT);
+        AGENT_SUB_FIELDS.put("prompt_template", Kind.TEXT);
+        AGENT_SUB_FIELDS.put("input_schema", Kind.OBJECT);
+        AGENT_SUB_FIELDS.put("output_schema", Kind.OBJECT);
+        AGENT_SUB_FIELDS.put("provider_capability", Kind.TEXT);
+        AGENT_SUB_FIELDS.put("allow_external", Kind.TEXT);
+        AGENT_SUB_FIELDS.put("golden_cases", Kind.ARRAY);
+
+        SKILL_SUB_FIELDS.put("code", Kind.TEXT);
+        SKILL_SUB_FIELDS.put("name", Kind.TEXT);
+        SKILL_SUB_FIELDS.put("capabilities", Kind.ARRAY);
+        SKILL_SUB_FIELDS.put("input_schema", Kind.OBJECT);
+        SKILL_SUB_FIELDS.put("output_schema", Kind.OBJECT);
+        SKILL_SUB_FIELDS.put("tool_policy_json", Kind.OBJECT);
+        SKILL_SUB_FIELDS.put("provider_capability", Kind.TEXT);
+        SKILL_SUB_FIELDS.put("allow_external", Kind.TEXT);
     }
 
     private final JsonMapper jsonMapper;
@@ -176,6 +222,7 @@ public class AigPackageManifestValidator {
         checkProvenance(root, acc);
         checkValueDomains(root, acc);
         checkOptionalTypes(root, acc);
+        checkDeclaredContent(root, acc);
         checkNetwork(root, acc);
         checkTools(root, acc);
         checkQuality(root, acc);
@@ -195,6 +242,27 @@ public class AigPackageManifestValidator {
     public static String manifestHash(String rawManifestJson) {
         return DigestUtil.sha256Hex(
             (rawManifestJson == null ? "" : rawManifestJson).getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * 解析 Manifest 视图（不做判定）。
+     *
+     * <p>给「已经知道自己在读哪份 Manifest」的调用方用（例如安装时按声明建 Agent/Skill）。
+     * 判定归 {@link #scan}，这里只做形状检查。</p>
+     *
+     * @param rawManifestJson Manifest 原文
+     * @return 视图；无法解析为 JSON 对象时返回 null
+     */
+    public AigPackageManifest parse(String rawManifestJson) {
+        if (StringUtils.isBlank(rawManifestJson)) {
+            return null;
+        }
+        try {
+            JsonNode root = jsonMapper.readTree(rawManifestJson);
+            return root != null && root.isObject() ? AigPackageManifest.from(root) : null;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /**
@@ -333,6 +401,156 @@ public class AigPackageManifestValidator {
             acc.hit(AigPackageRejectRuleEnum.UNBOUNDED_CODE_EXECUTION,
                 "可选声明字段的类型不符合声明式要求：" + listing(bad));
         }
+    }
+
+    /**
+     * 声明的 Agent/Skill 内容检查（§5.3、§6.1）。
+     *
+     * <p>三条判据：①条目内部同样是白名单（未声明子字段即拒绝）；②必填子字段、类型与取值；
+     * ③与 {@code package_type} 的一致性（AGENT 包不能带 Skill、SKILL 包不能带 Agent、MIXED 两者都要有）。</p>
+     *
+     * <p><b>只在真的声明了内容时才做一致性检查</b>：§6.1 的最小白名单里本来没有 agents/skills，
+     * 「没声明内容」的包依然能通过 Manifest 校验（校验管的是拒绝规则）；但**安装**会明确报
+     * 「这个 Manifest 没有声明任何 Agent/Skill，无法安装」——把「内容缺失」放在安装那一步，
+     * 而不是让扫描去替安装做判断。</p>
+     *
+     * @param root 根节点
+     * @param acc  累积器
+     */
+    private void checkDeclaredContent(JsonNode root, Accumulator acc) {
+        List<String> unknownSub = new ArrayList<>();
+        List<String> missingSub = new ArrayList<>();
+        List<String> badSub = new ArrayList<>();
+        List<String> agentCodes = new ArrayList<>();
+        List<String> skillCodes = new ArrayList<>();
+
+        boolean declared = collectContent(root.get("agents"), "agents", AGENT_SUB_FIELDS, AGENT_REQUIRED,
+            agentCodes, unknownSub, missingSub, badSub);
+        declared |= collectContent(root.get("skills"), "skills", SKILL_SUB_FIELDS, SKILL_REQUIRED,
+            skillCodes, unknownSub, missingSub, badSub);
+
+        if (declared) {
+            AigPackageTypeEnum type = AigPackageTypeEnum.find(text(root, "package_type"));
+            if (type != null) {
+                boolean hasAgents = !agentCodes.isEmpty();
+                boolean hasSkills = !skillCodes.isEmpty();
+                switch (type) {
+                    case AGENT -> {
+                        if (!hasAgents) {
+                            missingSub.add("package_type=AGENT 但 agents 为空");
+                        }
+                        if (hasSkills) {
+                            badSub.add("package_type=AGENT 却声明了 skills（包类型与内容物不一致）");
+                        }
+                    }
+                    case SKILL -> {
+                        if (!hasSkills) {
+                            missingSub.add("package_type=SKILL 但 skills 为空");
+                        }
+                        if (hasAgents) {
+                            badSub.add("package_type=SKILL 却声明了 agents（包类型与内容物不一致）");
+                        }
+                    }
+                    case MIXED -> {
+                        if (!hasAgents || !hasSkills) {
+                            missingSub.add("package_type=MIXED 需要 agents 与 skills 都非空");
+                        }
+                    }
+                    default -> {
+                    }
+                }
+            }
+        }
+
+        if (!unknownSub.isEmpty()) {
+            acc.hit(AigPackageRejectRuleEnum.UNBOUNDED_CODE_EXECUTION,
+                "内容物声明里出现未声明的字段：" + listing(unknownSub)
+                    + "。agents[]/skills[] 的条目同样只接受平台认识的声明式字段");
+        }
+        if (!missingSub.isEmpty() || !badSub.isEmpty()) {
+            StringBuilder note = new StringBuilder();
+            if (!missingSub.isEmpty()) {
+                note.append("缺失或为空：").append(listing(missingSub));
+            }
+            if (!badSub.isEmpty()) {
+                if (note.length() > 0) {
+                    note.append("；");
+                }
+                note.append("不符合要求：").append(listing(badSub));
+            }
+            acc.hit(AigPackageRejectRuleEnum.UNDECLARED_MANDATORY_FIELD, note.toString());
+        }
+    }
+
+    /**
+     * 收集一类内容声明的检查结果。
+     *
+     * @param array      声明数组
+     * @param label      字段名（agents / skills）
+     * @param allowed    允许的子字段
+     * @param required   必填子字段
+     * @param codes      编码收集器（用于查重与一致性判断）
+     * @param unknownSub 未声明子字段收集器
+     * @param missingSub 缺失/为空收集器
+     * @param badSub     类型与取值不符收集器
+     * @return 该字段存在（哪怕是空数组）返回 true
+     */
+    private boolean collectContent(JsonNode array, String label, Map<String, Kind> allowed,
+                                   List<String> required, List<String> codes, List<String> unknownSub,
+                                   List<String> missingSub, List<String> badSub) {
+        if (array == null || array.isNull() || array.isMissingNode()) {
+            return false;
+        }
+        if (!array.isArray()) {
+            badSub.add(label + "（应为数组，实际是" + nodeType(array) + "）");
+            return true;
+        }
+        int index = 0;
+        for (JsonNode item : array) {
+            String where = label + "[" + index + "]";
+            index++;
+            if (!item.isObject()) {
+                badSub.add(where + "（应为对象，实际是" + nodeType(item) + "）");
+                continue;
+            }
+            for (Map.Entry<String, JsonNode> entry : item.properties()) {
+                Kind kind = allowed.get(entry.getKey());
+                if (kind == null) {
+                    unknownSub.add(where + "." + entry.getKey());
+                } else if (!kindOk(kind, entry.getValue(), true)) {
+                    badSub.add(where + "." + entry.getKey() + "（应为" + kind.getDesc() + "，实际是"
+                        + nodeType(entry.getValue()) + "）");
+                }
+            }
+            for (String field : required) {
+                JsonNode node = item.get(field);
+                if (node == null || node.isNull() || !node.isTextual() || node.asText().isBlank()) {
+                    missingSub.add(where + "." + field);
+                }
+            }
+            String code = text(item, "code");
+            if (code != null && !code.isBlank()) {
+                if (codes.contains(code.trim())) {
+                    badSub.add(where + ".code 重复：" + code.trim());
+                } else {
+                    codes.add(code.trim());
+                }
+            }
+            if ("agents".equals(label)) {
+                String category = text(item, "category");
+                if (category != null && !category.isBlank()
+                    && AigAgentCategoryEnum.find(category) == null) {
+                    badSub.add(where + ".category 取值未知：" + category);
+                }
+            }
+            String allowExternal = text(item, "allow_external");
+            if (allowExternal != null && !allowExternal.isBlank()
+                && !"Y".equalsIgnoreCase(allowExternal.trim())
+                && !"N".equalsIgnoreCase(allowExternal.trim())) {
+                badSub.add(where + ".allow_external 只能是 Y 或 N，实际 " + allowExternal);
+            }
+        }
+        return true;
     }
 
     /**

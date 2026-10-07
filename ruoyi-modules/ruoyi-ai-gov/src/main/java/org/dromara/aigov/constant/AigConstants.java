@@ -184,6 +184,22 @@ public interface AigConstants {
     String PERM_EVALUATION_REVIEW = "aig:evaluation:review";
 
     /**
+     * Package 上传（携包体登记包与版本）
+     *
+     * <p>与「看清单」分开：上传会在库里落下包与版本行（含 Manifest 原文），
+     * 而包体哈希是服务端算的——这是一个写动作，不是查看。</p>
+     */
+    String PERM_PACKAGE_UPLOAD = "aig:package:upload";
+
+    /**
+     * Package 安装（把声明的内容物建成 Agent/Skill 版本）
+     *
+     * <p>与上传分开：安装会真的建出 Agent/Skill 版本行——那是「这个包带进来的东西」，
+     * 从此进入发布链路。上传者未必是决定「要不要装」的人。</p>
+     */
+    String PERM_PACKAGE_INSTALL = "aig:package:install";
+
+    /**
      * 系统提交者ID：任务由调度器/Agent 发起（无登录上下文）时，{@code create_by} 用它占位。
      *
      * <p><b>为什么不能留 NULL</b>：{@code aig_task.create_by} 同时是幂等唯一键

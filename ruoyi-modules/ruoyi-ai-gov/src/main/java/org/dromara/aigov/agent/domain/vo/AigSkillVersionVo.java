@@ -56,6 +56,11 @@ public class AigSkillVersionVo implements Serializable {
     private String allowExternal;
 
     /**
+     * 来源 Package 版本（第三方 Package 带入；内置 Skill 为空）
+     */
+    private Long packageVersionId;
+
+    /**
      * 人工批准人
      */
     private Long approvedBy;

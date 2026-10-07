@@ -204,6 +204,7 @@ create table if not exists aig_skill_version (
     tool_policy_json   varchar(2000)   default null               comment '工具策略（§10.2 tool_policy_json；允许/禁止工具与调用前置条件）',
     provider_capability varchar(64)    default null               comment '需要的 Provider 能力编码',
     allow_external     char(1)         not null default 'N'       comment '是否允许外部调用（Y/N）',
+    package_version_id bigint(20)      default null               comment '来源 Package 版本（第三方 Package 带入时指向 aig_package_version；内置 Skill 为空；安装幂等判据用它）',
     input_schema       longtext        default null               comment '输入 Schema',
     output_schema      longtext        default null               comment '输出 Schema',
     approved_by        bigint(20)      default null               comment '人工批准人',

@@ -12,6 +12,7 @@ import org.dromara.aigov.agent.mapper.AigAgentVersionMapper;
 import org.dromara.aigov.agent.mapper.AigEvaluationCaseMapper;
 import org.dromara.aigov.agent.mapper.AigEvaluationRunMapper;
 import org.dromara.aigov.agent.mapper.AigPackageMapper;
+import org.dromara.aigov.agent.mapper.AigPackageInstallLogMapper;
 import org.dromara.aigov.agent.mapper.AigPackageVersionMapper;
 import org.dromara.aigov.agent.mapper.AigReleaseEventMapper;
 import org.dromara.aigov.agent.mapper.AigSkillMapper;
@@ -19,9 +20,11 @@ import org.dromara.aigov.agent.mapper.AigSkillVersionMapper;
 import org.dromara.aigov.agent.service.IAigAgentRegistryQueryService;
 import org.dromara.aigov.agent.service.IAigAgentRegistryService;
 import org.dromara.aigov.agent.service.IAigEvaluationService;
+import org.dromara.aigov.agent.service.IAigPackageService;
 import org.dromara.aigov.agent.service.impl.AigAgentRegistryQueryServiceImpl;
 import org.dromara.aigov.agent.service.impl.AigAgentRegistryServiceImpl;
 import org.dromara.aigov.agent.service.impl.AigEvaluationServiceImpl;
+import org.dromara.aigov.agent.service.impl.AigPackageServiceImpl;
 import org.dromara.aigov.controller.AigAgentRegistryController;
 import org.dromara.aigov.controller.AigEvaluationController;
 import org.dromara.common.core.domain.PageResult;
@@ -44,13 +47,16 @@ import static org.hamcrest.Matchers.containsString;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import org.springframework.mock.web.MockMultipartFile;
 
 /**
  * WP3 的布线烟测（设计 §5、§6、§13.2 的落地形状）。
@@ -85,12 +91,14 @@ class AigWp3WiringAndRoutesTest {
     private IAigAgentRegistryQueryService queryService;
     private IAigAgentRegistryService registryService;
     private IAigEvaluationService evaluationService;
+    private IAigPackageService packageService;
 
     @BeforeEach
     void setUp() {
         queryService = mock(IAigAgentRegistryQueryService.class);
         registryService = mock(IAigAgentRegistryService.class);
         evaluationService = mock(IAigEvaluationService.class);
+        packageService = mock(IAigPackageService.class);
     }
 
     @Test
@@ -101,6 +109,7 @@ class AigWp3WiringAndRoutesTest {
             assertThat(context).hasSingleBean(IAigAgentRegistryService.class);
             assertThat(context).hasSingleBean(IAigAgentRegistryQueryService.class);
             assertThat(context).hasSingleBean(IAigEvaluationService.class);
+            assertThat(context).hasSingleBean(IAigPackageService.class);
             assertThat(context).hasSingleBean(AigPackageManifestValidator.class);
             assertThat(context).hasSingleBean(AigExpectedRuleChecker.class);
             assertThat(context).hasSingleBean(AigEvaluationSubjectRegistry.class);
@@ -133,7 +142,8 @@ class AigWp3WiringAndRoutesTest {
         when(evaluationService.listCaseVos(any(), any())).thenReturn(List.of());
 
         MockMvc mockMvc = MockMvcBuilders
-            .standaloneSetup(new AigAgentRegistryController(registryService, queryService),
+            .standaloneSetup(
+                new AigAgentRegistryController(registryService, queryService, packageService),
                 new AigEvaluationController(evaluationService))
             .build();
 
@@ -169,6 +179,21 @@ class AigWp3WiringAndRoutesTest {
                 .content("{\"runId\":1,\"reviewResult\":\"PASS\"}"))
             .andExpect(status().isOk());
         verify(evaluationService).reviewRun(any());
+
+        // 上传（multipart：包体 + Manifest 表单字段）与安装：绑定能走通
+        mockMvc.perform(multipart("/aigov/agent/package/upload")
+                .file(new MockMultipartFile("file", "pkg.zip", "application/zip", new byte[]{1, 2, 3}))
+                .param("manifestJson", "{\"package_code\":\"x\"}"))
+            .andExpect(status().isOk());
+        verify(packageService).register(any(), any(), any(), any());
+
+        mockMvc.perform(post("/aigov/agent/package/version/7/install"))
+            .andExpect(status().isOk());
+        verify(packageService).install(eq(7L), any());
+
+        mockMvc.perform(get("/aigov/agent/package/version/7/install-log"))
+            .andExpect(status().isOk());
+        verify(packageService).listInstallLog(7L);
 
         // 反面对照：没映射的路径仍然 404 —— 证明上面的 200 不是「什么都返回 200」
         mockMvc.perform(get("/aigov/agent/definitely-not-mapped"))
@@ -241,6 +266,11 @@ class AigWp3WiringAndRoutesTest {
         }
 
         @Bean
+        AigPackageInstallLogMapper packageInstallLogMapper() {
+            return mock(AigPackageInstallLogMapper.class);
+        }
+
+        @Bean
         AigPackageManifestValidator manifestValidator(JsonMapper jsonMapper) {
             return new AigPackageManifestValidator(jsonMapper);
         }
@@ -299,9 +329,25 @@ class AigWp3WiringAndRoutesTest {
         }
 
         @Bean
+        IAigPackageService packageService(AigPackageMapper packageMapper,
+                                          AigPackageVersionMapper packageVersionMapper,
+                                          AigPackageInstallLogMapper installLogMapper,
+                                          AigAgentMapper agentMapper,
+                                          AigAgentVersionMapper agentVersionMapper,
+                                          AigSkillMapper skillMapper,
+                                          AigSkillVersionMapper skillVersionMapper,
+                                          AigPackageManifestValidator manifestValidator,
+                                          JsonMapper jsonMapper) {
+            return new AigPackageServiceImpl(packageMapper, packageVersionMapper, installLogMapper,
+                agentMapper, agentVersionMapper, skillMapper, skillVersionMapper, manifestValidator,
+                jsonMapper);
+        }
+
+        @Bean
         AigAgentRegistryController agentRegistryController(IAigAgentRegistryService registryService,
-                                                          IAigAgentRegistryQueryService queryService) {
-            return new AigAgentRegistryController(registryService, queryService);
+                                                          IAigAgentRegistryQueryService queryService,
+                                                          IAigPackageService packageService) {
+            return new AigAgentRegistryController(registryService, queryService, packageService);
         }
 
         @Bean

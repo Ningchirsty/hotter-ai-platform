@@ -10,6 +10,7 @@ import org.dromara.aigov.agent.domain.bo.AigAgentBindingQueryBo;
 import org.dromara.aigov.agent.domain.bo.AigAgentQueryBo;
 import org.dromara.aigov.agent.domain.bo.AigAgentVersionQueryBo;
 import org.dromara.aigov.agent.domain.bo.AigPackageQueryBo;
+import org.dromara.aigov.agent.domain.bo.AigPackageUploadBo;
 import org.dromara.aigov.agent.domain.bo.AigPackageVersionQueryBo;
 import org.dromara.aigov.agent.domain.bo.AigReleaseAdvanceBo;
 import org.dromara.aigov.agent.domain.bo.AigSkillQueryBo;
@@ -17,6 +18,9 @@ import org.dromara.aigov.agent.domain.bo.AigSkillVersionQueryBo;
 import org.dromara.aigov.agent.domain.vo.AigAgentBindingVo;
 import org.dromara.aigov.agent.domain.vo.AigAgentVersionVo;
 import org.dromara.aigov.agent.domain.vo.AigAgentVo;
+import org.dromara.aigov.agent.domain.vo.AigPackageInstallLogVo;
+import org.dromara.aigov.agent.domain.vo.AigPackageInstallVo;
+import org.dromara.aigov.agent.domain.vo.AigPackageRegisterVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageVersionVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageVo;
 import org.dromara.aigov.agent.domain.vo.AigSkillVersionVo;
@@ -26,20 +30,25 @@ import org.dromara.aigov.agent.enums.AigReleaseStatusEnum;
 import org.dromara.aigov.agent.manifest.AigManifestScanResult;
 import org.dromara.aigov.agent.service.IAigAgentRegistryQueryService;
 import org.dromara.aigov.agent.service.IAigAgentRegistryService;
+import org.dromara.aigov.agent.service.IAigPackageService;
 import org.dromara.aigov.constant.AigConstants;
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.core.domain.R;
 import org.dromara.common.core.validate.QueryGroup;
 import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.common.redis.annotation.RepeatSubmit;
+import org.dromara.common.satoken.utils.LoginHelper;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -71,6 +80,8 @@ public class AigAgentRegistryController {
     private final IAigAgentRegistryService registryService;
 
     private final IAigAgentRegistryQueryService queryService;
+
+    private final IAigPackageService packageService;
 
     /**
      * 分页查询 Agent 清单。
@@ -266,6 +277,64 @@ public class AigAgentRegistryController {
     public R<AigManifestScanResult> scanManifest(
         @NotNull(message = "Package 版本ID不能为空") @PathVariable Long packageVersionId) {
         return R.ok(registryService.scanStoredManifest(packageVersionId));
+    }
+
+    /**
+     * 上传并登记 Package（携包体 + Manifest 原文）。
+     *
+     * <p><b>要求携包体是刻意的</b>：服务端据此计算 SHA-256 并与 Manifest 声明的 {@code checksum}
+     * 比对，校验和因此不是「调用方说了算」。包体本身不入库（声明式 Package 的安装只读 Manifest），
+     * 要留存包体请先交给平台文件服务并把存储键填进 {@code sourceRef}。</p>
+     *
+     * @param file 包体
+     * @param bo   上传入参（Manifest 原文 + 来源引用）
+     * @return 登记结果（含这次校验的结论；被拒也会留痕）
+     */
+    @SaCheckPermission(AigConstants.PERM_PACKAGE_UPLOAD)
+    @RepeatSubmit
+    @PostMapping("/package/upload")
+    public R<AigPackageRegisterVo> uploadPackage(
+        @RequestPart("file") MultipartFile file,
+        @Validated @ModelAttribute AigPackageUploadBo bo) {
+        if (file == null || file.isEmpty()) {
+            throw new org.dromara.common.core.exception.ServiceException("请选择要上传的包体");
+        }
+        byte[] body;
+        try {
+            body = file.getBytes();
+        } catch (Exception e) {
+            throw new org.dromara.common.core.exception.ServiceException(
+                "读取上传包体失败：" + e.getMessage());
+        }
+        return R.ok(packageService.register(bo, body, file.getOriginalFilename(),
+            LoginHelper.getUserId()));
+    }
+
+    /**
+     * 安装 Package 版本（按 Manifest 声明建出 Agent/Skill 版本，均为 DRAFT）。
+     *
+     * @param packageVersionId Package 版本ID
+     * @return 安装结果
+     */
+    @SaCheckPermission(AigConstants.PERM_PACKAGE_INSTALL)
+    @RepeatSubmit
+    @PostMapping("/package/version/{packageVersionId:\\d+}/install")
+    public R<AigPackageInstallVo> installPackage(
+        @NotNull(message = "Package 版本ID不能为空") @PathVariable Long packageVersionId) {
+        return R.ok(packageService.install(packageVersionId, LoginHelper.getUserId()));
+    }
+
+    /**
+     * 查某个 Package 版本的安装日志（追加型账本）。
+     *
+     * @param packageVersionId Package 版本ID
+     * @return 日志清单
+     */
+    @SaCheckPermission(AigConstants.PERM_PACKAGE_QUERY)
+    @GetMapping("/package/version/{packageVersionId:\\d+}/install-log")
+    public R<List<AigPackageInstallLogVo>> installLog(
+        @NotNull(message = "Package 版本ID不能为空") @PathVariable Long packageVersionId) {
+        return R.ok(packageService.listInstallLog(packageVersionId));
     }
 
     /**
