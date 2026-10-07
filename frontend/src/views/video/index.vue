@@ -605,6 +605,7 @@ import {
   retryVideoTask,
   uploadVideoAsset
 } from '@/api/video';
+import Pagination from '@/components/Pagination/index.vue';
 import CloudGenerationForm from '@/components/CreativeInspiration/CloudGenerationForm.vue';
 import GenerationSource from '@/components/CreativeInspiration/GenerationSource.vue';
 import CreativeInspiration from '@/components/CreativeInspiration/index.vue';
@@ -971,6 +972,7 @@ watch(taskKeyword, () => {
 });
 
 onMounted(() => {
+  void loadWorkerStatus();
   void loadWorkflows();
   void loadTasks();
   void loadAssets();

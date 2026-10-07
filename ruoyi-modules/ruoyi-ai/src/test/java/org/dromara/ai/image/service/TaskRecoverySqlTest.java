@@ -28,7 +28,7 @@ class TaskRecoverySqlTest {
             + "size_label VARCHAR(64), strength_label VARCHAR(64), prompt VARCHAR(1024), negative_prompt VARCHAR(1024), "
             + "input_json VARCHAR(1024), comfy_prompt_id VARCHAR(64), comfy_worker VARCHAR(64), "
             + "output_asset_id BIGINT, cover_asset_id BIGINT, progress INT, error_code VARCHAR(64), error_message VARCHAR(1024), "
-            + "attempt_count INT, output_width INT, output_height INT, output_has_alpha INT, output_size_bytes BIGINT, "
+            + "attempt_count INT, output_width INT, output_height INT, output_has_alpha INT NOT NULL DEFAULT 0, output_size_bytes BIGINT, "
             + "submitted_time TIMESTAMP, started_time TIMESTAMP, create_time TIMESTAMP, finished_time TIMESTAMP, "
             + "update_time TIMESTAMP, tier VARCHAR(64), duration_seconds INT";
         jdbc.execute("CREATE TABLE image_task (" + common + ")");
@@ -50,6 +50,7 @@ class TaskRecoverySqlTest {
         for (String key : List.of("error_code", "error_message", "finished_time", "comfy_prompt_id", "output_asset_id"))
             assertNull(row.get(key), key);
         assertEquals("keep prompt", row.get("prompt"));
+        assertEquals(0, ((Number) row.get("output_has_alpha")).intValue());
         assertEquals(0, images.reopen(1, "a", 42, ImageTaskStatus.SUCCEEDED));
     }
 

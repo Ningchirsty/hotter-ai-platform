@@ -236,7 +236,7 @@ public class JdbcImageTaskRepository implements ImageTaskRepository {
                    finished_time = NULL, started_time = NULL, submitted_time = NULL,
                    comfy_prompt_id = NULL, comfy_worker = NULL, output_asset_id = NULL,
                    cover_asset_id = NULL, output_width = NULL, output_height = NULL,
-                   output_has_alpha = NULL, output_size_bytes = NULL, update_time = NOW()
+                   output_has_alpha = 0, output_size_bytes = NULL, update_time = NOW()
              WHERE id = ? AND tenant_id = ? AND user_id = ? AND status = ? AND del_flag = '0'
             """, taskId, tenantId, userId, expectedFrom.name());
     }

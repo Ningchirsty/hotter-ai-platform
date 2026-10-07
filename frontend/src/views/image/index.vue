@@ -548,6 +548,7 @@ import {
   listImageWorkflows,
   uploadImageAsset
 } from '@/api/image';
+import Pagination from '@/components/Pagination/index.vue';
 import CloudGenerationForm from '@/components/CreativeInspiration/CloudGenerationForm.vue';
 import GenerationSource from '@/components/CreativeInspiration/GenerationSource.vue';
 import CreativeInspiration from '@/components/CreativeInspiration/index.vue';
