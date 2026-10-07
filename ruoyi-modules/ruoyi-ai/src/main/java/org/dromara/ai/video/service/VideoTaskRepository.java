@@ -111,6 +111,17 @@ public interface VideoTaskRepository {
      */
     int reopen(long taskId, VideoTaskStatus expectedFrom);
 
+    /** 查询本人任务，支持跨页检索。 */
+    default List<Map<String, Object>> listOwnedTasks(String tenantId, long userId, String status,
+                                                   String keyword, int offset, int limit) {
+        return listOwnedTasks(tenantId, userId, status, offset, limit);
+    }
+
+    /** 统计本人任务，筛选条件与分页查询一致。 */
+    default long countOwnedTasks(String tenantId, long userId, String status, String keyword) {
+        return countOwnedTasks(tenantId, userId, status);
+    }
+
     /**
      * 记录已提交 ComfyUI。
      */

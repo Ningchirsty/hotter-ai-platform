@@ -106,6 +106,9 @@ class ImageTaskDispatchServiceTest {
      * 只实现派发用到的两个动作。
      */
     static class RecordingRepository implements ImageTaskRepository {
+        @Override
+        public int reopen(long taskId, String tenantId, long userId, ImageTaskStatus expectedFrom) { return 0; }
+
         private final int claimResult;
         private final List<String> transitions = new ArrayList<>();
         private final AtomicInteger executed = new AtomicInteger();

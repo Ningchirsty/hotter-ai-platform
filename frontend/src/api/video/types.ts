@@ -169,6 +169,7 @@ export interface VideoTaskCreateForm {
 
 /** 执行结果 */
 export interface VideoTaskExecutionResult {
+  outcome?: 'ACCEPTED' | 'ALREADY_CLAIMED' | 'QUEUE_FULL';
   taskId: number | string;
   status: VideoTaskStatus;
   /**

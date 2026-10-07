@@ -308,6 +308,16 @@
               <el-icon><View /></el-icon>
             </button>
             <button
+              v-if="recoverable(task)"
+              type="button"
+              :disabled="recoveringIds.has(String(task.id))"
+              :aria-label="task.status === 'QUEUED' ? '再次执行' : '重新执行'"
+              @click="recoverTask(task)"
+            >
+              <el-icon><RefreshRight /></el-icon>
+              {{ recoveringIds.has(String(task.id)) ? '提交中…' : task.status === 'QUEUED' ? '再次执行' : '重新执行' }}
+            </button>
+            <button
               v-if="task.status === 'QUEUED'"
               type="button"
               title="取消排队"
@@ -324,6 +334,13 @@
         <b>没有匹配的任务</b>
         <span>调整搜索条件，或创建一个新的图像任务。</span>
       </div>
+      <pagination
+        v-if="taskTotal > 0"
+        v-model:page="taskPage.pageNum"
+        v-model:limit="taskPage.pageSize"
+        :total="taskTotal"
+        @pagination="loadTasks()"
+      />
     </section>
 
     <!-- ================= 素材库 ================= -->
@@ -385,6 +402,13 @@
         <b>素材库还是空的</b>
         <span>上传图片后，即可在创建任务时使用。</span>
       </div>
+      <pagination
+        v-if="assetTotal > 0"
+        v-model:page="assetPage.pageNum"
+        v-model:limit="assetPage.pageSize"
+        :total="assetTotal"
+        @pagination="loadAssets()"
+      />
     </section>
 
     <!-- ================= 详情弹窗 ================= -->
@@ -495,6 +519,7 @@ import {
   PictureFilled,
   Scissor,
   Search,
+  RefreshRight,
   UploadFilled,
   View,
   ZoomIn
@@ -514,6 +539,7 @@ import {
   createImageTask,
   deleteImageAsset,
   executeImageTask,
+  retryImageTask,
   fetchImageAssetBlobUrl,
   fetchImageAssetThumbnailBlobUrl,
   getImageTask,
@@ -532,6 +558,7 @@ import {
   type InspirationRoute
 } from '@/components/CreativeInspiration/types';
 import { extractErrorMessage } from '@/utils/request';
+import { createTaskPoller } from '@/utils/task-polling';
 import { IMAGE_MODULES, moduleOf, type ImageCapabilityModule, type ImageFieldKey } from './modules';
 
 type StudioView = 'create' | 'tasks' | 'assets';
@@ -570,6 +597,7 @@ const values = reactive<Partial<Record<ImageFieldKey, string>>>({});
 const workflows = ref<ImageWorkflowVO[]>([]);
 const tasks = ref<ImageTaskVO[]>([]);
 const assets = ref<ImageAssetVO[]>([]);
+const assetTotal = ref(0);
 const assetThumbs = reactive<Record<string, string>>({});
 const uploadAssetIds = reactive<Partial<Record<ImageFieldKey, Array<number | string>>>>({});
 const previewUrls = ref<string[]>([]);
@@ -581,6 +609,14 @@ const loadingAssets = ref(false);
 const fileInput = ref<HTMLInputElement>();
 const assetInput = ref<HTMLInputElement>();
 
+const taskTotal = ref(0);
+const taskPage = reactive({ pageNum: 1, pageSize: 20 });
+const assetPage = reactive({ pageNum: 1, pageSize: 20 });
+let taskRequestSequence = 0;
+let assetRequestSequence = 0;
+let searchTimer: ReturnType<typeof setTimeout> | undefined;
+const recoveringIds = reactive(new Set<string>());
+
 const taskKeyword = ref('');
 const taskFilter = ref<'ALL' | ImageTaskStatus>('ALL');
 const taskFilters: Array<{ key: 'ALL' | ImageTaskStatus; label: string }> = [
@@ -588,7 +624,9 @@ const taskFilters: Array<{ key: 'ALL' | ImageTaskStatus; label: string }> = [
   { key: 'QUEUED', label: '排队中' },
   { key: 'RUNNING', label: '生成中' },
   { key: 'SUCCEEDED', label: '已完成' },
-  { key: 'FAILED', label: '失败' }
+  { key: 'FAILED', label: '失败' },
+  { key: 'TIMEOUT', label: '超时' },
+  { key: 'CANCELED', label: '已取消' }
 ];
 
 const detailVisible = ref(false);
@@ -612,8 +650,7 @@ const taskPreviewMeta = ref<Array<{ label: string; value: string }>>([]);
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 const TERMINAL_STATUSES: ImageTaskStatus[] = ['SUCCEEDED', 'FAILED', 'CANCELED', 'TIMEOUT'];
 const POLL_INTERVAL_MS = 3000;
-const pollingTaskIds = new Set<string>();
-let pollTimer: ReturnType<typeof setInterval> | undefined;
+
 
 const currentWorkflow = computed(() => workflows.value.find(w => w.workflowCode === activeModule.value.workflowCode));
 const sizeOptions = computed(() => currentWorkflow.value?.sizes || []);
@@ -631,13 +668,16 @@ const uploadHint = computed(() => {
   const count = activeModule.value.imageFields?.length || 1;
   return count > 1 ? `点击上传参考图（最多 ${count} 张）` : '点击上传输入图片';
 });
-const filteredTasks = computed(() => {
-  const keyword = taskKeyword.value.trim().toLowerCase();
-  return tasks.value.filter(task => {
-    if (taskFilter.value !== 'ALL' && task.status !== taskFilter.value) return false;
-    if (!keyword) return true;
-    return (task.taskName || '').toLowerCase().includes(keyword) || task.taskNo.toLowerCase().includes(keyword);
-  });
+const filteredTasks = computed(() => tasks.value);
+
+function searchTasks() {
+  taskPage.pageNum = 1;
+  void loadTasks();
+}
+watch(taskFilter, searchTasks);
+watch(taskKeyword, () => {
+  if (searchTimer !== undefined) clearTimeout(searchTimer);
+  searchTimer = setTimeout(searchTasks, 300);
 });
 
 /** 提交可用性完全由服务端状态决定，不靠前端猜测。 */
@@ -816,9 +856,14 @@ async function submitTask() {
       return;
     }
     ElMessage.success('任务已创建，正在提交生成');
+    taskPage.pageNum = 1;
+    taskFilter.value = 'ALL';
+    taskKeyword.value = '';
+    activeView.value = 'tasks';
+    startTaskPolling(taskId);
     await loadTasks();
     const executed = await executeImageTask(taskId);
-    if (executed.data?.accepted === false || executed.data?.status === 'QUEUED') {
+    if (executed.data?.outcome === 'QUEUE_FULL' || executed.data?.status === 'QUEUED') {
       ElMessage.warning('执行队列已满，任务已排队，稍后可在「我的任务」重试执行');
     } else {
       startTaskPolling(taskId);
@@ -826,6 +871,7 @@ async function submitTask() {
     activeView.value = 'tasks';
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '提交失败');
+    await loadTasks();
   } finally {
     submitting.value = false;
   }
@@ -841,65 +887,70 @@ async function loadWorkflows() {
   }
 }
 
-async function loadTasks() {
-  loadingTasks.value = true;
+async function loadTasks(silent = false) {
+  const sequence = ++taskRequestSequence;
+  if (!silent) loadingTasks.value = true;
   try {
-    const res = await listImageTasks({ pageNum: 1, pageSize: 50 });
-    tasks.value = res.data?.rows || [];
-    tasks.value
-      .filter(task => !TERMINAL_STATUSES.includes(task.status))
-      .forEach(task => pollingTaskIds.add(String(task.id)));
-    if (pollingTaskIds.size > 0) ensurePolling();
-  } catch (error) {
-    ElMessage.error((await extractErrorMessage(error)) ?? '读取任务失败');
-  } finally {
-    loadingTasks.value = false;
-  }
-}
-
-function ensurePolling() {
-  if (pollTimer !== undefined) return;
-  pollTimer = setInterval(() => void pollPendingTasks(), POLL_INTERVAL_MS);
-}
-
-function startTaskPolling(taskId: number | string) {
-  pollingTaskIds.add(String(taskId));
-  ensurePolling();
-}
-
-function stopTaskPolling(taskId: number | string) {
-  pollingTaskIds.delete(String(taskId));
-  if (pollingTaskIds.size === 0 && pollTimer !== undefined) {
-    clearInterval(pollTimer);
-    pollTimer = undefined;
-  }
-}
-
-async function pollPendingTasks() {
-  const finished: string[] = [];
-  for (const id of Array.from(pollingTaskIds)) {
-    try {
-      const res = await getImageTask(id);
-      const task = res.data;
-      if (!task) continue;
-      if (TERMINAL_STATUSES.includes(task.status)) {
-        finished.push(id);
-        if (task.status === 'SUCCEEDED') {
-          ElMessage.success('任务 ' + task.taskNo + ' 已完成');
-        } else if (task.status === 'FAILED') {
-          ElMessage.error('任务 ' + task.taskNo + ' 失败：' + (task.errorMessage || task.errorCode || '未知原因'));
-        } else {
-          ElMessage.warning('任务 ' + task.taskNo + ' 已' + statusText(task.status));
-        }
-      }
-    } catch {
-      finished.push(id);
+    const res = await listImageTasks({
+      ...taskPage,
+      status: taskFilter.value === 'ALL' ? undefined : taskFilter.value,
+      keyword: taskKeyword.value.trim() || undefined
+    });
+    if (sequence !== taskRequestSequence) return;
+    tasks.value = res.data?.rows ?? [];
+    taskTotal.value = res.data?.total ?? tasks.value.length;
+    const lastPage = Math.max(1, Math.ceil(taskTotal.value / taskPage.pageSize));
+    if (taskPage.pageNum > lastPage) { taskPage.pageNum = lastPage; await loadTasks(silent); return; }
+    for (const task of tasks.value) {
+      if (!TERMINAL_STATUSES.includes(task.status)) startTaskPolling(task.id);
     }
+  } catch (error) {
+    if (!silent) ElMessage.error((await extractErrorMessage(error)) ?? '读取任务列表失败');
+  } finally {
+    if (sequence === taskRequestSequence) loadingTasks.value = false;
   }
-  finished.forEach(id => stopTaskPolling(id));
-  if (finished.length) {
+}
+
+const taskPoller = createTaskPoller<ImageTaskDetailVO>({
+  intervalMs: POLL_INTERVAL_MS,
+  fetch: async id => (await getImageTask(id)).data,
+  onUpdate: (id, task) => {
+    tasks.value = tasks.value.map(row => String(row.id) === id ? { ...row, ...task } : row);
+  },
+  onTerminal: (_id, task) => {
+    if (task.status === 'SUCCEEDED') ElMessage.success('任务 ' + task.taskNo + ' 已完成');
+    else ElMessage.warning(task.errorMessage || '任务已' + statusText(task.status));
+  },
+  onCycle: async finished => {
+    await loadTasks(true);
+
+    if (finished) await loadAssets();
+  }
+});
+
+function startTaskPolling(taskId: number | string) { taskPoller.start(taskId); }
+
+function recoverable(task: ImageTaskVO) {
+  return ['QUEUED', 'FAILED', 'TIMEOUT', 'CANCELED'].includes(task.status);
+}
+
+async function recoverTask(task: ImageTaskVO) {
+  const id = String(task.id);
+  if (recoveringIds.has(id)) return;
+  recoveringIds.add(id);
+  try {
+    const res = task.status === 'QUEUED' ? await executeImageTask(task.id) : await retryImageTask(task.id);
+    if (res.data?.outcome === 'QUEUE_FULL') {
+      ElMessage.warning('执行队列已满，任务已保留；稍后点击「再次执行」');
+    } else {
+      ElMessage.success('任务已受理，将自动刷新状态');
+    }
+    startTaskPolling(task.id);
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '执行请求失败；任务已保留，请刷新后重试');
+  } finally {
+    recoveringIds.delete(id);
     await loadTasks();
-    await loadAssets();
   }
 }
 
@@ -940,15 +991,20 @@ async function cancelTask(taskId: number | string) {
 }
 
 async function loadAssets() {
+  const sequence = ++assetRequestSequence;
   loadingAssets.value = true;
   try {
-    const res = await listImageAssets({ pageNum: 1, pageSize: 60 });
+    const res = await listImageAssets({ ...assetPage });
+    if (sequence !== assetRequestSequence) return;
     assets.value = res.data?.rows || [];
+    assetTotal.value = res.data?.total ?? assets.value.length;
+    const lastPage = Math.max(1, Math.ceil(assetTotal.value / assetPage.pageSize));
+    if (assetPage.pageNum > lastPage) { assetPage.pageNum = lastPage; await loadAssets(); return; }
     await loadAssetThumbs();
   } catch (error) {
     ElMessage.error((await extractErrorMessage(error)) ?? '读取素材失败');
   } finally {
-    loadingAssets.value = false;
+    if (sequence === assetRequestSequence) loadingAssets.value = false;
   }
 }
 
@@ -1143,7 +1199,10 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
-  if (pollTimer !== undefined) clearInterval(pollTimer);
+  if (searchTimer !== undefined) clearTimeout(searchTimer);
+  taskRequestSequence++;
+  assetRequestSequence++;
+  taskPoller.dispose();
   previewUrls.value.forEach(url => URL.revokeObjectURL(url));
   Object.values(assetThumbs).forEach(url => URL.revokeObjectURL(url));
   Object.values(taskCoverUrls.value).forEach(url => URL.revokeObjectURL(url));
@@ -1160,6 +1219,8 @@ onBeforeUnmount(() => {
 -->
 <style scoped lang="scss">
 @use '@/assets/styles/tokens-studio.scss';
+
+:deep(.pagination-container) { padding: 16px 0; background: transparent; }
 
 .studio {
   min-height: calc(100vh - 135px);

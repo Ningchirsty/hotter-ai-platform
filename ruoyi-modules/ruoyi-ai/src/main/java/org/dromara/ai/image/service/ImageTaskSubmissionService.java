@@ -512,6 +512,24 @@ public class ImageTaskSubmissionService {
     }
 
     /**
+     * 按原参数重试失败、超时或取消的本人任务；并发重试不重复派发。
+     */
+    public String retryOwned(long imageTaskId, String tenantId, long userId) {
+        Map<String, Object> task = repository.requireOwnedTask(imageTaskId, tenantId, userId);
+        ImageTaskStatus status = ImageTaskStatus.valueOf(String.valueOf(task.get("status")));
+        if (status == ImageTaskStatus.QUEUED || status == ImageTaskStatus.RUNNING) {
+            return dispatchOwned(imageTaskId, tenantId, userId);
+        }
+        if (!status.isTerminal() || status == ImageTaskStatus.SUCCEEDED) {
+            throw new ImageTaskException("INVALID_CONTRACT", "只有失败/超时/已取消的任务可以重新执行");
+        }
+        if (repository.reopen(imageTaskId, tenantId, userId, status) == 0) {
+            return ImageTaskDispatchService.Outcome.ALREADY_CLAIMED.name();
+        }
+        return dispatchOwned(imageTaskId, tenantId, userId);
+    }
+
+    /**
      * 取消排队中的任务。
      *
      * @param imageTaskId 内核任务 ID

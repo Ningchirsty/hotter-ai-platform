@@ -15,8 +15,7 @@ import type {
 /**
  * 查询可提交的工作流视图。
  *
- * 返回的 `status` 决定提交按钮是否可用：仓库中三个 H3 模板当前均为 DRAFT，
- * 实机验收通过并发布前，前端必须保持禁用并显示明确状态。
+ * 提交能力以服务端返回的工作流状态与 submittable 为准。
  */
 export const listVideoWorkflows = (): AxiosPromise<VideoWorkflowVO[]> => {
   return request({
@@ -91,7 +90,7 @@ export const createVideoTask = (data: VideoTaskCreateForm): AxiosPromise<{ taskI
 };
 
 /**
- * 执行任务并等待成片。
+ * 提交任务到后台执行，结果通过任务详情轮询读取。
  *
  * 浏览器不直连 ComfyUI，必须经此后端接口。
  */
@@ -136,6 +135,7 @@ export const listVideoTasks = (query?: {
   pageNum?: number;
   pageSize?: number;
   status?: string;
+  keyword?: string;
 }): AxiosPromise<PageResult<VideoTaskVO>> => {
   return request({
     url: '/video/tasks',

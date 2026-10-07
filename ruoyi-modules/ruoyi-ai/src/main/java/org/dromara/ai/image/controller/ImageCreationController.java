@@ -337,15 +337,26 @@ public class ImageCreationController extends BaseController {
         long userId = requireUserId();
         // 归属校验、状态可执行性判断与派发同样委托给提交服务（与建任务收敛在同一处）
         String outcome = submissionService.dispatchOwned(taskId, tenantId, userId);
+        return executionResult(taskId, tenantId, userId, outcome);
+    }
+
+    /** 重试失败、超时或取消的本人任务，保留原参数与任务号。 */
+    @PostMapping("/tasks/{taskId}/retry")
+    @SaCheckPermission("image:creation:submit")
+    public R<Map<String, Object>> retryTask(@PathVariable Long taskId) {
+        String tenantId = requireTenantId();
+        long userId = requireUserId();
+        String outcome = submissionService.retryOwned(taskId, tenantId, userId);
+        return executionResult(taskId, tenantId, userId, outcome);
+    }
+
+    private R<Map<String, Object>> executionResult(Long taskId, String tenantId, long userId, String outcome) {
+        Map<String, Object> current = repository.requireOwnedTask(taskId, tenantId, userId);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("taskId", taskId);
-        result.put("accepted", ImageTaskDispatchService.Outcome.ACCEPTED.name().equals(outcome)
-            || ImageTaskDispatchService.Outcome.ALREADY_CLAIMED.name().equals(outcome));
-        result.put("status", ImageTaskDispatchService.Outcome.QUEUE_FULL.name().equals(outcome)
-            ? ImageTaskStatus.QUEUED.name() : ImageTaskStatus.RUNNING.name());
-        if (ImageTaskDispatchService.Outcome.QUEUE_FULL.name().equals(outcome)) {
-            throw new ImageTaskException("QUEUE_FULL", "执行队列已满，请稍后重试");
-        }
+        result.put("accepted", ImageTaskDispatchService.Outcome.ACCEPTED.name().equals(outcome));
+        result.put("status", String.valueOf(current.get("status")));
+        result.put("outcome", outcome);
         return R.ok(result);
     }
 
@@ -355,13 +366,14 @@ public class ImageCreationController extends BaseController {
     @GetMapping("/tasks")
     @SaCheckPermission("image:creation:view")
     public R<PageResult<Map<String, Object>>> listTasks(PageQuery pageQuery,
-                                                        @RequestParam(value = "status", required = false) String status) {
+                                                        @RequestParam(value = "status", required = false) String status,
+                                                       @RequestParam(value = "keyword", required = false) String keyword) {
         String tenantId = requireTenantId();
         long userId = requireUserId();
         int pageNum = pageQuery.getPageNum() == null || pageQuery.getPageNum() < 1 ? 1 : pageQuery.getPageNum();
         int pageSize = pageQuery.getPageSize() == null ? 20 : Math.min(100, Math.max(1, pageQuery.getPageSize()));
-        List<Map<String, Object>> rows = repository.listOwnedTasks(tenantId, userId, status, (pageNum - 1) * pageSize, pageSize);
-        long total = repository.countOwnedTasks(tenantId, userId, status);
+        List<Map<String, Object>> rows = repository.listOwnedTasks(tenantId, userId, status, keyword, (pageNum - 1) * pageSize, pageSize);
+        long total = repository.countOwnedTasks(tenantId, userId, status, keyword);
         return R.ok(new PageResult<>(CamelCase.rows(rows), total));
     }
 

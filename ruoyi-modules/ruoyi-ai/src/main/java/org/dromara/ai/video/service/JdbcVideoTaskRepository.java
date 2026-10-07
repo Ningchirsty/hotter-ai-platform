@@ -10,6 +10,7 @@ import org.springframework.stereotype.Repository;
 
 import java.sql.PreparedStatement;
 import java.sql.Statement;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -149,40 +150,51 @@ public class JdbcVideoTaskRepository implements VideoTaskRepository {
     }
 
     @Override
-    public List<Map<String, Object>> listOwnedTasks(String tenantId, long userId, String status,
-                                                    int offset, int limit) {
-        if (status == null || status.isBlank()) {
-            return jdbc.queryForList("""
-                SELECT id, task_no, task_name, capability_code, workflow_code, model_code, status,
-                       tier, duration_seconds, progress, output_asset_id, error_message,
-                       comfy_worker, create_time, finished_time
-                FROM video_task
-                WHERE tenant_id = ? AND user_id = ? AND del_flag = '0'
-                ORDER BY id DESC LIMIT ? OFFSET ?
-                """, tenantId, userId, limit, offset);
-        }
-        return jdbc.queryForList("""
-            SELECT id, task_no, task_name, capability_code, workflow_code, model_code, status,
-                   tier, duration_seconds, progress, output_asset_id, error_message,
-                   comfy_worker, create_time, finished_time
-            FROM video_task
-            WHERE tenant_id = ? AND user_id = ? AND status = ? AND del_flag = '0'
-            ORDER BY id DESC LIMIT ? OFFSET ?
-            """, tenantId, userId, status, limit, offset);
+    public List<Map<String, Object>> listOwnedTasks(String tenantId, long userId, String status, int offset, int limit) {
+        return listOwnedTasks(tenantId, userId, status, null, offset, limit);
     }
 
     @Override
     public long countOwnedTasks(String tenantId, long userId, String status) {
-        Long count = (status == null || status.isBlank())
-            ? jdbc.queryForObject("""
-                SELECT COUNT(*) FROM video_task
-                WHERE tenant_id = ? AND user_id = ? AND del_flag = '0'
-                """, Long.class, tenantId, userId)
-            : jdbc.queryForObject("""
-                SELECT COUNT(*) FROM video_task
-                WHERE tenant_id = ? AND user_id = ? AND status = ? AND del_flag = '0'
-                """, Long.class, tenantId, userId, status);
+        return countOwnedTasks(tenantId, userId, status, null);
+    }
+
+    @Override
+    public List<Map<String, Object>> listOwnedTasks(String tenantId, long userId, String status,
+                                                  String keyword, int offset, int limit) {
+        StringBuilder sql = new StringBuilder("SELECT id, task_no, task_name, capability_code, workflow_code, model_code, status, "
+            + "tier, duration_seconds, progress, output_asset_id, error_message, comfy_worker, create_time, finished_time FROM video_task");
+        List<Object> args = new ArrayList<>();
+        appendTaskFilters(sql, args, tenantId, userId, status, keyword);
+        sql.append(" ORDER BY id DESC LIMIT ? OFFSET ?");
+        args.add(limit);
+        args.add(offset);
+        return jdbc.queryForList(sql.toString(), args.toArray());
+    }
+
+    @Override
+    public long countOwnedTasks(String tenantId, long userId, String status, String keyword) {
+        StringBuilder sql = new StringBuilder("SELECT COUNT(*) FROM video_task");
+        List<Object> args = new ArrayList<>();
+        appendTaskFilters(sql, args, tenantId, userId, status, keyword);
+        Long count = jdbc.queryForObject(sql.toString(), Long.class, args.toArray());
         return count == null ? 0L : count;
+    }
+
+    private static void appendTaskFilters(StringBuilder sql, List<Object> args, String tenantId,
+                                          long userId, String status, String keyword) {
+        sql.append(" WHERE tenant_id = ? AND user_id = ? AND del_flag = '0'");
+        args.add(tenantId);
+        args.add(userId);
+        if (status != null && !status.isBlank()) {
+            sql.append(" AND status = ?");
+            args.add(status);
+        }
+        if (keyword != null && !keyword.isBlank()) {
+            sql.append(" AND (LOCATE(LOWER(?), LOWER(task_no)) > 0 OR LOCATE(LOWER(?), LOWER(task_name)) > 0)");
+            args.add(keyword.trim());
+            args.add(keyword.trim());
+        }
     }
 
     @Override
