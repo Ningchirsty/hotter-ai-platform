@@ -83,6 +83,30 @@ public interface AigModelConfigMapper {
     int updateModelApiKey(@Param("modelId") Long modelId, @Param("apiKey") String apiKey);
 
     /**
+     * 批量写入/清除模型密钥（<b>只更新 {@code api_key} 一列</b>）。
+     *
+     * <p>与 {@link #updateModelApiKey} 同一口径，只差作用范围：一次覆盖多行，
+     * 供「同一供应商共用一把 Key」的批量录入使用。传入的 {@code apiKey} 同样是
+     * <b>由 Service 加密好的密文</b>，本方法不做任何加解密。</p>
+     *
+     * @param modelIds 目标模型ID列表（不可为空，由 Service 保证）
+     * @param apiKey   密文密钥；传 {@code null} 表示清除
+     * @return 影响行数
+     */
+    int updateModelApiKeyBatch(@Param("modelIds") List<Long> modelIds, @Param("apiKey") String apiKey);
+
+    /**
+     * 列出某供应商下已登记的全部模型ID（含停用）。
+     *
+     * <p>供供应商维度批量密钥录入解析作用范围；刻意不过滤 {@code is_enabled}——
+     * 停用只代表路由不选它，凭据仍应保持一致。</p>
+     *
+     * @param providerId 供应商ID
+     * @return 模型ID列表，按 id 升序
+     */
+    List<Long> selectModelIdsByProvider(@Param("providerId") Long providerId);
+
+    /**
      * 按模型标识统计（唯一性校验）。
      *
      * @param modelKey 模型标识

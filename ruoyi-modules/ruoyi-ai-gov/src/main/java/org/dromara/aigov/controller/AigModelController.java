@@ -9,6 +9,7 @@ import org.dromara.aigov.domain.bo.AigModelBaseBo;
 import org.dromara.aigov.domain.bo.AigModelCreateBo;
 import org.dromara.aigov.domain.bo.AigModelGovernanceBo;
 import org.dromara.aigov.domain.bo.AigModelProviderBo;
+import org.dromara.aigov.domain.bo.AigModelSecretBatchBo;
 import org.dromara.aigov.domain.bo.AigModelSecretBo;
 import org.dromara.aigov.domain.vo.AigModelProviderVo;
 import org.dromara.aigov.domain.vo.AigModelTestVo;
@@ -191,6 +192,30 @@ public class AigModelController {
     @PutMapping("/secret")
     public R<Integer> updateModelSecret(@Validated({Default.class, EditGroup.class}) @RequestBody AigModelSecretBo bo) {
         return R.ok(modelGovernanceService.updateModelSecret(bo));
+    }
+
+    /**
+     * 供应商维度批量写入/清除模型密钥。
+     *
+     * <p><b>为什么需要它</b>：同一家供应商下的模型通常共用一把 Key（实测 bluocto 的
+     * 7 个图像模型就是同一个 token 分组）。逐个模型录入意味着管理员要把同一串明文
+     * 粘贴 7 次，漏贴一次从 {@code api_key} 列上也看不出来。本接口把
+     * 「一次动作 = 一把 Key 覆盖一组模型」显式化。</p>
+     *
+     * <p><b>权限与逐模型录入完全一致</b>：同样要求 {@code aig:model:secret}，
+     * 不走 {@code aig:model:edit}。批量不是权限降级的理由——它覆盖面更大，
+     * 却共用同一份凭据要求，因此没有理由放宽。</p>
+     *
+     * @param bo 批量密钥参数（{@code clearKey=true} 时清除；{@code modelIds} 为空表示整个供应商）
+     * @return 实际影响的模型行数
+     */
+    @SaCheckPermission(AigConstants.PERM_MODEL_SECRET)
+    @Log(title = "AI模型密钥", businessType = BusinessType.UPDATE, excludeParamNames = {"apiKey"})
+    @RepeatSubmit
+    @PutMapping("/secret/batch")
+    public R<Integer> applyProviderSecret(
+        @Validated({Default.class, EditGroup.class}) @RequestBody AigModelSecretBatchBo bo) {
+        return R.ok(modelGovernanceService.applyProviderSecret(bo));
     }
 
     /**

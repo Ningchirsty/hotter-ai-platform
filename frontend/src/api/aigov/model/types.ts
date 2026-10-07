@@ -119,6 +119,28 @@ export interface AigModelSecretForm {
 }
 
 /**
+ * 供应商维度批量写入密钥（PUT /aigov/model/secret/batch）
+ *
+ * 同一家供应商下的模型通常共用一把 Key（bluocto 的 7 个图像模型就是同一个
+ * token 分组）。逐个模型录入要求把同一串明文粘贴 N 次，漏贴一次从
+ * `api_key` 列上也看不出来；本入口把「一把 Key 覆盖一组模型」变成一个动作。
+ *
+ * - 后端把明文**只加密一次**再复用到每一行（固定 IV 的确定性加密，
+ *   与逐行加密逐字节等价），因此没有引入新的密文形态；
+ * - `modelIds` 省略表示该供应商下**全部已登记模型**（含停用模型——
+ *   停用只是路由不选它，凭据仍应保持一致）。
+ */
+export interface AigModelSecretBatchForm {
+  providerId: string | number;
+  /** 目标模型ID；省略表示该供应商下全部模型。后端会拒绝不属于该供应商的ID */
+  modelIds?: Array<string | number>;
+  /** 明文密钥；clearKey=true 时可省略 */
+  apiKey?: string;
+  /** 是否清除这些模型已有的密钥 */
+  clearKey?: boolean;
+}
+
+/**
  * 供应商（GET /aigov/model/providers 与 /providers/all）
  * 只含名称/标识/说明/图标/启停，不含任何连接凭据——供应商表本身就没有密钥列。
  */
