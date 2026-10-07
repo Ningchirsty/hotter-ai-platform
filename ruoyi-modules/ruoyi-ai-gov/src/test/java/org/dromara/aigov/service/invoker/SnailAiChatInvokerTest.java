@@ -6,6 +6,7 @@ import com.aizuda.snail.ai.common.openapi.dto.OpenApiChatSyncResponse;
 import com.aizuda.snail.ai.openapi.client.core.api.OpenApiChatClient;
 import org.dromara.aigov.config.AigGovProperties;
 import org.dromara.aigov.domain.vo.AigSnailAgentVo;
+import org.dromara.aigov.helper.SnailAiAppVerifier;
 import org.dromara.aigov.mapper.AigSnailAgentMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -49,6 +50,7 @@ class SnailAiChatInvokerTest {
     private OpenApiChatClient client;
     private AigSnailAgentMapper agentMapper;
     private AigGovProperties properties;
+    private SnailAiAppVerifier appVerifier;
     private SnailAiChatInvoker invoker;
 
     @BeforeEach
@@ -59,8 +61,11 @@ class SnailAiChatInvokerTest {
         agentMapper = mock(AigSnailAgentMapper.class);
         properties = new AigGovProperties();
         properties.setEnabled(true);
+        appVerifier = mock(SnailAiAppVerifier.class);
+        // 身份核对默认通过（其自身的判定由 SnailAiAppVerifierTest 覆盖）
+        when(appVerifier.verify()).thenReturn(List.of());
         when(chatClientProvider.getIfAvailable()).thenReturn(client);
-        invoker = new SnailAiChatInvoker(chatClientProvider, properties, agentMapper);
+        invoker = new SnailAiChatInvoker(chatClientProvider, properties, agentMapper, appVerifier);
     }
 
     /**
@@ -160,7 +165,7 @@ class SnailAiChatInvokerTest {
     @Test
     @DisplayName("配置了应用作用域：属于别的应用的 Agent 不被选中；本地执行(app_id 为空)仍可用")
     void skipsAgentsScopedToAnotherApp() {
-        properties.setAppId("1");
+        when(appVerifier.effectiveAppId()).thenReturn("1");
         when(agentMapper.selectByChatModelId(MODEL_ID)).thenReturn(List.of(
             agent(8L, 1, "2", MODEL_ID),      // 别的应用：跳过
             agent(9L, 1, null, MODEL_ID)));   // 本地执行：可用
@@ -176,9 +181,24 @@ class SnailAiChatInvokerTest {
     }
 
     @Test
+    @DisplayName("客户端身份核对不通过（app-id/token 与 sai_app 不一致）：不发请求，报清原因")
+    void failsWhenIdentityCheckFails() {
+        when(appVerifier.verify()).thenReturn(List.of("snail-ai.token 与 sai_app 中该应用的令牌不一致"));
+
+        ModelInvokeResult result = invoker.invoke(request(MODEL_ID));
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getErrorSummary().contains("身份核对未通过"), result.getErrorSummary());
+        assertTrue(result.getErrorSummary().contains("令牌不一致"), result.getErrorSummary());
+        // 身份不对，连模型映射都不必查
+        verify(client, never()).chatSync(any());
+        verify(agentMapper, never()).selectByChatModelId(any());
+    }
+
+    @Test
     @DisplayName("配置了应用作用域且只剩别的应用：明确失败，不发请求")
     void failsWhenOnlyForeignAppAgents() {
-        properties.setAppId("1");
+        when(appVerifier.effectiveAppId()).thenReturn("1");
         when(agentMapper.selectByChatModelId(MODEL_ID))
             .thenReturn(List.of(agent(8L, 1, "2", MODEL_ID)));
 

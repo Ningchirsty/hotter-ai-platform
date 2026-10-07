@@ -399,5 +399,10 @@ Long durationMs;
 - 配置项 `aigov.snail-ai.agent-id` **已删除**（仓库内没有任何 yml 配过它）
 
 ### 其余待办
-- `snail-ai.app-id` 的实际取值与 `sai_app` 表的对应关系（**C2**：把它变成校验——
-  配置的 app-id 必须能在 `sai_app` 里找到且 token 一致，而不是靠人肉比对）
+- ~~`snail-ai.app-id` 的实际取值与 `sai_app` 表的对应关系~~ —— **阶段2 C2 已落地**：
+  不再靠人肉比对，而是由 `SnailAiAppVerifier` 核对——应用标识（优先 `aigov.snail-ai.app-id`，
+  否则平台客户端的 `snail-ai.app-id`）必须在 `sai_app` 里存在、处于启用状态，
+  且 `snail-ai.token` 与库中该应用的令牌一致；任何一项不成立都在**调用前**明确失败
+  （而不是以「超时 / 鉴权失败」的面目出现）。token 的比对在 SQL 内完成，
+  **原值不进入 Java、不进日志**。核对发生在真正要用该通道时（不在启动期失败：
+  该通道默认关闭，且 `sai_*` 表未必每个环境都导入）；模型连通性测试也会先报这一段结论。

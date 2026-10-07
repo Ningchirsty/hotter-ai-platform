@@ -10,6 +10,7 @@ import org.dromara.aigov.domain.vo.AigModelTestVo;
 import org.dromara.aigov.enums.AigDeploymentTypeEnum;
 import org.dromara.aigov.enums.AigErrorClassEnum;
 import org.dromara.aigov.helper.AigModelSecretCipher;
+import org.dromara.aigov.helper.SnailAiAppVerifier;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.json.utils.JsonUtils;
@@ -107,6 +108,14 @@ public class ModelConnectionTester {
      * 探测的超时与重试预算（{@code aigov.model-test.*}）。
      */
     private final AigModelTestProperties testProperties;
+
+    /**
+     * snail-ai 客户端身份核对（app-id / token 与 {@code sai_app} 是否一致）。
+     *
+     * <p>与 {@link SnailAiChatInvoker} 用的是同一个校验器：体检报出来的原因，
+     * 就是调用时真正会拦下它的那条。</p>
+     */
+    private final SnailAiAppVerifier appVerifier;
 
     /**
      * 执行一次连通性测试。
@@ -224,6 +233,15 @@ public class ModelConnectionTester {
         if (!snail.available()) {
             vo.setOk(false);
             vo.setMessage("snail-ai 链路不可用：请在应用配置中启用 aigov.snail-ai.enabled 并确认 OpenApiChatClient 已装配");
+            return;
+        }
+        // 体检先报客户端身份（app-id / token 与 sai_app 是否一致）：身份不对时，
+        // 下面的调用会以「超时 / 鉴权失败」等面目出现，而真正的原因在这里。
+        // 调用器内部也会做同一核对（用的是同一个校验器），这里只是让运维在页面上直接看到。
+        List<String> identityProblems = appVerifier.verify();
+        if (!identityProblems.isEmpty()) {
+            vo.setOk(false);
+            vo.setMessage("snail-ai 客户端身份核对未通过：" + SnailAiAppVerifier.describe(identityProblems));
             return;
         }
         ModelInvokeRequest request = new ModelInvokeRequest();

@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.dromara.aigov.config.AigGovProperties;
 import org.dromara.aigov.domain.vo.AigSnailAgentVo;
 import org.dromara.aigov.enums.AigDeploymentTypeEnum;
+import org.dromara.aigov.helper.SnailAiAppVerifier;
 import org.dromara.aigov.mapper.AigSnailAgentMapper;
 import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.json.utils.JsonUtils;
@@ -89,6 +90,13 @@ public class SnailAiChatInvoker implements ModelInvoker {
      */
     private final AigSnailAgentMapper snailAgentMapper;
 
+    /**
+     * 客户端身份核对（app-id / token 与 {@code sai_app} 是否一致）。
+     *
+     * <p>身份的作用域过滤也取自它，保证「过滤用谁」与「校验谁」是同一个值。</p>
+     */
+    private final SnailAiAppVerifier appVerifier;
+
     @Override
     public boolean supports(AigDeploymentTypeEnum deploymentType) {
         // 集团共享 / 外部企业服务走 snail-ai；本地私有由本地调用器承担。
@@ -122,6 +130,14 @@ public class SnailAiChatInvoker implements ModelInvoker {
         }
         if (!properties.isEnabled()) {
             return ModelInvokeResult.failure("snail-ai 调用未启用（aigov.snail-ai.enabled=false）", 0L);
+        }
+        // 先核对客户端身份（app-id / token 与 sai_app 是否一致）。
+        // 放在这里而不是启动期：该通道默认关闭，且 sai_* 表未必每个环境都导入；
+        // 而身份错了的典型表现是「发出去了但没人应答」或服务端鉴权失败，报错落在别处、很难定位。
+        List<String> identityProblems = appVerifier.verify();
+        if (!identityProblems.isEmpty()) {
+            return ModelInvokeResult.failure("snail-ai 客户端身份核对未通过："
+                + SnailAiAppVerifier.describe(identityProblems), 0L);
         }
         // 模型 → Agent：查不到就失败，绝不换一个模型跑（见类注释）
         AgentPick pick = resolveAgent(request);
@@ -207,14 +223,17 @@ public class SnailAiChatInvoker implements ModelInvoker {
                 + "或把该模型改用直连部署类型（EXTERNAL_API / LOCAL）");
         }
 
-        // 作用域：配置了 appId 时，只接受「本地执行(app_id 为空)」或「就是我方应用」的 Agent。
+        // 作用域：只接受「本地执行(app_id 为空)」或「就是我方应用」的 Agent。
         // 否则请求可能被派给别的应用，表现为「发出去了但没人应答」。
+        // 身份取自 appVerifier.effectiveAppId()——与上面的身份核对是同一个值，
+        // 不会出现「过滤用 A、校验用 B」。
+        String ownAppId = appVerifier.effectiveAppId();
         List<AigSnailAgentVo> scoped = new ArrayList<>();
         int foreignApp = 0;
         for (AigSnailAgentVo agent : agents) {
-            if (StringUtils.isBlank(properties.getAppId())
+            if (StringUtils.isBlank(ownAppId)
                 || StringUtils.isBlank(agent.getAppId())
-                || properties.getAppId().equals(agent.getAppId())) {
+                || ownAppId.equals(agent.getAppId())) {
                 scoped.add(agent);
             } else {
                 foreignApp++;
@@ -237,8 +256,9 @@ public class SnailAiChatInvoker implements ModelInvoker {
                 + " 个 Agent，其中状态非活跃/已废弃/已禁用 " + inactive + " 个"
                 + (foreignApp > 0 ? "、作用域属于其它应用 " + foreignApp + " 个" : "")
                 + "。处置：把其中一个设为活跃（status=1）"
-                + (StringUtils.isNotBlank(properties.getAppId())
-                    ? "，或确认 aigov.snail-ai.app-id 与它在同一作用域" : ""));
+                + (foreignApp > 0
+                    ? "，或确认「本客户端身份（app-id=" + ownAppId + "）」与它在同一作用域"
+                    : ""));
         }
 
         // 一对一最稳妥：Agent 自带的 instruction/skill/RAG 同样会影响输出，

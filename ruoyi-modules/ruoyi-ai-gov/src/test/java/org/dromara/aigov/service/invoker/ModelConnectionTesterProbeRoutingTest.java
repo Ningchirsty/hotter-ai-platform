@@ -6,6 +6,7 @@ import org.dromara.aigov.domain.vo.AigModelTestTargetVo;
 import org.dromara.aigov.domain.vo.AigModelTestVo;
 import org.dromara.aigov.enums.AigDeploymentTypeEnum;
 import org.dromara.aigov.helper.AigModelSecretCipher;
+import org.dromara.aigov.helper.SnailAiAppVerifier;
 import org.dromara.aigov.mapper.AigModelConfigMapper;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -106,7 +107,7 @@ class ModelConnectionTesterProbeRoutingTest {
     @DisplayName("图像模型走图像探针，不再走 chat 探针")
     void imageModelUsesImageProbe() {
         ModelConnectionTester tester = new ModelConnectionTester(
-            providerOf(imageInvoker()), mock(AigModelSecretCipher.class), new AigModelTestProperties());
+            providerOf(imageInvoker()), mock(AigModelSecretCipher.class), new AigModelTestProperties(), mock(SnailAiAppVerifier.class));
 
         AigModelTestVo result = tester.test(target("IMAGE", "openai-compatible", true));
 
@@ -123,7 +124,7 @@ class ModelConnectionTesterProbeRoutingTest {
     @DisplayName("图像模型但图像调用器没装配 → 明确说「调用器不可用」，不冒充网络失败")
     void imageModelWithoutInvoker() {
         ModelConnectionTester tester = new ModelConnectionTester(
-            providerOf(null), mock(AigModelSecretCipher.class), new AigModelTestProperties());
+            providerOf(null), mock(AigModelSecretCipher.class), new AigModelTestProperties(), mock(SnailAiAppVerifier.class));
 
         AigModelTestVo result = tester.test(target("IMAGE", "openai-compatible", true));
 
@@ -142,7 +143,7 @@ class ModelConnectionTesterProbeRoutingTest {
         // 重试 2 次 × 500ms，秒级）。之所以接受"真发一次"，是因为要证明的正是
         // "CHAT 仍然走 old path"；把它 mock 掉就只能证明我自己写的 stub 而已。
         ModelConnectionTester tester = new ModelConnectionTester(
-            providerOf(imageInvoker()), mock(AigModelSecretCipher.class), new AigModelTestProperties());
+            providerOf(imageInvoker()), mock(AigModelSecretCipher.class), new AigModelTestProperties(), mock(SnailAiAppVerifier.class));
 
         AigModelTestVo result = tester.test(target(null, "openai-compatible", true));
 
@@ -154,7 +155,7 @@ class ModelConnectionTesterProbeRoutingTest {
     void modelTypeIsNormalised() {
         for (String type : List.of("IMAGE", "image", " IMAGE ")) {
             ModelConnectionTester tester = new ModelConnectionTester(
-                providerOf(null), mock(AigModelSecretCipher.class), new AigModelTestProperties());
+                providerOf(null), mock(AigModelSecretCipher.class), new AigModelTestProperties(), mock(SnailAiAppVerifier.class));
             AigModelTestVo result = tester.test(target(type, "openai-compatible", true));
             assertEquals("OPENAI_IMAGE", result.getProbe(), "model_type=" + type + " 应走图像探针");
         }
@@ -164,7 +165,7 @@ class ModelConnectionTesterProbeRoutingTest {
     @DisplayName("图像模型没有端点 → 仍然是不支持，而不是误报图像探针成功")
     void imageModelWithoutEndpoint() {
         ModelConnectionTester tester = new ModelConnectionTester(
-            providerOf(imageInvoker()), mock(AigModelSecretCipher.class), new AigModelTestProperties());
+            providerOf(imageInvoker()), mock(AigModelSecretCipher.class), new AigModelTestProperties(), mock(SnailAiAppVerifier.class));
 
         AigModelTestVo result = tester.test(target("IMAGE", "openai-compatible", false));
 
