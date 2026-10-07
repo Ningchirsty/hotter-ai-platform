@@ -1,15 +1,18 @@
 package org.dromara.aigov.service.invoker;
 
+import cn.hutool.extra.spring.SpringUtil;
 import org.dromara.aigov.config.AigModelTestProperties;
 import org.dromara.aigov.domain.vo.AigModelTestTargetVo;
 import org.dromara.aigov.domain.vo.AigModelTestVo;
 import org.dromara.aigov.enums.AigDeploymentTypeEnum;
 import org.dromara.aigov.helper.AigModelSecretCipher;
 import org.dromara.aigov.mapper.AigModelConfigMapper;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.support.GenericApplicationContext;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.util.Iterator;
@@ -45,6 +48,26 @@ import static org.mockito.Mockito.mock;
 class ModelConnectionTesterProbeRoutingTest {
 
     private static final String ENDPOINT = "https://bluocto.com/v1";
+
+    /**
+     * 让 {@code JsonUtils} 能初始化（最小 Spring 上下文）。
+     *
+     * <p>{@code JsonUtils.JSON_MAPPER} 是 {@code SpringUtils.getBean(JsonMapper.class)} 这种**静态**
+     * 字段；没有容器时第一次被用到就 {@code ExceptionInInitializerError}，而且**同一个 JVM 里
+     * 该类从此废掉**（后续全是 {@code NoClassDefFoundError}）——这个错误是"粘"的。</p>
+     *
+     * <p><b>本类为什么仍然装它</b>：本类的用例刻意不调用会碰 {@code JsonUtils} 的代码路径
+     * （见下面 {@code chatModelStillRoutesToChatProbe} 的说明），但下游一旦有人加一句调用，
+     * 就会以"另一个测试类失败"的形式在 CI 上炸——先装上，成本为零。</p>
+     */
+    @BeforeAll
+    static void bootJsonMapper() {
+        GenericApplicationContext context = new GenericApplicationContext();
+        context.getBeanFactory().registerSingleton("jsonMapper", JsonMapper.builder().build());
+        context.refresh();
+        // hutool 的 SpringUtil 只有**实例方法**能写它的静态字段（正常由容器在 Aware 回调里调）
+        new SpringUtil().setApplicationContext(context);
+    }
 
     /** 只提供一个调用器的 ObjectProvider（Spring 的 ObjectProvider 是接口，这里给最小实现）。 */
     private static ObjectProvider<ModelInvoker> providerOf(ModelInvoker invoker) {
@@ -112,13 +135,18 @@ class ModelConnectionTesterProbeRoutingTest {
 
     @Test
     @DisplayName("非图像模型仍走 chat 探针（这次修改没有把它带走）")
-    void chatModelStillUsesChatProbe() {
+    void chatModelStillRoutesToChatProbe() {
+        // modelType 传 null（历史数据就是这种形态）：不是 IMAGE，所以应落到 chat 探针。
+        //
+        // 这条会真的发一次 HTTP——探针内部自己兜住了网络异常（DNS 失败会立刻返回，
+        // 重试 2 次 × 500ms，秒级）。之所以接受"真发一次"，是因为要证明的正是
+        // "CHAT 仍然走 old path"；把它 mock 掉就只能证明我自己写的 stub 而已。
         ModelConnectionTester tester = new ModelConnectionTester(
             providerOf(imageInvoker()), mock(AigModelSecretCipher.class), new AigModelTestProperties());
 
-        AigModelTestVo result = tester.test(target("CHAT", "openai-compatible", true));
+        AigModelTestVo result = tester.test(target(null, "openai-compatible", true));
 
-        assertEquals("OPENAI_COMPATIBLE", result.getProbe(), "CHAT 模型应仍走 chat 探针");
+        assertEquals("OPENAI_COMPATIBLE", result.getProbe(), "CHAT/空类型模型应仍走 chat 探针");
     }
 
     @Test
