@@ -167,6 +167,35 @@ SELECT 1764000000000000050, 'image_generation', '图像生成（外部聚合网�
 -- ============================================================================
 -- B 段：绑定与路由策略（**本段默认启用** —— 图像通路是本次接入的既定目标）
 --
+-- 🛑🛑 【重要】截至 2026-10-07，本段登记的图像通路**还不能真正调用**。
+--   下面这些登记是「配置到位」，但**传输协议未解决**，原因如下（实测量）：
+--
+--   POST https://bluocto.com/v1/images/generations  （附 Authorization: Bearer <token>）
+--     · 按 New API 官方文档的 OpenAI 原生格式构造请求体（model/prompt/n，
+--       response_format=b64_json 或 url、带或不带 size、最小体）→ **一律瞬间 400**：
+--         {"error":{"message":"Invalid task protocol request (request id: …)","type":"new_api_error"}}
+--     · 对全部 5 个模型（qwen-image-3.0-pro / flux-2-pro / gpt-image-2.5-flare /
+--       wan2.7-image-pro）返回**同一个**错误，且 0 秒返回 —— 说明**不是模型或字段问题，
+--       而是端点/协议不对**。
+--     · 末尾加斜杠只是 307 跳转，不是解法。
+--
+--   判读：New API 对「任务型」模型走的是 **Task Plugin** 机制（`owned_by=task plugin`
+--   就是该机制的标记；插件通过 `meta.routes` **注册自己的路由**、通过 `meta.protocols`
+--   认领宿主协议）。也就是说**端点与请求体由部署方的插件定义**，无法从公开文档推导。
+--   文档侧栏也确实把「图像」分成「原生OpenAI格式 / 原生Gemini格式 / 通义千问OpenAI格式」，
+--   说明不同上游走不同协议。
+--
+--   因此：**这 7 个模型到底怎么调，需要向 bluocto 的运维/文档确认**。要问的就三件事：
+--     ① 调用端点是哪个（是否仍是 /v1/images/generations）；
+--     ② 同步还是异步任务？若异步：提交返回的 task_id 字段名、查询端点与状态机、
+--        结果以 URL 还是 base64 返回；
+--     ③ 请求体必填字段（是否像火山系那样需要 req_key 之类的渠道参数）。
+--   一条**能跑通的 curl 示例**就够，我据此把适配器改成对应协议。
+--
+--   在此之前，B 段保持启用（配置本身无害且已实测通过），但**不要**以为调用能通：
+--   真实调用会以 400 结束，并被错误分类判为「入参问题 → 转人工」。这比伪装成功好，
+--   但仍需上面那份协议才能变成可用通路。
+--
 -- 【仍然做不到的两类能力，别再试】（2026-10-07 实测）
 --   · 文本能力（creative_direction_draft / creative_storyboard_draft）：
 --     网关 /v1/models 里**没有任何对话模型**。不是「暂时不绑」，是无模型可绑；
@@ -264,8 +293,11 @@ SELECT capability_code, data_level, preferred_deployment, allow_external, fallba
 --    期望：decision=MODEL、modelKey=qwen-image-3.0-pro、invoker=OpenAiImageInvoker。
 --    用接口验更真实：POST /aigov/invoke/dryRun
 --      {"capabilityCode":"image_generation","dataLevel":"INTERNAL"}
---    dryRun 不产生审计记录，可以随便跑；真实调用（POST /aigov/invoke/image_generation）
---    需要 sai_model_config.api_key 已录入，否则上游会返回 401 → 记为鉴权失败并建议熔断
---    （这是正确行为：没有凭据就该明确失败，而不是伪装成成功）。
+--    dryRun 不产生审计记录，可以随便跑。
+--
+--    ⚠ 但**真实调用当前必失败**：不是缺密钥的问题（那是另一层），而是**协议不对**——
+--    bluocto 对这些模型返回 400 "Invalid task protocol request"，需要向其运维确认
+--    端点和请求形态（详见 B 段开头的 🛑 说明）。密钥到位也只会在上游 400 前先撞上
+--    401，两层问题都要解。
 
 SELECT 'AIG_PROVIDER_BLUOCTO_DONE' AS marker;
