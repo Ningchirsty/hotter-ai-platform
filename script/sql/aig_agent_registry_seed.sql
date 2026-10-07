@@ -116,7 +116,7 @@ select 1765000000000000013, 1765000000000000003, '0.1.0', 'STABLE', 'GENERAL', n
        '{"fields":[{"name":"confirmedBrief"},{"name":"prompt"},{"name":"assets"},{"name":"constraints"}]}',
        '{"fields":[{"name":"providerSuggestion"},{"name":"workflowSuggestion"},{"name":"taskDraft"}]}',
        null,
-       '{"implementation":"org.dromara.creative.service.ICreativeProductionService + org.dromara.ai.image.service.ImageTaskSubmissionService","note":"只创建任务草案；实际执行经统一调用入口（路由/有序 fallback/退避重试/逐次审计都在那里）"}',
+       '{"implementation":"org.dromara.creative.service.ICreativeProductionService + org.dromara.ai.image.service.ImageTaskSubmissionService","golden_cases":["case-generation-build-dna","case-generation-build-fallback-dna"],"note":"只创建任务草案；实际执行经统一调用入口（路由/有序 fallback/退避重试/逐次审计都在那里）"}',
        null, 'shell,ssh,db-direct,docker-socket', 'image_generation', 'Y', '0', '0',
        1761000000000000103, 1761100000000000001, now(),
        '外发许可 Y：出图允许走外部图像网关；但最终是否外发仍由路由策略按数据等级取与决定'

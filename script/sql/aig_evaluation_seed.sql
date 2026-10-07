@@ -106,3 +106,38 @@ select 1767000000000000005, 'case-visual-qa-not-square', '视觉 QA·长方形�
        '这条用例的期望是「判不过」：阈值到了就翻脸，否则检查器只是装饰。用例通过 ≠ 产物合格'
   where not exists (select 1 from (select case_code from aig_evaluation_case) t
                      where t.case_code = 'case-visual-qa-not-square');
+
+-- ----------------------------
+-- 6、生成任务构建 Agent·由基因派生提示词
+-- ----------------------------
+-- 覆盖范围刻意写明：这条用例只跑「草案/prompt 派生」那一段。实际提交（ImageTaskSubmissionService）
+-- 花钱且结果非确定，归沙箱试跑与连通性测试——把提交塞进黄金用例的后果是「每次跑评测都花钱」，
+-- 那样没人会去跑它。产出里的 submission_not_performed=true 就是这句声明的机器可读版本。
+insert into aig_evaluation_case
+(case_id, case_code, case_name, case_type, scenario_code, input_snapshot_ref, expected_json,
+ rubric_json, cost_min, cost_max, data_level, classification, status, del_flag,
+ create_dept, create_by, create_time, remark)
+select 1767000000000000006, 'case-generation-build-dna', '生成任务构建·由基因派生提示词', 'IMAGE_QA', null,
+       'inline:{"subject":"鸢尾花香水","screen_hint":"HERO 主图","screen_text":"画面独白：鸢尾花香水静置在木桌上，晨光斜切","variant_seed":0,"dna":{"styleKeywords":["极简","自然"],"colors":{"background":"#F5F5F3","primary":"#2E6B4F","secondary":"#C9D8CE"},"lighting":{"type":"SOFT","direction":"FRONT"},"productRatio":{"min":15,"max":30},"saturation":"LOW","contrastLevel":"MEDIUM","whitespaceLevel":"HIGH"}}',
+       '{"required_paths":["prompt","negative_prompt","applied","prompt_length","has_negative_prompt"],"equals":{"has_negative_prompt":true,"dna_provided":true,"submission_not_performed":true,"deterministic_only":true,"model_part_evaluated":false,"reproducible_probe":true},"min_items":{"applied":3},"must_contain":["#2E6B4F","画面独白"]}',
+       null, 0.0000, 0.0000, 'INTERNAL', 'DETERMINISTIC_ENGINE', '0', '0',
+       1761000000000000103, 1761100000000000001, now(),
+       '判据钉三件事：主色与屏文案真的进了提示词、负向提示词非空、覆盖范围声明（没提交、没调模型）'
+  where not exists (select 1 from (select case_code from aig_evaluation_case) t
+                     where t.case_code = 'case-generation-build-dna');
+
+-- ----------------------------
+-- 7、生成任务构建 Agent·没有基因时走内置兜底
+-- ----------------------------
+insert into aig_evaluation_case
+(case_id, case_code, case_name, case_type, scenario_code, input_snapshot_ref, expected_json,
+ rubric_json, cost_min, cost_max, data_level, classification, status, del_flag,
+ create_dept, create_by, create_time, remark)
+select 1767000000000000007, 'case-generation-build-fallback-dna', '生成任务构建·无基因走兜底风格', 'IMAGE_QA', null,
+       'inline:{"subject":"鸢尾花香水","screen_hint":"HERO 主图"}',
+       '{"required_paths":["prompt","negative_prompt","applied","has_negative_prompt"],"equals":{"dna_provided":false,"has_negative_prompt":true,"submission_not_performed":true,"reproducible_probe":true},"min_items":{"applied":1},"must_contain":["现代简约"]}',
+       null, 0.0000, 0.0000, 'INTERNAL', 'DETERMINISTIC_ENGINE', '0', '0',
+       1761000000000000103, 1761100000000000001, now(),
+       '基因缺失时必须走内置兜底风格：提示词不能变成半句话（「静物，」这种）'
+  where not exists (select 1 from (select case_code from aig_evaluation_case) t
+                     where t.case_code = 'case-generation-build-fallback-dna');
