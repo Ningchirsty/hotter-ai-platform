@@ -45,6 +45,11 @@ public class AigPackageVersionVo implements Serializable {
     private String manifestHash;
 
     /**
+     * 包体对象键（为空 = 该版本未留存包体）
+     */
+    private String bodyRef;
+
+    /**
      * 扫描结论
      */
     private String scanResult;

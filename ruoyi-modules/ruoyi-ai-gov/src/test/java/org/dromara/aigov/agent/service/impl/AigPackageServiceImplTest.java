@@ -17,6 +17,8 @@ import org.dromara.aigov.agent.domain.vo.AigPackageDisableVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageInstallVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageRegisterVo;
 import org.dromara.aigov.agent.manifest.AigPackageManifestValidator;
+import org.dromara.aigov.config.AigPackageProperties;
+import org.dromara.aigov.agent.helper.IAigPackageBodyStore;
 import org.dromara.aigov.agent.mapper.AigAgentMapper;
 import org.dromara.aigov.agent.mapper.AigAgentVersionMapper;
 import org.dromara.aigov.agent.mapper.AigPackageInstallLogMapper;
@@ -38,6 +40,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -45,7 +48,9 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -98,6 +103,8 @@ class AigPackageServiceImplTest {
     private AigSkillMapper skillMapper;
     private AigSkillVersionMapper skillVersionMapper;
     private IAigAgentRegistryService registryService;
+    private IAigPackageBodyStore bodyStore;
+    private AigPackageProperties packageProperties;
     private AigPackageServiceImpl service;
 
     @BeforeAll
@@ -123,10 +130,12 @@ class AigPackageServiceImplTest {
         skillMapper = mock(AigSkillMapper.class);
         skillVersionMapper = mock(AigSkillVersionMapper.class);
         registryService = mock(IAigAgentRegistryService.class);
+        bodyStore = mock(IAigPackageBodyStore.class);
+        packageProperties = new AigPackageProperties();
         service = new AigPackageServiceImpl(packageMapper, packageVersionMapper, installLogMapper,
             agentMapper, agentVersionMapper, skillMapper, skillVersionMapper,
             new AigPackageManifestValidator(JsonMapper.builder().build()),
-            registryService, JsonMapper.builder().build());
+            registryService, packageProperties, bodyStore, JsonMapper.builder().build());
 
         when(packageMapper.insert(any(AigPackage.class))).thenAnswer(invocation -> {
             invocation.<AigPackage>getArgument(0).setPackageId(PKG_ID);
@@ -472,6 +481,77 @@ class AigPackageServiceImplTest {
         when(packageVersionMapper.selectById(99999L)).thenReturn(null);
         assertTrue(assertThrows(ServiceException.class, () -> service.install(99999L, 7L))
             .getMessage().contains("不存在"));
+    }
+
+    // ---------------------------------------------------------------- 包体留存
+
+    @Test
+    @DisplayName("默认不留存包体：不碰对象存储，响应如实回报 bodyStored=false")
+    void registerDoesNotStoreBodyByDefault() {
+        // storeBody 默认 false（见 AigPackageProperties 的取舍说明）
+        when(packageMapper.selectOne(any())).thenReturn(null);
+        when(packageVersionMapper.selectCount(any())).thenReturn(0L);
+
+        AigPackageRegisterVo vo = service.register(bo(defaultManifest()),
+            BODY.getBytes(StandardCharsets.UTF_8), "pkg.zip", 7L);
+
+        assertFalse(vo.bodyStored(), "默认关：不留存");
+        assertNull(vo.bodyRef());
+        verify(bodyStore, never()).put(any(), any());
+        verify(bodyStore, never()).buildKey(any(), any(), any());
+
+        // 落库的版本行 body_ref 必须为空（而不是写了别的东西）
+        ArgumentCaptor<AigPackageVersion> captor = ArgumentCaptor.forClass(AigPackageVersion.class);
+        verify(packageVersionMapper).insert(captor.capture());
+        assertNull(captor.getValue().getBodyRef());
+    }
+
+    @Test
+    @DisplayName("开启留存：先把对象放好再写库，body_ref 与响应一致")
+    void registerStoresBodyWhenEnabled() {
+        packageProperties.setStoreBody(true);
+        when(bodyStore.buildKey("vision-planning-skill", "1.0.0", BODY_SHA))
+            .thenReturn("aig-private/package/vision-planning-skill/1.0.0/body-abc123.bin");
+        when(packageMapper.selectOne(any())).thenReturn(null);
+        when(packageVersionMapper.selectCount(any())).thenReturn(0L);
+
+        AigPackageRegisterVo vo = service.register(bo(defaultManifest()),
+            BODY.getBytes(StandardCharsets.UTF_8), "pkg.zip", 7L);
+
+        ArgumentCaptor<byte[]> bodyCaptor = ArgumentCaptor.forClass(byte[].class);
+        verify(bodyStore).put(eq("aig-private/package/vision-planning-skill/1.0.0/body-abc123.bin"),
+            bodyCaptor.capture());
+        assertArrayEquals(BODY.getBytes(StandardCharsets.UTF_8), bodyCaptor.getValue(),
+            "留存的对象必须就是被核对过哈希的那份字节");
+
+        assertTrue(vo.bodyStored());
+        assertEquals("aig-private/package/vision-planning-skill/1.0.0/body-abc123.bin", vo.bodyRef());
+        ArgumentCaptor<AigPackageVersion> captor = ArgumentCaptor.forClass(AigPackageVersion.class);
+        verify(packageVersionMapper).insert(captor.capture());
+        assertEquals(vo.bodyRef(), captor.getValue().getBodyRef());
+    }
+
+    @Test
+    @DisplayName("开启留存但存储失败：整笔上传失败，且不落任何版本行（不留半截状态）")
+    void registerFailsLoudlyWhenStoreFails() {
+        packageProperties.setStoreBody(true);
+        when(bodyStore.buildKey(any(), any(), any())).thenReturn("aig-private/package/x/1.0.0/body-y.bin");
+        // put 是 void：打桩要用 doThrow（when(...) 语法对 void 方法不成立）
+        doThrow(new ServiceException("包体留存失败（对象存储不可用或未配置）：S3StorageException"))
+            .when(bodyStore).put(any(), any());
+        when(packageMapper.selectOne(any())).thenReturn(null);
+        when(packageVersionMapper.selectCount(any())).thenReturn(0L);
+
+        ServiceException error = assertThrows(ServiceException.class,
+            () -> service.register(bo(defaultManifest()), BODY.getBytes(StandardCharsets.UTF_8),
+                "pkg.zip", 7L));
+
+        assertTrue(error.getMessage().contains("包体留存失败"), error.getMessage());
+        // 关键：不能出现「版本登记了、对象存储里没有」这种最难查的半截状态。
+        // （包主记录在本步之前就已插入；生产里它随 @Transactional 一起回滚，
+        //   单测用 mock 没有事务所以看得见——这里断言的是承载 body_ref 的版本行与账本行。）
+        verify(packageVersionMapper, never()).insert(any(AigPackageVersion.class));
+        verify(installLogMapper, never()).insert(any(AigPackageInstallLog.class));
     }
 
     // ---------------------------------------------------------------- 停用

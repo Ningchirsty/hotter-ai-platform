@@ -42,6 +42,8 @@ export interface AigPackageVersionVO extends BaseEntity {
   version?: string;
   /** Manifest 原文 SHA-256（复扫时用来发现「入库后被改动」） */
   manifestHash?: string;
+  /** 包体对象键；为空 = 该版本未留存包体（未开 aigov.package.store-body） */
+  bodyRef?: string;
   /** 扫描结论：PASS / REJECT / PENDING（未扫描为 null） */
   scanResult?: string;
   scanDetail?: string;
@@ -84,6 +86,10 @@ export interface AigPackageRegisterVO {
   version?: string;
   checksum?: string;
   manifestHash?: string;
+  /** 本次包体是否已留存到对象存储（取决于 aigov.package.store-body 与留存结果） */
+  bodyStored?: boolean;
+  /** 包体对象键；未留存时为 null */
+  bodyRef?: string;
   scanPass?: boolean;
   scanResult?: string;
   scanDetail?: string;

@@ -78,6 +78,7 @@ create table if not exists aig_package_version (
     version                varchar(32)  not null                  comment '版本号（同 Package 内唯一）',
     manifest_json          longtext     not null                  comment 'Manifest 原文（声明式：身份/能力/依赖/权限/质量；不含可执行代码）',
     manifest_hash          char(64)     not null                  comment 'Manifest 原文 SHA-256（对原样入库字节计算，校验未被改写）',
+    body_ref               varchar(500) default null              comment '包体对象键（aigov.package.store-body=true 时写入；私有前缀且不登记 sys_oss，避免持有 system:oss:download 的账号绕过模块授权取到包体；关闭开关时为空=包体未留存）',
     scan_result            varchar(16)  default null              comment '拒绝规则扫描结论（PASS/REJECT/PENDING，§6.2）',
     scan_detail            varchar(1000) default null             comment '扫描说明（拒绝时必须写明命中哪一条，不允许空泛文案）',
     release_status         varchar(24)  not null default 'DRAFT'  comment '发布状态机（DRAFT/VALIDATED/SANDBOX_TESTED/CANDIDATE/STABLE/DISABLED/ARCHIVED，§5.4）',

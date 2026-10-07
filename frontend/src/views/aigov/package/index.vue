@@ -97,6 +97,16 @@
           </template>
         </el-table-column>
         <el-table-column label="扫描说明" align="center" prop="scanDetail" show-overflow-tooltip />
+        <el-table-column label="包体" align="center" width="110">
+          <template #default="scope">
+            <el-tooltip v-if="scope.row.bodyRef" :content="scope.row.bodyRef" placement="top">
+              <el-tag type="success">已留存</el-tag>
+            </el-tooltip>
+            <el-tooltip v-else content="未留存包体（aigov.package.store-body 未开启，或该版本在本开关上线前登记）" placement="top">
+              <el-tag type="info">未留存</el-tag>
+            </el-tooltip>
+          </template>
+        </el-table-column>
         <el-table-column label="操作" align="center" width="250" fixed="right">
           <template #default="scope">
             <el-button v-hasPermi="['aig:package:scan']" link type="primary" icon="Search" @click="handleScan(scope.row)">
@@ -394,7 +404,10 @@ const submitUpload = async () => {
     '（版本ID ' +
     result.packageVersionId +
     '）：' +
-    (result.scanPass ? 'Manifest 校验通过，可安装' : '被拒绝 —— ' + (result.scanDetail || ''));
+    (result.scanPass ? 'Manifest 校验通过，可安装' : '被拒绝 —— ' + (result.scanDetail || '')) +
+    (result.bodyStored
+      ? '；包体已留存（' + result.bodyRef + '）'
+      : '；包体未留存（aigov.package.store-body 未开启，这是默认行为）');
   getList();
 };
 

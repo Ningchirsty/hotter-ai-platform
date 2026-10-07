@@ -70,6 +70,14 @@ public class AigPackageVersion extends BaseEntity implements Serializable {
     private String manifestHash;
 
     /**
+     * 包体对象键（{@code aigov.package.store-body=true} 时写入）
+     *
+     * <p>为空 = 该版本未留存包体（未开开关，或本列上线前的历史版本）。对象在私有前缀下、
+     * <b>不登记 {@code sys_oss}</b>，只由治理模块按键访问。</p>
+     */
+    private String bodyRef;
+
+    /**
      * 拒绝规则扫描结论（PASS/REJECT/PENDING，设计 §6.2）
      */
     private String scanResult;

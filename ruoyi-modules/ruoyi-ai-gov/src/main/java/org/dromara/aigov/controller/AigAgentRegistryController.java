@@ -284,12 +284,14 @@ public class AigAgentRegistryController {
      * 上传并登记 Package（携包体 + Manifest 原文）。
      *
      * <p><b>要求携包体是刻意的</b>：服务端据此计算 SHA-256 并与 Manifest 声明的 {@code checksum}
-     * 比对，校验和因此不是「调用方说了算」。包体本身不入库（声明式 Package 的安装只读 Manifest），
-     * 要留存包体请先交给平台文件服务并把存储键填进 {@code sourceRef}。</p>
+     * 比对，校验和因此不是「调用方说了算」。包体<b>默认不留存</b>；开启
+     * {@code aigov.package.store-body} 后留存到对象存储，对象键记在该版本的 {@code bodyRef} 上
+     * （留存失败即整笔上传失败，不落半截状态）。无论开关状态，响应里的
+     * {@code bodyStored}/{@code bodyRef} 都会如实说明本次包体有没有被留存。</p>
      *
      * @param file 包体
      * @param bo   上传入参（Manifest 原文 + 来源引用）
-     * @return 登记结果（含这次校验的结论；被拒也会留痕）
+     * @return 登记结果（含这次校验的结论与包体留存情况；被拒也会留痕）
      */
     @SaCheckPermission(AigConstants.PERM_PACKAGE_UPLOAD)
     @RepeatSubmit

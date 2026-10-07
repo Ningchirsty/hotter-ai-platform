@@ -17,6 +17,10 @@ import org.dromara.aigov.agent.manifest.AigPackageManifest;
  * @param version          版本号
  * @param checksum         包体 SHA-256（服务端对上传字节计算，并与 Manifest 声明比对过）
  * @param manifestHash     Manifest 原文 SHA-256（对入库的那串字节计算）
+ * @param bodyStored       本次包体是否已留存到对象存储（取决于 {@code aigov.package.store-body}
+ *                         与留存结果）。<b>无论开关状态都如实回报</b>——否则「以为存了其实没存」
+ *                         这个判断只能靠人去翻存储；
+ * @param bodyRef          包体对象键；{@code bodyStored=false} 时为 null
  * @param scanPass         上传时那次校验是否通过
  * @param scanResult       PASS / REJECT
  * @param scanDetail       校验说明（拒绝时写明命中哪一条规则）
@@ -30,6 +34,8 @@ public record AigPackageRegisterVo(
     String version,
     String checksum,
     String manifestHash,
+    boolean bodyStored,
+    String bodyRef,
     boolean scanPass,
     String scanResult,
     String scanDetail,

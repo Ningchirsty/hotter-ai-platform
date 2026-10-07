@@ -20,6 +20,7 @@ import org.dromara.aigov.agent.domain.vo.AigPackageRegisterVo;
 import org.dromara.aigov.agent.enums.AigPackageInstallActionEnum;
 import org.dromara.aigov.agent.enums.AigReleaseStatusEnum;
 import org.dromara.aigov.agent.enums.AigReleaseTargetTypeEnum;
+import org.dromara.aigov.agent.helper.IAigPackageBodyStore;
 import org.dromara.aigov.agent.manifest.AigManifestAgentSpec;
 import org.dromara.aigov.agent.manifest.AigManifestScanResult;
 import org.dromara.aigov.agent.manifest.AigManifestSkillSpec;
@@ -35,6 +36,7 @@ import org.dromara.aigov.agent.mapper.AigSkillVersionMapper;
 import org.dromara.aigov.agent.service.IAigAgentRegistryService;
 import org.dromara.aigov.agent.service.IAigPackageService;
 import org.dromara.aigov.agent.state.AigReleaseStateMachine;
+import org.dromara.aigov.config.AigPackageProperties;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
 import org.springframework.stereotype.Service;
@@ -68,8 +70,10 @@ import java.util.Map;
  * <h3>两处刻意的语义选择</h3>
  * <ul>
  *     <li><b>要求携包体</b>：服务端据此算 SHA-256 并与 Manifest 声明的 {@code checksum} 比对，
- *         校验和从此不是「调用方说了算」。<b>包体本身不入库</b>——声明式 Package 的安装只读
- *         Manifest，包体只用于核对哈希；要留存包体应交给平台文件服务并把键填进 {@code source_ref}。</li>
+ *         校验和从此不是「调用方说了算」。<b>包体默认不留存</b>（声明式 Package 的安装只读
+ *         Manifest，包体只用于核对哈希）；开启 {@code aigov.package.store-body} 后留存到对象存储，
+ *         对象键写进<b>该版本</b>的 {@code body_ref}（逐版本而非逐包：每次上传的包体可能不同，
+ *         记在包上会被下一个版本覆盖）。留存失败即整笔上传失败，不落半截状态。</li>
  *     <li><b>{@code aig_package.checksum} 随每次上传更新为「最近一次包体哈希」</b>：这样
  *         Manifest 校验里「Manifest 声明 vs 包记录」的交叉核对在同一版本上恒成立；
  *         若把它冻结在首次上传，第二个版本就会被自己的校验规则误判为「校验和不一致」。</li>
@@ -134,6 +138,16 @@ public class AigPackageServiceImpl implements IAigPackageService {
      */
     private final IAigAgentRegistryService registryService;
 
+    /**
+     * Package 链路行为配置（当前只有「是否留存包体」一个开关，默认关）。
+     */
+    private final AigPackageProperties packageProperties;
+
+    /**
+     * 包体留存（对象存储）。只在开关开启时被调用。
+     */
+    private final IAigPackageBodyStore bodyStore;
+
     private final JsonMapper jsonMapper;
 
     @Override
@@ -184,7 +198,7 @@ public class AigPackageServiceImpl implements IAigPackageService {
             pkg.setSourceType(StringUtils.isBlank(bo.getSourceRef()) ? "UPLOAD" : "TRUSTED_SOURCE");
             pkg.setSourceRef(StringUtils.substring(bo.getSourceRef(), 0, 500));
             pkg.setDescription("由上传登记，包体 " + StringUtils.substring(bodyName, 0, 120)
-                + "（" + body.length + " 字节）；包体不入库，校验和见 checksum");
+                + "（" + body.length + " 字节）；包体是否留存见版本 body_ref，校验和见 checksum");
             pkg.setStatus(STATUS_NORMAL);
             pkg.setDelFlag(STATUS_NORMAL);
             pkg.setRemark(StringUtils.substring(bo.getRemark(), 0, 500));
@@ -210,11 +224,22 @@ public class AigPackageServiceImpl implements IAigPackageService {
                 + "@" + manifest.version() + "（版本不可变——覆盖会让已发布的结论失去依据）");
         }
 
+        // 包体留存（可选，默认关）。
+        // 刻意放在**写库之前**：留存失败就整笔失败、不落任何行——否则会出现
+        // 「版本登记了、body_ref 也写了、对象存储里其实没有」这种最难查的半截状态。
+        // 对象键由包编码/版本/哈希算出，不依赖入库后才有的ID，因此可以先放对象再写库。
+        String bodyRef = null;
+        if (packageProperties.isStoreBody()) {
+            bodyRef = bodyStore.buildKey(manifest.packageCode(), manifest.version(), bodyHash);
+            bodyStore.put(bodyRef, body);
+        }
+
         AigPackageVersion version = new AigPackageVersion();
         version.setPackageId(pkg.getPackageId());
         version.setVersion(manifest.version());
         version.setManifestJson(rawManifest);
         version.setManifestHash(AigPackageManifestValidator.manifestHash(rawManifest));
+        version.setBodyRef(bodyRef);
         version.setScanResult(scan.scanResult());
         version.setScanDetail(StringUtils.substring(scan.getDetail(), 0, SCAN_DETAIL_MAX));
         version.setReleaseStatus(AigReleaseStatusEnum.DRAFT.getCode());
@@ -226,11 +251,11 @@ public class AigPackageServiceImpl implements IAigPackageService {
 
         writeLog(version.getPackageVersionId(), AigPackageInstallActionEnum.UPLOAD,
             scan.isPass() ? "PASS" : "REJECT", scan.getDetail(), operatorId);
-        log.info("Package 上传登记完成, packageCode={}, version={}, scan={}, bodySha256={}",
-            manifest.packageCode(), manifest.version(), scan.scanResult(), bodyHash);
+        log.info("Package 上传登记完成, packageCode={}, version={}, scan={}, bodySha256={}, bodyStored={}",
+            manifest.packageCode(), manifest.version(), scan.scanResult(), bodyHash, bodyRef != null);
         return new AigPackageRegisterVo(pkg.getPackageId(), version.getPackageVersionId(),
             manifest.packageCode(), manifest.version(), bodyHash, version.getManifestHash(),
-            scan.isPass(), scan.scanResult(), scan.getDetail(), manifest);
+            bodyRef != null, bodyRef, scan.isPass(), scan.scanResult(), scan.getDetail(), manifest);
     }
 
     @Override

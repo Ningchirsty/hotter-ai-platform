@@ -5,6 +5,7 @@ import org.dromara.aigov.agent.domain.vo.AigPackageVo;
 import org.dromara.aigov.agent.enums.AigReleaseStatusEnum;
 import org.dromara.aigov.agent.evaluation.AigEvaluationSubjectRegistry;
 import org.dromara.aigov.agent.evaluation.AigExpectedRuleChecker;
+import org.dromara.aigov.agent.helper.IAigPackageBodyStore;
 import org.dromara.aigov.agent.manifest.AigPackageManifestValidator;
 import org.dromara.aigov.agent.mapper.AigAgentBindingMapper;
 import org.dromara.aigov.agent.mapper.AigAgentMapper;
@@ -27,6 +28,7 @@ import org.dromara.aigov.agent.service.impl.AigEvaluationServiceImpl;
 import org.dromara.aigov.agent.service.impl.AigPackageServiceImpl;
 import org.dromara.aigov.controller.AigAgentRegistryController;
 import org.dromara.aigov.controller.AigEvaluationController;
+import org.dromara.aigov.config.AigPackageProperties;
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.core.exception.ServiceException;
 import org.junit.jupiter.api.BeforeEach;
@@ -341,6 +343,18 @@ class AigWp3WiringAndRoutesTest {
         }
 
         @Bean
+        AigPackageProperties packageProperties() {
+            // 真配置对象（默认 storeBody=false，因此上下文不依赖对象存储）；行为见 AigPackageServiceImplTest
+            return new AigPackageProperties();
+        }
+
+        @Bean
+        IAigPackageBodyStore packageBodyStore() {
+            // 只在 storeBody=true 时才会被调用；这里用替身，装配测试不去连对象存储
+            return mock(IAigPackageBodyStore.class);
+        }
+
+        @Bean
         IAigPackageService packageService(AigPackageMapper packageMapper,
                                           AigPackageVersionMapper packageVersionMapper,
                                           AigPackageInstallLogMapper installLogMapper,
@@ -350,10 +364,12 @@ class AigWp3WiringAndRoutesTest {
                                           AigSkillVersionMapper skillVersionMapper,
                                           AigPackageManifestValidator manifestValidator,
                                           IAigAgentRegistryService registryService,
+                                          AigPackageProperties packageProperties,
+                                          IAigPackageBodyStore packageBodyStore,
                                           JsonMapper jsonMapper) {
             return new AigPackageServiceImpl(packageMapper, packageVersionMapper, installLogMapper,
                 agentMapper, agentVersionMapper, skillMapper, skillVersionMapper, manifestValidator,
-                registryService, jsonMapper);
+                registryService, packageProperties, packageBodyStore, jsonMapper);
         }
 
         @Bean

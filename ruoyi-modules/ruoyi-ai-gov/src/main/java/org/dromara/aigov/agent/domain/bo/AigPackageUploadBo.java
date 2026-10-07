@@ -31,12 +31,11 @@ public class AigPackageUploadBo implements Serializable {
     private String manifestJson;
 
     /**
-     * 来源引用（上传存储键或可信来源地址；可空）
+     * 来源引用（可信来源地址；可空）
      *
-     * <p><b>本阶段刻意不落包体</b>：声明式 Package 的安装只读 Manifest，包体仅用于
-     * 让服务端核对 {@code checksum}。所以「上传」= 携包体登记并校验哈希，
-     * 包体本身不入库、不假装入了对象存储。要留存包体，后续把包体交给平台文件服务并把
-     * 返回的存储键填进本字段。</p>
+     * <p><b>这不是包体的存放位置</b>：包体的留存由 {@code aigov.package.store-body} 决定，
+     * 开启后对象键写在<b>版本</b>的 {@code body_ref} 上（每次上传的包体可能不同，
+     * 记在包上会被下一个版本覆盖）。本字段只用来记「这份包是从哪来的」（可信来源地址/备注性引用）。</p>
      */
     @Size(max = 500, message = "来源引用长度不能超过 500")
     private String sourceRef;
