@@ -187,6 +187,58 @@ class CreativeEvaluationPipelineTest {
         return bo;
     }
 
+    /**
+     * 与种子脚本里 case-plan-brand-brief 的判据**逐字一致**（同一条判据在真实产出上求值）
+     */
+    private static final String BRAND_BRIEF_EXPECTED_JSON =
+        "{\"required_paths\":[\"directions\",\"screens\",\"brand_brief_used\",\"must_show_first_line\","
+            + "\"must_show_in_closing_screen\",\"selling_point_count\",\"selling_points_landed\","
+            + "\"selling_point_screens\"],"
+            + "\"equals\":{\"direction_count\":3,\"brand_brief_used\":true,"
+            + "\"must_show_in_closing_screen\":true,\"selling_point_count\":2,"
+            + "\"selling_points_landed\":2,\"selling_point_screens\":2,\"deterministic\":true,"
+            + "\"reproducible_probe\":true},"
+            + "\"min_items\":{\"directions\":3,\"screens\":1},"
+            + "\"must_contain\":[\"容量 50ml\",\"手工缠花\",\"蓝紫渐变釉色\"]}";
+
+    /**
+     * 与种子脚本里 case-plan-brand-brief 的输入快照**逐字一致**
+     */
+    private static final String BRAND_BRIEF_SNAPSHOT =
+        "inline:{\"product_name\":\"鸢尾花香水\",\"variant_seed\":0,"
+            + "\"facts\":{\"product_name\":\"鸢尾花香水\",\"color\":\"蓝紫渐变\"},"
+            + "\"dna\":{\"colors\":{\"background\":\"#F5F5F3\",\"primary\":\"#2E6B4F\"},"
+            + "\"lighting\":{\"type\":\"SOFT\",\"direction\":\"FRONT\"},\"saturation\":\"LOW\","
+            + "\"contrastLevel\":\"MEDIUM\",\"whitespaceLevel\":\"HIGH\"},"
+            + "\"brand_brief\":{\"must_show_first_line\":\"容量 50ml\","
+            + "\"selling_points\":[{\"title\":\"手工缠花\",\"content\":\"手工缠花工艺\"},"
+            + "{\"title\":\"蓝紫渐变\",\"content\":\"蓝紫渐变釉色\"}]}}";
+
+    @Test
+    @DisplayName("★ 端到端：种子里「品牌要求进分镜」那条用例，同一条判据在真实产出上求值 → PASS")
+    void brandBriefCasePassesEndToEnd() {
+        stubAgentVersion(null);
+        AigEvaluationCase evaluationCase = new AigEvaluationCase();
+        evaluationCase.setCaseId(CASE_ID);
+        evaluationCase.setCaseCode(CASE_CODE);
+        evaluationCase.setCaseName("策划·品牌要求进分镜");
+        evaluationCase.setCaseType("PLAN");
+        evaluationCase.setInputSnapshotRef(BRAND_BRIEF_SNAPSHOT);
+        evaluationCase.setExpectedJson(BRAND_BRIEF_EXPECTED_JSON);
+        evaluationCase.setCostMin(BigDecimal.ZERO);
+        evaluationCase.setCostMax(BigDecimal.ZERO);
+        evaluationCase.setStatus("0");
+        when(caseMapper.selectOne(any())).thenReturn(evaluationCase);
+
+        List<AigEvaluationRun> runs = service.runEvaluation(runBo());
+
+        assertEquals(1, runs.size());
+        AigEvaluationRun run = runs.get(0);
+        assertEquals(AigEvaluationStatusEnum.PASS.getCode(), run.getResultStatus(),
+            "判据未通过（说明品牌要求没落进分镜，或执行器没把 brand_brief 喂给派生器）："
+                + run.getScoreJson());
+    }
+
     @Test
     @DisplayName("端到端：真实策划引擎跑通用例 → PASS，成本 0，人工复核不要求")
     void endToEndPassesWithRealEngine() {

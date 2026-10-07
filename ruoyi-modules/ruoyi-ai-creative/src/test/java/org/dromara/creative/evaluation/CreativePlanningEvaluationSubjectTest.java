@@ -207,4 +207,88 @@ class CreativePlanningEvaluationSubjectTest {
         assertEquals(3, out.get("direction_count").asInt());
     }
 
+    // ---------------------------------------------------------------- 品牌要求进分镜
+
+    /**
+     * 品牌要求片段（与 aig_evaluation_seed.sql 里 case-plan-brand-brief 的快照逐字一致）
+     */
+    private static final String BRAND_BRIEF = "\"brand_brief\":{\"must_show_first_line\":\"容量 50ml\","
+        + "\"selling_points\":[{\"title\":\"手工缠花\",\"content\":\"手工缠花工艺\"},"
+        + "{\"title\":\"蓝紫渐变\",\"content\":\"蓝紫渐变釉色\"}]}";
+
+    /**
+     * 带品牌要求的快照引用。
+     *
+     * @param dna  DNA JSON
+     * @param seed 差异种子
+     * @return 快照引用
+     */
+    private static String snapshotWithBrandBrief(String dna, long seed) {
+        return "inline:{\"product_name\":\"" + PRODUCT + "\",\"variant_seed\":" + seed
+            + ",\"facts\":{\"product_name\":\"" + PRODUCT + "\",\"color\":\"蓝紫渐变\"},"
+            + "\"dna\":" + dna + "," + BRAND_BRIEF + "}";
+    }
+
+    @Test
+    @DisplayName("★ 品牌要求真的落进分镜：必显信息进末屏、两条卖点各进一个卖点屏")
+    void brandBriefLandsInScreens() throws Exception {
+        JsonNode out = run(snapshotWithBrandBrief(DNA_FULL, 0));
+
+        assertTrue(out.get("brand_brief_used").asBoolean(), out.toString());
+        assertEquals("容量 50ml", out.get("must_show_first_line").asText());
+        assertTrue(out.get("must_show_in_closing_screen").asBoolean(),
+            "必显信息必须进品牌收尾屏（末屏）：" + out);
+        assertEquals(2, out.get("selling_point_count").asInt());
+        assertEquals(2, out.get("selling_points_landed").asInt(),
+            "两条卖点都要落进卖点屏：" + out.get("screens"));
+        assertEquals(2, out.get("selling_point_screens").asInt(), "默认骨架有两个卖点屏");
+
+        JsonNode closing = out.get("screens").get(out.get("screens").size() - 1);
+        assertTrue(closing.toString().contains("容量 50ml"),
+            "末屏（品牌收尾）里应能看到必显信息：" + closing);
+    }
+
+    @Test
+    @DisplayName("没填品牌要求时：三个新字段是「未使用」，分镜与从前一致（卖点屏仍在，只是没内容可填）")
+    void withoutBrandBriefNewFieldsAreInert() throws Exception {
+        JsonNode out = run(snapshot(DNA_FULL, 0));
+
+        assertFalse(out.get("brand_brief_used").asBoolean());
+        assertTrue(out.get("must_show_first_line").isNull(), out.toString());
+        assertFalse(out.get("must_show_in_closing_screen").asBoolean());
+        assertEquals(0, out.get("selling_point_count").asInt());
+        assertEquals(0, out.get("selling_points_landed").asInt());
+        assertEquals(2, out.get("selling_point_screens").asInt());
+        // 「没填」不能变成「分镜变空」——这正是 5 参重载里 null/空清单保持原行为的用意
+        assertTrue(out.get("screen_count").asInt() >= 7, out.toString());
+    }
+
+    @Test
+    @DisplayName("品牌要求结构不合法：逐项报错，不猜也不静默忽略")
+    void brandBriefValidation() {
+        assertTrue(assertThrows(ServiceException.class, () -> subject.execute(request(
+            "inline:{\"product_name\":\"x\",\"brand_brief\":[1]}")))
+            .getMessage().contains("brand_brief 必须是对象"));
+        assertTrue(assertThrows(ServiceException.class, () -> subject.execute(request(
+            "inline:{\"product_name\":\"x\",\"brand_brief\":{\"must_show_first_line\":1}}")))
+            .getMessage().contains("must_show_first_line 必须是文本"));
+        assertTrue(assertThrows(ServiceException.class, () -> subject.execute(request(
+            "inline:{\"product_name\":\"x\",\"brand_brief\":{\"selling_points\":{}}}")))
+            .getMessage().contains("selling_points 必须是数组"));
+        assertTrue(assertThrows(ServiceException.class, () -> subject.execute(request(
+            "inline:{\"product_name\":\"x\",\"brand_brief\":{\"selling_points\":[\"文字\"]}}")))
+            .getMessage().contains("每一项必须是对象"));
+        assertTrue(assertThrows(ServiceException.class, () -> subject.execute(request(
+            "inline:{\"product_name\":\"x\",\"brand_brief\":{\"selling_points\":[{\"title\":1}]}}")))
+            .getMessage().contains("title 必须是文本"));
+    }
+
+    @Test
+    @DisplayName("带品牌要求也保持确定性：同快照两次逐字相同")
+    void brandBriefStaysDeterministic() {
+        String first = subject.execute(request(snapshotWithBrandBrief(DNA_FULL, 3))).outputJson();
+        String second = subject.execute(request(snapshotWithBrandBrief(DNA_FULL, 3))).outputJson();
+        assertEquals(first, second);
+    }
+
 }

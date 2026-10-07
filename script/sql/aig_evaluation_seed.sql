@@ -58,7 +58,26 @@ select 1767000000000000002, 'case-plan-blank-levels', '策划 Agent·缺档位�
                      where t.case_code = 'case-plan-blank-levels');
 
 -- ----------------------------
--- 3、视觉 DNA Agent·参考图确定性实测
+-- 3、策划 Agent·品牌要求真的落进分镜（必显信息 + 卖点）
+-- ----------------------------
+-- 为什么要这一条：生产链路（CreativeStoryboardServiceImpl）把品牌要求喂进了派生器的 5 参重载，
+-- 而评测执行器原先只调 3 参形态——「品牌要求进没进分镜」这段接线坏了，前两条用例照样全绿。
+-- 这条用例把那段接线钉住：必显信息必须出现在**末屏（品牌收尾）**，两条卖点必须各进一个卖点屏。
+insert into aig_evaluation_case
+(case_id, case_code, case_name, case_type, scenario_code, input_snapshot_ref, expected_json,
+ rubric_json, cost_min, cost_max, data_level, classification, status, del_flag,
+ create_dept, create_by, create_time, remark)
+select 1767000000000000008, 'case-plan-brand-brief', '策划 Agent·品牌要求进分镜（必显+卖点）', 'PLAN', null,
+       'inline:{"product_name":"鸢尾花香水","variant_seed":0,"facts":{"product_name":"鸢尾花香水","color":"蓝紫渐变"},"dna":{"colors":{"background":"#F5F5F3","primary":"#2E6B4F"},"lighting":{"type":"SOFT","direction":"FRONT"},"saturation":"LOW","contrastLevel":"MEDIUM","whitespaceLevel":"HIGH"},"brand_brief":{"must_show_first_line":"容量 50ml","selling_points":[{"title":"手工缠花","content":"手工缠花工艺"},{"title":"蓝紫渐变","content":"蓝紫渐变釉色"}]}}',
+       '{"required_paths":["directions","screens","brand_brief_used","must_show_first_line","must_show_in_closing_screen","selling_point_count","selling_points_landed","selling_point_screens"],"equals":{"direction_count":3,"brand_brief_used":true,"must_show_in_closing_screen":true,"selling_point_count":2,"selling_points_landed":2,"selling_point_screens":2,"deterministic":true,"reproducible_probe":true},"min_items":{"directions":3,"screens":1},"must_contain":["容量 50ml","手工缠花","蓝紫渐变釉色"]}',
+       null, 0.0000, 0.0000, 'INTERNAL', 'DETERMINISTIC_ENGINE', '0', '0',
+       1761000000000000103, 1761100000000000001, now(),
+       '覆盖「品牌要求 → 分镜」这段接线：必显信息进末屏、卖点各进一个卖点屏（此前执行器只跑 3 参形态，这段接线坏了也测不出来）'
+  where not exists (select 1 from (select case_code from aig_evaluation_case) t
+                     where t.case_code = 'case-plan-brand-brief');
+
+-- ----------------------------
+-- 4、视觉 DNA Agent·参考图确定性实测
 -- ----------------------------
 insert into aig_evaluation_case
 (case_id, case_code, case_name, case_type, scenario_code, input_snapshot_ref, expected_json,
@@ -74,7 +93,7 @@ select 1767000000000000003, 'case-visual-dna-solid-bg', '视觉 DNA·白底红�
                      where t.case_code = 'case-visual-dna-solid-bg');
 
 -- ----------------------------
--- 4、视觉 QA Agent·合格交付图判过
+-- 5、视觉 QA Agent·合格交付图判过
 -- ----------------------------
 insert into aig_evaluation_case
 (case_id, case_code, case_name, case_type, scenario_code, input_snapshot_ref, expected_json,
@@ -90,7 +109,7 @@ select 1767000000000000004, 'case-visual-qa-clean-800', '视觉 QA·合格图判
                      where t.case_code = 'case-visual-qa-clean-800');
 
 -- ----------------------------
--- 5、视觉 QA Agent·长方形图必须判不过
+-- 6、视觉 QA Agent·长方形图必须判不过
 -- ----------------------------
 -- 注意语义：这条用例的**运行结论是 PASS**——因为「检查器对这张图给出了预期的判定（判不过）」
 -- 就是用例要断言的事。不是「这张图合格」。用例通过 ≠ 产物合格。
@@ -108,7 +127,7 @@ select 1767000000000000005, 'case-visual-qa-not-square', '视觉 QA·长方形�
                      where t.case_code = 'case-visual-qa-not-square');
 
 -- ----------------------------
--- 6、生成任务构建 Agent·由基因派生提示词
+-- 7、生成任务构建 Agent·由基因派生提示词
 -- ----------------------------
 -- 覆盖范围刻意写明：这条用例只跑「草案/prompt 派生」那一段。实际提交（ImageTaskSubmissionService）
 -- 花钱且结果非确定，归沙箱试跑与连通性测试——把提交塞进黄金用例的后果是「每次跑评测都花钱」，
@@ -127,7 +146,7 @@ select 1767000000000000006, 'case-generation-build-dna', '生成任务构建·�
                      where t.case_code = 'case-generation-build-dna');
 
 -- ----------------------------
--- 7、生成任务构建 Agent·没有基因时走内置兜底
+-- 8、生成任务构建 Agent·没有基因时走内置兜底
 -- ----------------------------
 insert into aig_evaluation_case
 (case_id, case_code, case_name, case_type, scenario_code, input_snapshot_ref, expected_json,

@@ -67,6 +67,11 @@ public class CreativePlanningEvaluationSubject implements IAigEvaluationSubject 
      */
     private static final List<String> LEVEL_ENUMS = List.of("LOW", "MEDIUM", "HIGH");
 
+    /**
+     * 卖点屏的屏类型（默认骨架里的「卖点一/卖点二」）
+     */
+    private static final String SELLING_POINT_TYPE = "SELLING_POINT";
+
     @Override
     public boolean supports(String targetType, String subjectCode) {
         return AigReleaseTargetTypeEnum.AGENT_VERSION.getCode().equalsIgnoreCase(targetType)
@@ -90,10 +95,13 @@ public class CreativePlanningEvaluationSubject implements IAigEvaluationSubject 
         List<CreativeDraftFactory.DirectionDraft> directions =
             CreativeDraftFactory.directions(dna, snapshot.productName(), snapshot.facts(),
                 snapshot.variantSeed());
-        // 注意：只有 directions 有种子重载；screens 的第 4 个参数是 mustShowFirstLine 而不是种子，
-        // 因此分镜按 3 参形态生成（种子只影响方向的拍法选择）
-        List<CreativeDraftFactory.ScreenDraft> screens =
-            CreativeDraftFactory.screens(dna, snapshot.productName(), snapshot.facts());
+        // 分镜按**生产链路同一形态**生成：把品牌 Brief 的必显信息与卖点也喂进去。
+        // 起因：生产（CreativeStoryboardServiceImpl）走的是带品牌要求的 5 参重载，而本执行器原先
+        // 只调 3 参形态——于是「品牌要求进没进分镜」这段接线坏了，黄金用例照样全绿。
+        // 没有 brand_brief 时与从前逐字一致（5 参重载内部对 null/空清单就是原行为）。
+        List<CreativeDraftFactory.ScreenDraft> screens = CreativeDraftFactory.screens(
+            dna, snapshot.productName(), snapshot.facts(), snapshot.mustShow(),
+            snapshot.sellingPoints());
 
         List<Map<String, Object>> directionNodes = new ArrayList<>();
         for (CreativeDraftFactory.DirectionDraft draft : directions) {
@@ -137,6 +145,16 @@ public class CreativePlanningEvaluationSubject implements IAigEvaluationSubject 
         output.put("directions", directionNodes);
         output.put("screen_count", screenNodes.size());
         output.put("screens", screenNodes);
+        // 品牌要求是否真的落进了分镜：**测量**（对产出做统计），不是判断。
+        // 全部做成扁平标量，判据可以直接 equals/min_items，不必赌数组下标。
+        boolean briefUsed = snapshot.mustShow() != null || !snapshot.sellingPoints().isEmpty();
+        output.put("brand_brief_used", briefUsed);
+        output.put("must_show_first_line", snapshot.mustShow());
+        output.put("must_show_in_closing_screen", mustShowInClosingScreen(screenNodes, snapshot.mustShow()));
+        output.put("selling_point_count", snapshot.sellingPoints().size());
+        output.put("selling_points_landed",
+            sellingPointsLanded(screenNodes, snapshot.sellingPoints()));
+        output.put("selling_point_screens", countType(screenNodes, SELLING_POINT_TYPE));
         StringBuilder draftText = new StringBuilder();
         collectText(directionNodes, draftText);
         collectText(screenNodes, draftText);
@@ -207,7 +225,139 @@ public class CreativePlanningEvaluationSubject implements IAigEvaluationSubject 
             }
             variantSeed = seedNode.asLong();
         }
-        return new Snapshot(productName, facts, dna, variantSeed);
+
+        // 品牌要求（可选）：必显信息第一行 + 卖点块。与生产链路的入参一一对应，
+        // 缺省就是「这个项目没填品牌要求」——此时分镜与从前逐字一致。
+        String mustShow = null;
+        List<CreativeDraftFactory.CopyHint> sellingPoints = new ArrayList<>();
+        JsonNode briefNode = node.get("brand_brief");
+        if (briefNode != null && !briefNode.isNull()) {
+            if (!briefNode.isObject()) {
+                throw new ServiceException("内联输入快照的 brand_brief 必须是对象");
+            }
+            JsonNode mustShowNode = briefNode.get("must_show_first_line");
+            if (mustShowNode != null && !mustShowNode.isNull()) {
+                if (!mustShowNode.isTextual()) {
+                    throw new ServiceException("brand_brief.must_show_first_line 必须是文本");
+                }
+                mustShow = mustShowNode.asText();
+            }
+            JsonNode pointsNode = briefNode.get("selling_points");
+            if (pointsNode != null && !pointsNode.isNull()) {
+                if (!pointsNode.isArray()) {
+                    throw new ServiceException("brand_brief.selling_points 必须是数组");
+                }
+                for (JsonNode point : pointsNode) {
+                    if (!point.isObject()) {
+                        throw new ServiceException(
+                            "brand_brief.selling_points 的每一项必须是对象（title/content）");
+                    }
+                    sellingPoints.add(new CreativeDraftFactory.CopyHint(
+                        textOrNull(point, "title"), textOrNull(point, "content")));
+                }
+            }
+        }
+        return new Snapshot(productName, facts, dna, variantSeed, mustShow, sellingPoints);
+    }
+
+    /**
+     * 取节点上的文本字段（缺失/null 返回 null；类型不对直接报错，不猜）。
+     *
+     * @param node 对象节点
+     * @param field 字段名
+     * @return 文本或 null
+     */
+    private static String textOrNull(JsonNode node, String field) {
+        JsonNode value = node.get(field);
+        if (value == null || value.isNull()) {
+            return null;
+        }
+        if (!value.isTextual()) {
+            throw new ServiceException("brand_brief.selling_points 的 " + field + " 必须是文本");
+        }
+        return value.asText();
+    }
+
+    /**
+     * 必显信息是否落进了**末屏**（品牌收尾）。
+     *
+     * <p>判据依据生产口径：{@code mustShowFirstLine} 进的是品牌收尾屏的标题/正文。</p>
+     *
+     * @param screens 分镜
+     * @param mustShow 必显信息第一行（可空）
+     * @return 落进去了返回 true；没提供必显信息返回 false
+     */
+    private static boolean mustShowInClosingScreen(List<Map<String, Object>> screens, String mustShow) {
+        if (mustShow == null || mustShow.isBlank() || screens.isEmpty()) {
+            return false;
+        }
+        return textOf(screens.get(screens.size() - 1)).contains(mustShow);
+    }
+
+    /**
+     * 有几个卖点真的落进了卖点屏。
+     *
+     * <p>只在 {@value #SELLING_POINT_TYPE} 类型的屏里找，避免「落是落了，但落到了别的屏上」
+     * 也判为通过。卖点块的标题与正文任一出现即算落下（正文为空时只看标题）。</p>
+     *
+     * @param screens       分镜
+     * @param sellingPoints 卖点块
+     * @return 落下的条数
+     */
+    private static int sellingPointsLanded(List<Map<String, Object>> screens,
+                                           List<CreativeDraftFactory.CopyHint> sellingPoints) {
+        if (sellingPoints.isEmpty()) {
+            return 0;
+        }
+        StringBuilder sellingText = new StringBuilder();
+        for (Map<String, Object> screen : screens) {
+            if (SELLING_POINT_TYPE.equals(String.valueOf(screen.get("type")))) {
+                sellingText.append(textOf(screen)).append('\n');
+            }
+        }
+        String text = sellingText.toString();
+        int landed = 0;
+        for (CreativeDraftFactory.CopyHint point : sellingPoints) {
+            String probe = point.content() == null || point.content().isBlank()
+                ? point.title() : point.content();
+            if (probe != null && !probe.isBlank() && text.contains(probe)) {
+                landed++;
+            }
+        }
+        return landed;
+    }
+
+    /**
+     * 某类型的分镜数量。
+     *
+     * @param screens 分镜
+     * @param type    屏类型
+     * @return 数量
+     */
+    private static int countType(List<Map<String, Object>> screens, String type) {
+        int count = 0;
+        for (Map<String, Object> screen : screens) {
+            if (type.equals(String.valueOf(screen.get("type")))) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /**
+     * 拼接一屏里的所有字符串值（只看文案）。
+     *
+     * @param screen 一屏
+     * @return 文本
+     */
+    private static String textOf(Map<String, Object> screen) {
+        StringBuilder text = new StringBuilder();
+        for (Object value : screen.values()) {
+            if (value instanceof String string) {
+                text.append(string).append('\n');
+            }
+        }
+        return text.toString();
     }
 
     /**
@@ -283,13 +433,16 @@ public class CreativePlanningEvaluationSubject implements IAigEvaluationSubject 
     /**
      * 解析后的输入快照。
      *
-     * @param productName 产品名
-     * @param facts       已确认事实
-     * @param dna         锁定基因
-     * @param variantSeed 差异种子
+     * @param productName  产品名
+     * @param facts        已确认事实
+     * @param dna          锁定基因
+     * @param variantSeed  差异种子
+     * @param mustShow     品牌必显信息第一行（可空）
+     * @param sellingPoints 卖点块（按序，可空）
      */
     private record Snapshot(String productName, Map<String, String> facts, ObjectNode dna,
-                            long variantSeed) {
+                            long variantSeed, String mustShow,
+                            List<CreativeDraftFactory.CopyHint> sellingPoints) {
     }
 
 }

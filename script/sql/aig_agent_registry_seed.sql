@@ -86,7 +86,7 @@ select 1765000000000000011, 1765000000000000001, '0.1.0', 'STABLE', 'GENERAL', n
        '{"fields":[{"name":"productTruth"},{"name":"finalCopy"},{"name":"brandProfile"},{"name":"referenceAssets"}]}',
        '{"fields":[{"name":"pageSpec"},{"name":"modules"},{"name":"screenBriefs"},{"name":"promptPlan"}]}',
        null,
-       '{"implementation":"org.dromara.creative.helper.CreativeDraftFactory + CreativeDraftBrain","deterministic":true,"golden_cases":["case-plan-deterministic","case-plan-blank-levels"],"note":"参数化模板 + 可复现 variantSeed，无随机数无时钟；模型仅在字段通过 accept 时叠加并把来源标出，否则回落并标 TEMPLATE"}',
+       '{"implementation":"org.dromara.creative.helper.CreativeDraftFactory + CreativeDraftBrain","deterministic":true,"golden_cases":["case-plan-deterministic","case-plan-blank-levels","case-plan-brand-brief"],"note":"参数化模板 + 可复现 variantSeed，无随机数无时钟；模型仅在字段通过 accept 时叠加并把来源标出，否则回落并标 TEMPLATE"}',
        null, 'shell,ssh,db-direct,docker-socket', null, 'N', '0', '0',
        1761000000000000103, 1761100000000000001, now(),
        '确定性引擎：prompt_template 与 provider_capability 刻意为空，表示本 Agent 不调模型'
