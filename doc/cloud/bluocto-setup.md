@@ -2,7 +2,7 @@
 
 最新能力状态请先阅读 [恢复后七型号验收](bluocto-restored-validation-2026-10-07.md)。后续历史联调章节保留当时记录，不代表当前可提交能力；当前门禁见每个型号的 `/image/cloud/models` profiles。当前 5179 已启用本机真实云端交互，范围与运行方式见 [本机真实交互验收](bluocto-local-live-2026-10-07.md)。生产尚未发布本次云端接入。
 
-当前代码位于 `codex/cloud-image-model-ui` 工作树，尚未合并或部署生产。现有 ComfyUI 能力保持原接口与工作流。云端任务复用 image_task、image_asset、image_task_event，不需要数据库迁移。
+本次云端接入通过 `codex/cloud-image-api-integration` 提交至 main；生产是否启用应以实际镜像版本、服务端密钥挂载和只读配置检查为准。现有 ComfyUI 能力保持原接口与工作流。云端任务复用 image_task、image_asset、image_task_event，不需要数据库迁移。
 
 ## 1. 创建 Key
 
@@ -57,7 +57,7 @@ sudo nano /opt/ai-video-poc/secrets/bluocto.key
 environment:
   BLUOCTO_ENABLED: "${BLUOCTO_ENABLED:-false}"
   BLUOCTO_API_KEY_FILE: /run/secrets/bluocto.key
-  BLUOCTO_OUTPUT_HOSTS: "${BLUOCTO_OUTPUT_HOSTS:-bluocto.com,dashscope-463f.oss-accelerate.aliyuncs.com,dashscope-7c2c.oss-accelerate.aliyuncs.com}"
+  BLUOCTO_OUTPUT_HOSTS: "${BLUOCTO_OUTPUT_HOSTS:-bluocto.com,rolldek.com,dashscope-463f.oss-accelerate.aliyuncs.com,dashscope-7c2c.oss-accelerate.aliyuncs.com}"
 volumes:
   - /opt/ai-video-poc/secrets/bluocto.key:/run/secrets/bluocto.key:ro
 ```
@@ -82,11 +82,13 @@ volumes:
 
 ## 5. 参数和额外能力
 
-蓝章鱼公共型号清单确认 `/v1/images/generations`。当前真实调用只提交 `model` 与 `prompt`，使用供应商默认的单张输出。2026-10-07 用户补充 New API 文档后，已找到其官方 Alibaba 插件中千问 3.0 和万相 2.7 的参考图参数定义；这仍不证明蓝章鱼安装了同一版本或开放了同一渠道。
+当前提交会携带所选型号、创作能力及已验收的具体输出参数（尺寸、数量）；编辑入口同时传入参考图或蒙版。参数由前后端按型号与能力共同校验，画质和显式格式未通过验收的组合不能真实提交。最新参数证据见 [输出设置验收](bluocto-output-parameters-2026-10-07.md)。
+
+以下为初次接入的历史背景：蓝章鱼公共型号清单确认 `/v1/images/generations`。2026-10-07 用户补充 New API 文档后，已找到其官方 Alibaba 插件中千问 3.0 和万相 2.7 的参考图参数定义；这仍不证明蓝章鱼安装了同一版本或开放了同一渠道。
 
 文生图实际通过后，再用该型号的专用文档和少量实际请求确认参考图创作、指令编辑、多图融合、局部重绘/蒙版、扩图等能力。界面与服务端都不能用其他同系列型号的参数代替本型号验证结果。
 
-若返回 URL，服务器只下载 HTTPS、核准域名且非内网地址的图片，不携带 API Key、不跟随重定向。默认核准域名为 `bluocto.com` 及本轮实际验证的 `dashscope-463f.oss-accelerate.aliyuncs.com`、`dashscope-7c2c.oss-accelerate.aliyuncs.com`。输出来自供应商可信 CDN 时，先向供应商确认域名，再把准确主机名追加到 `BLUOCTO_OUTPUT_HOSTS`；不要使用任意域名或通配符。返回 `b64_json` 的图片无需额外域名配置。
+若返回 URL，服务器只下载 HTTPS、核准域名且非内网地址的图片，不携带 API Key、不跟随重定向。默认核准域名为 `bluocto.com`、实际供应商响应中返回并验证的 `rolldek.com`，以及 `dashscope-463f.oss-accelerate.aliyuncs.com`、`dashscope-7c2c.oss-accelerate.aliyuncs.com`。输出来自供应商可信 CDN 时，先向供应商确认域名，再把准确主机名追加到 `BLUOCTO_OUTPUT_HOSTS`；不要使用任意域名或通配符。返回 `b64_json` 的图片无需额外域名配置。
 
 输出上限 20MB / 16MP，必须可实测并解码为支持的图片格式后才归档成功。
 
