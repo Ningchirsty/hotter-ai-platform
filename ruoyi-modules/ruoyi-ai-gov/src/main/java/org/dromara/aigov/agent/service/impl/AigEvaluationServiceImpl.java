@@ -15,6 +15,8 @@ import org.dromara.aigov.agent.domain.AigSkillVersion;
 import org.dromara.aigov.agent.domain.bo.AigEvaluationCaseBo;
 import org.dromara.aigov.agent.domain.bo.AigEvaluationReviewBo;
 import org.dromara.aigov.agent.domain.bo.AigEvaluationRunBo;
+import org.dromara.aigov.agent.domain.vo.AigEvaluationCaseVo;
+import org.dromara.aigov.agent.domain.vo.AigEvaluationRunVo;
 import org.dromara.aigov.agent.enums.AigEvaluationCaseTypeEnum;
 import org.dromara.aigov.agent.enums.AigEvaluationReviewEnum;
 import org.dromara.aigov.agent.enums.AigEvaluationStatusEnum;
@@ -212,6 +214,36 @@ public class AigEvaluationServiceImpl implements IAigEvaluationService {
 
     @Override
     public List<AigEvaluationCase> listCases(String caseType, String scenarioCode) {
+        return caseMapper.selectList(caseWrapper(caseType, scenarioCode));
+    }
+
+    @Override
+    public List<AigEvaluationCaseVo> listCaseVos(String caseType, String scenarioCode) {
+        // 列表返回裁剪过的 VO：expected_json/rubric_json 是 longtext，
+        // 清单页不需要它，塞进列表响应只会让页面变慢
+        return caseMapper.selectVoList(caseWrapper(caseType, scenarioCode));
+    }
+
+    @Override
+    public AigEvaluationCaseVo getCaseVo(Long caseId) {
+        if (caseId == null) {
+            throw new ServiceException("用例ID不能为空");
+        }
+        AigEvaluationCaseVo vo = caseMapper.selectVoById(caseId);
+        if (vo == null) {
+            throw new ServiceException("用例不存在：" + caseId);
+        }
+        return vo;
+    }
+
+    /**
+     * 用例清单查询条件（两处复用：实体清单与 VO 清单）。
+     *
+     * @param caseType     用例类型（可空）
+     * @param scenarioCode 业务场景（可空）
+     * @return 条件
+     */
+    private LambdaQueryWrapper<AigEvaluationCase> caseWrapper(String caseType, String scenarioCode) {
         LambdaQueryWrapper<AigEvaluationCase> wrapper = new LambdaQueryWrapper<>();
         if (StringUtils.isNotBlank(caseType)) {
             AigEvaluationCaseTypeEnum type = AigEvaluationCaseTypeEnum.find(caseType);
@@ -225,7 +257,7 @@ public class AigEvaluationServiceImpl implements IAigEvaluationService {
             wrapper.eq(AigEvaluationCase::getScenarioCode, StringUtils.trim(scenarioCode));
         }
         wrapper.orderByAsc(AigEvaluationCase::getCaseCode);
-        return caseMapper.selectList(wrapper);
+        return wrapper;
     }
 
     @Override
@@ -296,15 +328,43 @@ public class AigEvaluationServiceImpl implements IAigEvaluationService {
 
     @Override
     public List<AigEvaluationRun> listRuns(String targetType, Long targetVersionId) {
+        return runMapper.selectList(runWrapper(targetType, targetVersionId));
+    }
+
+    @Override
+    public List<AigEvaluationRunVo> listRunVos(String targetType, Long targetVersionId) {
+        return runMapper.selectVoList(runWrapper(targetType, targetVersionId));
+    }
+
+    @Override
+    public AigEvaluationRunVo getRunVo(Long runId) {
+        if (runId == null) {
+            throw new ServiceException("运行ID不能为空");
+        }
+        AigEvaluationRunVo vo = runMapper.selectVoById(runId);
+        if (vo == null) {
+            throw new ServiceException("评测运行不存在：" + runId);
+        }
+        return vo;
+    }
+
+    /**
+     * 运行清单查询条件（两处复用：实体清单与 VO 清单）。
+     *
+     * @param targetType      评测对象类型
+     * @param targetVersionId 对象版本ID
+     * @return 条件
+     */
+    private LambdaQueryWrapper<AigEvaluationRun> runWrapper(String targetType, Long targetVersionId) {
         AigReleaseTargetTypeEnum type = requireType(targetType);
         if (targetVersionId == null) {
             throw new ServiceException("对象版本ID不能为空");
         }
-        return runMapper.selectList(new LambdaQueryWrapper<AigEvaluationRun>()
+        return new LambdaQueryWrapper<AigEvaluationRun>()
             .eq(AigEvaluationRun::getTargetType, type.getCode())
             .eq(AigEvaluationRun::getTargetVersionId, targetVersionId)
             .orderByDesc(AigEvaluationRun::getOperateTime)
-            .orderByDesc(AigEvaluationRun::getRunId));
+            .orderByDesc(AigEvaluationRun::getRunId);
     }
 
     @Override

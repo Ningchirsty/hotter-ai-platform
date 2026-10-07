@@ -5,6 +5,8 @@ import org.dromara.aigov.agent.domain.AigEvaluationRun;
 import org.dromara.aigov.agent.domain.bo.AigEvaluationCaseBo;
 import org.dromara.aigov.agent.domain.bo.AigEvaluationReviewBo;
 import org.dromara.aigov.agent.domain.bo.AigEvaluationRunBo;
+import org.dromara.aigov.agent.domain.vo.AigEvaluationCaseVo;
+import org.dromara.aigov.agent.domain.vo.AigEvaluationRunVo;
 import org.dromara.aigov.agent.evaluation.AigGoldenCaseEvidence;
 
 import java.util.List;
@@ -48,6 +50,40 @@ public interface IAigEvaluationService {
      * @return 用例清单
      */
     List<AigEvaluationCase> listCases(String caseType, String scenarioCode);
+
+    /**
+     * 按类型/场景列出用例（裁剪过的 VO：不含 expected_json/rubric_json 长文本）。
+     *
+     * @param caseType     用例类型（可空）
+     * @param scenarioCode 业务场景（可空）
+     * @return 用例清单
+     */
+    List<AigEvaluationCaseVo> listCaseVos(String caseType, String scenarioCode);
+
+    /**
+     * 取用例明细（VO；判据原文用 {@link #getCase} 读）。
+     *
+     * @param caseId 用例ID
+     * @return 用例
+     */
+    AigEvaluationCaseVo getCaseVo(Long caseId);
+
+    /**
+     * 列出某个版本的评测运行（VO，按时间倒序）。
+     *
+     * @param targetType      评测对象类型
+     * @param targetVersionId 对象版本ID
+     * @return 运行行清单
+     */
+    List<AigEvaluationRunVo> listRunVos(String targetType, Long targetVersionId);
+
+    /**
+     * 取运行明细（VO；打分明细原文用 {@link #getRun} 读）。
+     *
+     * @param runId 运行ID
+     * @return 运行行
+     */
+    AigEvaluationRunVo getRunVo(Long runId);
 
     /**
      * 读取版本声明的黄金用例集合。
