@@ -165,6 +165,13 @@ class AigWp3WiringAndRoutesTest {
         mockMvc.perform(get("/aigov/agent/package/version/list")).andExpect(status().isOk());
         mockMvc.perform(get("/aigov/evaluation/case/list")).andExpect(status().isOk());
 
+        // 页面靠这个接口拿到「版本声明的用例集合」（声明在 config_json/Manifest 里，页面读不到）
+        mockMvc.perform(get("/aigov/evaluation/declared-cases")
+                .param("targetType", "AGENT_VERSION")
+                .param("targetVersionId", "1"))
+            .andExpect(status().isOk());
+        verify(evaluationService).declaredGoldenCases(eq("AGENT_VERSION"), eq(1L));
+
         // 写接口的请求体绑定也走通（响应里是服务给的枚举名）
         mockMvc.perform(post("/aigov/agent/release/advance")
                 .contentType("application/json")

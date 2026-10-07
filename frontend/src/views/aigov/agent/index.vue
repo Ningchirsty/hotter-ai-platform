@@ -1,0 +1,341 @@
+<template>
+  <div class="p-2 app-container aigov-agent-page">
+    <PageHeading title="AI平台治理" subtitle="管理AI能力、模型接入与调用策略" admin module="aigov" />
+    <div class="search-wrap">
+      <el-card shadow="hover" class="search-panel" :class="{ 'is-collapsed': !showSearch }">
+        <template #header>
+          <div class="panel-heading search-panel-toggle" @click.stop="showSearch = !showSearch">
+            <div>
+              <span class="panel-kicker">Search Filters</span>
+              <h3>Agent 检索</h3>
+            </div>
+          </div>
+        </template>
+        <el-form ref="queryFormRef" :model="queryParams" :inline="true" class="query-form">
+          <el-form-item label="Agent编码" prop="agentCode">
+            <el-input v-model="queryParams.agentCode" placeholder="精确匹配" clearable @keyup.enter="handleQuery" />
+          </el-form-item>
+          <el-form-item label="Agent名称" prop="agentName">
+            <el-input v-model="queryParams.agentName" placeholder="模糊匹配" clearable @keyup.enter="handleQuery" />
+          </el-form-item>
+          <el-form-item label="类别" prop="category">
+            <el-select v-model="queryParams.category" placeholder="请选择类别" clearable style="width: 160px">
+              <el-option v-for="item in categoryOptions" :key="item.value" :label="item.label" :value="item.value" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="来源" prop="builtin">
+            <el-select v-model="queryParams.builtin" placeholder="请选择来源" clearable style="width: 160px">
+              <el-option label="平台内置" value="Y" />
+              <el-option label="Package 带入" value="N" />
+            </el-select>
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" icon="Search" @click="handleQuery">搜索</el-button>
+            <el-button icon="Refresh" @click="resetQuery">重置</el-button>
+          </el-form-item>
+        </el-form>
+      </el-card>
+    </div>
+
+    <el-card shadow="hover" class="table-panel">
+      <template #header>
+        <div class="toolbar-shell">
+          <div class="table-heading">
+            <span class="panel-kicker">Agent Registry</span>
+            <h3>Agent 注册中心</h3>
+            <p>
+              共 {{ total }} 条记录；Agent 不是一段代码，而是一条被版本化、被审批、可回滚的配置。
+              点「版本」看待发布版本，点「推进」走发布门槛（服务层会核对库里的证据）。
+            </p>
+          </div>
+          <div class="toolbar-actions">
+            <right-toolbar v-model:show-search="showSearch" :search="false" @query-table="getList"></right-toolbar>
+          </div>
+        </div>
+      </template>
+
+      <el-table v-loading="loading" border class="data-table" :data="agentList">
+        <el-table-column label="Agent编码" align="center" prop="agentCode" width="200" show-overflow-tooltip />
+        <el-table-column label="名称" align="center" prop="agentName" width="160" show-overflow-tooltip />
+        <el-table-column label="类别" align="center" width="120">
+          <template #default="scope">
+            <el-tag type="info">{{ categoryLabel(scope.row.category) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="来源" align="center" width="120">
+          <template #default="scope">
+            <el-tag :type="scope.row.builtin === 'Y' ? 'success' : 'warning'">
+              {{ scope.row.builtin === 'Y' ? '平台内置' : 'Package 带入' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="说明" align="center" prop="description" show-overflow-tooltip />
+        <el-table-column label="状态" align="center" width="90">
+          <template #default="scope">
+            <el-tag :type="scope.row.status === '0' ? 'success' : 'danger'">
+              {{ scope.row.status === '0' ? '正常' : '停用' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" align="center" width="160" fixed="right">
+          <template #default="scope">
+            <el-button v-hasPermi="['aig:agent:list']" link type="primary" icon="View" @click="openVersions(scope.row)">
+              版本
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <pagination
+        v-show="total > 0"
+        v-model:page="queryParams.pageNum"
+        v-model:limit="queryParams.pageSize"
+        :total="total"
+        @pagination="getList"
+      />
+    </el-card>
+
+    <!-- 版本列表 + 发布推进 -->
+    <el-dialog v-model="versionVisible" :title="'版本 · ' + (currentAgent?.agentName || '')" width="1000px" append-to-body>
+      <el-alert type="info" :closable="false" class="mb-2">
+        发布状态机：DRAFT → VALIDATED → SANDBOX_TESTED → CANDIDATE → STABLE（另有 DISABLED/ARCHIVED）。
+        推进时服务层会核对门槛证据：Manifest 校验看 scan_result、黄金用例看评测账本。
+      </el-alert>
+      <el-table v-loading="versionLoading" border :data="versionList">
+        <el-table-column label="版本" align="center" prop="version" width="90" />
+        <el-table-column label="发布状态" align="center" width="130">
+          <template #default="scope">
+            <el-tag :type="statusTagType(scope.row.releaseStatus)">{{ scope.row.releaseStatus }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="通道" align="center" prop="releaseChannel" width="100" />
+        <el-table-column label="外部调用" align="center" width="100">
+          <template #default="scope">{{ scope.row.allowExternal === 'Y' ? '允许' : '禁止' }}</template>
+        </el-table-column>
+        <el-table-column label="来源Package版本" align="center" prop="packageVersionId" width="170" show-overflow-tooltip />
+        <el-table-column label="最近评测" align="center" prop="evaluationRunId" width="150" show-overflow-tooltip />
+        <el-table-column label="操作" align="center" width="140" fixed="right">
+          <template #default="scope">
+            <el-button
+              v-hasPermi="['aig:agent:release']"
+              link
+              type="primary"
+              icon="Promotion"
+              :disabled="isTerminal(scope.row.releaseStatus)"
+              @click="openAdvance(scope.row)"
+            >
+              推进
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
+
+    <el-dialog v-model="advanceVisible" title="推进发布状态" width="560px" append-to-body>
+      <el-form ref="advanceFormRef" :model="advanceForm" label-width="130px">
+        <el-form-item label="对象">
+          <el-input :model-value="advanceForm.targetType + ' #' + advanceForm.targetVersionId" disabled />
+        </el-form-item>
+        <el-form-item label="我以为当前是" prop="expectedStatus">
+          <el-input v-model="advanceForm.expectedStatus" disabled />
+        </el-form-item>
+        <el-form-item label="目标状态" prop="toStatus">
+          <el-select v-model="advanceForm.toStatus" placeholder="请选择目标状态" style="width: 100%">
+            <el-option v-for="item in nextStatusOptions" :key="item" :label="item" :value="item" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="已通过门槛">
+          <el-checkbox-group v-model="advanceForm.passedGates">
+            <el-checkbox v-for="gate in gateOptions" :key="gate.value" :value="gate.value">{{ gate.label }}</el-checkbox>
+          </el-checkbox-group>
+          <div class="gate-hint">
+            服务层不会只看这里勾了什么：Manifest 校验与黄金用例会去库里核对证据，
+            没有证据的声明一律拒绝。缺哪些门槛可点下面的「查还差什么」。
+          </div>
+        </el-form-item>
+        <el-form-item label="说明">
+          <el-input v-model="advanceForm.detail" type="textarea" :rows="2" placeholder="可空；会写进发布事件账本" />
+        </el-form-item>
+      </el-form>
+      <el-alert v-if="missingGateText" type="warning" :closable="false" class="mb-2">{{ missingGateText }}</el-alert>
+      <template #footer>
+        <el-button @click="advanceVisible = false">取消</el-button>
+        <el-button @click="handleMissingGates">查还差什么</el-button>
+        <el-button type="primary" @click="submitAdvance">确定推进</el-button>
+      </template>
+    </el-dialog>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { getAgentVersion, listAgent, listAgentVersion, advanceRelease, missingGates } from '@/api/aigov/agent';
+import type { AigAgentQuery, AigAgentVO, AigAgentVersionVO, AigReleaseAdvanceForm } from '@/api/aigov/agent/types';
+import { useLoading } from '@/hooks/async/useLoading';
+import { useSearchReset } from '@/hooks/form/useSearchReset';
+import { useSearchToggle } from '@/hooks/form/useSearchToggle';
+import modal from '@/plugins/modal';
+
+defineOptions({ name: 'AigAgentRegistry' });
+
+/** Agent 类别（与后端 AigAgentCategoryEnum 一致） */
+const categoryOptions = [
+  { value: 'PLANNING', label: '详情页策划' },
+  { value: 'VISUAL_DNA', label: '视觉 DNA' },
+  { value: 'GENERATION', label: '生成任务构建' },
+  { value: 'QA', label: '视觉 QA' }
+];
+
+/** 五道门槛（与后端 AigReleaseGateEnum 一致） */
+const gateOptions = [
+  { value: 'MANIFEST_VALIDATION', label: 'Manifest 校验' },
+  { value: 'SANDBOX_RUN', label: '沙箱运行' },
+  { value: 'GOLDEN_CASE', label: '黄金用例' },
+  { value: 'HUMAN_APPROVAL', label: '人工批准' },
+  { value: 'CANARY', label: '灰度达标' }
+];
+
+const agentList = ref<AigAgentVO[]>([]);
+const versionList = ref<AigAgentVersionVO[]>([]);
+const currentAgent = ref<AigAgentVO>();
+const { loading, withLoading } = useLoading(true);
+const { loading: versionLoading, withLoading: withVersionLoading } = useLoading(true);
+const { showSearch } = useSearchToggle();
+const total = ref(0);
+const queryFormRef = ref<ElFormInstance>();
+const versionVisible = ref(false);
+const advanceVisible = ref(false);
+const missingGateText = ref('');
+const advanceFormRef = ref<ElFormInstance>();
+
+const queryParams = ref<AigAgentQuery>({
+  pageNum: 1,
+  pageSize: 10,
+  agentCode: undefined,
+  agentName: undefined,
+  category: undefined,
+  builtin: undefined,
+  params: {}
+});
+
+const advanceForm = ref<AigReleaseAdvanceForm>({
+  targetType: 'AGENT_VERSION',
+  targetVersionId: '',
+  expectedStatus: '',
+  toStatus: '',
+  passedGates: [],
+  detail: ''
+});
+
+/** 目标状态候选：门槛驱动的下一步 + 运维动作（停用/归档） */
+const nextStatusOptions = computed(() => {
+  const current = advanceForm.value.expectedStatus;
+  const map: Record<string, string[]> = {
+    DRAFT: ['VALIDATED', 'DISABLED', 'ARCHIVED'],
+    VALIDATED: ['SANDBOX_TESTED', 'DISABLED', 'ARCHIVED'],
+    SANDBOX_TESTED: ['CANDIDATE', 'DISABLED', 'ARCHIVED'],
+    CANDIDATE: ['STABLE', 'DISABLED', 'ARCHIVED'],
+    STABLE: ['DISABLED', 'ARCHIVED'],
+    DISABLED: ['STABLE', 'ARCHIVED'],
+    ARCHIVED: []
+  };
+  return map[current] || [];
+});
+
+const { resetQuery } = useSearchReset({
+  queryFormRef,
+  queryParams,
+  pageNumKey: 'pageNum',
+  afterReset: () => handleQuery()
+});
+
+/** 类别展示名 */
+const categoryLabel = (value?: string) => categoryOptions.find((item) => item.value === value)?.label || value || '-';
+
+/** 状态标签颜色：终态/停用给不同色，避免"看起来都一样" */
+const statusTagType = (status?: string): 'primary' | 'success' | 'info' | 'warning' | 'danger' | undefined => {
+  if (status === 'STABLE') return 'success';
+  if (status === 'DISABLED' || status === 'ARCHIVED') return 'info';
+  if (status === 'CANDIDATE') return 'warning';
+  return undefined;
+};
+
+const isTerminal = (status?: string) => status === 'ARCHIVED';
+
+/** 查询 Agent 清单 */
+const getList = async () => {
+  await withLoading(async () => {
+    const res = await listAgent(queryParams.value);
+    agentList.value = res.data?.rows || [];
+    total.value = res.data?.total || 0;
+  });
+};
+
+/** 搜索 */
+const handleQuery = () => {
+  queryParams.value.pageNum = 1;
+  getList();
+};
+
+/** 打开版本列表 */
+const openVersions = async (row: AigAgentVO) => {
+  currentAgent.value = row;
+  versionVisible.value = true;
+  await withVersionLoading(async () => {
+    const res = await listAgentVersion({ pageNum: 1, pageSize: 100, agentId: row.agentId });
+    versionList.value = res.data?.rows || [];
+  });
+};
+
+/** 打开推进对话框（expectedStatus 用当前状态，服务层会比对） */
+const openAdvance = async (row: AigAgentVersionVO) => {
+  const res = await getAgentVersion(row.agentVersionId as string | number);
+  advanceForm.value = {
+    targetType: 'AGENT_VERSION',
+    targetVersionId: row.agentVersionId as string | number,
+    expectedStatus: (res.data?.releaseStatus || row.releaseStatus) as string,
+    toStatus: '',
+    passedGates: [],
+    detail: ''
+  };
+  missingGateText.value = '';
+  advanceVisible.value = true;
+};
+
+/** 查「还差哪些门槛」 */
+const handleMissingGates = async () => {
+  const res = await missingGates(advanceForm.value.targetType, advanceForm.value.targetVersionId, advanceForm.value.passedGates);
+  const codes: string[] = res.data || [];
+  missingGateText.value = codes.length
+    ? '还差：' + codes.map((code) => gateOptions.find((g) => g.value === code)?.label || code).join('、')
+    : '当前状态下不需要再补门槛（或当前状态不接受门槛推进）。';
+};
+
+/** 提交推进 */
+const submitAdvance = async () => {
+  if (!advanceForm.value.toStatus) {
+    modal.msgError('请选择目标状态');
+    return;
+  }
+  await modal.confirm('确认把该版本推进到「' + advanceForm.value.toStatus + '」？服务层会核对门槛证据。');
+  const res = await advanceRelease(advanceForm.value);
+  modal.msgSuccess('已推进到 ' + res.data);
+  advanceVisible.value = false;
+  await openVersions(currentAgent.value as AigAgentVO);
+};
+
+onMounted(() => {
+  getList();
+});
+</script>
+
+<style lang="scss" scoped>
+@use '@/assets/styles/components/page-shell' as pageShell;
+
+@include pageShell.table-crud-page;
+
+.gate-hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--el-text-color-secondary);
+}
+</style>

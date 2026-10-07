@@ -156,4 +156,24 @@ public class AigEvaluationController {
         return R.ok(evaluationService.goldenCaseEvidence(targetType, targetVersionId));
     }
 
+    /**
+     * 取版本声明的黄金用例集合。
+     *
+     * <p><b>为什么页面需要这个接口</b>：跑评测要求「用例集合等于版本声明的集合」，
+     * 而声明在版本的 config_json 里（Agent/Skill）或 Manifest 里（Package）——页面读不到那些长文本，
+     * 也就无从知道该跑哪几条。没有这个接口，页面只能让用户凭记忆手填，
+     * 而手填错的结果是「集合不一致」被服务层拒绝。</p>
+     *
+     * @param targetType      评测对象类型
+     * @param targetVersionId 对象版本ID
+     * @return 用例编码清单；{@code null} 表示声明内容读不出来（不是合法 JSON）
+     */
+    @SaCheckPermission(AigConstants.PERM_EVALUATION_QUERY)
+    @GetMapping("/declared-cases")
+    public R<List<String>> declaredCases(
+        @NotBlank(message = "对象类型不能为空") @RequestParam String targetType,
+        @NotNull(message = "对象版本ID不能为空") @RequestParam Long targetVersionId) {
+        return R.ok(evaluationService.declaredGoldenCases(targetType, targetVersionId));
+    }
+
 }

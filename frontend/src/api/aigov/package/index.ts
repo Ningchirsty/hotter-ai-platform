@@ -1,0 +1,95 @@
+import type { PageResult } from '@/api/types';
+import type { AxiosPromise } from '@/utils/api-types';
+import request from '@/utils/request';
+import type {
+  AigManifestScanVO,
+  AigPackageInstallLogVO,
+  AigPackageInstallVO,
+  AigPackageQuery,
+  AigPackageRegisterVO,
+  AigPackageUploadForm,
+  AigPackageVO,
+  AigPackageVersionQuery,
+  AigPackageVersionVO
+} from './types';
+
+/** 分页查询 Package 清单 */
+export function listPackage(query: AigPackageQuery): AxiosPromise<PageResult<AigPackageVO>> {
+  return request({
+    url: '/aigov/agent/package/list',
+    method: 'get',
+    params: query
+  });
+}
+
+/** 查询 Package 详情 */
+export function getPackage(packageId: string | number): AxiosPromise<AigPackageVO> {
+  return request({
+    url: '/aigov/agent/package/' + packageId,
+    method: 'get'
+  });
+}
+
+/** 分页查询 Package 版本清单 */
+export function listPackageVersion(query: AigPackageVersionQuery): AxiosPromise<PageResult<AigPackageVersionVO>> {
+  return request({
+    url: '/aigov/agent/package/version/list',
+    method: 'get',
+    params: query
+  });
+}
+
+/** 查询 Package 版本详情（含扫描结论） */
+export function getPackageVersion(packageVersionId: string | number): AxiosPromise<AigPackageVersionVO> {
+  return request({
+    url: '/aigov/agent/package/version/' + packageVersionId,
+    method: 'get'
+  });
+}
+
+/** 扫描 Manifest（§6.2 五类拒绝规则），结论落库 */
+export function scanManifest(packageVersionId: string | number): AxiosPromise<AigManifestScanVO> {
+  return request({
+    url: '/aigov/agent/package/version/' + packageVersionId + '/scan',
+    method: 'post'
+  });
+}
+
+/**
+ * 上传并登记 Package（携包体）。
+ *
+ * 服务端对上传字节算 SHA-256 并与 Manifest 声明的 checksum 比对：不一致整笔拒绝、不落库。
+ */
+export function uploadPackage(file: File, form: AigPackageUploadForm): AxiosPromise<AigPackageRegisterVO> {
+  const data = new FormData();
+  data.append('file', file);
+  data.append('manifestJson', form.manifestJson);
+  if (form.sourceRef) {
+    data.append('sourceRef', form.sourceRef);
+  }
+  if (form.remark) {
+    data.append('remark', form.remark);
+  }
+  return request({
+    url: '/aigov/agent/package/upload',
+    method: 'post',
+    data: data,
+    headers: { 'Content-Type': 'multipart/form-data' }
+  });
+}
+
+/** 安装：按 Manifest 声明的 agents/skills 建出 DRAFT 版本（幂等） */
+export function installPackage(packageVersionId: string | number): AxiosPromise<AigPackageInstallVO> {
+  return request({
+    url: '/aigov/agent/package/version/' + packageVersionId + '/install',
+    method: 'post'
+  });
+}
+
+/** 查安装账本（追加型：UPLOAD / INSTALL / ...） */
+export function listInstallLog(packageVersionId: string | number): AxiosPromise<AigPackageInstallLogVO[]> {
+  return request({
+    url: '/aigov/agent/package/version/' + packageVersionId + '/install-log',
+    method: 'get'
+  });
+}
