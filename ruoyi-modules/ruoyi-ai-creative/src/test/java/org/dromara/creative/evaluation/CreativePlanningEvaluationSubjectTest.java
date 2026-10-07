@@ -1,0 +1,210 @@
+package org.dromara.creative.evaluation;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.dromara.aigov.agent.enums.AigReleaseTargetTypeEnum;
+import org.dromara.aigov.agent.evaluation.AigEvaluationOutcome;
+import org.dromara.aigov.agent.evaluation.AigEvaluationRequest;
+import org.dromara.common.core.exception.ServiceException;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+
+import java.math.BigDecimal;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * 策划 Agent 评测执行器测试（设计 §13.2）。
+ *
+ * <p>这里验证的是「执行器 + 真实策划引擎」这一整段，而不是 mock：</p>
+ * <ol>
+ *     <li>确定性：同一快照两次执行<b>逐字相同</b>（执行器自报的 reproducible_probe 在这里被独立验一遍，
+ *         因为一个说谎的执行器也能自报 true）；</li>
+ *     <li>零成本：不调模型，成本如实上报为「可知且为 0」——用例声明 cost_max=0 时，
+ *         一旦有人给确定性基座接上模型，评测就会失败；</li>
+ *     <li>快照前缀严格：只认 {@code inline:}，认不出的前缀报错而不是猜一个默认输入。</li>
+ * </ol>
+ *
+ * @author creative
+ */
+@Tag("local")
+@Tag("dev")
+@Tag("prod")
+class CreativePlanningEvaluationSubjectTest {
+
+    private static final String PRODUCT = "鸢尾花香水";
+
+    private static final String DNA_FULL = "{\"styleKeywords\":[\"极简\",\"自然\"],"
+        + "\"colors\":{\"background\":\"#F5F5F3\",\"primary\":\"#2E6B4F\"},"
+        + "\"lighting\":{\"type\":\"SOFT\",\"direction\":\"FRONT\"},"
+        + "\"productRatio\":{\"min\":15,\"max\":30},"
+        + "\"saturation\":\"LOW\",\"contrastLevel\":\"MEDIUM\",\"whitespaceLevel\":\"HIGH\"}";
+
+    /**
+     * 基因合法（可锁定）但没有三个档位——与 aig_evaluation_seed.sql 里
+     * case-plan-blank-levels 的快照一致：判据同时要求 dna_valid=true 与文案含「未设置」
+     */
+    private static final String DNA_WITHOUT_LEVELS = "{\"styleKeywords\":[\"极简\",\"自然\"],"
+        + "\"colors\":{\"background\":\"#F5F5F3\",\"primary\":\"#2E6B4F\"},"
+        + "\"lighting\":{\"type\":\"SOFT\",\"direction\":\"FRONT\"},"
+        + "\"productRatio\":{\"min\":15,\"max\":30}}";
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    private CreativePlanningEvaluationSubject subject;
+
+    @BeforeEach
+    void setUp() {
+        subject = new CreativePlanningEvaluationSubject();
+    }
+
+    /**
+     * 造一个内联快照引用。
+     *
+     * @param dna  DNA JSON
+     * @param seed 差异种子
+     * @return 快照引用
+     */
+    private static String snapshot(String dna, long seed) {
+        return "inline:{\"product_name\":\"" + PRODUCT + "\",\"variant_seed\":" + seed
+            + ",\"facts\":{\"product_name\":\"" + PRODUCT + "\",\"color\":\"蓝紫渐变\","
+            + "\"occasion\":\"通勤\"},\"dna\":" + dna + "}";
+    }
+
+    /**
+     * 造一条评测入参。
+     *
+     * @param ref 快照引用
+     * @return 入参
+     */
+    private static AigEvaluationRequest request(String ref) {
+        return new AigEvaluationRequest(AigReleaseTargetTypeEnum.AGENT_VERSION.getCode(),
+            CreativePlanningEvaluationSubject.SUBJECT_CODE, 9101L, "1.0.0", "case-plan-deterministic",
+            "PLAN", null, ref);
+    }
+
+    /**
+     * 执行并解析产出。
+     *
+     * @param ref 快照引用
+     * @return 产出 JSON 节点
+     */
+    private static JsonNode run(String ref) throws Exception {
+        AigEvaluationOutcome outcome =
+            new CreativePlanningEvaluationSubject().execute(request(ref));
+        return MAPPER.readTree(outcome.outputJson());
+    }
+
+    @Test
+    @DisplayName("只负责策划 Agent：别人的对象不认领（派发靠它，认错对象等于结论来自别的实现）")
+    void supportsOnlyPlanningAgent() {
+        assertTrue(subject.supports(AigReleaseTargetTypeEnum.AGENT_VERSION.getCode(),
+            CreativePlanningEvaluationSubject.SUBJECT_CODE));
+        assertTrue(subject.supports("agent_version", "creative_planning"), "编码大小写不敏感");
+        assertFalse(subject.supports(AigReleaseTargetTypeEnum.SKILL_VERSION.getCode(),
+            CreativePlanningEvaluationSubject.SUBJECT_CODE));
+        assertFalse(subject.supports(AigReleaseTargetTypeEnum.AGENT_VERSION.getCode(),
+            "creative_visual_dna"));
+        assertTrue(subject.describe().contains("creative_planning"), subject.describe());
+    }
+
+    @Test
+    @DisplayName("产出结构：3 条方向 + 分镜 + 基因自洽 + 文案不含档位枚举 + 零成本且非外呼")
+    void producesStructuredDrafts() throws Exception {
+        AigEvaluationOutcome outcome = subject.execute(request(snapshot(DNA_FULL, 0)));
+        JsonNode out = MAPPER.readTree(outcome.outputJson());
+
+        assertEquals(CreativePlanningEvaluationSubject.SUBJECT_CODE, out.get("subject").asText());
+        assertEquals(3, out.get("direction_count").asInt(), out.toString());
+        assertTrue(out.get("screen_count").asInt() >= 1, out.toString());
+        assertEquals(3, out.get("directions").size());
+        assertTrue(out.get("dna_valid").asBoolean(), "dna_issues=" + out.get("dna_issues"));
+        assertTrue(out.get("no_enum_leak").asBoolean(),
+            "文案里出现了档位枚举：" + out.get("level_enums_present"));
+        assertTrue(out.get("reproducible_probe").asBoolean());
+        assertTrue(out.get("drafts_mention_product").asBoolean(), "文案里应出现产品名");
+
+        assertTrue(outcome.costKnown(), "确定性引擎的成本是「可知且为 0」，不是「算不出来」");
+        assertEquals(BigDecimal.ZERO, outcome.costAmount());
+        assertFalse(outcome.externalCall(), "确定性引擎不调模型，也就没有外呼");
+        assertTrue(outcome.latencyMs() >= 0L);
+    }
+
+    @Test
+    @DisplayName("确定性：同一快照两次执行逐字相同（这是平台侧对 reproducible 声明的独立验证）")
+    void sameInputSameOutputByteForByte() {
+        String first = subject.execute(request(snapshot(DNA_FULL, 7))).outputJson();
+        String second = subject.execute(request(snapshot(DNA_FULL, 7))).outputJson();
+
+        assertEquals(first, second, "同一个种子必须逐字相同，否则「可复现」是假的");
+    }
+
+    @Test
+    @DisplayName("差异化：换了种子方向就变（否则「重新生成」看到的还是那三句话）")
+    void differentSeedYieldsDifferentDrafts() throws Exception {
+        JsonNode seedOne = run(snapshot(DNA_FULL, 1));
+        JsonNode seedTwo = run(snapshot(DNA_FULL, 2));
+
+        assertNotEquals(seedOne.get("directions").toString(), seedTwo.get("directions").toString(),
+            "不同种子必须产出不同拍法");
+        assertEquals(3, seedOne.get("direction_count").asInt());
+        assertEquals(3, seedTwo.get("direction_count").asInt(),
+            "种子只改「怎么拍」，不改方向的条数");
+    }
+
+    @Test
+    @DisplayName("快照前缀严格：只认 inline:，认不出的前缀报错而不是猜一个默认输入")
+    void snapshotPrefixIsStrict() {
+        ServiceException oss = assertThrows(ServiceException.class,
+            () -> subject.execute(request("oss://bucket/snapshot.json")));
+        assertTrue(oss.getMessage().contains("只支持 inline:"), oss.getMessage());
+
+        ServiceException unknown = assertThrows(ServiceException.class,
+            () -> subject.execute(request("{\"product_name\":\"x\"}")));
+        assertTrue(unknown.getMessage().contains("没有前缀"), unknown.getMessage());
+
+        ServiceException blank = assertThrows(ServiceException.class,
+            () -> subject.execute(request("   ")));
+        assertTrue(blank.getMessage().contains("没有输入快照"), blank.getMessage());
+    }
+
+    @Test
+    @DisplayName("快照校验：非法 JSON / 缺产品名 / facts 非文本 / 种子非数字 / dna 非对象 都报错")
+    void snapshotValidation() {
+        assertTrue(assertThrows(ServiceException.class,
+            () -> subject.execute(request("inline:{oops"))).getMessage().contains("不是合法 JSON"));
+        assertTrue(assertThrows(ServiceException.class,
+            () -> subject.execute(request("inline:{\"variant_seed\":1}")))
+            .getMessage().contains("缺少 product_name"));
+        assertTrue(assertThrows(ServiceException.class, () -> subject.execute(request(
+            "inline:{\"product_name\":\"x\",\"facts\":{\"n\":1}}"))).getMessage()
+            .contains("必须是文本"));
+        assertTrue(assertThrows(ServiceException.class, () -> subject.execute(request(
+            "inline:{\"product_name\":\"x\",\"variant_seed\":\"abc\"}")))
+            .getMessage().contains("variant_seed"));
+        assertTrue(assertThrows(ServiceException.class, () -> subject.execute(request(
+            "inline:{\"product_name\":\"x\",\"dna\":[1,2]}")))
+            .getMessage().contains("dna 必须是对象"));
+        assertTrue(assertThrows(ServiceException.class,
+            () -> subject.execute(request("inline:[1,2]"))).getMessage().contains("必须是 JSON 对象"));
+    }
+
+    @Test
+    @DisplayName("缺档位的基因：文案说「未设置」，不默认成「中」；基因本身仍是可锁定的")
+    void blankLevelsAreSaidAsUnset() throws Exception {
+        JsonNode out = run(snapshot(DNA_WITHOUT_LEVELS, 0));
+
+        assertTrue(out.get("dna_valid").asBoolean(), "dna_issues=" + out.get("dna_issues"));
+        assertTrue(out.toString().contains("未设置"),
+            "缺档位必须如实说「未设置」，不能默认成某个档：" + out);
+        assertTrue(out.get("no_enum_leak").asBoolean());
+        assertEquals(3, out.get("direction_count").asInt());
+    }
+
+}

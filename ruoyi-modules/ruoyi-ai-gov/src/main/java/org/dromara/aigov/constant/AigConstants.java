@@ -103,6 +103,87 @@ public interface AigConstants {
     String PERM_TASK_SELECT = "aig:task:select";
 
     /**
+     * Agent/Skill/Package 注册中心-列表（三类对象的清单都归这一个读权限）
+     */
+    String PERM_AGENT_LIST = "aig:agent:list";
+
+    /**
+     * Agent/Skill/Package 注册中心-详情
+     */
+    String PERM_AGENT_QUERY = "aig:agent:query";
+
+    /**
+     * 发布状态推进（§5.4 的唯一写入口）
+     *
+     * <p><b>为什么必须单独一个权限</b>：这个接口能把版本推成 STABLE——也就是把某个 Agent 的配置
+     * 真正放给业务用。它与「看清单」不是一件事：把两者合并，一个只该看进度的人就能把没验过的版本发出去。
+     * 而且该接口的入参里有 {@code passedGates}（本次依据哪些门槛），服务层虽然会核对证据
+     * （Manifest 扫描结论、评测账本），但「谁按下了这一步」必须能追到人。</p>
+     */
+    String PERM_AGENT_RELEASE = "aig:agent:release";
+
+    /**
+     * Agent 版本绑定管理（品牌/部门/测试项目范围）
+     */
+    String PERM_AGENT_BINDING = "aig:agent:binding";
+
+    /**
+     * Skill 清单（读）
+     */
+    String PERM_SKILL_LIST = "aig:skill:list";
+
+    /**
+     * Skill 详情（读）
+     */
+    String PERM_SKILL_QUERY = "aig:skill:query";
+
+    /**
+     * Package 清单（读）
+     */
+    String PERM_PACKAGE_LIST = "aig:package:list";
+
+    /**
+     * Package 详情（读）
+     */
+    String PERM_PACKAGE_QUERY = "aig:package:query";
+
+    /**
+     * Manifest 扫描（§6.2 五类拒绝规则）
+     *
+     * <p>与「看清单」分开：扫描会把结论写进版本行（{@code scan_result/scan_detail}），
+     * 而该结论是「Manifest 校验」这道门槛的<b>唯一证据</b>——能改证据的人不该只是"查看者"。</p>
+     */
+    String PERM_PACKAGE_SCAN = "aig:package:scan";
+
+    /**
+     * 黄金用例与评测-列表（用例清单/运行清单）
+     */
+    String PERM_EVALUATION_LIST = "aig:evaluation:list";
+
+    /**
+     * 黄金用例与评测-详情（含「黄金用例是否通过」的证据）
+     */
+    String PERM_EVALUATION_QUERY = "aig:evaluation:query";
+
+    /**
+     * 定义黄金用例
+     */
+    String PERM_EVALUATION_DEFINE = "aig:evaluation:define";
+
+    /**
+     * 跑评测（会产生评测账本，可能产生外部调用成本）
+     */
+    String PERM_EVALUATION_RUN = "aig:evaluation:run";
+
+    /**
+     * 人工复核评测结论（Rubric 用例的最后一道判断）
+     *
+     * <p>按设计 §5.4/§6.3-5，三方审批分别是业务 Owner / AI 管理员 / 平台管理员，
+     * 因此复核结论不是"谁都能看的人顺手点的"——它是放行链条上的一环。</p>
+     */
+    String PERM_EVALUATION_REVIEW = "aig:evaluation:review";
+
+    /**
      * 系统提交者ID：任务由调度器/Agent 发起（无登录上下文）时，{@code create_by} 用它占位。
      *
      * <p><b>为什么不能留 NULL</b>：{@code aig_task.create_by} 同时是幂等唯一键
