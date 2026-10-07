@@ -24,32 +24,51 @@
 -- 一把 Key 通多种模型：这是 New API 的形态——1 条 sai_model_provider + N 条
 -- sai_model_config，N 条共享同一 api_endpoint 与同一把 api_key。
 --
--- ⚠ 实测（2026-10-07）：本网关**只提供 12 个图像/视频生成模型，没有对话模型**。
---   详见 A 段模型清单注释与 B 段修正说明。当前状态因此是：
---     连接与治理属性已登记（惰性、不外发），模型行为空、密钥为空 —— 这是刻意的，
---     因为在实现 IMAGE 适配器之前，这些模型既不该被登记成 CHAT，也没有能力可用它们。
+-- ⚠ 实测（2026-10-07）：本网关**只提供图像/视频生成模型，没有对话模型**。
+--   本脚本登记的 7 个模型全部 `model_type='IMAGE'`，走 `/v1/images/generations`，
+--   由 `OpenAiImageInvoker` 调用。详见 A 段模型清单注释与 B 段说明。
 --
 -- ============================================================================
--- 本脚本默认**【只登记连接与治理属性】，不含任何数据外发**：
---   A 段（默认执行）：供应商 + 模型 + 治理属性 → 全部为「已登记但无能力指向」的惰性状态，
---                     没有任何能力会路由到它，因此不会发出任何外部请求。
---   B 段（默认整段注释）：绑定能力 + 放宽路由策略 → 这才是真正让数据出去的开关，
---                     需要你逐条确认后手动取消注释。理由见 B 段头部。
+-- 本脚本**默认就会打开这条外部通路**（务必先读这一段再用）：
+--   A 段（默认执行）：供应商 + 7 个图像模型 + 治理属性。**默认值刻意收紧**——
+--                     `data_level_max='INTERNAL'`（限制级数据在代码层就被排除）、
+--                     `lifecycle_status='GRAY'`（可用但标注未充分验证）。
+--   B 段（**默认执行，不是注释**）：绑定 image_generation + 写 3 条路由策略 →
+--                     这一步才让 `image_generation` 有候选、且 PUBLIC/INTERNAL 允许外发。
+--                     即：**跑完本脚本（两段）＝ 图像生成能力可用、可外发到该网关**。
+--
+--   为什么 B 段默认开：图像通路本身就是本次接入的既定目标；只在 A 段登记而 B 段留着不跑，
+--   得到的是一个"登记了但永远选不中"的惰性状态——那不是交付物。B 段开头有更详细的取舍说明。
+--
+--   若你希望**先不放开任何外发**：把 B1/B2 两段注释掉再执行即可（A 段照跑），
+--   不绑能力时那些模型是惰性的，不会有任何外部请求；之后需要时再单独跑 B 段。
+--
+--   ⚠ 生产状态（2026-10-07 已执行，仅作追溯）：本脚本 A+B **两段都已在生产执行过**，
+--   生产现有 `image_generation` 能力 1 条、绑定 1 条（`qwen-image-3.0-pro`，FALLBACK）、
+--   策略 3 条、模型 7 条。**因此不要在生产再跑第二遍**（虽有守卫，但没有意义；
+--   要改默认绑定/策略就直接改数据或 UI）。
 --
 -- 为什么不直接改现有 creative/content 的策略：
 --   dp_creative_r8_dna_gov.sql 明确把 visual_dna_extract 的三个数据等级都设成
 --   allow_external='N'，理由是「基因抽取涉及产品图，一律本地私有部署，禁止外发」；
 --   那是团队已经做过的一个安全决定，不该被一次「接入配置」顺手覆盖。
+--   本脚本也只写 `image_generation` 自己的策略，不碰别的能力。
 --
 -- 密钥怎么进（本脚本**不写** api_key）：
 --   api_key 是 SM4 密文列。**不要**在这里填明文，也不要用其它工具随便加密——必须与
 --   snail-ai 的 CryptoHelper 逐字节一致（SM4/CBC/PKCS5Padding，hex 16 字节 key/iv）。
 --   推荐路径：部署环境设 AIGOV_MODEL_CRYPTO_ENABLED=true + …_SECRET_KEY/…_IV，
 --   然后调 PUT /aigov/model/secret 录入明文，由服务端自行加密落库。
+--   ⚠ 本脚本**不录密钥**，所以跑完它还不能真正调用：7 个模型的 api_key 都是空，
+--   脚本自检那列会如实显示「未配置密钥（待录入）」。**必须再走一步录密钥**。
 --
--- 幂等：供应商/模型/治理属性/绑定 全部 NOT EXISTS 或 INSERT IGNORE 守卫；
+-- 幂等：供应商/模型/治理属性/绑定/策略 全部 NOT EXISTS 或 INSERT IGNORE 守卫；
 --   aig_model_governance 有 uk(model_id)、aig_capability_model 有 uk(capability_code,model_id)、
 --   aig_route_policy 有 uk(capability_code,data_level)，可安全重复执行。
+--
+-- 先决条件：依赖 `capability_tags` / `cost_limit_amount` 两列存在（A 段写这两列的值）。
+--   全新库请按 docs/aigov/07-部署与发布运行手册.md 的顺序，先跑
+--   aig_model_capability_tags.sql / aig_model_cost_limit_amount.sql，再跑本脚本。
 -- ----------------------------------------------------------------------------
 
 -- ============================================================================
@@ -188,58 +207,15 @@ SELECT 1764000000000000050, 'image_generation', '图像生成（外部聚合网�
 --     {"model":"qwen-image-3.0-pro","prompt":"…","n":1,"response_format":"url"}
 --   同步返回、无需轮询；response_format 默认取 aigov.external-api.image-response-format（=url）。
 --
--- ⚠️⚠️ 【下面到本段结束前的那一大段是「已作废」的判定过程，保留仅为追溯】
---   此前这里写着「试了六种请求体形态全部 400 Invalid task protocol request，
---   判定这些模型走 New API Task Plugin、是任务型、端点由渠道插件注册、公开文档推导不出」。
---   **那个判定是错的。** 真因是当时经 PowerShell 传 JSON 时 body 被改写
---   （`-d` 外层必须用单引号、body 必须是双引号合法 JSON）。同一批模型在正确形态下
---   直接同步出图。
+-- 【作废结论已清理，只留教训】（2026-10-07）
+--   本段原先还留着一段"任务型 / Task Plugin / 端点由渠道插件注册、公开文档推导不出"的
+--   判定过程，并把结论写成「真实调用会以 400 结束」。**那个判定是错的，已删除**：
+--   真因是当时经 PowerShell 传 JSON 时 body 被改写（`-d` 外层必须用单引号、
+--   body 必须是双引号合法 JSON），与上游协议无关。正确形态下同步出图成功。
 --
---   教训比结论重要：**「我试了好几种都失败」不等于「这条路不存在」**——
---   当失败形态高度一致（同一条报错、与请求内容无关）时，先怀疑自己的传参链路，
---   再怀疑对方的协议。当时的正确动作是把 request body 原样打出来看一眼。
---
--- 【以下为已作废的原始记录】
---
---   POST https://bluocto.com/v1/images/generations  （附 Authorization: Bearer <token>）
---     · 按 New API 官方文档的 OpenAI 原生格式构造请求体（model/prompt/n，
---       response_format=b64_json 或 url、带或不带 size、最小体）→ **一律瞬间 400**：
---         {"error":{"message":"Invalid task protocol request (request id: …)","type":"new_api_error"}}
---     · 对全部 5 个模型（qwen-image-3.0-pro / flux-2-pro / gpt-image-2.5-flare /
---       wan2.7-image-pro）返回**同一个**错误，且 0 秒返回 —— 说明**不是模型或字段问题，
---       而是端点/协议不对**。
---     · 末尾加斜杠只是 307 跳转，不是解法。
---
---   判读：New API 对「任务型」模型走的是 **Task Plugin** 机制（`owned_by=task plugin`
---   就是该机制的标记；插件通过 `meta.routes` **注册自己的路由**、通过 `meta.protocols`
---   认领宿主协议）。也就是说**端点与请求体由部署方的插件定义**，无法从公开文档推导。
---   文档侧栏也确实把「图像」分成「原生OpenAI格式 / 原生Gemini格式 / 通义千问OpenAI格式」，
---   说明不同上游走不同协议。
---
---   【已答，2026-10-07】以下是当时准备要问的问题，答案已拿到，留档备查：
---     ① 调用端点 → 仍是 POST /v1/images/generations；
---     ② 同步还是异步 → **同步**，无需轮询，结果默认以 url 返回（b64_json 也兼容）；
---     ③ 请求体必填字段 → model + prompt（示例另带 n:1、response_format:"url"）。
---
---   补充实测（同一天，进一步排除猜测空间）：
---     · 「后缀带尾斜杠」不是解法：POST /v1/images/generations/ 返回 **307**，
---       Location: /v1/images/generations —— 只是 nginx 的规范化跳转，跟随后落到同一个 400。
---       即**路径已确认正确**，问题只可能在请求体/协议。
---     · 尺寸分隔符也不是：1328*1328（DashScope 星号写法）、1664*928、1328x1328、
---       1024*1024 全部同一个 400。
---     · 空 body 暴露了分组信息：POST 不带 model 时 New API 默认 model=dall-e，
---       返回 503 model_not_found「**分组 Media** 下模型 dall-e 无可⽤渠道」。
---       ⇒ 本令牌属于 **Media 分组**，刚好只有这 12 个图像/视频模型。
---       这也直接证实了前面的判断：**该令牌拿不到任何对话模型**，
---       要接文本能力必须换一个含对话模型的令牌分组。
---     · GET /v1/images/generations → 404「Invalid URL」；POST /v1/tasks → 404。
---       故提交任务走的不是 /v1/tasks，而是**由渠道插件注册的自有路由**
---       （New API Task Plugin 的 `meta.routes`），公开文档推导不出。
---
---   【更正】上面那句「真实调用会以 400 结束」是**错的**，见本段开头的实测结论：
---   正确形态下同步出图成功。B 段这些登记（绑定 + 策略）本身就是可用的配置，
---   不需要额外改任何东西。
---
+--   留一条教训就够：**「我试了好几种都失败」不等于「这条路不存在」**——
+--   当失败形态高度一致（同一条报错、与请求内容无关、0 秒返回）时，
+--   先怀疑自己的传参链路，再怀疑对方的协议；正确动作是把 request body 原样打出来看一眼。
 -- 【仍然做不到的两类能力，别再试】（2026-10-07 实测）
 --   · 文本能力（creative_direction_draft / creative_storyboard_draft）：
 --     网关 /v1/models 里**没有任何对话模型**。不是「暂时不绑」，是无模型可绑；
@@ -339,9 +315,11 @@ SELECT capability_code, data_level, preferred_deployment, allow_external, fallba
 --      {"capabilityCode":"image_generation","dataLevel":"INTERNAL"}
 --    dryRun 不产生审计记录，可以随便跑。
 --
---    ⚠ 但**真实调用当前必失败**：不是缺密钥的问题（那是另一层），而是**协议不对**——
---    bluocto 对这些模型返回 400 "Invalid task protocol request"，需要向其运维确认
---    端点和请求形态（详见 B 段开头的 🛑 说明）。密钥到位也只会在上游 400 前先撞上
---    401，两层问题都要解。
+--    ⚠ 跑完本脚本**还不能真正调用**，只差一步：**7 个模型的 api_key 都是空**
+--    （本脚本刻意不写密钥，见文件头「密钥怎么进」）。
+--    顺序：① 先按上面的自检查配置（路由能选中预期模型）；
+--          ② 再录密钥（治理台 → 模型注册中心 → 编辑 → apiKey；或 PUT /aigov/model/secret）；
+--          ③ 最后跑一次 POST /aigov/model/{modelId}/test 把 health_status 落下来。
+--    协议侧已实测可用（见 B 段开头），不存在"协议不对"这类遗留问题。
 
 SELECT 'AIG_PROVIDER_BLUOCTO_DONE' AS marker;

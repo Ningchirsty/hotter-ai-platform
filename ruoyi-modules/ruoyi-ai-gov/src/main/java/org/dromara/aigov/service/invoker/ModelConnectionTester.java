@@ -8,6 +8,7 @@ import org.dromara.aigov.config.AigModelTestProperties;
 import org.dromara.aigov.domain.vo.AigModelTestTargetVo;
 import org.dromara.aigov.domain.vo.AigModelTestVo;
 import org.dromara.aigov.enums.AigDeploymentTypeEnum;
+import org.dromara.aigov.enums.AigErrorClassEnum;
 import org.dromara.aigov.helper.AigModelSecretCipher;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
@@ -36,6 +37,11 @@ import java.util.regex.Pattern;
  * <ul>
  *     <li>{@code LOCAL}（进程内规则引擎）：只做「执行者是否装配可用」的自检，不发网络请求；</li>
  *     <li>{@code adapter_key} 含 snail-ai：走 snail-ai 调用器可用性 + 一次最小调用；</li>
+ *     <li>{@code model_type = IMAGE}：走 {@link #probeImage}——真实走一次
+ *         {@code /images/generations}（复用 {@code OpenAiImageInvoker}）。<b>不能</b>用 chat 探针：
+ *         图像端点要 {@code model + prompt + n + response_format}，发 chat 形态会被上游稳定拒掉
+ *         （bluocto 实测 400 {@code Input should be a valid list: ….content}），
+ *         而那个 400 与"通道是否可用"无关；</li>
  *     <li>其余（典型是 {@code openai-compatible}）：对 {@code api_endpoint} 发一次最小 chat/completions 请求。</li>
  * </ul>
  * <p><b>安全约定</b>：密钥只用于发请求；响应体里的密钥会被替换成掩码；日志与返回值都不含密钥与完整响应体。
@@ -56,6 +62,16 @@ public class ModelConnectionTester {
      * 探测请求用的最小提示词（不含任何业务数据）
      */
     private static final String PROBE_PROMPT = "ping";
+
+    /**
+     * 图像模型的 {@code model_type} 取值（与 {@code OpenAiImageInvoker} 认领的一致）
+     */
+    private static final String IMAGE_MODEL_TYPE = "IMAGE";
+
+    /**
+     * 图像模型探测用的最小提示词（英文、无品牌信息，避免污染上游内容审核）
+     */
+    private static final String IMAGE_PROBE_PROMPT = "a single small red square on a white background";
 
     /**
      * 细节字段最大长度（避免把上游长报文整段回显）
@@ -120,6 +136,21 @@ public class ModelConnectionTester {
         } else if (containsAny(adapter, SNAIL_AI_HINTS) || containsAny(StringUtils.blankToDefault(target.getProviderKey(), ""), SNAIL_AI_HINTS)) {
             vo.setProbe("SNAIL_AI");
             probeSnailAi(vo, target, deploymentType);
+        } else if (StringUtils.isNotBlank(target.getApiEndpoint()) && IMAGE_MODEL_TYPE.equalsIgnoreCase(
+            StringUtils.blankToDefault(target.getModelType(), "").trim())) {
+            // 【2026-10-07 修】图像模型must走图像协议，不能走 chat。
+            //
+            // 修的是什么：原先所有 openai-compatible 都走 probeHttp，而它发的是
+            // chat/completions 形态（messages[].content 是**字符串**）。bluocto（New API 系）
+            // 对 Media 分组的模型做严格校验，稳定回
+            //   400 Input should be a valid list: ***.***.***.content
+            // 即"content 必须是数组"——与模型名无关。结果是：
+            //   ① 一个**完全可用**的图像通道，点「测试连接」永远判 UNHEALTHY；
+            //   ② 报错还会把人引向"模型名写错了"（见 describeHttpFailure），方向是错的。
+            // 实测证据：同配置的 dryRun 一直是 decision=MODEL / invoker=OpenAiImageInvoker，
+            // 只有这个探针失败——即"路由对了、探针协议错了"。
+            vo.setProbe("OPENAI_IMAGE");
+            probeImage(vo, target);
         } else if (StringUtils.isNotBlank(target.getApiEndpoint())) {
             vo.setProbe("OPENAI_COMPATIBLE");
             probeHttp(vo, target);
@@ -279,6 +310,65 @@ public class ModelConnectionTester {
     }
 
     /**
+     * 图像模型探测：走 {@code POST {endpoint}/images/generations}，**真实生成一张小图**。
+     *
+     * <p><b>为什么与 chat 探针分开</b>：chat 探针发的是 {@code messages[].content}（字符串），
+     * 图像端点要的是 {@code model + prompt + n + response_format}；两者不能互相代替。
+     * 用一个 chat 请求去测图像模型，得到一个稳定的 400，而那个 400 与"通道是否可用"无关
+     * （见 {@link #test} 里那段实测说明）。</p>
+     *
+     * <p><b>为什么直接复用 {@code OpenAiImageInvoker} 而不是自己发一次 HTTP</b>：
+     * 调用器已经承担了这条链路的全部要点——解密 SM4 密钥、拼 {@code /images/generations} 地址、
+     * 下载返回的图、校验魔术字并重算 sha256。自己再写一份 HTTP 就等于把"能不能用"的判据
+     * 分裂成两套：探针说能连、真实调用却可能失败。这里刻意让**探针与真实调用走同一条代码路径**。</p>
+     *
+     * <p><b>代价（要有预期）</b>：这是一次**真实生成**，会消耗上游额度、耗时为秒级
+     * （受 {@code aigov.external-api.image-timeout-ms} 约束，默认 180s）。它只在人手动点
+     * 「测试连接」时发生，换来的是"配好的这条通路确实能出图"这一条硬结论。</p>
+     *
+     * @param vo     结果（就地写 detail/latency/ok/message）
+     * @param target 模型快照（端点与密钥由调用器自行从库中取，这里只需 modelId）
+     */
+    private void probeImage(AigModelTestVo vo, AigModelTestTargetVo target) {
+        OpenAiImageInvoker invoker = null;
+        for (ModelInvoker candidate : invokerProvider) {
+            if (candidate instanceof OpenAiImageInvoker imageInvoker && imageInvoker.available()) {
+                invoker = imageInvoker;
+                break;
+            }
+        }
+        if (invoker == null) {
+            vo.setOk(false);
+            vo.setMessage("图像调用器不可用（OpenAiImageInvoker 未装配或已被配置关闭）");
+            return;
+        }
+        ModelInvokeRequest request = new ModelInvokeRequest();
+        request.setModelId(target.getModelId());
+        request.setModelKey(target.getModelKey());
+        request.setModelType(target.getModelType());
+        request.setDeploymentType(AigDeploymentTypeEnum.EXTERNAL_API);
+        // 提示词刻意用一句与业务无关的英文：这次探测是"通道通不通"，不是"出图好不好"，
+        // 不该把品牌/产品信息带进一次巡检性调用。
+        request.setPrompt(IMAGE_PROBE_PROMPT);
+
+        ModelInvokeResult result = invoker.invoke(request);
+        vo.setLatencyMs(result.getLatencyMs());
+        vo.setDetail(truncate(result.getOutput() == null ? result.getErrorSummary() : result.getOutput()));
+        if (result.isSuccess()) {
+            vo.setOk(true);
+            vo.setMessage("连接成功（图像生成）：" + truncate(result.getOutput()));
+            return;
+        }
+        vo.setOk(false);
+        AigErrorClassEnum errorClass = result.getErrorCode() == null
+            ? null : AigErrorClassEnum.find(result.getErrorCode());
+        vo.setMessage("图像生成调用失败"
+            + (errorClass == null ? "" : "（" + errorClass.getDesc() + "）")
+            + (result.getHttpStatus() == null ? "" : "（HTTP " + result.getHttpStatus() + "）")
+            + "：" + truncate(result.getErrorSummary()));
+    }
+
+    /**
      * 沿 cause 链走到最内层异常。Hutool 会把底层 IOException 包成自己的异常，
      * 只看最外层永远只能得到一句「HttpException」，无法区分 DNS/连接/超时/TLS。
      *
@@ -396,8 +486,14 @@ public class ModelConnectionTester {
         } else if (status >= 500) {
             base = "上游服务错误（HTTP " + status + "）：对端异常，稍后重试通常可恢复";
         } else if (status == 400) {
+            // 【2026-10-07 修】原先这里写"请与上游模型目录逐字核对（区分大小写；聚合网关常要求
+            // vendor/model 前缀或 -free 后缀）"——那是**猜**，而且实测猜错过方向：
+            // 真实失败原因是**请求体形态**（chat 探针把 content 发成字符串，而上游要数组），
+            // 与模型标识无关。让人照着"改模型名"去试是白费功夫，正是我们要避免的那类误导。
+            // 现在只陈述事实：发出去的是什么 + 上游原话，把判断留给看到两条信息的人。
             base = "请求被拒（HTTP 400）：上游不接受本次请求。" + sent
-                + "，请与上游模型目录逐字核对（区分大小写；聚合网关常要求 vendor/model 前缀或 -free 后缀）";
+                + "。请以上游原文为准判断是「模型标识」还是「请求体形态」的问题"
+                + "（本探针发的是 chat/completions 形态；图像模型应走 /images/generations）";
         } else {
             base = "连接失败（HTTP " + status + "）";
         }
