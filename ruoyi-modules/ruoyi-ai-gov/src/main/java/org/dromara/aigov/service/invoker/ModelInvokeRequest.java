@@ -79,4 +79,14 @@ public class ModelInvokeRequest implements Serializable {
      */
     private String outputSchema;
 
+    /**
+     * {@code true} 表示这是一次**探测**（连通性测试），不是业务调用。
+     *
+     * <p>图像调用器据此跳过「下载图体 / base64 进信封」这一步：探针只回答"这条通路能不能用"，
+     * 没必要为它搬几 MB 的图。代价是它**不证明那张图当时可下载**——那由真实调用负责。</p>
+     *
+     * <p>默认 {@code false}，即业务链路行为不变。</p>
+     */
+    private boolean probeOnly;
+
 }

@@ -204,6 +204,31 @@ public class OpenAiImageInvoker implements ModelInvoker {
      * @return 调用结果
      */
     private ModelInvokeResult extractImage(String bodyText, ModelInvokeRequest request, long start) {
+        // 探测模式（连通性测试用）：只证明「上游接受这次请求并给出了图」，**不下载图体**。
+        //
+        // 为什么单独留一条路，而不是让探针也走完整链路：真实出图会把整张图 base64 进 JSON 信封，
+        // 一张 2048×2048 的 PNG 就是数 MB；连通性测试只回答"这条通路能不能用"，
+        // 没必要为此把几 MB 搬一遍。代价是**它不证明那张图当时可下载**——
+        // 交付型产品的探针只需回答"能不能用"，真要证明可下载是真实调用的职责。
+        if (request.isProbeOnly()) {
+            String probeUrl = extractUrl(bodyText);
+            String probeB64 = extractB64Json(bodyText);
+            if (StringUtils.isBlank(probeUrl) && StringUtils.isBlank(probeB64)) {
+                return failure("上游响应里既没有 data[0].b64_json 也没有 data[0].url", start,
+                    AigErrorClassEnum.OUTPUT_UNPARSABLE, null);
+            }
+            Map<String, Object> probeEnvelope = new LinkedHashMap<>();
+            probeEnvelope.put("model", request.getModelKey());
+            probeEnvelope.put("providerType", AigProviderTypeEnum.IMAGE.getCode());
+            probeEnvelope.put("probeOnly", true);
+            probeEnvelope.put("hasUrl", StringUtils.isNotBlank(probeUrl));
+            probeEnvelope.put("hasB64Json", StringUtils.isNotBlank(probeB64));
+            probeEnvelope.put("responseBytes", bodyText == null ? 0 : bodyText.length());
+            ModelInvokeResult probeResult = ModelInvokeResult.success(
+                jsonMapper.writeValueAsString(probeEnvelope), System.currentTimeMillis() - start);
+            probeResult.setModelVersion(request.getModelKey());
+            return probeResult;
+        }
         byte[] bytes;
         String mimeType;
         String b64 = extractB64Json(bodyText);

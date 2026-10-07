@@ -324,7 +324,9 @@ public class ModelConnectionTester {
      *
      * <p><b>代价（要有预期）</b>：这是一次**真实生成**，会消耗上游额度、耗时为秒级
      * （受 {@code aigov.external-api.image-timeout-ms} 约束，默认 180s）。它只在人手动点
-     * 「测试连接」时发生，换来的是"配好的这条通路确实能出图"这一条硬结论。</p>
+     * 「测试连接」时发生，换来的是"配好的这条通路确实能出图"这一条硬结论。
+     * 为省带宽，探测模式下调用器**只确认上游接受请求并给出图，不下载图体**；
+     * 因此它证明的是"上游接受 + 有产物"，不证明"那张图当时可下载"——后者由真实调用覆盖。</p>
      *
      * @param vo     结果（就地写 detail/latency/ok/message）
      * @param target 模型快照（端点与密钥由调用器自行从库中取，这里只需 modelId）
@@ -350,6 +352,9 @@ public class ModelConnectionTester {
         // 提示词刻意用一句与业务无关的英文：这次探测是"通道通不通"，不是"出图好不好"，
         // 不该把品牌/产品信息带进一次巡检性调用。
         request.setPrompt(IMAGE_PROBE_PROMPT);
+        // 探测模式：调用器只确认"上游接受这次请求并给出了图"，不下载图体（省掉几 MB）。
+        // 代价：它不证明那张图当时可下载——那是真实调用的职责。
+        request.setProbeOnly(true);
 
         ModelInvokeResult result = invoker.invoke(request);
         vo.setLatencyMs(result.getLatencyMs());

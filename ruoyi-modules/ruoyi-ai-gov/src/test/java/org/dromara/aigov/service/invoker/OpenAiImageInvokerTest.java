@@ -168,6 +168,32 @@ class OpenAiImageInvokerTest {
     }
 
     @Test
+    @DisplayName("探测模式：只确认上游给了图，**不下载图体**；无产物时仍如实失败")
+    void probeOnlyDoesNotDownload() throws Exception {
+        // 走私有 extractImage：探测分支在下载之前就返回，因此这里**不能**发生任何 HTTP。
+        // 用一个必然解析不了的域名当产物地址——若它真去下载，本测试会以 UnknownHost 失败。
+        java.lang.reflect.Method extract = OpenAiImageInvoker.class
+            .getDeclaredMethod("extractImage", String.class, ModelInvokeRequest.class, long.class);
+        extract.setAccessible(true);
+
+        ModelInvokeRequest probe = new ModelInvokeRequest();
+        probe.setModelKey("qwen-image-3.0-pro");
+        probe.setProbeOnly(true);
+        String bodyWithUrl = "{\"data\":[{\"url\":\"https://probe.invalid/a.png\"}]}";
+
+        ModelInvokeResult ok = (ModelInvokeResult) extract.invoke(invoker, bodyWithUrl, probe, 0L);
+        assertTrue(ok.isSuccess(), "探测模式下有产物即成功");
+        assertTrue(ok.getOutput().contains("\"probeOnly\":true"), "信封要标明这是探测：" + ok.getOutput());
+        assertTrue(ok.getOutput().contains("\"hasUrl\":true"));
+        assertFalse(ok.getOutput().contains("b64"), "探测模式不得把图体 base64 塞进信封：" + ok.getOutput());
+
+        // 没有 url 也没有 b64_json → 仍然是明确的失败，不能因为"探测"就放过
+        ModelInvokeResult bad = (ModelInvokeResult) extract.invoke(invoker, "{\"data\":[]}", probe, 0L);
+        assertFalse(bad.isSuccess(), "没有产物时探测也必须判失败");
+        assertEquals(AigErrorClassEnum.OUTPUT_UNPARSABLE.getCode(), bad.getErrorCode());
+    }
+
+    @Test
     @DisplayName("MIME 推断：响应头优先，其次 URL 扩展名，最后退回 png")
     void guessMimeType() {
         assertEquals("image/jpeg", OpenAiImageInvoker.guessImageMimeType("image/jpeg", null));
