@@ -81,7 +81,7 @@ public class AigAuditRecorder {
             AigInvocationAudit audit = new AigInvocationAudit();
             audit.setTraceId(ctx.getTraceId());
             audit.setCapabilityCode(ctx.getCapabilityCode());
-            audit.setCallerId(ctx.getCallerId() == null ? LoginHelper.getUserId() : ctx.getCallerId());
+            audit.setCallerId(resolveCallerId(ctx));
             audit.setCallerName(StringUtils.isBlank(ctx.getCallerName()) ? LoginHelper.getUsername() : ctx.getCallerName());
             audit.setDataLevel(ctx.getDataLevel());
             audit.setScenarioCode(ctx.getScenarioCode());
@@ -130,6 +130,39 @@ public class AigAuditRecorder {
             return null;
         }
         return AigInputSanitizer.buildSummary(ctx.getPrompt(), ctx.getPayload());
+    }
+
+    /**
+     * 解析调用人用户ID。
+     *
+     * <p><b>为什么单独抽一个方法</b>：人均配额要按「调用人」计数，而审计行里也要记调用人。
+     * 如果两处各写一份解析逻辑，迟早会分叉成「审计里记的是 A、被限额的是 B」——
+     * 那时人看到的是「按你的配额超了」，而账本上却是另一个人的调用，谁也说不清。
+     * 因此这里作为<b>唯一</b>的解析入口：审计与配额都用它。</p>
+     *
+     * <p><b>必须异常安全</b>：没有 Sa-Token 上下文时（调度线程执行任务、单元测试）
+     * {@code LoginHelper.isLogin()} 会抛 {@code SaTokenContextException}。
+     * 审计侧原本就把同类取值包在 try 里（所以那种情况下 caller_id 只是为空），
+     * 而人均配额是从调用入口调的——若让异常冒出去，<b>一次调度调用会因为「取不到登录态」而失败</b>。
+     * 因此这里一律吞掉并按「无调用人」处理：调用不该因为取不到调用人而失败。</p>
+     *
+     * <p>上下文里带了调用人就用它（内部调用可显式指定），否则取登录态；
+     * <b>没有登录态时返回 null</b>（调度/系统发起）——审计的 caller_id 为空，
+     * 人均配额也因此不适用（没有「人」可归属），系统调用该由别的口径管。</p>
+     *
+     * @param ctx 审计上下文（可空）
+     * @return 调用人用户ID；无法确定时 null
+     */
+    public static Long resolveCallerId(AigAuditContext ctx) {
+        if (ctx != null && ctx.getCallerId() != null) {
+            return ctx.getCallerId();
+        }
+        try {
+            return LoginHelper.isLogin() ? LoginHelper.getUserId() : null;
+        } catch (Exception e) {
+            // 无 Sa-Token 上下文（调度线程/单测）：按「无调用人」处理，不把异常带给调用方
+            return null;
+        }
     }
 
     /**

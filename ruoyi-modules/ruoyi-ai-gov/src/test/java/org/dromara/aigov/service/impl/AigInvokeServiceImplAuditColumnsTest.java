@@ -33,6 +33,7 @@ import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import org.dromara.aigov.service.IAigUserQuotaService;
 
 /**
  * 审计「供应商 / 用量 / 输入快照」三列的采集行为测试。
@@ -135,7 +136,7 @@ class AigInvokeServiceImplAuditColumnsTest {
         when(routeService.decide(any(), any(), nullable(AigRouteHint.class))).thenReturn(decision);
 
         AigInvokeServiceImpl service = new AigInvokeServiceImpl(routeService, auditRecorder,
-            invokers, modelViewMapper, retryProperties);
+            invokers, modelViewMapper, retryProperties, mock(IAigUserQuotaService.class));
         AigInvokeBo bo = new AigInvokeBo();
         bo.setCapabilityCode(CAPABILITY);
         bo.setDataLevel(AigDataLevelEnum.INTERNAL.getCode());

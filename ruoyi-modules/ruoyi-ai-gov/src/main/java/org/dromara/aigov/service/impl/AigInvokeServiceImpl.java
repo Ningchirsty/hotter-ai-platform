@@ -21,6 +21,7 @@ import org.dromara.aigov.helper.AigAuditRecorder;
 import org.dromara.aigov.helper.AigOutputSchemaValidator;
 import org.dromara.aigov.mapper.AigModelViewMapper;
 import org.dromara.aigov.service.IAigInvokeService;
+import org.dromara.aigov.service.IAigUserQuotaService;
 import org.dromara.aigov.service.IAigRouteService;
 import org.dromara.aigov.service.invoker.ModelInvokeRequest;
 import org.dromara.aigov.service.invoker.ModelInvokeResult;
@@ -78,6 +79,13 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
      */
     private final AigRetryProperties retryProperties;
 
+    /**
+     * 人均配额（C3）：按调用人计「调用次数」，自然日/自然月。
+     *
+     * <p>只在确实要调用模型之前判；命中上限则整笔拒绝（fail-closed）。</p>
+     */
+    private final IAigUserQuotaService quotaService;
+
     @Override
     public AigInvokeVo dryRun(AigInvokeBo bo) {
         AigDataLevelEnum dataLevel = parseDataLevel(bo);
@@ -114,7 +122,14 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
                 return toVo(traceId, decision, null, decision.getReason(),
                     AigErrorClassEnum.POLICY_DENIED.getCode());
             }
-            // 6. 决策为 MODEL → 按有序候选依次执行，失败则顺延（有序 fallback）
+            // 6. 人均配额（C3）：只在「确实要调用模型」之前判。
+            //    放在策略拒绝/转人工之后是刻意的：那两条分支不消耗额度，也不该被额度抢先拦截——
+            //    否则人会看到「配额超了」，而真实原因是策略不允许（数据不能出域之类），
+            //    两者该做的处置完全不同。
+            //    调用人取自与审计行同一处解析（AigAuditRecorder#resolveCallerId），
+            //    保证「被限额的人」与「账本上记的人」永远是同一个。
+            quotaService.assertWithinQuota(AigAuditRecorder.resolveCallerId(audit));
+            // 7. 决策为 MODEL → 按有序候选依次执行，失败则顺延（有序 fallback）
             List<AigRouteCandidate> candidates = decision.getCandidates();
             if (candidates.isEmpty()) {
                 // 兼容：决策未携带候选列表（旧调用方或手工构造）时退化为「单一模型」路径

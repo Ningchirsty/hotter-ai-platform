@@ -194,6 +194,31 @@ create table aig_invocation_audit (
 ) engine=innodb comment = 'AI调用逐次审计表';
 
 -- ----------------------------
+-- 调用人均配额（C3：用量配额按人）
+--   计量单位是「调用次数」而不是钱：审计里的 cost「为空表示未知而非免费」，
+--   经 snail-ai 的链路恒为 null；用经常未知的数字做配额会算出一本对不上的账。
+--   无配额行 = 不限（新表上线不改变既有调用行为）；日/月上限可各为空（为空的那条不限）。
+--   存量库由 script/sql/aig_user_quota.sql 补齐（幂等）。
+-- ----------------------------
+create table if not exists aig_user_quota (
+    quota_id       bigint(20)   not null                   comment '配额ID',
+    user_id        bigint(20)   not null                   comment '用户ID（sys_user.user_id）：按「调用人」计',
+    user_name      varchar(64)  default null               comment '调用人账号（冗余，便于离线核对；以 user_id 为准）',
+    daily_limit    int(11)      default null               comment '每自然日调用次数上限（NULL=不限）',
+    monthly_limit  int(11)      default null               comment '每自然月调用次数上限（NULL=不限）',
+    status         char(1)      default '0'                comment '状态（0正常 1停用；停用=不参与判定，等同于不限）',
+    del_flag       char(1)      default '0'                comment '删除标志（0代表存在 1代表删除）',
+    create_dept    bigint(20)   default null               comment '创建部门',
+    create_by      bigint(20)   default null               comment '创建者',
+    create_time    datetime     default null               comment '创建时间',
+    update_by      bigint(20)   default null               comment '更新者',
+    update_time    datetime     default null               comment '更新时间',
+    remark         varchar(500) default null               comment '备注（为什么给他设这个额度）',
+    primary key (quota_id),
+    unique key uk_aig_user_quota_user (user_id)
+) engine=innodb comment = 'AI 调用人均配额（按人、自然日/自然月、计「调用次数」）';
+
+-- ----------------------------
 -- 6、阶段1 演示数据：首个能力模板 talent_match（设计 §5.2 §12.3）
 --    人才匹配只允许本地模型/规则处理，禁止外发个人信息
 -- ----------------------------

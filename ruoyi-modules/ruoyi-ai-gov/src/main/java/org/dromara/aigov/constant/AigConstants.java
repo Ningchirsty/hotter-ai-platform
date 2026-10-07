@@ -209,6 +209,19 @@ public interface AigConstants {
     String PERM_PACKAGE_DISABLE = "aig:package:disable";
 
     /**
+     * 人均配额清单（读）：谁有多少额度、当前用了多少
+     */
+    String PERM_QUOTA_LIST = "aig:quota:list";
+
+    /**
+     * 人均配额编辑（写）：新增/修改/删除某个人的额度
+     *
+     * <p>删除与修改共用一个权限点，因为它们改变的是同一件事——「这个人还能不能被调用」。
+     * 删除的含义是回到「不限」，那同样是放宽额度，不该由只能看清单的人执行。</p>
+     */
+    String PERM_QUOTA_EDIT = "aig:quota:edit";
+
+    /**
      * 系统提交者ID：任务由调度器/Agent 发起（无登录上下文）时，{@code create_by} 用它占位。
      *
      * <p><b>为什么不能留 NULL</b>：{@code aig_task.create_by} 同时是幂等唯一键

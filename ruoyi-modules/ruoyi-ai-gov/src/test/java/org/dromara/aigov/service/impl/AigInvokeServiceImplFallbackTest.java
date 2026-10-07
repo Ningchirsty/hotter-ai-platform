@@ -38,6 +38,7 @@ import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import org.dromara.aigov.service.IAigUserQuotaService;
 
 /**
  * 调用编排「有序 fallback」行为锁定测试。
@@ -245,7 +246,7 @@ class AigInvokeServiceImplFallbackTest {
         when(routeService.decide(any(), any(), nullable(AigRouteHint.class))).thenReturn(decision);
 
         AigInvokeServiceImpl service = new AigInvokeServiceImpl(routeService, auditRecorder,
-            invokers, modelViewMapper, retryProperties);
+            invokers, modelViewMapper, retryProperties, mock(IAigUserQuotaService.class));
         AigInvokeBo bo = new AigInvokeBo();
         bo.setCapabilityCode(CAPABILITY);
         bo.setDataLevel(AigDataLevelEnum.INTERNAL.getCode());

@@ -37,6 +37,7 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import org.dromara.aigov.service.IAigUserQuotaService;
 
 /**
  * 场景编码从「调用入参」到「路由决策」与「审计留痕」的贯通测试。
@@ -82,7 +83,7 @@ class AigInvokeServiceImplScenarioTest {
 
     private AigInvokeServiceImpl service() {
         return new AigInvokeServiceImpl(routeService, auditRecorder, List.<ModelInvoker>of(),
-            modelViewMapper, new AigRetryProperties());
+            modelViewMapper, new AigRetryProperties(), mock(IAigUserQuotaService.class));
     }
 
     /**
