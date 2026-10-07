@@ -128,6 +128,11 @@ class ImageModuleWiringTest {
     private static ImageTaskRepository stubRepository() {
         return new ImageTaskRepository() {
             @Override
+            public int reopen(long taskId, String tenantId, long userId, org.dromara.ai.image.domain.ImageTaskStatus expectedFrom) {
+                return 0;
+            }
+
+            @Override
             public long insertAsset(AssetRow row) {
                 return 0;
             }
