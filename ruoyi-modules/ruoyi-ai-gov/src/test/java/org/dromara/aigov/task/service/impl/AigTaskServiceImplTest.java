@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.dromara.aigov.constant.AigConstants;
 import org.dromara.aigov.enums.AigErrorClassEnum;
 import org.dromara.aigov.task.config.AigCallbackProperties;
 import org.dromara.aigov.task.domain.AigCallback;
@@ -265,6 +266,48 @@ class AigTaskServiceImplTest {
         verify(taskMapper, never()).insert(any(AigTask.class));
         verify(snapshotMapper, never()).insert(any(AigTaskSnapshot.class));
         verify(eventMapper, never()).insert(any(AigTaskEvent.class));
+    }
+
+    @Test
+    @DisplayName("创建幂等：系统触发（无登录用户）也要真幂等——create_by 不能是 NULL，"
+        + "否则唯一键不约束 NULL、等值查询永不成立，重复提交会变成两个任务")
+    void createIsIdempotentForSystemSubmitter() {
+        when(actorProvider.currentUserId()).thenReturn(null);
+        // 库里已有什么，由「第一次 insert 写入的那一行」决定——这样这条测试测的是
+        // 真实时序（先查空、写入、再查命中），而不是把一个现成的返回硬塞进去
+        AigTask[] stored = new AigTask[1];
+        when(taskMapper.selectOne(any())).thenAnswer(invocation -> stored[0]);
+        when(taskMapper.insert(any(AigTask.class))).thenAnswer(invocation -> {
+            AigTask saved = invocation.getArgument(0);
+            saved.setTaskId(9001L);
+            stored[0] = saved;
+            return 1;
+        });
+
+        Long first = service.create(createBo("INTERNAL", "Y", "sys-submit-1"));
+        Long second = service.create(createBo("INTERNAL", "Y", "sys-submit-1"));
+
+        assertEquals(first, second, "同一幂等键的重复提交必须返回同一任务");
+        verify(taskMapper, times(1)).insert(any(AigTask.class));
+
+        ArgumentCaptor<AigTask> captor = ArgumentCaptor.forClass(AigTask.class);
+        verify(taskMapper).insert(captor.capture());
+        assertEquals(AigConstants.SYSTEM_SUBMITTER_ID, captor.getValue().getCreateBy(),
+            "系统触发时 create_by 必须是 0（系统）而不是 NULL，否则库层唯一键形同不存在");
+
+        // 查询条件里也必须带非空提交人：写 0 而查 NULL 的话，幂等只在库层成立、应用层永远命中不到
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<LambdaQueryWrapper<AigTask>> wrapperCaptor =
+            ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(taskMapper, times(2)).selectOne(wrapperCaptor.capture());
+        LambdaQueryWrapper<AigTask> idemWrapper = wrapperCaptor.getAllValues().get(1);
+        // 参数是惰性填充的，必须先取一次 SQL 片段
+        idemWrapper.getSqlSegment();
+        assertTrue(idemWrapper.getSqlSegment().contains("create_by"),
+            "幂等查询必须带上 create_by：" + idemWrapper.getSqlSegment());
+        assertTrue(idemWrapper.getParamNameValuePairs().values().stream()
+                .anyMatch(v -> AigConstants.SYSTEM_SUBMITTER_ID.equals(v)),
+            "幂等查询的提交人参数不能为 NULL：" + idemWrapper.getParamNameValuePairs());
     }
 
     @Test

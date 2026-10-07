@@ -8,6 +8,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.dromara.aigov.constant.AigConstants;
 import org.dromara.aigov.enums.AigDataLevelEnum;
 import org.dromara.aigov.enums.AigErrorClassEnum;
 import org.dromara.aigov.task.config.AigCallbackProperties;
@@ -242,7 +243,8 @@ public class AigTaskServiceImpl implements IAigTaskService {
             throw new ServiceException("输入快照不能为空：执行与审核只引用快照，缺了它结果无法复现");
         }
         // 幂等：同一业务域 + 提交人 + 幂等键只建一个任务（设计 §9.2）
-        Long existing = findByIdempotencyKey(bo.getProjectType(), bo.getIdempotencyKey());
+        Long submitterId = resolveSubmitterId();
+        Long existing = findByIdempotencyKey(bo.getProjectType(), bo.getIdempotencyKey(), submitterId);
         if (existing != null) {
             log.info("命中创建幂等键，返回既有任务, taskId={}, projectType={}, idempotencyKey={}",
                 existing, bo.getProjectType(), bo.getIdempotencyKey());
@@ -283,8 +285,7 @@ public class AigTaskServiceImpl implements IAigTaskService {
         // 而幂等查询用的正是这里的同一次取值。若依赖自动填充，写入值与查询值就可能来自
         // 两个不同的来源（登录态 vs 无登录态），结果是「明明有幂等键却建了第二个任务」，
         // 而且库层的唯一键也会因为 create_by 为 NULL 而失去去重能力（MySQL 唯一键不约束 NULL）。
-        Long actorId = actorProvider.currentUserId();
-        task.setCreateBy(actorId);
+        task.setCreateBy(submitterId);
         task.setCreateTime(LocalDateTime.now());
         // 落库顺序：**先任务、再快照、最后回填关联**。
         // 不能反过来——aig_task_snapshot.task_id 是 NOT NULL，且「没有任务的快照」本身
@@ -741,21 +742,36 @@ public class AigTaskServiceImpl implements IAigTaskService {
     }
 
     /**
+     * 解析本次创建的「提交人」，作为幂等作用域。
+     *
+     * <p><b>为什么不直接用 {@link AigTaskActorProvider#currentUserId()}</b>：它可以是 null
+     * （调度器/Agent 发起，没有登录用户），而 null 在幂等唯一键与等值查询里都不能用——
+     * 前者不约束 NULL，后者恒为 UNKNOWN。用哨兵值把「系统」变成一个真实身份，
+     * 重复提交才会被真正挡住。</p>
+     *
+     * @return 登录用户ID；无登录上下文时返回 {@link AigConstants#SYSTEM_SUBMITTER_ID}
+     */
+    private Long resolveSubmitterId() {
+        Long actorId = actorProvider.currentUserId();
+        return actorId == null ? AigConstants.SYSTEM_SUBMITTER_ID : actorId;
+    }
+
+    /**
      * 查询创建幂等键对应的既有任务。
      *
      * @param projectType    业务域
-     * @param dataLevel      数据等级（仅用于日志，不参与匹配）
      * @param idempotencyKey 幂等键
+     * @param submitterId    提交人（{@link #resolveSubmitterId()} 的结果，保证非空）
      * @return 既有任务ID；无则返回 null
      */
-    private Long findByIdempotencyKey(String projectType, String idempotencyKey) {
+    private Long findByIdempotencyKey(String projectType, String idempotencyKey, Long submitterId) {
         if (StringUtils.isBlank(idempotencyKey)) {
             return null;
         }
         AigTask existing = taskMapper.selectOne(new LambdaQueryWrapper<AigTask>()
             .eq(AigTask::getProjectType, projectType)
             .eq(AigTask::getIdempotencyKey, idempotencyKey)
-            .eq(AigTask::getCreateBy, actorProvider.currentUserId())
+            .eq(AigTask::getCreateBy, submitterId)
             .last("limit 1"));
         return existing == null ? null : existing.getTaskId();
     }

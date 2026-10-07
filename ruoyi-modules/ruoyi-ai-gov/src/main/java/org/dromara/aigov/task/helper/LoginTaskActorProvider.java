@@ -7,10 +7,16 @@ import org.springframework.stereotype.Component;
 /**
  * 基于 Sa-Token 登录态的默认操作者解析。
  *
- * <p><b>刻意把「无登录上下文」当作正常情况而不是异常</b>：调度器重试、
- * Provider 回调、超时扫描都不在 HTTP 线程里，取不到登录用户是预期行为。
- * 若在这里抛异常，「任务该重试但没重试」会被一条 token 异常掩盖，
- * 排查时几乎看不出两者的关系。返回 null 则让事件如实记录「系统触发」。</p>
+ * <p><b>刻意把「无登录上下文」当作正常情况</b>：调度器重试、Provider 回调、
+ * 超时扫描都不在 HTTP 线程里，取不到登录用户是预期行为，返回 null
+ * 让事件如实记录「系统触发」。</p>
+ *
+ * <p><b>更正一条曾被写错的结论</b>：早先的注释说这里抛异常会导致「任务该重试但没重试」。
+ * 实测 {@code LoginHelper.getUserId()} 在无登录上下文时<b>返回 null 而不抛异常</b>
+ * （其内部 {@code getExtra} 已 catch 全部异常），所以下面这层 try/catch 实际不会被触发，
+ * 它保留的意义是不依赖第三方实现细节。真正会因 null 出问题的地方是
+ * {@code create_by} 参与的创建幂等（见 {@link AigTaskActorProvider} 说明），
+ * 已由 {@code AigTaskServiceImpl} 的提交者哨兵值解决。</p>
  *
  * @author ai-gov
  */

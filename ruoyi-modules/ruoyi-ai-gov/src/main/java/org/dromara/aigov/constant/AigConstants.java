@@ -103,6 +103,24 @@ public interface AigConstants {
     String PERM_TASK_SELECT = "aig:task:select";
 
     /**
+     * 系统提交者ID：任务由调度器/Agent 发起（无登录上下文）时，{@code create_by} 用它占位。
+     *
+     * <p><b>为什么不能留 NULL</b>：{@code aig_task.create_by} 同时是幂等唯一键
+     * {@code uk_aig_task_idem (project_type, create_by, idempotency_key)} 的一段。
+     * 而 NULL 在唯一键里<b>不被约束</b>（MySQL/MariaDB 的唯一键不约束 NULL），
+     * 在等值查询里也永不成立（{@code create_by = NULL} 恒为 UNKNOWN）——
+     * 两处叠加的结果是「同一个 Agent 重复提交同一个幂等键会建出两个任务」，
+     * 于是变成两次真实模型调用、两次计费，而每一步单看都很正常。
+     * 实测（真实 MariaDB）：无登录上下文下重复提交同一键 → 库里两行。</p>
+     *
+     * <p>用一个稳定的非空哨兵值把「系统」变成一个真实的提交者身份，上述两处才都成立。
+     * 取值 0：RuoYi 的用户ID 从 1 起（admin=1），0 不会被真实用户占用；
+     * 这个位只用于<b>幂等作用域</b>，事件/审计里的 {@code actor_id}/{@code caller_id}
+     * 在系统触发时仍如实写 NULL——那里要表达的是「没有人操作」，与「谁提交的」不是同一件事。</p>
+     */
+    Long SYSTEM_SUBMITTER_ID = 0L;
+
+    /**
      * 阶段1 首个能力编码：人才能力匹配
      */
     String CAP_TALENT_MATCH = "talent_match";
