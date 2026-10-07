@@ -15,6 +15,7 @@
 </template>
 
 <script setup name="Pagination" lang="ts">
+import { computed } from 'vue';
 import { propTypes } from '@/utils/propTypes';
 import { scrollTo } from '@/utils/scroll-to';
 

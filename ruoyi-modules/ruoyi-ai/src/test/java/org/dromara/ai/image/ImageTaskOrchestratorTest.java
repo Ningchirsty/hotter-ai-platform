@@ -302,6 +302,9 @@ class ImageTaskOrchestratorTest {
      * 内存仓储替身：只记录被调用的关键动作。
      */
     static class StubRepository implements ImageTaskRepository {
+        @Override
+        public int reopen(long taskId, String tenantId, long userId, ImageTaskStatus expectedFrom) { return 0; }
+
         final Map<Long, AssetRow> assets = new LinkedHashMap<>();
         final List<AssetRow> insertedAssets = new ArrayList<>();
         final List<String> events = new ArrayList<>();

@@ -87,6 +87,20 @@ public interface ImageTaskRepository {
      */
     int cancelQueued(long taskId, String tenantId, long userId);
 
+    /** 按归属与前置终态原子重开任务，清除上一次执行结果。 */
+    int reopen(long taskId, String tenantId, long userId, ImageTaskStatus expectedFrom);
+
+    /** 查询本人任务，支持跨页检索。 */
+    default List<Map<String, Object>> listOwnedTasks(String tenantId, long userId, String status,
+                                                   String keyword, int offset, int limit) {
+        return listOwnedTasks(tenantId, userId, status, offset, limit);
+    }
+
+    /** 统计本人任务，筛选条件与分页查询一致。 */
+    default long countOwnedTasks(String tenantId, long userId, String status, String keyword) {
+        return countOwnedTasks(tenantId, userId, status);
+    }
+
     /**
      * 素材行。
      */

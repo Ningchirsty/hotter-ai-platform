@@ -51,7 +51,15 @@ public class ImageTaskDispatchService {
             log.info("图像任务 {} 已被认领（重复提交），不再重复执行", taskId);
             return Outcome.ALREADY_CLAIMED;
         }
-        boolean accepted = executionService.submit(contextFactory.get());
+        boolean accepted;
+        try {
+            accepted = executionService.submit(contextFactory.get());
+        } catch (RuntimeException e) {
+            // No job was accepted: preserve the original task for a later execute request.
+            repository.transition(taskId, org.dromara.ai.image.domain.ImageTaskStatus.RUNNING,
+                org.dromara.ai.image.domain.ImageTaskStatus.QUEUED, null, null);
+            throw e;
+        }
         if (!accepted) {
             int rolledBack = repository.transition(taskId, org.dromara.ai.image.domain.ImageTaskStatus.RUNNING,
                 org.dromara.ai.image.domain.ImageTaskStatus.QUEUED, null, null);

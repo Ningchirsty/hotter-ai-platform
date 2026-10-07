@@ -1,0 +1,206 @@
+{
+  "video": [
+    {
+      "workflowCode": "wf-i2v-h3",
+      "capabilityCode": "I2V",
+      "modelCode": "H3",
+      "version": "v0.1.0-draft",
+      "status": "PUBLISHED",
+      "submittable": true,
+      "testable": true,
+      "supportedTier": "高清 · 1080P",
+      "supportedTiers": [
+        "高清 · 1080P",
+        "流畅 · 720P",
+        "标清 · 480P",
+        "竖屏 · 1080×1920",
+        "竖屏 · 720×1280",
+        "竖屏 · 480×864"
+      ],
+      "supportedDuration": "5 秒",
+      "supportedDurationsByTier": {
+        "高清 · 1080P": ["5 秒"],
+        "流畅 · 720P": ["5 秒", "10 秒"],
+        "标清 · 480P": ["5 秒", "10 秒", "20 秒"],
+        "竖屏 · 1080×1920": ["5 秒"],
+        "竖屏 · 720×1280": ["5 秒", "10 秒"],
+        "竖屏 · 480×864": ["5 秒", "10 秒", "20 秒"]
+      },
+      "supportedRatios": ["16:9 横屏", "9:16 竖屏"],
+      "supportedTiersByRatio": {
+        "16:9 横屏": ["高清 · 1080P", "流畅 · 720P", "标清 · 480P"],
+        "9:16 竖屏": ["竖屏 · 1080×1920", "竖屏 · 720×1280", "竖屏 · 480×864"]
+      },
+      "defaultRatio": "16:9 横屏",
+      "maxDurationSeconds": 20
+    },
+    {
+      "workflowCode": "wf-fl2v-h3",
+      "capabilityCode": "FL2V",
+      "modelCode": "H3",
+      "version": "v0.1.0-draft",
+      "status": "PUBLISHED",
+      "submittable": true,
+      "testable": true,
+      "supportedTier": "高清 · 1080P",
+      "supportedTiers": [
+        "高清 · 1080P",
+        "流畅 · 720P",
+        "标清 · 480P",
+        "竖屏 · 1080×1920",
+        "竖屏 · 720×1280",
+        "竖屏 · 480×864"
+      ],
+      "supportedDuration": "5 秒",
+      "supportedDurationsByTier": {
+        "高清 · 1080P": ["5 秒"],
+        "流畅 · 720P": ["5 秒", "10 秒"],
+        "标清 · 480P": ["5 秒", "10 秒", "20 秒"],
+        "竖屏 · 1080×1920": ["5 秒"],
+        "竖屏 · 720×1280": ["5 秒", "10 秒"],
+        "竖屏 · 480×864": ["5 秒", "10 秒", "20 秒"]
+      },
+      "supportedRatios": ["16:9 横屏", "9:16 竖屏"],
+      "supportedTiersByRatio": {
+        "16:9 横屏": ["高清 · 1080P", "流畅 · 720P", "标清 · 480P"],
+        "9:16 竖屏": ["竖屏 · 1080×1920", "竖屏 · 720×1280", "竖屏 · 480×864"]
+      },
+      "defaultRatio": "16:9 横屏",
+      "maxDurationSeconds": 20
+    },
+    {
+      "workflowCode": "wf-t2v-h3",
+      "capabilityCode": "T2V",
+      "modelCode": "H3",
+      "version": "v0.1.0-draft",
+      "status": "PUBLISHED",
+      "submittable": true,
+      "testable": true,
+      "supportedTier": "高清 · 1080P",
+      "supportedTiers": [
+        "高清 · 1080P",
+        "流畅 · 720P",
+        "标清 · 480P",
+        "竖屏 · 1080×1920",
+        "竖屏 · 720×1280",
+        "竖屏 · 480×864"
+      ],
+      "supportedDuration": "5 秒",
+      "supportedDurationsByTier": {
+        "高清 · 1080P": ["5 秒"],
+        "流畅 · 720P": ["5 秒", "10 秒"],
+        "标清 · 480P": ["5 秒", "10 秒", "20 秒"],
+        "竖屏 · 1080×1920": ["5 秒"],
+        "竖屏 · 720×1280": ["5 秒", "10 秒"],
+        "竖屏 · 480×864": ["5 秒", "10 秒", "20 秒"]
+      },
+      "supportedRatios": ["16:9 横屏", "9:16 竖屏"],
+      "supportedTiersByRatio": {
+        "16:9 横屏": ["高清 · 1080P", "流畅 · 720P", "标清 · 480P"],
+        "9:16 竖屏": ["竖屏 · 1080×1920", "竖屏 · 720×1280", "竖屏 · 480×864"]
+      },
+      "defaultRatio": "16:9 横屏",
+      "maxDurationSeconds": 20
+    }
+  ],
+  "image": [
+    {
+      "workflowCode": "wf-t2i-qwen21",
+      "capabilityCode": "T2I",
+      "modelCode": "QWEN21",
+      "version": "v0.1.0-draft",
+      "status": "PUBLISHED",
+      "submittable": true,
+      "testable": true,
+      "requireAlpha": false,
+      "maxPixels": 4194304,
+      "defaultSize": "1:1 方图 · 1MP（1024×1024）",
+      "sizes": [
+        {
+          "label": "1:1 方图 · 1MP（1024×1024）",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "label": "4:3 横图 · 1MP（1152×864）",
+          "width": 1152,
+          "height": 864
+        },
+        {
+          "label": "3:4 竖图 · 1MP（864×1152）",
+          "width": 864,
+          "height": 1152
+        },
+        {
+          "label": "16:9 宽屏 · 1MP（1344×768）",
+          "width": 1344,
+          "height": 768
+        },
+        {
+          "label": "9:16 竖屏 · 1MP（768×1344）",
+          "width": 768,
+          "height": 1344
+        },
+        {
+          "label": "1:1 方图 · 2K（2048×2048）",
+          "width": 2048,
+          "height": 2048
+        }
+      ],
+      "strengths": []
+    },
+    {
+      "workflowCode": "wf-i2i-qwen21",
+      "capabilityCode": "I2I",
+      "modelCode": "QWEN21",
+      "version": "v0.1.0-draft",
+      "status": "PUBLISHED",
+      "submittable": true,
+      "testable": true,
+      "requireAlpha": false,
+      "maxPixels": 4194304,
+      "sizes": [],
+      "defaultStrength": "标准重绘 · 0.75",
+      "strengths": ["轻微变化 · 0.4", "标准重绘 · 0.75", "强烈重绘 · 0.9"]
+    },
+    {
+      "workflowCode": "wf-edit-qwen21",
+      "capabilityCode": "EDIT",
+      "modelCode": "QWEN21",
+      "version": "v0.1.1",
+      "status": "PUBLISHED",
+      "submittable": true,
+      "testable": true,
+      "requireAlpha": false,
+      "maxPixels": 4194304,
+      "sizes": [],
+      "strengths": []
+    },
+    {
+      "workflowCode": "wf-bgremove-qwen21",
+      "capabilityCode": "BGREMOVE",
+      "modelCode": "QWEN21",
+      "version": "v0.1.1",
+      "status": "PUBLISHED",
+      "submittable": true,
+      "testable": true,
+      "requireAlpha": true,
+      "maxPixels": 4194304,
+      "sizes": [],
+      "strengths": []
+    },
+    {
+      "workflowCode": "wf-whitebg-qwen21",
+      "capabilityCode": "WHITEBG",
+      "modelCode": "QWEN21",
+      "version": "v0.1.0",
+      "status": "PUBLISHED",
+      "submittable": true,
+      "testable": true,
+      "requireAlpha": false,
+      "maxPixels": 4194304,
+      "sizes": [],
+      "strengths": []
+    }
+  ]
+}

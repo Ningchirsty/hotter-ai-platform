@@ -14,9 +14,7 @@ import type {
 /**
  * 查询可提交的工作流视图。
  *
- * 返回的 `status` / `submittable` 决定提交按钮是否可用：图像模块四个模板当前均为 DRAFT
- * （真机已实测出图，但任务 API 与生产环境尚未联调），因此页面必须保持禁用并显示真实原因，
- * 不允许把「模板已导入」伪装成「服务已联通」。
+ * 提交能力以服务端返回的工作流状态与 submittable 为准。
  */
 export const listImageWorkflows = (): AxiosPromise<ImageWorkflowVO[]> => {
   return request({
@@ -86,11 +84,17 @@ export const executeImageTask = (taskId: number | string): AxiosPromise<ImageTas
   });
 };
 
+/** 按原参数重试本人失败、超时或取消的任务。 */
+export const retryImageTask = (taskId: number | string): AxiosPromise<ImageTaskExecutionResult> => {
+  return request({ url: '/image/tasks/' + taskId + '/retry', method: 'post' });
+};
+
 /** 查询本人任务列表。 */
 export const listImageTasks = (query?: {
   pageNum?: number;
   pageSize?: number;
   status?: string;
+  keyword?: string;
 }): AxiosPromise<PageResult<ImageTaskVO>> => {
   return request({
     url: '/image/tasks',

@@ -141,13 +141,20 @@ public class JdbcImageTaskRepository implements ImageTaskRepository {
 
     @Override
     public List<Map<String, Object>> listOwnedTasks(String tenantId, long userId, String status, int offset, int limit) {
-        StringBuilder sql = new StringBuilder(taskSelect())
-            .append(" WHERE tenant_id = ? AND user_id = ? AND del_flag = '0'");
-        List<Object> args = new ArrayList<>(List.of(tenantId, userId));
-        if (status != null && !status.isBlank()) {
-            sql.append(" AND status = ?");
-            args.add(status);
-        }
+        return listOwnedTasks(tenantId, userId, status, null, offset, limit);
+    }
+
+    @Override
+    public long countOwnedTasks(String tenantId, long userId, String status) {
+        return countOwnedTasks(tenantId, userId, status, null);
+    }
+
+    @Override
+    public List<Map<String, Object>> listOwnedTasks(String tenantId, long userId, String status,
+                                                  String keyword, int offset, int limit) {
+        StringBuilder sql = new StringBuilder(taskSelect());
+        List<Object> args = new ArrayList<>();
+        appendTaskFilters(sql, args, tenantId, userId, status, keyword);
         sql.append(" ORDER BY id DESC LIMIT ? OFFSET ?");
         args.add(limit);
         args.add(offset);
@@ -155,16 +162,28 @@ public class JdbcImageTaskRepository implements ImageTaskRepository {
     }
 
     @Override
-    public long countOwnedTasks(String tenantId, long userId, String status) {
-        StringBuilder sql = new StringBuilder(
-            "SELECT COUNT(*) FROM image_task WHERE tenant_id = ? AND user_id = ? AND del_flag = '0'");
-        List<Object> args = new ArrayList<>(List.of(tenantId, userId));
+    public long countOwnedTasks(String tenantId, long userId, String status, String keyword) {
+        StringBuilder sql = new StringBuilder("SELECT COUNT(*) FROM image_task");
+        List<Object> args = new ArrayList<>();
+        appendTaskFilters(sql, args, tenantId, userId, status, keyword);
+        Long count = jdbc.queryForObject(sql.toString(), Long.class, args.toArray());
+        return count == null ? 0L : count;
+    }
+
+    private static void appendTaskFilters(StringBuilder sql, List<Object> args, String tenantId,
+                                          long userId, String status, String keyword) {
+        sql.append(" WHERE tenant_id = ? AND user_id = ? AND del_flag = '0'");
+        args.add(tenantId);
+        args.add(userId);
         if (status != null && !status.isBlank()) {
             sql.append(" AND status = ?");
             args.add(status);
         }
-        Long count = jdbc.queryForObject(sql.toString(), Long.class, args.toArray());
-        return count == null ? 0 : count;
+        if (keyword != null && !keyword.isBlank()) {
+            sql.append(" AND (LOCATE(LOWER(?), LOWER(task_no)) > 0 OR LOCATE(LOWER(?), LOWER(task_name)) > 0)");
+            args.add(keyword.trim());
+            args.add(keyword.trim());
+        }
     }
 
     @Override
@@ -204,6 +223,22 @@ public class JdbcImageTaskRepository implements ImageTaskRepository {
                    finished_time = CASE WHEN ? = 1 THEN NOW() ELSE finished_time END
              WHERE id = ? AND status = ?
             """, target.name(), errorCode, errorMessage, terminal ? 1 : 0, taskId, expectedFrom.name());
+    }
+
+    @Override
+    public int reopen(long taskId, String tenantId, long userId, ImageTaskStatus expectedFrom) {
+        if (!expectedFrom.isTerminal() || expectedFrom == ImageTaskStatus.SUCCEEDED) {
+            return 0;
+        }
+        return jdbc.update("""
+            UPDATE image_task
+               SET status = 'QUEUED', error_code = NULL, error_message = NULL, progress = 0,
+                   finished_time = NULL, started_time = NULL, submitted_time = NULL,
+                   comfy_prompt_id = NULL, comfy_worker = NULL, output_asset_id = NULL,
+                   cover_asset_id = NULL, output_width = NULL, output_height = NULL,
+                   output_has_alpha = 0, output_size_bytes = NULL, update_time = NOW()
+             WHERE id = ? AND tenant_id = ? AND user_id = ? AND status = ? AND del_flag = '0'
+            """, taskId, tenantId, userId, expectedFrom.name());
     }
 
     @Override

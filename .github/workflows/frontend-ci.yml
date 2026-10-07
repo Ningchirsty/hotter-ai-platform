@@ -45,6 +45,10 @@ jobs:
         working-directory: frontend
         run: pnpm install --frozen-lockfile
 
+      - name: Test inspiration and task recovery
+        working-directory: frontend
+        run: pnpm exec vitest run --config preview/inspiration-vitest.config.mts
+
       - name: Lint frontend
         working-directory: frontend
         run: pnpm lint

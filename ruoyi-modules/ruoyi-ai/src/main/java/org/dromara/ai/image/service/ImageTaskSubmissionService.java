@@ -37,10 +37,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * {@link ImageTaskOrchestrator} / {@link ImageWorkflowContractRegistry} 负责。
  * 它只做三件事：校验（能力/契约/字段/素材归属）、入库（image_asset / image_task）、派发（QUEUED→RUNNING）。</p>
  *
- * <p><b>与控制器重复的部分</b>：{@code ImageCreationController.createTask} 里有一套同样的装配逻辑。
- * 本次以「纯新增」方式落地（不改动线上图像页的控制器，避免把在用的功能一起改坏），
- * 两处重复是<b>已知技术债</b>，计划在视觉工厂 R1 把控制器改为委托本服务，收敛为一处。
- * 语义对齐由 {@code ImageTaskSubmissionServiceTest} 钉住。</p>
+ * <p>图像控制器与视觉工厂统一复用本服务的任务装配与派发规则。</p>
  *
  * <p><b>启用条件</b>：与 {@link org.dromara.ai.image.config.ImageModuleConfiguration} 一致，
  * 仅在 {@code image.enabled=true} 时注册——否则它依赖的 AssetStore/Orchestrator 等 Bean 并不存在。
@@ -509,6 +506,24 @@ public class ImageTaskSubmissionService {
             throw new ImageTaskException("INVALID_CONTRACT", "任务当前状态不可执行：" + status);
         }
         return dispatchService.dispatch(imageTaskId, () -> buildContext(task, tenantId, userId)).name();
+    }
+
+    /**
+     * 按原参数重试失败、超时或取消的本人任务；并发重试不重复派发。
+     */
+    public String retryOwned(long imageTaskId, String tenantId, long userId) {
+        Map<String, Object> task = repository.requireOwnedTask(imageTaskId, tenantId, userId);
+        ImageTaskStatus status = ImageTaskStatus.valueOf(String.valueOf(task.get("status")));
+        if (status == ImageTaskStatus.QUEUED || status == ImageTaskStatus.RUNNING) {
+            return dispatchOwned(imageTaskId, tenantId, userId);
+        }
+        if (!status.isTerminal() || status == ImageTaskStatus.SUCCEEDED) {
+            throw new ImageTaskException("INVALID_CONTRACT", "只有失败/超时/已取消的任务可以重新执行");
+        }
+        if (repository.reopen(imageTaskId, tenantId, userId, status) == 0) {
+            return ImageTaskDispatchService.Outcome.ALREADY_CLAIMED.name();
+        }
+        return dispatchOwned(imageTaskId, tenantId, userId);
     }
 
     /**

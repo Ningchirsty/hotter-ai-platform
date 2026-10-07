@@ -1,0 +1,46 @@
+/** 视频、图像及其独立弹层共用的浅色主题。 */
+@mixin creative-light-tokens {
+  --bg: #f5f6fb;
+  --surface: #fff;
+  --elevated: #fff;
+  --sunken: #f6f7fb;
+  --line: #e1e6f0;
+  --line2: #dce2ee;
+  --t1: #29364f;
+  --t2: #728097;
+  --t3: #8794aa;
+  --p: #7961ca;
+  --p-h: #6e54bc;
+  --tint: #f0eafd;
+  --grad: linear-gradient(120deg, #7961ca, #6654ad);
+  --glow: rgba(121, 97, 202, 0.12);
+  --el-text-color-primary: #29364f;
+  --el-text-color-regular: #728097;
+  --el-input-text-color: #29364f;
+  --el-input-bg-color: #fff;
+  --el-border-color: #dce2ee;
+  --el-fill-color-blank: #fff;
+  --el-color-primary: #7961ca;
+  --el-color-primary-light-3: #a18fd9;
+  --el-color-primary-light-5: #bcafe5;
+  --el-color-primary-light-7: #d7cfef;
+  --el-color-primary-light-8: #e4dff5;
+  --el-color-primary-light-9: #f0eafd;
+  --el-color-primary-dark-2: #6e54bc;
+  --el-bg-color: #fff;
+  --el-bg-color-page: #f5f6fb;
+  --el-bg-color-overlay: #fff;
+  --el-text-color-secondary: #728097;
+  --el-text-color-placeholder: #8794aa;
+  --el-text-color-disabled: #8794aa;
+  --el-border-color-light: #e1e6f0;
+  --el-border-color-lighter: #e9edf5;
+  --el-fill-color: #eef0f7;
+  --el-fill-color-light: #f6f7fb;
+  --el-fill-color-lighter: #f8f9fc;
+  --el-fill-color-dark: #e1e6f0;
+  --el-fill-color-darker: #dce2ee;
+  --el-disabled-bg-color: #f6f7fb;
+  --el-disabled-text-color: #8794aa;
+  --el-disabled-border-color: #e1e6f0;
+}

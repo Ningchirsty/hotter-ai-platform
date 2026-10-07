@@ -1,0 +1,269 @@
+@use './creative-light-tokens' as theme;
+
+/** 所有创作视图共用配色，保持原有布局、操作与状态含义。 */
+.studio.creative-light {
+    @include theme.creative-light-tokens;
+    background-image: none;
+
+    .guide-bar {
+        color: var(--t2);
+        background: var(--surface);
+        border-color: var(--line);
+    }
+    .studio-nav button.active,
+    .task-filters button.active,
+    .capability.active,
+    .choice-grid button.active,
+    .task-actions .recreate {
+        color: var(--p);
+        background: var(--tint);
+        border-color: var(--p);
+    }
+    .task-cover,
+    .task-cover.done,
+    .task-cover.queued,
+    .task-cover.failed,
+    .task-cover.muted,
+    .asset-preview,
+    .asset-preview.video,
+    .asset-preview.audio {
+        color: var(--p);
+        background: linear-gradient(135deg, #f0eafd, #e8edf7);
+    }
+    .task-cover span,
+    .task-cover .task-cover-zoom {
+        color: var(--p-h);
+        background: rgba(255, 255, 255, 0.94);
+    }
+    .task-status.running {
+        color: #6e54bc;
+        background: #f0eafd;
+    }
+    .task-status.queued {
+        color: #946615;
+        background: #fff4d7;
+    }
+    .task-status.done {
+        color: #24735c;
+        background: #eef8f4;
+    }
+    .task-status.failed {
+        color: #a94458;
+        background: #fff0f2;
+    }
+    .task-error {
+        color: #a94458 !important;
+    }
+    .gpu-status-dot.busy {
+        background: #378071;
+        box-shadow: 0 0 0 3px rgba(55, 128, 113, 0.12);
+    }
+    .gpu-status-warn {
+        color: #946615;
+    }
+    .task-actions button:not(:disabled):hover {
+        color: var(--p);
+        border-color: var(--p);
+        background: var(--tint);
+    }
+    .asset-card > button:hover {
+        color: #a94458;
+        border-color: #e8b8c2;
+        background: #fff0f2;
+    }
+    .choice-grid button {
+        min-width: 0;
+        padding: 8px 6px;
+        font-size: 12px;
+        line-height: 1.6;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+    .primary-action {
+        border-radius: 8px;
+    }
+    :deep(.el-input__wrapper),
+    :deep(.el-textarea__inner),
+    :deep(.el-select__wrapper) {
+        color: var(--t1);
+        background: var(--surface);
+    }
+    button:focus-visible,
+    a:focus-visible {
+        outline: 2px solid var(--p);
+        outline-offset: 3px;
+    }
+}
+
+/* Element Plus 弹层脱离 studio，必须在弹层自身设置相同变量。 */
+:global(.creative-dialog),
+:global(.creative-popup),
+:global(.creative-message-box) {
+    @include theme.creative-light-tokens;
+    color: var(--t1);
+    background: var(--surface);
+    border-color: var(--line);
+    border-radius: 14px;
+}
+:global(.creative-dialog .preview-video),
+:global(.creative-dialog .preview-image) {
+    background: #f6f7fb;
+}
+:global(.creative-dialog .preview-meta dt) {
+    color: #728097;
+}
+:global(.creative-dialog .preview-meta dd) {
+    color: #29364f;
+}
+:global(.creative-dialog .error-text) {
+    color: #a94458;
+}
+
+/** 创建页继续沿用已确认的双栏框架。 */
+.studio.creation-workbench {
+    .workbench-grid {
+        grid-template-columns: minmax(340px, 390px) minmax(0, 1fr);
+        align-items: stretch;
+        max-width: 1600px;
+    }
+    .create-card {
+        display: flex;
+        flex-direction: column;
+        align-self: stretch;
+        min-width: 0;
+        background: #fff;
+        border-radius: 14px;
+        padding: 24px;
+    }
+    .editor-body {
+        flex: 1;
+    }
+    .section-heading {
+        align-items: flex-start;
+        flex-wrap: wrap;
+    }
+    .section-heading h2 {
+        font-size: 20px;
+    }
+    .version-pill {
+        color: var(--p) !important;
+        font-size: 10px;
+        overflow-wrap: anywhere;
+    }
+    .capability-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .capability {
+        padding: 12px 9px;
+    }
+    .capability small {
+        line-height: 1.65;
+    }
+    .model-option.active,
+    .fixed-workflow i,
+    .prompt-tools .optimize {
+        color: var(--p);
+    }
+    .submit-row {
+        margin-top: auto;
+        padding-top: 24px;
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+    }
+    .submit-button {
+        width: 100%;
+        min-height: 46px;
+        border-radius: 9px;
+    }
+    .submit-row > span {
+        line-height: 1.8;
+    }
+    .workflow-note {
+        font-size: 11px;
+        color: var(--t2);
+    }
+    .creation-title {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 22px;
+    }
+    .creation-title h1 {
+        margin: 0 0 7px;
+        font-size: 28px;
+        font-weight: 600;
+    }
+    .creation-title p {
+        margin: 0;
+        color: var(--t2);
+        font-size: 12px;
+        line-height: 1.8;
+    }
+    .media-switch {
+        display: inline-flex;
+        padding: 4px;
+        background: #eceff6;
+        border-radius: 9px;
+    }
+    .media-switch a {
+        padding: 9px 13px;
+        border-radius: 6px;
+        color: var(--t2);
+        font-size: 13px;
+        text-decoration: none;
+        white-space: nowrap;
+    }
+    .media-switch a.current {
+        color: var(--t1);
+        background: white;
+        box-shadow: 0 2px 5px rgba(41, 54, 79, 0.05);
+    }
+    .local-model-note {
+        padding: 11px 13px;
+        margin: 0 0 20px;
+        color: var(--t2);
+        background: var(--sunken);
+        border-radius: 8px;
+        font-size: 12px;
+        line-height: 1.7;
+    }
+    .local-model-note b {
+        display: block;
+        color: var(--t1);
+        margin-bottom: 3px;
+    }
+    :deep(.el-textarea__inner),
+    :deep(.el-input__wrapper) {
+        background: #fff;
+        color: var(--t1);
+    }
+    button:focus-visible,
+    a:focus-visible {
+        outline: 2px solid var(--p);
+        outline-offset: 3px;
+    }
+}
+
+@media (max-width: 1000px) {
+    .studio.creation-workbench .workbench-grid {
+        grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+    }
+    .studio.creation-workbench .create-card {
+        padding: 18px;
+    }
+}
+@media (max-width: 780px) {
+    .studio.creation-workbench .workbench-grid {
+        grid-template-columns: 1fr;
+    }
+    .studio.creation-workbench .creation-title {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    .studio.creation-workbench {
+        padding: 16px;
+    }
+}
