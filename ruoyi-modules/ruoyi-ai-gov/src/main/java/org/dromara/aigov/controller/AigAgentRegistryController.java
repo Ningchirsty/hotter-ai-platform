@@ -22,6 +22,7 @@ import org.dromara.aigov.agent.domain.vo.AigPackageDisableVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageInstallLogVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageInstallVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageRegisterVo;
+import org.dromara.aigov.agent.domain.vo.AigPackageStatusVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageVersionVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageVo;
 import org.dromara.aigov.agent.domain.vo.AigSkillVersionVo;
@@ -341,9 +342,43 @@ public class AigAgentRegistryController {
     @SaCheckPermission(AigConstants.PERM_PACKAGE_DISABLE)
     @RepeatSubmit
     @PostMapping("/package/version/{packageVersionId:\\d+}/disable")
-    public R<AigPackageDisableVo> disablePackage(
+    public R<AigPackageDisableVo> disablePackageVersion(
         @NotNull(message = "Package 版本ID不能为空") @PathVariable Long packageVersionId) {
         return R.ok(packageService.disable(packageVersionId, LoginHelper.getUserId()));
+    }
+
+    /**
+     * <b>包级</b>停用：此后不再接受该包的新版本上传，也不能安装。
+     *
+     * <p><b>不影响已经装出去、可能正在被使用的版本</b>——要下线它们请用版本级的
+     * {@code POST /package/version/{packageVersionId}/disable}。两件事刻意分开，
+     * 免得「停用了这个包」被理解成线上的东西也停了。</p>
+     *
+     * @param packageId Package ID
+     * @return 变更结果
+     */
+    @SaCheckPermission(AigConstants.PERM_PACKAGE_DISABLE)
+    @RepeatSubmit
+    @PostMapping("/package/{packageId:\\d+}/disable")
+    public R<AigPackageStatusVo> disablePackage(
+        @NotNull(message = "Package ID不能为空") @PathVariable Long packageId) {
+        return R.ok(packageService.disablePackage(packageId, LoginHelper.getUserId()));
+    }
+
+    /**
+     * <b>包级</b>启用：恢复「可上传新版本、可安装」。
+     *
+     * <p>不会把版本级停用过的版本重新启用（那走发布推进）。</p>
+     *
+     * @param packageId Package ID
+     * @return 变更结果
+     */
+    @SaCheckPermission(AigConstants.PERM_PACKAGE_DISABLE)
+    @RepeatSubmit
+    @PostMapping("/package/{packageId:\\d+}/enable")
+    public R<AigPackageStatusVo> enablePackage(
+        @NotNull(message = "Package ID不能为空") @PathVariable Long packageId) {
+        return R.ok(packageService.enablePackage(packageId, LoginHelper.getUserId()));
     }
 
     /**

@@ -16,6 +16,7 @@ import org.dromara.aigov.agent.domain.bo.AigReleaseAdvanceBo;
 import org.dromara.aigov.agent.domain.vo.AigPackageDisableVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageInstallVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageRegisterVo;
+import org.dromara.aigov.agent.domain.vo.AigPackageStatusVo;
 import org.dromara.aigov.agent.manifest.AigPackageManifestValidator;
 import org.dromara.aigov.config.AigPackageProperties;
 import org.dromara.aigov.agent.helper.IAigPackageBodyStore;
@@ -673,6 +674,90 @@ class AigPackageServiceImplTest {
             .getMessage().contains("不能为空"));
         when(packageVersionMapper.selectById(99999L)).thenReturn(null);
         assertTrue(assertThrows(ServiceException.class, () -> service.disable(99999L, 7L))
+            .getMessage().contains("不存在"));
+    }
+
+    // ---------------------------------------------------------------- 包级停用/启用
+
+    @Test
+    @DisplayName("包级停用：只改 status 这一列，并说明「既有版本不受影响」")
+    void disablePackageSetsStatus() {
+        when(packageMapper.selectById(PKG_ID)).thenReturn(existingPackage());
+
+        AigPackageStatusVo vo = service.disablePackage(PKG_ID, 7L);
+
+        assertTrue(vo.disabled());
+        assertTrue(vo.changed());
+        assertEquals("vision-planning-skill", vo.packageCode());
+        assertTrue(vo.note().contains("既有版本不受影响"), vo.note());
+
+        ArgumentCaptor<AigPackage> captor = ArgumentCaptor.forClass(AigPackage.class);
+        verify(packageMapper).updateById(captor.capture());
+        assertEquals(PKG_ID, captor.getValue().getPackageId());
+        assertEquals("1", captor.getValue().getStatus(), "包级停用只改 status，不碰任何版本状态");
+    }
+
+    @Test
+    @DisplayName("包级停用幂等：已是停用状态则不改库，并说清楚「没做任何改动」")
+    void disablePackageIsIdempotent() {
+        AigPackage pkg = existingPackage();
+        pkg.setStatus("1");
+        when(packageMapper.selectById(PKG_ID)).thenReturn(pkg);
+
+        AigPackageStatusVo vo = service.disablePackage(PKG_ID, 7L);
+
+        assertTrue(vo.disabled());
+        assertFalse(vo.changed());
+        assertTrue(vo.note().contains("未做任何改动"), vo.note());
+        verify(packageMapper, never()).updateById(any(AigPackage.class));
+    }
+
+    @Test
+    @DisplayName("包级启用：置回正常，并说明被停用的版本不会因此恢复")
+    void enablePackageRestoresStatus() {
+        AigPackage pkg = existingPackage();
+        pkg.setStatus("1");
+        when(packageMapper.selectById(PKG_ID)).thenReturn(pkg);
+
+        AigPackageStatusVo vo = service.enablePackage(PKG_ID, 7L);
+
+        assertFalse(vo.disabled());
+        assertTrue(vo.changed());
+        assertTrue(vo.note().contains("不会因此恢复"), vo.note());
+
+        ArgumentCaptor<AigPackage> captor = ArgumentCaptor.forClass(AigPackage.class);
+        verify(packageMapper).updateById(captor.capture());
+        assertEquals("0", captor.getValue().getStatus());
+    }
+
+    @Test
+    @DisplayName("包级停用与安装检查接上了：停用后安装被拒（那条检查原先永远为假——没有任何入口能置位）")
+    void packageLevelDisableNowBlocksInstall() {
+        // 生产端：disablePackage 把 status 置 1
+        when(packageMapper.selectById(PKG_ID)).thenReturn(existingPackage());
+        AigPackageStatusVo status = service.disablePackage(PKG_ID, 7L);
+        assertTrue(status.changed());
+
+        // 消费端：status=1 时安装被拒（同一条检查）
+        AigPackage disabled = existingPackage();
+        disabled.setStatus("1");
+        when(packageMapper.selectById(PKG_ID)).thenReturn(disabled);
+        when(packageVersionMapper.selectById(PKG_VERSION_ID))
+            .thenReturn(packageVersion("PASS", defaultManifest()));
+
+        ServiceException error = assertThrows(ServiceException.class,
+            () -> service.install(PKG_VERSION_ID, 7L));
+
+        assertTrue(error.getMessage().contains("已停用"), error.getMessage());
+    }
+
+    @Test
+    @DisplayName("包级停用入参：ID 为空、包不存在都报可读错误")
+    void packageStatusValidatesInput() {
+        assertTrue(assertThrows(ServiceException.class, () -> service.disablePackage(null, 7L))
+            .getMessage().contains("不能为空"));
+        when(packageMapper.selectById(99999L)).thenReturn(null);
+        assertTrue(assertThrows(ServiceException.class, () -> service.enablePackage(99999L, 7L))
             .getMessage().contains("不存在"));
     }
 

@@ -8,6 +8,7 @@ import type {
   AigPackageInstallVO,
   AigPackageQuery,
   AigPackageRegisterVO,
+  AigPackageStatusVO,
   AigPackageUploadForm,
   AigPackageVO,
   AigPackageVersionQuery,
@@ -96,14 +97,36 @@ export function listInstallLog(packageVersionId: string | number): AxiosPromise<
 }
 
 /**
- * 停用：把该 Package 版本带进来的 Agent/Skill 版本批量下线。
+ * 停用【版本级】：把该 Package 版本带进来的 Agent/Skill 版本批量下线。
  *
  * 停的是「这个包带进来的」（按 `package_version_id` 精确判定），同一个 Agent 的其它版本不动。
  * 已在停用状态的按幂等处理；已归档的跳过并给出原因（不让一个归档版本阻断其余版本下线）。
+ * **影响已经装出去、可能正在被使用的版本**——与下面的包级停用不是一回事。
  */
-export function disablePackage(packageVersionId: string | number): AxiosPromise<AigPackageDisableVO> {
+export function disablePackageVersion(packageVersionId: string | number): AxiosPromise<AigPackageDisableVO> {
   return request({
     url: '/aigov/agent/package/version/' + packageVersionId + '/disable',
+    method: 'post'
+  });
+}
+
+/**
+ * 停用【包级】：此后不再接受该包的新版本上传，也不能安装。
+ *
+ * **不会动已经装出去、正在被使用的版本**（要下线它们用 `disablePackageVersion`）。
+ * 启用用 `enablePackage`。
+ */
+export function disablePackage(packageId: string | number): AxiosPromise<AigPackageStatusVO> {
+  return request({
+    url: '/aigov/agent/package/' + packageId + '/disable',
+    method: 'post'
+  });
+}
+
+/** 启用【包级】：恢复「可上传新版本、可安装」（不会让被停用的版本恢复） */
+export function enablePackage(packageId: string | number): AxiosPromise<AigPackageStatusVO> {
+  return request({
+    url: '/aigov/agent/package/' + packageId + '/enable',
     method: 'post'
   });
 }

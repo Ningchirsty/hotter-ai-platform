@@ -5,6 +5,7 @@ import org.dromara.aigov.agent.domain.vo.AigPackageDisableVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageInstallLogVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageInstallVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageRegisterVo;
+import org.dromara.aigov.agent.domain.vo.AigPackageStatusVo;
 
 import java.util.List;
 
@@ -93,6 +94,47 @@ public interface IAigPackageService {
      * @return 停用结果（成功项与跳过项分开，跳过项带原因）
      */
     AigPackageDisableVo disable(Long packageVersionId, Long operatorId);
+
+    /**
+     * <b>包级</b>停用：把 {@code aig_package.status} 置为停用，此后<b>不再接受新版本上传</b>，
+     * 也<b>不能安装</b>该包的版本。
+     *
+     * <p><b>与 {@link #disable(Long, Long)} 的分工（必须分清，否则会「误以为停了」）</b>：</p>
+     * <table border="1">
+     *     <caption>两个「停用」</caption>
+     *     <tr><th></th><th>{@link #disablePackage}（包级）</th><th>{@link #disable}（版本级）</th></tr>
+     *     <tr><td>改什么</td><td>{@code aig_package.status}</td>
+     *         <td>该 Package 版本带进来的 Agent/Skill 版本的发布状态</td></tr>
+     *     <tr><td>影响谁</td><td><b>将来</b>：不许上传新版本、不许安装</td>
+     *         <td><b>已经装出去、可能正在被业务使用的</b>那些版本</td></tr>
+     *     <tr><td>会不会动线上</td><td><b>不会</b></td><td>会（STABLE 版本会被下线）</td></tr>
+     * </table>
+     *
+     * <p>两者刻意不互相隐含：包级停用<b>不会</b>顺手把已装的版本下线——那是个影响面大得多的动作，
+     * 必须由人显式做（调用方要「一停到底」就两个都调，页面也是这么引导的）。</p>
+     *
+     * <p>幂等：已是停用状态时返回 {@code changed=false}，不改库、不报错。</p>
+     *
+     * @param packageId  Package ID
+     * @param operatorId 操作人
+     * @return 变更结果（含「下一步该做什么」的说明）
+     */
+    AigPackageStatusVo disablePackage(Long packageId, Long operatorId);
+
+    /**
+     * <b>包级</b>启用：把 {@code aig_package.status} 置回正常，恢复「可上传新版本、可安装」。
+     *
+     * <p>与 {@link #disablePackage} 是同一影响面的一组动作（都是改变这个包还能不能被使用），
+     * 因此共用同一个权限点。同样幂等。</p>
+     *
+     * <p>注意它<b>不会</b>把版本级停用过的版本重新启用：版本重新启用走发布推进
+     * （{@code DISABLED → STABLE} 需证明该版本曾 STABLE 过）。</p>
+     *
+     * @param packageId  Package ID
+     * @param operatorId 操作人
+     * @return 变更结果
+     */
+    AigPackageStatusVo enablePackage(Long packageId, Long operatorId);
 
     /**
      * 查某个 Package 版本的安装日志（追加型账本，按时间正序）。

@@ -205,6 +205,15 @@ class AigWp3WiringAndRoutesTest {
             .andExpect(status().isOk());
         verify(packageService).disable(eq(7L), any());
 
+        // 包级停用/启用：另一个写接口（同一权限点，但影响面不同）
+        mockMvc.perform(post("/aigov/agent/package/7/disable"))
+            .andExpect(status().isOk());
+        verify(packageService).disablePackage(eq(7L), any());
+
+        mockMvc.perform(post("/aigov/agent/package/7/enable"))
+            .andExpect(status().isOk());
+        verify(packageService).enablePackage(eq(7L), any());
+
         mockMvc.perform(get("/aigov/agent/package/version/7/install-log"))
             .andExpect(status().isOk());
         verify(packageService).listInstallLog(7L);

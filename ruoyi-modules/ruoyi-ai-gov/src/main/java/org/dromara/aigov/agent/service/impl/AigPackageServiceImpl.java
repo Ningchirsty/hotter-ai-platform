@@ -17,6 +17,7 @@ import org.dromara.aigov.agent.domain.vo.AigPackageDisableVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageInstallLogVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageInstallVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageRegisterVo;
+import org.dromara.aigov.agent.domain.vo.AigPackageStatusVo;
 import org.dromara.aigov.agent.enums.AigPackageInstallActionEnum;
 import org.dromara.aigov.agent.enums.AigReleaseStatusEnum;
 import org.dromara.aigov.agent.enums.AigReleaseTargetTypeEnum;
@@ -105,6 +106,11 @@ public class AigPackageServiceImpl implements IAigPackageService {
      * 记录状态：正常
      */
     private static final String STATUS_NORMAL = "0";
+
+    /**
+     * 记录状态：停用（包级停用 = 不再接受新版本上传、不能安装；<b>不动已装出去的版本</b>）
+     */
+    private static final String PACKAGE_DISABLED = "1";
 
     /**
      * 新建的第三方对象（非平台内置）
@@ -323,6 +329,59 @@ public class AigPackageServiceImpl implements IAigPackageService {
             codes(agents), codes(skills));
         return new AigPackageInstallVo(pkg.getPackageId(), packageVersionId, false, agents, skills,
             "安装出的版本一律为 DRAFT：安装不等于发布，发布门槛照旧要逐道过");
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public AigPackageStatusVo disablePackage(Long packageId, Long operatorId) {
+        return changePackageStatus(packageId, PACKAGE_DISABLED, operatorId);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public AigPackageStatusVo enablePackage(Long packageId, Long operatorId) {
+        return changePackageStatus(packageId, STATUS_NORMAL, operatorId);
+    }
+
+    /**
+     * 包级状态变更（停用 / 启用）。
+     *
+     * <p>只改 {@code aig_package.status}：它管的是「这个包还能不能被使用」。
+     * <b>不顺手改任何版本状态</b>——把已装出去的版本下线是另一件事（影响面大得多），
+     * 必须由人显式走 {@link #disable}。这两件事在接口语义上分开，是为了挡住「误以为停了」。</p>
+     *
+     * @param packageId  Package ID
+     * @param target     目标状态（{@link #STATUS_NORMAL} / {@link #PACKAGE_DISABLED}）
+     * @param operatorId 操作人
+     * @return 变更结果
+     */
+    private AigPackageStatusVo changePackageStatus(Long packageId, String target, Long operatorId) {
+        if (packageId == null) {
+            throw new ServiceException("Package ID不能为空");
+        }
+        AigPackage pkg = packageMapper.selectById(packageId);
+        if (pkg == null) {
+            throw new ServiceException("Package 不存在：" + packageId);
+        }
+        boolean disabled = !STATUS_NORMAL.equals(target);
+        if (target.equals(pkg.getStatus())) {
+            // 幂等：已是目标状态，不改库也不报错（但要说清楚「没改动」）
+            return new AigPackageStatusVo(packageId, pkg.getPackageCode(), disabled, false,
+                "该 Package 已是" + (disabled ? "停用" : "正常") + "状态，本次未做任何改动");
+        }
+        AigPackage update = new AigPackage();
+        update.setPackageId(packageId);
+        update.setStatus(target);
+        // update_by / update_time 由 MyBatis-Plus 自动填充；包级状态属主数据，
+        // 审计走这两列，不进 aig_package_install_log（那张表是**安装链路**的账本，逐 Package 版本）
+        packageMapper.updateById(update);
+        log.info("Package 包级状态变更, packageId={}, packageCode={}, {}→{}, operatorId={}",
+            packageId, pkg.getPackageCode(), pkg.getStatus(), target, operatorId);
+        return new AigPackageStatusVo(packageId, pkg.getPackageCode(), disabled, true, disabled
+            ? "已停用该 Package：不再接受新版本上传，也不能安装它的版本。"
+                + "包带进来的**既有版本不受影响**——要下线正在使用中的版本，请对该版本执行「停用」"
+            : "已启用该 Package：可以继续上传新版本与安装。"
+                + "此前被停用的版本不会因此恢复（版本重新启用走发布推进）");
     }
 
     @Override

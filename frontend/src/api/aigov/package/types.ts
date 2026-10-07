@@ -141,6 +141,18 @@ export interface AigPackageDisableVO {
   note?: string;
 }
 
+/** 包级状态变更结果（停用/启用这个包本身） */
+export interface AigPackageStatusVO {
+  packageId?: string | number;
+  packageCode?: string;
+  /** 变更后的状态（true = 已停用） */
+  disabled?: boolean;
+  /** 本次是否真的改了库（false = 幂等命中，已是目标状态） */
+  changed?: boolean;
+  /** 可读说明（含下一步该做什么） */
+  note?: string;
+}
+
 /** 被停用的一个版本 */
 export interface AigPackageDisabledItem {
   /** AGENT_VERSION / SKILL_VERSION */

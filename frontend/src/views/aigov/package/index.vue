@@ -68,10 +68,37 @@
           </template>
         </el-table-column>
         <el-table-column label="来源" align="center" prop="sourceType" width="120" />
-        <el-table-column label="操作" align="center" width="140" fixed="right">
+        <el-table-column label="状态" align="center" width="100">
+          <template #default="scope">
+            <el-tag :type="scope.row.status === '1' ? 'danger' : 'success'">
+              {{ scope.row.status === '1' ? '已停用' : '正常' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" align="center" width="210" fixed="right">
           <template #default="scope">
             <el-button v-hasPermi="['aig:package:list']" link type="primary" icon="View" @click="openVersions(scope.row)">
               版本
+            </el-button>
+            <el-button
+              v-if="scope.row.status !== '1'"
+              v-hasPermi="['aig:package:disable']"
+              link
+              type="danger"
+              icon="CircleClose"
+              @click="handleDisablePackage(scope.row)"
+            >
+              停用包
+            </el-button>
+            <el-button
+              v-else
+              v-hasPermi="['aig:package:disable']"
+              link
+              type="success"
+              icon="Open"
+              @click="handleEnablePackage(scope.row)"
+            >
+              启用包
             </el-button>
           </template>
         </el-table-column>
@@ -221,6 +248,8 @@
 <script setup lang="ts">
 import {
   disablePackage,
+  disablePackageVersion,
+  enablePackage,
   installPackage,
   listInstallLog,
   listPackage,
@@ -353,11 +382,39 @@ const handleDisable = async (row: AigPackageVersionVO) => {
       '会把这些版本批量下线：如果其中已有 STABLE 版本正在被业务使用，会立即影响线上使用。' +
       '停用只改发布状态、不删版本内容（重新启用走发布推进，且需证明该版本曾 STABLE 过）。'
   );
-  const res = await disablePackage(row.packageVersionId as string | number);
+  const res = await disablePackageVersion(row.packageVersionId as string | number);
   // 先刷新版本表（状态已经变了），再弹结果说明
   await openVersions(currentPackage.value as AigPackageVO);
   disableResult.value = res.data || {};
   disableVisible.value = true;
+};
+
+/**
+ * 停用【包级】：此后不再接受该包的新版本上传，也不能安装。
+ *
+ * 确认框必须把「不影响已经装出去的版本」说清楚——否则容易被理解成线上的东西也停了。
+ */
+const handleDisablePackage = async (row: AigPackageVO) => {
+  await modal.confirm(
+    '确认停用 Package「' + (row.packageName || row.packageCode) + '」？' +
+      '此后不再接受它的新版本上传，也不能安装它的版本。' +
+      '注意：这不会影响已经装出去、正在被使用的版本——要下线它们，' +
+      '请在「版本」里对具体版本执行「停用」。'
+  );
+  const res = await disablePackage(row.packageId as string | number);
+  modal.msgSuccess(res.data?.note || '已停用该 Package');
+  getList();
+};
+
+/** 启用【包级】：恢复「可上传新版本、可安装」 */
+const handleEnablePackage = async (row: AigPackageVO) => {
+  await modal.confirm(
+    '确认启用 Package「' + (row.packageName || row.packageCode) + '」？' +
+      '将恢复「可上传新版本、可安装」。此前被停用的版本不会因此恢复（那走发布推进）。'
+  );
+  const res = await enablePackage(row.packageId as string | number);
+  modal.msgSuccess(res.data?.note || '已启用该 Package');
+  getList();
 };
 
 /** 打开安装账本 */
