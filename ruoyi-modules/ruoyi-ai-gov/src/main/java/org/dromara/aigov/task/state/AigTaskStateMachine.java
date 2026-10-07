@@ -68,6 +68,11 @@ public final class AigTaskStateMachine {
         edges.put(AigTaskStatusEnum.QUEUED, EnumSet.of(
             // 设计：QUEUED → DISPATCHED
             AigTaskStatusEnum.DISPATCHED,
+            // 补边：**同步 Provider 没有「派发」这一步**——请求发出去就在等结果，
+            // 不存在一个可查询的外部作业。若强制先记 DISPATCHED 再记 RUNNING，
+            // 每次同步调用都会凭空多一个状态与一条事件，而那个「已派发」既没有作业ID
+            // 也不代表任何可观测的中间态。异步 Provider 仍走 QUEUED→DISPATCHED→RUNNING。
+            AigTaskStatusEnum.RUNNING,
             // 补边：排队中可取消（还没提交给任何 Provider，取消没有副作用）
             AigTaskStatusEnum.CANCELLED));
         edges.put(AigTaskStatusEnum.DISPATCHED, EnumSet.of(

@@ -74,6 +74,16 @@ public class AigInvokeVo implements Serializable {
     private String reason;
 
     /**
+     * 结构化的错误分类编码（取值同 {@code AigErrorClassEnum}）；成功时为空。
+     *
+     * <p><b>为什么必须下发，而不是让上层从 {@link #reason} 文本里猜</b>：任务编排层要据此决定
+     * 「向同一家重试 / 换候选 / 转人工 / 停在失败」，而错误分类内部早就算好了
+     * （错误码 → HTTP 状态码 → 文本兜底 三级判定）。
+     * 让上层去解析中文文案等于把已确定的结论重新猜一遍——文案一改就错，且错得没有痕迹。</p>
+     */
+    private String errorCode;
+
+    /**
      * 策略命中明细（路由 7 步的逐条判定，含「哪些候选模型因何被排除」）。
      * <p>与写入 {@code aig_invocation_audit.policy_hit} 的内容同源。
      * {@code dryRun} 正是「上线前预演」入口，只回一句 reason 无法解释

@@ -361,6 +361,30 @@ public class AigTaskServiceImpl implements IAigTaskService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public AigTask recordExecutionFacts(Long taskId, Integer expectedVersion, String traceId,
+                                        String routeSnapshot, boolean externalCall, Long latencyMs) {
+        if (taskId == null) {
+            throw new ServiceException("任务ID不能为空");
+        }
+        if (expectedVersion == null) {
+            throw new ServiceException("期望版本不能为空：记录执行事实同样需要乐观锁版本");
+        }
+        AigTask update = new AigTask();
+        update.setTaskId(taskId);
+        update.setVersion(expectedVersion);
+        update.setTraceId(traceId);
+        update.setRouteSnapshot(routeSnapshot);
+        update.setExternalCall(externalCall ? YES : NO);
+        update.setLatencyMs(latencyMs);
+        if (taskMapper.updateById(update) == 0) {
+            throw new ServiceException("任务已被并发修改，执行事实未记录：taskId=" + taskId
+                + "，期望版本=" + expectedVersion);
+        }
+        return loadTask(taskId);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public AigTask markDispatched(Long taskId, Integer expectedVersion, String providerCode,
                                   String providerJobId, boolean externalCall) {
         if (taskId == null) {

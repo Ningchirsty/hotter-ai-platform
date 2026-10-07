@@ -146,6 +146,16 @@
           <template #default="scope">
             <el-button link type="primary" icon="View" @click="handleDetail(scope.row)">详情</el-button>
             <el-button
+              v-if="scope.row.status === 'QUEUED'"
+              v-hasPermi="['aig:task:operate']"
+              link
+              type="warning"
+              :loading="executingId === scope.row.taskId"
+              @click="handleExecute(scope.row)"
+            >
+              执行
+            </el-button>
+            <el-button
               v-if="canCancel(scope.row)"
               v-hasPermi="['aig:task:operate']"
               link
@@ -276,7 +286,7 @@
 </template>
 
 <script setup lang="ts">
-import { getAigTask, cancelAigTask, listAigTask, requeueAigTask, sweepAigTask } from '@/api/aigov/task';
+import { getAigTask, cancelAigTask, executeAigTask, listAigTask, requeueAigTask, sweepAigTask } from '@/api/aigov/task';
 import type { AigTaskDetailVO, AigTaskQuery, AigTaskVO } from '@/api/aigov/task/types';
 import { useLoading } from '@/hooks/async/useLoading';
 import { useDateRangeQuery } from '@/hooks/form/useDateRangeQuery';
@@ -327,6 +337,8 @@ const total = ref(0);
 const queryFormRef = ref<ElFormInstance>();
 const { dateRange, applyDateRange, resetDateRange } = useDateRangeQuery();
 const sweeping = ref(false);
+/** 正在执行的任务ID（用于按钮 loading，避免重复点触发两次真实调用） */
+const executingId = ref<string | number | null>(null);
 
 const detailVisible = ref(false);
 const detailLoading = ref(false);
@@ -430,8 +442,50 @@ const handleRequeue = async (row: AigTaskVO) => {
   getList();
 };
 
-const handleSweep = async () => {
-  sweeping.value = true;
+/**
+ * 手动执行一次任务（联调/运维用）。
+ *
+ * 正常路径是业务域建任务后直接调用执行器——前端调这个只是为了联调期手动触发与运维重跑。
+ * 提示词必须手填：治理层不知道业务快照的字段含义，无法从快照推导出真实请求。
+ */
+const handleExecute = async (row: AigTaskVO) => {
+  let prompt = '';
+  try {
+    const result = await modal.prompt('本次执行的提示词（写入调用请求；快照仍作为不可变记录）');
+    prompt = result?.value ?? '';
+  } catch {
+    return;
+  }
+  if (!prompt) {
+    modal.msgWarning('提示词不能为空');
+    return;
+  }
+  executingId.value = row.taskId!;
+  try {
+    const res = await executeAigTask(row.taskId!, prompt);
+    const data = res.data;
+    if (data?.success) {
+      modal.msgSuccess(
+        `执行成功：模型 ${data.modelKey ?? '-'}，调用器 ${data.invoker ?? '-'}，` +
+          `外发 ${data.externalCall ? '是' : '否'}，耗时 ${data.latencyMs ?? '-'} ms，traceId ${data.traceId ?? '-'}`
+      );
+      // 输出不落库（落资产是业务域的事），联调时把预览放进详情抽屉
+      if (data.output) {
+        detail.value = { task: { ...row, status: data.status } };
+        detailVisible.value = true;
+      }
+    } else {
+      modal.msgError(
+        `执行失败：${data?.errorCode ?? 'UNKNOWN'} ${data?.reason ?? ''}（任务已落到 ${data?.status ?? '-'}）`
+      );
+    }
+    getList();
+  } finally {
+    executingId.value = null;
+  }
+};
+
+const handleSweep = async () => {  sweeping.value = true;
   try {
     const res = await sweepAigTask();
     const data = res.data || {};

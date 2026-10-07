@@ -127,6 +127,24 @@ export interface AigTaskQuery extends PageQuery {
   params?: Record<string, any>;
 }
 
+/** 执行任务结果 */
+export interface AigTaskExecuteVO {
+  taskId?: string | number;
+  status?: string;
+  success?: boolean;
+  /** 调用链ID：一条 traceId 串起任务与逐次审计 */
+  traceId?: string;
+  modelKey?: string;
+  deploymentType?: string;
+  invoker?: string;
+  externalCall?: boolean;
+  /** 模型输出（原样返回，未落库——落资产是业务域的事） */
+  output?: string;
+  reason?: string;
+  errorCode?: string;
+  latencyMs?: number;
+}
+
 /** 调度扫描结果 */
 export interface AigTaskSweepVO {
   retryCandidate?: number;

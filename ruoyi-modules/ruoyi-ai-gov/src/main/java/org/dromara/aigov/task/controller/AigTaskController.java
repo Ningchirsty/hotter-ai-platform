@@ -7,12 +7,15 @@ import jakarta.validation.groups.Default;
 import lombok.RequiredArgsConstructor;
 import org.dromara.aigov.constant.AigConstants;
 import org.dromara.aigov.task.domain.AigTask;
+import org.dromara.aigov.task.domain.bo.AigTaskExecuteBo;
 import org.dromara.aigov.task.domain.bo.AigTaskQueryBo;
 import org.dromara.aigov.task.domain.vo.AigTaskDetailVo;
+import org.dromara.aigov.task.domain.vo.AigTaskExecuteVo;
 import org.dromara.aigov.task.domain.vo.AigTaskSweepVo;
 import org.dromara.aigov.task.domain.vo.AigTaskVo;
 import org.dromara.aigov.task.enums.AigTaskStatusEnum;
 import org.dromara.aigov.task.enums.AigTaskTypeEnum;
+import org.dromara.aigov.task.service.IAigTaskExecutor;
 import org.dromara.aigov.task.service.IAigTaskScheduler;
 import org.dromara.aigov.task.service.IAigTaskService;
 import org.dromara.common.core.domain.PageResult;
@@ -25,6 +28,7 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -49,6 +53,8 @@ public class AigTaskController {
     private final IAigTaskService taskService;
 
     private final IAigTaskScheduler taskScheduler;
+
+    private final IAigTaskExecutor taskExecutor;
 
     /**
      * 分页查询任务。
@@ -119,6 +125,30 @@ public class AigTaskController {
         AigTask moved = taskService.transition(taskId, expectedVersion, AigTaskStatusEnum.QUEUED,
             "人工重新入队" + StringUtils.blankToDefault(note, ""), null);
         return R.ok(toVo(moved));
+    }
+
+    /**
+     * 执行一次任务（任务层 → 统一调用入口）。
+     *
+     * <p><b>这个接口平时不该被前端调</b>：正常路径是业务域建任务后<b>直接调用</b>
+     * {@code IAigTaskExecutor}（同进程、无需绕 HTTP）。这里开放出来是为了①联调期手动触发
+     * ②运维重跑——两者都要求 {@code aig:task:operate}。</p>
+     *
+     * <p>提示词与载荷由请求体给出，而不是从快照推导：快照是业务域自己组装的 JSON，
+     * 治理层不知道它的字段含义。执行前会校验快照哈希未被改写。</p>
+     *
+     * @param taskId 任务ID（以路径为准，覆盖请求体里的同名字段，避免两处不一致）
+     * @param bo     执行入参（提示词 / 载荷 / 可选预算）
+     * @return 执行结果（含任务结局与调用细节）
+     */
+    @SaCheckPermission(AigConstants.PERM_TASK_OPERATE)
+    @RepeatSubmit
+    @PostMapping("/{taskId}/execute")
+    public R<AigTaskExecuteVo> execute(@NotNull(message = "任务ID不能为空") @PathVariable("taskId") Long taskId,
+                                       @RequestBody(required = false) AigTaskExecuteBo bo) {
+        AigTaskExecuteBo payload = bo == null ? new AigTaskExecuteBo() : bo;
+        payload.setTaskId(taskId);
+        return R.ok(taskExecutor.execute(payload));
     }
 
     /**

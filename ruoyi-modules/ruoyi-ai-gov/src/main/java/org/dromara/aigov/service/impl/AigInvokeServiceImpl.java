@@ -102,14 +102,17 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
                 audit.setResult(AigInvokeResultEnum.FAILED.getCode());
                 audit.setErrorSummary(decision.getReason());
                 audit.setManualDecision(AigManualDecisionEnum.NOT_REQUIRED.getCode());
-                return toVo(traceId, decision, null, decision.getReason());
+                return toVo(traceId, decision, null, decision.getReason(),
+                    AigErrorClassEnum.POLICY_DENIED.getCode());
             }
             if (AigRouteDecisionEnum.MANUAL.getCode().equals(decision.getDecision())) {
                 // 5. 转人工：标记待确认，不调用模型
                 audit.setResult(AigInvokeResultEnum.FAILED.getCode());
                 audit.setErrorSummary(decision.getReason());
                 audit.setManualDecision(AigManualDecisionEnum.PENDING.getCode());
-                return toVo(traceId, decision, null, decision.getReason());
+                // 转人工同样归为「策略类、不可重试」：重试还是同一个结论，只会重复打扰人
+                return toVo(traceId, decision, null, decision.getReason(),
+                    AigErrorClassEnum.POLICY_DENIED.getCode());
             }
             // 6. 决策为 MODEL → 按有序候选依次执行，失败则顺延（有序 fallback）
             List<AigRouteCandidate> candidates = decision.getCandidates();
@@ -209,7 +212,8 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
             if (!executed) {
                 audit.setResult(AigInvokeResultEnum.FAILED.getCode());
                 audit.setErrorSummary("无可用调用器");
-                return toVo(traceId, decision, elapsedMs, "路由命中模型但无可用调用器（invoker）");
+                return toVo(traceId, decision, elapsedMs, "路由命中模型但无可用调用器（invoker）",
+                    AigErrorClassEnum.INVALID_REQUEST.getCode());
             }
             audit.setRetryCount(Math.max(0, totalAttempts - 1));
             audit.setLatencyMs((int) Math.min(elapsedMs, Integer.MAX_VALUE));
@@ -226,6 +230,9 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
                 if (errorClass == null) {
                     errorClass = AigErrorClassEnum.UNKNOWN;
                 }
+                // 把内部已算好的错误分类下发：上层要据此决定「重试/换候选/转人工/停在失败」，
+                // 让它去解析 reason 文案等于把已确定的结论重新猜一遍（文案一改就错）
+                vo.setErrorCode(errorClass.getCode());
                 recordErrorClass(audit, decision, errorClass);
                 return vo;
             }
@@ -501,6 +508,21 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
      * @return 返回视图
      */
     private AigInvokeVo toVo(String traceId, AigRouteDecision decision, Long latencyMs, String reason) {
+        return toVo(traceId, decision, latencyMs, reason, null);
+    }
+
+    /**
+     * 组装返回视图。
+     *
+     * @param traceId    调用链ID（dryRun 为空）
+     * @param decision   路由决策
+     * @param latencyMs  耗时（可空）
+     * @param reason     原因（可空，取决策里的）
+     * @param errorCode  错误分类编码（成功时为空）
+     * @return 返回视图
+     */
+    private AigInvokeVo toVo(String traceId, AigRouteDecision decision, Long latencyMs, String reason,
+                             String errorCode) {
         AigInvokeVo vo = new AigInvokeVo();
         vo.setTraceId(traceId);
         vo.setDecision(decision.getDecision());
@@ -516,6 +538,7 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
         vo.setReason(StringUtils.blankToDefault(reason, decision.getReason()));
         vo.setPolicyHits(decision.getPolicyHits());
         vo.setPendingConfirm(decision.getHumanConfirmPoints());
+        vo.setErrorCode(errorCode);
         return vo;
     }
 

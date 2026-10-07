@@ -40,6 +40,17 @@ export function requeueAigTask(taskId: string | number, expectedVersion: number,
   });
 }
 
+// 执行一次任务（任务层 → 统一调用入口：路由 / 有序 fallback / 退避重试 / 逐次审计都在里面）
+// 平时前端不该调这个：正常路径是业务域建任务后直接调用执行器（同进程）。
+// 开放出来是为了联调期手动触发与运维重跑，两者都要求 aig:task:operate。
+export function executeAigTask(taskId: string | number, prompt?: string, maxCost?: number) {
+  return request({
+    url: '/aigov/task/' + taskId + '/execute',
+    method: 'post',
+    data: { prompt, maxCost }
+  });
+}
+
 // 手动触发一次调度扫描（供 SnailJob / 运维 cron 使用；
 // aigov.task.scheduler.enabled=false 时这是唯一的触发路径）
 export function sweepAigTask(): AxiosPromise<AigTaskSweepVO> {

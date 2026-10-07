@@ -127,6 +127,27 @@ public interface IAigTaskService {
     AigTaskDetailVo getDetail(Long taskId);
 
     /**
+     * 记录一次执行的客观事实（路由快照 / 追踪ID / 是否外发 / 耗时），<b>不改变状态</b>。
+     *
+     * <p><b>为什么与状态迁移分开</b>：这些是「这次执行发生了什么」的事实，状态是「任务处在哪一步」。
+     * 合成一个方法会让「只更新事实」也必须伪造一次状态迁移，而状态机不允许自迁移——
+     * 于是要么放宽图（出现无意义的自环），要么在某些路径上丢掉事实（审计断链）。
+     *
+     * <p>路由快照尤其重要：它是执行与排障的<b>唯一依据</b>——治理配置会变，
+     * 只有当时那一刻的路由结论能回答「为什么跑的是这个模型」。</p>
+     *
+     * @param taskId          任务ID
+     * @param expectedVersion 期望版本（乐观锁）
+     * @param traceId         调用链ID（关联 aig_invocation_audit）
+     * @param routeSnapshot   路由快照（可空）
+     * @param externalCall    本次是否发生外部调用
+     * @param latencyMs       端到端耗时（可空）
+     * @return 更新后的任务
+     */
+    AigTask recordExecutionFacts(Long taskId, Integer expectedVersion, String traceId,
+                                 String routeSnapshot, boolean externalCall, Long latencyMs);
+
+    /**
      * 处理 Provider 回调：验签 → 幂等 → 定位任务 → 按状态机推进 → 记账。
      *
      * @param bo 回调入参（原始载荷，不得重新序列化）
