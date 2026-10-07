@@ -23,7 +23,11 @@
 --
 -- 一把 Key 通多种模型：这是 New API 的形态——1 条 sai_model_provider + N 条
 -- sai_model_config，N 条共享同一 api_endpoint 与同一把 api_key。
--- Key 到位后由 GET /v1/models 枚举真实模型清单来生成行，不猜 model_key。
+--
+-- ⚠ 实测（2026-10-07）：本网关**只提供 12 个图像/视频生成模型，没有对话模型**。
+--   详见 A 段模型清单注释与 B 段修正说明。当前状态因此是：
+--     连接与治理属性已登记（惰性、不外发），模型行为空、密钥为空 —— 这是刻意的，
+--     因为在实现 IMAGE 适配器之前，这些模型既不该被登记成 CHAT，也没有能力可用它们。
 --
 -- ============================================================================
 -- 本脚本默认**【只登记连接与治理属性】，不含任何数据外发**：
@@ -80,9 +84,26 @@ SELECT p.id, m.model_name, m.model_key, 'CHAT', 'openai-compatible', m.descripti
         SELECT 'REPLACE_ME' AS model_key, '待填：模型显示名' AS model_name,
                '待填：用途说明' AS description, 1 AS is_enabled
          WHERE 1 = 0
-        -- 实际形态示例（把 WHERE 1 = 0 去掉并替换成真实标识）：
-        -- UNION ALL SELECT 'gpt-4o-mini',      'GPT-4o mini',   '文本/轻量', 1
-        -- UNION ALL SELECT 'gemini-2.5-flash', 'Gemini 2.5 Flash', '文本+视觉', 1
+        -- ⚠ 实测（2026-10-07，GET /v1/models）：bluocto 只返回 12 个模型，
+        --   **全部是图像/视频「生成」模型，没有任何文本/对话模型**。因此：
+        --   1) 外层 INSERT 写死 model_type='CHAT' 只适用于对话模型；本网关的模型应为
+        --      'IMAGE'（/v1/images/generations）或走异步任务（视频）。在 IMAGE 适配器
+        --      落地前**不要启用下面任何一行**——登记成 CHAT 会被调用器直接拒绝。
+        --   2) 真实清单（model_key 即下行 id；endpoints 为网关声明）：
+        --      flux-2-pro              image-generation | openai
+        --      gpt-image-2.5-flare     image-generation | openai
+        --      gpt-image-2.5-sunburst  image-generation | openai
+        --      qwen-image-3.0          image-generation | openai
+        --      qwen-image-3.0-pro      image-generation | openai
+        --      wan2.7-image            image-generation | openai
+        --      wan2.7-image-pro        image-generation | openai
+        --      seedream-5-0-lite       openai
+        --      seedream-5-0-pro        openai
+        --      happyhorse-1.1-i2v      openai（owned_by=task plugin，疑为异步任务）
+        --      happyhorse-1.1-r2v      openai（同上）
+        --      happyhorse-1.1-t2v      openai（同上）
+        --   3) 注：/v1/models 只返回**该 token 可用**的模型。若你的令牌分组里本该有
+        --      对话模型却没出现，那是分组/渠道问题，不是本脚本的问题。
        ) m
  WHERE p.provider_key = 'bluocto'
    AND NOT EXISTS (SELECT 1 FROM (SELECT provider_id, model_key FROM sai_model_config) c
@@ -141,19 +162,29 @@ SELECT 1764100000000000000 + c.id, c.id, 'EXTERNAL_API', 'INTERNAL', 'GRAY', NUL
 --      preferred_deployment 留 NULL：该列目前不参与过滤（只写入策略命中说明），
 --      填了会让人误以为在生效。
 --
--- 需要放开的具体能力，请按你的判断增删：
---   creative_direction_draft   视觉方向草稿（文本）
---   creative_storyboard_draft  分镜草稿（文本）
---   visual_dna_extract         视觉基因抽取（**看图**，只能绑视觉模型）
---   deliverable_consistency    成品一致性检查（**看图**，只能绑视觉模型）
+-- ⚠⚠ 重大修正（2026-10-07 实测）：**「绑文本能力」这个方向对 bluocto 不成立。**
+--   该网关 /v1/models 只返回 12 个模型，全部是图像/视频**生成**模型，没有对话模型：
+--     · creative_direction_draft / creative_storyboard_draft（文本）→ **无法绑定**。
+--       不是「暂时不绑」，是网关没有可用对话模型；要接文本得让网关侧换一个含对话
+--       模型的令牌分组（/v1/models 只返回该 token 可用的模型）。
+--     · visual_dna_extract / deliverable_consistency（**看图理解**）→ 同样**无法用**：
+--       这里的模型是「能画图」，不是「能看图」。别把生成能力当理解能力。
+--   正确落点是设计文档 §4.1 的 **IMAGE 类型 Provider**（本仓 IMAGE 目前只有 ComfyUI
+--   一条路）。但需先有对接 /v1/images/generations 的调用器，且有两个前置约束：
+--     · 现状 OpenAiCompatibleInvoker 只对接 /chat/completions，并**明确拒绝非 CHAT**
+--       类型（代码里 !"CHAT".equals(modelType) 直接返回失败）——用它接图像模型必失败；
+--     · 它认领了整个 EXTERNAL_API 部署类型；再写一个同样认领 EXTERNAL_API 的调用器
+--       会破坏「每种部署类型只有一个调用器认领」的不变式，挑选将取决于 Bean 装配顺序。
+--       解法是 WP1 的 ProviderType/Adapter SPI：**按模型类型分派，而不是按部署类型**。
+--   在 IMAGE 适配器落地前，本段保持注释，**不要启用**。
 -- ----------------------------------------------------------------------------
--- -- B1：把 bluocto 的模型绑到「文本」能力上（GRAY 灰度，不挤掉本地主选）
+-- -- B1（待 IMAGE 适配器就绪后再启用；把能力编码换成本仓真实存在的图像能力）
 -- INSERT IGNORE INTO aig_capability_model
 -- (bind_id, capability_code, model_id, usage_type, priority, status, del_flag,
 --  create_dept, create_by, create_time, remark)
--- SELECT 1764200000000000000 + c.id, 'creative_direction_draft', c.id, 'GRAY', 500, '0', '0',
+-- SELECT 1764200000000000000 + c.id, 'REPLACE_WITH_IMAGE_CAPABILITY', c.id, 'GRAY', 500, '0', '0',
 --        1761000000000000103, 1761100000000000001, NOW(),
---        'bluocto 聚合网关：本地不可用时的灰度备选'
+--        'bluocto 聚合网关：图像生成的外部备选（本地 ComfyUI 排队/不可用时）'
 --   FROM sai_model_config c
 --   JOIN sai_model_provider p ON p.id = c.provider_id
 --  WHERE p.provider_key = 'bluocto';
