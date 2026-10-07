@@ -20,6 +20,7 @@ import org.dromara.aigov.task.domain.bo.AigTaskCallbackBo;
 import org.dromara.aigov.task.domain.bo.AigTaskCreateBo;
 import org.dromara.aigov.task.domain.bo.AigTaskQueryBo;
 import org.dromara.aigov.task.domain.bo.AigTaskResultBo;
+import org.dromara.aigov.task.domain.bo.AigTaskResultSelectBo;
 import org.dromara.aigov.task.domain.bo.AigTaskReviewBo;
 import org.dromara.aigov.task.domain.vo.AigCallbackVo;
 import org.dromara.aigov.task.domain.vo.AigTaskDetailVo;
@@ -491,6 +492,77 @@ public class AigTaskServiceImpl implements IAigTaskService {
         log.info("回写任务结果, taskId={}, resultId={}, resultType={}, candidateStatus={}",
             bo.getTaskId(), result.getResultId(), bo.getResultType(), candidate.getCode());
         return result.getResultId();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Long selectCandidate(AigTaskResultSelectBo bo) {
+        if (bo == null || bo.getTaskId() == null || bo.getResultId() == null) {
+            throw new ServiceException("任务ID与候选结果ID不能为空");
+        }
+        AigTask task = loadTask(bo.getTaskId());
+        // 只有「待人工复核」的任务才谈得上交付物：未成功、已取消、已终态的任务不该产出选定结果
+        if (!AigTaskStatusEnum.REVIEW_PENDING.getCode().equals(task.getStatus())) {
+            throw new ServiceException("只有「待人工复核」的任务可以选定候选，当前状态=" + task.getStatus()
+                + "：taskId=" + bo.getTaskId()
+                + "（执行尚未成功，或任务已被取消/拒绝；这些情况下没有可交付的候选）");
+        }
+        AigTaskResult result = resultMapper.selectById(bo.getResultId());
+        if (result == null) {
+            throw new ServiceException("候选结果不存在：" + bo.getResultId());
+        }
+        // 防止「拿 A 任务的 resultId 去选定到 B 任务下」——参数来自前端，必须核对归属
+        if (!bo.getTaskId().equals(result.getTaskId())) {
+            throw new ServiceException("候选结果 " + bo.getResultId() + " 不属于任务 "
+                + bo.getTaskId() + "（实际属于 " + result.getTaskId() + "）");
+        }
+        AigCandidateStatusEnum current = AigCandidateStatusEnum.find(result.getCandidateStatus());
+        if (current == AigCandidateStatusEnum.APPROVED) {
+            return bo.getResultId();
+        }
+        if (current == AigCandidateStatusEnum.REJECTED) {
+            // 自动 QA 明确筛除的候选不接受选定：要推翻自动结论需要一条显式通道，
+            // 不能让「已知不合格」的候选因为一次顺手点击变成交付物
+            throw new ServiceException("该候选已被自动质检筛除，不能直接选定。"
+                + "若确认质检结论有误，请先修正质检依据（这是一条需要显式开放的通道）");
+        }
+
+        // 单选：同一任务只允许一个「已选定」。允许并列会让「到底交付哪一张」无法回答，
+        // 而下游（投放/排版/交付清单）需要一个确定的答案。
+        List<AigTaskResult> approved = resultMapper.selectList(new LambdaQueryWrapper<AigTaskResult>()
+            .eq(AigTaskResult::getTaskId, bo.getTaskId())
+            .eq(AigTaskResult::getCandidateStatus, AigCandidateStatusEnum.APPROVED.getCode()));
+        if (CollUtil.isNotEmpty(approved)) {
+            for (AigTaskResult previous : approved) {
+                if (previous.getResultId().equals(bo.getResultId())) {
+                    continue;
+                }
+                AigTaskResult reset = new AigTaskResult();
+                reset.setResultId(previous.getResultId());
+                // 回到候选而不是筛除：它只是「没被选中」，不是「不合格」
+                reset.setCandidateStatus(AigCandidateStatusEnum.CANDIDATE.getCode());
+                reset.setSelectedBy(null);
+                reset.setSelectedAt(null);
+                resultMapper.updateById(reset);
+                appendEvent(task, nextSequence(bo.getTaskId()), AigTaskEventTypeEnum.AI_TASK_REVIEWED,
+                    null, null, "取消此前的选定 resultId=" + previous.getResultId()
+                        + "（同任务单选：改为选定 resultId=" + bo.getResultId() + "）", null);
+            }
+        }
+
+        AigTaskResult update = new AigTaskResult();
+        update.setResultId(bo.getResultId());
+        update.setCandidateStatus(AigCandidateStatusEnum.APPROVED.getCode());
+        update.setSelectedBy(actorProvider.currentUserId());
+        update.setSelectedAt(LocalDateTime.now());
+        update.setRemark(bo.getRemark());
+        resultMapper.updateById(update);
+        appendEvent(task, nextSequence(bo.getTaskId()), AigTaskEventTypeEnum.AI_TASK_REVIEWED, null, null,
+            "人工选定交付物 resultId=" + bo.getResultId()
+                + StringUtils.blankToDefault(bo.getRemark(), ""), null);
+        log.info("人工选定候选资产, taskId={}, resultId={}, selectedBy={}",
+            bo.getTaskId(), bo.getResultId(), actorProvider.currentUserId());
+        return bo.getResultId();
     }
 
     @Override

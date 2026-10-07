@@ -9,6 +9,7 @@ import org.dromara.aigov.constant.AigConstants;
 import org.dromara.aigov.task.domain.AigTask;
 import org.dromara.aigov.task.domain.bo.AigTaskExecuteBo;
 import org.dromara.aigov.task.domain.bo.AigTaskQueryBo;
+import org.dromara.aigov.task.domain.bo.AigTaskResultSelectBo;
 import org.dromara.aigov.task.domain.vo.AigTaskDetailVo;
 import org.dromara.aigov.task.domain.vo.AigTaskExecuteVo;
 import org.dromara.aigov.task.domain.vo.AigTaskSweepVo;
@@ -149,6 +150,31 @@ public class AigTaskController {
         AigTaskExecuteBo payload = bo == null ? new AigTaskExecuteBo() : bo;
         payload.setTaskId(taskId);
         return R.ok(taskExecutor.execute(payload));
+    }
+
+    /**
+     * 人工选定候选资产（把候选置为「已选定」）。
+     *
+     * <p>这是「自动流程只筛除、不放行」的唯一出口：自动写入 APPROVED 会被拒绝，
+     * 因此候选要成为交付物只能走这里，并记录选定人。</p>
+     *
+     * @param taskId   任务ID（以路径为准）
+     * @param resultId 候选结果ID
+     * @param remark   选定说明（写入事件流，便于事后回答「为什么选了它」）
+     * @return 选定后的结果ID
+     */
+    @SaCheckPermission(AigConstants.PERM_TASK_SELECT)
+    @RepeatSubmit
+    @PostMapping("/{taskId}/result/{resultId}/select")
+    public R<Long> selectCandidate(@NotNull(message = "任务ID不能为空") @PathVariable("taskId") Long taskId,
+                                   @NotNull(message = "候选结果ID不能为空")
+                                   @PathVariable("resultId") Long resultId,
+                                   @RequestParam(value = "remark", required = false) String remark) {
+        AigTaskResultSelectBo bo = new AigTaskResultSelectBo();
+        bo.setTaskId(taskId);
+        bo.setResultId(resultId);
+        bo.setRemark(remark);
+        return R.ok(taskService.selectCandidate(bo));
     }
 
     /**

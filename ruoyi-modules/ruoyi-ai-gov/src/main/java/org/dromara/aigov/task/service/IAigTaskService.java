@@ -6,6 +6,7 @@ import org.dromara.aigov.task.domain.bo.AigTaskCallbackBo;
 import org.dromara.aigov.task.domain.bo.AigTaskCreateBo;
 import org.dromara.aigov.task.domain.bo.AigTaskQueryBo;
 import org.dromara.aigov.task.domain.bo.AigTaskResultBo;
+import org.dromara.aigov.task.domain.bo.AigTaskResultSelectBo;
 import org.dromara.aigov.task.domain.bo.AigTaskReviewBo;
 import org.dromara.aigov.task.domain.vo.AigCallbackVo;
 import org.dromara.aigov.task.domain.vo.AigTaskDetailVo;
@@ -146,6 +147,24 @@ public interface IAigTaskService {
      */
     AigTask recordExecutionFacts(Long taskId, Integer expectedVersion, String traceId,
                                  String routeSnapshot, boolean externalCall, Long latencyMs);
+
+    /**
+     * 人工选定候选资产（把候选置为 APPROVED 并记录选定人）。
+     *
+     * <p><b>这是「自动流程只筛除、不放行」的唯一出口</b>：{@link #recordResult} 会拒绝自动置
+     * APPROVED，因此候选要成为交付物只能走这里，且必须记录选定人——一旦选错，
+     * 「谁选的」是唯一能追到的责任点。</p>
+     *
+     * <p><b>口径</b>：①任务必须处于「待人工复核」——未成功、已取消的任务不该产出交付物；
+     * ②候选必须属于该任务；③被自动 QA 筛除（REJECTED）的候选不接受选定
+     * （要推翻自动结论需要另开显式通道，不能让「已知不合格」的候选顺手变成交付物）；
+     * ④同一任务<b>单选</b>：选定一个会取消该任务此前的选定，避免出现两个「已选定」
+     * 而无法回答「到底交付哪一张」。</p>
+     *
+     * @param bo 选定入参
+     * @return 选定后的结果ID
+     */
+    Long selectCandidate(AigTaskResultSelectBo bo);
 
     /**
      * 处理 Provider 回调：验签 → 幂等 → 定位任务 → 按状态机推进 → 记账。

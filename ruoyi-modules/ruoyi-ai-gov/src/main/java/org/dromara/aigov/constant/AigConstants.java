@@ -94,6 +94,13 @@ public interface AigConstants {
      * 而查看任务只是读。合并的话，一个只该看进度的人就能替所有人取消在跑的任务。</p>
      */
     String PERM_TASK_OPERATE = "aig:task:operate";
+    /**
+     * AI任务-选定交付物（人工选定候选资产）
+     * <p>与 {@link #PERM_TASK_OPERATE} 分开：「运维取消/重跑」与「决定交付哪一张」
+     * 是两类人做的决定，后者有业务后果且需要担责。合并的话，一个只负责重跑任务的人
+     * 就能替业务方敲定最终交付物。</p>
+     */
+    String PERM_TASK_SELECT = "aig:task:select";
 
     /**
      * 阶段1 首个能力编码：人才能力匹配

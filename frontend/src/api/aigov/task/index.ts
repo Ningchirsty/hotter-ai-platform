@@ -51,6 +51,16 @@ export function executeAigTask(taskId: string | number, prompt?: string, maxCost
   });
 }
 
+// 人工选定候选资产（自动流程只筛除、不放行，选定必须人工）
+// 口径：任务须处于「待人工复核」；被自动质检筛除的候选不接受选定；同一任务单选
+export function selectAigTaskResult(taskId: string | number, resultId: string | number, remark?: string) {
+  return request({
+    url: `/aigov/task/${taskId}/result/${resultId}/select`,
+    method: 'post',
+    params: { remark }
+  });
+}
+
 // 手动触发一次调度扫描（供 SnailJob / 运维 cron 使用；
 // aigov.task.scheduler.enabled=false 时这是唯一的触发路径）
 export function sweepAigTask(): AxiosPromise<AigTaskSweepVO> {

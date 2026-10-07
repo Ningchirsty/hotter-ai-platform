@@ -271,7 +271,24 @@
           <el-table-column label="候选状态" align="center" width="160">
             <template #default="scope">{{ scope.row.candidateStatusLabel || scope.row.candidateStatus }}</template>
           </el-table-column>
-          <el-table-column label="修订意见" align="center" prop="qaDetail" show-overflow-tooltip />
+          <el-table-column label="质检说明" align="center" prop="qaDetail" show-overflow-tooltip />
+          <el-table-column label="操作" align="center" width="110">
+            <template #default="scope">
+              <!-- 只有「候选」可被选定：被自动筛除的不给入口（要推翻自动结论需另开显式通道） -->
+              <el-button
+                v-if="scope.row.candidateStatus === 'CANDIDATE'"
+                v-hasPermi="['aig:task:select']"
+                link
+                type="primary"
+                :loading="selectingId === scope.row.resultId"
+                @click="handleSelect(scope.row)"
+              >
+                选定为交付物
+              </el-button>
+              <el-tag v-else-if="scope.row.candidateStatus === 'APPROVED'" type="success">已选定</el-tag>
+              <span v-else>-</span>
+            </template>
+          </el-table-column>
         </el-table>
         <el-alert
           class="detail-alert"
@@ -286,8 +303,8 @@
 </template>
 
 <script setup lang="ts">
-import { getAigTask, cancelAigTask, executeAigTask, listAigTask, requeueAigTask, sweepAigTask } from '@/api/aigov/task';
-import type { AigTaskDetailVO, AigTaskQuery, AigTaskVO } from '@/api/aigov/task/types';
+import { getAigTask, cancelAigTask, executeAigTask, listAigTask, requeueAigTask, selectAigTaskResult, sweepAigTask } from '@/api/aigov/task';
+import type { AigTaskDetailVO, AigTaskQuery, AigTaskResultVO, AigTaskVO } from '@/api/aigov/task/types';
 import { useLoading } from '@/hooks/async/useLoading';
 import { useDateRangeQuery } from '@/hooks/form/useDateRangeQuery';
 import { useSearchReset } from '@/hooks/form/useSearchReset';
@@ -482,6 +499,34 @@ const handleExecute = async (row: AigTaskVO) => {
     getList();
   } finally {
     executingId.value = null;
+  }
+};
+
+/** 正在选定的候选ID（避免重复点击造成两次选定与两条事件） */
+const selectingId = ref<string | number | null>(null);
+
+/**
+ * 人工选定交付物。
+ *
+ * 这是「自动流程只筛除、不放行」的唯一出口——候选要成为交付物只能由人在这里点。
+ * 选定说明要写进事件流：事后回答「为什么选了这一张」靠它。
+ */
+const handleSelect = async (row: AigTaskResultVO) => {
+  let remark = '';
+  try {
+    const result = await modal.prompt('选定说明（写入事件流，便于事后回答「为什么选了它」）');
+    remark = result?.value ?? '';
+  } catch {
+    return;
+  }
+  selectingId.value = row.resultId!;
+  try {
+    await selectAigTaskResult(detail.value.task!.taskId!, row.resultId!, remark);
+    modal.msgSuccess('已选定为交付物（同一任务单选，此前的选定已自动撤回）');
+    await handleDetail(detail.value.task!);
+    getList();
+  } finally {
+    selectingId.value = null;
   }
 };
 

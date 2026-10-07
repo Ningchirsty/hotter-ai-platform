@@ -16,6 +16,7 @@ import org.dromara.aigov.task.domain.bo.AigTaskCallbackBo;
 import org.dromara.aigov.task.domain.bo.AigTaskCreateBo;
 import org.dromara.aigov.task.domain.bo.AigTaskQueryBo;
 import org.dromara.aigov.task.domain.bo.AigTaskResultBo;
+import org.dromara.aigov.task.domain.bo.AigTaskResultSelectBo;
 import org.dromara.aigov.task.domain.bo.AigTaskReviewBo;
 import org.dromara.aigov.task.domain.vo.AigCallbackVo;
 import org.dromara.aigov.task.domain.vo.AigTaskDetailVo;
@@ -45,6 +46,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -154,6 +156,38 @@ class AigTaskServiceImplTest {
         pageQuery.setPageNum(1);
         pageQuery.setPageSize(10);
         return pageQuery;
+    }
+
+    /**
+     * 造一个候选结果行。
+     *
+     * @param resultId 结果ID
+     * @param taskId   所属任务ID
+     * @param status   候选状态
+     * @return 结果行
+     */
+    private static AigTaskResult candidate(long resultId, long taskId, String status) {
+        AigTaskResult result = new AigTaskResult();
+        result.setResultId(resultId);
+        result.setTaskId(taskId);
+        result.setCandidateStatus(status);
+        result.setResultType("ASSET");
+        return result;
+    }
+
+    /**
+     * 造一个选定入参。
+     *
+     * @param taskId   任务ID
+     * @param resultId 结果ID
+     * @return 选定入参
+     */
+    private static AigTaskResultSelectBo selectBo(long taskId, long resultId) {
+        AigTaskResultSelectBo bo = new AigTaskResultSelectBo();
+        bo.setTaskId(taskId);
+        bo.setResultId(resultId);
+        bo.setRemark("这张构图最稳");
+        return bo;
     }
 
     private static AigTask task(long taskId, String status, int attemptNo, int version) {
@@ -375,6 +409,95 @@ class AigTaskServiceImplTest {
 
         assertThrows(ServiceException.class, () -> service.getDetail(404L));
         assertThrows(ServiceException.class, () -> service.getDetail(null));
+    }
+
+    // ------------------------------------------------------------------ 人工选定交付物
+
+    @Test
+    @DisplayName("选定：把候选置为已选定并记录选定人（选错时这是唯一能追到的责任点）")
+    void selectCandidateRecordsTheHuman() {
+        when(taskMapper.selectById(1L)).thenReturn(task(1L, "REVIEW_PENDING", 1, 3));
+        when(resultMapper.selectById(9L)).thenReturn(candidate(9L, 1L, "CANDIDATE"));
+        when(resultMapper.selectList(any())).thenReturn(List.of());
+
+        Long resultId = service.selectCandidate(selectBo(1L, 9L));
+
+        assertEquals(9L, resultId);
+        ArgumentCaptor<AigTaskResult> captor = ArgumentCaptor.forClass(AigTaskResult.class);
+        verify(resultMapper).updateById(captor.capture());
+        AigTaskResult update = captor.getValue();
+        assertEquals("APPROVED", update.getCandidateStatus());
+        assertEquals(USER_ID, update.getSelectedBy(), "必须记录选定人——一旦选错，这是唯一能追到的责任点");
+        assertNotNull(update.getSelectedAt(), "选定时间也要记：事后判断「先选后改」靠它");
+    }
+
+    @Test
+    @DisplayName("选定：任务必须处于「待人工复核」——未成功/已取消的任务不该产出交付物")
+    void selectCandidateRequiresReviewPending() {
+        when(taskMapper.selectById(1L)).thenReturn(task(1L, "CANCELLED", 1, 3));
+
+        ServiceException ex = assertThrows(ServiceException.class,
+            () -> service.selectCandidate(selectBo(1L, 9L)));
+
+        assertTrue(ex.getMessage().contains("待人工复核"), "实际=" + ex.getMessage());
+        assertTrue(ex.getMessage().contains("CANCELLED"), "报错要带当前状态，便于定位；实际=" + ex.getMessage());
+        verify(resultMapper, never()).updateById(any(AigTaskResult.class));
+    }
+
+    @Test
+    @DisplayName("选定：候选必须属于该任务（防止拿 A 的 resultId 选到 B 名下）")
+    void selectCandidateRejectsForeignResult() {
+        when(taskMapper.selectById(1L)).thenReturn(task(1L, "REVIEW_PENDING", 1, 3));
+        when(resultMapper.selectById(9L)).thenReturn(candidate(9L, 2L, "CANDIDATE"));
+
+        ServiceException ex = assertThrows(ServiceException.class,
+            () -> service.selectCandidate(selectBo(1L, 9L)));
+
+        assertTrue(ex.getMessage().contains("不属于任务"), "实际=" + ex.getMessage());
+        verify(resultMapper, never()).updateById(any(AigTaskResult.class));
+    }
+
+    @Test
+    @DisplayName("选定：被自动质检筛除的候选不接受选定（否则一次顺手点击就能让已知不合格的候选成为交付物）")
+    void selectCandidateRejectsFilteredOutCandidate() {
+        when(taskMapper.selectById(1L)).thenReturn(task(1L, "REVIEW_PENDING", 1, 3));
+        when(resultMapper.selectById(9L)).thenReturn(candidate(9L, 1L, "REJECTED"));
+
+        ServiceException ex = assertThrows(ServiceException.class,
+            () -> service.selectCandidate(selectBo(1L, 9L)));
+
+        assertTrue(ex.getMessage().contains("已被自动质检筛除"), "实际=" + ex.getMessage());
+        verify(resultMapper, never()).updateById(any(AigTaskResult.class));
+    }
+
+    @Test
+    @DisplayName("选定是单选：选定一个会取消该任务此前的选定，避免两个「已选定」答不出交付哪一张")
+    void selectCandidateIsSingleChoice() {
+        when(taskMapper.selectById(1L)).thenReturn(task(1L, "REVIEW_PENDING", 1, 3));
+        when(resultMapper.selectById(9L)).thenReturn(candidate(9L, 1L, "CANDIDATE"));
+        when(resultMapper.selectList(any())).thenReturn(List.of(candidate(8L, 1L, "APPROVED")));
+
+        service.selectCandidate(selectBo(1L, 9L));
+
+        ArgumentCaptor<AigTaskResult> captor = ArgumentCaptor.forClass(AigTaskResult.class);
+        verify(resultMapper, times(2)).updateById(captor.capture());
+        AigTaskResult previousReset = captor.getAllValues().get(0);
+        assertEquals(8L, previousReset.getResultId());
+        assertEquals("CANDIDATE", previousReset.getCandidateStatus(),
+            "此前被选中的候选要回到「候选」而不是「筛除」——它只是没被选中，不是不合格");
+        assertNull(previousReset.getSelectedBy(), "撤回选定要一并清掉选定人，否则会留下「已撤回但仍显示某人选定」");
+        assertEquals("APPROVED", captor.getAllValues().get(1).getCandidateStatus());
+    }
+
+    @Test
+    @DisplayName("选定：已选定的候选重复选定直接返回（幂等，不产生多余写入与事件）")
+    void selectCandidateIsIdempotent() {
+        when(taskMapper.selectById(1L)).thenReturn(task(1L, "REVIEW_PENDING", 1, 3));
+        when(resultMapper.selectById(9L)).thenReturn(candidate(9L, 1L, "APPROVED"));
+
+        service.selectCandidate(selectBo(1L, 9L));
+
+        verify(resultMapper, never()).updateById(any(AigTaskResult.class));
     }
 
     // ------------------------------------------------------------------ 状态迁移
