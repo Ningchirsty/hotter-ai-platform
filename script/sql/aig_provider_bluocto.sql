@@ -1,16 +1,29 @@
 -- ----------------------------------------------------------------------------
 -- 外部聚合网关接入种子：bluocto（New API 系，OpenAI 兼容）
 --
--- 端点已实测确认：
---   GET https://bluocto.com/v1/models → 401
---   {"error":{"message":"无效的令牌…","type":"new_api_error"}}
---   401 而不是 404，且 type=new_api_error —— 说明 /v1 这条 OpenAI 兼容路径存在，
---   平台是 New API（one-api 系）。因此 api_endpoint 登记为 https://bluocto.com/v1，
---   由 OpenAiCompatibleInvoker 拼成 …/v1/chat/completions
---   （buildChatUrl：配到 /v1 或直接配到 /chat/completions 都能工作）。
+-- ⚠ api_endpoint 是 https://bluocto.com/v1 ——**不要改成 docs.newapi.pro**。
+--   两者实测对比（2026-10-07）：
+--     GET https://bluocto.com/v1/models      → 401 application/json
+--        {"error":{"code":"","message":"无效的令牌 (request id: …)","type":"new_api_error"}}
+--        ← 真网关。401（不是 404）+ JSON + type=new_api_error 说明路径存在、只是缺令牌。
+--     GET https://docs.newapi.pro/v1/models  → 404 text/html
+--        <title>404: This page could not be found.</title>
+--        ← 这是 New API 项目**官方文档站**（Next.js），不是任何人的 API；
+--          它只用来查接口契约，不能作为调用地址。Key 由 bluocto 签发，
+--          发给 docs.newapi.pro 既没有模型也不会鉴权，必然失败。
+--   契约依据（官方文档）：https://docs.newapi.pro/zh/docs/api/ai-model/models/list/listmodels
+--     GET /v1/models   Header: Authorization: Bearer sk-xxxxxx
+--     200 → {"object":"list","data":[{"id":"gpt-4","object":"model","created":0,"owned_by":"openai"}]}
+--     401 → {"error":{"message","type","param","code"}}   ← 与上面 bluocto 的返回一致
+--   **格式自动识别**：带 x-api-key+anthropic-version 返回 Anthropic 格式；
+--   带 x-goog-api-key 或 ?key= 返回 Gemini 格式；**其余情况返回 OpenAI 格式**。
+--   我们的 OpenAiCompatibleInvoker 只发 Authorization: Bearer + Content-Type，
+--   因此拿到的是 **OpenAI 格式**，正是它 extractContent(choices[0].message.content) 与
+--   extractTotalTokens(usage.total_tokens) 期望的——**无需额外请求头**。
 --
 -- 一把 Key 通多种模型：这是 New API 的形态——1 条 sai_model_provider + N 条
 -- sai_model_config，N 条共享同一 api_endpoint 与同一把 api_key。
+-- Key 到位后由 GET /v1/models 枚举真实模型清单来生成行，不猜 model_key。
 --
 -- ============================================================================
 -- 本脚本默认**【只登记连接与治理属性】，不含任何数据外发**：
