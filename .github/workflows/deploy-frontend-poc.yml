@@ -11,6 +11,11 @@ on:
         description: Git commit SHA embedded in the frontend image
         required: true
         type: string
+      allow_unknown_disk:
+        description: 'Emergency override: proceed even if root free space cannot be read (default false; the pre-flight refuses instead)'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -48,19 +53,32 @@ jobs:
         env:
           MIN_FREE_KB: '3145728'
           KEEP_PREVIOUS: '3'
+          # 读不到磁盘状态时是否放行（默认否）。见下面说明。
+          ALLOW_UNKNOWN_DISK: ${{ inputs.allow_unknown_disk && '1' || '0' }}
         run: |
           set -uo pipefail
           free_kb=$(df -Pk / | awk 'NR==2 {print $4}')
-          echo "root free: $((free_kb / 1024))MB (require >= $((MIN_FREE_KB / 1024))MB)"
           stale=$(docker ps -a --filter 'name=ruoyi-web-previous-' --format '{{.Names}}' \
             | sort -r | tail -n +$((KEEP_PREVIOUS + 1)))
           if [ -n "$stale" ]; then
             echo "$stale" | xargs -r docker rm >/dev/null 2>&1 || true
             echo "pruned stale previous-* containers, kept newest $KEEP_PREVIOUS"
           fi
-          if [ "$free_kb" -lt "$MIN_FREE_KB" ]; then
-            echo "::error::root filesystem has only $((free_kb / 1024))MB free (< $((MIN_FREE_KB / 1024))MB). Deploy AND rollback both need disk; refusing to start."
-            exit 1
+          # 与 deploy-poc.yml 同一条修正：读不到磁盘必须拒绝（fail-closed），
+          # 否则 `[ "" -lt N ]` 会被当作 false 而静默放行，恰好在最该拦的时候失效。
+          if ! [[ "$free_kb" =~ ^[0-9]+$ ]]; then
+            if [ "${ALLOW_UNKNOWN_DISK:-0}" = "1" ]; then
+              echo "::warning::cannot read root free space (df gave '${free_kb:-<empty>}'); proceeding because allow_unknown_disk was requested"
+            else
+              echo "::error::cannot read root free space (df gave '${free_kb:-<empty>}'). Deploy AND rollback both need disk, so refusing to start. Re-run with the allow_unknown_disk input set to true to override."
+              exit 1
+            fi
+          else
+            echo "root free: $((free_kb / 1024))MB (require >= $((MIN_FREE_KB / 1024))MB)"
+            if [ "$free_kb" -lt "$MIN_FREE_KB" ]; then
+              echo "::error::root filesystem has only $((free_kb / 1024))MB free (< $((MIN_FREE_KB / 1024))MB). Deploy AND rollback both need disk; refusing to start."
+              exit 1
+            fi
           fi
 
       - name: Deploy and verify frontend through audited entrypoint

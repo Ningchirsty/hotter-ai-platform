@@ -8,6 +8,11 @@ on:
         required: true
         type: string
         default: ghcr.io/ningchirsty/hotter-ai-platform-backend@sha256:72cc11ba16103a1cd18dee4f8b6c47a46b310cf9f9e6f67532f29fc06232b07a
+      allow_unknown_disk:
+        description: 'Emergency override: proceed even if root free space cannot be read (default false; the pre-flight refuses instead)'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -43,10 +48,11 @@ jobs:
         env:
           MIN_FREE_KB: '3145728'
           KEEP_PREVIOUS: '3'
+          # 读不到磁盘状态时是否放行（默认否）。见下面说明。
+          ALLOW_UNKNOWN_DISK: ${{ inputs.allow_unknown_disk && '1' || '0' }}
         run: |
           set -uo pipefail
           free_kb=$(df -Pk / | awk 'NR==2 {print $4}')
-          echo "root free: $((free_kb / 1024))MB (require >= $((MIN_FREE_KB / 1024))MB)"
           # 单调增长的陈旧 previous-* 容器是本次事故的堆积源之一，先清掉（保留最近几个）
           stale=$(docker ps -a --filter 'name=ruoyi-web-previous-' --format '{{.Names}}' \
             | sort -r | tail -n +$((KEEP_PREVIOUS + 1)))
@@ -54,9 +60,24 @@ jobs:
             echo "$stale" | xargs -r docker rm >/dev/null 2>&1 || true
             echo "pruned stale previous-* containers, kept newest $KEEP_PREVIOUS"
           fi
-          if [ "$free_kb" -lt "$MIN_FREE_KB" ]; then
-            echo "::error::root filesystem has only $((free_kb / 1024))MB free (< $((MIN_FREE_KB / 1024))MB). Deploy AND rollback both need disk; refusing to start."
-            exit 1
+          # ⚠️ 这道预检存在的意义就是"磁盘满时部署与回滚会一起失败"（2026-10-08 事故）。
+          # 所以**读不到磁盘状态必须拒绝**。原先直接拿 $free_kb 去比较：一旦 df 输出异常/为空，
+          # `[ "" -lt N ]` 返回非 0（被当作 false），预检就静默通过了——
+          # 恰好在它最该起作用的时候（文件系统异常）失效。修成 fail-closed，
+          # 并留一个显式口子 allow_unknown_disk（应急用，会在日志里留痕）。
+          if ! [[ "$free_kb" =~ ^[0-9]+$ ]]; then
+            if [ "${ALLOW_UNKNOWN_DISK:-0}" = "1" ]; then
+              echo "::warning::cannot read root free space (df gave '${free_kb:-<empty>}'); proceeding because allow_unknown_disk was requested"
+            else
+              echo "::error::cannot read root free space (df gave '${free_kb:-<empty>}'). Deploy AND rollback both need disk, so refusing to start. Re-run with the allow_unknown_disk input set to true to override."
+              exit 1
+            fi
+          else
+            echo "root free: $((free_kb / 1024))MB (require >= $((MIN_FREE_KB / 1024))MB)"
+            if [ "$free_kb" -lt "$MIN_FREE_KB" ]; then
+              echo "::error::root filesystem has only $((free_kb / 1024))MB free (< $((MIN_FREE_KB / 1024))MB). Deploy AND rollback both need disk; refusing to start."
+              exit 1
+            fi
           fi
 
       - name: Deploy and verify backend through audited entrypoint

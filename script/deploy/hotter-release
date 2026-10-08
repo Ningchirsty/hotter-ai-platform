@@ -28,8 +28,16 @@ require_free_space() {
   local free_kb
   free_kb=$(df -Pk / | awk 'NR==2 {print $4}')
   if ! [[ "$free_kb" =~ ^[0-9]+$ ]]; then
-    warn "无法读取根分区可用空间（df 输出异常），跳过磁盘检查：$stage"
-    return 0
+    # 2026-10-08 修正：这里原先是 `warn ...; return 0`（读不到就跳过检查，fail-open）。
+    # 但本函数存在的理由正是"磁盘满会让部署与回滚**一起**失败"（R61 事故：
+    # 容器创建了起不来 → 健康检查超时 → 回滚也因写满失败 → 后端完全不可用）。
+    # 对这样一道防线，"量不出来"不能当作"没问题"。改为拒绝，
+    # 并留一个显式口子（HOTTER_ALLOW_UNKNOWN_DISK=1）供应急放行，且放行会写进日志。
+    if [ "${HOTTER_ALLOW_UNKNOWN_DISK:-0}" = "1" ]; then
+      warn "无法读取根分区可用空间（df 输出异常），已按 HOTTER_ALLOW_UNKNOWN_DISK=1 放行：$stage"
+      return 0
+    fi
+    die "无法读取根分区可用空间（stage=$stage，df 输出='${free_kb:-<empty>}'）。部署与回滚都需要写盘，量不出来时不能假设空间够；请先确认 df 可用（或显式设 HOTTER_ALLOW_UNKNOWN_DISK=1 应急放行）。"
   fi
   if [ "$free_kb" -lt "$MIN_FREE_KB" ]; then
     die "根分区可用空间不足（stage=$stage）：可用 $((free_kb / 1024))MB < 要求 $((MIN_FREE_KB / 1024))MB；部署与回滚都需要写盘，空间不足会让两者一起失败（2026-10-08 事故）。请先清理：docker builder prune -af / 删除陈旧的 previous-* 容器 / 清理多余镜像。"
