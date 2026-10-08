@@ -1,6 +1,6 @@
-# 0-2 ADR-001~007 决定记录
+# 0-2 ADR-001~008 决定记录
 
-> 状态：**完成**（2026-10-08）
+> 状态：**完成**（2026-10-08；ADR-008 于同日追加）
 > 每条 ADR 给：**决定** / **依据** / **落地为可执行契约的方式** / **被否决的替代方案**。
 > "已核实"项均指读了源码或查了生产。
 
@@ -90,6 +90,89 @@
 
 ---
 
+## ADR-008 图像能力门禁的权威层：**治理层管路由，`CloudImageValidation` 只管验收** —— **接受**
+
+> 提出时间：2026-10-08（由 B-2 阻塞项触发）。**背景是一次实测推翻了我方此前的错误结论**，
+> 因此本 ADR 的价值一半在"决定"，一半在"记录为什么原来判断错了"。
+
+### 背景：图像能力其实有**四处判据**，不是两处
+
+| 层 | 位置 | 实际作用 |
+|---|---|---|
+| ① 前端硬编码清单 | `frontend/src/components/CreativeInspiration/cloud-image-capabilities.ts:19-23` | 决定 UI **列出**哪些能力（纯展示，提交仍由 ② 把关） |
+| ② 云端逐能力验收快照 | `ruoyi-ai/.../CloudImageValidation.java:10-17` | **真正的云端能力开关**：`verified()` = `status=="PASSED"`；`CloudImageRequest.requireVerified()` 在提交时抛 `CLOUD_CAPABILITY_UNVERIFIED` |
+| ③ 云端输出参数验收档 | `ruoyi-ai/.../cloud-image-output-validation.json` | **不是能力开关**：仅在用户传了 custom 输出参数时，校验该「型号 × 能力 × 参数」组合是否验证过 |
+| ④ 治理层路由 | `aig_model_governance.lifecycle_status` | 决定 **aigov** 能否路由到它 |
+
+**关键事实（已核验）**：① ② ③ 所在的云端图像链路**完全不经过 aigov**——
+`ruoyi-modules/ruoyi-ai` 的 `src/main/java` 里 **0 处** `aigov` 引用、
+`ImageCloudService` **0 处** audit 引用、`ruoyi-ai/pom.xml` **不依赖 aigov**。
+它是直连 BluOcto 的独立子系统。
+
+**另一个必须同时看的门禁**：④ 之外还有一层 **服务端 Key 的模型授权**
+（`GET /image/cloud/check` → `authorizedModels`）。这不是配置项，而是**问上游网关当前 Key 能用哪些模型**。
+实测（`b2-authorized-models.out`）：
+
+```
+authorizedModels = [qwen-image-3.0-pro, wan2.7-image, gpt-image-2.5-flare,
+                    wan2.7-image-pro, gpt-image-2.5-sunburst, qwen-image-3.0]
+generationVerified = True
+（7 个登记模型中只有 flux-2-pro 未授权）
+```
+
+⇒ 所以"云端链路能用什么"= **② 验收状态 ∩ Key 授权**。flare 两项都满足。
+
+### 原判断错在哪（留档，避免重犯）
+
+原结论是「`cloud-image-output-validation.json` 已把 flare 5 项能力标为开放，但治理层仍
+`SUSPENDED`，所以 flare 被路由排除、**"开放了能力"是空的**」。
+
+**错在两处**：
+
+1. 把 ③（输出参数验收档）当成了能力开关——真正的开关是 ② 的硬编码 `PASSED` 表；
+2. 把两条**互不依赖**的路径当成了同一个门禁——云端图像链路里 flare **实测 6/6 `PASSED`**
+   **且在 `authorizedModels` 里**，**真实可用**
+   （`blockers-cloud-gate.out` GET `/image/cloud/models`；`b2-authorized-models.out` GET `/image/cloud/check`）。
+
+**正确表述**：不是"开放是空的"，而是**同一模型在两处状态相反，且没有单一事实源**——
+任何一处改了都不同步，且无人收到提示。
+
+### 决定
+
+| 项 | 内容 |
+|---|---|
+| **决定** | **治理层 `aig_model_governance.lifecycle_status` 是"能否被路由"的唯一权威**（它管路由、审计、数据等级）；`CloudImageValidation` 是**参数/输出验收快照**，只回答"这个型号×能力×参数组合有没有被真实验证过"，**不是路由开关** |
+| **依据** | 两条链路各有明确职责且已验证独立（见上）；治理层是唯一同时参与路由、审计与数据等级判定的层，因此由它定"可用性"不会产生第二个事实源 |
+| **落地方式** | ① 两者**不一致时必须告警**（不得各自静默生效）——建议纳入 M-006 类巡检；② `CloudImageValidation` 的验收状态**迁出硬编码、改为可运维配置**（见下"迁移项"）；③ 文档与 UI 须显式说明"云端图像链路独立于治理路由" |
+| **否决的替代** | (a) 让 `CloudImageValidation` 也参与路由（否决：会产生两个可用性权威，正是本次问题的成因）；(b) 把云端图像链路并入 aigov 治理（否决：会打断既有直连链路与审计边界，且当前无此需求） |
+
+### 迁移项（本 ADR 要求实施，属代码变更）
+
+`CloudImageValidation` 把验收状态**硬编码在 Java 源码**里：
+
+```java
+public static final String TESTED_AT = "2026-10-08";
+private static final Map<String, Map<String, String>> LATEST = Map.of( ... );
+```
+
+问题：**改一次验收结论就要改代码、走一次发版**；且这是一份**会过期的快照**，
+没有任何机制提醒它过期。
+
+**要求**：迁到配置/数据库（保留"空配置时回落到内置默认值"的兜底，避免表未初始化就整体失效）。
+**不要求**与治理层同源——它们回答的是不同问题。
+
+### flare 状态定调（本次一并决定）
+
+| 项 | 内容 |
+|---|---|
+| 决定 | flare 治理层 `lifecycle_status`：`SUSPENDED` → **`GRAY`** |
+| 依据 | 云端链路实测其 6 项能力全部 `PASSED`；且其它已验证图像提供方（`qwen-image-3.0`、`wan2.7-image` 等）**都是 `GRAY`** |
+| 为什么不是 `PRODUCTION` | 那会让 flare 成为唯一 `PRODUCTION` 的图像模型，暗示它是主路径——**没人这么决定过** |
+| **范围限定** | **只改生命周期，不加绑定**。`aig_capability_model` 里 flare 仍 0 行 ⇒ 它成为"可用候选"但**不是 `image_generation` 的候选**。**路由结果不因本次变更而改变**（已实测确认候选集未变） |
+| 附带影响 | 仍受 `data_level_max=INTERNAL` 限制 ⇒ `RESTRICTED` 一律排除；`allowExternal='N'` 时也排除 |
+
+---
+
 ## 决定汇总
 
 | ADR | 决定 | 关键修改/前置 |
@@ -101,3 +184,4 @@
 | 005 | 接受 | 复用 `execution_mode=EXTERNAL` 这条既有边界 |
 | 006 | 接受 | **必须落成代码**；书面接受 `OPAQUE` 残余风险 |
 | 007 | 接受 | **阶段 1 只做 VibePoster 一条** |
+| 008 | 接受（2026-10-08 追加） | **治理层是路由唯一权威**；`CloudImageValidation` 验收状态**迁出硬编码**；flare → `GRAY`（只改生命周期、不加绑定） |

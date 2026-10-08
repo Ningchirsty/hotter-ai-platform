@@ -28,7 +28,7 @@ public record CloudImageRequest(String model, String prompt, String capability,
     public static boolean verified(String model, String capability) { return CloudImageValidation.verified(model, capability); }
     public static List<Map<String, Object>> profiles() {
         return BluOctoImageClient.MODELS.stream().map(model -> Map.<String, Object>of(
-            "model", model, "testedAt", CloudImageValidation.TESTED_AT,
+            "model", model, "testedAt", CloudImageValidation.testedAt(model),
             "outputProfiles", CloudImageOutputValidation.profiles(model),
             "maxReferenceImages", CloudImageValidation.maxReferences(model), "maxReferenceBytes", CloudImageValidation.maxReferenceBytes(model),
             "capabilities", CloudImageValidation.capabilities(model).stream().map(cap -> Map.of(

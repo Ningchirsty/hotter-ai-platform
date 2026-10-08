@@ -1,0 +1,65 @@
+[
+  {
+    "model": "flux-2-pro",
+    "testedAt": "2026-10-08",
+    "maxReferenceImages": 16,
+    "maxReferenceBytes": 10485760,
+    "capabilities": { "T2I": "HTTP_503" }
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "testedAt": "2026-10-08",
+    "maxReferenceImages": 16,
+    "maxReferenceBytes": 20971520,
+    "capabilities": {
+      "T2I": "PASSED",
+      "EDIT": "PASSED",
+      "MULTI": "PASSED",
+      "MASK": "PASSED",
+      "OUTPAINT": "PASSED",
+      "TRANSPARENT": "PASSED"
+    }
+  },
+  {
+    "model": "gpt-image-2.5-sunburst",
+    "testedAt": "2026-10-08",
+    "maxReferenceImages": 16,
+    "maxReferenceBytes": 20971520,
+    "capabilities": {
+      "T2I": "PASSED",
+      "EDIT": "PASSED",
+      "MULTI": "PASSED",
+      "MASK": "PASSED",
+      "OUTPAINT": "PASSED",
+      "TRANSPARENT": "PASSED"
+    }
+  },
+  {
+    "model": "qwen-image-3.0",
+    "testedAt": "2026-10-08",
+    "maxReferenceImages": 3,
+    "maxReferenceBytes": 10485760,
+    "capabilities": { "T2I": "PASSED", "EDIT": "PASSED", "MULTI": "PASSED" }
+  },
+  {
+    "model": "qwen-image-3.0-pro",
+    "testedAt": "2026-10-08",
+    "maxReferenceImages": 3,
+    "maxReferenceBytes": 10485760,
+    "capabilities": { "T2I": "PASSED", "EDIT": "PASSED", "MULTI": "PASSED" }
+  },
+  {
+    "model": "wan2.7-image",
+    "testedAt": "2026-10-08",
+    "maxReferenceImages": 9,
+    "maxReferenceBytes": 10485760,
+    "capabilities": { "T2I": "PASSED", "EDIT": "PASSED", "MULTI": "HTTP_400" }
+  },
+  {
+    "model": "wan2.7-image-pro",
+    "testedAt": "2026-10-08",
+    "maxReferenceImages": 9,
+    "maxReferenceBytes": 10485760,
+    "capabilities": { "T2I": "PASSED", "EDIT": "PASSED", "MULTI": "PASSED" }
+  }
+]
