@@ -441,6 +441,7 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
         audit.setCapabilityCode(bo.getCapabilityCode());
         audit.setDataLevel(dataLevel.getCode());
         audit.setScenarioCode(bo.getScenarioCode());
+        audit.setAgentVersionId(bo.getAgentVersionId());
         audit.setInputSnapshotRef(bo.getInputSnapshotRef());
         audit.setModelId(decision.getModelId());
         audit.setModelKey(decision.getModelKey());

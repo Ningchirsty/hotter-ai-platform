@@ -55,6 +55,19 @@ public class AigInvokeBo implements Serializable {
     private String scenarioCode;
 
     /**
+     * 本次调用所属的 Agent 版本ID（可选，治理层发布的版本，见 {@code aig_agent_version.id}）
+     *
+     * <p><b>与 modelVersion 是两回事</b>：{@code modelVersion} 是「跑了哪个模型版本」，
+     * 这里是「这次调用归属哪个治理层发布的 Agent 版本」。任务域本来就知道自己挂在哪个
+     * Agent 版本上（{@code aig_task.agent_version_id}），但过去构造调用入参时没有把它带下来，
+     * 于是审计里根本没有这一维度——按 Agent 版本统计「被调用多少次 / 失败几次」拿不到数据。</p>
+     *
+     * <p><b>为空是正常且有含义的</b>：直接调能力（不经任务）的调用本来就没有绑定 Agent 版本，
+     * 这一列为空表示「本次没绑定到某个 Agent 版本」，不是「不知道」。</p>
+     */
+    private Long agentVersionId;
+
+    /**
      * 提示词（业务输入）
      */
     private String prompt;

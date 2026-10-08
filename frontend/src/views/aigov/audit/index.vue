@@ -117,6 +117,12 @@
         <el-table-column label="模型" align="center" width="160" show-overflow-tooltip>
           <template #default="scope">{{ scope.row.modelKey || '-' }}</template>
         </el-table-column>
+        <!-- Agent 版本：与「模型」是两个维度（模型版本 vs 治理层发布的 Agent 版本）。
+             灰度的达标判据按 Agent 版本统计调用次数/失败率，因此明细里必须看得见；
+             为空=本次未绑定某版本（如直接调能力），不是「不知道」 -->
+        <el-table-column label="Agent版本" align="center" width="130" show-overflow-tooltip>
+          <template #default="scope">{{ scope.row.agentVersionId ?? '-' }}</template>
+        </el-table-column>
         <!-- 供应商：当时那一次的归属。缺了它，费用与合规只能靠模型ID join 现查，查到的是今天的归属 -->
         <el-table-column label="供应商" align="center" width="140" show-overflow-tooltip>
           <template #default="scope">

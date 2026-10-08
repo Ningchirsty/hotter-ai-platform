@@ -61,6 +61,7 @@ import static org.mockito.Mockito.when;
 class AigTaskExecutorImplTest {
 
     private static final long TASK_ID = 1L;
+    private static final long AGENT_VERSION_ID = 4242L;
     private static final String SNAPSHOT_JSON = "{\"facts\":\"v1\"}";
 
     private IAigTaskService taskService;
@@ -90,6 +91,7 @@ class AigTaskExecutorImplTest {
         task.setDataLevel("INTERNAL");
         task.setScenarioCode("POSTER");
         task.setAttemptNo(0);
+        task.setAgentVersionId(AGENT_VERSION_ID);
 
         AigTaskSnapshotVo snapshot = new AigTaskSnapshotVo();
         snapshot.setSnapshotId(77L);
@@ -190,6 +192,20 @@ class AigTaskExecutorImplTest {
         assertNotNull(sent.getInputSnapshotRef(), "要带上快照引用：它是事后复现的唯一入口");
         assertTrue(sent.getInputSnapshotRef().contains("77"), "引用里要能定位到具体快照；实际="
             + sent.getInputSnapshotRef());
+    }
+
+    @Test
+    @DisplayName("Agent 版本必须从任务带进调用入参：任务域本来就知道，过去在这一跳丢了")
+    void agentVersionIsCarriedFromTaskIntoInvoke() {
+        stubHappyPath(invoked("{}", null, null));
+
+        executor.execute(executedBo());
+
+        ArgumentCaptor<AigInvokeBo> captor = ArgumentCaptor.forClass(AigInvokeBo.class);
+        verify(invokeService).invoke(captor.capture());
+        assertEquals(AGENT_VERSION_ID, captor.getValue().getAgentVersionId(),
+            "任务知道自己在哪个 Agent 版本上，漏带会让审计里这一维度恒为空，"
+                + "灰度的「按版本统计调用次数/失败率」永远拿不到任务发起的调用");
     }
 
     @Test

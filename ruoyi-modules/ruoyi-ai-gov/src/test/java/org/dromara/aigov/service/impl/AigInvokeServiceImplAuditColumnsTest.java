@@ -119,6 +119,20 @@ class AigInvokeServiceImplAuditColumnsTest {
      * @return 审计上下文
      */
     private AigAuditContext invoke(List<ModelInvoker> invokers, String snapshotRef, boolean twoCandidates) {
+        return invoke(invokers, snapshotRef, twoCandidates, null);
+    }
+
+    /**
+     * 驱动一次调用（可指定 Agent 版本）。
+     *
+     * @param invokers         可用调用器
+     * @param snapshotRef      入参里的输入快照引用（可空）
+     * @param twoCandidates    true 时提供主/备两个候选，false 时只有一个主候选
+     * @param agentVersionId   入参里的 Agent 版本ID（可空）
+     * @return 审计上下文
+     */
+    private AigAuditContext invoke(List<ModelInvoker> invokers, String snapshotRef, boolean twoCandidates,
+                                   Long agentVersionId) {
         AigRouteDecision decision = new AigRouteDecision();
         decision.setCapabilityCode(CAPABILITY);
         decision.setDecision(AigRouteDecisionEnum.MODEL.getCode());
@@ -142,6 +156,7 @@ class AigInvokeServiceImplAuditColumnsTest {
         bo.setDataLevel(AigDataLevelEnum.INTERNAL.getCode());
         bo.setPrompt("生成一张图");
         bo.setInputSnapshotRef(snapshotRef);
+        bo.setAgentVersionId(agentVersionId);
         service.invoke(bo);
 
         ArgumentCaptor<AigAuditContext> captor = ArgumentCaptor.forClass(AigAuditContext.class);
@@ -222,6 +237,29 @@ class AigInvokeServiceImplAuditColumnsTest {
 
         assertEquals(SNAPSHOT_REF, audit.getInputSnapshotRef(),
             "没有它，同一个 traceId 只能看到用了什么模型，看不到当时喂进去的是什么");
+    }
+
+    @Test
+    @DisplayName("Agent 版本透传进审计上下文（灰度按版本统计的前提）")
+    void agentVersionIsRecorded() {
+        StubInvoker only = new StubInvoker("InvokerA", ModelInvokeResult.success("{\"image\":\"x\"}", 5L));
+
+        AigAuditContext audit = invoke(List.of(only), null, false, 4242L);
+
+        assertEquals(4242L, audit.getAgentVersionId(),
+            "没有这一维度，灰度就统计不出「这个 Agent 版本被跑了多少次、失败几次」，"
+                + "达标与否只剩调用方声明");
+    }
+
+    @Test
+    @DisplayName("不经任务的调用没有 Agent 版本：留空表示「本次未绑定」，不是「不知道」")
+    void absentAgentVersionStaysNull() {
+        StubInvoker only = new StubInvoker("InvokerA", ModelInvokeResult.success("{\"image\":\"x\"}", 5L));
+
+        AigAuditContext audit = invoke(List.of(only), null, false);
+
+        assertNull(audit.getAgentVersionId(),
+            "直接调能力本来就没绑定 Agent 版本；伪造一个会让「按版本统计」把无归属的调用算到别人头上");
     }
 
     @Test

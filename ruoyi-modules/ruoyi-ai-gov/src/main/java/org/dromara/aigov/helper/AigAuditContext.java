@@ -78,6 +78,13 @@ public class AigAuditContext implements Serializable {
     private String modelVersion;
 
     /**
+     * 本次调用所属的 Agent 版本ID（治理层发布的版本，可为空）
+     * <p>与 {@link #modelVersion} 不同：那是「模型」版本，这里是「Agent」版本。
+     * 灰度的达标判据要按 Agent 版本统计调用次数/失败率/严重错误，缺了这一维度就无从统计。</p>
+     */
+    private Long agentVersionId;
+
+    /**
      * 部署类型
      */
     private String deploymentType;

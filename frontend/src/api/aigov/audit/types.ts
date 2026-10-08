@@ -21,6 +21,12 @@ export interface AigInvocationAuditVO {
   modelId?: string | number;
   modelKey?: string;
   modelVersion?: string;
+  /**
+   * 本次调用所属的 Agent 版本ID（治理层发布的版本）。
+   * 与 modelVersion 不是一回事：那是「模型」版本，这里是「Agent」版本。
+   * 为空表示本次未绑定某个 Agent 版本（如直接调能力、不经任务），不是「不知道」。
+   */
+  agentVersionId?: string | number;
   /** 实际使用的供应商ID（当时那一次的归属；模型改归属后它不跟着变） */
   providerId?: string | number;
   /** 供应商名称（后端回填） */

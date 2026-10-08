@@ -71,6 +71,9 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
         invokeBo.setCapabilityCode(task.getCapabilityCode());
         invokeBo.setDataLevel(task.getDataLevel());
         invokeBo.setScenarioCode(task.getScenarioCode());
+        // 任务知道自己挂在哪个 Agent 版本上，必须带进调用入参，否则审计里就没有这个维度，
+        // 灰度的「按版本统计调用次数/失败率」永远拿不到任务发起的那些调用
+        invokeBo.setAgentVersionId(task.getAgentVersionId());
         invokeBo.setPrompt(bo.getPrompt());
         invokeBo.setPayload(bo.getPayload());
         invokeBo.setInputSnapshotRef("task:" + bo.getTaskId() + "/snapshot:" + snapshot.getSnapshotId());

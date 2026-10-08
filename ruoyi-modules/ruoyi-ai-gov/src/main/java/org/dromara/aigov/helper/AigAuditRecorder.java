@@ -89,6 +89,7 @@ public class AigAuditRecorder {
             audit.setProviderId(ctx.getProviderId());
             audit.setModelKey(ctx.getModelKey());
             audit.setModelVersion(ctx.getModelVersion());
+            audit.setAgentVersionId(ctx.getAgentVersionId());
             audit.setDeploymentType(ctx.getDeploymentType());
             audit.setExternalCall(ctx.isExternalCall() ? "Y" : "N");
             audit.setPolicyHit(AigInputSanitizer.truncate(joinHits(ctx), POLICY_HIT_MAX));

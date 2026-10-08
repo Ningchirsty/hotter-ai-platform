@@ -170,6 +170,7 @@ create table aig_invocation_audit (
     provider_id      bigint(20)      default null               comment '实际使用的供应商ID（当时那一次的归属，不随模型改归属而变）',
     model_key        varchar(100)    default null               comment '模型键（内部标识）',
     model_version    varchar(64)     default null               comment '模型版本',
+    agent_version_id bigint(20)      default null               comment '本次调用所属的 Agent 版本ID（治理层发布的 aig_agent_version.id；为空=本次未绑定 Agent 版本，非「不知道」）',
     deployment_type  varchar(24)     default null               comment '部署类型',
     external_call    char(1)         default 'N'                comment '是否外发（Y是 N否）',
     policy_hit       varchar(255)    default null               comment '命中的路由策略摘要',
@@ -189,6 +190,7 @@ create table aig_invocation_audit (
     key idx_aig_audit_time (operate_time),
     key idx_aig_audit_cap (capability_code, operate_time),
     key idx_aig_audit_caller (caller_id, operate_time),
+    key idx_aig_audit_agent_version (agent_version_id, operate_time),
     key idx_aig_audit_trace (trace_id),
     key idx_aig_audit_external (external_call, operate_time)
 ) engine=innodb comment = 'AI调用逐次审计表';

@@ -88,6 +88,16 @@ public class AigInvocationAudit implements Serializable {
     private String modelVersion;
 
     /**
+     * 本次调用所属的 Agent 版本ID（治理层发布的 {@code aig_agent_version.id}，可为空）
+     * <p><b>为什么需要它</b>：{@code model_version} 是模型版本，不是治理层发布的 Agent 版本。
+     * 灰度（CANDIDATE→STABLE 的 CANARY 门槛）要按版本统计「被调用多少次 / 失败几次 /
+     * 有无严重错误」，只有模型维度是统计不出来的——同一模型可能挂着多个 Agent 版本。</p>
+     * <p>为空表示「本次没绑定到某个 Agent 版本」（例如直接调能力、不经任务），
+     * <b>不是</b>「不知道」。</p>
+     */
+    private Long agentVersionId;
+
+    /**
      * 部署类型
      */
     private String deploymentType;

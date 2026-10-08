@@ -104,6 +104,29 @@ class AigAuditRecorderColumnsTest {
     }
 
     @Test
+    @DisplayName("Agent 版本列要从上下文落到实体：漏掉这一层就是「列在、值恒为空」")
+    void mapsAgentVersionId() {
+        AigAuditContext ctx = context();
+        ctx.setModelVersion("v1");
+        ctx.setAgentVersionId(4242L);
+
+        recorder.record(ctx);
+
+        AigInvocationAudit audit = capture();
+        assertEquals(4242L, audit.getAgentVersionId(), "Agent 版本必须落库，否则灰度无从按版本统计");
+        assertEquals("v1", audit.getModelVersion(),
+            "模型版本列不受影响：model_version（模型）与 agent_version_id（Agent）是两个维度");
+    }
+
+    @Test
+    @DisplayName("没有 Agent 版本时保持 null：空值表示「本次未绑定」，不是「不知道」")
+    void absentAgentVersionStaysNull() {
+        recorder.record(context());
+
+        assertNull(capture().getAgentVersionId());
+    }
+
+    @Test
     @DisplayName("超长 usage_json 必须截断到列宽，否则整条审计插入失败且失败被静默吞掉")
     void truncatesOversizedUsageJson() {
         AigAuditContext ctx = context();
