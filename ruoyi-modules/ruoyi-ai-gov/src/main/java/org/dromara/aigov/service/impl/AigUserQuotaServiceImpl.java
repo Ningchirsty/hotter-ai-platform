@@ -2,6 +2,7 @@ package org.dromara.aigov.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.aigov.domain.AigUserQuota;
@@ -35,11 +36,24 @@ import java.time.LocalDateTime;
  *         只算成功会让「反复失败重试」成为绕开配额的路子。</li>
  * </ol>
  *
- * <h3>一个必须写在代码里的陷阱</h3>
- * <p>{@code updateById} 默认策略是 {@code NOT_NULL}，即<b>跳过 null 字段</b>。
- * 而本表的「不限」就是 null——所以用它更新会导致<b>「把日上限清成不限」静默失败</b>
- * （界面上显示清了，库里还是旧上限）。因此需要在更新时把 null 用显式
- * {@code set(...)} 写进去，见 {@link #save}。</p>
+ * <h3>三个必须写在代码里的陷阱（都在生产上真发生过，各自有回归测试钉住）</h3>
+ * <ol>
+ *     <li><b>{@code updateById} 会跳过 null，而本表的「不限」就是 null</b>：用它更新会导致
+ *         「把日上限清成不限」<b>静默失败</b>（界面上显示清了，库里还是旧上限）。因此清成 null
+ *         必须用显式 {@code set(...)} 写进去；反过来，<b>非空的新上限也必须显式带上</b>
+ *         （{@code entity.setDailyLimit/setMonthlyLimit}），否则「改额度」同样是一次静默失败
+ *         （入库 9 却还是 5）。见 {@link #save}。</li>
+ *     <li><b>唯一键是 {@code user_id}，不含 {@code del_flag}</b>：删除是逻辑删除（{@code @TableLogic}），
+ *         会留下一行 {@code del_flag='1'} 的墓碑。此后 {@code save()} 查不到它、INSERT 又撞唯一键，
+ *         表现为「<b>删掉配额后这个人再也配不上</b>」（HTTP 409「数据库中已存在该记录」）。
+ *         修法是<b>复活那一行</b>，不是插新行。见 {@link AigUserQuotaMapper#selectAnyByUser}。</li>
+ *     <li><b>分页查询不能把 {@code selectVoPage(...)} 内联进 {@code PageResult.build(...)}</b>：
+ *         {@code PageResult} 只有 {@code build(Collection)}，而 {@code selectVoPage} 的返回类型是自由
+ *         类型变量，内联传参会让编译器按 {@code Collection} 反推 → 运行期
+ *         {@code ClassCastException: Page cannot be cast to Collection}（空结果时表现为
+ *         「cannot find converter from AigUserQuota to AigUserQuotaVo」）。
+ *         必须先赋给 {@code Page<AigUserQuotaVo>} 局部变量再用两参 {@code build}。见 {@link #queryPage}。</li>
+ * </ol>
  *
  * @author ai-gov
  */
@@ -67,7 +81,14 @@ public class AigUserQuotaServiceImpl implements IAigUserQuotaService {
             .like(StringUtils.isNotBlank(bo.getUserName()), AigUserQuota::getUserName, bo.getUserName())
             .eq(StringUtils.isNotBlank(bo.getStatus()), AigUserQuota::getStatus, bo.getStatus())
             .orderByDesc(AigUserQuota::getUpdateTime);
-        return PageResult.build(quotaMapper.selectVoPage(pageQuery.build(), wrapper));
+        // 必须先落到带类型的局部变量，再交给 PageResult.build(List, total)。
+        // 不能写成 PageResult.build(quotaMapper.selectVoPage(...))：PageResult 只有
+        // build(Collection)/build(Collection, long)，没有 build(IPage)；而
+        // BaseMapperPlus.selectVoPage 的返回类型是自由类型变量 <P extends IPage<V>>，
+        // 内联传参时编译器只能用 build(Collection) 去反推 P，于是字节码把返回的 Page
+        // 强转成 Collection —— 运行期 ClassCastException（空结果时表现为找不到转换器）。
+        Page<AigUserQuotaVo> voPage = quotaMapper.selectVoPage(pageQuery.build(), wrapper);
+        return PageResult.build(voPage.getRecords(), voPage.getTotal());
     }
 
     @Override
@@ -101,6 +122,19 @@ public class AigUserQuotaServiceImpl implements IAigUserQuotaService {
         AigUserQuota existing = selectByUser(bo.getUserId());
         String status = StringUtils.isBlank(bo.getStatus()) ? STATUS_NORMAL : bo.getStatus();
         if (existing == null) {
+            // 「删了再配」必须复活那一行，不能 INSERT：唯一键是 user_id（不含 del_flag），
+            // 逻辑删除会留下一行 del_flag='1' 的墓碑，selectByUser 看不到它、INSERT 又会撞
+            // uk_aig_user_quota_user —— 表现为「删掉配额后这个人再也配不上」（409）。
+            // 一人一行是这张表的语义，所以墓碑就是那一行本身。
+            AigUserQuota deleted = quotaMapper.selectAnyByUser(bo.getUserId());
+            if (deleted != null) {
+                quotaMapper.restoreById(deleted.getQuotaId());
+                log.info("人均配额复活（此前已删除，唯一键是 user_id 而非 user_id+del_flag，插新行会撞键）, "
+                    + "quotaId={}, userId={}", deleted.getQuotaId(), bo.getUserId());
+                existing = deleted;
+            }
+        }
+        if (existing == null) {
             AigUserQuota entity = new AigUserQuota();
             entity.setUserId(bo.getUserId());
             entity.setUserName(StringUtils.substring(bo.getUserName(), 0, 64));
@@ -114,12 +148,17 @@ public class AigUserQuotaServiceImpl implements IAigUserQuotaService {
             return entity.getQuotaId();
         }
 
-        // 非空列走实体更新（顺带让 update_by/update_time 自动填充）
+        // 非空列走实体更新（顺带让 update_by/update_time 自动填充）。
+        // 上下限必须一起带上：updateById 的 NOT_NULL 策略会跳过 null，
+        // 所以「非空的新上限」只能靠这里写进去——漏了它，改额度就是一次静默失败
+        // （界面上填了 9，库里还是 5）；null（=不限）由下面的显式 set 负责。
         AigUserQuota entity = new AigUserQuota();
         entity.setQuotaId(existing.getQuotaId());
         entity.setUserName(StringUtils.substring(bo.getUserName(), 0, 64));
         entity.setStatus(status);
         entity.setRemark(StringUtils.substring(bo.getRemark(), 0, 500));
+        entity.setDailyLimit(bo.getDailyLimit());
+        entity.setMonthlyLimit(bo.getMonthlyLimit());
         quotaMapper.updateById(entity);
         // null 是「不限」的表示，而 updateById 会跳过 null：需要清成不限时必须显式 set 写进去，
         // 否则界面上「清空」了、库里还是旧上限（静默失败）

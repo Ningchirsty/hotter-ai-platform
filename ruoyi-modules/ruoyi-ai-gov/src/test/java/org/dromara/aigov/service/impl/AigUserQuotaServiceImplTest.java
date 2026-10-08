@@ -2,21 +2,27 @@ package org.dromara.aigov.service.impl;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.dromara.aigov.domain.AigUserQuota;
 import org.dromara.aigov.domain.bo.AigUserQuotaBo;
 import org.dromara.aigov.domain.vo.AigUserQuotaUsageVo;
+import org.dromara.aigov.domain.vo.AigUserQuotaVo;
 import org.dromara.aigov.mapper.AigInvocationAuditMapper;
 import org.dromara.aigov.mapper.AigUserQuotaMapper;
+import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.core.exception.ServiceException;
+import org.dromara.common.mybatis.core.page.PageQuery;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -276,6 +282,88 @@ class AigUserQuotaServiceImplTest {
 
         verify(auditMapper).countByCallerSince(USER_ID, expectedDay);
         verify(auditMapper).countByCallerSince(USER_ID, expectedMonth);
+    }
+
+    // ------------------------------------------------------------------
+    // 以下三条是生产上真实发生过的缺陷的回归测试（R43）。
+    // 每条都先在真库/真 HTTP 上复现过，再钉在这里——它们都不是"理论风险"。
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("★分页清单能返回：内联 selectVoPage 会 ClassCastException（Page 不能转 Collection）")
+    void queryPageReturnsRows() {
+        AigUserQuotaVo vo = new AigUserQuotaVo();
+        vo.setQuotaId(9001L);
+        vo.setUserId(USER_ID);
+        Page<AigUserQuotaVo> page = new Page<>(1, 10, 1L);
+        page.setRecords(List.of(vo));
+        // 显式类型见证：selectVoPage 的返回类型是自由类型变量，不写死会让同样的推断问题
+        // 在测试里也复现（那正是这个方法要钉住的东西）
+        when(quotaMapper.<Page<AigUserQuotaVo>>selectVoPage(any(), any())).thenReturn(page);
+
+        PageResult<AigUserQuotaVo> result = service.queryPage(new AigUserQuotaBo(), new PageQuery(10, 1));
+
+        assertEquals(1L, result.getTotal());
+        assertEquals(1, result.getRows().size());
+        assertEquals(9001L, result.getRows().iterator().next().getQuotaId());
+    }
+
+    @Test
+    @DisplayName("★删除后重新配置：复活同一行，绝不 INSERT（唯一键是 user_id，插新行会撞键 → 409）")
+    void saveRevivesLogicallyDeletedRow() {
+        when(quotaMapper.selectOne(any())).thenReturn(null);
+        AigUserQuota tombstone = quota(10, 200, "0");
+        tombstone.setDelFlag("1");
+        when(quotaMapper.selectAnyByUser(USER_ID)).thenReturn(tombstone);
+
+        AigUserQuotaBo bo = new AigUserQuotaBo();
+        bo.setUserId(USER_ID);
+        bo.setUserName("zhangsan");
+        bo.setDailyLimit(3);
+        bo.setMonthlyLimit(30);
+
+        Long id = service.save(bo);
+
+        assertEquals(9001L, id, "一人一行：复活墓碑那一行，而不是插新行");
+        verify(quotaMapper).restoreById(9001L);
+        verify(quotaMapper, never()).insert(any(AigUserQuota.class));
+        verify(quotaMapper).updateById(any(AigUserQuota.class));
+    }
+
+    @Test
+    @DisplayName("★没有墓碑时才新增（不能因为查过墓碑就每次都走复活）")
+    void saveInsertsWhenNoRowAtAll() {
+        when(quotaMapper.selectOne(any())).thenReturn(null);
+        when(quotaMapper.selectAnyByUser(USER_ID)).thenReturn(null);
+
+        AigUserQuotaBo bo = new AigUserQuotaBo();
+        bo.setUserId(USER_ID);
+        bo.setDailyLimit(3);
+
+        service.save(bo);
+
+        verify(quotaMapper).insert(any(AigUserQuota.class));
+        verify(quotaMapper, never()).restoreById(any());
+    }
+
+    @Test
+    @DisplayName("★改额度：非空的新上限必须写进实体（只清 null 会漏掉新值——界面填 9、库里还是 5）")
+    void saveWritesNonNullLimits() {
+        when(quotaMapper.selectOne(any())).thenReturn(quota(5, 50, "0"));
+
+        AigUserQuotaBo bo = new AigUserQuotaBo();
+        bo.setUserId(USER_ID);
+        bo.setDailyLimit(9);
+        bo.setMonthlyLimit(90);
+
+        service.save(bo);
+
+        ArgumentCaptor<AigUserQuota> captor = ArgumentCaptor.forClass(AigUserQuota.class);
+        verify(quotaMapper).updateById(captor.capture());
+        assertEquals(9, captor.getValue().getDailyLimit(), "日上限必须带上，否则改额度静默失效");
+        assertEquals(90, captor.getValue().getMonthlyLimit(), "月上限必须带上");
+        // 两个都非空时不需要额外的显式 set（那是给 null=不限 用的）
+        verify(quotaMapper, never()).update(eq(null), any());
     }
 
 }
