@@ -96,7 +96,8 @@ public class AigTaskCreateBo implements Serializable {
     private String negativeConstraints;
 
     /**
-     * 预算上限（算不出留空，不要填 0）
+     * 预算上限（<b>每个任务项</b>的预算；单位＝<b>美元 USD</b>，见 {@code AigConstants#COST_CURRENCY}；
+     * 算不出留空，不要填 0——0 的含义是"一分钱都不许花"，不是"不知道"）
      */
     @DecimalMin(value = "0", message = "预算不能为负数")
     private BigDecimal budgetAmount;

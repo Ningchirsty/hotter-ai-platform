@@ -234,6 +234,14 @@
             show-icon
             :title="'内容 SHA-256：' + detail.snapshot.snapshotHash + '（执行与审核只引用快照，避免配置变更导致结果不可复现）'"
           />
+          <!-- 预算是「每个任务项」的，并且随快照冻结：判定要用的是**当时承诺的那个数**，
+               而不是今天改过之后的配置。金额单位＝美元（USD，全平台唯一口径）。 -->
+          <el-descriptions :column="1" border class="detail-alert">
+            <el-descriptions-item label="预算上限（USD）">
+              <span v-if="detail.snapshot.budgetAmount != null">{{ detail.snapshot.budgetAmount }}</span>
+              <span v-else class="cost-undeclared">未声明（不设预算约束：路由不会因预算排除候选）</span>
+            </el-descriptions-item>
+          </el-descriptions>
           <pre class="json-block">{{ detail.snapshot.snapshotJson }}</pre>
         </template>
         <el-empty v-else description="无快照" :image-size="60" />

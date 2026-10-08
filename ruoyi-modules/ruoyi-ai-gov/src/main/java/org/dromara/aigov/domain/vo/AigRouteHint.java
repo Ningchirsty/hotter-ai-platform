@@ -32,14 +32,16 @@ public class AigRouteHint implements Serializable {
     private String scenarioCode;
 
     /**
-     * 本次调用可接受的最高成本（单次）。
+     * 本次调用可接受的最高成本（单次；单位＝<b>美元 USD</b>，全平台唯一口径，见
+     * {@link org.dromara.aigov.constant.AigConstants#COST_CURRENCY}）。
      *
      * <p>与模型治理里的 {@code cost_limit_amount}（该模型的单次成本上限）比对：
      * 声明值高于本次预算的候选会被排除。<b>为空表示调用方没有预算约束</b>，
      * 此时不做任何过滤、也不产生提示——把「没提要求」当成「预算为零」会把所有候选排除干净。</p>
      *
-     * <p>金额单位由部署方统一（本平台按人民币元），此处不做换算：混用币种而不换算
-     * 会让比较结果看起来正常却完全错误，宁可让调用方统一口径。</p>
+     * <p><b>不做换算</b>：全平台只有一个币种（美元），两侧天然可比；一旦出现按别的币种计价的
+     * 供应商，要在<b>调用器</b>里换算成美元再回填，而不是让原币金额到这里「看起来也能比」——
+     * 混用币种而不换算会让比较结果看起来正常却完全错误。</p>
      */
     private BigDecimal maxCost;
 

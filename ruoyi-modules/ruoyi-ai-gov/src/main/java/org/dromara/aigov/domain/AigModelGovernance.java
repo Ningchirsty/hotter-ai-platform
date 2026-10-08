@@ -85,11 +85,18 @@ public class AigModelGovernance extends BaseEntity implements Serializable {
 
     /**
      * 成本与配额：单次/单项目/单日预算与限流规则（<b>人读的描述</b>，不参与判定）
+     *
+     * <p><b>「单项目」只存在于这段话里，不是机器口径</b>：机器可判定的金额维度只有两个——
+     * <b>单次</b>（{@link #costLimitAmount}，调用前比对）与<b>每个任务项</b>
+     * （任务快照的 {@code budget_amount}，建任务时冻结）。刻意<b>没有</b>项目级累计预算：
+     * 累计要按实际费用归集，而费用回执至今多数为空（"未知而非免费"），
+     * 拿它做累计只会得到一本对不上的账。要按项目看花销，请用调用审计按项目/时间筛选后再汇总。</p>
      */
     private String costLimit;
 
     /**
-     * 单次成本上限（<b>机器可判定的数值</b>）
+     * 单次成本上限（<b>机器可判定的数值</b>；单位＝<b>美元 USD</b>，全平台唯一金额口径，见
+     * {@link org.dromara.aigov.constant.AigConstants#COST_CURRENCY}）
      *
      * <p><b>为什么另开一列而不把 {@link #costLimit} 改成数字</b>：{@code cost_limit} 从上线起
      * 就是「单次/单项目/单日预算与限流规则」这类人读描述，已有数据是文字。

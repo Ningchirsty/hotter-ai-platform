@@ -163,10 +163,11 @@ public class AigInvocationAudit implements Serializable {
     private Integer latencyMs;
 
     /**
-     * 本次成本
-     */
-    /**
-     * 成本（由调用器回填；多数外部供应商不回执费用，为空表示未知而非免费）
+     * 本次成本（单位＝<b>美元 USD</b>，全平台唯一金额口径，见
+     * {@link org.dromara.aigov.constant.AigConstants#COST_CURRENCY}）
+     *
+     * <p>由调用器回填；多数外部供应商不回执费用，<b>为空表示未知而非免费</b>——
+     * 「没有回执」与「这次没花钱」是两件事，把前者当 0 会把账算少。</p>
      */
     private BigDecimal cost;
 

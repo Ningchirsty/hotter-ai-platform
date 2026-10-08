@@ -152,7 +152,9 @@
         <el-table-column label="耗时" align="center" width="100">
           <template #default="scope">{{ scope.row.latencyMs ?? '-' }} ms</template>
         </el-table-column>
-        <el-table-column label="成本" align="center" width="110">
+        <!-- 金额单位＝美元（USD）：全平台唯一口径（后端 AigConstants.COST_CURRENCY），
+             所以标签上写明币种，避免读的人按别的币种理解 -->
+        <el-table-column label="成本（USD）" align="center" width="130">
           <template #default="scope">{{ scope.row.cost ?? '-' }}</template>
         </el-table-column>
         <!-- 用量回执：为空表示该次未拿到用量（图像模型普遍不回执 token），与「用量为零」是两件事 -->

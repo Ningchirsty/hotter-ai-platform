@@ -71,7 +71,13 @@ public class AigTaskSnapshot implements Serializable {
     private String allowExternal;
 
     /**
-     * 预算上限（算不出留空）
+     * 预算上限（<b>每个任务项</b>的预算，建任务时随快照冻结；单位＝<b>美元 USD</b>，见
+     * {@code AigConstants#COST_CURRENCY}；算不出留空，禁止填 0 冒充）
+     *
+     * <p><b>为什么预算的维度是「每个任务项」</b>：预算是拿来做<b>调用前判定</b>的
+     * （本次预算 vs 该模型的单次成本上限），而判定必须发生在调用之前、且要有一个确定的数字；
+     * 一个任务项一条预算，正是这个数字的天然载体。项目级/日级累计预算刻意不做——
+     * 那要按实际费用归集，而费用回执多数为空（"未知而非免费"），做了就是一本对不上的假账。</p>
      */
     private BigDecimal budgetAmount;
 

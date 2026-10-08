@@ -88,7 +88,8 @@ public class AigInvokeBo implements Serializable {
     private String inputSnapshotRef;
 
     /**
-     * 本次调用可接受的最高成本（单次，可选；单位由部署方统一，本平台按元）
+     * 本次调用可接受的最高成本（单次，可选；单位＝<b>美元 USD</b>——全平台唯一金额口径，见
+     * {@link org.dromara.aigov.constant.AigConstants#COST_CURRENCY}）
      *
      * <p>与模型治理的 {@code cost_limit_amount} 比对：声明上限高于本次预算的候选会被排除
      * （设计 §4.4 第 3 步「过滤…超过预算…的 Provider」）。

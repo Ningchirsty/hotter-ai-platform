@@ -41,7 +41,10 @@ public class AigTaskExecuteBo implements Serializable {
     private Map<String, Object> payload;
 
     /**
-     * 本次预算（可空；为空则用快照里的 budget_amount）
+     * 本次预算（可空；为空则用快照里的 {@code budget_amount}）。
+     *
+     * <p>单位＝<b>美元 USD</b>（全平台唯一金额口径，见 {@code AigConstants#COST_CURRENCY}）；
+     * 它就是这个<b>任务项</b>的预算——不是项目级累计预算，也不会跨任务项累计。</p>
      */
     private BigDecimal maxCost;
 

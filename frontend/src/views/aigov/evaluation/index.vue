@@ -25,7 +25,7 @@
         <el-table-column label="名称" align="center" prop="caseName" width="200" show-overflow-tooltip />
         <el-table-column label="类型" align="center" prop="caseType" width="110" />
         <el-table-column label="输入快照引用" align="center" prop="inputSnapshotRef" show-overflow-tooltip />
-        <el-table-column label="成本范围" align="center" width="150">
+        <el-table-column label="成本范围（USD）" align="center" width="150">
           <template #default="scope">{{ scope.row.costMin ?? '-' }} ~ {{ scope.row.costMax ?? '-' }}</template>
         </el-table-column>
         <el-table-column label="数据等级" align="center" prop="dataLevel" width="110" />
@@ -91,7 +91,7 @@
             <el-tag :type="reviewTagType(scope.row.reviewResult)">{{ scope.row.reviewResult || '不需要' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="成本" align="center" prop="costAmount" width="100" />
+        <el-table-column label="成本（USD）" align="center" prop="costAmount" width="120" />
         <el-table-column label="耗时(ms)" align="center" prop="latencyMs" width="110" />
         <el-table-column label="备注" align="center" prop="remark" show-overflow-tooltip />
         <el-table-column label="操作" align="center" width="110" fixed="right">
@@ -119,7 +119,7 @@
         <el-descriptions-item label="输入快照引用">{{ currentCase?.inputSnapshotRef }}</el-descriptions-item>
         <el-descriptions-item label="机器判据">{{ currentCase?.expectedJson || '（无：由人工 Rubric 判定）' }}</el-descriptions-item>
         <el-descriptions-item label="人工 Rubric">{{ currentCase?.rubricJson || '（无）' }}</el-descriptions-item>
-        <el-descriptions-item label="成本范围">
+        <el-descriptions-item label="成本范围（USD）">
           {{ currentCase?.costMin ?? '-' }} ~ {{ currentCase?.costMax ?? '-' }}
         </el-descriptions-item>
       </el-descriptions>
@@ -159,7 +159,7 @@
         <el-form-item label="人工Rubric" prop="rubricJson">
           <el-input v-model="defineForm.rubricJson" type="textarea" :rows="3" placeholder="填了就意味着这条用例需要人工复核" />
         </el-form-item>
-        <el-form-item label="成本范围" prop="costMin">
+        <el-form-item label="成本范围（USD）" prop="costMin">
           <el-input v-model.number="defineForm.costMin" placeholder="下限" style="width: 140px" />
           <span class="mx-2">~</span>
           <el-input v-model.number="defineForm.costMax" placeholder="上限" style="width: 140px" />

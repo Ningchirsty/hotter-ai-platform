@@ -34,7 +34,7 @@ SET @ddl := (
       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'aig_model_governance'
         AND COLUMN_NAME = 'cost_limit_amount'),
     'SELECT ''aig_model_governance.cost_limit_amount already exists'' AS note',
-    'ALTER TABLE aig_model_governance ADD COLUMN cost_limit_amount DECIMAL(18,8) NULL COMMENT ''单次成本上限（机器可判定）：路由在调用前与本次预算比对；NULL=未声明（默认放行并提示，aigov.route.require-model-cost=true 时严格排除）'' AFTER cost_limit')
+    'ALTER TABLE aig_model_governance ADD COLUMN cost_limit_amount DECIMAL(18,8) NULL COMMENT ''单次成本上限（机器可判定）：路由在调用前与本次预算比对；单位=美元USD；NULL=未声明（默认放行并提示，aigov.route.require-model-cost=true 时严格排除）'' AFTER cost_limit')
 );
 PREPARE hotter_ddl FROM @ddl; EXECUTE hotter_ddl; DEALLOCATE PREPARE hotter_ddl;
 
