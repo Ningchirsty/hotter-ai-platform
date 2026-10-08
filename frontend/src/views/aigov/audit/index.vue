@@ -170,6 +170,12 @@
             <span v-if="scope.row.errorSummary" class="error-summary">{{ scope.row.errorSummary }}</span>
           </template>
         </el-table-column>
+        <!-- 错误分类：机器可读的那一份（errorSummary 是给人看的文本）。
+             灰度的「无严重错误」判据按它统计，明细里据此一眼看出这次失败严不严重；
+             为空=成功或旧数据，不写成空串 -->
+        <el-table-column label="错误分类" align="center" width="150" show-overflow-tooltip>
+          <template #default="scope">{{ scope.row.errorClass ?? '-' }}</template>
+        </el-table-column>
         <el-table-column label="调用时间" align="center" width="180">
           <template #default="scope">{{ parseTime(scope.row.operateTime) }}</template>
         </el-table-column>

@@ -127,6 +127,27 @@ class AigAuditRecorderColumnsTest {
     }
 
     @Test
+    @DisplayName("错误分类列要落库：灰度的「无严重错误」判据只能靠它，不能靠解析 policy_hit 文本")
+    void mapsErrorClass() {
+        AigAuditContext ctx = context();
+        ctx.setResult("1");
+        ctx.setErrorClass("AUTH_FAILED");
+
+        recorder.record(ctx);
+
+        assertEquals("AUTH_FAILED", capture().getErrorClass(),
+            "分类必须落在独立列上：policy_hit 是 varchar(255) 且该片段最后追加，会被截掉");
+    }
+
+    @Test
+    @DisplayName("成功调用不写错误分类：空表示「没有错误」，不是「不知道」")
+    void absentErrorClassStaysNull() {
+        recorder.record(context());
+
+        assertNull(capture().getErrorClass());
+    }
+
+    @Test
     @DisplayName("超长 usage_json 必须截断到列宽，否则整条审计插入失败且失败被静默吞掉")
     void truncatesOversizedUsageJson() {
         AigAuditContext ctx = context();

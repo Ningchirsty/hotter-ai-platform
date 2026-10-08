@@ -37,6 +37,7 @@ class AigInvocationAuditVoMappingTest {
         AigInvocationAudit entity = new AigInvocationAudit();
         entity.setAgentVersionId(4242L);
         entity.setModelVersion("v1");
+        entity.setErrorClass("AUTH_FAILED");
 
         AigInvocationAuditVo vo = mapper.convert(entity);
 
@@ -44,13 +45,18 @@ class AigInvocationAuditVoMappingTest {
             "实体有值、VO 没值，说明字段没被映射（名字对不上时 MapStruct 静默跳过，不报错）");
         assertEquals("v1", vo.getModelVersion(),
             "模型版本列不受影响：model_version（模型）与 agent_version_id（Agent）是两个维度");
+        assertEquals("AUTH_FAILED", vo.getErrorClass(),
+            "错误分类同样要映射进明细：灰度依据它判「有无严重错误」，人也要能一眼看出严不严重");
     }
 
     @Test
     @DisplayName("不经任务的调用没有 Agent 版本：明细里留空，不伪造")
     void absentAgentVersionStaysNull() {
-        assertNull(mapper.convert(new AigInvocationAudit()).getAgentVersionId(),
+        AigInvocationAuditVo vo = mapper.convert(new AigInvocationAudit());
+
+        assertNull(vo.getAgentVersionId(),
             "空值表示「本次未绑定某个 Agent 版本」；伪造一个会让按版本统计把无归属调用算到别人头上");
+        assertNull(vo.getErrorClass(), "成功调用没有错误分类，留空表示「没有错误」而不是「不知道」");
     }
 
 }

@@ -20,6 +20,7 @@ import org.dromara.aigov.agent.mapper.AigSkillMapper;
 import org.dromara.aigov.agent.mapper.AigSkillVersionMapper;
 import org.dromara.aigov.agent.service.IAigAgentRegistryQueryService;
 import org.dromara.aigov.agent.service.IAigAgentRegistryService;
+import org.dromara.aigov.agent.service.IAigCanaryEvidenceService;
 import org.dromara.aigov.agent.service.IAigEvaluationService;
 import org.dromara.aigov.agent.service.IAigPackageService;
 import org.dromara.aigov.agent.service.impl.AigAgentRegistryQueryServiceImpl;
@@ -93,6 +94,7 @@ class AigWp3WiringAndRoutesTest {
     private IAigAgentRegistryQueryService queryService;
     private IAigAgentRegistryService registryService;
     private IAigEvaluationService evaluationService;
+    private IAigCanaryEvidenceService canaryEvidenceService;
     private IAigPackageService packageService;
 
     @BeforeEach
@@ -100,6 +102,7 @@ class AigWp3WiringAndRoutesTest {
         queryService = mock(IAigAgentRegistryQueryService.class);
         registryService = mock(IAigAgentRegistryService.class);
         evaluationService = mock(IAigEvaluationService.class);
+        canaryEvidenceService = mock(IAigCanaryEvidenceService.class);
         packageService = mock(IAigPackageService.class);
     }
 
@@ -111,6 +114,7 @@ class AigWp3WiringAndRoutesTest {
             assertThat(context).hasSingleBean(IAigAgentRegistryService.class);
             assertThat(context).hasSingleBean(IAigAgentRegistryQueryService.class);
             assertThat(context).hasSingleBean(IAigEvaluationService.class);
+            assertThat(context).hasSingleBean(IAigCanaryEvidenceService.class);
             assertThat(context).hasSingleBean(IAigPackageService.class);
             assertThat(context).hasSingleBean(AigPackageManifestValidator.class);
             assertThat(context).hasSingleBean(AigExpectedRuleChecker.class);
@@ -146,7 +150,7 @@ class AigWp3WiringAndRoutesTest {
         MockMvc mockMvc = MockMvcBuilders
             .standaloneSetup(
                 new AigAgentRegistryController(registryService, queryService, packageService),
-                new AigEvaluationController(evaluationService))
+                new AigEvaluationController(evaluationService, canaryEvidenceService))
             .build();
 
         // 字面路径优先：/package/list 不能被 /package/{packageId} 抢走
@@ -173,6 +177,14 @@ class AigWp3WiringAndRoutesTest {
                 .param("targetVersionId", "1"))
             .andExpect(status().isOk());
         verify(evaluationService).declaredGoldenCases(eq("AGENT_VERSION"), eq(1L));
+
+        // 灰度达标证据（CANDIDATE→STABLE 的判据来源）：路由与参数绑定都要通，
+        // 页面靠它回答「还差多少」（实测数字 + 阈值 + 差在哪）
+        mockMvc.perform(get("/aigov/evaluation/canary-evidence")
+                .param("targetType", "AGENT_VERSION")
+                .param("targetVersionId", "1"))
+            .andExpect(status().isOk());
+        verify(canaryEvidenceService).canaryEvidence(eq("AGENT_VERSION"), eq(1L));
 
         // 写接口的请求体绑定也走通（响应里是服务给的枚举名）
         mockMvc.perform(post("/aigov/agent/release/advance")
@@ -333,10 +345,11 @@ class AigWp3WiringAndRoutesTest {
                                                  AigAgentBindingMapper bindingMapper,
                                                  AigPackageMapper packageMapper,
                                                  AigPackageManifestValidator manifestValidator,
-                                                 IAigEvaluationService evaluationService) {
+                                                 IAigEvaluationService evaluationService,
+                                                 IAigCanaryEvidenceService canaryEvidenceService) {
             return new AigAgentRegistryServiceImpl(agentVersionMapper, skillVersionMapper,
                 packageVersionMapper, releaseEventMapper, bindingMapper, packageMapper,
-                manifestValidator, evaluationService);
+                manifestValidator, evaluationService, canaryEvidenceService);
         }
 
         @Bean
@@ -349,6 +362,14 @@ class AigWp3WiringAndRoutesTest {
                                                            AigAgentBindingMapper bindingMapper) {
             return new AigAgentRegistryQueryServiceImpl(agentMapper, agentVersionMapper, skillMapper,
                 skillVersionMapper, packageMapper, packageVersionMapper, bindingMapper);
+        }
+
+        @Bean
+        IAigCanaryEvidenceService canaryEvidenceService() {
+            // 装配测试只验「Bean 都在、路径都通」，灰度判据本身在
+            // AigCanaryEvidenceTest / AigCanaryEvidenceServiceTest 里测；这里用替身，
+            // 免得为了起上下文去连审计表
+            return mock(IAigCanaryEvidenceService.class);
         }
 
         @Bean
@@ -389,8 +410,9 @@ class AigWp3WiringAndRoutesTest {
         }
 
         @Bean
-        AigEvaluationController evaluationController(IAigEvaluationService evaluationService) {
-            return new AigEvaluationController(evaluationService);
+        AigEvaluationController evaluationController(IAigEvaluationService evaluationService,
+                                                     IAigCanaryEvidenceService canaryEvidenceService) {
+            return new AigEvaluationController(evaluationService, canaryEvidenceService);
         }
     }
 

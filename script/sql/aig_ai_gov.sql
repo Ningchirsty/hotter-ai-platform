@@ -180,6 +180,7 @@ create table aig_invocation_audit (
     output_ref       varchar(500)    default null               comment '输出引用（对象键/业务ID，不存完整输出副本）',
     result           char(1)         default '0'                comment '结果（0成功 1失败）',
     error_summary    varchar(500)    default null               comment '错误摘要',
+    error_class      varchar(32)     default null               comment '错误分类编码（AigErrorClassEnum：POLICY_DENIED/AUTH_FAILED/TIMEOUT…），成功时为空；灰度的「无严重错误」按它统计',
     latency_ms       int(11)         default null               comment '耗时（毫秒）',
     cost             decimal(18,8)   default null               comment '本次成本（供应商不回执时为空=未知，不等于免费）',
     usage_json       varchar(1000)   default null               comment '模型用量回执（JSON，如 {"tokensUsed":123}）；为空表示未拿到用量',

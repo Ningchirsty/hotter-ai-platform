@@ -151,6 +151,14 @@ public class AigInvocationAuditVo implements Serializable {
     private String errorSummary;
 
     /**
+     * 错误分类编码（{@code AigErrorClassEnum}），成功时为空
+     * <p>与 {@link #errorSummary} 的分工：那是给人看的文本，这是机器可读的分类。
+     * 灰度的「无严重错误」判据按它统计——若只在明细里显示文本，
+     * 人就无法一眼看出「这次失败算不算严重」。</p>
+     */
+    private String errorClass;
+
+    /**
      * 耗时（毫秒）
      */
     private Integer latencyMs;

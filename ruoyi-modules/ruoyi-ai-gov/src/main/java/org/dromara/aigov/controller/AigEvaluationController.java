@@ -11,7 +11,9 @@ import org.dromara.aigov.agent.domain.bo.AigEvaluationReviewBo;
 import org.dromara.aigov.agent.domain.bo.AigEvaluationRunBo;
 import org.dromara.aigov.agent.domain.vo.AigEvaluationCaseVo;
 import org.dromara.aigov.agent.domain.vo.AigEvaluationRunVo;
+import org.dromara.aigov.agent.evaluation.AigCanaryEvidence;
 import org.dromara.aigov.agent.evaluation.AigGoldenCaseEvidence;
+import org.dromara.aigov.agent.service.IAigCanaryEvidenceService;
 import org.dromara.aigov.agent.service.IAigEvaluationService;
 import org.dromara.aigov.constant.AigConstants;
 import org.dromara.common.core.domain.R;
@@ -47,6 +49,8 @@ import java.util.List;
 public class AigEvaluationController {
 
     private final IAigEvaluationService evaluationService;
+
+    private final IAigCanaryEvidenceService canaryEvidenceService;
 
     /**
      * 列出黄金用例（裁剪 VO）。
@@ -154,6 +158,25 @@ public class AigEvaluationController {
         @NotBlank(message = "对象类型不能为空") @RequestParam String targetType,
         @NotNull(message = "对象版本ID不能为空") @RequestParam Long targetVersionId) {
         return R.ok(evaluationService.goldenCaseEvidence(targetType, targetVersionId));
+    }
+
+    /**
+     * 取「灰度是否达标」的证据（发布门槛 CANARY 的判据来源，CANDIDATE→STABLE）。
+     *
+     * <p>与 {@code /evidence}（黄金用例）并列：两者都是发布门槛的证据。
+     * 与它不同的是，这里的证据来自<b>逐次调用审计</b>按 Agent 版本统计的真实流量，
+     * 窗口起点是账本里该版本「进入 CANDIDATE」的那一刻。</p>
+     *
+     * @param targetType      对象类型
+     * @param targetVersionId 对象版本ID
+     * @return 证据结论（含实测数字、阈值与不满足原因）
+     */
+    @SaCheckPermission(AigConstants.PERM_EVALUATION_QUERY)
+    @GetMapping("/canary-evidence")
+    public R<AigCanaryEvidence> canaryEvidence(
+        @NotBlank(message = "对象类型不能为空") @RequestParam String targetType,
+        @NotNull(message = "对象版本ID不能为空") @RequestParam Long targetVersionId) {
+        return R.ok(canaryEvidenceService.canaryEvidence(targetType, targetVersionId));
     }
 
     /**

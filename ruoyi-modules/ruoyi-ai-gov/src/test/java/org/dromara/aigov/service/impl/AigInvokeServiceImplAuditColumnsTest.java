@@ -8,6 +8,8 @@ import org.dromara.aigov.domain.vo.AigRouteDecision;
 import org.dromara.aigov.domain.vo.AigRouteHint;
 import org.dromara.aigov.enums.AigDataLevelEnum;
 import org.dromara.aigov.enums.AigDeploymentTypeEnum;
+import org.dromara.aigov.enums.AigErrorClassEnum;
+import org.dromara.aigov.enums.AigInvokeResultEnum;
 import org.dromara.aigov.enums.AigRouteDecisionEnum;
 import org.dromara.aigov.helper.AigAuditContext;
 import org.dromara.aigov.helper.AigAuditRecorder;
@@ -164,6 +166,66 @@ class AigInvokeServiceImplAuditColumnsTest {
         return captor.getValue();
     }
 
+    /**
+     * 驱动一次「策略拒绝」的调用（不调用模型，直接返回 DENIED）。
+     *
+     * @return 审计上下文
+     */
+    private AigAuditContext invokeDenied() {
+        AigRouteDecision decision = new AigRouteDecision();
+        decision.setCapabilityCode(CAPABILITY);
+        decision.setDecision(AigRouteDecisionEnum.DENIED.getCode());
+        decision.setReason("数据等级 STRICT 不允许外发");
+        decision.setAuditLevel("SUMMARY");
+        when(routeService.decide(any(), any(), nullable(AigRouteHint.class))).thenReturn(decision);
+
+        AigInvokeServiceImpl service = new AigInvokeServiceImpl(routeService, auditRecorder,
+            List.of(new StubInvoker("InvokerA", ModelInvokeResult.success("{}", 5L))),
+            modelViewMapper, retryProperties, mock(IAigUserQuotaService.class));
+        AigInvokeBo bo = new AigInvokeBo();
+        bo.setCapabilityCode(CAPABILITY);
+        bo.setDataLevel(AigDataLevelEnum.INTERNAL.getCode());
+        service.invoke(bo);
+
+        ArgumentCaptor<AigAuditContext> captor = ArgumentCaptor.forClass(AigAuditContext.class);
+        verify(auditRecorder).record(captor.capture());
+        return captor.getValue();
+    }
+
+    @Test
+    @DisplayName("★ 最终失败要落错误分类：这是灰度「无严重错误」判据的唯一来源")
+    void failureRecordsErrorClass() {
+        StubInvoker only = new StubInvoker("InvokerA",
+            ModelInvokeResult.failure(null, 401, "unauthorized", 5L));
+
+        AigAuditContext audit = invoke(List.of(only), null, false);
+
+        assertEquals(AigErrorClassEnum.AUTH_FAILED.getCode(), audit.getErrorClass(),
+            "401 是鉴权失败；不落分类的话，「有没有严重错误」就只能去解析中文文案");
+        assertEquals(AigInvokeResultEnum.FAILED.getCode(), audit.getResult());
+    }
+
+    @Test
+    @DisplayName("★ 策略拒绝要落 POLICY_DENIED：这是最该被看见的一类严重错误")
+    void deniedDecisionRecordsPolicyDeniedClass() {
+        AigAuditContext audit = invokeDenied();
+
+        assertEquals(AigErrorClassEnum.POLICY_DENIED.getCode(), audit.getErrorClass(),
+            "策略拒绝此前只留在中文 reason 里；分类不落库，灰度判据就看不见它");
+        assertEquals(AigInvokeResultEnum.FAILED.getCode(), audit.getResult());
+    }
+
+    @Test
+    @DisplayName("成功调用不写错误分类：空表示「没有错误」，不是「不知道」")
+    void successLeavesErrorClassNull() {
+        StubInvoker only = new StubInvoker("InvokerA", ModelInvokeResult.success("{\"image\":\"x\"}", 5L));
+
+        AigAuditContext audit = invoke(List.of(only), null, false);
+
+        assertNull(audit.getErrorClass());
+        assertEquals(AigInvokeResultEnum.SUCCESS.getCode(), audit.getResult());
+    }
+
     @Test
     @DisplayName("供应商必须跟着实际执行的候选：主候选 401 顺延后，审计要记备选那家")
     void providerFollowsTheExecutedCandidate() {
@@ -177,6 +239,11 @@ class AigInvokeServiceImplAuditColumnsTest {
         assertEquals(FALLBACK_MODEL_ID, audit.getModelId(), "模型要记实际执行的那个（既有约束）");
         assertEquals(FALLBACK_PROVIDER_ID, audit.getProviderId(),
             "供应商同样要跟着实际执行的候选；停在主候选会让费用与合规按错的供应商统计");
+        // ★ 主候选失败但备选成功 —— 这次调用**成功了**，途中的鉴权失败不算严重错误。
+        //   若把「顺延过的失败」也记成严重错误，正常容错反而会把版本否决掉。
+        assertNull(audit.getErrorClass(),
+            "备选成功即整体成功；记成严重错误会让「换候选」这种正常容错否决整轮灰度");
+        assertEquals(AigInvokeResultEnum.SUCCESS.getCode(), audit.getResult());
     }
 
     @Test

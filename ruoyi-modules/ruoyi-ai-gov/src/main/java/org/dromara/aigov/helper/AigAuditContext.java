@@ -120,6 +120,17 @@ public class AigAuditContext implements Serializable {
     private String errorSummary;
 
     /**
+     * 错误分类编码（{@link org.dromara.aigov.enums.AigErrorClassEnum} 的 code），成功时为空
+     * <p><b>为什么不复用 error_summary</b>：那是一段给人看的文本，机器读不懂；
+     * 而「这次失败是策略拒绝、还是上游临时不可用」是两件完全不同的事——
+     * 前者说明版本/配置错了，后者只说明当时网络不好。灰度的达标判据「无严重错误」
+     * 必须按分类统计，不能去解析中文文案（文案一改就错）。</p>
+     * <p>只在<b>最终失败</b>时写入：主候选失败但备选成功了的那次调用是成功的，
+     * 不该被算成严重错误。</p>
+     */
+    private String errorClass;
+
+    /**
      * 耗时（毫秒）
      */
     private Integer latencyMs;

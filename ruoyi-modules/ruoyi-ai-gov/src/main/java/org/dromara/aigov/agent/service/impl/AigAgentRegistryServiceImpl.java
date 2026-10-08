@@ -16,6 +16,7 @@ import org.dromara.aigov.agent.enums.AigReleaseChannelEnum;
 import org.dromara.aigov.agent.enums.AigReleaseGateEnum;
 import org.dromara.aigov.agent.enums.AigReleaseStatusEnum;
 import org.dromara.aigov.agent.enums.AigReleaseTargetTypeEnum;
+import org.dromara.aigov.agent.evaluation.AigCanaryEvidence;
 import org.dromara.aigov.agent.evaluation.AigGoldenCaseEvidence;
 import org.dromara.aigov.agent.manifest.AigManifestScanResult;
 import org.dromara.aigov.agent.manifest.AigPackageIdentity;
@@ -27,6 +28,7 @@ import org.dromara.aigov.agent.mapper.AigPackageVersionMapper;
 import org.dromara.aigov.agent.mapper.AigReleaseEventMapper;
 import org.dromara.aigov.agent.mapper.AigSkillVersionMapper;
 import org.dromara.aigov.agent.service.IAigAgentRegistryService;
+import org.dromara.aigov.agent.service.IAigCanaryEvidenceService;
 import org.dromara.aigov.agent.service.IAigEvaluationService;
 import org.dromara.aigov.agent.state.AigReleaseStateMachine;
 import org.dromara.common.core.exception.ServiceException;
@@ -84,6 +86,8 @@ public class AigAgentRegistryServiceImpl implements IAigAgentRegistryService {
     private final AigPackageManifestValidator manifestValidator;
 
     private final IAigEvaluationService evaluationService;
+
+    private final IAigCanaryEvidenceService canaryEvidenceService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -148,6 +152,11 @@ public class AigAgentRegistryServiceImpl implements IAigAgentRegistryService {
         // 同理，「黄金用例通过」也不能只凭声明：证据是评测账本（§13.2）。
         // 判据只实现一次（IAigEvaluationService#goldenCaseEvidence），这里只消费结论。
         assertGoldenCaseEvidence(type, bo.getTargetVersionId(), passed);
+
+        // 「灰度达标」此前是唯一没有证据校验的门槛（CANDIDATE→STABLE）。
+        // 证据是逐次调用审计按 Agent 版本统计出来的 a+b+c，判据只实现一次
+        // （IAigCanaryEvidenceService#canaryEvidence），这里只消费结论。
+        assertCanaryEvidence(type, bo.getTargetVersionId(), passed);
 
         // 后门：DISABLED → STABLE 必须能证明该版本曾经 STABLE 过（状态机看不到历史，只能在这里兜）
         if (from == AigReleaseStatusEnum.DISABLED && to == AigReleaseStatusEnum.STABLE
@@ -302,6 +311,39 @@ public class AigAgentRegistryServiceImpl implements IAigAgentRegistryService {
         String verdicts = evidence == null ? "" : "逐用例结论：" + evidence.verdictSummary() + "。";
         throw new ServiceException("不允许声明「黄金用例已通过」而库里没有证据：" + reason + "。"
             + verdicts + "请先对版本声明的黄金用例集合跑一遍评测并取得通过"
+            + "（对象 " + type.getCode() + " #" + id + "）");
+    }
+
+    /**
+     * 落实「灰度达标」这道门槛的证据要求（CANDIDATE → STABLE）。
+     *
+     * <p><b>这是发布链路上最后一个"只凭声明"的门槛</b>：Manifest 校验与黄金用例此前已各有人
+     * 兜住，唯独「灰度达标」调用方说过了就过了——而"灰度跑得好不好"是<b>唯一能证明
+     * 这个版本在真实流量下没问题</b>的一环，恰恰最不该没有证据。</p>
+     *
+     * <p>证据是逐次调用审计里<b>归属该 Agent 版本</b>的那些行（判据 a+b+c，见
+     * {@link AigCanaryEvidence}）。因此这条校验有一个前提：调用必须真的带上
+     * {@code agent_version_id}（任务域已打通）。不经任务的直接调用没有版本归属，
+     * 不会计入任何版本——这是刻意的，把它记到随便一个版本头上会让"灰度达标"变成假账。</p>
+     *
+     * @param type   对象类型
+     * @param id     对象版本ID
+     * @param passed 本次声明的已通过门槛
+     */
+    private void assertCanaryEvidence(AigReleaseTargetTypeEnum type, Long id,
+                                      Set<AigReleaseGateEnum> passed) {
+        if (!passed.contains(AigReleaseGateEnum.CANARY)) {
+            return;
+        }
+        AigCanaryEvidence evidence = canaryEvidenceService.canaryEvidence(type.getCode(), id);
+        if (evidence != null && evidence.satisfied()) {
+            return;
+        }
+        String reason = evidence == null ? "灰度证据不可用" : evidence.reason();
+        String detail = evidence == null ? "" : "实测：" + evidence.verdictSummary()
+            + "；严重错误明细：" + evidence.severeSummary() + "。";
+        throw new ServiceException("不允许声明「灰度已达标」而库里没有证据：" + reason + "。"
+            + detail + "灰度期内该 Agent 版本的真实调用表现是转正式的唯一依据"
             + "（对象 " + type.getCode() + " #" + id + "）");
     }
 

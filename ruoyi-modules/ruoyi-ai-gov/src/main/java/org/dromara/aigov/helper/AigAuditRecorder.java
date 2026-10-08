@@ -44,6 +44,13 @@ public class AigAuditRecorder {
     private static final int ERROR_MAX = 500;
 
     /**
+     * error_class 列长度上限（varchar(32)）。
+     * <p>取值是 {@code AigErrorClassEnum} 的编码，最长 {@code OUTPUT_UNPARSABLE}（17 字符），
+     * 留一倍余量。截断在这里只是兜底：正常取值远小于列宽。</p>
+     */
+    private static final int ERROR_CLASS_MAX = 32;
+
+    /**
      * output_ref 列长度上限（varchar(500)）。
      */
     private static final int OUTPUT_REF_MAX = 500;
@@ -103,6 +110,7 @@ public class AigAuditRecorder {
                 ? AigInvokeResultEnum.FAILED.getCode() : ctx.getResult());
             audit.setErrorSummary(AigInputSanitizer.truncate(
                 AigInputSanitizer.mask(ctx.getErrorSummary()), ERROR_MAX));
+            audit.setErrorClass(AigInputSanitizer.truncate(ctx.getErrorClass(), ERROR_CLASS_MAX));
             audit.setLatencyMs(ctx.getLatencyMs());
             audit.setCost(ctx.getCost());
             audit.setUsageJson(AigInputSanitizer.truncate(ctx.getUsageJson(), USAGE_JSON_MAX));

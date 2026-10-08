@@ -147,6 +147,17 @@ public class AigInvocationAudit implements Serializable {
     private String errorSummary;
 
     /**
+     * 错误分类编码（{@code AigErrorClassEnum} 的 code），成功或未归类时为空
+     * <p><b>为什么要单独一列而不是从 policy_hit 里解析</b>：分类信息此前确实被写进了
+     * {@code policy_hit}（形如「错误分类=POLICY_DENIED（…）」），但 {@code policy_hit} 是
+     * varchar(255) 且该片段是<b>最后追加</b>的——策略命中多时它正好最先被截掉，
+     * 于是「有没有严重错误」会静默漏判。判据要可靠，就不能压在会被截断的文本上。</p>
+     * <p>只在<b>最终失败</b>时写入：主候选失败、备选成功的那次调用是成功的，
+     * 不该被算成严重错误。</p>
+     */
+    private String errorClass;
+
+    /**
      * 耗时（毫秒）
      */
     private Integer latencyMs;

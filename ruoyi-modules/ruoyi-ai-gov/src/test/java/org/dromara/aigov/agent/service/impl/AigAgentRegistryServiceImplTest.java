@@ -16,6 +16,7 @@ import org.dromara.aigov.agent.enums.AigPackageRejectRuleEnum;
 import org.dromara.aigov.agent.enums.AigReleaseGateEnum;
 import org.dromara.aigov.agent.enums.AigReleaseStatusEnum;
 import org.dromara.aigov.agent.enums.AigReleaseTargetTypeEnum;
+import org.dromara.aigov.agent.evaluation.AigCanaryEvidence;
 import org.dromara.aigov.agent.evaluation.AigGoldenCaseEvidence;
 import org.dromara.aigov.agent.manifest.AigManifestScanResult;
 import org.dromara.aigov.agent.manifest.AigPackageManifestValidator;
@@ -25,6 +26,7 @@ import org.dromara.aigov.agent.mapper.AigPackageMapper;
 import org.dromara.aigov.agent.mapper.AigPackageVersionMapper;
 import org.dromara.aigov.agent.mapper.AigReleaseEventMapper;
 import org.dromara.aigov.agent.mapper.AigSkillVersionMapper;
+import org.dromara.aigov.agent.service.IAigCanaryEvidenceService;
 import org.dromara.aigov.agent.service.IAigEvaluationService;
 import org.dromara.common.core.exception.ServiceException;
 import org.junit.jupiter.api.BeforeAll;
@@ -35,6 +37,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -104,6 +107,7 @@ class AigAgentRegistryServiceImplTest {
     private AigAgentBindingMapper bindingMapper;
     private AigPackageMapper packageMapper;
     private IAigEvaluationService evaluationService;
+    private IAigCanaryEvidenceService canaryEvidenceService;
     private AigAgentRegistryServiceImpl service;
 
     @BeforeAll
@@ -126,16 +130,36 @@ class AigAgentRegistryServiceImplTest {
         bindingMapper = mock(AigAgentBindingMapper.class);
         packageMapper = mock(AigPackageMapper.class);
         evaluationService = mock(IAigEvaluationService.class);
+        canaryEvidenceService = mock(IAigCanaryEvidenceService.class);
         service = new AigAgentRegistryServiceImpl(agentVersionMapper, skillVersionMapper,
             packageVersionMapper, releaseEventMapper, bindingMapper, packageMapper,
-            new AigPackageManifestValidator(JsonMapper.builder().build()), evaluationService);
+            new AigPackageManifestValidator(JsonMapper.builder().build()), evaluationService,
+            canaryEvidenceService);
         // 默认：黄金用例证据「已满足」（需要它的用例各自再覆盖）
         when(evaluationService.goldenCaseEvidence(any(), any()))
             .thenReturn(AigGoldenCaseEvidence.satisfied(List.of(), Map.of()));
+        // 默认：灰度证据「已达标」。注意这个默认值是**真的走了一遍判定**得来的
+        // （100 次调用、0 失败、0 严重错误），而不是凭空造一个 satisfied=true——
+        // 否则这条桩会把判定逻辑的缺陷一起掩盖掉
+        when(canaryEvidenceService.canaryEvidence(any(), any())).thenReturn(satisfiedCanary());
         // 默认：条件更新命中 1 行、事件写入成功
         when(agentVersionMapper.update(isNull(), any())).thenReturn(1);
         when(packageVersionMapper.update(isNull(), any())).thenReturn(1);
         when(releaseEventMapper.insert(any(AigReleaseEvent.class))).thenReturn(1);
+    }
+
+    /**
+     * 造一个「灰度达标」的证据：100 次调用、0 失败、0 严重错误。
+     *
+     * <p>刻意走真实的 {@link AigCanaryEvidence#evaluate}，而不是直接造一个
+     * {@code satisfied=true}：桩与生产共用同一段判定，判定写错时测试不会替它遮掩。</p>
+     *
+     * @return 达标证据
+     */
+    private static AigCanaryEvidence satisfiedCanary() {
+        LocalDateTime to = LocalDateTime.now();
+        return AigCanaryEvidence.evaluate(to.minusHours(1), to, 100L, 0L, Map.of(),
+            new AigCanaryEvidence.Thresholds(50, 0.05, 0));
     }
 
     /**
@@ -289,6 +313,40 @@ class AigAgentRegistryServiceImplTest {
         stubVersion("CANDIDATE", "GENERAL");
         assertEquals(AigReleaseStatusEnum.STABLE, service.advanceRelease(
             bo("CANDIDATE", "STABLE", List.of(AigReleaseGateEnum.CANARY.getCode()))));
+    }
+
+    @Test
+    @DisplayName("★ 声明「灰度已达标」而库里没有证据 → 拒绝推进，且一行都不改")
+    void refusesCanaryWithoutEvidence() {
+        stubVersion("CANDIDATE", "GENERAL");
+        LocalDateTime to = LocalDateTime.now();
+        // 三项判据同时不满足：样本不够、失败率超标、还有 1 个严重错误
+        when(canaryEvidenceService.canaryEvidence(any(), any())).thenReturn(AigCanaryEvidence.evaluate(
+            to.minusHours(1), to, 40L, 5L, Map.of("POLICY_DENIED", 1L),
+            new AigCanaryEvidence.Thresholds(50, 0.05, 0)));
+
+        ServiceException error = assertThrows(ServiceException.class, () -> service.advanceRelease(
+            bo("CANDIDATE", "STABLE", List.of(AigReleaseGateEnum.CANARY.getCode()))));
+
+        assertTrue(error.getMessage().contains("灰度"), error.getMessage());
+        assertTrue(error.getMessage().contains("调用次数不足"), "要说清差在哪：" + error.getMessage());
+        assertTrue(error.getMessage().contains("失败率超标"), "三项都要报出来：" + error.getMessage());
+        assertTrue(error.getMessage().contains("出现严重错误"), "严重错误也要报出来：" + error.getMessage());
+        assertTrue(error.getMessage().contains("POLICY_DENIED"),
+            "严重错误要给出分类明细，否则运维不知道是策略拒绝还是鉴权失败：" + error.getMessage());
+        verify(agentVersionMapper, never()).update(isNull(), any());
+        verify(releaseEventMapper, never()).insert(any(AigReleaseEvent.class));
+    }
+
+    @Test
+    @DisplayName("不声明 CANARY 门槛时不去查灰度证据（只有声明了才要求拿得出证据）")
+    void canaryEvidenceNotQueriedWhenGateNotClaimed() {
+        stubVersion("DRAFT", "GENERAL");
+
+        service.advanceRelease(bo("DRAFT", "VALIDATED",
+            List.of(AigReleaseGateEnum.MANIFEST_VALIDATION.getCode())));
+
+        verify(canaryEvidenceService, never()).canaryEvidence(any(), any());
     }
 
     @Test

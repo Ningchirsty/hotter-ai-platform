@@ -109,6 +109,9 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
                 // 4. 策略拒绝：不调用模型
                 audit.setResult(AigInvokeResultEnum.FAILED.getCode());
                 audit.setErrorSummary(decision.getReason());
+                // 分类要落库：策略拒绝是「版本/配置不允许」这类严重错误，
+                // 灰度的「无严重错误」判据必须看得见它，而不是只能从中文文案里猜
+                audit.setErrorClass(AigErrorClassEnum.POLICY_DENIED.getCode());
                 audit.setManualDecision(AigManualDecisionEnum.NOT_REQUIRED.getCode());
                 return toVo(traceId, decision, null, decision.getReason(),
                     AigErrorClassEnum.POLICY_DENIED.getCode());
@@ -117,6 +120,7 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
                 // 5. 转人工：标记待确认，不调用模型
                 audit.setResult(AigInvokeResultEnum.FAILED.getCode());
                 audit.setErrorSummary(decision.getReason());
+                audit.setErrorClass(AigErrorClassEnum.POLICY_DENIED.getCode());
                 audit.setManualDecision(AigManualDecisionEnum.PENDING.getCode());
                 // 转人工同样归为「策略类、不可重试」：重试还是同一个结论，只会重复打扰人
                 return toVo(traceId, decision, null, decision.getReason(),
@@ -227,6 +231,9 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
             if (!executed) {
                 audit.setResult(AigInvokeResultEnum.FAILED.getCode());
                 audit.setErrorSummary("无可用调用器");
+                // 同一分类既要下发给上层，也要落进审计——两处不一致时，
+                // 「按审计统计的严重错误」与「调用方看到的错误码」会各说各话
+                audit.setErrorClass(AigErrorClassEnum.INVALID_REQUEST.getCode());
                 return toVo(traceId, decision, elapsedMs, "路由命中模型但无可用调用器（invoker）",
                     AigErrorClassEnum.INVALID_REQUEST.getCode());
             }
@@ -389,6 +396,9 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
      * @param errorClass 错误分类
      */
     private void recordErrorClass(AigAuditContext audit, AigRouteDecision decision, AigErrorClassEnum errorClass) {
+        // 机器可读的那一份落独立列：policy_hit 是给人看的文本、且会被截断到 255，
+        // 而「有没有严重错误」的判据必须建立在不会被截掉的列上
+        audit.setErrorClass(errorClass.getCode());
         audit.getPolicyHits().add("错误分类=" + errorClass.getCode() + "（" + errorClass.getDesc() + "）"
             + "，允许自动重试=" + (errorClass.isRetryable() ? "是" : "否")
             + "，需转人工=" + (errorClass.isNeedsHuman() ? "是" : "否"));

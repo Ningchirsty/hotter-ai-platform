@@ -47,6 +47,12 @@ export interface AigInvocationAuditVO {
   /** 结果（0成功 1失败） */
   result?: string;
   errorSummary?: string;
+  /**
+   * 错误分类编码（AigErrorClassEnum：POLICY_DENIED/AUTH_FAILED/TIMEOUT…），成功时为空。
+   * 与 errorSummary 的分工：那是给人看的文本，这是机器可读的分类；
+   * 灰度的「无严重错误」判据按它统计，明细里也据此一眼看出严不严重。
+   */
+  errorClass?: string;
   latencyMs?: number;
   cost?: number;
   retryCount?: number;
