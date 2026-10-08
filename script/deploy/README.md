@@ -101,6 +101,31 @@ automatically once healthy). Until a scheduled run is observed, treat the
 5-minute cadence as **configured but unproven**; a host-side timer with a
 notification credential would remove the dependency on GitHub's scheduler.
 
+## Registry credential: scope must be **read-only packages, nothing else**
+
+`hotter-release` logs in to GHCR with `GHCR_USERNAME` / `GHCR_TOKEN` from
+`/opt/ai-video-poc/.env` and only ever **pulls** images. So the token needs exactly
+one permission: **`read:packages`** (fine-grained: *Packages → Read* on that one
+package).
+
+**2026-10-08 audit finding**: the token actually deployed on the host is a *classic*
+PAT with `read:packages, **repo**`. GitHub's `repo` scope is full read/write on the
+account's repositories, so a credential whose only job is `docker login` also carries
+the ability to write to the repository — on a host, for weeks, with no expiry
+reminder. The repository-side docs already stated the intent
+(`docs/image-module-implementation-handoff.md`: "具备 `read:packages` 的新 PAT");
+the token was simply created broader than that.
+
+Rules for this credential:
+
+1. Scope it to `read:packages` only. Do **not** tick `repo`.
+2. Give it an expiry and keep the reminder.
+3. Never reuse it for something else (e.g. raising issues or dispatching workflows) —
+   if the host ever needs to call the GitHub API, mint a *separate* narrow token
+   for that one purpose.
+4. After replacing it, re-run a release to prove the pull still works
+   (a silently-broken token is exactly what caused the 401/403 in the handoff note).
+
 ## To roll code back, dispatch the same workflow with the previously recorded image
 digest (and, for the frontend, its Git SHA). Database and object data remain in
 place. Schema-incompatible releases require an approved forward-fix or data

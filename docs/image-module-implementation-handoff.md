@@ -641,6 +641,10 @@ expected single matching bean but found 2: imageObjectMapper,videoObjectMapper
 `/home/gh-deploy/.docker/config.json` 里那份也**没有包读权限**（GHCR 返 403）——
 表现为两个 deploy workflow 会在 `docker pull` 一步失败。
 已更换为具备 `read:packages` 的新 PAT（旧 `.env` 备份为 `.env.bak-token-<时间戳>`）。
+**注意这是"上限"而不是"至少"**：该 PAT 只用于 `docker login` 拉取镜像，**不应**勾选 `repo`。
+2026-10-08 的凭据审计发现，主机上实际部署的那份是**经典 PAT 且带 `read:packages, repo`**——
+`repo` 是对仓库的完整读写权限，而这个凭据的唯一用途只是 `docker login`（见
+`script/deploy/README.md` 的"Registry credential"一节）。
 建议：给该 PAT 设一个到期提醒，并清掉 `gh-deploy` 里那份无权限的旧凭据。
 
 
