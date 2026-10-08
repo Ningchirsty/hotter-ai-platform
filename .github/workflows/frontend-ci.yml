@@ -45,9 +45,21 @@ jobs:
         working-directory: frontend
         run: pnpm install --frozen-lockfile
 
-      - name: Test inspiration and task recovery
+      # 2026-10-08：这里原先跑的是
+      #   pnpm exec vitest run --config preview/inspiration-vitest.config.mts
+      # 而那份配置的 include 只列了 5 个 spec —— 仓库里有 28 个。
+      # 实测：那份配置 = 5 files / 33 tests；默认口径 = 28 files / 244 tests。
+      # ⇒ 23 个文件（211 个用例）**从来没在 CI 里跑过**，包括 aigov 的 UI 用例。
+      # 现在改为跑**默认口径**（vitest 会沿用 vite.config.ts 的 Vue 插件与 @ 别名，
+      # 所以不能再传 --config，否则等于丢掉这些插件、导致部分 spec 直接加载失败）。
+      # 结果交给下一步核对：它断言"磁盘上每个 spec 都真的出现在结果里"。
+      - name: Run frontend unit tests
         working-directory: frontend
-        run: pnpm exec vitest run --config preview/inspiration-vitest.config.mts
+        continue-on-error: true
+        run: pnpm exec vitest run --reporter=json --outputFile=vitest-results.json
+
+      - name: Verify frontend tests actually ran
+        run: node script/ci/check-frontend-tests.mjs frontend/vitest-results.json frontend
 
       - name: Lint frontend
         working-directory: frontend

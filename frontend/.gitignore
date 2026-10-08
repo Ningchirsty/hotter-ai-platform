@@ -30,3 +30,6 @@ components.d.ts
 
 # Independent UI preview build output
 .preview-dist/
+
+# vitest JSON report (written by CI and by the local verification run)
+vitest-results*.json
