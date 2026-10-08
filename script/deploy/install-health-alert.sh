@@ -35,8 +35,16 @@ for f in health-check.sh health-alert.sh; do
 done
 
 install -d -m 0755 "$DEST"
-install -m 0750 "$SRC_DIR/health-check.sh" "$DEST/health-check.sh"
-install -m 0750 "$SRC_DIR/health-alert.sh" "$DEST/health-alert.sh"
+if [ "$SRC_DIR" = "$DEST" ]; then
+  # 从 /opt/hotter-alert 自身运行（本安装器也放一份在那里）：脚本已就位，
+  # 只修正权限。**必须跳过 copy**——`install` 把一个文件拷到它自己身上会报错甚至截断。
+  chmod 0750 "$DEST/health-check.sh" "$DEST/health-alert.sh"
+  echo "sources already in place: $DEST"
+else
+  install -m 0750 "$SRC_DIR/health-check.sh" "$DEST/health-check.sh"
+  install -m 0750 "$SRC_DIR/health-alert.sh" "$DEST/health-alert.sh"
+  install -m 0750 "$SRC_DIR/install-health-alert.sh" "$DEST/install-health-alert.sh"
+fi
 install -d -m 0700 "$CONF_DIR"
 install -d -m 0700 "$STATE_DIR"
 
