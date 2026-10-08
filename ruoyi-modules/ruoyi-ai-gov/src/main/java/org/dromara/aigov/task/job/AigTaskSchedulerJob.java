@@ -15,11 +15,10 @@ import org.springframework.stereotype.Component;
  * <ol>
  *     <li><b>单实例 / 简单部署</b>：置 {@code aigov.task.scheduler.enabled=true}，
  *         由本类按 {@code aigov.task.scheduler.interval-ms} 周期调用。
- *         <b>前提是容器启用了 {@code @EnableScheduling}</b>——本仓的启用点在
- *         {@code ruoyi-common-job} 的 {@code SnailJobConfig}，而 {@code ruoyi-ai-gov}
- *         并不依赖它。也就是说：若把本模块单独跑（不带 job 模块），本类<b>不会</b>被触发，
- *         而且不会有任何报错——只是「什么都没发生」。这是刻意写在这里的提示，
- *         因为「定时任务静默不执行」是很难从现象反推的。</li>
+ *         <b>前提是容器启用了 {@code @EnableScheduling}</b>——本模块自带的启用点是
+ *         {@code AigSchedulingConfig}（{@code aigov.scheduling.enabled}）。该开关打开后
+ *         本类是否生效，仍取决于它自己的 {@code enabled}：**生产目前为关闭**
+ *         （本类从未在生产跑过，且它会改任务状态，打开属于一次独立变更，需单独评估）。</li>
  *     <li><b>集群 / 已有调度平台</b>：保持 {@code enabled=false}，改由 SnailJob
  *         （本仓既有的调度机制）或运维 cron 调用
  *         {@code POST /aigov/task/scheduler/sweep}。多实例同时触发也不会重复推进——

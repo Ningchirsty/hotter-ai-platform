@@ -173,6 +173,51 @@ private static final Map<String, Map<String, String>> LATEST = Map.of( ... );
 
 ---
 
+## ADR-009 已启用的定时任务「谁来触发」：**进程内 `@EnableScheduling`，不用外部 cron** —— **接受**
+
+> 提出时间：2026-10-08（由"R65 三个定时任务在生产都不会跑"触发）。
+> **背景同样含一次自我纠正**：我最初给出的第 2 步（外部 cron 调 HTTP 入口）经实测**根本走不通**。
+
+### 背景：`@Scheduled` 只是声明，没人注册后处理器就等于没写
+
+本仓 `@EnableScheduling` 此前**只**出现在 `ruoyi-common-job` 的 `SnailJobConfig`，
+且被 `snail-job.enabled` 门控（生产 false，**且没有部署 SnailJob server**，17888 不可达）。
+结果：三个 `@Scheduled` 任务在生产**一个都不会跑，且不会有任何报错**——只是"什么都没发生"。
+
+### 关键实测（决定了 ADR 的取舍）
+
+| 事实 | 证据 |
+|---|---|
+| 全仓只有 **3 个** `@Scheduled`，**全部**在 `ruoyi-ai-gov` | 全仓 grep `@Scheduled` |
+| 其中 2 个被各自的 `@ConditionalOnProperty` 门控且生产未设置 ⇒ **打开调度只会激活"模型健康探测"1 个任务** | `AigTaskSchedulerJob`(`aigov.task.scheduler.enabled`)、`AigCallApprovalExpireJob`(`aigov.approval.expire-scan-enabled`) 在 `application-prod.yml` 中**均未出现** |
+| 同步探测入口实测 **133019 ms**（8 个模型逐个真外呼），客户端却在 120 s 超时 ⇒ **网关掐断不会让后端停下来** | 第一次实跑：客户端超时，服务端日志正常跑完并写回 7 个模型 |
+| 三个触发入口**都**有 `@SaCheckPermission` | `AigModelController:171`、`AigTaskController:191`、`AigCallApprovalController:131` |
+| 机器登录的唯一通道要过**图形验证码**，且**没有** per-client 例外 | `captcha.enable: true`（`application.yml:20`，生产未覆盖）；`PasswordAuthStrategy:64-68` 无条件校验；`ruoyi-common` 无内部调用旁路、无 `@SaIgnore` |
+
+⇒ **第 2 步（主机 cron 调 HTTP 入口）被验证码挡住**：cron 拿不到令牌。
+可用的绕过手段只有"人工过一次验证码把 token 存盘"或"root cron 自己往 Redis 写验证码答案"，
+两者都等于把一个人工/管理员凭据放进定时任务。**这不是缺个配置，而是缺一个机读凭据**——
+正是 **ADR-002 已列为前置的「服务身份/机器令牌」**。
+
+### 决定
+
+| 项 | 内容 |
+|---|---|
+| **决定** | 触发机制用**进程内调度**：新增 `AigSchedulingConfig`（`@EnableScheduling`，被 `aigov.scheduling.enabled` 门控），生产置 `true`。HTTP 入口**保留**，但定位改为"按需立即探测一次" |
+| **依据** | ① 打开开关实际只激活 1 个任务（上表已逐个核对），爆炸半径可枚举；② 不需要任何凭据、不碰验证码、不新增攻击面；③ 回滚是"改配置回 false 重新发布"，不必改代码 |
+| **为什么用一个门控开关而不是把注解加在启动类上** | 加在启动类上等于"永远开启且无法关闭"，而本仓有两个**从未在生产跑过**的写操作任务；用配置门控至少让"是否启用调度"是一个显式、可 grep 的决定 |
+| **否决的替代** | (a) **外部 cron + HTTP（原第 2 步）**：否决，见上（缺机读凭据）；待 ADR-002 的机器令牌落地后可重新评估；(b) **`snail-job.enabled=true`**：否决，生产没有 SnailJob server，打开只会在启动时连不上 17888；(c) 保持现状（只留 HTTP 入口）：否决，等于"允许但没人触发"，`health-check.sh` 会永久 WARN |
+| **必须同时接受的代价** | ①`@EnableScheduling` 注册的后处理器**作用于整个容器**，将来任何人新增 `@Scheduled` 都会随本开关一起上线；②默认调度线程池只有 1 个线程，探测单轮约 133 秒会占用它，将来启用另外两个任务时**必须同时调大** `spring.task.scheduling.pool.size` |
+
+### 后果（已实施）
+
+1. 第 1 步：`aigov.model.health-probe.enabled=true`（只决定"允许探测"）；
+2. 第 2 步：**未采用**（原因见上）；
+3. 第 3 步：`aigov.scheduling.enabled=true`（真正的触发机制）；
+4. 入口的同步等待改为"提交即返回 + 在途去重"，因为 133 秒必然被 Cloudflare（约 100 秒即 524）掐断。
+
+---
+
 ## 决定汇总
 
 | ADR | 决定 | 关键修改/前置 |
@@ -185,3 +230,4 @@ private static final Map<String, Map<String, String>> LATEST = Map.of( ... );
 | 006 | 接受 | **必须落成代码**；书面接受 `OPAQUE` 残余风险 |
 | 007 | 接受 | **阶段 1 只做 VibePoster 一条** |
 | 008 | 接受（2026-10-08 追加） | **治理层是路由唯一权威**；`CloudImageValidation` 验收状态**迁出硬编码**；flare → `GRAY`（只改生命周期、不加绑定） |
+| 009 | 接受（2026-10-08 追加） | 定时任务的触发用**进程内 `@EnableScheduling`**（`aigov.scheduling.enabled`）；**外部 cron 方案否决**（缺机读凭据，见 ADR-002 前置）；探测入口改为"提交即返回 + 去重" |

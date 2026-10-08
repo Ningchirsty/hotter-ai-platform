@@ -359,12 +359,11 @@ aigov:
       #   因此稳态外呼量 ≈ 每个外部模型每 6 小时 1 次（≈20 次/天），与"调短周期"不成正比。
       #
       # ⚠️ 重要：本开关只决定**是否允许**探测，不决定**谁来触发**。
-      #   @Scheduled 需要 @EnableScheduling；本仓该注解只在 ruoyi-common-job 的
+      #   @Scheduled 需要 @EnableScheduling；本仓该注解此前只在 ruoyi-common-job 的
       #   SnailJobConfig 上、且被 snail-job.enabled 门控（生产为 false，且**没有部署
-      #   SnailJob server**，17888 不可达）。所以打开本开关后仍需：
-      #     ① 外部 cron 调 POST /aigov/model/health-probe/run（第 2 步），或
-      #     ② 启用调度子系统（第 3 步）。
-      #   否则它只是一个"允许但没人触发"的开关——这正是 R65 记下的那个坑。
+      #   SnailJob server**，17888 不可达），所以光打开本开关会得到一个"允许但没人触发"的开关。
+      #   现已由**第 3 步**解决：见本文件末尾的 aigov.scheduling.enabled=true。
+      #   第 2 步（外部 cron 调 POST /aigov/model/health-probe/run）未采用，原因见该处注释。
       enabled: true
       # 探测周期（毫秒，默认 30 分钟）。fixedDelay 语义：实际间隔 = 本轮耗时 + 该值。
       interval-ms: 1800000
@@ -374,3 +373,31 @@ aigov:
       max-per-round: 20
       # 距上次探测超过该小时数的才复测（0=每轮都测）。让"调短周期"不会等比例放大成本。
       stale-hours: 6
+
+  scheduling:
+    # 调度子系统开关（执行顺序 1→2→3 的**第 3 步**，2026-10-08 由运维授权）。
+    #
+    # 为什么需要它：@Scheduled 只是"声明"，真正让它生效的是 @EnableScheduling 注册的
+    # 后处理器。本仓此前该注解**只**在 ruoyi-common-job 的 SnailJobConfig 上、且被
+    # snail-job.enabled 门控（生产为 false，且**没有部署 SnailJob server**），
+    # 于是三个 @Scheduled 任务在生产一个都不会跑，**而且不会有任何报错**——
+    # 只是"什么都没发生"（R65 记下的坑，也是本项要关掉的静默失效）。
+    #
+    # 生效范围（逐个核对过，不是估计）：本仓共 3 个 @Scheduled，全部在 ruoyi-ai-gov：
+    #   ① AigModelHealthProbeJob   ← 本开关打开后**唯一**会被激活的任务（其自身开关已为 true）
+    #   ② AigTaskSchedulerJob      ← 被 aigov.task.scheduler.enabled 门控，本文件未设置 → 仍关闭
+    #   ③ AigCallApprovalExpireJob ← 被 aigov.approval.expire-scan-enabled 门控，本文件未设置 → 仍关闭
+    # 也就是说：打开本开关**不会**顺带把两个"从未在生产跑过的写操作任务"上线。
+    # ⚠️ 但后处理器是全局的：将来任何人新增 @Scheduled，都会随本开关一起上线。
+    #
+    # 第 2 步（外部 cron 调 POST /aigov/model/health-probe/run）**未采用**，原因是实测的：
+    #   三个入口都有 @SaCheckPermission，而机器登录唯一通道 /auth/login 必须过图形验证码
+    #   （captcha.enable=true，生产未覆盖该值，且 PasswordAuthStrategy 里没有 per-client 例外），
+    #   主机上的 cron 根本拿不到令牌。故第 3 步即为本项的触发机制；
+    #   host cron 只保留 script/deploy/health-check.sh 做**核验**（不触发）。
+    #
+    # ⚠️ 探测任务首轮在容器启动后立即执行（fixedDelay 未设 initialDelay），单轮实测约 133 秒。
+    #   因为 stale-hours=6，同一模型 6 小时内不会复测，所以"频繁重启"不会放大外呼量。
+    #
+    # 回滚：改回 false 重新发布即可（无需改代码），或直接回滚到上一个镜像。
+    enabled: true

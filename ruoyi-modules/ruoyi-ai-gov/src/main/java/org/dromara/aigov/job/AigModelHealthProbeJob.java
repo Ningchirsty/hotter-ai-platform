@@ -15,15 +15,17 @@ import org.springframework.stereotype.Component;
  * <ol>
  *     <li><b>单实例 / 简单部署</b>：置 {@code aigov.model.health-probe.enabled=true}，
  *         由本类按 {@code interval-ms} 周期探测。
- *         <b>前提是容器启用了 {@code @EnableScheduling}</b>——本仓的启用点在
- *         {@code ruoyi-common-job} 的 {@code SnailJobConfig}，而 {@code ruoyi-ai-gov}
- *         并不依赖它。也就是说：若本模块单独跑（不带 job 模块），本类<b>不会</b>被触发，
- *         <b>而且不会有任何报错——只是「什么都没发生」</b>。
- *         这条提示是刻意抄在这里的：既有的两个定时任务都栽在同一个坑上，
- *         而"定时任务静默不执行"极难从现象反推。</li>
- *     <li><b>集群 / 已有调度平台</b>：保持 {@code enabled=false}，由运维 cron 调
- *         {@code probeOnce()}（或经 SnailJob 调同义入口）。多实例同时跑也不会互相破坏——
- *         探测是幂等的读+写健康字段，最坏情况是同一模型被多测一次（多花一次外呼）。</li>
+ *         <b>前提是容器启用了 {@code @EnableScheduling}</b>——本模块自带的启用点是
+ *         {@code AigSchedulingConfig}（配置项 {@code aigov.scheduling.enabled}，生产已于
+ *         2026-10-08 的第 3 步置为 true）。<b>若该开关没开，本类不会被触发，而且不会有
+ *         任何报错——只是「什么都没发生」</b>；这条提示是刻意留在这里的，
+ *         因为"定时任务静默不执行"极难从现象反推（R65）。
+ *         另一个可能的启用点是 {@code ruoyi-common-job} 的 {@code SnailJobConfig}
+ *         （被 {@code snail-job.enabled} 门控），但生产没有部署 SnailJob server。</li>
+ *     <li><b>集群 / 已有调度平台</b>：保持 {@code enabled=false}，改由调度平台或运维调
+ *         {@code POST /aigov/model/health-probe/run}（异步受理，立即返回）。
+ *         多实例同时跑也不会互相破坏——探测是幂等的读+写健康字段，
+ *         最坏情况是同一模型被多测一次（多花一次外呼）。</li>
  * </ol>
  *
  * @author ai-gov

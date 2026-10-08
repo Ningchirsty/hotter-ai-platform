@@ -148,12 +148,18 @@ public class AigModelController {
      * 批量健康探测：挑出需要复测的模型，逐个探测并把结果写回治理表（M-003）。
      *
      * <p><b>为什么需要一个显式入口（而不是只留定时任务）</b>：
-     * 本仓 {@code @EnableScheduling} 只在 {@code ruoyi-common-job} 的 {@code SnailJobConfig} 上，
-     * 而它被 {@code @ConditionalOnProperty(snail-job.enabled=true)} 门控——生产是 false。
-     * 因此三个 {@code @Scheduled} 任务（任务扫描 / 审批超时扫描 / 本探测）此前都不会被触发，
-     * 且不会有任何报错。既有的另外两个任务正因同一原因各自提供了 cron 入口：
+     * 在 2026-10-08 的第 3 步之前，本仓 {@code @EnableScheduling} 只在 {@code ruoyi-common-job}
+     * 的 {@code SnailJobConfig} 上，而它被 {@code @ConditionalOnProperty(snail-job.enabled=true)}
+     * 门控——生产是 false，且没有部署 SnailJob server。因此三个 {@code @Scheduled} 任务
+     * （任务扫描 / 审批超时扫描 / 本探测）当时都不会被触发，且不会有任何报错。
+     * 既有的另外两个任务正因同一原因各自提供了显式入口：
      * {@code POST /aigov/task/scheduler/sweep} 与 {@code POST /aigov/approval/expire-scan}。
-     * 本接口与它们对齐，使运维可以在**不改代码、不启用整个调度子系统**的前提下用外部 cron 驱动。</p>
+     * 本接口与它们对齐。</p>
+     *
+     * <p><b>调度现已启用，但本接口仍然保留</b>：第 3 步已打开 {@code aigov.scheduling.enabled}
+     * （见 {@code AigSchedulingConfig}），探测任务会自己跑。本接口的价值转为
+     * <b>按需立即探测一次</b>（不必等到下一个周期），以及给"不使用进程内调度"的部署方式留出通路。
+     * 由于有去重，按需触发与定时触发同时发生也不会重复外呼。</p>
      *
      * <p><b>为什么是「提交即返回」而不是同步等结果</b>（2026-10-08 实测教训）：
      * 一次完整探测要<b>逐个对外发起真实调用</b>，实测 <b>8 个模型耗时 133 秒</b>。
