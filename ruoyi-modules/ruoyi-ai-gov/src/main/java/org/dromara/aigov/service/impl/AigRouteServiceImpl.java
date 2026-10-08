@@ -37,6 +37,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -82,9 +83,21 @@ public class AigRouteServiceImpl implements IAigRouteService {
     private static final String YES = "Y";
 
     /**
-     * 健康检查结果：不可用（由连通性测试写入，见 AigModelGovernanceServiceImpl#testConnection）。
+     * 健康检查结果为「坏」的字面量集合。
+     *
+     * <p><b>2026-10-08 修正一个从未生效的机制</b>：这里原本只认 {@code "DOWN"} 一个值，而
+     * 写入端 {@code ModelConnectionTester} 实际落库的是 {@code HEALTHY/UNHEALTHY}
+     * （见 {@code AigModelTestVo} 的注释），DDL 注释写的又是 {@code UP/DOWN/DEGRADED}——
+     * <b>三套词汇互不相同，且全仓库没有任何代码写过 {@code DOWN}</b>。
+     * 结果是「点一次测试连接发现模型坏掉 → 路由自动避开它」<b>从未生效过</b>：
+     * 生产上 {@code UNHEALTHY} 的模型照旧进入候选池。</p>
+     *
+     * <p>现在把实际会被写入的几个「坏」值都认上（大小写不敏感，已做去空白）。
+     * <b>刻意不包含 {@code UNKNOWN} 与 {@code NULL}</b> —— 「没测过 ≠ 不可用」是既有且正确的取舍：
+     * 若要求非 UP 即排除，会让所有从未探测过的模型（生产上有 2 个正在跑）当场失去候选，
+     * 那是比「可能调到坏模型」严重得多的回归。</p>
      */
-    private static final String HEALTH_DOWN = "DOWN";
+    private static final Set<String> HEALTH_BAD = Set.of("DOWN", "UNHEALTHY");
 
     /**
      * 能力模板 Mapper。
@@ -569,14 +582,16 @@ public class AigRouteServiceImpl implements IAigRouteService {
             decision.addHit("排除 " + modelLabel + "：部署类型非法（" + governance.getDeploymentType() + "）");
             return null;
         }
-        // 4.5 健康状态：**只在明确 DOWN 时排除**。
+        // 4.5 健康状态：**只在明确「坏」时排除**（DOWN / UNHEALTHY）。
         // 为什么不是「要求 UP」：health_status 由连通性测试（人工点一下）写入，
         // 绝大多数模型从未测过（null）。若要求 UP，等于把「没测过」判成不可用，
         // 会让所有既有路由瞬间失效——那是比「可能调到坏模型」严重得多的回归。
-        // 因此口径是：测出 DOWN 才拦，未知(DEGRADED/null)一律放行。
-        if (HEALTH_DOWN.equalsIgnoreCase(governance.getHealthStatus())) {
+        // 因此口径是：测出 DOWN/UNHEALTHY 才拦，UNKNOWN/null/DEGRADED 一律放行。
+        if (governance.getHealthStatus() != null
+            && HEALTH_BAD.contains(governance.getHealthStatus().trim().toUpperCase(Locale.ROOT))) {
             decision.addHit("排除 " + modelLabel + "（modelKey=" + model.getModelKey()
-                + "）：最近一次健康检查为 DOWN（healthTime=" + governance.getHealthTime() + "），"
+                + "）：最近一次健康检查为 " + governance.getHealthStatus()
+                + "（healthTime=" + governance.getHealthTime() + "），"
                 + "暂不参与路由，避免把预算花在已知不可用的模型上");
             return null;
         }
