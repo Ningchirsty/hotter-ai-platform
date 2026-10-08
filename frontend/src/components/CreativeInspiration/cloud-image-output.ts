@@ -36,3 +36,15 @@ export function observedOutputFormat(status:CloudImageModelsVO|undefined,model:s
   const unique=[...new Set(formats)];
   return unique.length === 1 ? unique[0].toUpperCase() : undefined;
 }
+
+/** Keep measured failures separate from options that have never been tested. */
+export function outputParameterStatusLabel(status:CloudImageModelsVO|undefined,model:string,capability:string,key:OutputKey,value:string):string {
+  if(outputParameterVerified(status,model,capability,key,value)) return '';
+  const checks=status?.profiles?.find(p=>p.model === model)?.outputProfiles?.filter(p=>p.capability === capability && outputValue(p.output,key) === value && p.parameterResults?.[key]);
+  const result=checks?.at(-1)?.parameterResults?.[key];
+  if(result === 'OUTPUT_MISMATCH') return ' · 实测未生效';
+  if(result === 'ACCEPTED_UNCONFIRMED') return ' · 已测试，生效未确认';
+  if(result === 'HTTP_ERROR') return ' · 接口拒绝';
+  if(result === 'RESULT_UNKNOWN') return ' · 结果未确认';
+  return ' · 待验证';
+}

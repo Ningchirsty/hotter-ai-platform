@@ -142,5 +142,436 @@
     "observedFormats": [
       "png"
     ]
+  },
+  {
+    "model": "qwen-image-3.0",
+    "capability": "T2I",
+    "testedAt": "2026-10-08",
+    "label": "2026-10-08 第一批真实参数验收",
+    "output": {
+      "size": "1024x1536",
+      "n": 1
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED"
+    },
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "qwen-image-3.0",
+    "capability": "T2I",
+    "testedAt": "2026-10-08",
+    "label": "2026-10-08 第一批真实参数验收",
+    "output": {
+      "size": "2048x2048",
+      "n": 1
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED"
+    },
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "qwen-image-3.0-pro",
+    "capability": "T2I",
+    "testedAt": "2026-10-08",
+    "label": "2026-10-08 第一批真实参数验收",
+    "output": {
+      "size": "1024x1536",
+      "n": 1
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED"
+    },
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "qwen-image-3.0-pro",
+    "capability": "T2I",
+    "testedAt": "2026-10-08",
+    "label": "2026-10-08 第一批真实参数验收",
+    "output": {
+      "size": "2048x2048",
+      "n": 1
+    },
+    "verifiedFields": [],
+    "parameterResults": {
+      "size": "RESULT_UNKNOWN",
+      "n": "RESULT_UNKNOWN"
+    },
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": []
+  },
+  {
+    "model": "wan2.7-image",
+    "capability": "T2I",
+    "testedAt": "2026-10-08",
+    "label": "2026-10-08 第一批真实参数验收",
+    "output": {
+      "size": "1024x1536",
+      "n": 1
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED"
+    },
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "wan2.7-image",
+    "capability": "T2I",
+    "testedAt": "2026-10-08",
+    "label": "2026-10-08 第一批真实参数验收",
+    "output": {
+      "size": "2048x2048",
+      "n": 1
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED"
+    },
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "wan2.7-image-pro",
+    "capability": "T2I",
+    "testedAt": "2026-10-08",
+    "label": "2026-10-08 第一批真实参数验收",
+    "output": {
+      "size": "1024x1536",
+      "n": 1
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED"
+    },
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "wan2.7-image-pro",
+    "capability": "T2I",
+    "testedAt": "2026-10-08",
+    "label": "2026-10-08 第一批真实参数验收",
+    "output": {
+      "size": "2048x2048",
+      "n": 1
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED"
+    },
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-sunburst",
+    "capability": "T2I",
+    "testedAt": "2026-10-08",
+    "label": "2026-10-08 第一批真实参数验收",
+    "output": {
+      "size": "1024x1536",
+      "n": 1,
+      "quality": "medium",
+      "outputFormat": "webp"
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED",
+      "quality": "ACCEPTED_UNCONFIRMED",
+      "outputFormat": "OUTPUT_MISMATCH"
+    },
+    "qualityEvidence": "REQUEST_ACCEPTED_ONLY",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-sunburst",
+    "capability": "T2I",
+    "testedAt": "2026-10-08",
+    "label": "2026-10-08 第一批真实参数验收",
+    "output": {
+      "size": "1536x1024",
+      "n": 1,
+      "quality": "high",
+      "outputFormat": "jpeg"
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED",
+      "quality": "ACCEPTED_UNCONFIRMED",
+      "outputFormat": "OUTPUT_MISMATCH"
+    },
+    "qualityEvidence": "REQUEST_ACCEPTED_ONLY",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "EDIT",
+    "testedAt": "2026-10-08",
+    "label": "2026-10-08 第一批真实参数验收",
+    "output": {
+      "size": "1024x1024",
+      "n": 1,
+      "quality": "low",
+      "outputFormat": "png"
+    },
+    "verifiedFields": [
+      "n",
+      "outputFormat"
+    ],
+    "parameterResults": {
+      "size": "OUTPUT_MISMATCH",
+      "n": "PASSED",
+      "quality": "ACCEPTED_UNCONFIRMED",
+      "outputFormat": "PASSED"
+    },
+    "qualityEvidence": "REQUEST_ACCEPTED_ONLY",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "EDIT",
+    "testedAt": "2026-10-08",
+    "label": "2026-10-08 第一批真实参数验收",
+    "output": {
+      "size": "1024x1536",
+      "n": 1,
+      "quality": "medium",
+      "outputFormat": "webp"
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED",
+      "quality": "ACCEPTED_UNCONFIRMED",
+      "outputFormat": "OUTPUT_MISMATCH"
+    },
+    "qualityEvidence": "REQUEST_ACCEPTED_ONLY",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "EDIT",
+    "testedAt": "2026-10-08",
+    "label": "2026-10-08 第一批真实参数验收",
+    "output": {
+      "size": "1536x1024",
+      "n": 1,
+      "quality": "high",
+      "outputFormat": "jpeg"
+    },
+    "verifiedFields": [
+      "n"
+    ],
+    "parameterResults": {
+      "size": "OUTPUT_MISMATCH",
+      "n": "PASSED",
+      "quality": "ACCEPTED_UNCONFIRMED",
+      "outputFormat": "OUTPUT_MISMATCH"
+    },
+    "qualityEvidence": "REQUEST_ACCEPTED_ONLY",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "EDIT",
+    "testedAt": "2026-10-08",
+    "label": "2026-10-08 第一批真实参数验收",
+    "output": {
+      "size": "1536x1024",
+      "n": 1
+    },
+    "verifiedFields": [],
+    "parameterResults": {
+      "size": "RESULT_UNKNOWN",
+      "n": "RESULT_UNKNOWN"
+    },
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": []
+  },
+  {
+    "model": "qwen-image-3.0",
+    "capability": "T2I",
+    "testedAt": "2026-10-08",
+    "label": "2026-10-08 第一批真实参数验收",
+    "output": {
+      "size": "1536x1024",
+      "n": 2
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED"
+    },
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "qwen-image-3.0-pro",
+    "capability": "T2I",
+    "testedAt": "2026-10-08",
+    "label": "2026-10-08 第一批真实参数验收",
+    "output": {
+      "size": "1536x1024",
+      "n": 2
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED"
+    },
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "wan2.7-image",
+    "capability": "T2I",
+    "testedAt": "2026-10-08",
+    "label": "2026-10-08 第一批真实参数验收",
+    "output": {
+      "size": "1536x1024",
+      "n": 2
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED"
+    },
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "wan2.7-image-pro",
+    "capability": "T2I",
+    "testedAt": "2026-10-08",
+    "label": "2026-10-08 第一批真实参数验收",
+    "output": {
+      "size": "1536x1024",
+      "n": 2
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED"
+    },
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-sunburst",
+    "capability": "T2I",
+    "testedAt": "2026-10-08",
+    "label": "2026-10-08 第一批真实参数验收",
+    "output": {
+      "size": "1024x1024",
+      "n": 2,
+      "quality": "low",
+      "outputFormat": "png"
+    },
+    "verifiedFields": [
+      "n",
+      "outputFormat"
+    ],
+    "parameterResults": {
+      "size": "OUTPUT_MISMATCH",
+      "n": "PASSED",
+      "quality": "ACCEPTED_UNCONFIRMED",
+      "outputFormat": "PASSED"
+    },
+    "qualityEvidence": "REQUEST_ACCEPTED_ONLY",
+    "observedFormats": [
+      "png"
+    ]
   }
 ]
