@@ -73,6 +73,19 @@ public interface IAigTaskService {
     AigTask createDispatched(AigTaskCreateBo bo, String providerCode, String providerJobId);
 
     /**
+     * 取任务当前行（<b>业务域事件式回写专用</b>）。
+     *
+     * <p>回写方（如创作域）不知道这条任务被平台或人工动过几次，而 {@link #transition} 要求
+     * 声明期望版本（乐观锁）。给它一个轻量读，让它先读版本再 CAS：这样并发被改时它会
+     * <b>响亮地失败</b>，而不是安静地覆盖别人的结论。刻意返回实体而不是详情——
+     * {@link #getDetail} 会连事件流与候选结果一起加载，回写用不上。</p>
+     *
+     * @param taskId 任务ID
+     * @return 任务行；不存在时抛错
+     */
+    AigTask getTask(Long taskId);
+
+    /**
      * 状态迁移（<b>唯一入口</b>）：校验合法边 + 乐观锁 + 追加事件。
      *
      * @param taskId          任务ID
@@ -84,6 +97,32 @@ public interface IAigTaskService {
      */
     AigTask transition(Long taskId, Integer expectedVersion, AigTaskStatusEnum toStatus,
                        String detail, String payloadJson);
+
+    /**
+     * 状态迁移（带失败信息）：与 {@link #transition} 完全一致，另外把失败分类与原因写进
+     * {@code aig_task.error_code / error_message}。
+     *
+     * <p><b>为什么要有这个重载</b>：那两列此前<b>全表无人写入</b>，而治理台的任务列表与详情
+     * <b>都在渲染它们</b>——等于那两处永远是空的。平台侧的执行失败走 {@code recordFailure}，
+     * 业务域（创作域）回写失败走这里，两条路都要把「为什么失败」落到列上，而不是只塞进事件说明。</p>
+     *
+     * <p><b>只有失败才写，成功会清空</b>：目标状态是 {@code FAILED} 时写入
+     * （{@code errorClass} 为空按 {@code UNKNOWN} 记，不假装分类已知）；目标是 {@code SUCCEEDED} 时
+     * <b>清空</b>——一条成功的任务上挂着上一次尝试的旧错误码，比没有错误码更坏
+     * （注意 MyBatis-Plus 默认忽略 null 字段，所以这里写的是空串而不是 null）。其余状态不碰这两列
+     * （{@code RETRY_WAIT}/{@code NEEDS_HUMAN} 正需要保留失败原因）。</p>
+     *
+     * @param taskId          任务ID
+     * @param expectedVersion 期望版本（乐观锁）
+     * @param toStatus        目标状态
+     * @param detail          可读说明（写入事件）
+     * @param payloadJson     事件载荷（可空）
+     * @param errorClass      错误分类（仅目标为 {@code FAILED} 时使用；可空）
+     * @param errorMessage    可读失败原因（仅目标为 {@code FAILED} 时使用；可空）
+     * @return 迁移后的任务
+     */
+    AigTask transition(Long taskId, Integer expectedVersion, AigTaskStatusEnum toStatus,
+                       String detail, String payloadJson, AigErrorClassEnum errorClass, String errorMessage);
 
     /**
      * 标记任务已派发：迁移到 DISPATCHED 并写入 Provider 与外部作业ID。

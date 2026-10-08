@@ -132,6 +132,16 @@ public class DpGeneration extends BaseEntity implements Serializable {
     private Long imageTaskId;
 
     /**
+     * 治理层统一任务ID（{@code aig_task.task_id}）：本次出图登记的那条任务
+     *
+     * <p><b>为什么要把它记在候选行上</b>：登记之后还要**回写**（内核状态变化、人工选定/否决），
+     * 而回写发生在**刷新线程**——那里可能没有登录用户，按 {@code aig_task} 的创建幂等键
+     * （含 {@code create_by}）去查会落到 SYSTEM 哨兵上、查不到当初那个人登记的那条。
+     * 任务号是事实，不该靠复算幂等键猜出来。为空 = 该候选未登记（历史候选，或登记失败时如实为空）。</p>
+     */
+    private Long aigTaskId;
+
+    /**
      * 执行者租户
      */
     private String execTenantId;

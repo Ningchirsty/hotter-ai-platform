@@ -230,6 +230,7 @@ CREATE TABLE IF NOT EXISTS dp_generation (
   input_file_id   BIGINT       NULL     COMMENT '输入参考图附件ID（cp_task_file.file_id，业务留痕）',
   input_asset_id  BIGINT       NULL     COMMENT '输入参考图内核素材ID（image_asset.id，执行用）',
   image_task_id   BIGINT       NULL     COMMENT '执行内核任务ID（image_task.id，出图真相在这张表）',
+  aig_task_id     BIGINT       NULL     COMMENT '治理层统一任务ID（aig_task.task_id）：本次出图登记的那条任务，执行方=业务域（EXTERNAL）',
   exec_tenant_id  VARCHAR(20)  NULL     COMMENT '执行者租户（内核按 tenant+user 校验素材归属，回读状态必须带）',
   exec_user_id    BIGINT       NULL     COMMENT '执行者用户（同上；可为任务负责人而非创建人）',
   output_file_id  BIGINT       NULL     COMMENT '产出附件ID（cp_task_file.file_id，业务留痕）',

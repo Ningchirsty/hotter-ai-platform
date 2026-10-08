@@ -12,6 +12,7 @@ import org.dromara.content.service.IContentTaskService;
 import org.dromara.creative.domain.vo.CreativeProjectVo;
 import org.dromara.creative.helper.CreativeOutputSpecResolver;
 import org.dromara.creative.helper.CreativeImageRuleChecker;
+import org.dromara.creative.helper.CreativeTaskLedger;
 import org.dromara.creative.helper.CreativeQaRules;
 import org.dromara.creative.helper.CreativeScreenModuleConfig;
 import lombok.extern.slf4j.Slf4j;
@@ -104,6 +105,11 @@ public class CreativeProductionServiceImpl implements ICreativeProductionService
     private final IContentOutputCheckService outputCheckService;
     private final IContentProductService productService;
 
+    /**
+     * 治理层任务账本接线（人工选定/质检筛除的结论要回写到登记的那条任务上）。
+     */
+    private final CreativeTaskLedger taskLedger;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public ProductionRun start(Long taskId, boolean force) {
@@ -191,6 +197,8 @@ public class CreativeProductionServiceImpl implements ICreativeProductionService
         }
         row.setStatus(DpGenerationStatusEnum.APPROVED.getCode());
         generationMapper.updateById(row);
+        // 选定 = 人工结论：回写登记的那条治理任务（两步 REVIEW_PENDING → APPROVED）
+        taskLedger.writebackDecision(row, DpGenerationStatusEnum.APPROVED);
 
         // 选定即按输出规格规格化（R27）：主图的规格是 800×800（1:1），但现有工作流的契约是
         // "画布由输入图与 resolution 决定"（wf-whitebg 固定 1536 档），**送模型时改输入尺寸并不能
@@ -493,12 +501,19 @@ public class CreativeProductionServiceImpl implements ICreativeProductionService
                 if (check.getResultFileId() != null) {
                     row.setOutputFileId(check.getResultFileId());
                 }
+                boolean rejectedNow = false;
                 if (VERDICT_INCONSISTENT.equalsIgnoreCase(check.getVerdict())
                     && !DpGenerationStatusEnum.APPROVED.getCode().equals(row.getStatus())) {
                     // 只筛除：不一致的候选不再参与选定（已选定的会另外提示，不静默改人的决定）
                     row.setStatus(DpGenerationStatusEnum.REJECTED.getCode());
+                    rejectedNow = true;
                 }
                 generationMapper.updateById(row);
+                if (rejectedNow) {
+                    // 质检筛除同样是「复核结论」：走两步回写（REVIEW_PENDING → REJECTED）。
+                    // 只在本轮真的改了状态时回写——否则每刷一次质检都会重复写一遍任务事件
+                    taskLedger.writebackDecision(row, DpGenerationStatusEnum.REJECTED);
+                }
                 projectService.appendEvent(taskId, "QA", "QA_" + StringUtils.blankToDefault(
                     check.getVerdict(), "UNKNOWN"),
                     toJson(Map.of("generationId", row.getId(),

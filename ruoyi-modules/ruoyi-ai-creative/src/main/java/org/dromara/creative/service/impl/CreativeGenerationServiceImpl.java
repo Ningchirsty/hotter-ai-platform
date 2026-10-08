@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.dromara.creative.service.ICreativeScenarioConfigService;
 import org.dromara.creative.domain.DpOutputSpec;
 import org.dromara.creative.helper.CreativeOutputSpecResolver;
+import org.dromara.creative.helper.CreativeTaskLedger;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.ai.image.domain.ImageWorkflowVersion;
 import org.dromara.ai.image.service.ImageTaskSubmissionService;
@@ -85,6 +86,14 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
      * 场景配置（R27）：出图尺寸按交付类型的默认输出规格（主图 800×800 这类固定规格）。
      */
     private final ICreativeScenarioConfigService scenarioConfigService;
+
+    /**
+     * 治理层任务账本接线（登记 + 状态回写）。
+     *
+     * <p>出图的编排留在图像内核，治理台要看到的是活任务——所以提交时把这次工作登记成一条
+     * {@code aig_task}（执行方=业务域），内核状态变化时回写。见 {@link CreativeTaskLedger}。</p>
+     */
+    private final CreativeTaskLedger taskLedger;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -263,6 +272,13 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
             row.setErrorMessage("暂未派发（" + result.outcome() + "），系统会自动重试派发");
         }
         generationMapper.insert(row);
+
+        // 登记治理任务（同一事务）：执行方=业务域，平台不执行也不扫描它。
+        // 登记失败就整笔失败——静默不登记等于产出一份没有治理账的东西
+        row.setAigTaskId(taskLedger.register(row, project));
+        if (generationMapper.updateById(row) != 1) {
+            throw new ServiceException("登记治理任务后回填失败：候选记录未更新（generationId=" + row.getId() + "）");
+        }
 
         if (fitted.scaled()) {
             // 参考图被适配过就留一条事件：页面上要能回答「这张图是按多大的参考图出的」
@@ -451,6 +467,10 @@ public class CreativeGenerationServiceImpl implements ICreativeGenerationService
                     generationMapper.updateById(row);
                     changed++;
                     DpGenerationStatusEnum now = DpGenerationStatusEnum.find(row.getStatus());
+                    // 只有「状态真的变了」才回写治理任务——就是这里。
+                    // 刻意不放在 refreshRows 入口：queryPage（打开列表）也会调它，
+                    // 那样「看一眼列表」就等于反复写任务事件（创作域自己踩过同类坑）
+                    taskLedger.writebackKernel(row, now);
                     if (now != null && now.isTerminal()) {
                         Map<String, Object> detail = new LinkedHashMap<>();
                         detail.put("generationId", row.getId());

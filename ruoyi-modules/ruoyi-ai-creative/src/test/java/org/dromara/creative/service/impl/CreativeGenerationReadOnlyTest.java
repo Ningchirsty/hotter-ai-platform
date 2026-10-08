@@ -9,6 +9,7 @@ import org.dromara.content.service.IContentBrandBriefService;
 import org.dromara.content.service.IContentTaskService;
 import org.dromara.creative.domain.DpGeneration;
 import org.dromara.creative.domain.vo.DpGenerationVo;
+import org.dromara.creative.helper.CreativeTaskLedger;
 import org.dromara.creative.helper.DnaPromptBuilder;
 import org.dromara.creative.mapper.CreativeTaskStageMapper;
 import org.dromara.creative.mapper.DpGenerationMapper;
@@ -83,7 +84,9 @@ class CreativeGenerationReadOnlyTest {
             generationMapper,
             stageMapper,
             submissionProvider,
-            mock(ICreativeScenarioConfigService.class));
+            mock(ICreativeScenarioConfigService.class),
+            // 治理任务账本：只读读法根本不该碰它（本测试的断言正是「不写库、不触达外部」）
+            mock(CreativeTaskLedger.class));
     }
 
     /**

@@ -696,6 +696,65 @@ class AigTaskServiceImplTest {
     }
 
     @Test
+    @DisplayName("失败：错误分类与原因要落到 error_code/error_message 两列（此前这两列全表无人写入，治理台恒为空）")
+    void failureWritesErrorColumns() {
+        when(taskMapper.selectById(1L)).thenReturn(task(1L, "RUNNING", 2, 5), task(1L, "FAILED", 3, 6));
+        when(taskMapper.updateById(any(AigTask.class))).thenReturn(1);
+
+        service.recordFailure(1L, 5, AigErrorClassEnum.AUTH_FAILED, "上游拒绝");
+
+        ArgumentCaptor<AigTask> captor = ArgumentCaptor.forClass(AigTask.class);
+        verify(taskMapper).updateById(captor.capture());
+        AigTask update = captor.getValue();
+        assertEquals(AigErrorClassEnum.AUTH_FAILED.getCode(), update.getErrorCode(),
+            "治理台的「错误码」列渲染的就是这一列，不写它那列永远为空");
+        assertEquals("上游拒绝", update.getErrorMessage());
+    }
+
+    @Test
+    @DisplayName("失败：没给分类时如实记 UNKNOWN（不假装知道），也不留空列")
+    void failureWithoutClassRecordsUnknown() {
+        when(taskMapper.selectById(1L)).thenReturn(task(1L, "RUNNING", 2, 5), task(1L, "FAILED", 3, 6));
+        when(taskMapper.updateById(any(AigTask.class))).thenReturn(1);
+
+        service.transition(1L, 5, AigTaskStatusEnum.FAILED, "业务域回写失败", null, null, "内核挂了");
+
+        ArgumentCaptor<AigTask> captor = ArgumentCaptor.forClass(AigTask.class);
+        verify(taskMapper).updateById(captor.capture());
+        assertEquals(AigErrorClassEnum.UNKNOWN.getCode(), captor.getValue().getErrorCode());
+        assertEquals("内核挂了", captor.getValue().getErrorMessage());
+    }
+
+    @Test
+    @DisplayName("成功：要清空 error_code/error_message（成功还挂着上一次尝试的旧错误码比没有更坏）")
+    void successClearsErrorColumns() {
+        when(taskMapper.selectById(1L)).thenReturn(task(1L, "RUNNING", 0, 5), task(1L, "SUCCEEDED", 1, 6));
+        when(taskMapper.updateById(any(AigTask.class))).thenReturn(1);
+
+        service.transition(1L, 5, AigTaskStatusEnum.SUCCEEDED, "调用成功", null);
+
+        ArgumentCaptor<AigTask> captor = ArgumentCaptor.forClass(AigTask.class);
+        verify(taskMapper).updateById(captor.capture());
+        // 用空串而不是 null：MyBatis-Plus 默认忽略 null 字段，传 null 根本改不动这一列
+        assertEquals("", captor.getValue().getErrorCode());
+        assertEquals("", captor.getValue().getErrorMessage());
+    }
+
+    @Test
+    @DisplayName("其余状态不碰错误列（RETRY_WAIT/NEEDS_HUMAN 正需要保留失败原因）")
+    void otherStatusesLeaveErrorColumnsUntouched() {
+        when(taskMapper.selectById(1L)).thenReturn(task(1L, "FAILED", 1, 5), task(1L, "RETRY_WAIT", 1, 6));
+        when(taskMapper.updateById(any(AigTask.class))).thenReturn(1);
+
+        service.transition(1L, 5, AigTaskStatusEnum.RETRY_WAIT, "等待重试", null);
+
+        ArgumentCaptor<AigTask> captor = ArgumentCaptor.forClass(AigTask.class);
+        verify(taskMapper).updateById(captor.capture());
+        assertNull(captor.getValue().getErrorCode(), "不碰它，让它保留着失败原因");
+        assertNull(captor.getValue().getErrorMessage());
+    }
+
+    @Test
     @DisplayName("失败：迁移到 FAILED 时 attemptNo 加一（它是幂等键的一半，不计数会让重试变成重复提交）")
     void failureIncrementsAttemptNo() {
         when(taskMapper.selectById(1L)).thenReturn(task(1L, "RUNNING", 2, 5), task(1L, "FAILED", 3, 6));

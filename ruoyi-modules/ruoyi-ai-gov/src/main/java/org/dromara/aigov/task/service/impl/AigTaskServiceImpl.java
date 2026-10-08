@@ -368,9 +368,25 @@ public class AigTaskServiceImpl implements IAigTaskService {
     }
 
     @Override
+    public AigTask getTask(Long taskId) {
+        if (taskId == null) {
+            throw new ServiceException("任务ID不能为空");
+        }
+        return loadTask(taskId);
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public AigTask transition(Long taskId, Integer expectedVersion, AigTaskStatusEnum toStatus,
                               String detail, String payloadJson) {
+        return transition(taskId, expectedVersion, toStatus, detail, payloadJson, null, null);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public AigTask transition(Long taskId, Integer expectedVersion, AigTaskStatusEnum toStatus,
+                              String detail, String payloadJson,
+                              AigErrorClassEnum errorClass, String errorMessage) {
         if (taskId == null) {
             throw new ServiceException("任务ID不能为空");
         }
@@ -395,6 +411,7 @@ public class AigTaskServiceImpl implements IAigTaskService {
         update.setStatus(toStatus.getCode());
         update.setVersion(expectedVersion);
         applyStatusSideEffects(update, current, from, toStatus);
+        applyFailureFacts(update, toStatus, errorClass, errorMessage);
         int rows = taskMapper.updateById(update);
         if (rows == 0) {
             // 乐观锁命中：并发方已经改过。这里必须报错而不是重试覆盖——
@@ -483,11 +500,12 @@ public class AigTaskServiceImpl implements IAigTaskService {
     @Transactional(rollbackFor = Exception.class)
     public AigTaskStatusEnum recordFailure(Long taskId, Integer expectedVersion, AigErrorClassEnum errorClass,
                                            String errorMessage) {
-        // 第一步：先记失败（→ FAILED），顺带把本次尝试计入 attempt_no
+        // 第一步：先记失败（→ FAILED），顺带把本次尝试计入 attempt_no，
+        // 并把错误分类/原因落到 error_code/error_message（此前这两列无人写入，治理台恒为空）
         AigTask failed = transition(taskId, expectedVersion, AigTaskStatusEnum.FAILED,
             "执行失败" + (errorClass == null ? "（错误分类未知）" : "（分类 " + errorClass.getCode()
                 + "：" + errorClass.getDesc() + "）") + StringUtils.blankToDefault(errorMessage, ""),
-            null);
+            null, errorClass, errorMessage);
         AigTaskStatusEnum resting = AigTaskStateMachine.restingAfterFailure(errorClass,
             failed.getAttemptNo() == null ? 0 : failed.getAttemptNo(),
             failed.getMaxAttempt() == null ? DEFAULT_MAX_ATTEMPT : failed.getMaxAttempt());
@@ -790,6 +808,36 @@ public class AigTaskServiceImpl implements IAigTaskService {
         if (to == AigTaskStatusEnum.SUCCEEDED || to == AigTaskStatusEnum.FAILED
             || to == AigTaskStatusEnum.CANCELLED) {
             update.setFinishedAt(LocalDateTime.now());
+        }
+    }
+
+    /**
+     * 把失败信息落到 {@code aig_task.error_code / error_message} 两列。
+     *
+     * <p>这两列此前<b>全表无人写入</b>，而治理台的任务列表/详情都在渲染它们——即那两处恒为空。
+     * 平台侧失败走 {@code recordFailure}、业务域失败走带错误信息的 {@code transition}，
+     * 两条路都从这里写。</p>
+     *
+     * <p>只有 {@code FAILED} 写、{@code SUCCEEDED} 清；其余状态不碰（见接口 javadoc）。
+     * 清空刻意写空串而不是 null：MyBatis-Plus 默认忽略 null 字段，传 null 根本改不动这一列。</p>
+     *
+     * @param update       待更新实体（就地填充）
+     * @param to           目标状态
+     * @param errorClass   错误分类（可空，按 UNKNOWN 记）
+     * @param errorMessage 可读原因（可空）
+     */
+    private void applyFailureFacts(AigTask update, AigTaskStatusEnum to,
+                                   AigErrorClassEnum errorClass, String errorMessage) {
+        if (to == AigTaskStatusEnum.FAILED) {
+            // 分类未知就如实记 UNKNOWN（会转人工），不假装知道；也不留空——空列在治理台看起来像「没失败过」
+            update.setErrorCode(errorClass == null ? AigErrorClassEnum.UNKNOWN.getCode() : errorClass.getCode());
+            update.setErrorMessage(StringUtils.blankToDefault(errorMessage, ""));
+            return;
+        }
+        if (to == AigTaskStatusEnum.SUCCEEDED) {
+            // 成功还挂着上一次尝试的旧错误码，比没有错误码更坏
+            update.setErrorCode("");
+            update.setErrorMessage("");
         }
     }
 
