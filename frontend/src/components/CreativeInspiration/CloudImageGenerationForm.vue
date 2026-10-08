@@ -132,7 +132,7 @@
       <p>提交后会调用云端 API 并产生费用，结果归入「我的任务」和「素材库」。</p>
       <a :href="model.docs" target="_blank" rel="noopener noreferrer">平台接口说明 ↗</a>
     </section>
-    <p class="field-help inspiration-hint">右侧灵感目前匹配本地模型；应用创作方向会切换回本地生成。</p>
+    <p class="field-help inspiration-hint">右侧作品可匹配已验收的云端模型与本地工作流；带入后请确认素材和参数。</p>
   </div>
 </template>
 
@@ -142,7 +142,7 @@ import { cloudModelsFor } from './cloud-models';
 import { IMAGE_CLOUD_CAPABILITIES, imageCapabilityVerified, imageCapabilitiesForModel, imageCapabilityStatusLabel, type ImageCloudCapability } from './cloud-image-capabilities';
 import CloudImageMaterials from './CloudImageMaterials.vue';
 import {outputFields,outputValue,outputCandidates,outputParameterStatusLabel,outputVerified,updateOutput,outputDefaults,observedOutputFormat,type OutputKey} from './cloud-image-output';
-const props = defineProps<{ busy?: boolean; cloudStatus?: import('@/api/image/types').CloudImageModelsVO }>();
+const props = defineProps<{ busy?: boolean; cloudStatus?: import('@/api/image/types').CloudImageModelsVO; inspiration?: { route: import('./types').InspirationRoute; stamp: number } }>();
 const emit = defineEmits<{ change: [draft: import('@/api/image/types').CloudImageDraft] }>();
 function availableModel(id: string) {
   return Boolean(props.cloudStatus?.configured && props.cloudStatus.models.includes(id));
@@ -208,6 +208,14 @@ watch(() => [modelId.value, mode.value, draft.value.prompt, props.cloudStatus, m
   const blockReason = !verified(mode.value) ? '此能力尚未通过供应商接口验证，暂不可提交' : !availableModel(modelId.value) ? '云端 API Key 尚未配置，暂不可提交' : needsReference.value && !materials.value.ready ? '请完成参考素材与蒙版设置' : !outputVerified(props.cloudStatus,modelId.value,mode.value,selectedOutput.value) ? '所选输出参数尚未验证通过，暂不可提交' : '';
   emit('change', { model: modelId.value, prompt: draft.value.prompt, capability: mode.value, referenceAssetIds: needsReference.value ? materials.value.ids : [], maskAssetId: needsReference.value ? materials.value.maskId : undefined, ready, blockReason, output: selectedOutput.value });
 }, { immediate: true, deep: true });
+watch(() => props.inspiration, value => {
+  if (!value || props.busy) return;
+  const route = value.route;
+  if (!availableModel(route.model) || !imageCapabilityVerified(props.cloudStatus, route.model, route.capability)) return;
+  modelId.value = route.model; mode.value = route.capability as ImageCloudCapability;
+  family.value = '全部'; keyword.value = '';
+  drafts[route.model + ':' + route.capability].prompt = route.prompt;
+}, { immediate: true });
 function formatPrice(price?: number): string {
   return price === undefined ? '待确认' : `$${price.toFixed(4).replace(/0+$/, '').replace(/\.$/, '')}`;
 }

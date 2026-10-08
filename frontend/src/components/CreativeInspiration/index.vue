@@ -11,6 +11,11 @@
       </div>
       <span class="media-pill">{{ media === 'video' ? '参考视频' : '参考图像' }}</span>
     </header>
+    <div class="pool-actions">
+      <button type="button" :disabled="loading || media !== 'image'" @click="refreshPool">刷新作品</button>
+      <button type="button" :disabled="loading || pagination.pageCount < 2" @click="changeBatch">换一批</button>
+      <span role="status">{{ loading ? '正在更新…' : updatedAt ? '更新于 ' + updatedAt : '' }}</span>
+    </div>
     <div class="discovery-toolbar">
       <el-input v-model="keyword" placeholder="搜索风格、构图或主题" clearable aria-label="搜索灵感">
         <template #prefix>
@@ -29,7 +34,7 @@
     </div>
     <div class="model-filters">
       <label>
-        已接入模型
+        来源模型
         <select v-model="selectedModel" aria-label="推荐模型筛选">
           <option value="">全部可用模型</option>
           <option v-for="model in connectedModels" :key="model" :value="model">{{ model }}</option>
@@ -65,7 +70,7 @@
     <div v-if="visibleWorks.length" ref="galleryElement" class="masonry">
       <article v-for="work in visibleWorks" :key="work.id" class="work-card">
         <button type="button" class="work-open" :aria-label="`查看${work.title}，推荐模型`" @click="selected = work">
-          <InspirationVideo v-if="work.media === 'video'" :reference="work.video" :title="work.title" />
+          <GeneratedCover v-if="work.assetId" :asset-id="work.assetId" :title="work.title" />
           <ReferenceCover v-else :cover="work.cover" :title="work.title">
             <span class="cover-label">{{ work.category }}</span>
             <span class="cover-action">
@@ -87,7 +92,7 @@
           </button>
         </div>
         <div class="work-models">
-          <span v-for="route in recommendedRoutes(work)" :key="route.workflowCode">
+          <span v-for="route in recommendedRoutes(work).slice(0, 2)" :key="route.model + route.capability + route.workflowCode">
             {{ route.model }} · {{ capabilityLabel(route.capability) }}
           </span>
         </div>
@@ -96,10 +101,10 @@
     </div>
     <div v-else class="gallery-empty">
       <el-icon><Picture /></el-icon>
-      <b>{{ savedOnly ? '还没有匹配的收藏' : '暂无匹配的灵感' }}</b>
+      <b>{{ error || (media === 'video' ? '视频灵感更新源尚未接入' : savedOnly ? '还没有匹配的收藏' : '暂无匹配的真实作品') }}</b>
       <p>
         {{
-          connectedModels.length ? '试试其他分类、模型能力或关键词。' : '当前没有可用的已发布模型，请先确认工作流状态。'
+          media === 'video' ? '蓝章鱼图像作品不会混入视频推荐。' : '成功完成的云端图像任务会自动加入当前账号的作品池；也可更换筛选条件。'
         }}
       </p>
       <button type="button" @click="resetFilters">查看全部灵感</button>
@@ -142,8 +147,8 @@
       <p>
         {{
           media === 'video'
-            ? '视频为外部示例参考，可在详情中播放并查看来源；不代表模型生成效果。'
-            : '图像为你提供的截图中的精选参考，仅用于界面展示。'
+            ? '视频需单独接入真实视频更新源。'
+            : '图像来自当前账号已完成的蓝章鱼任务；刷新仅更新作品池，不产生生成费用。'
         }}
         先选作品，再按可用模型带入创作。
       </p>
@@ -172,6 +177,7 @@
             :title="selected.title"
             playable
           />
+          <GeneratedCover v-else-if="selected.assetId" :asset-id="selected.assetId" :title="selected.title" />
           <ReferenceCover v-else :cover="selected.cover" :title="selected.title" />
           <a
             v-if="selected.media === 'video'"
@@ -188,10 +194,10 @@
           <span class="detail-eyebrow">从这件作品开始</span>
           <h3>推荐创作方向</h3>
           <p class="detail-tags">{{ selected.tags.join(' / ') }}</p>
-          <article v-for="route in recommendedRoutes(selected)" :key="route.workflowCode" class="model-recommendation">
+          <article v-for="route in recommendedRoutes(selected)" :key="route.model + route.capability + route.workflowCode" class="model-recommendation">
             <div class="model-heading">
               <b>{{ route.model }}</b>
-              <span>本地 · ComfyUI</span>
+              <span>{{ route.source === 'cloud' ? '云端 · 蓝章鱼' : '本地 · ComfyUI' }}</span>
             </div>
             <strong>{{ capabilityLabel(route.capability) }}</strong>
             <p>{{ route.reason }}</p>
@@ -200,27 +206,24 @@
               <summary>查看创作描述</summary>
               <p>{{ route.prompt }}</p>
             </details>
-            <button type="button" :disabled="busy || !isRouteAvailable(route, workflows)" @click="applyRoute(route)">
+            <button type="button" :disabled="busy || !isRouteAvailable(route, workflows, cloudStatus)" @click="applyRoute(route)">
               {{
                 busy
                   ? '请等待当前操作完成'
-                  : isRouteAvailable(route, workflows)
+                  : isRouteAvailable(route, workflows, cloudStatus)
                     ? '使用此模型，带入创作'
                     : '工作流尚未开放'
               }}
               <el-icon><ArrowRight /></el-icon>
             </button>
-            <small v-if="!isRouteAvailable(route, workflows)">
+            <small v-if="!isRouteAvailable(route, workflows, cloudStatus)">
               可用性以服务端发布状态为准；读取失败或尚未发布时不开放。
             </small>
           </article>
-          <div class="cloud-direction">
-            <el-icon><Cloudy /></el-icon>
-            <div>
-              <b>云端模型 · 待接入</b>
-              <p>接入外部 API 后，再推荐兼容此创作方向的云端模型。</p>
-            </div>
-          </div>
+          <p v-if="selected.media === 'image' && selected.provenance" class="detail-tags">
+            来源：蓝章鱼真实生成 · {{ selected.provenance.model }}<br />
+            原任务：{{ selected.provenance.taskNo }}
+          </p>
         </div>
       </div>
     </el-dialog>
@@ -228,128 +231,91 @@
 </template>
 
 <script setup lang="ts">
-import { ArrowRight, Check, Cloudy, CollectionTag, MagicStick, Picture, Search } from '@element-plus/icons-vue';
+import { ArrowRight, Check, CollectionTag, MagicStick, Picture, Search } from '@element-plus/icons-vue';
 import { useStorage } from '@vueuse/core';
-import { computed, ref, watch } from 'vue';
-import { categoriesFor, INSPIRATION_WORKS, matchingRoutes, paginateWorks, recommendedWorks } from './catalog';
+import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue';
+import { listImageInspirations, type GeneratedInspiration } from '@/api/image/inspiration';
+import type { CloudImageModelsVO } from '@/api/image/types';
+import { categoriesFor } from './catalog';
+import { generatedWork, generatedRoutes } from './generated-pool';
+import GeneratedCover from './GeneratedCover.vue';
 import InspirationVideo from './InspirationVideo.vue';
 import ReferenceCover from './ReferenceCover.vue';
-import {
-  isRouteAvailable,
-  type CreativeMedia,
-  type InspirationRoute,
-  type InspirationWork,
-  type InspirationWorkflow
-} from './types';
+import { isRouteAvailable, type CreativeMedia, type InspirationRoute, type InspirationWork, type InspirationWorkflow } from './types';
 
 const props = defineProps<{
-  media: CreativeMedia;
-  workflows: InspirationWorkflow[];
-  busy?: boolean;
-  appliedTitle?: string;
+  media: CreativeMedia; workflows: InspirationWorkflow[]; cloudStatus?: CloudImageModelsVO;
+  busy?: boolean; appliedTitle?: string; revision?: number;
 }>();
 const emit = defineEmits<{ apply: [route: InspirationRoute, title: string] }>();
-const category = ref('全部');
-const keyword = ref('');
-const savedOnly = ref(false);
+const category = ref('全部'), keyword = ref(''), savedOnly = ref(false);
 const favorites = useStorage<string[]>('hotter-creative-inspiration-favorites-v1', []);
-const currentPage = ref(1);
-const selectedModel = ref('');
-const selectedCapability = ref('');
-const selected = ref<InspirationWork>();
-const galleryElement = ref<HTMLElement>();
-const categories = computed(() => categoriesFor(props.media));
-const connectedRoutes = computed(() =>
-  INSPIRATION_WORKS.flatMap(work => matchingRoutes(work, props.media, props.workflows))
-);
-const connectedModels = computed(() => [...new Set(connectedRoutes.value.map(route => route.model))]);
-const connectedCapabilities = computed(() => [
-  ...new Set(
-    connectedRoutes.value
-      .filter(route => !selectedModel.value || route.model === selectedModel.value)
-      .map(route => route.capability)
-  )
-]);
-const filteredWorks = computed(() =>
-  recommendedWorks(INSPIRATION_WORKS, props.media, props.workflows, {
-    category: category.value,
-    keyword: keyword.value,
-    model: selectedModel.value,
-    capability: selectedCapability.value,
-    savedIds: savedOnly.value ? favorites.value : undefined
-  })
-);
-const pagination = computed(() => paginateWorks(filteredWorks.value, currentPage.value));
-const visibleWorks = computed(() => pagination.value.items);
-watch([category, keyword, savedOnly, selectedModel, selectedCapability, () => props.media], () => {
-  currentPage.value = 1;
-});
-watch(selectedModel, () => {
-  selectedCapability.value = '';
-});
-watch(
-  () => props.media,
-  () => {
-    resetFilters();
-    selected.value = undefined;
-  }
-);
-watch(connectedModels, models => {
-  if (selectedModel.value && !models.includes(selectedModel.value)) selectedModel.value = '';
-});
-watch(connectedCapabilities, capabilities => {
-  if (selectedCapability.value && !capabilities.some(code => code === selectedCapability.value))
-    selectedCapability.value = '';
-});
-watch(
-  () => pagination.value.currentPage,
-  page => {
-    currentPage.value = page;
-  }
-);
-
-function recommendedRoutes(work: InspirationWork) {
-  return matchingRoutes(work, props.media, props.workflows, selectedModel.value, selectedCapability.value);
+const currentPage = ref(1), selectedModel = ref(''), selectedCapability = ref('');
+const selected = ref<InspirationWork>(), galleryElement = ref<HTMLElement>();
+const works = ref<GeneratedInspiration[]>([]), total = ref(0), loading = ref(false), error = ref(''), updatedAt = ref('');
+const pageSize = 6;
+let sequence = 0, timer: ReturnType<typeof setTimeout> | undefined, refreshTimer: ReturnType<typeof setInterval> | undefined;
+const categories = computed(() => [...categoriesFor(props.media), ...(props.media === 'image' ? ['风格与构图'] : [])]);
+const connectedModels = computed(() => props.cloudStatus?.configured ? props.cloudStatus.models.filter(model => model !== 'flux-2-pro') : []);
+const connectedCapabilities = computed(() => [...new Set((props.cloudStatus?.profiles ?? [])
+  .filter(profile => !selectedModel.value || profile.model === selectedModel.value)
+  .flatMap(profile => profile.capabilities.filter(cap => cap.verified).map(cap => cap.code)))]);
+const filteredWorks = computed(() => works.value.map(generatedWork).filter(work =>
+  (category.value === '全部' || work.category === category.value) && (!savedOnly.value || favorites.value.includes(work.id))));
+const pagination = computed(() => ({
+  currentPage: currentPage.value, pageCount: Math.max(1, Math.ceil(total.value / pageSize)), total: total.value
+}));
+const visibleWorks = computed(() => filteredWorks.value);
+async function loadPool() {
+  const current = ++sequence;
+  if (props.media !== 'image') { works.value = []; total.value = 0; loading.value = false; return; }
+  loading.value = true; error.value = '';
+  try {
+    const response = await listImageInspirations({ pageNum: currentPage.value, pageSize,
+      keyword: keyword.value.trim() || undefined, model: selectedModel.value || undefined,
+      capability: selectedCapability.value || undefined, category: category.value,
+      savedIds: savedOnly.value ? favorites.value.map(id => id.replace('generated-', '')).join(',') : undefined });
+    if (current !== sequence) return;
+    works.value = response.data.rows ?? []; total.value = response.data.total ?? 0;
+    currentPage.value = Math.min(currentPage.value, Math.max(1, Math.ceil(total.value / pageSize)));
+    updatedAt.value = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+  } catch { if (current === sequence) { error.value = '真实作品读取失败，请刷新重试'; works.value = []; total.value = 0; } }
+  finally { if (current === sequence) loading.value = false; }
 }
+function refreshPool() { currentPage.value = 1; void loadPool(); }
+function changeBatch() { goToPage(currentPage.value < pagination.value.pageCount ? currentPage.value + 1 : 1); }
 function goToPage(page: number) {
-  currentPage.value = paginateWorks(filteredWorks.value, page).currentPage;
-  galleryElement.value?.scrollIntoView({ behavior: 'auto', block: 'start' });
+  currentPage.value = Math.max(1, Math.min(pagination.value.pageCount, page));
+  void loadPool(); galleryElement.value?.scrollIntoView({ behavior: 'auto', block: 'start' });
 }
-
-function toggleFavorite(id: string) {
-  favorites.value = favorites.value.includes(id)
-    ? favorites.value.filter(value => value !== id)
-    : [...favorites.value, id];
+function recommendedRoutes(work: InspirationWork) {
+  return work.media === 'image' ? generatedRoutes(work, props.cloudStatus, props.workflows) : [];
 }
-function resetFilters() {
-  category.value = '全部';
-  keyword.value = '';
-  savedOnly.value = false;
-  selectedModel.value = '';
-  selectedCapability.value = '';
-  currentPage.value = 1;
-}
+function toggleFavorite(id: string) { favorites.value = favorites.value.includes(id) ? favorites.value.filter(value => value !== id) : [...favorites.value, id]; }
+function resetFilters() { category.value = '全部'; keyword.value = ''; savedOnly.value = false; selectedModel.value = ''; selectedCapability.value = ''; refreshPool(); }
 function capabilityLabel(code: string) {
-  const names: Record<string, string> = {
-    T2I: '文生图',
-    I2I: '图生图',
-    EDIT: '指令改图',
-    BGREMOVE: '抠图去背景',
-    WHITEBG: '白底图',
-    T2V: '文生视频',
-    I2V: '图生视频',
-    FL2V: '首尾帧生视频'
-  };
-  return names[code] || code;
+  return ({ T2I:'文生图', I2I:'图生图', EDIT:'参考图编辑', MULTI:'多图融合', MASK:'局部重绘', OUTPAINT:'画面扩展', TRANSPARENT:'透明背景', BGREMOVE:'抠图去背景', WHITEBG:'白底图', T2V:'文生视频', I2V:'图生视频', FL2V:'首尾帧生视频' } as Record<string,string>)[code] || code;
 }
 function applyRoute(route: InspirationRoute) {
-  if (!selected.value || props.busy || !isRouteAvailable(route, props.workflows)) return;
-  emit('apply', route, selected.value.title);
-  selected.value = undefined;
+  if (!selected.value || props.busy || !isRouteAvailable(route, props.workflows, props.cloudStatus)) return;
+  emit('apply', route, selected.value.title); selected.value = undefined;
 }
+watch([keyword, category, savedOnly, favorites, selectedModel, selectedCapability, () => props.media], () => {
+  if (timer) clearTimeout(timer); currentPage.value = 1;
+  timer = setTimeout(loadPool, 300);
+});
+watch(() => props.media, () => { selected.value = undefined; });
+watch(() => props.revision, () => { if (!loading.value) refreshPool(); });
+onMounted(() => { void loadPool(); refreshTimer = setInterval(() => { if (!document.hidden && !loading.value && !selected.value) void loadPool(); }, 60000); });
+onBeforeUnmount(() => { sequence++; if (timer) clearTimeout(timer); if (refreshTimer) clearInterval(refreshTimer); });
 </script>
 
 <style scoped>
+.pool-actions { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.pool-actions button { padding: 8px 12px; border: 1px solid #e1e6f0; border-radius: 7px; background: #f7f4fc; color: #7961ca; cursor: pointer; }
+.pool-actions span { font-size: 11px; color: #8d98aa; }
+.pool-actions button:disabled { opacity: .5; cursor: not-allowed; }
+
 .discovery {
   display: flex;
   flex-direction: column;
