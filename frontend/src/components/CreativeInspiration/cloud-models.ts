@@ -10,6 +10,12 @@ export interface CloudModel {
   capabilities: CloudCapability[];
   status: 'PENDING';
   docs: string;
+  family?: 'GPT Image' | 'Qwen' | 'Wan';
+  priceUsd?: number;
+  /** 公开模型清单没有给出这些型号的参数范围，联调前不复用其他型号参数。 */
+  parametersVerified?: boolean;
+  /** 单次文生图联调记录，不代表高级参数或当前服务健康。 */
+  generationTestedAt?: string;
 }
 export const CLOUD_MODELS: CloudModel[] = [
   {
@@ -33,24 +39,84 @@ export const CLOUD_MODELS: CloudModel[] = [
     docs: 'https://ai.google.dev/gemini-api/docs/veo'
   },
   {
-    id: 'qwen-image-plus',
-    name: 'Qwen-Image Plus',
-    provider: '阿里云百炼',
+    id: 'gpt-image-2.5-flare',
+    name: 'gpt-image-2.5-flare',
+    provider: '蓝章鱼 BluOcto',
     media: 'image',
-    description: '文字排版、海报与多样艺术风格',
+    family: 'GPT Image',
+    description: '图像生成 · Media 分组',
     capabilities: ['T2I'],
     status: 'PENDING',
-    docs: 'https://help.aliyun.com/zh/model-studio/qwen-image-api'
+    priceUsd: 0.0143,
+    parametersVerified: false,
+    generationTestedAt: '2026-10-07',
+    docs: 'https://docs.newapi.pro/zh/docs/guide/feature-guide/user/api'
   },
   {
-    id: 'qwen-image-edit-plus',
-    name: 'Qwen-Image Edit Plus',
-    provider: '阿里云百炼',
+    id: 'gpt-image-2.5-sunburst',
+    name: 'gpt-image-2.5-sunburst',
+    provider: '蓝章鱼 BluOcto',
     media: 'image',
-    description: '指令编辑、单图修改与多图融合',
-    capabilities: ['EDIT'],
+    family: 'GPT Image',
+    description: '图像生成 · Media 分组',
+    capabilities: ['T2I'],
     status: 'PENDING',
-    docs: 'https://help.aliyun.com/zh/model-studio/qwen-image-edit-api'
+    priceUsd: 0.0143,
+    parametersVerified: false,
+    generationTestedAt: '2026-10-07',
+    docs: 'https://docs.newapi.pro/zh/docs/guide/feature-guide/user/api'
+  },
+  {
+    id: 'qwen-image-3.0',
+    name: 'qwen-image-3.0',
+    provider: '蓝章鱼 BluOcto',
+    media: 'image',
+    family: 'Qwen',
+    description: '图像生成 · Media 分组',
+    capabilities: ['T2I'],
+    status: 'PENDING',
+    priceUsd: 0.0313,
+    parametersVerified: false,
+    docs: 'https://docs.newapi.pro/zh/docs/guide/feature-guide/user/api'
+  },
+  {
+    id: 'qwen-image-3.0-pro',
+    name: 'qwen-image-3.0-pro',
+    provider: '蓝章鱼 BluOcto',
+    media: 'image',
+    family: 'Qwen',
+    description: '图像生成 · Media 分组',
+    capabilities: ['T2I'],
+    status: 'PENDING',
+    priceUsd: 0.0435,
+    parametersVerified: false,
+    docs: 'https://docs.newapi.pro/zh/docs/guide/feature-guide/user/api'
+  },
+  {
+    id: 'wan2.7-image',
+    name: 'wan2.7-image',
+    provider: '蓝章鱼 BluOcto',
+    media: 'image',
+    family: 'Wan',
+    description: '图像生成 · Media 分组',
+    capabilities: ['T2I'],
+    status: 'PENDING',
+    priceUsd: 0.0271,
+    parametersVerified: false,
+    docs: 'https://docs.newapi.pro/zh/docs/guide/feature-guide/user/api'
+  },
+  {
+    id: 'wan2.7-image-pro',
+    name: 'wan2.7-image-pro',
+    provider: '蓝章鱼 BluOcto',
+    media: 'image',
+    family: 'Wan',
+    description: '图像生成 · Media 分组',
+    capabilities: ['T2I'],
+    status: 'PENDING',
+    priceUsd: 0.0661,
+    parametersVerified: false,
+    docs: 'https://docs.newapi.pro/zh/docs/guide/feature-guide/user/api'
   }
 ];
 export const CLOUD_CAPABILITIES: Record<CloudCapability, { name: string; description: string }> = {
@@ -90,6 +156,7 @@ export interface CloudOutputOption {
   label: string;
 }
 export function cloudOutputOptions(model: CloudModel, capability: CloudCapability): CloudOutputOption[] {
+  if (model.parametersVerified === false) return [];
   if (model.id === 'MiniMax-Hailuo-2.3') return ['768P', '1080P'].map(value => ({ value, label: value }));
   if (model.media === 'video')
     return (capability === 'EXTEND' ? ['720p'] : ['720p', '1080p', '4k']).map(value => ({
@@ -129,7 +196,7 @@ export interface CloudDraft {
   sourceTask: string;
 }
 export function createCloudDraft(model: CloudModel, capability: CloudCapability): CloudDraft {
-  const output = cloudOutputOptions(model, capability)[0].value;
+  const output = cloudOutputOptions(model, capability)[0]?.value ?? '';
   return {
     prompt: '',
     negativePrompt: '',

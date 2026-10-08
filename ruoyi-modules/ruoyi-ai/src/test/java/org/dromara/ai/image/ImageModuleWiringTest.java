@@ -44,7 +44,7 @@ class ImageModuleWiringTest {
         // "No qualifying bean of type ImageTaskSubmissionService" 失败（这是测试与生产装配方式的差异，
         // 不是产品缺陷——生产里 image.enabled=true 时组件扫描会把它注册进来）。
         .withUserConfiguration(ImageModuleConfiguration.class, ImageCreationController.class,
-            ImageTaskSubmissionService.class)
+            ImageTaskSubmissionService.class, org.dromara.ai.image.cloud.ImageCloudConfiguration.class)
         .withBean(ImageTaskRepository.class, ImageModuleWiringTest::stubRepository)
         .withBean(JdbcTemplate.class, () -> mock(JdbcTemplate.class));
 

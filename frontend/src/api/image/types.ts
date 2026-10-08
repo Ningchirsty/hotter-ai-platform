@@ -105,6 +105,7 @@ export interface ImageTaskDetailVO extends ImageTaskVO {
   comfyPromptId?: string | null;
   attemptCount?: number | null;
   events?: ImageTaskEventVO[];
+  outputAssets?: Pick<ImageAssetVO, 'id' | 'contentType' | 'width' | 'height' | 'hasAlpha'>[];
 }
 
 /** 创建任务的字段（只允许契约声明的键）。 */
@@ -140,4 +141,25 @@ export interface ImageTaskExecutionResult {
   hasAlpha?: boolean | null;
   errorCode?: string | null;
   errorMessage?: string | null;
+}
+
+/** 云端输出参数以逐型号、逐能力验收档位为准。 */
+export interface CloudImageOutputParams { size?: string | null; n?: number; quality?: string | null; outputFormat?: string | null; }
+export interface CloudImageOutputProfile { model: string; capability: string; label: string; output: CloudImageOutputParams; verifiedFields?: (keyof CloudImageOutputParams)[]; qualityEvidence?: string; observedFormats?: string[]; }
+export interface CloudImageDraft {
+  model: string;
+  prompt: string;
+  ready: boolean;
+  capability?: import('@/components/CreativeInspiration/cloud-image-capabilities').ImageCloudCapability;
+  referenceAssetIds?: (number | string)[];
+  maskAssetId?: number | string;
+  blockReason?: string;
+  output?: CloudImageOutputParams;
+}
+export interface CloudImageModelsVO {
+  configured: boolean;
+  models: string[];
+  capabilities: string[];
+  verified: boolean;
+  profiles?: { model: string; testedAt: string; maxReferenceImages?: number; maxReferenceBytes?: number; outputProfiles?: CloudImageOutputProfile[]; capabilities: {code: string; verified: boolean; historicallyVerified?: boolean; status: string}[] }[];
 }

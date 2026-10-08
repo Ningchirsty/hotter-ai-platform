@@ -1,6 +1,6 @@
 <template>
   <div :class="['studio', 'creative-light', { 'creation-workbench': activeView === 'create' }]">
-    <div v-if="showGuide" class="guide-bar">
+    <div v-if="showGuide && generationSource === 'local'" class="guide-bar">
       <el-icon><MagicStick /></el-icon>
       <span>
         创建任务：选择图像能力，上传素材并描述画面，确认输出档位。五个能力均走 Qwen-Image-2.1 本地 GPU 工作流。
@@ -38,8 +38,8 @@
     <!-- ================= 创建 ================= -->
     <div v-if="activeView === 'create'" class="workbench-grid">
       <section class="studio-card create-card">
-        <GenerationSource v-model="generationSource" :busy="uploading || submitting" />
-        <CloudGenerationForm v-show="generationSource === 'cloud'" media="image" :busy="uploading || submitting" />
+        <GenerationSource v-model="generationSource" :busy="uploading || submitting" :cloud-label="cloudStatus?.configured ? '可联调' : '未配置'" />
+        <CloudGenerationForm v-show="generationSource === 'cloud'" media="image" :busy="uploading || submitting" :cloud-status="cloudStatus" @change="cloudDraft = $event" />
         <div v-show="generationSource === 'local'" class="editor-body">
           <div class="section-heading">
             <div>
@@ -205,13 +205,13 @@
               submitting
                 ? '提交中…'
                 : generationSource === 'cloud'
-                  ? '云端服务待接入'
+                  ? (cloudDraft.ready ? '提交云端生成' : cloudDraft.blockReason?.includes('输出参数') ? '所选参数待验证' : cloudDraft.blockReason?.includes('验证') ? '此能力暂不可提交' : '请完成配置与素材')
                   : canSubmit
                     ? '提交生成'
                     : '暂不可提交'
             }}
           </button>
-          <span>{{ submitBlockReason || '提交后将经服务端填充模板并交由 ComfyUI 执行' }}</span>
+          <span v-if="submitBlockReason !== '此能力尚未通过供应商接口验证，暂不可提交'">{{ submitBlockReason || '提交后将经服务端填充模板并交由 ComfyUI 执行' }}</span>
         </div>
       </section>
 
@@ -288,7 +288,7 @@
               <span :class="['task-status', toneOf(task.status)]">{{ statusText(task.status) }}</span>
             </div>
             <p>
-              {{ moduleOf(task.capabilityCode)?.name || task.capabilityCode }} · {{ task.workflowCode }}
+              {{ moduleOf(task.capabilityCode)?.name || task.capabilityCode }} · {{ task.workflowCode === 'cloud-bluocto-t2i' ? '云端 · ' + task.modelCode : task.workflowCode }}
               <template v-if="task.outputWidth">· {{ task.outputWidth }}×{{ task.outputHeight }}</template>
             </p>
             <small>{{ task.taskNo }} · {{ task.createTime || '—' }}</small>
@@ -420,6 +420,8 @@
           <el-descriptions-item label="能力">
             {{ moduleOf(detail.capabilityCode)?.name || detail.capabilityCode }}
           </el-descriptions-item>
+          <el-descriptions-item label="生成来源">{{ detail.workflowCode === 'cloud-bluocto-t2i' ? '云端 · 蓝章鱼' : '本地 · ComfyUI' }}</el-descriptions-item>
+          <el-descriptions-item label="模型">{{ detail.modelCode || '—' }}</el-descriptions-item>
           <el-descriptions-item label="工作流">{{ detail.workflowCode }}</el-descriptions-item>
           <el-descriptions-item label="输出尺寸">
             <span v-if="detail.outputWidth">{{ detail.outputWidth }}×{{ detail.outputHeight }}</span>
@@ -486,6 +488,9 @@
           <b>暂无可预览的产出</b>
         </div>
 
+        <div v-if="taskPreviewOutputs.length > 1" class="output-pages" aria-label="任务生成图片">
+          <el-button v-for="(asset,index) in taskPreviewOutputs" :key="asset.id" :type="taskPreviewOutputIndex === index ? 'primary' : 'default'" :disabled="taskPreviewLoading" @click="selectTaskOutput(index)">第 {{ index + 1 }} 张</el-button>
+        </div>
         <dl v-if="taskPreviewMeta.length" class="preview-meta">
           <div v-for="row in taskPreviewMeta" :key="row.label">
             <dt>{{ row.label }}</dt>
@@ -505,6 +510,7 @@
 </template>
 
 <script setup lang="ts">
+import { cloudImageCapabilityName } from '@/components/CreativeInspiration/cloud-image-capabilities';
 import type { Component } from 'vue';
 import {
   Brush,
@@ -537,6 +543,8 @@ import type {
 import {
   cancelImageTask,
   createImageTask,
+  createCloudImageTask,
+  listCloudImageModels,
   deleteImageAsset,
   executeImageTask,
   retryImageTask,
@@ -565,7 +573,12 @@ import { IMAGE_MODULES, moduleOf, type ImageCapabilityModule, type ImageFieldKey
 type StudioView = 'create' | 'tasks' | 'assets';
 
 const activeView = ref<StudioView>('create');
-const generationSource = ref<GenerationSourceType>('local');
+const localCloudLive = import.meta.env.VITE_CLOUD_LOCAL_LIVE === 'true';
+const generationSource = ref<GenerationSourceType>(localCloudLive ? 'cloud' : 'local');
+const cloudStatus = ref<import('@/api/image/types').CloudImageModelsVO>();
+const cloudDraft = ref<import('@/api/image/types').CloudImageDraft>({ model: '', prompt: '', ready: false });
+// 请求结果不确定时重复点击复用同一个键，避免创建两条付费任务。
+let cloudSubmission: { signature: string; key: string } | undefined;
 const appliedInspirationTitle = ref('');
 const showGuide = ref(true);
 const studioViews: Array<{ key: StudioView; label: string; icon: unknown }> = [
@@ -682,10 +695,18 @@ watch(taskKeyword, () => {
 });
 
 /** 提交可用性完全由服务端状态决定，不靠前端猜测。 */
-const canSubmit = computed(() => canSubmitLocal(generationSource.value, currentWorkflow.value));
+const canSubmit = computed(() => generationSource.value === 'cloud'
+  ? cloudDraft.value.ready && Boolean(cloudDraft.value.prompt.trim())
+  : !localCloudLive && canSubmitLocal(generationSource.value, currentWorkflow.value));
 
 const submitBlockReason = computed(() => {
-  if (generationSource.value === 'cloud') return '云端 API 待接入，当前可配置草稿，暂不支持提交';
+  if (generationSource.value === 'cloud') {
+    if (!cloudStatus.value) return '正在读取云端配置状态…';
+    if (!cloudDraft.value.ready) return cloudDraft.value.blockReason || '云端服务暂不可提交';
+    if (!cloudDraft.value.prompt.trim()) return '请填写创作描述';
+    return '云端生成会产生费用，结果自动保存到任务和素材库';
+  }
+  if (localCloudLive) return '本机联调仅开放云端真实生成，本地 ComfyUI 为样例展示';
   if (!workflows.value.length) return '正在读取工作流状态…';
   const workflow = currentWorkflow.value;
   if (!workflow) return activeModule.value.workflowCode + ' 尚未在服务端注册';
@@ -808,11 +829,52 @@ async function handleFiles(event: Event) {
   }
 }
 
+async function submitCloudTask() {
+  submitting.value = true;
+  const signature = JSON.stringify([cloudDraft.value.model, cloudDraft.value.prompt, cloudDraft.value.capability, cloudDraft.value.referenceAssetIds, cloudDraft.value.maskAssetId, cloudDraft.value.output]);
+  if (cloudSubmission?.signature !== signature) {
+    cloudSubmission = { signature, key: 'cloud-' + crypto.randomUUID() };
+  }
+  try {
+    const created = await createCloudImageTask({
+      model: cloudDraft.value.model,
+      prompt: cloudDraft.value.prompt,
+      capability: cloudDraft.value.capability,
+      referenceAssetIds: cloudDraft.value.referenceAssetIds,
+      maskAssetId: cloudDraft.value.maskAssetId,
+      output: cloudDraft.value.output,
+      taskName: cloudImageCapabilityName(cloudDraft.value.capability ?? 'T2I') + ' · ' + cloudDraft.value.model,
+      idempotencyKey: cloudSubmission.key
+    });
+    const id = created.data?.taskId;
+    if (id === undefined) throw new Error('服务端未返回 taskId');
+    taskPage.pageNum = 1;
+    taskFilter.value = 'ALL';
+    taskKeyword.value = '';
+    activeView.value = 'tasks';
+    startTaskPolling(id);
+    await loadTasks();
+    if (created.data.status === 'QUEUED' || created.data.status === 'RUNNING') {
+      const executed = await executeImageTask(id);
+      if (executed.data?.outcome === 'QUEUE_FULL') ElMessage.warning('云端队列已满，任务已保留，可稍后再次执行');
+      else ElMessage.success('云端任务已受理');
+    } else {
+      ElMessage.info('已找到本次提交的任务，请查看结果或错误详情');
+    }
+    // 创建与执行均已确认后，下次明确提交是一个新任务。
+    cloudSubmission = undefined;
+  } catch (error) {
+    ElMessage.error((await extractErrorMessage(error)) ?? '提交结果未确认，请先刷新任务列表');
+    await loadTasks();
+  } finally { submitting.value = false; }
+}
+
 async function submitTask() {
   if (!canSubmit.value || submitting.value || uploading.value) {
     ElMessage.warning(submitBlockReason.value || '请等待当前操作完成');
     return;
   }
+  if (generationSource.value === 'cloud') return submitCloudTask();
   const module = activeModule.value;
   const workflowCode = module.workflowCode;
   if (module.fields.includes('prompt') && !values.prompt?.trim()) {
@@ -932,6 +994,7 @@ const taskPoller = createTaskPoller<ImageTaskDetailVO>({
 function startTaskPolling(taskId: number | string) { taskPoller.start(taskId); }
 
 function recoverable(task: ImageTaskVO) {
+  if (task.workflowCode === 'cloud-bluocto-t2i' && ['CLOUD_RESULT_UNKNOWN', 'ORPHANED_BY_RESTART'].includes(task.errorCode || '')) return false;
   return ['QUEUED', 'FAILED', 'TIMEOUT', 'CANCELED'].includes(task.status);
 }
 
@@ -1121,8 +1184,19 @@ async function loadTaskCovers() {
  * 产出内容要走鉴权接口取回再转 blob URL（<img src> 不带 Authorization 头），
  * 关闭时 revoke，避免 blob 越堆越多。
  */
+const taskPreviewOutputs = ref<NonNullable<import('@/api/image/types').ImageTaskDetailVO['outputAssets']>>([]);
+const taskPreviewOutputIndex = ref(0);
+async function selectTaskOutput(index:number) {
+  const asset=taskPreviewOutputs.value[index];if(!asset) return;
+  taskPreviewLoading.value=true;taskPreviewError.value='';
+  if(taskPreviewUrl.value) { URL.revokeObjectURL(taskPreviewUrl.value);taskPreviewUrl.value=''; }
+  try { taskPreviewUrl.value=await fetchImageAssetBlobUrl(asset.id);taskPreviewOutputIndex.value=index; }
+  catch(error) { taskPreviewError.value=(await extractErrorMessage(error)) ?? '读取产出失败'; }
+  finally { taskPreviewLoading.value=false; }
+}
 async function previewTask(task: ImageTaskVO) {
   taskPreviewTask.value = task;
+  taskPreviewOutputs.value=[];taskPreviewOutputIndex.value=0;
   taskPreviewVisible.value = true;
   taskPreviewError.value = '';
   if (taskPreviewUrl.value) {
@@ -1142,7 +1216,9 @@ async function previewTask(task: ImageTaskVO) {
   }
   taskPreviewLoading.value = true;
   try {
-    taskPreviewUrl.value = await fetchImageAssetBlobUrl(task.outputAssetId as number | string);
+    const response=await getImageTask(task.id);
+    taskPreviewOutputs.value=response.data.outputAssets ?? [];
+    taskPreviewUrl.value = await fetchImageAssetBlobUrl(taskPreviewOutputs.value[0]?.id ?? task.outputAssetId as number | string);
   } catch (error) {
     taskPreviewError.value = (await extractErrorMessage(error)) ?? '读取产出失败';
   } finally {
@@ -1164,7 +1240,9 @@ function downloadTaskOutput() {
   if (!taskPreviewUrl.value || !taskPreviewTask.value) return;
   const link = document.createElement('a');
   link.href = taskPreviewUrl.value;
-  link.download = (taskPreviewTask.value.taskNo || 'image-task') + '.png';
+  const mime=taskPreviewOutputs.value[taskPreviewOutputIndex.value]?.contentType;
+  const extension=mime === 'image/jpeg' ? 'jpg' : mime === 'image/webp' ? 'webp' : 'png';
+  link.download = (taskPreviewTask.value.taskNo || 'image-task') + '-' + (taskPreviewOutputIndex.value+1) + '.'+extension;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -1193,6 +1271,8 @@ function formatSize(bytes?: number | null) {
 }
 
 onMounted(async () => {
+  try { cloudStatus.value = (await listCloudImageModels()).data; }
+  catch { cloudStatus.value = { configured: false, models: [], capabilities: [], verified: false }; }
   await loadWorkflows();
   applyDefaults();
   await loadTasks();

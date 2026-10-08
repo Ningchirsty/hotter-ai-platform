@@ -4,6 +4,9 @@ import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.dromara.ai.image.cloud.ImageCloudService;
+import org.dromara.ai.image.cloud.CloudImageRequest;
+import org.dromara.ai.image.cloud.BluOctoImageClient;
 import org.dromara.ai.image.domain.ImageCapability;
 import org.dromara.ai.image.domain.ImageTaskStatus;
 import org.dromara.ai.image.domain.ImageWorkflowVersion;
@@ -94,6 +97,7 @@ public class ImageCreationController extends BaseController {
     private final ImageTemplatePreparer preparer;
     private final ImageTaskRepository repository;
     private final ImageTaskDispatchService dispatchService;
+    private final ImageCloudService cloudService;
 
     /**
      * 建任务/派发的唯一装配入口（与视觉工厂共用一处，避免两处漂移）
@@ -336,7 +340,9 @@ public class ImageCreationController extends BaseController {
         String tenantId = requireTenantId();
         long userId = requireUserId();
         // 归属校验、状态可执行性判断与派发同样委托给提交服务（与建任务收敛在同一处）
-        String outcome = submissionService.dispatchOwned(taskId, tenantId, userId);
+        Map<String, Object> task = repository.requireOwnedTask(taskId, tenantId, userId);
+        String outcome = ImageCloudService.isCloud(task) ? cloudService.execute(taskId, tenantId, userId)
+            : submissionService.dispatchOwned(taskId, tenantId, userId);
         return executionResult(taskId, tenantId, userId, outcome);
     }
 
@@ -346,8 +352,45 @@ public class ImageCreationController extends BaseController {
     public R<Map<String, Object>> retryTask(@PathVariable Long taskId) {
         String tenantId = requireTenantId();
         long userId = requireUserId();
-        String outcome = submissionService.retryOwned(taskId, tenantId, userId);
+        Map<String, Object> task = repository.requireOwnedTask(taskId, tenantId, userId);
+        String outcome = ImageCloudService.isCloud(task) ? cloudService.retry(taskId, tenantId, userId)
+            : submissionService.retryOwned(taskId, tenantId, userId);
         return executionResult(taskId, tenantId, userId, outcome);
+    }
+
+    /** 云端可配置清单，不把已配置密钥误报为模型已经生成验收通过。 */
+    @GetMapping("/cloud/models")
+    @SaCheckPermission("image:creation:view")
+    public R<Map<String, Object>> cloudModels() {
+        return R.ok(Map.of("configured", cloudService.configured(), "models", BluOctoImageClient.MODELS,
+            "capabilities", CloudImageRequest.CAPABILITIES, "verified", BluOctoImageClient.MODELS.stream().anyMatch(model -> CloudImageRequest.verified(model, "T2I")), "profiles", CloudImageRequest.profiles()));
+    }
+
+    /** 只读核验当前服务端 Key 的模型权限。 */
+    @GetMapping("/cloud/check")
+    @SaCheckPermission("image:creation:submit")
+    public R<Map<String, Object>> checkCloud() {
+        var authorizedModels = cloudService.authorizedModels();
+        boolean generationVerified = authorizedModels.stream().anyMatch(model -> CloudImageRequest.verified(model, "T2I"));
+        return R.ok(Map.of("authorizedModels", authorizedModels, "generationVerified", generationVerified));
+    }
+
+    /** 创建云端任务，仍通过同一个任务列表/执行/素材接口回读结果。 */
+    @PostMapping("/cloud/tasks")
+    @SaCheckPermission("image:creation:submit")
+    public R<Map<String, Object>> createCloudTask(@RequestBody Map<String, Object> payload) {
+        if (!java.util.Set.of("model", "prompt", "taskName", "idempotencyKey", "capability", "referenceAssetIds", "maskAssetId", "output").containsAll(payload.keySet())) {
+            throw ImageTaskException.invalidContract("云端请求包含尚未验证的参数");
+        }
+        try {
+            Map<String, Object> fields = new LinkedHashMap<>(payload);
+            fields.remove("taskName"); fields.remove("idempotencyKey");
+            CloudImageRequest request = MAPPER.convertValue(fields, CloudImageRequest.class);
+            return R.ok(cloudService.create(requireTenantId(), requireUserId(), LoginHelper.getDeptId(), request,
+                text(payload.get("taskName")), text(payload.get("idempotencyKey"))));
+        } catch (IllegalArgumentException e) {
+            throw ImageTaskException.invalidContract("云端能力参数格式无效");
+        }
     }
 
     private R<Map<String, Object>> executionResult(Long taskId, String tenantId, long userId, String outcome) {
@@ -388,6 +431,7 @@ public class ImageCreationController extends BaseController {
         Map<String, Object> task = repository.requireOwnedTask(taskId, tenantId, userId);
         Map<String, Object> detail = CamelCase.row(task);
         detail.put("events", CamelCase.rows(repository.listEvents(taskId, tenantId)));
+        detail.put("outputAssets",CamelCase.rows(repository.listTaskOutputs(taskId,tenantId,userId)));
         return R.ok(detail);
     }
 

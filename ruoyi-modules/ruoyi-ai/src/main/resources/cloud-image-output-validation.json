@@ -1,0 +1,146 @@
+[
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "EDIT",
+    "testedAt": "2026-10-07",
+    "label": "实测尺寸与数量",
+    "output": {
+      "size": "1536x1024",
+      "n": 2
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "qualityEvidence": "REQUEST_ACCEPTED_ONLY",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-sunburst",
+    "capability": "EDIT",
+    "testedAt": "2026-10-07",
+    "label": "实测尺寸与数量",
+    "output": {
+      "size": "1536x1024",
+      "n": 2
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "qualityEvidence": "REQUEST_ACCEPTED_ONLY",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "qwen-image-3.0",
+    "capability": "EDIT",
+    "testedAt": "2026-10-07",
+    "label": "实测尺寸与数量",
+    "output": {
+      "size": "1536x1024",
+      "n": 2
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "qwen-image-3.0-pro",
+    "capability": "EDIT",
+    "testedAt": "2026-10-07",
+    "label": "实测尺寸与数量",
+    "output": {
+      "size": "1536x1024",
+      "n": 2
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "qwen-image-3.0-pro",
+    "capability": "T2I",
+    "testedAt": "2026-10-07",
+    "label": "实测尺寸与数量",
+    "output": {
+      "size": "1024x1024",
+      "n": 1
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "qwen-image-3.0",
+    "capability": "T2I",
+    "testedAt": "2026-10-07",
+    "label": "实测尺寸与数量",
+    "output": {
+      "size": "1024x1024",
+      "n": 1
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "wan2.7-image-pro",
+    "capability": "T2I",
+    "testedAt": "2026-10-07",
+    "label": "实测尺寸与数量",
+    "output": {
+      "size": "1024x1024",
+      "n": 1
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "wan2.7-image",
+    "capability": "T2I",
+    "testedAt": "2026-10-07",
+    "label": "实测尺寸与数量",
+    "output": {
+      "size": "1024x1024",
+      "n": 1
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
+  }
+]

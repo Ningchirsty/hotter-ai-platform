@@ -47,7 +47,7 @@ class VideoImageCoexistenceTest {
         // 所以只补图片侧这一个。
         .withUserConfiguration(VideoModuleConfiguration.class, VideoCreationController.class,
             ImageModuleConfiguration.class, ImageCreationController.class,
-            ImageTaskSubmissionService.class)
+            ImageTaskSubmissionService.class, org.dromara.ai.image.cloud.ImageCloudConfiguration.class)
         .withBean(JdbcTemplate.class, () -> mock(JdbcTemplate.class))
         .withBean(VideoTaskRepository.class, () -> mock(VideoTaskRepository.class))
         .withBean(ImageTaskRepository.class, () -> mock(ImageTaskRepository.class))
