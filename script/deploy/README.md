@@ -73,7 +73,19 @@ Manual run / local check: `bash script/deploy/health-check.sh`
 
 `health-check.sh` covers: backend JSON probe, both containers' health/restart
 count, free disk, rollback target present, stale `previous-*` count, model-probe
-freshness, and background-job backlog.
+freshness, background-job backlog, and **dependency health** (MySQL, Redis, MinIO)
+plus a **storage liveness probe**.
+
+**Why dependencies are checked separately** (added 2026-10-08, after asking "what
+could be broken while this alarm stays green?"): the backend probe hits
+`/auth/code`, which only needs Redis for the captcha and **never touches MySQL**;
+the MySQL queries further down only raise a **WARN** when they cannot run; and
+**MinIO was covered by nothing at all** — it has no container healthcheck either
+(measured `health=none`), so a storage outage would break uploads/reads while
+everything else stayed green. MinIO's `9000/9001` are not published to the host,
+so the probe runs **from inside the backend container**, and if `curl` is missing
+there the check reports a **WARN rather than passing silently** — "could not
+verify" must never look like "verified fine".
 
 **Model-probe freshness is measured over ROUTABLE models only** — those with an
 enabled `aig_capability_model` row. The probe itself runs `only-bound=true`,

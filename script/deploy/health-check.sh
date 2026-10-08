@@ -230,6 +230,56 @@ if docker inspect "$MYSQL_CONTAINER" >/dev/null 2>&1; then
   fi
 fi
 
+# ---- 8) 依赖服务（2026-10-08 补：它们的故障不会让第 1/2 项变红） ----
+# 为什么必须单独查（这是我问自己"告警还漏了什么"时找出来的盲区）：
+#   · 第 1 项探的是 /auth/code —— 它只依赖 Redis（写验证码），**完全不碰 MySQL**；
+#     也就是说 **MySQL 单独挂掉时第 1 项照样绿**；
+#   · 第 6/7 项虽然用 docker exec 查了 MySQL，但读不到时只报 **WARN**，不是 CRITICAL；
+#   · **MinIO 完全没有被任何一项覆盖**：它挂了的表现是"上传/取图失败"，
+#     而后端仍然正常应答 200。这是最危险的一类——功能坏了但告警是绿的。
+DEP_CONTAINERS="${HOTTER_DEP_CONTAINERS:-ai-video-poc-mysql-1 ai-video-poc-redis-1 ai-video-poc-minio-1}"
+for c in $DEP_CONTAINERS; do
+  if ! docker inspect "$c" >/dev/null 2>&1; then
+    report "[CRITICAL] dependency container missing: $c"
+    critical=$((critical + 1))
+    continue
+  fi
+  dstate=$(docker inspect "$c" --format '{{.State.Status}}')
+  dhealth=$(docker inspect "$c" --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}')
+  if [ "$dstate" != "running" ]; then
+    report "[CRITICAL] dependency $c state=$dstate (expected running)"
+    critical=$((critical + 1))
+  elif [ "$dhealth" = "unhealthy" ]; then
+    report "[CRITICAL] dependency $c is unhealthy"
+    critical=$((critical + 1))
+  else
+    report "[ok] dependency $c state=$dstate health=$dhealth"
+  fi
+done
+
+# 容器在跑不等于服务可用——而且 MinIO **没有 healthcheck**（实测 health=none），
+# 所以对存储必须真探一次活性。MinIO 的 9000/9001 没有映射到宿主机，
+# 只有同一 docker 网络内的容器能连，因此从后端容器里发。
+MINIO_PROBE_URL="${HOTTER_MINIO_PROBE_URL:-http://ai-video-poc-minio-1:9000/minio/health/live}"
+if ! docker inspect "$BACKEND_CONTAINER" >/dev/null 2>&1; then
+  report "[WARN] cannot probe storage liveness: backend container $BACKEND_CONTAINER missing"
+  warn=$((warn + 1))
+elif ! docker exec "$BACKEND_CONTAINER" sh -c 'command -v curl >/dev/null 2>&1'; then
+  # 探不了 ≠ 探过了没问题：不能静默算通过（否则镜像一换就变成永久盲区）
+  report "[WARN] cannot probe storage liveness: no curl inside $BACKEND_CONTAINER"
+  warn=$((warn + 1))
+else
+  mcode=$(docker exec "$BACKEND_CONTAINER" curl -s -o /dev/null -m 10 -w '%{http_code}' "$MINIO_PROBE_URL" 2>/dev/null || true)
+  mcode="${mcode:-000}"
+  if [ "$mcode" = "200" ]; then
+    report "[ok] storage liveness: http=200 ($MINIO_PROBE_URL)"
+  else
+    report "[CRITICAL] storage liveness failed: http=$mcode from $MINIO_PROBE_URL"
+    report "           uploads/reads would fail while the backend still answers 200"
+    critical=$((critical + 1))
+  fi
+fi
+
 report ""
 report "=== summary: critical=$critical warn=$warn ==="
 if [ "$critical" -gt 0 ]; then
