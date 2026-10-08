@@ -18,6 +18,12 @@ on:
     # 每 5 分钟。注意：schedule 只在默认分支上生效。
     - cron: '*/5 * * * *'
   workflow_dispatch:
+    inputs:
+      probe_url:
+        description: 'Override the probe target (used to verify the alert path itself)'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -42,6 +48,10 @@ jobs:
       - name: Run health check
         id: health
         continue-on-error: true
+        env:
+          # 允许手动指定探针目标，用于**验证告警通路本身**（例如故意指向一个不可达端口，
+          # 确认真的会创建 issue），而不必去破坏生产。留空则用 health-check.sh 的默认值。
+          HOTTER_BACKEND_PROBE_URL: ${{ inputs.probe_url }}
         run: |
           set -uo pipefail
           bash script/deploy/health-check.sh | tee /tmp/health-report.txt
