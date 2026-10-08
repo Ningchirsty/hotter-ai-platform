@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hotter.internal/aigov/v2/contract/execution-request.schema.json",
+  "title": "Execution Request v1",
+  "description": "客户端提交一次异步执行的请求契约。不含 principal：授权上下文由服务端从会话/服务令牌补全并签名，绝不接受客户端自报（见 02-Execution-Contract-v1.md 红线 3）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contractVersion", "requestId", "idempotencyKey", "target", "inputs", "policy"],
+  "properties": {
+    "contractVersion": {
+      "const": "1.0",
+      "description": "契约版本。服务端必须拒绝未知版本（fail closed），不猜测兼容。"
+    },
+    "requestId": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "description": "客户端侧调用 ID，用于排障；不是幂等键。"
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "description": "幂等键，作用域 = 服务端确定的 (org_scope, submitter, idempotencyKey)。相同键 + 不同 requestDigest 必须返回冲突，不得静默复用旧执行。"
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code"],
+      "properties": {
+        "code": { "type": "string", "maxLength": 64 },
+        "version": { "$ref": "#/$defs/semver" }
+      },
+      "description": "业务场景。用于场景收窄（既有 aig_route_scenario_binding）与场景版本锁定。"
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "code"],
+      "properties": {
+        "type": { "enum": ["AGENT", "SKILL", "TOOL", "WORKFLOW", "SCENARIO"] },
+        "code": { "type": "string", "maxLength": 64 },
+        "version": {
+          "$ref": "#/$defs/semver",
+          "description": "不填 = 由服务端按权限 + 场景/品牌/通道解析当前稳定版本，并落不可变快照。"
+        }
+      },
+      "description": "执行目标。服务端必须做版本解析与发布门槛校验；前端传入的元数据一律不可信。"
+    },
+    "inputs": {
+      "type": "object",
+      "description": "业务输入。文件不传内容，只传 artifactId 引用（见 $defs/artifactRef）。字段级校验由 target 的 inputSchema 决定。",
+      "properties": {
+        "artifacts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/artifactRef" },
+          "maxItems": 50
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dataLevel"],
+      "properties": {
+        "dataLevel": {
+          "enum": ["PUBLIC", "INTERNAL", "RESTRICTED", "STRICT"],
+          "description": "本次数据等级。STRICT 硬性禁止外发，任何策略都不得绕过。"
+        },
+        "maxWallSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400,
+          "description": "外层墙钟预算（声明）。注意：服务端超时判定目前由定时 sweep 执行，实际精度 = sweep 周期，需与声明对齐。"
+        },
+        "maxCost": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["amount", "currency"],
+          "properties": {
+            "amount": { "type": "string", "pattern": "^\\d+(\\.\\d{1,8})?$" },
+            "currency": { "const": "USD", "description": "平台已统一为 USD（R46），不得使用其他币种。" }
+          },
+          "description": "本次执行的外层预算上限；模型实际计费口径另在计费模块配置。"
+        },
+        "externalAllowed": {
+          "type": "boolean",
+          "description": "调用方声明。真实生效的是 aig_route_policy.allow_external 与 STRICT 硬禁令——声明不能放宽策略（见 ADR-006）。"
+        }
+      }
+    },
+    "trace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["traceId"],
+      "properties": {
+        "traceId": { "type": "string", "maxLength": 128 },
+        "parentExecutionId": {
+          "oneOf": [{ "$ref": "#/$defs/entityId" }, { "type": "null" }],
+          "description": "顶层执行为 null（允许显式 null：多数客户端会把缺省的可选字段序列化成 null）。"
+        }
+      },
+      "description": "可选。缺失时由服务端生成 traceId（非功能目标要求 100% 记录关联 traceId）。"
+    }
+  },
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "entityId": {
+      "type": "string",
+      "pattern": "^\\d+$",
+      "maxLength": 32,
+      "description": "雪花 ID。平台把 Long 序列化为 JSON 字符串（防 JS 精度丢失），契约一律用 string。"
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifactId", "role"],
+      "properties": {
+        "artifactId": { "$ref": "#/$defs/entityId" },
+        "role": { "type": "string", "maxLength": 32 }
+      }
+    }
+  }
+}

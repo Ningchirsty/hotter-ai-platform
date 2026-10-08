@@ -1,0 +1,30 @@
+{
+  "executionId": "1765000000000099001",
+  "taskId": "1765000000000099001",
+  "requestId": "req-20261008-0001",
+  "idempotencyKey": "brandA-detail-20261008-0001",
+  "status": "SUCCEEDED",
+  "currentStep": "export",
+  "progress": 100,
+  "dataLevel": "INTERNAL",
+  "versionSnapshot": {
+    "agentVersionId": "1764000000000000011",
+    "skillVersionIds": ["1765000000000000021"],
+    "runtimeDeployId": "1765000000000030001",
+    "scenarioVersionId": "1765000000000040001",
+    "routePolicyId": "1763000000000002011",
+    "selectedModelId": "1764000000000000029",
+    "selectedModelKey": "qwen-image-3.0-pro"
+  },
+  "outputs": [
+    { "type": "IMAGE", "artifactId": "1765000000000091001", "mimeType": "image/png", "sha256": "9f2b1c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f809", "sizeBytes": 1843200 },
+    { "type": "DESIGN_DOCUMENT", "artifactId": "1765000000000091002", "mimeType": "application/json" }
+  ],
+  "usage": { "durationMs": 123000, "modelCalls": 7, "toolCalls": 3, "costAmount": "0.4200", "currency": "USD", "costUnknown": false },
+  "externalCall": true,
+  "error": null,
+  "startedAt": "2026-10-08T02:00:00Z",
+  "finishedAt": "2026-10-08T02:02:03Z",
+  "operateTime": "2026-10-08T02:02:04Z",
+  "traceId": "trace-20261008-0001"
+}

@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hotter.internal/aigov/v2/contract/execution-event.schema.json",
+  "title": "Execution Event v1",
+  "description": "执行事件账本的一条记录。事件类型词表 = AigTaskEventTypeEnum（既有 6 个 + V2 追加 4 个）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["eventId", "executionId", "sequence", "eventType", "timestamp"],
+  "properties": {
+    "eventId": { "$ref": "#/$defs/entityId" },
+    "executionId": { "$ref": "#/$defs/entityId" },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "单个执行内单调递增。消费方去重键 = (executionId, sequence)；允许至少一次投递，不依赖严格全局顺序。"
+    },
+    "eventType": {
+      "enum": [
+        "AI_TASK_CREATED",
+        "AI_TASK_STATUS_CHANGED",
+        "AI_TASK_PROGRESSED",
+        "AI_TASK_RESULT_RECORDED",
+        "AI_TASK_CALLBACK_RECEIVED",
+        "AI_TASK_REVIEWED",
+        "AI_TASK_STEP_STARTED",
+        "AI_TASK_STEP_SUCCEEDED",
+        "AI_TASK_STEP_FAILED",
+        "AI_TASK_ARTIFACT_ADDED",
+        "AI_TASK_POLICY_DECIDED"
+      ],
+      "description": "前 6 个 = AigTaskEventTypeEnum 既有值；后 5 个为 V2 追加（逐节点粒度、制品、策略决策）。"
+    },
+    "stepId": { "type": "string", "maxLength": 128 },
+    "attemptNo": { "type": "integer", "minimum": 0 },
+    "fromStatus": { "$ref": "#/$defs/status" },
+    "toStatus": { "$ref": "#/$defs/status" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "detail": { "type": "string", "maxLength": 1000 },
+    "traceId": { "type": "string", "maxLength": 128 },
+    "actorId": { "$ref": "#/$defs/entityId" },
+    "payload": {
+      "type": "object",
+      "description": "事件载荷。禁止把明文凭证或不必要的完整敏感 Prompt 放进 payload。",
+      "properties": {
+        "progress": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "artifactIds": { "type": "array", "items": { "$ref": "#/$defs/entityId" }, "maxItems": 50 },
+        "externalJobId": { "type": "string", "maxLength": 255 },
+        "errorCode": { "type": "string", "maxLength": 64 },
+        "reasonCode": { "type": "string", "maxLength": 64 }
+      }
+    }
+  },
+  "$defs": {
+    "entityId": { "type": "string", "pattern": "^\\d+$", "maxLength": 32 },
+    "status": {
+      "enum": [
+        "DRAFT",
+        "POLICY_CHECKING",
+        "QUEUED",
+        "DISPATCHED",
+        "RUNNING",
+        "REVIEW_PENDING",
+        "NEED_HUMAN",
+        "RETRY_WAIT",
+        "SUCCEEDED",
+        "FAILED",
+        "CANCEL_REQUESTED",
+        "CANCELLED",
+        "APPROVED",
+        "REJECTED"
+      ]
+    }
+  }
+}

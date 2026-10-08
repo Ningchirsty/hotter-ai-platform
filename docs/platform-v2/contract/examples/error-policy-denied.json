@@ -1,0 +1,26 @@
+{
+  "executionId": "1765000000000099002",
+  "taskId": "1765000000000099002",
+  "status": "FAILED",
+  "progress": 0,
+  "dataLevel": "INTERNAL",
+  "versionSnapshot": {
+    "agentVersionId": "1764000000000000011"
+  },
+  "outputs": [],
+  "usage": { "durationMs": 42, "modelCalls": 0, "toolCalls": 0, "costUnknown": true },
+  "externalCall": false,
+  "error": {
+    "errorCode": "POLICY_DENIED",
+    "reasonCode": "EXTERNAL_DISALLOWED",
+    "message": "策略 allowExternal='N'，本次调用仅允许本地/集团共享部署模型，外部部署模型将被排除；已无可用候选",
+    "retryable": false,
+    "worthFallback": false,
+    "needsHuman": true,
+    "circuitBreak": false
+  },
+  "startedAt": "2026-10-08T02:10:00Z",
+  "finishedAt": "2026-10-08T02:10:00Z",
+  "operateTime": "2026-10-08T02:10:00Z",
+  "traceId": "trace-20261008-0002"
+}

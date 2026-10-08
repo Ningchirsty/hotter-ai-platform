@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hotter.internal/aigov/v2/contract/execution-result.schema.json",
+  "title": "Execution Result v1",
+  "description": "一次执行的查询/终态结果。状态词表 = AigTaskStatusEnum（14 态），不另立一套；超时是原因不是状态。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["executionId", "status", "versionSnapshot"],
+  "properties": {
+    "executionId": {
+      "$ref": "#/$defs/entityId",
+      "description": "对外执行 ID。与内部 aig_task.task_id 同源（不再引入第二个执行事实源）。"
+    },
+    "taskId": { "$ref": "#/$defs/entityId" },
+    "requestId": { "type": "string", "maxLength": 64 },
+    "idempotencyKey": { "type": "string", "maxLength": 128 },
+    "status": {
+      "enum": [
+        "DRAFT",
+        "POLICY_CHECKING",
+        "QUEUED",
+        "DISPATCHED",
+        "RUNNING",
+        "REVIEW_PENDING",
+        "NEED_HUMAN",
+        "RETRY_WAIT",
+        "SUCCEEDED",
+        "FAILED",
+        "CANCEL_REQUESTED",
+        "CANCELLED",
+        "APPROVED",
+        "REJECTED"
+      ],
+      "description": "= AigTaskStatusEnum。终态：SUCCEEDED / FAILED / CANCELLED / APPROVED / REJECTED。"
+    },
+    "currentStep": { "type": "string", "maxLength": 128 },
+    "progress": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "dataLevel": { "enum": ["PUBLIC", "INTERNAL", "RESTRICTED", "STRICT"] },
+    "versionSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agentVersionId"],
+      "properties": {
+        "agentVersionId": { "$ref": "#/$defs/entityId" },
+        "skillVersionIds": { "type": "array", "items": { "$ref": "#/$defs/entityId" }, "maxItems": 50 },
+        "runtimeDeployId": { "$ref": "#/$defs/entityId" },
+        "scenarioVersionId": { "$ref": "#/$defs/entityId" },
+        "workflowVersionId": { "$ref": "#/$defs/entityId" },
+        "routePolicyId": { "$ref": "#/$defs/entityId" },
+        "selectedModelId": { "$ref": "#/$defs/entityId" },
+        "selectedModelKey": { "type": "string", "maxLength": 100 }
+      },
+      "description": "执行时锁定的不可变版本快照。已运行任务永远用它，不随新版本漂移。"
+    },
+    "outputs": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "artifactId"],
+        "properties": {
+          "type": { "type": "string", "maxLength": 32 },
+          "artifactId": { "$ref": "#/$defs/entityId" },
+          "mimeType": { "type": "string", "maxLength": 128 },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "sizeBytes": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "description": "大模型输出与设计文件不写进审计正文；这里只给制品引用与摘要。"
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "durationMs": { "type": "integer", "minimum": 0 },
+        "modelCalls": { "type": "integer", "minimum": 0 },
+        "toolCalls": { "type": "integer", "minimum": 0 },
+        "costAmount": { "type": "string", "pattern": "^\\d+(\\.\\d{1,8})?$" },
+        "currency": { "const": "USD" },
+        "costUnknown": { "type": "boolean", "description": "供应商不回执费用时为 true。空不等于免费。" }
+      }
+    },
+    "externalCall": { "type": "boolean" },
+    "error": {
+      "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/error" }]
+    },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "finishedAt": { "type": "string", "format": "date-time" },
+    "operateTime": { "type": "string", "format": "date-time" },
+    "traceId": { "type": "string", "maxLength": 128 }
+  },
+  "$defs": {
+    "entityId": { "type": "string", "pattern": "^\\d+$", "maxLength": 32 },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["errorCode", "retryable"],
+      "properties": {
+        "errorCode": {
+          "enum": [
+            "INVALID_REQUEST",
+            "POLICY_DENIED",
+            "APPROVAL_REQUIRED",
+            "RATE_LIMITED",
+            "TIMEOUT",
+            "AUTH_FAILED",
+            "QUOTA_EXCEEDED",
+            "UNAVAILABLE",
+            "OUTPUT_UNPARSABLE",
+            "UNKNOWN",
+            "ARTIFACT_INVALID",
+            "TOOL_FAILED",
+            "SECURITY_QUARANTINE"
+          ],
+          "description": "= AigErrorClassEnum（含 V2 追加 3 项）。见 contract/error-codes.json。"
+        },
+        "reasonCode": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "description": "给人看的细因（如 EXTERNAL_DISALLOWED）。不要把细因做成 errorCode。"
+        },
+        "message": { "type": "string", "maxLength": 1000 },
+        "retryable": { "type": "boolean" },
+        "worthFallback": { "type": "boolean" },
+        "needsHuman": { "type": "boolean" },
+        "circuitBreak": { "type": "boolean" },
+        "fieldPath": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "INVALID_REQUEST 时给出出错字段路径，便于前端定位。"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "contractVersion": "1.0",
+  "requestId": "req-20261008-0001",
+  "idempotencyKey": "brandA-detail-20261008-0001",
+  "scenario": { "code": "COMMERCE_DETAIL_PAGE", "version": "1.0.0" },
+  "target": { "type": "AGENT", "code": "vibeposter-design", "version": "0.1.0" },
+  "inputs": {
+    "productId": "SKU-BLOCK-FLOWER-001",
+    "brief": "生成竖版商品详情页分屏主视觉",
+    "pageCount": 5,
+    "artifacts": [
+      { "artifactId": "1764000000000000901", "role": "PRODUCT_REFERENCE" },
+      { "artifactId": "1764000000000000902", "role": "BRAND_GUIDE" }
+    ]
+  },
+  "policy": {
+    "dataLevel": "INTERNAL",
+    "maxWallSeconds": 300,
+    "maxCost": { "amount": "5.00", "currency": "USD" },
+    "externalAllowed": false
+  },
+  "trace": { "traceId": "trace-20261008-0001", "parentExecutionId": null }
+}

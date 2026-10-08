@@ -1,0 +1,62 @@
+{
+  "$comment": "AigErrorClassEnum 的权威镜像 + V2 追加项。source=existing 的条目必须与 ruoyi-modules/ruoyi-ai-gov/src/main/java/org/dromara/aigov/enums/AigErrorClassEnum.java 逐字一致；改一处必须同时改另一处。",
+  "contractVersion": "1.0",
+  "authority": "org.dromara.aigov.enums.AigErrorClassEnum",
+  "dispositionSemantics": {
+    "retryable": "向同一个 Provider 再要一次（可能重复计费，故取值保守）",
+    "worthFallback": "换到有序候选里的下一个 Provider 试一次（fallback 存在的意义）",
+    "needsHuman": "转人工（对应任务状态 NEED_HUMAN）",
+    "circuitBreak": "立即熔断该 Provider 并告警"
+  },
+  "codes": [
+    { "code": "INVALID_REQUEST", "desc": "参数或输出Schema错误", "retryable": false, "needsHuman": true, "circuitBreak": false, "worthFallback": false, "http": 400, "source": "existing" },
+    { "code": "POLICY_DENIED", "desc": "权限或外发策略拒绝", "retryable": false, "needsHuman": true, "circuitBreak": false, "worthFallback": false, "http": 403, "source": "existing" },
+    { "code": "APPROVAL_REQUIRED", "desc": "需要调用审批（无有效授权）", "retryable": false, "needsHuman": true, "circuitBreak": false, "worthFallback": false, "http": 403, "source": "existing" },
+    { "code": "RATE_LIMITED", "desc": "被限流", "retryable": true, "needsHuman": false, "circuitBreak": false, "worthFallback": true, "http": 429, "source": "existing" },
+    { "code": "TIMEOUT", "desc": "调用超时", "retryable": true, "needsHuman": false, "circuitBreak": false, "worthFallback": true, "http": 504, "source": "existing" },
+    { "code": "AUTH_FAILED", "desc": "鉴权失败", "retryable": false, "needsHuman": false, "circuitBreak": true, "worthFallback": true, "http": 401, "source": "existing" },
+    { "code": "QUOTA_EXCEEDED", "desc": "额度或余额不足", "retryable": false, "needsHuman": true, "circuitBreak": true, "worthFallback": true, "http": 402, "source": "existing" },
+    { "code": "UNAVAILABLE", "desc": "服务不可用", "retryable": true, "needsHuman": false, "circuitBreak": false, "worthFallback": true, "http": 503, "source": "existing" },
+    { "code": "OUTPUT_UNPARSABLE", "desc": "结果不可解析", "retryable": false, "needsHuman": true, "circuitBreak": false, "worthFallback": true, "http": 502, "source": "existing" },
+    { "code": "UNKNOWN", "desc": "未归类的错误", "retryable": false, "needsHuman": false, "circuitBreak": false, "worthFallback": true, "http": 500, "source": "existing" },
+
+    { "code": "ARTIFACT_INVALID", "desc": "制品校验失败（MIME/大小/哈希不符）", "retryable": false, "needsHuman": true, "circuitBreak": false, "worthFallback": false, "http": 422, "source": "v2-addition" },
+    { "code": "TOOL_FAILED", "desc": "工具调用失败（可重试）", "retryable": true, "needsHuman": false, "circuitBreak": false, "worthFallback": false, "http": 502, "source": "v2-addition" },
+    { "code": "SECURITY_QUARANTINE", "desc": "安全隔离（检出恶意内容/越权脚本）", "retryable": false, "needsHuman": true, "circuitBreak": true, "worthFallback": false, "http": 403, "source": "v2-addition" }
+  ],
+  "notErrorCodes": {
+    "$comment": "这些概念刻意不做成错误码",
+    "APPROVAL_REJECTED": "审批驳回是任务状态 REJECTED（业务流程的正常分支），不是调用失败；做成错误码会把业务退回算进灰度失败率",
+    "TIMED_OUT": "超时是原因不是状态：用状态 FAILED + errorCode=TIMEOUT 表达"
+  },
+  "reasonCodes": {
+    "$comment": "errorCode 是可编程的粗分类（决定重试/熔断/转人工）；reasonCode 是给人看的细因。不要把细因做成错误码。",
+    "recommended": [
+      "EXTERNAL_DISALLOWED",
+      "DATA_LEVEL_TOO_HIGH",
+      "NO_ROUTE_POLICY",
+      "NO_MODEL_BOUND",
+      "MODEL_TAGS_MISMATCH",
+      "RUNTIME_UNHEALTHY",
+      "ORG_SCOPE_DENIED",
+      "TOOL_NOT_GRANTED",
+      "TOOL_RISK_NEEDS_APPROVAL",
+      "ARTIFACT_OUT_OF_SCOPE",
+      "SANDBOX_EVIDENCE_MISSING"
+    ]
+  },
+  "docMapping": {
+    "$comment": "设计文档 §6.5 的写法 → 本契约的写法",
+    "INVALID_INPUT": "INVALID_REQUEST",
+    "SCHEMA_MISMATCH": "INVALID_REQUEST",
+    "POLICY_DENIED": "POLICY_DENIED",
+    "ORG_FORBIDDEN": "POLICY_DENIED + reasonCode=ORG_SCOPE_DENIED",
+    "DEPENDENCY_UNAVAILABLE": "UNAVAILABLE",
+    "RUNTIME_TIMEOUT": "TIMEOUT",
+    "RATE_LIMITED": "RATE_LIMITED",
+    "TOOL_FAILED_RETRYABLE": "TOOL_FAILED",
+    "APPROVAL_REJECTED": "(task status REJECTED)",
+    "ARTIFACT_INVALID": "ARTIFACT_INVALID",
+    "SECURITY_QUARANTINE": "SECURITY_QUARANTINE"
+  }
+}

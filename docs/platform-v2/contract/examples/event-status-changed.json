@@ -1,0 +1,14 @@
+{
+  "eventId": "1765000000000095003",
+  "executionId": "1765000000000099001",
+  "sequence": 3,
+  "eventType": "AI_TASK_STATUS_CHANGED",
+  "attemptNo": 1,
+  "fromStatus": "DISPATCHED",
+  "toStatus": "RUNNING",
+  "timestamp": "2026-10-08T02:00:04Z",
+  "detail": "已派发到运行时并开始执行",
+  "traceId": "trace-20261008-0001",
+  "actorId": "1761100000000000001",
+  "payload": { "progress": 5, "externalJobId": "vp-job-778812" }
+}
