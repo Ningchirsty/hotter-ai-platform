@@ -1,8 +1,10 @@
 package org.dromara.hrtalent.domain.vo.talent;
 
+import io.github.linpeilie.annotations.AutoMapper;
 import lombok.Data;
 import org.dromara.common.translation.annotation.Translation;
 import org.dromara.common.translation.constant.TransConstant;
+import org.dromara.hrtalent.domain.entity.TalentDuplicateCase;
 import org.dromara.hrtalent.enums.DuplicateMatchLevelEnum;
 import org.dromara.hrtalent.enums.DuplicateStatusEnum;
 
@@ -23,6 +25,7 @@ import java.time.LocalDateTime;
  * @author hr-talent
  */
 @Data
+@AutoMapper(target = TalentDuplicateCase.class)
 public class TalentDuplicateCaseVo implements Serializable {
 
     @Serial

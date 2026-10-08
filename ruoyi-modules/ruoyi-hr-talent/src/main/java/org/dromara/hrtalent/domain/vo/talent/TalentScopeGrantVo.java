@@ -26,7 +26,9 @@ import java.time.LocalDateTime;
  * @author hr-talent
  */
 @Data
-@AutoMapper(target = TalentScopeGrant.class, reverseConvertGenerate = false)
+// reverseConvertGenerate 默认 true：selectVoPage 需要的是**实体→VO**这一向，
+// 关掉它会让 TalentScopeGrantMapper.selectVoPage 在运行期抛 ConvertException（列表接口 500）。
+@AutoMapper(target = TalentScopeGrant.class)
 public class TalentScopeGrantVo implements Serializable {
 
     @Serial

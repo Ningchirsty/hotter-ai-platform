@@ -1,8 +1,10 @@
 package org.dromara.hrtalent.domain.vo.talent;
 
+import io.github.linpeilie.annotations.AutoMapper;
 import lombok.Data;
 import org.dromara.common.translation.annotation.Translation;
 import org.dromara.common.translation.constant.TransConstant;
+import org.dromara.hrtalent.domain.entity.TalentProfileChange;
 
 import java.io.Serial;
 import java.io.Serializable;
@@ -21,6 +23,7 @@ import java.time.LocalDateTime;
  * @author hr-talent
  */
 @Data
+@AutoMapper(target = TalentProfileChange.class)
 public class TalentProfileChangeVo implements Serializable {
 
     @Serial
