@@ -741,7 +741,7 @@ class AigTaskServiceImplTest {
     }
 
     @Test
-    @DisplayName("其余状态不碰错误列（RETRY_WAIT/NEEDS_HUMAN 正需要保留失败原因）")
+    @DisplayName("其余状态不碰错误列（RETRY_WAIT/NEED_HUMAN 正需要保留失败原因）")
     void otherStatusesLeaveErrorColumnsUntouched() {
         when(taskMapper.selectById(1L)).thenReturn(task(1L, "FAILED", 1, 5), task(1L, "RETRY_WAIT", 1, 6));
         when(taskMapper.updateById(any(AigTask.class))).thenReturn(1);

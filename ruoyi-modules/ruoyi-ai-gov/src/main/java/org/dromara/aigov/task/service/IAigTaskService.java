@@ -110,7 +110,7 @@ public interface IAigTaskService {
      * （{@code errorClass} 为空按 {@code UNKNOWN} 记，不假装分类已知）；目标是 {@code SUCCEEDED} 时
      * <b>清空</b>——一条成功的任务上挂着上一次尝试的旧错误码，比没有错误码更坏
      * （注意 MyBatis-Plus 默认忽略 null 字段，所以这里写的是空串而不是 null）。其余状态不碰这两列
-     * （{@code RETRY_WAIT}/{@code NEEDS_HUMAN} 正需要保留失败原因）。</p>
+     * （{@code RETRY_WAIT}/{@code NEED_HUMAN} 正需要保留失败原因）。</p>
      *
      * @param taskId          任务ID
      * @param expectedVersion 期望版本（乐观锁）
