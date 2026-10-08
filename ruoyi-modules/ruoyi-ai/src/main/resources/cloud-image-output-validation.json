@@ -573,5 +573,120 @@
     "observedFormats": [
       "png"
     ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "T2I",
+    "testedAt": "2026-10-08",
+    "label": "Flare能力补验：实测尺寸与数量",
+    "output": {
+      "size": "1024x1536",
+      "n": 1
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED"
+    },
+    "observedFormats": [
+      "png"
+    ],
+    "qualityEvidence": "NOT_SENT"
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "MULTI",
+    "testedAt": "2026-10-08",
+    "label": "Flare能力补验：实测尺寸与数量",
+    "output": {
+      "size": "1024x1536",
+      "n": 1
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED"
+    },
+    "observedFormats": [
+      "png"
+    ],
+    "qualityEvidence": "NOT_SENT"
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "MASK",
+    "testedAt": "2026-10-08",
+    "label": "Flare能力补验：实测尺寸与数量",
+    "output": {
+      "size": "1024x1536",
+      "n": 1
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED"
+    },
+    "observedFormats": [
+      "png"
+    ],
+    "qualityEvidence": "NOT_SENT"
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "OUTPAINT",
+    "testedAt": "2026-10-08",
+    "label": "Flare能力补验：实测尺寸与数量",
+    "output": {
+      "size": "1536x1024",
+      "n": 1
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED"
+    },
+    "observedFormats": [
+      "png"
+    ],
+    "qualityEvidence": "NOT_SENT"
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "TRANSPARENT",
+    "testedAt": "2026-10-08",
+    "label": "Flare能力补验：实测尺寸与数量",
+    "output": {
+      "size": "1024x1536",
+      "n": 1,
+      "outputFormat": "png",
+      "quality": "low"
+    },
+    "verifiedFields": [
+      "size",
+      "n",
+      "outputFormat"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED",
+      "outputFormat": "PASSED",
+      "quality": "ACCEPTED_UNCONFIRMED"
+    },
+    "observedFormats": [
+      "png"
+    ],
+    "qualityEvidence": "REQUEST_ACCEPTED_ONLY"
   }
 ]

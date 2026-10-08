@@ -56,4 +56,21 @@ class CloudImageRequestTest {
         assertThrows(ImageTaskException.class,()->new CloudImageRequest("wan2.7-image-pro","x","MULTI",List.of(1L,2L,3L,4L,5L,6L,7L,8L,9L,10L),null).validateShape());
     }
 
+    @Test void flareVerifiedAbilitiesAcceptTheirMaterialsButUnverifiedOutputStillCannotSubmit() {
+        var output = new CloudImageOutput("1024x1536",1,null,null);
+        for (String mode : List.of("T2I","MULTI","MASK","OUTPAINT","TRANSPARENT")) {
+            var refs = List.of("T2I","TRANSPARENT").contains(mode) ? List.<Long>of()
+                : "MULTI".equals(mode) ? List.of(1L,2L) : List.of(1L);
+            Long mask = List.of("MASK","OUTPAINT").contains(mode) ? 3L : null;
+            var size = "OUTPAINT".equals(mode) ? "1536x1024" : output.size();
+            var request = new CloudImageRequest("gpt-image-2.5-flare","flower",mode,refs,mask,
+                new CloudImageOutput(size,1,null,null));
+            assertDoesNotThrow(request::requireVerified);
+            assertDoesNotThrow(() -> CloudImageOutputValidation.requireVerified(request));
+        }
+        assertEquals("CLOUD_OUTPUT_PARAMETERS_UNVERIFIED",assertThrows(ImageTaskException.class,() ->
+            CloudImageOutputValidation.requireVerified(new CloudImageRequest("gpt-image-2.5-flare","flower","T2I",List.of(),null,
+                new CloudImageOutput("1024x1536",1,"high",null)))).getErrorCode());
+    }
+
 }

@@ -120,10 +120,10 @@ class ImageCloudServiceTest {
         } finally { service.shutdown(); }
     }
 
-    @Test void failedAndUnknownModelsAreRejectedByProductionGateWithoutPaidCall() {
+    @Test void failedModelIsRejectedByProductionGateWithoutPaidCall() {
         var productionGate = new ImageCloudService(new ImageCloudProperties(),client,repo,assets,new java.util.concurrent.atomic.AtomicLong(100)::incrementAndGet);
         try {
-            for (String model : List.of("flux-2-pro","gpt-image-2.5-flare")) {
+            for (String model : List.of("flux-2-pro")) {
                 assertEquals("CLOUD_CAPABILITY_UNVERIFIED",assertThrows(ImageTaskException.class,
                     () -> productionGate.create("tenant",2,null,model,"flower","","new-key-123")).getErrorCode());
             }
