@@ -26,9 +26,15 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  * 门控且默认关闭，所以打开本开关<b>实际只会激活「模型健康探测」一个任务</b>。
  * 但将来任何人新增 {@code @Scheduled}，都会随本开关一起上线——这是本类必须写清的前提。</p>
  *
- * <p><b>关于线程池</b>：Spring Boot 默认调度线程池只有 1 个线程。当前唯一启用的探测任务
- * 单轮实测约 133 秒，会占用该线程；若将来启用另外两个任务（60 秒 / 300 秒周期），
- * 需要同时调大 {@code spring.task.scheduling.pool.size}，否则它们的触发会被探测阻塞。</p>
+ * <p><b>关于线程池（实测修正）</b>：{@code @Scheduled} 在本仓跑在
+ * {@code ruoyi-common-core} 的 {@code ThreadPoolConfig} 所定义的那个全局
+ * {@code ScheduledExecutorService} 上（核心线程数 = {@code availableProcessors() + 1}，
+ * 线程名 {@code schedule-pool-%d}）——Spring 在没有 {@code TaskScheduler} bean 时会采用
+ * 该执行器，**不是** Spring Boot 默认的单线程调度器。生产实测第一轮探测的日志线程名即
+ * {@code schedule-pool-1}，主机 8 核 ⇒ 该池 9 个线程。
+ * 因此单轮约 133 秒的探测只占用其中 1 个线程，另两个任务不会因此排不上队；
+ * 也**不要**去调 {@code spring.task.scheduling.pool.size}（它配的是 Boot 自动配置的
+ * {@code ThreadPoolTaskScheduler}，在本仓不参与调度）。</p>
  *
  * @author ai-gov
  */

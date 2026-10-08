@@ -207,7 +207,7 @@ private static final Map<String, Map<String, String>> LATEST = Map.of( ... );
 | **依据** | ① 打开开关实际只激活 1 个任务（上表已逐个核对），爆炸半径可枚举；② 不需要任何凭据、不碰验证码、不新增攻击面；③ 回滚是"改配置回 false 重新发布"，不必改代码 |
 | **为什么用一个门控开关而不是把注解加在启动类上** | 加在启动类上等于"永远开启且无法关闭"，而本仓有两个**从未在生产跑过**的写操作任务；用配置门控至少让"是否启用调度"是一个显式、可 grep 的决定 |
 | **否决的替代** | (a) **外部 cron + HTTP（原第 2 步）**：否决，见上（缺机读凭据）；待 ADR-002 的机器令牌落地后可重新评估；(b) **`snail-job.enabled=true`**：否决，生产没有 SnailJob server，打开只会在启动时连不上 17888；(c) 保持现状（只留 HTTP 入口）：否决，等于"允许但没人触发"，`health-check.sh` 会永久 WARN |
-| **必须同时接受的代价** | ①`@EnableScheduling` 注册的后处理器**作用于整个容器**，将来任何人新增 `@Scheduled` 都会随本开关一起上线；②默认调度线程池只有 1 个线程，探测单轮约 133 秒会占用它，将来启用另外两个任务时**必须同时调大** `spring.task.scheduling.pool.size` |
+| **必须同时接受的代价** | ①`@EnableScheduling` 注册的后处理器**作用于整个容器**，将来任何人新增 `@Scheduled` 都会随本开关一起上线；②探测单轮约 133 秒会占用调度线程池的 1 个线程——但本仓的池**不是** Spring Boot 默认的 1 个线程（见下"一处自我纠正"） |
 
 ### 后果（已实施）
 
@@ -215,6 +215,26 @@ private static final Map<String, Map<String, String>> LATEST = Map.of( ... );
 2. 第 2 步：**未采用**（原因见上）；
 3. 第 3 步：`aigov.scheduling.enabled=true`（真正的触发机制）；
 4. 入口的同步等待改为"提交即返回 + 在途去重"，因为 133 秒必然被 Cloudflare（约 100 秒即 524）掐断。
+
+### 一处自我纠正：调度线程池不是"1 个线程"
+
+我在本 ADR 的初稿里写了"默认调度线程池只有 1 个线程，探测会占用它，将来启用另外两个任务时
+必须调大 `spring.task.scheduling.pool.size`"。**这句是错的**，已在实施后由运行证据推翻：
+
+- `ruoyi-common-core` 的 `ThreadPoolConfig` 定义了全局 `ScheduledExecutorService` bean
+  （`ScheduledThreadPoolExecutor`，核心线程数 = `availableProcessors() + 1`，线程名 `schedule-pool-%d`）；
+- Spring 的 `ScheduledAnnotationBeanPostProcessor` 在没有 `TaskScheduler` bean 时会采用
+  **该 `ScheduledExecutorService` bean**，所以 `@Scheduled` 跑在这个池上，**不是** Boot 默认的
+  单线程调度器；
+- 实测证据：生产启动后第一轮探测的日志线程名是 **`schedule-pool-1`**
+  （`2026-10-08 12:34:52 [schedule-pool-1] INFO o.d.aigov.job.AigModelHealthProbeJob`），
+  而该命名只来自 `ThreadPoolConfig`。
+- 生产主机 `nproc = 8`、容器无 CPU 限额 ⇒ 该池 **9 个线程**。
+- 另外 `spring.task.scheduling.pool.size` 在本仓**根本不起作用**（它配的是 Boot 自动配置的
+  `ThreadPoolTaskScheduler`，而这里没有 `TaskScheduler` bean 参与）。
+
+⇒ 正确表述：探测占用 CPU+1 池中的 1 个线程，另两个任务**不会**因为它而排不上队。
+**教训与本次主题一致：注解"在不在"、配置"写没写"都不算数，要看运行时到底用了哪个池。**
 
 ---
 

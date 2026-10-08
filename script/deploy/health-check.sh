@@ -116,6 +116,16 @@ fi
 # 为什么放在这里：2026-10-08 巡检查出，真正参与路由的 3 个模型里没有一个"近期测过且健康"
 #   （1 个从未测过、1 个有状态无时间、1 个 14 天未复测）。探测能力早就有，缺的是"到点自动跑"；
 #   在自动探测落地之前，至少要让**长期没人测**这件事可见，否则它会一直是盲区。
+#
+# ★ 判据必须与**探测范围**一致（2026-10-08 实测教训）：
+#   探测是 only-bound=true —— 只测"有启用绑定"的模型，因为**没有绑定的模型根本不可能被路由到**
+#   （路由候选集来自 aig_capability_model），为它们付费没有收益。
+#   而本项原先按"启用 + 生命周期可调用"统计，口径更宽：`nvidia` / `openrouter/free`
+#   两个模型启用、GRAY/PRODUCTION、但**绑定数为 0**，于是它们永远不会被探测刷新
+#   => 报出一个**永久的 WARN**（实测 never_tested=0, older_than_7d=2），
+#      把"探测没在跑"和"这两个模型不在探测范围内"混成同一个信号。
+#   永久 WARN 等于没有告警（会训练人忽略它），所以这里按**可路由**（有启用绑定）统计，
+#   并把"启用但没有绑定"的模型单独如实列出来，而不是塞进同一个 WARN 里。
 MYSQL_CONTAINER="${HOTTER_MYSQL_CONTAINER:-ai-video-poc-mysql-1}"
 STALE_PROBE_DAYS="${HOTTER_STALE_PROBE_DAYS:-7}"
 if docker inspect "$MYSQL_CONTAINER" >/dev/null 2>&1; then
@@ -123,30 +133,50 @@ if docker inspect "$MYSQL_CONTAINER" >/dev/null 2>&1; then
        SUM(CASE WHEN g.health_time IS NULL THEN 1 ELSE 0 END) AS never_tested,
        SUM(CASE WHEN g.health_time IS NOT NULL
                  AND TIMESTAMPDIFF(DAY, g.health_time, NOW()) >= ${STALE_PROBE_DAYS} THEN 1 ELSE 0 END) AS stale,
-       SUM(CASE WHEN g.health_status IS NOT NULL AND g.health_time IS NULL THEN 1 ELSE 0 END) AS status_without_time
+       SUM(CASE WHEN g.health_status IS NOT NULL AND g.health_time IS NULL THEN 1 ELSE 0 END) AS status_without_time,
+       SUM(CASE WHEN NOT EXISTS (SELECT 1 FROM aig_capability_model c
+                                  WHERE c.model_id = g.model_id AND c.status = '0' AND c.del_flag = '0')
+                THEN 1 ELSE 0 END) AS unbound
      FROM aig_model_governance g
      JOIN sai_model_config m ON m.id = g.model_id AND m.is_enabled = 1
      WHERE g.del_flag='0' AND g.status='0'
-       AND g.lifecycle_status IN ('TRIAL','GRAY','PRODUCTION');"
+       AND g.lifecycle_status IN ('TRIAL','GRAY','PRODUCTION')
+       AND EXISTS (SELECT 1 FROM aig_capability_model c
+                    WHERE c.model_id = g.model_id AND c.status = '0' AND c.del_flag = '0');"
+  q_unbound="SELECT COUNT(*)
+     FROM aig_model_governance g
+     JOIN sai_model_config m ON m.id = g.model_id AND m.is_enabled = 1
+     WHERE g.del_flag='0' AND g.status='0'
+       AND g.lifecycle_status IN ('TRIAL','GRAY','PRODUCTION')
+       AND NOT EXISTS (SELECT 1 FROM aig_capability_model c
+                        WHERE c.model_id = g.model_id AND c.status = '0' AND c.del_flag = '0');"
   row=$(docker exec -i "$MYSQL_CONTAINER" sh -c \
     "mysql --default-character-set=utf8mb4 -uroot -p\"\$MYSQL_ROOT_PASSWORD\" -D ai_video_poc -N -B -e \"$q\"" 2>/dev/null | tail -1)
+  unbound=$(docker exec -i "$MYSQL_CONTAINER" sh -c \
+    "mysql --default-character-set=utf8mb4 -uroot -p\"\$MYSQL_ROOT_PASSWORD\" -D ai_video_poc -N -B -e \"$q_unbound\"" 2>/dev/null | tail -1)
   never=$(echo "$row" | awk '{print $1}')
   stale=$(echo "$row" | awk '{print $2}')
   notime=$(echo "$row" | awk '{print $3}')
   if [[ "$never" =~ ^[0-9]+$ ]]; then
     if [ "$notime" -gt 0 ]; then
-      report "[WARN] $notime callable model(s) have health_status but NO health_time (undecidable state)"
+      report "[WARN] $notime routable model(s) have health_status but NO health_time (undecidable state)"
       warn=$((warn + 1))
     fi
     if [ "$never" -gt 0 ] || [ "$stale" -gt 0 ]; then
-      report "[WARN] model health probes stale: never_tested=$never, older_than_${STALE_PROBE_DAYS}d=$stale"
+      report "[WARN] routable model health probes stale: never_tested=$never, older_than_${STALE_PROBE_DAYS}d=$stale"
       report "           probes now run IN-PROCESS (aigov.scheduling.enabled + aigov.model.health-probe.enabled),"
-      report "           first round at container start then every ~30min => staleness means the scheduler is"
-      report "           NOT running. Check the startup log for logger org.dromara.aigov.config.AigSchedulingConfig,"
-      report "           or probe one model manually: POST /aigov/model/{id}/test"
+      report "           first round at container start then every ~30min. For a ROUTABLE model staleness means the"
+      report "           scheduler is NOT running. Check the startup log for logger"
+      report "           org.dromara.aigov.config.AigSchedulingConfig, or probe one manually:"
+      report "           POST /aigov/model/{id}/test"
       warn=$((warn + 1))
     else
-      report "[ok] model health probes fresh (never_tested=0, stale=0)"
+      report "[ok] routable model health probes fresh (never_tested=0, stale=0)"
+    fi
+    if [[ "$unbound" =~ ^[0-9]+$ ]] && [ "$unbound" -gt 0 ]; then
+      report "[note] $unbound enabled model(s) have NO capability binding => unreachable by routing and"
+      report "       deliberately outside the probe scope (only-bound=true), so their health stays stale."
+      report "       Owner decision: suspend/disable them, bind them, or accept. NOT counted as a WARN."
     fi
   else
     report "[WARN] could not read model-probe staleness from $MYSQL_CONTAINER"
