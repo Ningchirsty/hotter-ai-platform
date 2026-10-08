@@ -143,14 +143,16 @@
             <dict-tag :options="aig_lifecycle_status" :value="scope.row.lifecycleStatus" />
           </template>
         </el-table-column>
-        <!-- 健康状态：由「测试连接」写入治理表 health_status / health_time -->
+        <!-- 健康状态：由「测试连接」写入治理表 health_status / health_time。
+             口径与后端路由判定一致（M-003①）：只有 DOWN/UNHEALTHY 算「不通」，
+             UNKNOWN 与空值是「未测/未测试」——它们**仍会被路由放行**，
+             显示成「不通」会让人以为模型已被排除。 -->
         <el-table-column label="连通性" align="center" width="150">
           <template #default="scope">
             <div class="health-cell">
-              <el-tag v-if="scope.row.healthStatus" :type="scope.row.healthStatus === 'HEALTHY' ? 'success' : 'danger'">
-                {{ scope.row.healthStatus === 'HEALTHY' ? '连通' : '不通' }}
+              <el-tag :type="describeHealth(scope.row.healthStatus).tone">
+                {{ describeHealth(scope.row.healthStatus).label }}
               </el-tag>
-              <el-tag v-else type="info">未测试</el-tag>
               <span v-if="scope.row.healthTime" class="health-time">{{ parseTime(scope.row.healthTime, '{m}-{d} {h}:{i}') }}</span>
             </div>
           </template>
@@ -943,6 +945,7 @@ import modal from '@/plugins/modal';
 import { useDict } from '@/utils/dict';
 import { checkPermi } from '@/utils/permission';
 import { parseTime } from '@/utils/ruoyi';
+import { describeHealth } from './health';
 
 defineOptions({ name: 'AigModel' });
 

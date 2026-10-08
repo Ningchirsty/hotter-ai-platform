@@ -40,6 +40,12 @@ export interface AigAgentVersionVO extends BaseEntity {
   /** 发布通道/可见范围：TESTING / BRAND / DEPT / GENERAL */
   releaseChannel?: string;
   scenarioCode?: string;
+  /**
+   * 声明的 Provider 能力编码。
+   *
+   * <p><b>仅是声明，不参与路由选型</b>——全仓库没有任何路由/调用代码读这个字段
+   * （已核实）。实际调用哪个模型由「能力 × 模型绑定」（`aig_capability_model`）决定。</p>
+   */
   providerCapability?: string;
   /** 是否允许外部调用（Y/N） */
   allowExternal?: string;

@@ -33,6 +33,13 @@ export interface AigSkillVersionVO extends BaseEntity {
   version?: string;
   releaseStatus?: string;
   releaseChannel?: string;
+  /**
+   * 声明的 Provider 能力编码。
+   *
+   * <p><b>仅是声明，不参与路由选型</b>——全仓库没有任何路由/调用代码读这个字段
+   * （已核实）。实际调用哪个模型由「能力 × 模型绑定」（`aig_capability_model`）决定。
+   * 界面上因此标注为「声明能力」，避免被读成"这个 Skill 走哪个模型"。</p>
+   */
   providerCapability?: string;
   allowExternal?: string;
   /** 来源 Package 版本（本轮补的列：第三方带入时不为空） */

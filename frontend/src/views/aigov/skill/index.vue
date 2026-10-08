@@ -93,11 +93,22 @@
         第三方 Package 带入的 Skill 版本会在「来源Package版本」里显示指向的 Package 版本；
         发布门槛与 Agent 版本一致（DRAFT 起，逐道过）。
       </el-alert>
+      <!--
+        M-004：provider_capability 是**声明**字段，全仓库没有任何路由/调用代码读它
+        （已核实）。它原本的表头只写「能力」，很容易被读成"这个 Skill 走哪个模型"——
+        而真正决定选型的是「能力 × 模型绑定」（aig_capability_model）。
+        表头用「声明能力」并在下面备一句说明，是为了让"它不参与路由"这件事在界面上可读，
+        而不是只写在某份手册里。
+      -->
+      <div class="capability-declaration-note">
+        下表「声明能力」只表示该版本<b>声明</b>具备哪类能力，<b>不参与路由选型</b>；
+        实际调用哪个模型由「能力 → 模型绑定」（治理台「模型绑定」页）决定。
+      </div>
       <el-table v-loading="versionLoading" border :data="versionList">
         <el-table-column label="版本" align="center" prop="version" width="90" />
         <el-table-column label="发布状态" align="center" width="140" prop="releaseStatus" />
         <el-table-column label="通道" align="center" prop="releaseChannel" width="110" />
-        <el-table-column label="能力" align="center" prop="providerCapability" width="160" show-overflow-tooltip />
+        <el-table-column label="声明能力" align="center" prop="providerCapability" width="160" show-overflow-tooltip />
         <el-table-column label="外部调用" align="center" width="100">
           <template #default="scope">{{ scope.row.allowExternal === 'Y' ? '允许' : '禁止' }}</template>
         </el-table-column>
@@ -176,4 +187,17 @@ onMounted(() => {
 @use '@/assets/styles/components/page-shell' as pageShell;
 
 @include pageShell.table-crud-page;
+
+/* M-004：说明「声明能力」不参与路由。做成一条不抢眼的注释风格提示，
+   而不是弹窗或红字——它是口径说明，不是故障。 */
+.capability-declaration-note {
+  margin-bottom: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--el-text-color-secondary);
+  background: var(--el-fill-color-light);
+  border-left: 3px solid var(--el-border-color);
+  border-radius: 2px;
+}
 </style>

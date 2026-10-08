@@ -71,7 +71,15 @@ export interface AigModelGovernanceVO extends BaseEntity {
   validFrom?: string;
   /** 有效期止 */
   validTo?: string;
-  /** 最近健康检查结果 UP/DOWN/DEGRADED */
+  /**
+   * 最近健康检查结果。
+   *
+   * <p>**实际写入值**是 `HEALTHY` / `UNHEALTHY`（连通性测试，见 ModelConnectionTester）；
+   * `UNKNOWN` 与空值表示"未测过"。注意后端**只把 DOWN/UNHEALTHY 视为排除**
+   * ——`UNKNOWN`/空值仍会被路由放行（"没测过 ≠ 不可用"）。</p>
+   *
+   * <p>（此处原注释写的是 `UP/DOWN/DEGRADED`，与实际写入的词汇不符，2026-10-08 更正。）</p>
+   */
   healthStatus?: string;
   healthTime?: string;
   /** 状态（0正常 1停用） */
