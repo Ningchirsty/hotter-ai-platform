@@ -48,6 +48,8 @@ import java.util.Set;
  *     <li>{@code decide} 内「// 步骤1」：能力不存在或 status≠'0' → {@code DENIED}</li>
  *     <li>「// 步骤2」：无 {@code aig_route_policy(能力,数据等级)} → {@code DENIED}（默认拒绝）</li>
  *     <li>「// 步骤3」：{@code allowExternal='N'} 时候选模型仅限非外部部署</li>
+ *     <li>「// 步骤3.5」：{@link #preferDeployment} 策略声明的 {@code preferred_deployment}
+ *         命中的候选<b>整体前置</b>（<b>只是排序偏好</b>：不过滤、也不放宽 allowExternal 等硬约束）</li>
  *     <li>「// 步骤4」：{@link #narrowByScenario} 若场景强制绑定了供应商，先把候选收窄到这些供应商</li>
  *     <li>「// 步骤4」：{@link #isCandidateUsable} 逐项校验生命周期 / 数据等级 / 启用 / 健康 / 外发</li>
  *     <li>「// 步骤5」：{@link #orderBindings} 按 PRIMARY→GRAY→FALLBACK 再按 priority 升序</li>
@@ -258,6 +260,9 @@ public class AigRouteServiceImpl implements IAigRouteService {
             // 步骤3：候选模型仅限 deploymentType ∈ {LOCAL, GROUP}
             decision.addHit("策略 allowExternal='N'：本次调用仅允许本地/集团共享部署模型，外部部署模型将被排除");
         }
+        // 步骤3.5：策略的「优先部署类型」（aig_route_policy.preferred_deployment）。
+        // 这是一条**排序偏好**，不是过滤：不匹配的候选只是顺延到后面，仍然作备选。
+        ordered = preferDeployment(decision, ordered, governanceMap, policy.getPreferredDeployment());
 
         // 步骤4：逐项校验候选模型可用性；步骤7：记录因 allowExternal='N' 被排除的外部模型
         // 注意：这里**不再命中即返回**，而是收集「全部可用候选」形成有序 fallback 链。
@@ -662,6 +667,69 @@ public class AigRouteServiceImpl implements IAigRouteService {
             }
         }
         return tags;
+    }
+
+    /**
+     * 步骤3.5：按策略的「优先部署类型」对候选做<b>稳定前置</b>。
+     *
+     * <p><b>为什么优先级高于 usageType（PRIMARY→GRAY→FALLBACK）</b>：字段名与 DDL 注释都是
+     * 「<b>优先</b>部署类型」，若只做同级平手排序，那么「策略说要 LOCAL、而主绑定是外部模型」时
+     * LOCAL 候选取不到前置——这个开关在它最该起作用的场景里等于没生效（这正是它此前长期
+     * 只被写进 {@code policyHits} 的那个问题）。</p>
+     *
+     * <p><b>它只是排序偏好，绝不是过滤，也绝不放宽硬约束</b>：不匹配的候选顺延到后面仍作备选；
+     * 被 {@code allowExternal='N'} / 严格级不外发 / 生命周期 / 数据等级上限排除掉的候选
+     * 早在 {@link #isCandidateUsable} 就出局了，这里的排序<b>看不见</b>它们——
+     * 安全约束永远优先于偏好（否则「优先外部」就成了绕过禁令的后门）。</p>
+     *
+     * @param decision            决策（写入命中说明）
+     * @param ordered             已按 usageType/priority 排好的绑定
+     * @param governanceMap       模型治理属性（部署类型的来源）
+     * @param preferredDeployment 策略声明的优先部署类型（可空）
+     * @return 前置后的列表；未声明、候选不足两个、或没有匹配项时原样返回
+     */
+    private List<AigCapabilityModel> preferDeployment(AigRouteDecision decision,
+                                                      List<AigCapabilityModel> ordered,
+                                                      Map<Long, AigModelGovernance> governanceMap,
+                                                      String preferredDeployment) {
+        if (StringUtils.isBlank(preferredDeployment) || ordered.size() < 2) {
+            return ordered;
+        }
+        AigDeploymentTypeEnum preferred = AigDeploymentTypeEnum.find(preferredDeployment);
+        if (preferred == null) {
+            // 非法值不该静默忽略（那会让人以为「优先」生效了），但也不该让整次调用失败——
+            // 它只是排序偏好、不是安全约束；策略保存时有正则校验，这里兜底如实记账
+            decision.addHit("策略 preferred_deployment=" + preferredDeployment
+                + " 不是合法的部署类型：本次不做优先排序（它只是排序偏好，不影响能否调用）");
+            return ordered;
+        }
+        int matched = 0;
+        for (AigCapabilityModel binding : ordered) {
+            AigModelGovernance governance = governanceMap.get(binding.getModelId());
+            AigDeploymentTypeEnum deployment = governance == null ? null
+                : AigDeploymentTypeEnum.find(governance.getDeploymentType());
+            if (deployment == preferred) {
+                matched++;
+            }
+        }
+        if (matched == 0) {
+            decision.addHit("策略 preferred_deployment=" + preferred.getCode()
+                + "：本次候选里没有该部署类型的模型，优先排序无对象（候选顺序按 usageType/priority）");
+            return ordered;
+        }
+        // list.sort 是稳定排序：按「是否匹配」这一个键排序 = 稳定前置，同组内保持原有相对顺序
+        List<AigCapabilityModel> reordered = new ArrayList<>(ordered);
+        reordered.sort(Comparator.comparingInt((AigCapabilityModel item) -> {
+            AigModelGovernance governance = governanceMap.get(item.getModelId());
+            AigDeploymentTypeEnum deployment = governance == null ? null
+                : AigDeploymentTypeEnum.find(governance.getDeploymentType());
+            return deployment == preferred ? 0 : 1;
+        }));
+        decision.addHit("策略 preferred_deployment=" + preferred.getCode()
+            + "：匹配该部署类型的候选已前置（" + matched + "/" + reordered.size()
+            + " 个；同组内仍按 PRIMARY→GRAY→FALLBACK、同级 priority 升序）——"
+            + "这是排序偏好，不排除任何候选，也不会放宽 allowExternal/严格级等硬约束");
+        return reordered;
     }
 
     /**

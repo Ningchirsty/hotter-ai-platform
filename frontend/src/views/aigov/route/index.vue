@@ -220,6 +220,11 @@
               :value="dict.value"
             />
           </el-select>
+          <div class="form-tip">
+            <b>排序偏好，不是过滤</b>：命中的候选会被整体前置（优先于 PRIMARY/GRAY/FALLBACK 的用途顺序），
+            不匹配的候选顺延其后仍作备选；它<b>不会</b>放宽「禁止外发」或严格级不外发的硬约束。
+            留空 = 不做优先排序。
+          </div>
         </el-form-item>
         <el-form-item label="允许外发" prop="allowExternal">
           <el-switch v-model="allowExternalSwitch" inline-prompt active-text="允许" inactive-text="禁止" />

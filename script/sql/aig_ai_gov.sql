@@ -110,7 +110,7 @@ create table aig_route_policy (
     policy_id            bigint(20)      not null                   comment '策略ID',
     capability_code      varchar(64)     not null                   comment '能力编码',
     data_level           varchar(16)     not null                   comment '数据等级（PUBLIC/INTERNAL/RESTRICTED）',
-    preferred_deployment varchar(24)     default null               comment '优先部署类型（LOCAL/GROUP/EXTERNAL_ENTERPRISE/EXTERNAL_API）',
+    preferred_deployment varchar(24)     default null               comment '优先部署类型（LOCAL/GROUP/EXTERNAL_ENTERPRISE/EXTERNAL_API）：命中的候选在路由里整体前置（排序偏好，优先于 PRIMARY/GRAY/FALLBACK；不过滤、不放宽 allowExternal/严格级）；为空=不做优先排序',
     allow_external       char(1)         not null default 'N'       comment '是否允许外发（Y允许 N禁止）',
     require_approval     char(1)         not null default 'N'       comment '调用前是否需要审批（Y是 N否；Y 时调用入口要求「人×能力×数据等级」有未过期授权，见 aig_call_approval）',
     fallback_to_manual   char(1)         not null default 'Y'       comment '无可用模型时是否转人工待办（Y是 N否）',

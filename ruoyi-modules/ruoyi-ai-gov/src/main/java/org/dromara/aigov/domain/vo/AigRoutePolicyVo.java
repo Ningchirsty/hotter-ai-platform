@@ -50,6 +50,10 @@ public class AigRoutePolicyVo implements Serializable {
 
     /**
      * 优先部署类型（字典 aig_deployment_type）
+     *
+     * <p><b>它是排序偏好，不是过滤</b>：命中的候选整体前置（优先于 PRIMARY/GRAY/FALLBACK 的用途顺序），
+     * 不匹配的候选顺延其后仍作备选；也<b>不放宽</b> allowExternal / 严格级不外发等硬约束。
+     * 为空 = 不做优先排序（顺序按用途与 priority）。</p>
      */
     private String preferredDeployment;
 

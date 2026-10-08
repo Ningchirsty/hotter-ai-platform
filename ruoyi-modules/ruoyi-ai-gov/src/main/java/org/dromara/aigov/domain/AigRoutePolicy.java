@@ -42,6 +42,10 @@ public class AigRoutePolicy extends BaseEntity implements Serializable {
 
     /**
      * 优先部署类型（LOCAL/GROUP/EXTERNAL_ENTERPRISE/EXTERNAL_API）
+     *
+     * <p><b>已生效（2026-10-08）</b>：命中的候选在路由里<b>整体前置</b>（优先于 PRIMARY/GRAY/FALLBACK 的
+     * 用途顺序）。它<b>只是排序偏好</b>——不排除任何候选（不匹配的顺延其后仍作备选），
+     * 也<b>不放宽</b> allowExternal / 严格级不外发等硬约束。为空 = 不做优先排序。</p>
      */
     private String preferredDeployment;
 

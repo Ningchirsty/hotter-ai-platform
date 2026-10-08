@@ -56,6 +56,10 @@ public class AigRoutePolicyBo implements Serializable {
 
     /**
      * 优先部署类型（LOCAL/GROUP/EXTERNAL_ENTERPRISE/EXTERNAL_API）
+     *
+     * <p><b>已生效（2026-10-08）</b>：匹配该部署类型的候选在路由里<b>整体前置</b>，优先于
+     * PRIMARY/GRAY/FALLBACK 的用途顺序。⚠️ 它<b>只改顺序、不改权限</b>：不会排除任何候选，
+     * 也不会放宽 allowExternal / 严格级不外发。留空 = 不做优先排序（这是最中性的表态）。</p>
      */
     @Pattern(regexp = "^(LOCAL|GROUP|EXTERNAL_ENTERPRISE|EXTERNAL_API)?$",
         message = "优先部署类型只能为 LOCAL/GROUP/EXTERNAL_ENTERPRISE/EXTERNAL_API",
