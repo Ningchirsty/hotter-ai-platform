@@ -51,7 +51,12 @@ public class AigRoutePolicy extends BaseEntity implements Serializable {
     private String allowExternal;
 
     /**
-     * 调用前是否需要审批（Y是 N否；阶段1仅作为路由判定，审批流二期）
+     * 调用前是否需要审批（Y是 N否）
+     *
+     * <p><b>已实现（C3 第三块，2026-10-08）</b>：{@code 'Y'} 时，统一调用入口会要求本次调用人持有
+     * 「该人 × 该能力 × 该数据等级」<b>未过期的有效授权</b>，否则以 {@code APPROVAL_REQUIRED} 拒绝
+     * （不消耗额度、不调用模型）。授权来自 {@code aig_call_approval}：申请 → 批准 → 有效期内免再审，
+     * 详见运维手册 A.4.2。</p>
      */
     private String requireApproval;
 

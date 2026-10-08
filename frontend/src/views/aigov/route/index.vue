@@ -236,7 +236,10 @@
         />
         <el-form-item label="调用前审批" prop="requireApproval">
           <el-switch v-model="approvalSwitch" inline-prompt active-text="需要" inactive-text="不需要" />
-          <div class="form-tip">阶段1仅作为路由判定记录，审批流在二期实现。</div>
+          <div class="form-tip">
+            开启后该「能力 × 数据等级」调用前需要审批：调用人须先在「调用授权」页提交申请并获批，
+            批准后在有效期内免再审；没有有效授权的调用会以 APPROVAL_REQUIRED 被拒（不消耗额度、不调用模型）。
+          </div>
         </el-form-item>
         <el-form-item label="无模型时转人工" prop="fallbackToManual">
           <el-switch v-model="fallbackSwitch" inline-prompt active-text="转人工" inactive-text="拒绝" />

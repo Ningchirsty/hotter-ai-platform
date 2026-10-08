@@ -112,7 +112,7 @@ create table aig_route_policy (
     data_level           varchar(16)     not null                   comment '数据等级（PUBLIC/INTERNAL/RESTRICTED）',
     preferred_deployment varchar(24)     default null               comment '优先部署类型（LOCAL/GROUP/EXTERNAL_ENTERPRISE/EXTERNAL_API）',
     allow_external       char(1)         not null default 'N'       comment '是否允许外发（Y允许 N禁止）',
-    require_approval     char(1)         not null default 'N'       comment '调用前是否需要审批（Y是 N否；阶段1仅作为路由判定，审批流二期）',
+    require_approval     char(1)         not null default 'N'       comment '调用前是否需要审批（Y是 N否；Y 时调用入口要求「人×能力×数据等级」有未过期授权，见 aig_call_approval）',
     fallback_to_manual   char(1)         not null default 'Y'       comment '无可用模型时是否转人工待办（Y是 N否）',
     status               char(1)         default '0'                comment '状态（0正常 1停用）',
     del_flag             char(1)         default '0'                comment '删除标志（0代表存在 1代表删除）',

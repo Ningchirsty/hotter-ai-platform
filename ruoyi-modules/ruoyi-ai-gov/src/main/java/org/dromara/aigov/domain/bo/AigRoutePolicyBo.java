@@ -71,7 +71,11 @@ public class AigRoutePolicyBo implements Serializable {
     private String allowExternal;
 
     /**
-     * 调用前是否需要审批（Y是 N否；阶段1 仅作为路由判定，审批流二期）
+     * 调用前是否需要审批（Y是 N否）
+     *
+     * <p><b>已实现（C3 第三块，2026-10-08）</b>：{@code 'Y'} 时调用入口要求「该人 × 该能力 × 该数据等级」
+     * 有未过期的有效授权，否则以 {@code APPROVAL_REQUIRED} 拒绝。开启前请先配好审批人
+     * （{@code aig:approval:approve}），否则申请单会堆着没人处理。</p>
      */
     @Pattern(regexp = "^(Y|N)?$", message = "是否需要审批只能为 Y/N", groups = {AddGroup.class, EditGroup.class})
     private String requireApproval;
