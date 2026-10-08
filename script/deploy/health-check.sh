@@ -112,6 +112,48 @@ else
   report "[ok] stale previous-* containers: $stale_count"
 fi
 
+# ---- 6) 模型健康探测的"新鲜度"（M-003） ----
+# 为什么放在这里：2026-10-08 巡检查出，真正参与路由的 3 个模型里没有一个"近期测过且健康"
+#   （1 个从未测过、1 个有状态无时间、1 个 14 天未复测）。探测能力早就有，缺的是"到点自动跑"；
+#   在自动探测落地之前，至少要让**长期没人测**这件事可见，否则它会一直是盲区。
+MYSQL_CONTAINER="${HOTTER_MYSQL_CONTAINER:-ai-video-poc-mysql-1}"
+STALE_PROBE_DAYS="${HOTTER_STALE_PROBE_DAYS:-7}"
+if docker inspect "$MYSQL_CONTAINER" >/dev/null 2>&1; then
+  q="SELECT
+       SUM(CASE WHEN g.health_time IS NULL THEN 1 ELSE 0 END) AS never_tested,
+       SUM(CASE WHEN g.health_time IS NOT NULL
+                 AND TIMESTAMPDIFF(DAY, g.health_time, NOW()) >= ${STALE_PROBE_DAYS} THEN 1 ELSE 0 END) AS stale,
+       SUM(CASE WHEN g.health_status IS NOT NULL AND g.health_time IS NULL THEN 1 ELSE 0 END) AS status_without_time
+     FROM aig_model_governance g
+     JOIN sai_model_config m ON m.id = g.model_id AND m.is_enabled = 1
+     WHERE g.del_flag='0' AND g.status='0'
+       AND g.lifecycle_status IN ('TRIAL','GRAY','PRODUCTION');"
+  row=$(docker exec -i "$MYSQL_CONTAINER" sh -c \
+    "mysql --default-character-set=utf8mb4 -uroot -p\"\$MYSQL_ROOT_PASSWORD\" -D ai_video_poc -N -B -e \"$q\"" 2>/dev/null | tail -1)
+  never=$(echo "$row" | awk '{print $1}')
+  stale=$(echo "$row" | awk '{print $2}')
+  notime=$(echo "$row" | awk '{print $3}')
+  if [[ "$never" =~ ^[0-9]+$ ]]; then
+    if [ "$notime" -gt 0 ]; then
+      report "[WARN] $notime callable model(s) have health_status but NO health_time (undecidable state)"
+      warn=$((warn + 1))
+    fi
+    if [ "$never" -gt 0 ] || [ "$stale" -gt 0 ]; then
+      report "[WARN] model health probes stale: never_tested=$never, older_than_${STALE_PROBE_DAYS}d=$stale"
+      report "           (probe manually via POST /aigov/model/{id}/test, or enable aigov.model.health-probe)"
+      warn=$((warn + 1))
+    else
+      report "[ok] model health probes fresh (never_tested=0, stale=0)"
+    fi
+  else
+    report "[WARN] could not read model-probe staleness from $MYSQL_CONTAINER"
+    warn=$((warn + 1))
+  fi
+else
+  report "[WARN] mysql container $MYSQL_CONTAINER not found; skipped model-probe staleness"
+  warn=$((warn + 1))
+fi
+
 report ""
 report "=== summary: critical=$critical warn=$warn ==="
 if [ "$critical" -gt 0 ]; then
