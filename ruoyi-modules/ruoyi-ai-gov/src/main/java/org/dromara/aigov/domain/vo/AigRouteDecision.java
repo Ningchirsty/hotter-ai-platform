@@ -83,6 +83,18 @@ public class AigRouteDecision implements Serializable {
     private String capabilityCode;
 
     /**
+     * 本次调用的策略是否要求<b>调用授权审批</b>（{@code aig_route_policy.require_approval='Y'}）。
+     *
+     * <p>路由引擎只<b>读出并转达</b>这个要求，不在路由里做审批判定：授权是按「人 × 能力 × 数据等级」
+     * 授的，而路由引擎拿不到调用人（`decide` 的入参里没有调用人）。因此它把要求放在这里，
+     * 由统一调用入口用同一处解析出来的调用人去核对授权——判定所需的两样东西必须在同一个地方碰面，
+     * 否则「按 A 的授权放行了 B 的调用」这类错会静默发生。</p>
+     *
+     * <p>默认 false：没有策略（或策略为 {@code 'N'}）时行为与引入本字段之前<b>逐字不变</b>。</p>
+     */
+    private boolean approvalRequired;
+
+    /**
      * 能力审计等级（SUMMARY/FULL/HASH_ONLY）
      */
     private String auditLevel;

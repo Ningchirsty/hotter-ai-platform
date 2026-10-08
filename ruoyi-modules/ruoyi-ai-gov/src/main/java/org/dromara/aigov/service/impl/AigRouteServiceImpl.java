@@ -211,6 +211,15 @@ public class AigRouteServiceImpl implements IAigRouteService {
             + "，allowExternal=" + policy.getAllowExternal()
             + "，requireApproval=" + policy.getRequireApproval()
             + "，fallbackToManual=" + policy.getFallbackToManual());
+        // 把「是否需要审批」作为结构化字段转达给调用入口（C3）：
+        // 这里只读出要求、不做判定——授权按「人 × 能力 × 数据等级」授，
+        // 而路由引擎拿不到调用人，判定必须在统一调用入口用同一处的调用人去做
+        decision.setApprovalRequired(YES.equalsIgnoreCase(policy.getRequireApproval()));
+        if (decision.isApprovalRequired()) {
+            decision.addHit("该策略要求调用授权审批（require_approval=Y）："
+                + "调用入口会核对本次调用人是否持有「该能力 × 该数据等级」的有效授权，"
+                + "没有则以 APPROVAL_REQUIRED 拒绝（不消耗额度、不调用模型）");
+        }
 
         // 步骤3 + 步骤5：候选绑定按 PRIMARY → GRAY → FALLBACK，再按 priority 升序
         List<AigCapabilityModel> bindings = capabilityModelMapper.selectList(new LambdaQueryWrapper<AigCapabilityModel>()

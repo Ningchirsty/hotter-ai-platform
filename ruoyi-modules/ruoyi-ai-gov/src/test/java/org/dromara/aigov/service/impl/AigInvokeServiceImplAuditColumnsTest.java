@@ -35,6 +35,7 @@ import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import org.dromara.aigov.service.IAigCallApprovalService;
 import org.dromara.aigov.service.IAigUserQuotaService;
 
 /**
@@ -152,7 +153,7 @@ class AigInvokeServiceImplAuditColumnsTest {
         when(routeService.decide(any(), any(), nullable(AigRouteHint.class))).thenReturn(decision);
 
         AigInvokeServiceImpl service = new AigInvokeServiceImpl(routeService, auditRecorder,
-            invokers, modelViewMapper, retryProperties, mock(IAigUserQuotaService.class));
+            invokers, modelViewMapper, retryProperties, mock(IAigUserQuotaService.class), mock(IAigCallApprovalService.class));
         AigInvokeBo bo = new AigInvokeBo();
         bo.setCapabilityCode(CAPABILITY);
         bo.setDataLevel(AigDataLevelEnum.INTERNAL.getCode());
@@ -181,7 +182,7 @@ class AigInvokeServiceImplAuditColumnsTest {
 
         AigInvokeServiceImpl service = new AigInvokeServiceImpl(routeService, auditRecorder,
             List.of(new StubInvoker("InvokerA", ModelInvokeResult.success("{}", 5L))),
-            modelViewMapper, retryProperties, mock(IAigUserQuotaService.class));
+            modelViewMapper, retryProperties, mock(IAigUserQuotaService.class), mock(IAigCallApprovalService.class));
         AigInvokeBo bo = new AigInvokeBo();
         bo.setCapabilityCode(CAPABILITY);
         bo.setDataLevel(AigDataLevelEnum.INTERNAL.getCode());

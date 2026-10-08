@@ -1,5 +1,6 @@
 package org.dromara.aigov.agent.evaluation;
 
+import org.dromara.aigov.enums.AigErrorClassEnum;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -169,6 +170,20 @@ class AigCanaryEvidenceTest {
         assertFalse(AigCanaryEvidence.isSevere("   "));
         assertFalse(AigCanaryEvidence.isSevere("SOMETHING_ELSE"),
             "认不出的分类不算严重（它仍计入失败率），不能凭猜测否决整轮灰度");
+    }
+
+    @Test
+    @DisplayName("★ 「需要审批」不算严重错误：授权流程没走 ≠ 版本质量差（但仍计入失败率）")
+    void approvalRequiredIsNotSevere() {
+        String code = AigErrorClassEnum.APPROVAL_REQUIRED.getCode();
+        assertFalse(AigCanaryEvidence.isSevere(code),
+            "把它算严重，会让「授权没跟上」这种事否决整轮灰度——它说明的不是版本质量差");
+
+        // 不严重 ≠ 看不见：它仍然计入失败率（调用确实失败了）
+        AigCanaryEvidence e = evaluate(100L, 5L, Map.of(code, 5L));
+        assertEquals(0L, e.severeErrorCount());
+        assertTrue(e.severeByClass().isEmpty(), "非严重分类不该出现在严重明细里");
+        assertTrue(e.satisfied(), "5% 恰好在上限内应当达标：" + e.reason());
     }
 
     @Test

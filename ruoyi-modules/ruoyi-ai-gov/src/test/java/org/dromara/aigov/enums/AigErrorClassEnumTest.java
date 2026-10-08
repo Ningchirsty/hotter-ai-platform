@@ -41,18 +41,21 @@ class AigErrorClassEnumTest {
     }
 
     @Test
-    @DisplayName("处置矩阵：转人工只有参数/Schema、权限外发、结果不可解析三类 + 额度不足")
+    @DisplayName("处置矩阵：转人工＝参数/Schema、权限外发、结果不可解析 + 额度不足 + 需要调用审批")
     void needsHumanSetIsExact() {
         List<AigErrorClassEnum> needsHuman = Arrays.stream(AigErrorClassEnum.values())
             .filter(AigErrorClassEnum::isNeedsHuman)
             .toList();
         assertEquals(
             List.of(AigErrorClassEnum.INVALID_REQUEST, AigErrorClassEnum.POLICY_DENIED,
-                AigErrorClassEnum.QUOTA_EXCEEDED, AigErrorClassEnum.OUTPUT_UNPARSABLE),
+                AigErrorClassEnum.APPROVAL_REQUIRED, AigErrorClassEnum.QUOTA_EXCEEDED,
+                AigErrorClassEnum.OUTPUT_UNPARSABLE),
             needsHuman,
             "应转人工的集合即设计 §13.3「不重试、转 NEED_HUMAN」的三种情形，"
                 + "外加额度不足——它要人去做充值/申请预算这个具体动作，"
-                + "而且处置完成后任务可以重排继续");
+                + "而且处置完成后任务可以重排继续；"
+                + "外加需要调用审批（C3）——它同样要人去做一件具体的事（提交申请/批准），"
+                + "做完之后同一份预案就能继续跑");
     }
 
     @Test
@@ -113,13 +116,15 @@ class AigErrorClassEnumTest {
     }
 
     @Test
-    @DisplayName("换候选（fallback）集合：只有「入参类」不换——换谁都一样被拒")
+    @DisplayName("换候选（fallback）集合：入参类与策略类不换——换谁都一样被拒")
     void worthFallbackSetIsExact() {
         List<AigErrorClassEnum> noFallback = Arrays.stream(AigErrorClassEnum.values())
             .filter(item -> !item.isWorthFallback())
             .toList();
-        assertEquals(List.of(AigErrorClassEnum.INVALID_REQUEST, AigErrorClassEnum.POLICY_DENIED), noFallback,
-            "入参错误与策略拒绝换候选只是把同一个失败乘以候选数；其余错误都应允许顺延备选");
+        assertEquals(List.of(AigErrorClassEnum.INVALID_REQUEST, AigErrorClassEnum.POLICY_DENIED,
+                AigErrorClassEnum.APPROVAL_REQUIRED), noFallback,
+            "入参错误与策略拒绝换候选只是把同一个失败乘以候选数；"
+                + "需要调用审批同理——换一家 Provider 一样要审批，顺延只会多烧几次调用");
     }
 
     @Test

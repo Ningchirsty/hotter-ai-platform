@@ -21,6 +21,7 @@ import org.dromara.aigov.helper.AigAuditRecorder;
 import org.dromara.aigov.helper.AigOutputSchemaValidator;
 import org.dromara.aigov.mapper.AigModelViewMapper;
 import org.dromara.aigov.service.IAigInvokeService;
+import org.dromara.aigov.service.IAigCallApprovalService;
 import org.dromara.aigov.service.IAigUserQuotaService;
 import org.dromara.aigov.service.IAigRouteService;
 import org.dromara.aigov.service.invoker.ModelInvokeRequest;
@@ -42,6 +43,7 @@ import java.util.List;
  *     <li><b>无论成功失败都写一条 {@code aig_invocation_audit}</b>（try/finally + 独立 Bean）</li>
  *     <li>决策 {@code DENIED} → 直接返回，{@code result=1}，不调用模型</li>
  *     <li>决策 {@code MANUAL} → 返回并标记 {@code pendingConfirm}，{@code manualDecision=PENDING}</li>
+ *     <li>决策 {@code MODEL} 且策略要求审批 → 无有效授权则 {@code APPROVAL_REQUIRED} 拒绝（不调用模型）</li>
  *     <li>决策 {@code MODEL} → 选 invoker 调用 → 写回 latency/tokens/cost</li>
  *     <li>输出不符合 {@code output_schema} → {@code result=1}，{@code errorSummary="输出不符合Schema"}</li>
  *     <li>模型原始输出<b>不写入任何业务事实表</b>，只返回给调用方与审计引用</li>
@@ -86,6 +88,14 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
      */
     private final IAigUserQuotaService quotaService;
 
+    /**
+     * 调用授权审批（C3）：策略要求审批的能力，调用前必须有一张未过期的有效授权。
+     *
+     * <p>判定所需的两样东西在这里碰面：路由决策里的「是否需要审批」与<b>同一处</b>
+     * 解析出来的调用人（{@link AigAuditRecorder#resolveCallerId}）。</p>
+     */
+    private final IAigCallApprovalService approvalService;
+
     @Override
     public AigInvokeVo dryRun(AigInvokeBo bo) {
         AigDataLevelEnum dataLevel = parseDataLevel(bo);
@@ -126,14 +136,39 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
                 return toVo(traceId, decision, null, decision.getReason(),
                     AigErrorClassEnum.POLICY_DENIED.getCode());
             }
-            // 6. 人均配额（C3）：只在「确实要调用模型」之前判。
+            // 6. 调用授权审批（C3）：策略 require_approval='Y' 的能力，必须有一张
+            //    「该调用人 × 该能力 × 该数据等级」且未过期的授权。放在人均配额之前是刻意的——
+            //    与「策略拒绝/转人工」同理：没有授权时真实且可操作的结论是「去提交申请」，
+            //    而不是「配额超了」（后者会把人引到完全错误的方向）。
+            //    判定不抛异常：拿不到调用人也按「无授权」处理，fail-closed。
+            if (decision.isApprovalRequired()) {
+                Long callerId = AigAuditRecorder.resolveCallerId(audit);
+                if (!approvalService.hasValidGrant(callerId, bo.getCapabilityCode(), dataLevel.getCode())) {
+                    String why = callerId == null
+                        ? "本次调用没有调用人（调度/系统发起），无法对应到任何一张授权"
+                        : "调用人（userId=" + callerId + "）对该能力×数据等级没有未过期的有效授权";
+                    String reason = "该能力×数据等级需要调用审批：" + why
+                        + "。可在治理台「调用授权」页提交申请，批准后在有效期内免再审";
+                    audit.setResult(AigInvokeResultEnum.FAILED.getCode());
+                    audit.setErrorSummary(reason);
+                    audit.setErrorClass(AigErrorClassEnum.APPROVAL_REQUIRED.getCode());
+                    // 需要人去做一件事（提交/批准），因此是对人的待办而不是「偶发失败」
+                    audit.setManualDecision(AigManualDecisionEnum.PENDING.getCode());
+                    return toVo(traceId, decision, null, reason,
+                        AigErrorClassEnum.APPROVAL_REQUIRED.getCode());
+                }
+                audit.getPolicyHits().add("命中有效调用授权（调用人=" + callerId
+                    + "，能力=" + bo.getCapabilityCode() + "，数据等级=" + dataLevel.getCode()
+                    + "），本次按审批放行");
+            }
+            // 7. 人均配额（C3）：只在「确实要调用模型」之前判。
             //    放在策略拒绝/转人工之后是刻意的：那两条分支不消耗额度，也不该被额度抢先拦截——
             //    否则人会看到「配额超了」，而真实原因是策略不允许（数据不能出域之类），
             //    两者该做的处置完全不同。
             //    调用人取自与审计行同一处解析（AigAuditRecorder#resolveCallerId），
             //    保证「被限额的人」与「账本上记的人」永远是同一个。
             quotaService.assertWithinQuota(AigAuditRecorder.resolveCallerId(audit));
-            // 7. 决策为 MODEL → 按有序候选依次执行，失败则顺延（有序 fallback）
+            // 8. 决策为 MODEL → 按有序候选依次执行，失败则顺延（有序 fallback）
             List<AigRouteCandidate> candidates = decision.getCandidates();
             if (candidates.isEmpty()) {
                 // 兼容：决策未携带候选列表（旧调用方或手工构造）时退化为「单一模型」路径
@@ -205,7 +240,7 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
                     }
                 }
                 if (result.isSuccess()) {
-                    // 7. 输出必须符合能力输出模板，否则不视为成功。
+                    // 8. 输出必须符合能力输出模板，否则不视为成功。
                     // 但**不重试同一模型**：同样的输入与提示词，重试只会得到同样的输出；
                     // 换一个模型才可能有帮助——故归类为「值得 fallback」的 OUTPUT_UNPARSABLE。
                     if (AigOutputSchemaValidator.matches(decision.getOutputSchema(), result.getOutput())) {
@@ -259,7 +294,7 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
                 return vo;
             }
             audit.setResult(AigInvokeResultEnum.SUCCESS.getCode());
-            // 8. 原始输出只返回给调用方；审计只留引用，不写输出副本
+            // 9. 原始输出只返回给调用方；审计只留引用，不写输出副本
             vo.setOutput(result.getOutput());
             vo.setPendingConfirm(decision.getHumanConfirmPoints());
             return vo;

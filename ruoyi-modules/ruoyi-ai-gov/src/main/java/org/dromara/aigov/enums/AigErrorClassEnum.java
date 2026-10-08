@@ -47,6 +47,23 @@ public enum AigErrorClassEnum {
     POLICY_DENIED("POLICY_DENIED", "权限或外发策略拒绝", false, true, false, false),
 
     /**
+     * 需要调用审批但没有有效授权（C3）。
+     *
+     * <p><b>为什么单独一类，而不是并进 {@link #POLICY_DENIED}</b>：两者要人做的事不同。
+     * 策略拒绝是"这条路不通，改方案或改策略"；而"缺审批"是"去提一张申请单，
+     * 批准后在有效期内免再审"——是流程没走，不是方案不行。</p>
+     *
+     * <p>处置与 {@link #POLICY_DENIED} 一致的部分：都不重试、都转人工、都不值得换候选
+     * （换一家 Provider 同样要审批）。<b>不熔断</b>：这与 Provider 的健康无关，
+     * 熔断会把一个流程问题记成供应商故障。</p>
+     *
+     * <p><b>对灰度判据的影响</b>：本类<b>不在</b>
+     * {@code AigCanaryEvidence.SEVERE_CLASS_CODES} 里——"授权流程没走"不说明版本质量差。
+     * 但它仍然计入失败率（调用确实失败了），因此不会把问题藏起来。</p>
+     */
+    APPROVAL_REQUIRED("APPROVAL_REQUIRED", "需要调用审批（无有效授权）", false, true, false, false),
+
+    /**
      * 限流：指数退避后可重试；重试耗尽仍失败则值得换下一个候选
      */
     RATE_LIMITED("RATE_LIMITED", "被限流", true, false, false, true),

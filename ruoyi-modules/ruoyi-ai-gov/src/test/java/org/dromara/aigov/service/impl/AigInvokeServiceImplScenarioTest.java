@@ -37,6 +37,7 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import org.dromara.aigov.service.IAigCallApprovalService;
 import org.dromara.aigov.service.IAigUserQuotaService;
 
 /**
@@ -83,7 +84,7 @@ class AigInvokeServiceImplScenarioTest {
 
     private AigInvokeServiceImpl service() {
         return new AigInvokeServiceImpl(routeService, auditRecorder, List.<ModelInvoker>of(),
-            modelViewMapper, new AigRetryProperties(), mock(IAigUserQuotaService.class));
+            modelViewMapper, new AigRetryProperties(), mock(IAigUserQuotaService.class), mock(IAigCallApprovalService.class));
     }
 
     /**

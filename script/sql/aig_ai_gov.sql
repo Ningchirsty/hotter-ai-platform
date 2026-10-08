@@ -222,6 +222,41 @@ create table if not exists aig_user_quota (
 ) engine=innodb comment = 'AI 调用人均配额（按人、自然日/自然月、计「调用次数」）';
 
 -- ----------------------------
+-- 调用授权审批（C3：把 aig_route_policy.require_approval 做实）
+--   require_approval='Y' 的 (能力×数据等级)，调用前必须有一张**已批准且未过期**的授权，
+--   否则路由照选、但调用入口会以 APPROVAL_REQUIRED 拒绝（不消耗额度、不调用模型）。
+--   授权粒度＝**人 × 能力 × 数据等级**：审批本身就是按 (能力,数据等级) 的策略触发的，
+--   批准 INTERNAL 不该顺带放行 RESTRICTED/STRICT（数据等级是安全维度，越高越严）。
+--   一张单子既是被拒/申请的事实，也是批准后的授权来源（valid_until 未来即授权在用）。
+--   存量库由 script/sql/aig_call_approval.sql 补齐（幂等）。
+-- ----------------------------
+create table if not exists aig_call_approval (
+    approval_id     bigint(20)   not null                   comment '审批单ID',
+    requester_id    bigint(20)   not null                   comment '申请人用户ID（sys_user.user_id）',
+    requester_name  varchar(64)  default null               comment '申请人账号（冗余，便于离线核对）',
+    capability_code varchar(64)  not null                   comment '能力编码（授权粒度：能力）',
+    data_level      varchar(16)  not null                   comment '数据等级（授权粒度：数据等级）',
+    reason          varchar(500) default null               comment '申请理由（为什么需要这次授权）',
+    status          varchar(16)  not null default 'PENDING' comment '状态（PENDING 待审批 / APPROVED 已批准 / REJECTED 已驳回 / EXPIRED 已超时 / CANCELLED 已撤回）',
+    expire_time     datetime     not null                   comment '审批时限：PENDING 超过此时间不得再批准，由扫描置 EXPIRED',
+    approver_id     bigint(20)   default null               comment '审批人用户ID（申请人不得自审）',
+    approver_name   varchar(64)  default null               comment '审批人账号（冗余）',
+    decided_at      datetime     default null               comment '审批时间',
+    decision_remark varchar(500) default null               comment '审批意见（批准/驳回时填；驳回必填）',
+    valid_until     datetime     default null               comment '授权有效期止（批准时=审批时间+有效时长；为空表示这张单从未获批）',
+    del_flag        char(1)      default '0'                comment '删除标志（0代表存在 1代表删除）',
+    create_dept     bigint(20)   default null               comment '创建部门',
+    create_by       bigint(20)   default null               comment '创建者',
+    create_time     datetime     default null               comment '创建时间',
+    update_by       bigint(20)   default null               comment '更新者',
+    update_time     datetime     default null               comment '更新时间',
+    remark          varchar(500) default null               comment '备注',
+    primary key (approval_id),
+    key idx_aig_call_approval_grant (requester_id, capability_code, data_level, status, valid_until),
+    key idx_aig_call_approval_status (status, expire_time)
+) engine=innodb comment = 'AI 调用授权审批（人×能力×数据等级，带时效；批准后有效期内免再审）';
+
+-- ----------------------------
 -- 6、阶段1 演示数据：首个能力模板 talent_match（设计 §5.2 §12.3）
 --    人才匹配只允许本地模型/规则处理，禁止外发个人信息
 -- ----------------------------

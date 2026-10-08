@@ -33,6 +33,7 @@ import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import org.dromara.aigov.service.IAigCallApprovalService;
 import org.dromara.aigov.service.IAigUserQuotaService;
 
 /**
@@ -185,7 +186,7 @@ class AigInvokeServiceImplRetryTest {
         // 而 any(Class) 走 instanceof 语义、**不匹配 null**，会静默打不中桩。
         when(routeService.decide(any(), any(), nullable(AigRouteHint.class))).thenReturn(decision);
         AigInvokeServiceImpl service = new AigInvokeServiceImpl(routeService, auditRecorder,
-            List.of(invoker), modelViewMapper, retryProperties, mock(IAigUserQuotaService.class));
+            List.of(invoker), modelViewMapper, retryProperties, mock(IAigUserQuotaService.class), mock(IAigCallApprovalService.class));
         AigInvokeBo bo = new AigInvokeBo();
         bo.setCapabilityCode(CAPABILITY);
         bo.setDataLevel(AigDataLevelEnum.INTERNAL.getCode());

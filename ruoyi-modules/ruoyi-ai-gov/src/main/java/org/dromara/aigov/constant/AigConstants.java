@@ -222,6 +222,28 @@ public interface AigConstants {
     String PERM_QUOTA_EDIT = "aig:quota:edit";
 
     /**
+     * 调用授权清单（读）：谁申请了什么、批没批、哪张授权还在有效期内
+     */
+    String PERM_APPROVAL_LIST = "aig:approval:list";
+
+    /**
+     * 提交/撤回调用授权申请（写）
+     *
+     * <p>三个角色都给：谁都可能碰到「这个能力需要审批」的提示，
+     * 申请与撤回自己那张单子不需要治理权限。</p>
+     */
+    String PERM_APPROVAL_APPLY = "aig:approval:apply";
+
+    /**
+     * 审批调用授权（批准/驳回）
+     *
+     * <p><b>与申请分开</b>：申请是"我需要"，审批是"我替你担这个责任"。
+     * 只给 AI 管理员与安全（默认不给自己），且服务层强制<b>申请人不得自审</b>——
+     * 靠页面藏按钮不算约束。</p>
+     */
+    String PERM_APPROVAL_APPROVE = "aig:approval:approve";
+
+    /**
      * 系统提交者ID：任务由调度器/Agent 发起（无登录上下文）时，{@code create_by} 用它占位。
      *
      * <p><b>为什么不能留 NULL</b>：{@code aig_task.create_by} 同时是幂等唯一键

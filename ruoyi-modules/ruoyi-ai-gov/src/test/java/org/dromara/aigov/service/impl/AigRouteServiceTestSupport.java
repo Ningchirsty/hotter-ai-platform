@@ -274,12 +274,25 @@ abstract class AigRouteServiceTestSupport {
      * @param fallbackToManual 无可用模型时是否转人工
      */
     protected void stubPolicy(AigDataLevelEnum dataLevel, String allowExternal, String fallbackToManual) {
+        stubPolicy(dataLevel, allowExternal, fallbackToManual, "N");
+    }
+
+    /**
+     * 桩：路由策略（可指定「调用前是否需要审批」，C3）。
+     *
+     * @param dataLevel        策略所属数据等级
+     * @param allowExternal    是否允许外发
+     * @param fallbackToManual 无可用模型时是否转人工
+     * @param requireApproval  调用前是否需要审批（Y/N）
+     */
+    protected void stubPolicy(AigDataLevelEnum dataLevel, String allowExternal, String fallbackToManual,
+                              String requireApproval) {
         AigRoutePolicy policy = new AigRoutePolicy();
         policy.setPolicyId(9L);
         policy.setCapabilityCode(CAPABILITY);
         policy.setDataLevel(dataLevel.getCode());
         policy.setAllowExternal(allowExternal);
-        policy.setRequireApproval("N");
+        policy.setRequireApproval(requireApproval);
         policy.setFallbackToManual(fallbackToManual);
         policy.setStatus("0");
         when(routePolicyMapper.selectOne(any())).thenReturn(policy);
