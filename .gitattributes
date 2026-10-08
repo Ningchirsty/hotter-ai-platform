@@ -9,6 +9,12 @@ script/image/workflows/api/*.json text eol=lf
 script/image/workflows/*.json text eol=lf
 /script/deploy/hotter-release text eol=lf
 /script/deploy/gh-deploy-hotter.sudoers text eol=lf
+# 2026-10-08 补：health-check.sh 是这个目录里的**第 3 个 shell 脚本**，当初漏了它。
+# 后果实测到了：本地 Windows 检出（core.autocrlf=true）把它变成 CRLF 并**照原样提交**，
+# 而它要在**宿主机**（self-hosted runner）上运行 —— bash 看到 `if ...; then\r` 直接语法错，
+# 报的却是别的行的 "syntax error near unexpected token"，极难定位。
+# 同一份脚本在 Linux 检出是 LF、Windows 检出是 CRLF，行为不一致 —— 这类文件必须固定在 LF。
+/script/deploy/health-check.sh text eol=lf
 # 渲染模板同理（R7 踩到过）：模板文件按**文件字节**算 SHA-256 登记在 dp_layout_template，
 # requirePublished 一旦发现"渲染服务里的实时校验和 != 登记值"就**拒绝排版**。
 # 同一份模板在 Windows 检出是 CRLF、Linux 检出是 LF，sha256 不同 →

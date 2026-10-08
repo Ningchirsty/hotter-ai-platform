@@ -154,6 +154,45 @@ else
   warn=$((warn + 1))
 fi
 
+# ---- 7) 后台任务是否真的在跑（2026-10-08 发现：一个都没跑） ----
+# 为什么必须**持续检测**而不是记在文档里：
+#   本仓 @EnableScheduling 只在 ruoyi-common-job 的 SnailJobConfig 上，而它被
+#   @ConditionalOnProperty(snail-job.enabled=true) 门控；生产 snail-job.enabled=false，
+#   且三个 @Scheduled 任务各自的开关也都没配
+#   => **任务状态机扫描 / 审批超时扫描 / 健康探测一个都不会被触发，而且不报错、不留日志**。
+#   当前 aig_task 与 aig_call_approval 都是 0 行，所以"看不出问题"；
+#   一旦有数据，症状才会出现（过期审批一直挂着、失败任务不再自动重试）。
+# 判据用**"不该存在的悬挂行"**，而不是去猜调度器状态：
+#   PENDING 且 expire_time 已过 = 审批超时扫描没在跑；
+#   RETRY_WAIT/QUEUED 且已过 1 天 = 任务扫描没在跑。
+if docker inspect "$MYSQL_CONTAINER" >/dev/null 2>&1; then
+  q2="SELECT
+        (SELECT COUNT(*) FROM aig_call_approval
+          WHERE del_flag='0' AND status='PENDING' AND expire_time IS NOT NULL
+            AND expire_time < NOW()) AS overdue_pending,
+        (SELECT COUNT(*) FROM aig_task
+          WHERE del_flag='0' AND status IN ('RETRY_WAIT','QUEUED')
+            AND create_time IS NOT NULL
+            AND TIMESTAMPDIFF(DAY, create_time, NOW()) >= 1) AS stuck_tasks;"
+  row2=$(docker exec -i "$MYSQL_CONTAINER" sh -c \
+    "mysql --default-character-set=utf8mb4 -uroot -p\"\$MYSQL_ROOT_PASSWORD\" -D ai_video_poc -N -B -e \"$q2\"" 2>/dev/null | tail -1)
+  overdue=$(echo "$row2" | awk '{print $1}')
+  stuck=$(echo "$row2" | awk '{print $2}')
+  if [[ "$overdue" =~ ^[0-9]+$ ]]; then
+    if [ "$overdue" -gt 0 ] || [ "$stuck" -gt 0 ]; then
+      report "[WARN] background jobs look inactive: overdue_pending_approvals=$overdue, stuck_tasks=$stuck"
+      report "           these rows SHOULD have been swept - see the @EnableScheduling gap"
+      report "           trigger manually: POST /aigov/approval/expire-scan , POST /aigov/task/scheduler/sweep"
+      warn=$((warn + 1))
+    else
+      report "[ok] no overdue approvals / stuck tasks (background sweeps not yet needed)"
+    fi
+  else
+    report "[WARN] could not read background-job backlog from $MYSQL_CONTAINER"
+    warn=$((warn + 1))
+  fi
+fi
+
 report ""
 report "=== summary: critical=$critical warn=$warn ==="
 if [ "$critical" -gt 0 ]; then
