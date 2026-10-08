@@ -31,7 +31,45 @@ references. The frontend additionally requires the full Git SHA embedded in
 verification, the service-only switch, and automatic code rollback. It never
 runs `docker compose down`, deletes volumes, imports SQL, or restores data.
 
-To roll code back, dispatch the same workflow with the previously recorded image
+## Host-capacity guards (added 2026-10-08 after a P0 outage)
+
+**What happened**: the root filesystem hit 100%. The backend container was created
+but could not start, the health check timed out, and **the rollback failed too —
+because rollback also needs to write to disk**. Result: the backend was fully down
+with no alarm. Two contributing accumulations: 18 leftover `ruoyi-web-previous-*`
+containers (the frontend flow renames and keeps them forever) and 12GB of Docker
+build cache.
+
+**Four guards now exist** (all overridable by env var, defaults shown):
+
+| Guard | Where | Behaviour |
+|---|---|---|
+| Disk precheck | `hotter-release` `require_free_space` | Refuses to release if root has `< 3GB` free (`HOTTER_MIN_FREE_KB`). Checked **before and after** the image pull, since pulling ~1.2GB itself writes. |
+| Stale container cleanup | `hotter-release` `prune_previous_containers` | Keeps the newest 3 `ruoyi-web-previous-*` and removes older ones (`HOTTER_KEEP_PREVIOUS`). Container removal only — images stay usable for rollback. |
+| Build-cache reclaim | `hotter-release` `reclaim_build_cache_if_tight` | Prunes build cache **only** when free space drops below 1GB (`HOTTER_BUILD_CACHE_RECLAIM_KB`). Left alone otherwise, so builds stay fast. |
+| Rollback-target check | `hotter-release` `require_rollback_target` | Refuses to release unless the current running image is still present locally. Otherwise a failed switch would leave **neither** the new nor the old container. |
+
+Because `hotter-release` is root-owned and only takes effect after
+`sudo install`, both `deploy-poc.yml` and `deploy-frontend-poc.yml` also run an
+equivalent **Pre-flight host capacity** step in the workflow itself. That layer
+depends only on the runner's docker access, so it is active as soon as it is merged.
+
+## Availability alert
+
+`.github/workflows/production-health-alert.yml` probes production every 5 minutes
+on the self-hosted runner and raises/updates a repository issue when unhealthy,
+closing it automatically once healthy.
+
+It probes **`http://127.0.0.1:18082`** and requires the body to be JSON. This is
+deliberate: `ruoyi-web` is nginx and answers **200 with the SPA `index.html` for
+any path** (including `/actuator/health`), so a public HTTP 200 does **not** mean
+the backend is alive — verified during the outage. Probing through nginx would
+have missed the very outage this workflow exists to catch.
+
+Manual run / local check: `bash script/deploy/health-check.sh`
+(exit 0 = ok, 1 = critical, 2 = warn).
+
+## To roll code back, dispatch the same workflow with the previously recorded image
 digest (and, for the frontend, its Git SHA). Database and object data remain in
 place. Schema-incompatible releases require an approved forward-fix or data
 recovery procedure and must not use this application rollback path.

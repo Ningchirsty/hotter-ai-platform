@@ -1,0 +1,104 @@
+name: Production Health Alert
+
+# 2026-10-08 P0 事故后新增：那一次后端完全不可用，**没有任何告警**——
+# 我是靠盯着 deploy run 才发现失败的。更隐蔽的是从公网看不出来：
+# ruoyi-web 是 nginx，对任何路径都回 200 + SPA 的 index.html（含 /actuator/health），
+# 所以"站点是活的"与"后端是活的"是两件事。
+#
+# 因此本 workflow 在 self-hosted runner（与后端同主机）上**直连后端** 127.0.0.1:18082 探测，
+# 并要求响应体是 JSON，而不是只看状态码。
+#
+# 告警落地方式选择说明：
+#   本仓库没有任何 webhook/告警通道（已核实：无 schedule、无 webhook secret）。
+#   因此用**本仓库的 Issue** 作为告警收件箱——它只需 GITHUB_TOKEN，不依赖任何外部服务，
+#   且会在 GitHub 通知里推送给 watching 的人。同一问题不新建、只更新同一个 issue
+#   （避免每 5 分钟刷一条）。
+on:
+  schedule:
+    # 每 5 分钟。注意：schedule 只在默认分支上生效。
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: production-health-alert
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    name: Probe production backend availability
+    # 与部署 workflow 用同一组标签：必须是宿主机上的 runner，才能直连 127.0.0.1:18082
+    runs-on: [shenzhen, deploy]
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Run health check
+        id: health
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          bash script/deploy/health-check.sh | tee /tmp/health-report.txt
+          echo "rc=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Summarize
+        run: |
+          {
+            echo "## Production health check"
+            echo
+            echo '```'
+            cat /tmp/health-report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Raise or update the alert issue
+        if: steps.health.outputs.rc != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RC: ${{ steps.health.outputs.rc }}
+        run: |
+          set -uo pipefail
+          if [ "$RC" = "2" ]; then
+            TITLE="[生产告警] 健康巡检有 WARN（未中断服务）"
+          else
+            TITLE="[生产告警] 后端不可用或部署条件不满足"
+          fi
+          BODY="$(printf '健康巡检在 %s 报告异常（rc=%s）。\n\n```\n%s\n```\n\n巡检脚本：`script/deploy/health-check.sh`\n' \
+            "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$RC" "$(cat /tmp/health-report.txt)")"
+          # 只维护一个 issue：按标题查找，存在则评论更新，不存在则创建。
+          existing=$(gh issue list --state open --search "$TITLE in:title" \
+            --json number,title --jq ".[] | select(.title == \"$TITLE\") | .number" | head -1)
+          if [ -n "${existing:-}" ]; then
+            gh issue comment "$existing" --body "$BODY"
+            echo "updated issue #$existing"
+          else
+            gh issue create --title "$TITLE" --body "$BODY" --label "ops" 2>/dev/null \
+              || gh issue create --title "$TITLE" --body "$BODY"
+          fi
+
+      - name: Close the alert issue when healthy again
+        if: steps.health.outputs.rc == '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          for TITLE in "[生产告警] 后端不可用或部署条件不满足" "[生产告警] 健康巡检有 WARN（未中断服务）"; do
+            num=$(gh issue list --state open --search "$TITLE in:title" \
+              --json number,title --jq ".[] | select(.title == \"$TITLE\") | .number" | head -1)
+            if [ -n "${num:-}" ]; then
+              gh issue close "$num" --comment "健康巡检在 $(date -u '+%Y-%m-%dT%H:%M:%SZ') 恢复正常，自动关闭。"
+              echo "closed issue #$num"
+            fi
+          done
+
+      - name: Fail the run so it is visible in Actions
+        if: steps.health.outputs.rc != '0'
+        run: |
+          echo "health check reported rc=${{ steps.health.outputs.rc }}" >&2
+          exit 1

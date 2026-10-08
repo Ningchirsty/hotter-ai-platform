@@ -10,7 +10,74 @@ readonly FRONTEND_IMAGE_RE='^ghcr\.io/ningchirsty/hotter-ai-platform-frontend@sh
 readonly SHA_RE='^[0-9a-f]{40}$'
 readonly PUBLIC_URL=https://pm.hottter.cn
 
+# ---- 2026-10-08 P0 事故后新增的防线（见 R61 事故记录） ----
+# 事故：根分区写满 → 容器只创建成功无法启动 → 健康检查超时 → 回滚也因写满失败
+#       → 后端完全不可用。根因是本脚本**没有任何磁盘水位检查**，而回滚本身也需要写磁盘，
+#       于是"回滚"与"被回滚的动作"一起失败。以下四项针对该事故。
+readonly MIN_FREE_KB="${HOTTER_MIN_FREE_KB:-3145728}"   # 默认要求根分区至少 3GB 可用
+readonly KEEP_PREVIOUS_DEPLOYMENTS="${HOTTER_KEEP_PREVIOUS:-3}"
+readonly BUILD_CACHE_RECLAIM_KB="${HOTTER_BUILD_CACHE_RECLAIM_KB:-1048576}"  # 低于 1GB 才动缓存
+
 die() { echo "release preflight failed: $*" >&2; exit 1; }
+warn() { echo "release warning: $*" >&2; }
+
+# 断言根分区可用空间充足。**部署前与拉取镜像后各调用一次**：
+# 拉取一个 1.2GB 镜像本身就要写盘，只在开头检查不足以覆盖。
+require_free_space() {
+  local stage=$1
+  local free_kb
+  free_kb=$(df -Pk / | awk 'NR==2 {print $4}')
+  if ! [[ "$free_kb" =~ ^[0-9]+$ ]]; then
+    warn "无法读取根分区可用空间（df 输出异常），跳过磁盘检查：$stage"
+    return 0
+  fi
+  if [ "$free_kb" -lt "$MIN_FREE_KB" ]; then
+    die "根分区可用空间不足（stage=$stage）：可用 $((free_kb / 1024))MB < 要求 $((MIN_FREE_KB / 1024))MB；部署与回滚都需要写盘，空间不足会让两者一起失败（2026-10-08 事故）。请先清理：docker builder prune -af / 删除陈旧的 previous-* 容器 / 清理多余镜像。"
+  fi
+}
+
+# 清理陈旧的 frontend previous-* 容器（只保留最近 N 个）。
+# 为什么必须做：frontend 发布流程每次 `docker rename` 旧的为 previous-<时间戳> 并保留，
+# **从不清理**，因此是单调增长的。2026-10-08 已累积 18 个。
+# `docker rm` 只删容器（可写层通常几十 KB），**不动镜像**——镜像仍可用于回滚。
+prune_previous_containers() {
+  local keep=$1
+  local stale
+  stale=$(docker ps -a --filter 'name=ruoyi-web-previous-' --format '{{.Names}}' \
+    | sort -r | tail -n +$((keep + 1)))
+  if [ -z "$stale" ]; then
+    return 0
+  fi
+  local n=0
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    if docker rm "$name" >/dev/null 2>&1; then n=$((n + 1)); fi
+  done <<< "$stale"
+  echo "pruned $n stale previous-* container(s), kept newest $keep"
+}
+
+# 仅在空间偏低时回收 Build Cache（纯派生数据，不参与运行）。
+# 空间充足时**不动它**：缓存能让下次构建更快，无谓清理是浪费。
+reclaim_build_cache_if_tight() {
+  local free_kb
+  free_kb=$(df -Pk / | awk 'NR==2 {print $4}')
+  if [[ "$free_kb" =~ ^[0-9]+$ ]] && [ "$free_kb" -lt "$BUILD_CACHE_RECLAIM_KB" ]; then
+    warn "根分区仅剩 $((free_kb / 1024))MB，回收 Build Cache 以腾出空间"
+    docker builder prune -af >/dev/null 2>&1 || warn "builder prune 失败（不阻断发布）"
+  fi
+}
+
+# 断言回滚目标镜像在本地可用。
+# 为什么需要：`up -d --no-deps` 会移除旧容器，此后若新容器起不来，
+# 唯一能回滚的凭据就是这个镜像引用。若它已被清理，回滚会变成
+# 「删了新容器、旧的也没有」——比不回滚更糟。2026-10-08 事故中旧镜像恰好在，
+# 但脚本**从未验证过**这一点，纯属运气。
+require_rollback_target() {
+  local previous_image=$1
+  test -n "$previous_image" || die "拿不到当前运行镜像，无法确定回滚目标"
+  docker image inspect "$previous_image" >/dev/null 2>&1 \
+    || die "回滚目标镜像不在本地：$previous_image。请先 docker pull 该镜像，再重试发布"
+}
 
 require_root_owned_config() {
   local path=$1
@@ -79,9 +146,18 @@ deploy_backend() {
   local image=$1
   [[ "$image" =~ $BACKEND_IMAGE_RE ]] || die "invalid backend image reference"
   require_runtime
+  # 事故防线 1：部署前先确认有空间（拉镜像本身就要写盘）
+  reclaim_build_cache_if_tight
+  prune_previous_containers "$KEEP_PREVIOUS_DEPLOYMENTS"
+  require_free_space "before-pull"
   local previous_image
   previous_image=$(docker inspect ai-video-poc-backend-1 --format '{{.Config.Image}}') || die "existing backend container missing"
+  # 事故防线 4：回滚目标必须在本地。旧容器马上会被 up 移除，
+  # 此后它是唯一的回滚凭据；若已被清理，回滚会变成「删了新的、旧的也没有」。
+  require_rollback_target "$previous_image"
   pull_image "$image"
+  # 拉完镜像再查一次：镜像约 1.2GB，只在开头查不足以及时发现触底
+  require_free_space "after-pull"
   if ! BACKEND_IMAGE="$image" docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --no-deps backend; then
     restore_backend "$previous_image" || die "backend switch and restore both failed"
     die "backend switch failed; previous image restored"
@@ -103,7 +179,12 @@ deploy_frontend() {
   require_runtime
   docker inspect ai-video-poc-backend-1 --format '{{.State.Health.Status}}' | grep -qx healthy || die "backend is not healthy"
   docker inspect ruoyi-web --format '{{.HostConfig.NetworkMode}}' | grep -qx host || die "ruoyi-web is not using host networking"
+  # 事故防线 1+2：前端发布要额外起一个 candidate 容器，更吃空间；先回收再断言
+  reclaim_build_cache_if_tight
+  prune_previous_containers "$KEEP_PREVIOUS_DEPLOYMENTS"
+  require_free_space "before-pull"
   pull_image "$image"
+  require_free_space "after-pull"
 
   local run_id candidate previous
   run_id="${GITHUB_RUN_ID:-$(date +%Y%m%d%H%M%S)}-${GITHUB_RUN_ATTEMPT:-1}"

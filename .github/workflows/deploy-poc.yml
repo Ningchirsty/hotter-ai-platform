@@ -34,6 +34,31 @@ jobs:
             exit 1
           fi
 
+      # 2026-10-08 P0 事故后新增：部署前预检。
+      # 事故经过：根分区写满 → 容器只创建成功、无法启动 → 健康检查超时 → **回滚也因写满失败**
+      # → 后端完全不可用。hotter-release 里已加同样的防线，但那份脚本是 root 所有、
+      # 需人工 install 才生效；本步骤只依赖 runner 的 docker 权限，**提交即可生效**，
+      # 因此作为"立刻可用的那一层"。
+      - name: Pre-flight host capacity
+        env:
+          MIN_FREE_KB: '3145728'
+          KEEP_PREVIOUS: '3'
+        run: |
+          set -uo pipefail
+          free_kb=$(df -Pk / | awk 'NR==2 {print $4}')
+          echo "root free: $((free_kb / 1024))MB (require >= $((MIN_FREE_KB / 1024))MB)"
+          # 单调增长的陈旧 previous-* 容器是本次事故的堆积源之一，先清掉（保留最近几个）
+          stale=$(docker ps -a --filter 'name=ruoyi-web-previous-' --format '{{.Names}}' \
+            | sort -r | tail -n +$((KEEP_PREVIOUS + 1)))
+          if [ -n "$stale" ]; then
+            echo "$stale" | xargs -r docker rm >/dev/null 2>&1 || true
+            echo "pruned stale previous-* containers, kept newest $KEEP_PREVIOUS"
+          fi
+          if [ "$free_kb" -lt "$MIN_FREE_KB" ]; then
+            echo "::error::root filesystem has only $((free_kb / 1024))MB free (< $((MIN_FREE_KB / 1024))MB). Deploy AND rollback both need disk; refusing to start."
+            exit 1
+          fi
+
       - name: Deploy and verify backend through audited entrypoint
         env:
           IMAGE: ${{ inputs.image }}

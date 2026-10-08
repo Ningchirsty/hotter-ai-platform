@@ -42,6 +42,27 @@ jobs:
             exit 1
           fi
 
+      # 2026-10-08 P0 事故后新增：部署前预检（前端发布还要额外起一个 candidate 容器，更吃空间）。
+      # 详见 deploy-poc.yml 里的同名校验与 R61 事故记录。
+      - name: Pre-flight host capacity
+        env:
+          MIN_FREE_KB: '3145728'
+          KEEP_PREVIOUS: '3'
+        run: |
+          set -uo pipefail
+          free_kb=$(df -Pk / | awk 'NR==2 {print $4}')
+          echo "root free: $((free_kb / 1024))MB (require >= $((MIN_FREE_KB / 1024))MB)"
+          stale=$(docker ps -a --filter 'name=ruoyi-web-previous-' --format '{{.Names}}' \
+            | sort -r | tail -n +$((KEEP_PREVIOUS + 1)))
+          if [ -n "$stale" ]; then
+            echo "$stale" | xargs -r docker rm >/dev/null 2>&1 || true
+            echo "pruned stale previous-* containers, kept newest $KEEP_PREVIOUS"
+          fi
+          if [ "$free_kb" -lt "$MIN_FREE_KB" ]; then
+            echo "::error::root filesystem has only $((free_kb / 1024))MB free (< $((MIN_FREE_KB / 1024))MB). Deploy AND rollback both need disk; refusing to start."
+            exit 1
+          fi
+
       - name: Deploy and verify frontend through audited entrypoint
         env:
           IMAGE: ${{ inputs.image }}

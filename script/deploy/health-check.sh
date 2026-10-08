@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+# =====================================================================
+# 生产健康巡检（部署失败场景的告警防线）
+# =====================================================================
+# 为什么需要它（2026-10-08 P0 事故）：
+#   磁盘写满 → 后端容器只创建成功、无法启动 → 部署健康检查超时 → 回滚也因写满失败
+#   → **后端完全不可用，而且没有任何告警**。我是靠盯着 deploy run 才发现失败的。
+#   更隐蔽的是：**从公网看不出来**——`ruoyi-web` 是 nginx，对任何路径都回 200 + SPA 的
+#   index.html（含 `/actuator/health`、`/auth/code`），所以"站点是活的"与"后端是活的"
+#   是两件事。实测确认：后端挂掉时 `https://pm.hottter.cn/actuator/health` 仍返回 200 的 HTML。
+#
+# 因此本脚本**只探直连后端** `127.0.0.1:18082`（本 job 跑在宿主机上的 self-hosted runner，
+# 与后端共享主机网络）。判定不只看状态码，还要求响应体是 JSON——避免再被 HTML 骗过一次。
+#
+# 用法：bash script/deploy/health-check.sh
+# 退出码：0=全部正常；1=有 CRITICAL；2=有 WARN（无 CRITICAL）
+# =====================================================================
+set -uo pipefail
+
+BACKEND_URL="${HOTTER_BACKEND_PROBE_URL:-http://127.0.0.1:18082/auth/code}"
+BACKEND_CONTAINER="${HOTTER_BACKEND_CONTAINER:-ai-video-poc-backend-1}"
+FRONTEND_CONTAINER="${HOTTER_FRONTEND_CONTAINER:-ruoyi-web}"
+MIN_FREE_KB="${HOTTER_MIN_FREE_KB:-3145728}"          # 与 hotter-release 同口径：3GB
+STALE_CONTAINER_LIMIT="${HOTTER_STALE_LIMIT:-6}"     # previous-* 超过这个数就提醒（保留策略是 3）
+
+critical=0
+warn=0
+report() { printf '%s\n' "$*"; }
+
+report "=== production health check ($(date -u '+%Y-%m-%dT%H:%M:%SZ')) ==="
+
+# ---- 1) 后端可用性（最关键） ----
+# 只用一次 curl：`-w` 把状态码追加在正文之后，避免请求两次（两次之间状态可能变化，
+# 且连接失败时第一次会输出空串、与第二次的 000 拼接成 000000）。
+raw=$(curl --silent --show-error --max-time 15 --write-out $'\n__CODE__%{http_code}' "$BACKEND_URL" 2>/dev/null || true)
+code="${raw##*__CODE__}"
+body="${raw%$'\n'__CODE__*}"
+code="${code:-000}"
+
+# 判定：HTTP 2xx/4xx（应用在应答，401/403 也算活着）+ 响应体以 '{' 开头（是 JSON，不是 nginx 的 HTML）
+if [ "$code" = "000" ]; then
+  report "[CRITICAL] backend unreachable: $BACKEND_URL (curl failed)"
+  critical=$((critical + 1))
+elif [ "${code:0:1}" != "2" ] && [ "${code:0:1}" != "4" ]; then
+  report "[CRITICAL] backend returned http=$code from $BACKEND_URL"
+  critical=$((critical + 1))
+elif [ "${body:0:1}" != "{" ]; then
+  report "[CRITICAL] backend answered http=$code but body is NOT json (first char '${body:0:1}')"
+  report "           -> this is the nginx/SPA trap: a 200 HTML page does not mean the backend is up"
+  critical=$((critical + 1))
+else
+  report "[ok] backend alive: http=$code json=yes"
+fi
+
+# ---- 2) 容器状态 ----
+for c in "$BACKEND_CONTAINER" "$FRONTEND_CONTAINER"; do
+  if ! docker inspect "$c" >/dev/null 2>&1; then
+    report "[CRITICAL] container missing: $c"
+    critical=$((critical + 1))
+    continue
+  fi
+  state=$(docker inspect "$c" --format '{{.State.Status}}')
+  health=$(docker inspect "$c" --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}')
+  restarts=$(docker inspect "$c" --format '{{.RestartCount}}')
+  if [ "$state" != "running" ]; then
+    report "[CRITICAL] container $c state=$state (expected running)"
+    critical=$((critical + 1))
+  elif [ "$health" = "unhealthy" ]; then
+    report "[CRITICAL] container $c is unhealthy (restarts=$restarts)"
+    critical=$((critical + 1))
+  else
+    report "[ok] container $c state=$state health=$health restarts=$restarts"
+  fi
+done
+
+# ---- 3) 磁盘水位（本次事故的直接原因） ----
+free_kb=$(df -Pk / | awk 'NR==2 {print $4}')
+if [[ "$free_kb" =~ ^[0-9]+$ ]]; then
+  if [ "$free_kb" -lt "$MIN_FREE_KB" ]; then
+    report "[CRITICAL] disk low: $((free_kb / 1024))MB free < $((MIN_FREE_KB / 1024))MB required"
+    report "           (a deploy would fail AND its rollback would fail too - see the 2026-10-08 incident)"
+    critical=$((critical + 1))
+  elif [ "$free_kb" -lt $((MIN_FREE_KB * 2)) ]; then
+    report "[WARN] disk getting low: $((free_kb / 1024))MB free"
+    warn=$((warn + 1))
+  else
+    report "[ok] disk free: $((free_kb / 1024))MB"
+  fi
+else
+  report "[WARN] could not read disk usage (df output unexpected)"
+  warn=$((warn + 1))
+fi
+
+# ---- 4) 回滚凭据：当前运行镜像是否仍在本地 ----
+cur_image=$(docker inspect "$BACKEND_CONTAINER" --format '{{.Config.Image}}' 2>/dev/null || true)
+if [ -z "$cur_image" ]; then
+  report "[WARN] cannot read running backend image, rollback target unknown"
+  warn=$((warn + 1))
+elif docker image inspect "$cur_image" >/dev/null 2>&1; then
+  report "[ok] rollback target present locally"
+else
+  report "[CRITICAL] running image is NOT present locally: $cur_image (rollback would be impossible)"
+  critical=$((critical + 1))
+fi
+
+# ---- 5) 陈旧 previous-* 容器堆积（单调增长，会吃干磁盘） ----
+stale_count=$(docker ps -a --filter 'name=ruoyi-web-previous-' -q 2>/dev/null | wc -l | tr -d ' ')
+if [ "$stale_count" -gt "$STALE_CONTAINER_LIMIT" ]; then
+  report "[WARN] stale previous-* containers: $stale_count (limit $STALE_CONTAINER_LIMIT; release keeps 3)"
+  warn=$((warn + 1))
+else
+  report "[ok] stale previous-* containers: $stale_count"
+fi
+
+report ""
+report "=== summary: critical=$critical warn=$warn ==="
+if [ "$critical" -gt 0 ]; then
+  report "RESULT: CRITICAL"
+  exit 1
+elif [ "$warn" -gt 0 ]; then
+  report "RESULT: WARN"
+  exit 2
+fi
+report "RESULT: OK"
+exit 0
