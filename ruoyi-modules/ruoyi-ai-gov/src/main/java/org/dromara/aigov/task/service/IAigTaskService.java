@@ -44,6 +44,35 @@ public interface IAigTaskService {
     Long create(AigTaskCreateBo bo);
 
     /**
+     * 登记一条<b>由业务域执行</b>的任务：创建 + 直接落到「已派发」，执行方标为
+     * {@code EXTERNAL}（{@code AigTaskExecutionModeEnum}）。
+     *
+     * <p><b>给谁用</b>：把编排留在自己域内的业务侧（创作域的图像生成走图像内核
+     * {@code ImageTaskSubmissionService}）。这类任务登记进统一任务视图是为了<b>可见</b>，
+     * 不是为了交给平台执行——所以它<b>不</b>经历平台的策略校验与排队：那两步的语义是
+     * 「平台在做策略校验 / 排队等平台执行」，对不经平台模型调用的任务不成立，
+     * 伪造那段历史比跳过它更坏。</p>
+     *
+     * <p><b>平台不会碰它</b>：调度器的重试重排与超时清扫只处理
+     * {@code execution_mode='PLATFORM'} 的任务（见 {@code AigTaskSchedulerImpl}）。
+     * 否则会出现「把业务域正在跑的任务重新入队再执行一遍」或「内核还在出图、账上已判超时失败」。</p>
+     *
+     * <p><b>幂等</b>：沿用创建幂等键（业务域 + 提交人 + 键）。<b>第二次调用返回既有任务且不改动它</b>
+     * ——不重置状态、不覆盖外部作业ID：任务的后续状态由业务域回写，重复登记不该把进度抹掉。</p>
+     *
+     * <p><b>状态回写</b>：业务域拿到结果后用 {@link #transition} / {@link #recordExecutionFacts}
+     * 推进同一条任务（{@code DISPATCHED → RUNNING/SUCCEEDED/FAILED}）。回写是<b>拉模式</b>，
+     * 一次刷新可能只观测到终态，因此状态机允许 {@code DISPATCHED → SUCCEEDED}——
+     * 要求回写先补一条未被观测到的 {@code RUNNING}，等于让它伪造中间态。</p>
+     *
+     * @param bo             创建入参（快照内容由业务域组装成字符串传入）
+     * @param providerCode   业务域侧的 Provider 编码（必填：回写/排障要靠它定位）
+     * @param providerJobId  外部作业ID（可空：有的内核不给作业号）
+     * @return 登记后的任务（含最终状态与执行方，供业务域记录 taskId）
+     */
+    AigTask createDispatched(AigTaskCreateBo bo, String providerCode, String providerJobId);
+
+    /**
      * 状态迁移（<b>唯一入口</b>）：校验合法边 + 乐观锁 + 追加事件。
      *
      * @param taskId          任务ID

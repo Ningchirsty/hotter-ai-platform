@@ -112,6 +112,8 @@
         <el-table-column label="状态" align="center" width="160">
           <template #default="scope">
             <el-tag :type="statusTagType(scope.row.status)">{{ scope.row.statusLabel || scope.row.status }}</el-tag>
+            <!-- 执行方：EXTERNAL 的任务由业务域执行，平台的「重跑」会把别人正在跑的工作再跑一遍 -->
+            <div v-if="scope.row.executionMode === 'EXTERNAL'" class="text-muted">业务域执行</div>
           </template>
         </el-table-column>
         <el-table-column label="尝试" align="center" width="90">
@@ -200,6 +202,12 @@
             </el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="类型">{{ detail.task.taskTypeLabel }}</el-descriptions-item>
+          <el-descriptions-item label="执行方">
+            {{ detail.task.executionModeLabel || detail.task.executionMode || '-' }}
+            <span v-if="detail.task.executionMode === 'EXTERNAL'" class="text-muted">
+              （编排在业务域：平台不执行也不扫描它，重试/取消请回业务域入口）
+            </span>
+          </el-descriptions-item>
           <el-descriptions-item label="能力">{{ detail.task.capabilityCode || '-' }}</el-descriptions-item>
           <el-descriptions-item label="业务对象">
             {{ detail.task.projectType }} / {{ detail.task.projectId }}
@@ -572,6 +580,12 @@ onMounted(() => {
 
 .detail-body {
   padding: 0 4px;
+}
+
+// 次要说明（执行方等）：别抢主值的视觉权重
+.text-muted {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 
 .detail-alert {

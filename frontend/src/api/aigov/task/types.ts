@@ -21,6 +21,12 @@ export interface AigTaskVO {
   allowExternal?: string;
   status?: string;
   statusLabel?: string;
+  /**
+   * 执行方：PLATFORM=平台执行（走统一调用入口，平台负责重试/超时）；
+   * EXTERNAL=业务域执行（编排在业务域，平台只登记与展示，重试/取消要回业务域自己的入口）。
+   */
+  executionMode?: string;
+  executionModeLabel?: string;
   attemptNo?: number;
   maxAttempt?: number;
   inputSnapshotId?: string | number;

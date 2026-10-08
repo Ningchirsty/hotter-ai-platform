@@ -8,6 +8,7 @@ import org.dromara.aigov.enums.AigErrorClassEnum;
 import org.dromara.aigov.task.config.AigTaskSchedulerProperties;
 import org.dromara.aigov.task.domain.AigTask;
 import org.dromara.aigov.task.domain.vo.AigTaskSweepVo;
+import org.dromara.aigov.task.enums.AigTaskExecutionModeEnum;
 import org.dromara.aigov.task.enums.AigTaskStatusEnum;
 import org.dromara.aigov.task.mapper.AigTaskMapper;
 import org.dromara.aigov.task.service.IAigTaskService;
@@ -124,6 +125,19 @@ class AigTaskSchedulerImplTest {
 
         assertTrue(paramsOf(0).contains(AigTaskStatusEnum.RETRY_WAIT.getCode()),
             "重试扫描必须按 RETRY_WAIT 过滤；实际参数=" + paramsOf(0));
+    }
+
+    @Test
+    @DisplayName("★ 两个清扫都只碰「平台执行」的任务：业务域执行的任务被重排会再跑一遍、被判超时会报假账")
+    void sweepsOnlyConsiderPlatformTasks() {
+        when(taskMapper.selectList(any())).thenReturn(List.of(), List.of());
+
+        scheduler.sweep();
+
+        assertTrue(paramsOf(0).contains(AigTaskExecutionModeEnum.PLATFORM.getCode()),
+            "重试重排必须带 execution_mode=PLATFORM；实际参数=" + paramsOf(0));
+        assertTrue(paramsOf(1).contains(AigTaskExecutionModeEnum.PLATFORM.getCode()),
+            "超时清扫必须带 execution_mode=PLATFORM；实际参数=" + paramsOf(1));
     }
 
     @Test

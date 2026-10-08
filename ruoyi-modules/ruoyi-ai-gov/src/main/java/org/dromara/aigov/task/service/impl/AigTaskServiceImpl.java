@@ -31,6 +31,7 @@ import org.dromara.aigov.task.domain.vo.AigTaskSnapshotVo;
 import org.dromara.aigov.task.domain.vo.AigTaskVo;
 import org.dromara.aigov.task.enums.AigCandidateStatusEnum;
 import org.dromara.aigov.task.enums.AigTaskEventTypeEnum;
+import org.dromara.aigov.task.enums.AigTaskExecutionModeEnum;
 import org.dromara.aigov.task.enums.AigTaskStatusEnum;
 import org.dromara.aigov.task.enums.AigTaskTypeEnum;
 import org.dromara.aigov.task.helper.AigTaskActorProvider;
@@ -199,6 +200,8 @@ public class AigTaskServiceImpl implements IAigTaskService {
             row.setStatusLabel(status == null ? row.getStatus() : status.getDesc());
             AigTaskTypeEnum type = AigTaskTypeEnum.find(row.getTaskType());
             row.setTaskTypeLabel(type == null ? row.getTaskType() : type.getDesc());
+            AigTaskExecutionModeEnum mode = AigTaskExecutionModeEnum.find(row.getExecutionMode());
+            row.setExecutionModeLabel(mode == null ? row.getExecutionMode() : mode.getDesc());
         }
     }
 
@@ -271,6 +274,10 @@ public class AigTaskServiceImpl implements IAigTaskService {
         task.setDataLevel(dataLevel.getCode());
         task.setAllowExternal(allowExternal);
         task.setStatus(AigTaskStatusEnum.DRAFT.getCode());
+        // 执行方**显式写 PLATFORM**，不依赖 DDL 默认值：「平台建的任务由平台执行」是这条创建路径的
+        // 语义，把它藏在默认值里，一旦换建表脚本或 MP 的字段写入策略变了，值就没了——
+        // 而调度器正是按这一列决定碰不碰这条任务
+        task.setExecutionMode(AigTaskExecutionModeEnum.PLATFORM.getCode());
         task.setAttemptNo(0);
         task.setMaxAttempt(bo.getMaxAttempt() == null || bo.getMaxAttempt() < 1
             ? DEFAULT_MAX_ATTEMPT : bo.getMaxAttempt());
@@ -313,6 +320,51 @@ public class AigTaskServiceImpl implements IAigTaskService {
         log.info("创建 AI 任务完成, taskId={}, taskNo={}, taskType={}, snapshotId={}",
             task.getTaskId(), task.getTaskNo(), task.getTaskType(), snapshot.getSnapshotId());
         return task.getTaskId();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public AigTask createDispatched(AigTaskCreateBo bo, String providerCode, String providerJobId) {
+        if (StringUtils.isBlank(providerCode)) {
+            throw new ServiceException("Provider 编码不能为空：业务域回写与排障都要靠它定位任务");
+        }
+        // 复用 create：幂等键、快照冻结与关联回填、严格级强制禁外发都在里面，不另写一份
+        Long taskId = create(bo);
+        AigTask task = loadTask(taskId);
+        AigTaskExecutionModeEnum mode = AigTaskExecutionModeEnum.find(task.getExecutionMode());
+        if (mode == AigTaskExecutionModeEnum.EXTERNAL) {
+            // 幂等命中：已经登记并派发过。**原样返回、不改动它**——任务的后续状态由业务域回写，
+            // 重复登记若重置状态或覆盖外部作业ID，会把真实进度抹掉
+            log.info("任务已是「业务域执行」，登记幂等命中, taskId={}, providerCode={}",
+                taskId, task.getProviderCode());
+            return task;
+        }
+        // 登记为「业务域执行」并由任务侧直接落到 DISPATCHED：
+        //   · create 刚插入的 DRAFT 只是它的初始态，同一事务内对外不可见；
+        //   · **不经过 POLICY_CHECKING/QUEUED**：那两个状态的含义是「平台在做策略校验 /
+        //     排队等平台执行」，对执行留在业务域的任务不成立，伪造那段历史比跳过它更坏；
+        //   · 落到 DISPATCHED 之后调度器不会碰它（重试重排与超时清扫只处理 PLATFORM）。
+        AigTask update = new AigTask();
+        update.setTaskId(taskId);
+        update.setVersion(task.getVersion());
+        update.setStatus(AigTaskStatusEnum.DISPATCHED.getCode());
+        update.setExecutionMode(AigTaskExecutionModeEnum.EXTERNAL.getCode());
+        update.setProviderCode(providerCode);
+        update.setProviderJobId(providerJobId);
+        applyStatusSideEffects(update, task, AigTaskStatusEnum.DRAFT, AigTaskStatusEnum.DISPATCHED);
+        if (taskMapper.updateById(update) == 0) {
+            throw new ServiceException("任务已被并发修改，登记未生效：taskId=" + taskId
+                + "，期望版本=" + task.getVersion());
+        }
+        AigTask latest = loadTask(taskId);
+        appendEvent(latest, nextSequence(taskId), AigTaskEventTypeEnum.AI_TASK_STATUS_CHANGED,
+            AigTaskStatusEnum.DRAFT, AigTaskStatusEnum.DISPATCHED,
+            "由业务域登记并派发（执行方=业务域，providerCode=" + providerCode
+                + "，外部作业ID=" + StringUtils.blankToDefault(providerJobId, "-")
+                + "）：平台不会执行它，也不会把它重新入队或判超时；后续状态由业务域回写", null);
+        log.info("登记「业务域执行」任务完成, taskId={}, providerCode={}, providerJobId={}",
+            taskId, providerCode, providerJobId);
+        return latest;
     }
 
     @Override

@@ -7,6 +7,7 @@ import org.dromara.aigov.enums.AigErrorClassEnum;
 import org.dromara.aigov.task.config.AigTaskSchedulerProperties;
 import org.dromara.aigov.task.domain.AigTask;
 import org.dromara.aigov.task.domain.vo.AigTaskSweepVo;
+import org.dromara.aigov.task.enums.AigTaskExecutionModeEnum;
 import org.dromara.aigov.task.enums.AigTaskStatusEnum;
 import org.dromara.aigov.task.mapper.AigTaskMapper;
 import org.dromara.aigov.task.service.IAigTaskScheduler;
@@ -55,6 +56,9 @@ public class AigTaskSchedulerImpl implements IAigTaskScheduler {
         LocalDateTime deadline = LocalDateTime.now().minusSeconds(Math.max(0L, properties.getRetryDelaySeconds()));
         List<AigTask> candidates = taskMapper.selectList(new LambdaQueryWrapper<AigTask>()
             .eq(AigTask::getStatus, AigTaskStatusEnum.RETRY_WAIT.getCode())
+            // 只碰「平台执行」的任务：业务域自己执行的任务（execution_mode=EXTERNAL）
+            // 由业务域决定要不要重试；平台把它重新入队会**再执行一遍**（两份产出、两次计费）
+            .eq(AigTask::getExecutionMode, AigTaskExecutionModeEnum.PLATFORM.getCode())
             .le(AigTask::getUpdateTime, deadline)
             .orderByAsc(AigTask::getUpdateTime)
             .last("limit " + batchSize()));
@@ -93,6 +97,9 @@ public class AigTaskSchedulerImpl implements IAigTaskScheduler {
         List<AigTask> candidates = taskMapper.selectList(new LambdaQueryWrapper<AigTask>()
             .in(AigTask::getStatus, List.of(AigTaskStatusEnum.DISPATCHED.getCode(),
                 AigTaskStatusEnum.RUNNING.getCode()))
+            // 只碰「平台执行」的任务：业务域执行的任务在途多久都不该由平台判超时失败——
+            // 内核可能还在出图，账上已经 FAILED（甚至转人工重排，又一次计费）
+            .eq(AigTask::getExecutionMode, AigTaskExecutionModeEnum.PLATFORM.getCode())
             .le(AigTask::getUpdateTime, deadline)
             .orderByAsc(AigTask::getUpdateTime)
             .last("limit " + batchSize()));

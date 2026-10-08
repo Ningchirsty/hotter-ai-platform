@@ -14,6 +14,7 @@ import org.dromara.aigov.task.domain.vo.AigTaskDetailVo;
 import org.dromara.aigov.task.domain.vo.AigTaskExecuteVo;
 import org.dromara.aigov.task.domain.vo.AigTaskSweepVo;
 import org.dromara.aigov.task.domain.vo.AigTaskVo;
+import org.dromara.aigov.task.enums.AigTaskExecutionModeEnum;
 import org.dromara.aigov.task.enums.AigTaskStatusEnum;
 import org.dromara.aigov.task.enums.AigTaskTypeEnum;
 import org.dromara.aigov.task.service.IAigTaskExecutor;
@@ -205,6 +206,8 @@ public class AigTaskController {
         vo.setStatusLabel(status == null ? task.getStatus() : status.getDesc());
         AigTaskTypeEnum type = AigTaskTypeEnum.find(task.getTaskType());
         vo.setTaskTypeLabel(type == null ? task.getTaskType() : type.getDesc());
+        AigTaskExecutionModeEnum mode = AigTaskExecutionModeEnum.find(task.getExecutionMode());
+        vo.setExecutionModeLabel(mode == null ? task.getExecutionMode() : mode.getDesc());
         return vo;
     }
 

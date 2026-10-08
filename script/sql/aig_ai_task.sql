@@ -42,6 +42,7 @@ create table if not exists aig_task (
     data_level         varchar(16)     not null default 'INTERNAL' comment '数据等级（PUBLIC/INTERNAL/RESTRICTED/STRICT）',
     allow_external     char(1)         not null default 'N'       comment '业务侧是否允许外发（Y/N）；与路由策略取与，两者都允许才可能外发',
     status             varchar(24)     not null default 'DRAFT'   comment '状态（DRAFT/POLICY_CHECKING/QUEUED/DISPATCHED/RUNNING/SUCCEEDED/REVIEW_PENDING/APPROVED/REJECTED/FAILED/RETRY_WAIT/CANCEL_REQUESTED/CANCELLED/NEED_HUMAN）',
+    execution_mode     varchar(16)     not null default 'PLATFORM' comment '执行方（PLATFORM=平台执行，走统一调用入口；EXTERNAL=业务域执行，平台只登记与展示、不执行也不扫描；调度器的重试/超时清扫只碰 PLATFORM）',
     attempt_no         int(11)         not null default 0         comment '已尝试次数（幂等键的一半）',
     max_attempt        int(11)         not null default 3         comment '最大自动重试次数（默认3，是否重试由错误分类决定）',
     idempotency_key    varchar(128)    default null               comment '外部提交幂等键（同一提交人+键只建一个任务）',

@@ -78,6 +78,13 @@ public final class AigTaskStateMachine {
         edges.put(AigTaskStatusEnum.DISPATCHED, EnumSet.of(
             // 设计：DISPATCHED → RUNNING
             AigTaskStatusEnum.RUNNING,
+            // 补边：**业务域执行的任务是「拉模式」回写的**（execution_mode=EXTERNAL，
+            //   例如创作域把编排留在图像内核）。平台不驱动它，业务域按刷新看到内核状态后再回写；
+            //   两次刷新之间内核可能已经跑完，于是回写**第一次就只观测到终态**。
+            //   若没有这条边，业务域就只能先补一条自己从未观测到的 RUNNING——
+            //   那是往事件流里写假记录。允许 DISPATCHED → SUCCEEDED 才是如实记录。
+            //   平台同步 Provider 仍走 QUEUED→RUNNING→SUCCEEDED，不受影响。
+            AigTaskStatusEnum.SUCCEEDED,
             // 补边：**提交本身也会失败**（Provider 拒收、网络不通、作业创建报错）。
             //       设计只写了 RUNNING→FAILED，若没有这条边，提交失败就只能在
             //       DISPATCHED 上永远挂着——既不在跑也没失败，无法重试也无法告警

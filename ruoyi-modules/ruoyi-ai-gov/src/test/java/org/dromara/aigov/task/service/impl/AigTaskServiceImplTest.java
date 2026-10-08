@@ -22,6 +22,7 @@ import org.dromara.aigov.task.domain.bo.AigTaskReviewBo;
 import org.dromara.aigov.task.domain.vo.AigCallbackVo;
 import org.dromara.aigov.task.domain.vo.AigTaskDetailVo;
 import org.dromara.aigov.task.domain.vo.AigTaskVo;
+import org.dromara.aigov.task.enums.AigTaskExecutionModeEnum;
 import org.dromara.aigov.task.enums.AigTaskStatusEnum;
 import org.dromara.aigov.task.helper.AigTaskActorProvider;
 import org.dromara.aigov.task.helper.AigTaskCallbackSigner;
@@ -51,6 +52,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -266,6 +268,99 @@ class AigTaskServiceImplTest {
         verify(taskMapper, never()).insert(any(AigTask.class));
         verify(snapshotMapper, never()).insert(any(AigTaskSnapshot.class));
         verify(eventMapper, never()).insert(any(AigTaskEvent.class));
+    }
+
+    /**
+     * 造一个「内存里的库」：insert 回填主键、updateById 把更新对象上的非空字段写回同一行。
+     *
+     * <p>用于 {@link #createDispatchedRegistersExternalTask()} 这类「先创建、再改状态」的路径——
+     * 中间隔着一次 {@code loadTask}，用现成返回值硬塞会绕过真实时序（读回来的是哪一行、
+     * 更新后状态有没有生效，都测不到）。</p>
+     *
+     * @return 长度为 1 的行容器（第 0 项即当前行）
+     */
+    private AigTask[] fakeRow() {
+        AigTask[] stored = new AigTask[1];
+        when(taskMapper.selectOne(any())).thenAnswer(invocation -> stored[0]);
+        when(taskMapper.insert(any(AigTask.class))).thenAnswer(invocation -> {
+            AigTask saved = invocation.getArgument(0);
+            saved.setTaskId(9001L);
+            stored[0] = saved;
+            return 1;
+        });
+        when(taskMapper.selectById(any())).thenAnswer(invocation -> stored[0]);
+        when(taskMapper.updateById(any(AigTask.class))).thenAnswer(invocation -> {
+            AigTask update = invocation.getArgument(0);
+            if (stored[0] != null) {
+                if (update.getStatus() != null) {
+                    stored[0].setStatus(update.getStatus());
+                }
+                if (update.getExecutionMode() != null) {
+                    stored[0].setExecutionMode(update.getExecutionMode());
+                }
+                if (update.getProviderCode() != null) {
+                    stored[0].setProviderCode(update.getProviderCode());
+                }
+                if (update.getProviderJobId() != null) {
+                    stored[0].setProviderJobId(update.getProviderJobId());
+                }
+                if (update.getInputSnapshotId() != null) {
+                    stored[0].setInputSnapshotId(update.getInputSnapshotId());
+                }
+            }
+            return 1;
+        });
+        return stored;
+    }
+
+    @Test
+    @DisplayName("★ 登记「业务域执行」的任务：直接落到 DISPATCHED、执行方=EXTERNAL、带上外部作业ID")
+    void createDispatchedRegistersExternalTask() {
+        fakeRow();
+
+        AigTask task = service.createDispatched(createBo("INTERNAL", "Y", "creative-1"), "COMFYUI", "job-77");
+
+        assertEquals(AigTaskStatusEnum.DISPATCHED.getCode(), task.getStatus(),
+            "登记即「已派发」：执行已经交给业务域了，不是等平台排队");
+        assertEquals(AigTaskExecutionModeEnum.EXTERNAL.getCode(), task.getExecutionMode(),
+            "执行方必须是业务域：否则调度器会把它重新入队（再跑一遍）或判超时失败");
+        assertEquals("COMFYUI", task.getProviderCode());
+        assertEquals("job-77", task.getProviderJobId());
+        // 创建事件 + 派发事件：事件流要如实说明「谁在执行、平台会不会碰它」
+        ArgumentCaptor<AigTaskEvent> eventCaptor = ArgumentCaptor.forClass(AigTaskEvent.class);
+        verify(eventMapper, times(2)).insert(eventCaptor.capture());
+        AigTaskEvent dispatch = eventCaptor.getAllValues().get(1);
+        assertEquals(AigTaskStatusEnum.DISPATCHED.getCode(), dispatch.getToStatus());
+        assertTrue(dispatch.getDetail().contains("业务域"), dispatch.getDetail());
+        assertTrue(dispatch.getDetail().contains("不会"), "要写明平台不会执行/不会扫描它：" + dispatch.getDetail());
+    }
+
+    @Test
+    @DisplayName("★ 重复登记幂等，且**原样返回、不重置**已有任务（进度是业务域写的，不能被抹掉）")
+    void createDispatchedIsIdempotentAndKeepsProgress() {
+        AigTask[] stored = fakeRow();
+        service.createDispatched(createBo("INTERNAL", "Y", "creative-2"), "COMFYUI", "job-88");
+        // 业务域回写：内核已经跑到 RUNNING（真实进度）
+        stored[0].setStatus(AigTaskStatusEnum.RUNNING.getCode());
+        clearInvocations(taskMapper, eventMapper);
+
+        AigTask again = service.createDispatched(createBo("INTERNAL", "Y", "creative-2"), "COMFYUI", "job-88");
+
+        assertEquals(AigTaskStatusEnum.RUNNING.getCode(), again.getStatus(),
+            "重复登记若重置状态，会把业务域已经写好的真实进度抹掉");
+        verify(taskMapper, never()).insert(any(AigTask.class));
+        verify(taskMapper, never()).updateById(any(AigTask.class));
+        verify(eventMapper, never()).insert(any(AigTaskEvent.class));
+    }
+
+    @Test
+    @DisplayName("登记必须给 Provider 编码：业务域回写与排障都要靠它定位任务")
+    void createDispatchedRejectsBlankProvider() {
+        ServiceException e = assertThrows(ServiceException.class,
+            () -> service.createDispatched(createBo("INTERNAL", "Y", "creative-x"), "  ", null));
+
+        assertTrue(e.getMessage().contains("Provider 编码不能为空"), e.getMessage());
+        verify(taskMapper, never()).insert(any(AigTask.class));
     }
 
     @Test

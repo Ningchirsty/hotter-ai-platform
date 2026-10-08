@@ -59,6 +59,19 @@ public class AigTaskVo implements Serializable {
     private String status;
 
     /**
+     * 执行方（PLATFORM=平台执行 / EXTERNAL=业务域执行）
+     *
+     * <p>页面上必须显示：{@code EXTERNAL} 的任务「重试/取消」得回到业务域自己的入口去做，
+     * 平台的重跑会把别人正在跑的工作再跑一遍。</p>
+     */
+    private String executionMode;
+
+    /**
+     * 执行方描述
+     */
+    private String executionModeLabel;
+
+    /**
      * 状态描述
      */
     private String statusLabel;

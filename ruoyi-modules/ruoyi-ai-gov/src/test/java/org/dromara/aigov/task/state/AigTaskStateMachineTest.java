@@ -254,4 +254,19 @@ class AigTaskStateMachineTest {
             "终态的说明要直接点明「不允许再迁移」");
     }
 
+    @Test
+    @DisplayName("★ DISPATCHED → SUCCEEDED：业务域拉模式回写可能只观测到终态，不该逼它伪造 RUNNING")
+    void dispatchedCanJumpStraightToSucceeded() {
+        assertTrue(AigTaskStateMachine.canTransition(AigTaskStatusEnum.DISPATCHED,
+                AigTaskStatusEnum.SUCCEEDED),
+            "业务域执行的任务（execution_mode=EXTERNAL）由业务域按刷新回写：两次刷新之间内核可能已跑完，"
+                + "回写第一次就只看到终态。要求它先补一条自己从未观测到的 RUNNING，"
+                + "等于往事件流里写假记录");
+        // 加了这条边不等于放松终态：已是终态的仍然不可回退（既有约束不变）
+        assertFalse(AigTaskStateMachine.canTransition(AigTaskStatusEnum.SUCCEEDED,
+                AigTaskStatusEnum.DISPATCHED));
+        assertFalse(AigTaskStateMachine.canTransition(AigTaskStatusEnum.SUCCEEDED,
+                AigTaskStatusEnum.RUNNING));
+    }
+
 }

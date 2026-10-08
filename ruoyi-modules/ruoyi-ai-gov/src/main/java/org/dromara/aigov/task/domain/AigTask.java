@@ -95,6 +95,16 @@ public class AigTask extends BaseEntity implements Serializable {
     private String status;
 
     /**
+     * 执行方（{@code AigTaskExecutionModeEnum}：PLATFORM/EXTERNAL）
+     *
+     * <p><b>它决定「平台能不能碰这条任务」</b>：调度器的重试重排与超时清扫<b>只碰 PLATFORM</b>。
+     * 业务域自己执行的任务（如创作域把编排留在图像内核）标记为 {@code EXTERNAL}——
+     * 否则它会被平台重新入队（再执行一遍）或在途被判超时失败（内核还在跑）。
+     * 默认 {@code PLATFORM}，存量行取默认值，因此本列不改变既有调度行为。</p>
+     */
+    private String executionMode;
+
+    /**
      * 已尝试次数（幂等键的一半）
      */
     private Integer attemptNo;
