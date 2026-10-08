@@ -15,6 +15,10 @@ script/image/workflows/*.json text eol=lf
 # 报的却是别的行的 "syntax error near unexpected token"，极难定位。
 # 同一份脚本在 Linux 检出是 LF、Windows 检出是 CRLF，行为不一致 —— 这类文件必须固定在 LF。
 /script/deploy/health-check.sh text eol=lf
+# 2026-10-08 再补：把该目录下所有 *.sh 一次性固定 LF，而不是**逐个**补条目。
+# 上次踩坑的根因正是"新加的文件没有对应条目"（见上面 health-check.sh 的说明），
+# 本次又新增了 health-alert.sh / install-health-alert.sh 两个要在宿主机上跑的脚本。
+/script/deploy/*.sh text eol=lf
 # 渲染模板同理（R7 踩到过）：模板文件按**文件字节**算 SHA-256 登记在 dp_layout_template，
 # requirePublished 一旦发现"渲染服务里的实时校验和 != 登记值"就**拒绝排版**。
 # 同一份模板在 Windows 检出是 CRLF、Linux 检出是 LF，sha256 不同 →

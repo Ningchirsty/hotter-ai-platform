@@ -107,11 +107,64 @@ does mean the scheduler is not running; check the startup log for the
 Every run of `production-health-alert.yml` so far has been a manual
 `workflow_dispatch`; **no `schedule`-triggered run has ever appeared**, even though
 the cron is present on the default branch, the workflow `state` is `active`, the
-repository is public, and it has push activity. The raise and close paths are
-themselves verified (an issue was created from a real WARN and later closed
-automatically once healthy). Until a scheduled run is observed, treat the
-5-minute cadence as **configured but unproven**; a host-side timer with a
-notification credential would remove the dependency on GitHub's scheduler.
+repository is public, and it has push activity. (Measured again on 2026-10-08: 100
+runs scanned, 0 `schedule` events; a minimal **schedule-only** diagnostic workflow
+also missed 7 consecutive windows before it was removed.) The raise and close paths
+are themselves verified (an issue was created from a real WARN and later closed
+automatically once healthy). A host-side timer with a notification credential is the
+workaround, and it is implemented below.
+
+## Host-side alert (cron) — and why it exists
+
+`script/deploy/health-alert.sh` runs `health-check.sh` on a schedule and notifies on
+**state change**: raise on the first failure, repeat at most every `REPEAT_MINUTES`
+while it stays bad, and notify recovery + close the issue when it heals. State lives
+in `/var/lib/hotter-alert/state`, log in `/var/log/hotter-health-alert.log`.
+
+Bonus: this path does not depend on the self-hosted runner picking up a job, so a
+runner/network problem can no longer make the alarm disappear with it.
+
+Install or upgrade (idempotent):
+
+```bash
+sudo bash script/deploy/install-health-alert.sh
+```
+
+It copies both scripts to `/opt/hotter-alert` (0750 root), creates
+`/etc/hotter-alert/config` (0600), and writes `/etc/cron.d/hotter-health-alert`
+**only once a notification sink is configured**. An unconfigured install deliberately
+schedules nothing: "looks installed but cannot notify" is worse than not installed.
+
+Configure exactly one sink in the root-only config:
+
+```bash
+# webhook (preferred; Feishu / WeCom / DingTalk / Slack payload shapes auto-detected)
+WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/xxxxxxxx
+# ...or a GitHub issue (fine-grained token: Issues Read and write, this repo only)
+GH_TOKEN=github_pat_xxxxxxxx
+GH_REPO=Ningchirsty/hotter-ai-platform
+GH_LABEL=ops/health-alert
+REPEAT_MINUTES=30
+```
+
+Then re-run the installer to enable the 5-minute cron (`flock` prevents overlapping
+runs). Verify the notification path with a deliberate failure — it points the storage
+probe at a closed port, so nothing in production is touched:
+
+```bash
+sudo env HOTTER_MINIO_PROBE_URL=http://127.0.0.1:1/x /opt/hotter-alert/health-alert.sh  # expect: raised
+sudo /opt/hotter-alert/health-alert.sh                                                  # expect: recovered + closed
+```
+
+Uninstall: `sudo rm -f /etc/cron.d/hotter-health-alert` and
+`sudo rm -rf /opt/hotter-alert /etc/hotter-alert` (state and log are kept for forensics).
+
+**What this still does not cover**: if the whole host or its network is down, the host
+cron cannot tell anyone — and neither can the GitHub workflow, whose job runs on that
+same host. Cover that layer with an **external** vantage point: monitor
+`https://pm.hottter.cn/prod-api/auth/code` and require the body to be **JSON**. A
+status-code-only check proves nothing here, because nginx answers `200` with the SPA
+HTML for any path.
 
 ## Registry credential: scope must be **read-only packages, nothing else**
 
