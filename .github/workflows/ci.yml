@@ -13,7 +13,10 @@ defaults:
     shell: bash
 
 concurrency:
-  group: backend-ci-${{ github.head_ref || github.ref_name }}
+  # 按「事件 + 分支」编组。原先是 `backend-ci-${head_ref || ref_name}`，push 与
+  # workflow_dispatch 的 ref_name 相同（都是 main），于是"push 后再手动派发取制品"
+  # 会把先前的 push 运行取消掉。把事件并入组名，避免这种跨事件互相取消。
+  group: backend-ci-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
@@ -152,10 +155,30 @@ jobs:
 
   publish-image:
     name: Publish main image to GHCR
-    if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    # 2026-10-08 修复：这里原本是 `event_name == 'push' && ...`，而下面若干产物步骤
+    # （Upload test reports / Package JAR / Upload backend JAR / Export image /
+    #  Upload backend image）的条件是 `event_name == 'workflow_dispatch'`。
+    # 两组条件**互斥**，导致：push 的那次运行（唯一会推镜像的）不产出制品，
+    # 而手动派发的那次（产出制品）又不推镜像。
+    #
+    # 实际后果（2026-10-08 亲历）：push 后又手动派发一次 CI 取制品，而本 workflow 的并发组是
+    # `backend-ci-${head_ref || ref_name}`、两次运行同名且 cancel-in-progress: true，
+    # 于是**先前的 push 运行被取消**——恰好是唯一会推镜像的那次。最后只能靠
+    # `rerun-failed-jobs` 重跑被取消的运行才把镜像推上去。
+    #
+    # 现在两种事件都能发布；release 是幂等的（同一个 sha 标签重推是 no-op）。
+    # 仍限定默认分支：re-run 会保持原 event_name，非默认分支的 re-run 不会被误放行。
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     needs: build-test-image
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    concurrency:
+      # 与 build-test-image 分开编组：两者要产出不同东西（制品 vs 镜像），
+      # 共用一组会让"push 完再手动派发"稳定地互相取消。
+      group: backend-ci-publish-${{ github.head_ref || github.ref_name }}
+      cancel-in-progress: false
     permissions:
       contents: read
       packages: write

@@ -323,3 +323,22 @@ justauth:
       client-id: 10**********6
       client-secret: 1f7d08**********5b7**********29e
       redirect-uri: ${justauth.address}/social-callback?source=gitea
+
+--- # AI 治理：路由行为
+# 用嵌套写法而不是 `aigov.route:` 点号键，是为了让 @ConfigurationProperties(prefix="aigov.route")
+# 的绑定不依赖 Spring 的点号键展开，读起来也不会有歧义。
+aigov:
+  route:
+    # 是否要求模型必须声明能力标签（aig_model_governance.capability_tags）。
+    #
+    # 2026-10-08 由运维决定在**生产**打开。此前为 false（放行但提示），原因见 AigRouteProperties：
+    # 该列是后加的，既有模型全为 NULL，默认严格会把所有既有模型一次排除干净。
+    #
+    # 打开的前提已逐项核实（_local/prod-upgrade/require-tags-preflight.out）：
+    #   * 8 个能力的全部 8 条绑定**都已声明 capability_tags**；
+    #   * 不存在"绑定模型未声明标签"的行（即 isTagMismatch 的 NULL 分支在候选里打不到）；
+    #   * 唯一的行为差异是：未声明标签的模型由"放行+提示"改为"严格排除"——
+    #     而当前候选集里**没有**这类模型，故本次打开**不改变任何现有路由结果**。
+    # 它的作用是关掉那个口子：将来若有人把没有对应标签的模型绑到能力上，会被直接拦下，
+    # 而不是"跑出一份看起来正常的错误结果"。
+    require-model-tags: true
