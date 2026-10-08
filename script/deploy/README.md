@@ -69,6 +69,38 @@ have missed the very outage this workflow exists to catch.
 Manual run / local check: `bash script/deploy/health-check.sh`
 (exit 0 = ok, 1 = critical, 2 = warn).
 
+### What the check inspects, and one scope decision worth knowing
+
+`health-check.sh` covers: backend JSON probe, both containers' health/restart
+count, free disk, rollback target present, stale `previous-*` count, model-probe
+freshness, and background-job backlog.
+
+**Model-probe freshness is measured over ROUTABLE models only** — those with an
+enabled `aig_capability_model` row. The probe itself runs `only-bound=true`,
+because a model with no binding can never be selected by routing, so paying to
+probe it buys nothing. Measuring staleness over the wider set "enabled + lifecycle
+in TRIAL/GRAY/PRODUCTION" produced a **permanent WARN** for two unbound models
+(`nvidia`, `openrouter/free`) that the probe would never refresh — and a permanent
+WARN is the same as no alarm. Enabled-but-unbound models are now reported as a
+separate `[note]`: that is a hygiene decision for the owner, not an availability
+incident.
+
+Probes run **in-process** (`aigov.scheduling.enabled=true` plus
+`aigov.model.health-probe.enabled=true`), so for a routable model staleness really
+does mean the scheduler is not running; check the startup log for the
+`org.dromara.aigov.config.AigSchedulingConfig` line.
+
+### Known gap: the `*/5` schedule has not been observed firing
+
+Every run of `production-health-alert.yml` so far has been a manual
+`workflow_dispatch`; **no `schedule`-triggered run has ever appeared**, even though
+the cron is present on the default branch, the workflow `state` is `active`, the
+repository is public, and it has push activity. The raise and close paths are
+themselves verified (an issue was created from a real WARN and later closed
+automatically once healthy). Until a scheduled run is observed, treat the
+5-minute cadence as **configured but unproven**; a host-side timer with a
+notification credential would remove the dependency on GitHub's scheduler.
+
 ## To roll code back, dispatch the same workflow with the previously recorded image
 digest (and, for the frontend, its Git SHA). Database and object data remain in
 place. Schema-incompatible releases require an approved forward-fix or data
