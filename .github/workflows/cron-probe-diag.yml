@@ -1,0 +1,33 @@
+name: Cron Probe (TEMPORARY diagnostic)
+
+# TEMPORARY -- delete this file once the question is settled.
+#
+# Why it exists: production-health-alert.yml has had a "*/5 * * * *" schedule since
+# 2026-10-08T10:20Z, yet every one of its 7 runs has been a manual workflow_dispatch and
+# NO schedule-triggered run has ever appeared (~3h later, where */5 predicts ~35).
+# The cron is on the default branch, the workflow state is "active", the repo is public,
+# not archived, not a fork, and it has push activity -- so the usual suspects are excluded.
+#
+# This workflow does one thing: record whether GitHub's scheduler fires for this repository
+# at all. It uses the SAME runner labels as the alert workflow so the comparison is fair.
+# Read-only, ~1 second of runtime, no side effects.
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tick:
+    name: schedule tick
+    runs-on: [shenzhen, deploy]
+    timeout-minutes: 5
+    steps:
+      - name: Record the tick
+        run: |
+          echo "tick      : $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          echo "event_name: ${{ github.event_name }}"
+          echo "ref       : ${{ github.ref }}"
+          echo "sha       : ${{ github.sha }}"
