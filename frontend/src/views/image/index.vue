@@ -39,7 +39,7 @@
     <div v-if="activeView === 'create'" class="workbench-grid">
       <section class="studio-card create-card">
         <GenerationSource v-model="generationSource" :busy="uploading || submitting" :cloud-label="cloudStatus?.configured ? '可联调' : '未配置'" />
-        <CloudGenerationForm v-show="generationSource === 'cloud'" media="image" :busy="uploading || submitting" :cloud-status="cloudStatus" @change="cloudDraft = $event" />
+        <CloudGenerationForm v-show="generationSource === 'cloud'" media="image" :busy="uploading || submitting" :cloud-status="cloudStatus" :inspiration="cloudInspiration" @change="cloudDraft = $event" />
         <div v-show="generationSource === 'local'" class="editor-body">
           <div class="section-heading">
             <div>
@@ -217,6 +217,8 @@
 
       <CreativeInspiration
         media="image"
+        :cloud-status="cloudStatus"
+        :revision="inspirationRevision"
         :workflows="workflows"
         :busy="uploading || submitting"
         :applied-title="appliedInspirationTitle"
@@ -580,6 +582,8 @@ const cloudDraft = ref<import('@/api/image/types').CloudImageDraft>({ model: '',
 // 请求结果不确定时重复点击复用同一个键，避免创建两条付费任务。
 let cloudSubmission: { signature: string; key: string } | undefined;
 const appliedInspirationTitle = ref('');
+const cloudInspiration = ref<{ route: InspirationRoute; stamp: number }>();
+const inspirationRevision = ref(0);
 const showGuide = ref(true);
 const studioViews: Array<{ key: StudioView; label: string; icon: unknown }> = [
   { key: 'create', label: '创建图像', icon: MagicStick },
@@ -749,8 +753,14 @@ function applyDefaults() {
 }
 
 function applyCreativeInspiration(route: InspirationRoute, title: string) {
-  if (route.media !== 'image' || uploading.value || submitting.value || !isRouteAvailable(route, workflows.value))
+  if (route.media !== 'image' || uploading.value || submitting.value || !isRouteAvailable(route, workflows.value, cloudStatus.value))
     return;
+  if (route.source === 'cloud') {
+    generationSource.value = 'cloud';
+    cloudInspiration.value = { route, stamp: Date.now() };
+    appliedInspirationTitle.value = title; activeView.value = 'create';
+    ElMessage.success('已带入云端模型和描述，请完善素材与参数后提交'); return;
+  }
   const module = IMAGE_MODULES.find(item => item.code === route.capability && item.workflowCode === route.workflowCode);
   if (!module) return;
   generationSource.value = 'local';
@@ -981,6 +991,7 @@ const taskPoller = createTaskPoller<ImageTaskDetailVO>({
     tasks.value = tasks.value.map(row => String(row.id) === id ? { ...row, ...task } : row);
   },
   onTerminal: (_id, task) => {
+    if (task.status === 'SUCCEEDED') inspirationRevision.value++;
     if (task.status === 'SUCCEEDED') ElMessage.success('任务 ' + task.taskNo + ' 已完成');
     else ElMessage.warning(task.errorMessage || '任务已' + statusText(task.status));
   },

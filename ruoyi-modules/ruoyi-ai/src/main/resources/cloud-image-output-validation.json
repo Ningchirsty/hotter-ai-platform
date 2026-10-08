@@ -1,6 +1,162 @@
 [
   {
     "model": "gpt-image-2.5-flare",
+    "capability": "T2I",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 04",
+    "evidenceId": "flare-output-batch2-04",
+    "output": {
+      "size": "1024x1536",
+      "n": 1,
+      "outputFormat": "png"
+    },
+    "verifiedFields": [
+      "size",
+      "n",
+      "outputFormat"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED",
+      "outputFormat": "PASSED"
+    },
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "EDIT",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 27",
+    "evidenceId": "flare-output-batch2-27",
+    "output": {
+      "size": "1024x1536",
+      "n": 1,
+      "outputFormat": "png"
+    },
+    "verifiedFields": [
+      "size",
+      "n",
+      "outputFormat"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED",
+      "outputFormat": "PASSED"
+    },
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "MULTI",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 12",
+    "evidenceId": "flare-output-batch2-12",
+    "output": {
+      "size": "1024x1536",
+      "n": 1,
+      "outputFormat": "png"
+    },
+    "verifiedFields": [
+      "size",
+      "n",
+      "outputFormat"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED",
+      "outputFormat": "PASSED"
+    },
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "MASK",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 16",
+    "evidenceId": "flare-output-batch2-16",
+    "output": {
+      "size": "1024x1536",
+      "n": 1,
+      "outputFormat": "png"
+    },
+    "verifiedFields": [
+      "size",
+      "n",
+      "outputFormat"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED",
+      "outputFormat": "PASSED"
+    },
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "OUTPAINT",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 20",
+    "evidenceId": "flare-output-batch2-20",
+    "output": {
+      "size": "1536x1024",
+      "n": 1,
+      "outputFormat": "png"
+    },
+    "verifiedFields": [
+      "size",
+      "n",
+      "outputFormat"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED",
+      "outputFormat": "PASSED"
+    },
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "TRANSPARENT",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 24",
+    "evidenceId": "flare-output-batch2-24",
+    "output": {
+      "size": "1024x1536",
+      "n": 1,
+      "outputFormat": "png"
+    },
+    "verifiedFields": [
+      "size",
+      "n",
+      "outputFormat"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED",
+      "outputFormat": "PASSED"
+    },
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
     "capability": "EDIT",
     "testedAt": "2026-10-07",
     "label": "实测尺寸与数量",
@@ -688,5 +844,843 @@
       "png"
     ],
     "qualityEvidence": "REQUEST_ACCEPTED_ONLY"
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "T2I",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 01",
+    "evidenceId": "flare-output-batch2-01",
+    "output": {
+      "size": "1024x1024",
+      "n": 1,
+      "outputFormat": "png",
+      "quality": "low"
+    },
+    "verifiedFields": [
+      "n",
+      "outputFormat"
+    ],
+    "parameterResults": {
+      "size": "OUTPUT_MISMATCH",
+      "n": "PASSED",
+      "outputFormat": "PASSED",
+      "quality": "ACCEPTED_UNCONFIRMED"
+    },
+    "qualityEvidence": "REQUEST_ACCEPTED_ONLY",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "T2I",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 02",
+    "evidenceId": "flare-output-batch2-02",
+    "output": {
+      "size": "1536x1024",
+      "n": 1,
+      "outputFormat": "jpeg",
+      "quality": "medium"
+    },
+    "verifiedFields": [
+      "n"
+    ],
+    "parameterResults": {
+      "size": "OUTPUT_MISMATCH",
+      "n": "PASSED",
+      "outputFormat": "OUTPUT_MISMATCH",
+      "quality": "ACCEPTED_UNCONFIRMED"
+    },
+    "qualityEvidence": "REQUEST_ACCEPTED_ONLY",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "T2I",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 03",
+    "evidenceId": "flare-output-batch2-03",
+    "output": {
+      "size": "1024x1536",
+      "n": 2,
+      "outputFormat": "webp",
+      "quality": "high"
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED",
+      "outputFormat": "OUTPUT_MISMATCH",
+      "quality": "ACCEPTED_UNCONFIRMED"
+    },
+    "qualityEvidence": "REQUEST_ACCEPTED_ONLY",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "EDIT",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 05",
+    "evidenceId": "flare-output-batch2-05",
+    "output": {
+      "size": "1024x1024",
+      "n": 1,
+      "outputFormat": "png",
+      "quality": "low"
+    },
+    "verifiedFields": [],
+    "parameterResults": {
+      "size": "RESULT_UNKNOWN",
+      "n": "RESULT_UNKNOWN",
+      "outputFormat": "RESULT_UNKNOWN",
+      "quality": "RESULT_UNKNOWN"
+    },
+    "qualityEvidence": "NOT_CONFIRMED",
+    "observedFormats": []
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "EDIT",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 06",
+    "evidenceId": "flare-output-batch2-06",
+    "output": {
+      "size": "1536x1024",
+      "n": 1,
+      "outputFormat": "jpeg",
+      "quality": "medium"
+    },
+    "verifiedFields": [],
+    "parameterResults": {
+      "size": "RESULT_UNKNOWN",
+      "n": "RESULT_UNKNOWN",
+      "outputFormat": "RESULT_UNKNOWN",
+      "quality": "RESULT_UNKNOWN"
+    },
+    "qualityEvidence": "NOT_CONFIRMED",
+    "observedFormats": []
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "EDIT",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 07",
+    "evidenceId": "flare-output-batch2-07",
+    "output": {
+      "size": "1024x1536",
+      "n": 2,
+      "outputFormat": "webp",
+      "quality": "high"
+    },
+    "verifiedFields": [
+      "n"
+    ],
+    "parameterResults": {
+      "size": "OUTPUT_MISMATCH",
+      "n": "PASSED",
+      "outputFormat": "OUTPUT_MISMATCH",
+      "quality": "ACCEPTED_UNCONFIRMED"
+    },
+    "qualityEvidence": "REQUEST_ACCEPTED_ONLY",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "EDIT",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 08",
+    "evidenceId": "flare-output-batch2-08",
+    "output": {
+      "size": "1024x1536",
+      "n": 1,
+      "outputFormat": "png"
+    },
+    "verifiedFields": [
+      "n",
+      "outputFormat"
+    ],
+    "parameterResults": {
+      "size": "OUTPUT_MISMATCH",
+      "n": "PASSED",
+      "outputFormat": "PASSED"
+    },
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "MULTI",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 09",
+    "evidenceId": "flare-output-batch2-09",
+    "output": {
+      "size": "1024x1024",
+      "n": 1,
+      "outputFormat": "png",
+      "quality": "low"
+    },
+    "verifiedFields": [
+      "n",
+      "outputFormat"
+    ],
+    "parameterResults": {
+      "size": "OUTPUT_MISMATCH",
+      "n": "PASSED",
+      "outputFormat": "PASSED",
+      "quality": "ACCEPTED_UNCONFIRMED"
+    },
+    "qualityEvidence": "REQUEST_ACCEPTED_ONLY",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "MULTI",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 10",
+    "evidenceId": "flare-output-batch2-10",
+    "output": {
+      "size": "1536x1024",
+      "n": 1,
+      "outputFormat": "jpeg",
+      "quality": "medium"
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED",
+      "outputFormat": "OUTPUT_MISMATCH",
+      "quality": "ACCEPTED_UNCONFIRMED"
+    },
+    "qualityEvidence": "REQUEST_ACCEPTED_ONLY",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "MULTI",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 11",
+    "evidenceId": "flare-output-batch2-11",
+    "output": {
+      "size": "1024x1536",
+      "n": 2,
+      "outputFormat": "webp",
+      "quality": "high"
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED",
+      "outputFormat": "OUTPUT_MISMATCH",
+      "quality": "ACCEPTED_UNCONFIRMED"
+    },
+    "qualityEvidence": "REQUEST_ACCEPTED_ONLY",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "MASK",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 13",
+    "evidenceId": "flare-output-batch2-13",
+    "output": {
+      "size": "1024x1024",
+      "n": 1,
+      "outputFormat": "png",
+      "quality": "low"
+    },
+    "verifiedFields": [
+      "n",
+      "outputFormat"
+    ],
+    "parameterResults": {
+      "size": "OUTPUT_MISMATCH",
+      "n": "PASSED",
+      "outputFormat": "PASSED",
+      "quality": "ACCEPTED_UNCONFIRMED"
+    },
+    "qualityEvidence": "REQUEST_ACCEPTED_ONLY",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "MASK",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 14",
+    "evidenceId": "flare-output-batch2-14",
+    "output": {
+      "size": "1536x1024",
+      "n": 1,
+      "outputFormat": "jpeg",
+      "quality": "medium"
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED",
+      "outputFormat": "OUTPUT_MISMATCH",
+      "quality": "ACCEPTED_UNCONFIRMED"
+    },
+    "qualityEvidence": "REQUEST_ACCEPTED_ONLY",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "MASK",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 15",
+    "evidenceId": "flare-output-batch2-15",
+    "output": {
+      "size": "1024x1536",
+      "n": 2,
+      "outputFormat": "webp",
+      "quality": "high"
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED",
+      "outputFormat": "OUTPUT_MISMATCH",
+      "quality": "ACCEPTED_UNCONFIRMED"
+    },
+    "qualityEvidence": "REQUEST_ACCEPTED_ONLY",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "OUTPAINT",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 17",
+    "evidenceId": "flare-output-batch2-17",
+    "output": {
+      "size": "1024x1024",
+      "n": 1,
+      "outputFormat": "png",
+      "quality": "low"
+    },
+    "verifiedFields": [
+      "n",
+      "outputFormat"
+    ],
+    "parameterResults": {
+      "size": "OUTPUT_MISMATCH",
+      "n": "PASSED",
+      "outputFormat": "PASSED",
+      "quality": "ACCEPTED_UNCONFIRMED"
+    },
+    "qualityEvidence": "REQUEST_ACCEPTED_ONLY",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "OUTPAINT",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 18",
+    "evidenceId": "flare-output-batch2-18",
+    "output": {
+      "size": "1536x1024",
+      "n": 1,
+      "outputFormat": "jpeg",
+      "quality": "medium"
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED",
+      "outputFormat": "OUTPUT_MISMATCH",
+      "quality": "ACCEPTED_UNCONFIRMED"
+    },
+    "qualityEvidence": "REQUEST_ACCEPTED_ONLY",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "OUTPAINT",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 19",
+    "evidenceId": "flare-output-batch2-19",
+    "output": {
+      "size": "1024x1536",
+      "n": 2,
+      "outputFormat": "webp",
+      "quality": "high"
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED",
+      "outputFormat": "OUTPUT_MISMATCH",
+      "quality": "ACCEPTED_UNCONFIRMED"
+    },
+    "qualityEvidence": "REQUEST_ACCEPTED_ONLY",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "TRANSPARENT",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 21",
+    "evidenceId": "flare-output-batch2-21",
+    "output": {
+      "size": "1024x1024",
+      "n": 1,
+      "outputFormat": "png",
+      "quality": "low"
+    },
+    "verifiedFields": [
+      "n",
+      "outputFormat"
+    ],
+    "parameterResults": {
+      "size": "OUTPUT_MISMATCH",
+      "n": "PASSED",
+      "outputFormat": "PASSED",
+      "quality": "ACCEPTED_UNCONFIRMED"
+    },
+    "qualityEvidence": "REQUEST_ACCEPTED_ONLY",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "TRANSPARENT",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 22",
+    "evidenceId": "flare-output-batch2-22",
+    "output": {
+      "size": "1536x1024",
+      "n": 1,
+      "outputFormat": "png",
+      "quality": "medium"
+    },
+    "verifiedFields": [
+      "size",
+      "n",
+      "outputFormat"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED",
+      "outputFormat": "PASSED",
+      "quality": "ACCEPTED_UNCONFIRMED"
+    },
+    "qualityEvidence": "REQUEST_ACCEPTED_ONLY",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "TRANSPARENT",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 23",
+    "evidenceId": "flare-output-batch2-23",
+    "output": {
+      "size": "1024x1536",
+      "n": 2,
+      "outputFormat": "webp",
+      "quality": "high"
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED",
+      "outputFormat": "OUTPUT_MISMATCH",
+      "quality": "ACCEPTED_UNCONFIRMED"
+    },
+    "qualityEvidence": "REQUEST_ACCEPTED_ONLY",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "T2I",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 25",
+    "evidenceId": "flare-output-batch2-25",
+    "output": {
+      "size": "1024x1024",
+      "n": 1,
+      "outputFormat": "png"
+    },
+    "verifiedFields": [
+      "n",
+      "outputFormat"
+    ],
+    "parameterResults": {
+      "size": "OUTPUT_MISMATCH",
+      "n": "PASSED",
+      "outputFormat": "PASSED"
+    },
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "T2I",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 26",
+    "evidenceId": "flare-output-batch2-26",
+    "output": {
+      "size": "1536x1024",
+      "n": 1,
+      "outputFormat": "png"
+    },
+    "verifiedFields": [
+      "n",
+      "outputFormat"
+    ],
+    "parameterResults": {
+      "size": "OUTPUT_MISMATCH",
+      "n": "PASSED",
+      "outputFormat": "PASSED"
+    },
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "EDIT",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 28",
+    "evidenceId": "flare-output-batch2-28",
+    "output": {
+      "size": "1536x1024",
+      "n": 1,
+      "outputFormat": "png"
+    },
+    "verifiedFields": [
+      "size",
+      "n",
+      "outputFormat"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED",
+      "outputFormat": "PASSED"
+    },
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "T2I",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 29",
+    "evidenceId": "flare-output-batch2-29",
+    "output": {
+      "size": "1024x1536",
+      "n": 1,
+      "outputFormat": "jpeg"
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED",
+      "outputFormat": "OUTPUT_MISMATCH"
+    },
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "T2I",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 30",
+    "evidenceId": "flare-output-batch2-30",
+    "output": {
+      "size": "1024x1536",
+      "n": 1,
+      "outputFormat": "webp"
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED",
+      "outputFormat": "OUTPUT_MISMATCH"
+    },
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "EDIT",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 31",
+    "evidenceId": "flare-output-batch2-31",
+    "output": {
+      "size": "1024x1536",
+      "n": 1,
+      "outputFormat": "jpeg"
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED",
+      "outputFormat": "OUTPUT_MISMATCH"
+    },
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "EDIT",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 32",
+    "evidenceId": "flare-output-batch2-32",
+    "output": {
+      "size": "1024x1536",
+      "n": 1,
+      "outputFormat": "webp"
+    },
+    "verifiedFields": [
+      "size",
+      "n"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED",
+      "outputFormat": "OUTPUT_MISMATCH"
+    },
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "T2I",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 33",
+    "evidenceId": "flare-output-batch2-33",
+    "output": {
+      "size": "1024x1536",
+      "n": 1,
+      "outputFormat": "png",
+      "quality": "low"
+    },
+    "verifiedFields": [
+      "size",
+      "n",
+      "outputFormat"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED",
+      "outputFormat": "PASSED",
+      "quality": "ACCEPTED_UNCONFIRMED"
+    },
+    "qualityEvidence": "REQUEST_ACCEPTED_ONLY",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "T2I",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 34",
+    "evidenceId": "flare-output-batch2-34",
+    "output": {
+      "size": "1024x1536",
+      "n": 1,
+      "outputFormat": "png",
+      "quality": "medium"
+    },
+    "verifiedFields": [
+      "size",
+      "n",
+      "outputFormat"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED",
+      "outputFormat": "PASSED",
+      "quality": "ACCEPTED_UNCONFIRMED"
+    },
+    "qualityEvidence": "REQUEST_ACCEPTED_ONLY",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "T2I",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 35",
+    "evidenceId": "flare-output-batch2-35",
+    "output": {
+      "size": "1024x1536",
+      "n": 1,
+      "outputFormat": "png",
+      "quality": "high"
+    },
+    "verifiedFields": [
+      "size",
+      "n",
+      "outputFormat"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED",
+      "outputFormat": "PASSED",
+      "quality": "ACCEPTED_UNCONFIRMED"
+    },
+    "qualityEvidence": "REQUEST_ACCEPTED_ONLY",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "MULTI",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 36",
+    "evidenceId": "flare-output-batch2-36",
+    "output": {
+      "size": "1024x1536",
+      "n": 2,
+      "outputFormat": "png"
+    },
+    "verifiedFields": [
+      "size",
+      "n",
+      "outputFormat"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED",
+      "outputFormat": "PASSED"
+    },
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "MASK",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 37",
+    "evidenceId": "flare-output-batch2-37",
+    "output": {
+      "size": "1024x1536",
+      "n": 2,
+      "outputFormat": "png"
+    },
+    "verifiedFields": [
+      "size",
+      "n",
+      "outputFormat"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED",
+      "outputFormat": "PASSED"
+    },
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "capability": "TRANSPARENT",
+    "testedAt": "2026-10-08",
+    "label": "Flare 参数实测 · 38",
+    "evidenceId": "flare-output-batch2-38",
+    "output": {
+      "size": "1024x1536",
+      "n": 2,
+      "outputFormat": "png"
+    },
+    "verifiedFields": [
+      "size",
+      "n",
+      "outputFormat"
+    ],
+    "parameterResults": {
+      "size": "PASSED",
+      "n": "PASSED",
+      "outputFormat": "PASSED"
+    },
+    "qualityEvidence": "NOT_SENT",
+    "observedFormats": [
+      "png"
+    ]
   }
 ]
