@@ -30,9 +30,12 @@
    **M-001 步骤 1 后收敛为 3 个、步骤 3 后为 2 个**（`brief_precheck`、`talent_match`）；
 2. `RERANK` 标签**当前没有任何模型能提供** → `brief_precheck`/`talent_match` 在严格模式下永远无解，
    需产品决策（补供应商 / 去掉该标签 / 永不打开开关）。**这是 M-001 唯一剩下的待决项**；
-3. 平台存在**两层能力门禁且当前不一致**：自研云端图像模块已把 flare 的 5 项能力标为开放
-   （`cloud-image-output-validation.json`），但治理层 `lifecycle_status` 仍是 `SUSPENDED`
-   → **flare 在治理路由里依然被排除**。"开放了"目前是空的。
+3. **图像能力门禁实际有三层且互不知情**：真正的云端能力开关注在 `CloudImageValidation.java`
+   的硬编码 `PASSED` 表（flare **6/6 已通过**），而治理层 `lifecycle_status` 仍是 `SUSPENDED`
+   → flare 在 **aigov 路由**里被排除，但在**云端图像链路**上真实可用（两条路互不依赖，
+   `ruoyi-ai` 对 `aigov` 0 引用）。
+   **不是"开放了是空的"**（那是我最初的误判，已在 `04-` §1.4 修正），
+   而是**同一模型在两处状态相反、且无单一事实源**。
 
 ## 与既有文档的关系
 
