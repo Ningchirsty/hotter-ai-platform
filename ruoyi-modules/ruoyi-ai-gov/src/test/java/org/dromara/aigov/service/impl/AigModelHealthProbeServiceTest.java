@@ -8,6 +8,7 @@ import org.dromara.aigov.domain.vo.AigModelTestVo;
 import org.dromara.aigov.mapper.AigCapabilityModelMapper;
 import org.dromara.aigov.mapper.AigModelGovernanceMapper;
 import org.dromara.aigov.service.IAigModelGovernanceService;
+import org.dromara.aigov.service.IAigModelHealthProbeService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -17,11 +18,16 @@ import org.mockito.ArgumentCaptor;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -176,6 +182,127 @@ class AigModelHealthProbeServiceTest {
 
         assertEquals(1, result.getUnhealthy());
         assertTrue(result.getUnhealthyModels().contains("9"), "不健康的模型ID要带出来");
+    }
+
+    // ------------------------------------------------------------------
+    // HTTP 入口的"提交即返回"契约（2026-10-08 实测 133 秒超时事故）
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("★ 开关关闭时提交必须被拒（且一次外呼都不发），而不是受理后什么都不做")
+    void triggerAsyncRefusesWhenDisabled() {
+        properties.setEnabled(false);
+
+        IAigModelHealthProbeService.SubmitOutcome outcome = service.triggerAsync();
+
+        assertEquals(IAigModelHealthProbeService.SubmitOutcome.DISABLED, outcome);
+        verify(governanceService, never()).testConnection(any());
+    }
+
+    @Test
+    @DisplayName("★ 提交立即返回：探测耗时 133 秒，入口不能同步等它（网关约 100 秒就断）")
+    void triggerAsyncReturnsImmediatelyWhileProbeKeepsRunning() throws Exception {
+        properties.setStaleHours(0);
+        stubGovernance(governance(1L, null));
+        stubBindings(1L);
+        CountDownLatch probeFinished = new CountDownLatch(1);
+        // 模拟真实外呼：单次探测耗时明显长于"提交"应耗的时间
+        when(governanceService.testConnection(1L)).thenAnswer(inv -> {
+            try {
+                Thread.sleep(1500L);
+                return ok(true);
+            } finally {
+                probeFinished.countDown();
+            }
+        });
+
+        long start = System.nanoTime();
+        IAigModelHealthProbeService.SubmitOutcome outcome = service.triggerAsync();
+        long submitMs = (System.nanoTime() - start) / 1_000_000L;
+
+        assertEquals(IAigModelHealthProbeService.SubmitOutcome.ACCEPTED, outcome);
+        assertTrue(submitMs < 1000L,
+            "提交必须在 1 秒内返回（实测探测本身要 133 秒）；实际=" + submitMs + "ms");
+        assertTrue(probeFinished.await(10, TimeUnit.SECONDS),
+            "返回之后后台仍必须真的把这一轮跑完——否则『立即返回』就变成了『什么都没做』");
+    }
+
+    @Test
+    @DisplayName("★ 去重：一轮没跑完时的第二次提交必须被拒（单线程执行器只会排队，挡不住重复外呼）")
+    void triggerAsyncIsDeduplicatedWhileARoundIsStillRunning() throws Exception {
+        properties.setStaleHours(0);
+        stubGovernance(governance(1L, null));
+        stubBindings(1L);
+        CountDownLatch probeEntered = new CountDownLatch(1);
+        CountDownLatch releaseFirstRound = new CountDownLatch(1);
+        when(governanceService.testConnection(1L)).thenAnswer(inv -> {
+            probeEntered.countDown();
+            releaseFirstRound.await(10, TimeUnit.SECONDS);
+            return ok(true);
+        });
+
+        assertEquals(IAigModelHealthProbeService.SubmitOutcome.ACCEPTED, service.triggerAsync());
+        assertTrue(probeEntered.await(10, TimeUnit.SECONDS), "第一轮应已进入探测");
+
+        assertEquals(IAigModelHealthProbeService.SubmitOutcome.ALREADY_RUNNING, service.triggerAsync(),
+            "第一轮还在跑，第二次提交必须是 ALREADY_RUNNING");
+        assertEquals(IAigModelHealthProbeService.SubmitOutcome.ALREADY_RUNNING, service.triggerAsync(),
+            "连续重试也不该被放行——重试正是网关超时后最可能发生的事");
+
+        releaseFirstRound.countDown();
+
+        // 状态位必须在 finally 里释放，否则这个开关会永久卡死、从此再也探测不了
+        IAigModelHealthProbeService.SubmitOutcome afterRelease = null;
+        long deadline = System.currentTimeMillis() + 10_000L;
+        while (System.currentTimeMillis() < deadline) {
+            afterRelease = service.triggerAsync();
+            if (afterRelease == IAigModelHealthProbeService.SubmitOutcome.ACCEPTED) {
+                break;
+            }
+            Thread.sleep(50L);
+        }
+        assertEquals(IAigModelHealthProbeService.SubmitOutcome.ACCEPTED, afterRelease,
+            "第一轮结束后必须能再次提交（probeInFlight 要在 finally 里释放）");
+
+        verify(governanceService, org.mockito.Mockito.timeout(10_000).atLeast(2)).testConnection(1L);
+    }
+
+    @Test
+    @DisplayName("提交失败必须把状态位放回去，否则一次执行器故障会永久禁用探测")
+    void rejectedSubmissionDoesNotLatchTheInFlightFlag() {
+        properties.setStaleHours(0);
+        stubGovernance(governance(1L, null));
+        stubBindings(1L);
+
+        // 用替身执行器模拟"执行器不可用"（真实执行器无法安全地模拟这一状态）
+        ExecutorService rejecting = mock(ExecutorService.class);
+        doThrow(new RejectedExecutionException("shutdown")).when(rejecting).execute(any());
+        setProbeExecutor(rejecting);
+
+        assertEquals(IAigModelHealthProbeService.SubmitOutcome.REJECTED, service.triggerAsync(),
+            "执行器拒绝时应如实回 REJECTED，而不是含糊的 false");
+
+        // 执行器恢复后必须能再次提交——若 try 里忘了在 catch 放回状态位，这里会得到 ALREADY_RUNNING
+        ExecutorService accepting = mock(ExecutorService.class);
+        setProbeExecutor(accepting);
+        assertEquals(IAigModelHealthProbeService.SubmitOutcome.ACCEPTED, service.triggerAsync(),
+            "一次拒绝不能把探测永久锁死");
+    }
+
+    /**
+     * 用反射替换私有执行器，以便在不 shutdown 真实线程池的前提下模拟"执行器不可用"。
+     *
+     * @param executor 替身执行器
+     */
+    private void setProbeExecutor(ExecutorService executor) {
+        try {
+            java.lang.reflect.Field f =
+                AigModelHealthProbeServiceImpl.class.getDeclaredField("probeExecutor");
+            f.setAccessible(true);
+            f.set(service, executor);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("无法替换 probeExecutor（字段名被改动了？）", e);
+        }
     }
 
     // ------------------------------------------------------------------

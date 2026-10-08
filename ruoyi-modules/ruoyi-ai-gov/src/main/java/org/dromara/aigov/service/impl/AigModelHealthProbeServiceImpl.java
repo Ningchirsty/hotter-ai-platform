@@ -20,6 +20,10 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 模型健康探测实现（M-003）。
@@ -49,6 +53,81 @@ public class AigModelHealthProbeServiceImpl implements IAigModelHealthProbeServi
     private final AigCapabilityModelMapper capabilityModelMapper;
     private final IAigModelGovernanceService modelGovernanceService;
     private final AigModelHealthProbeProperties properties;
+
+    /**
+     * 后台执行探测。用单线程<b>串行</b>执行：探测是外呼，并发会把同一供应商的连接同时拉满，
+     * 串行最温和；用守护线程是因为它是后台作业，进程退出时不该被它拖住。
+     *
+     * <p><b>注意：单线程执行器不等于去重</b>——它会把第二次提交<b>排队</b>，
+     * 于是"连续两次提交"仍然会真的外呼两轮。去重靠 {@link #probeInFlight}。</p>
+     *
+     * <p>故意不加 {@code final}：{@code AigModelHealthProbeServiceTest} 需要把它换成
+     * "提交即拒绝"的替身来验证 {@code REJECTED} 分支不会把状态位永久卡死
+     * （那个分支只有在执行器不可用时才会发生，生产里没有别的办法复现）。</p>
+     */
+    private ExecutorService probeExecutor = newSingleThreadProbeExecutor();
+
+    private static ExecutorService newSingleThreadProbeExecutor() {
+        return Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "aigov-model-health-probe");
+            t.setDaemon(true);
+            return t;
+        });
+    }
+
+    /**
+     * "是否已有一轮探测在跑"的状态位。
+     *
+     * <p>它存在的唯一理由就是<b>去重</b>：没有它，两次提交会排队执行、外呼两轮、账单翻倍。</p>
+     */
+    private final AtomicBoolean probeInFlight = new AtomicBoolean(false);
+
+    @Override
+    public SubmitOutcome triggerAsync() {
+        if (!properties.isEnabled()) {
+            // 开关关闭时不提交任何任务。即使将来有人绕过 HTTP 入口直接调用，
+            // 也不会出现"以为已经探测了、其实什么都没做"
+            return SubmitOutcome.DISABLED;
+        }
+        // CAS 而非 get-then-set：并发提交时只有一个能把状态位从 false 翻成 true
+        if (!probeInFlight.compareAndSet(false, true)) {
+            return SubmitOutcome.ALREADY_RUNNING;
+        }
+        try {
+            probeExecutor.execute(this::runProbeQuietly);
+            return SubmitOutcome.ACCEPTED;
+        } catch (RejectedExecutionException e) {
+            // 提交失败必须把状态位放回去，否则这个开关会永远卡在 true，
+            // 从此每一次提交都被误判成"已有一轮在跑"
+            probeInFlight.set(false);
+            log.warn("模型健康探测提交失败（执行器不可用）", e);
+            return SubmitOutcome.REJECTED;
+        }
+    }
+
+    /**
+     * 后台跑一轮并把结果写进日志；异常只记日志，不向调用方抛。
+     *
+     * <p>无论成功、失败还是抛异常，都必须释放 {@link #probeInFlight}——
+     * 漏掉这一步就等于永久禁止后续探测。</p>
+     */
+    private void runProbeQuietly() {
+        try {
+            AigModelHealthProbeVo r = probeOnce();
+            if (r.getUnhealthy() > 0 || r.getSkipped() > 0) {
+                log.warn("模型健康探测：测 {} 个，健康 {}，不健康 {} {}，跳过 {}，本轮未处理 {}",
+                    r.getProbed(), r.getHealthy(), r.getUnhealthy(), r.getUnhealthyModels(),
+                    r.getSkipped(), r.getDeferred());
+            } else {
+                log.info("模型健康探测：测 {} 个，全部健康，本轮未处理 {}",
+                    r.getProbed(), r.getDeferred());
+            }
+        } catch (Exception e) {
+            log.error("模型健康探测后台执行异常（本轮结束，下一轮继续）", e);
+        } finally {
+            probeInFlight.set(false);
+        }
+    }
 
     @Override
     public AigModelHealthProbeVo probeOnce() {

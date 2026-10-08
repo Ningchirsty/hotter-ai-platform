@@ -11,7 +11,6 @@ import org.dromara.aigov.domain.bo.AigModelGovernanceBo;
 import org.dromara.aigov.domain.bo.AigModelProviderBo;
 import org.dromara.aigov.domain.bo.AigModelSecretBatchBo;
 import org.dromara.aigov.domain.bo.AigModelSecretBo;
-import org.dromara.aigov.domain.vo.AigModelHealthProbeVo;
 import org.dromara.aigov.domain.vo.AigModelProviderVo;
 import org.dromara.aigov.domain.vo.AigModelTestVo;
 import org.dromara.aigov.domain.vo.AigModelVo;
@@ -146,26 +145,42 @@ public class AigModelController {
     }
 
     /**
-     * 批量健康探测：按周期挑出需要复测的模型，逐个探测并把结果写回治理表（M-003）。
+     * 批量健康探测：挑出需要复测的模型，逐个探测并把结果写回治理表（M-003）。
      *
      * <p><b>为什么需要一个显式入口（而不是只留定时任务）</b>：
      * 本仓 {@code @EnableScheduling} 只在 {@code ruoyi-common-job} 的 {@code SnailJobConfig} 上，
      * 而它被 {@code @ConditionalOnProperty(snail-job.enabled=true)} 门控——生产是 false。
-     * 因此<b>三个 {@code @Scheduled} 任务（任务扫描 / 审批超时扫描 / 本探测）目前都不会被触发</b>，
-     * 且不会有任何报错。既有的另外两个任务正是因为同一原因各自提供了 cron 入口：
+     * 因此三个 {@code @Scheduled} 任务（任务扫描 / 审批超时扫描 / 本探测）此前都不会被触发，
+     * 且不会有任何报错。既有的另外两个任务正因同一原因各自提供了 cron 入口：
      * {@code POST /aigov/task/scheduler/sweep} 与 {@code POST /aigov/approval/expire-scan}。
      * 本接口与它们对齐，使运维可以在**不改代码、不启用整个调度子系统**的前提下用外部 cron 驱动。</p>
      *
-     * <p>行为受 {@code aigov.model.health-probe} 控制：{@code enabled=false} 时本接口
-     * 直接返回"未执行"且<b>一次外呼都不发</b>（不会绕过开关偷偷探测）。</p>
+     * <p><b>为什么是「提交即返回」而不是同步等结果</b>（2026-10-08 实测教训）：
+     * 一次完整探测要<b>逐个对外发起真实调用</b>，实测 <b>8 个模型耗时 133 秒</b>。
+     * 而本平台前面有 Cloudflare（约 100 秒即 524）与 nginx，同步等结果必然被网关掐断——
+     * 更糟的是：**网关超时不会让后端停下来**，探测仍在跑，只是调用方永远拿不到结果
+     * （我第一次实测就撞上：客户端 120 秒超时，服务端日志却正常跑完 133 秒并写回了 7 个模型）。
+     * 因此本接口只负责<b>校验开关、去重、提交</b>，实际探测交给后台线程，立即返回。</p>
      *
-     * @return 本轮探测汇总（含未执行原因）
+     * <p>结果可从治理表读取（{@code aig_model_governance.health_status/health_time}），
+     * 或看后端日志里的「模型健康探测：…」一行。重复提交会被去重，不会叠加外呼。</p>
+     *
+     * @return 已受理的提示（真正结果在治理表与日志里）
      */
     @SaCheckPermission(AigConstants.PERM_MODEL_EDIT)
-    @RepeatSubmit
     @PostMapping("/health-probe/run")
-    public R<AigModelHealthProbeVo> runHealthProbe() {
-        return R.ok(healthProbeService.probeOnce());
+    public R<String> runHealthProbe() {
+        // 四种结局分开回答，不合并成一个"false"：运维需要知道到底是"已在跑"还是"开关关着"
+        return switch (healthProbeService.triggerAsync()) {
+            case ACCEPTED -> R.ok(
+                "已受理：正在后台探测（约需数分钟）。结果见治理表 health_status/health_time 与后端日志");
+            case ALREADY_RUNNING -> R.ok(
+                "未受理：已有一轮探测在跑，本次不重复提交（避免同一批模型被重复外呼）");
+            case DISABLED -> R.ok(
+                "未执行：aigov.model.health-probe.enabled=false，探测开关关闭");
+            case REJECTED -> R.fail(
+                "未受理：后台执行器不可用，本次未提交，详见后端日志");
+        };
     }
 
     /**
