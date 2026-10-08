@@ -150,6 +150,25 @@ restore_backend() {
   BACKEND_IMAGE="$previous_image" docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --no-deps backend
 }
 
+# ---- 2026-10-08 R73 新增：镜像回收（**发布成功后**才跑） ----
+# 为什么需要：本脚本会清容器、清构建缓存，但**从不删镜像**；每次发布 pull 一个约 1.2GB 的
+# 新镜像 ⇒ 单调增长（实测 23 个后端镜像 ≈ 27GB，其中 20.43GB 可回收）。这正是 R61
+# "根分区写满"的同一成因。回收规则与安全约束见 image-gc.sh（绝不动被容器引用的镜像）。
+# 语义：它是**收尾清理**，不是发布前置条件——失败只 warn，绝不把一次成功的发布变成失败。
+gc_old_images() {
+  local gc
+  gc="${HOTTER_IMAGE_GC:-$(dirname "$0")/image-gc.sh}"
+  if [ ! -f "$gc" ]; then
+    warn "镜像回收脚本不存在（$gc）；本次跳过。镜像会继续累积，见 R73。"
+    return 0
+  fi
+  if bash "$gc" --apply; then
+    return 0
+  fi
+  warn "镜像回收未正常完成（退出码 $?）；不影响本次发布。"
+  return 0
+}
+
 deploy_backend() {
   local image=$1
   [[ "$image" =~ $BACKEND_IMAGE_RE ]] || die "invalid backend image reference"
@@ -172,6 +191,7 @@ deploy_backend() {
   fi
   if wait_for_backend "$image"; then
     docker image inspect "$image" --format '{{index .RepoDigests 0}}'
+    gc_old_images
     return 0
   fi
   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs --tail=100 backend >&2
@@ -238,6 +258,7 @@ deploy_frontend() {
   fi
   docker image inspect "$image" --format '{{index .RepoDigests 0}}'
   echo "previous frontend retained as $previous for manual rollback"
+  gc_old_images
 }
 
 case "${1:-}" in

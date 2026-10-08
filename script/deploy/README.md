@@ -48,6 +48,38 @@ build cache.
 | Stale container cleanup | `hotter-release` `prune_previous_containers` | Keeps the newest 3 `ruoyi-web-previous-*` and removes older ones (`HOTTER_KEEP_PREVIOUS`). Container removal only — images stay usable for rollback. |
 | Build-cache reclaim | `hotter-release` `reclaim_build_cache_if_tight` | Prunes build cache **only** when free space drops below 1GB (`HOTTER_BUILD_CACHE_RECLAIM_KB`). Left alone otherwise, so builds stay fast. |
 | Rollback-target check | `hotter-release` `require_rollback_target` | Refuses to release unless the current running image is still present locally. Otherwise a failed switch would leave **neither** the new nor the old container. |
+| Image retention | `hotter-release` `gc_old_images` → `image-gc.sh` | **After a successful release**: deletes images that are referenced by **no** container and are **not among the newest `HOTTER_KEEP_IMAGES` (default 10)** per repository. Never touches a rollback anchor. |
+
+### Disk pre-checks are fail-closed (2026-10-08)
+
+Both layers (the workflow's `Pre-flight host capacity` step and `hotter-release`'s
+`require_free_space`) used to treat an **unreadable** `df` as "fine": `[ "" -lt N ]`
+returns non-zero, which the `if` reads as false, so the guard passed silently — failing
+exactly when it mattered most. They now **refuse** when the free-space figure cannot be
+parsed. Override deliberately with the `allow_unknown_disk` workflow input, or
+`HOTTER_ALLOW_UNKNOWN_DISK=1` for the entrypoint; both log the override.
+
+### Why images need their own retention policy
+
+`hotter-release` cleans **containers** (`previous-*`) and **build cache**, but it never
+deleted **images** — and every release pulls a fresh ~1.2GB image. Measured on
+2026-10-08: 23 backend images locally, 30.95GB of images with **20.43GB reclaimable**.
+That is the same mechanism behind the 2026-10-08 P0 (root filesystem full), just one
+layer lower.
+
+**Do not run `docker image prune` here.** Images pulled by digest are unreferenced by
+containers, so Docker considers them dangling — but they *are* the rollback anchors, and
+a rollback needs a **local** image (and disk) precisely when things are already broken.
+
+```bash
+sudo bash /usr/local/sbin/image-gc.sh --dry-run   # report only (default)
+sudo bash /usr/local/sbin/image-gc.sh --apply     # delete the candidates
+HOTTER_KEEP_IMAGES=20 sudo bash /usr/local/sbin/image-gc.sh --dry-run   # widen retention
+```
+
+Digests dropped by the policy are not lost: the GHCR credential is verified to work, so
+any of them can be pulled again by digest.
+
 
 Because `hotter-release` is root-owned and only takes effect after
 `sudo install`, both `deploy-poc.yml` and `deploy-frontend-poc.yml` also run an
