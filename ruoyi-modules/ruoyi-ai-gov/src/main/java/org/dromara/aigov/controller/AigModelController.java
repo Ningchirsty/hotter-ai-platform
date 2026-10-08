@@ -11,10 +11,12 @@ import org.dromara.aigov.domain.bo.AigModelGovernanceBo;
 import org.dromara.aigov.domain.bo.AigModelProviderBo;
 import org.dromara.aigov.domain.bo.AigModelSecretBatchBo;
 import org.dromara.aigov.domain.bo.AigModelSecretBo;
+import org.dromara.aigov.domain.vo.AigModelHealthProbeVo;
 import org.dromara.aigov.domain.vo.AigModelProviderVo;
 import org.dromara.aigov.domain.vo.AigModelTestVo;
 import org.dromara.aigov.domain.vo.AigModelVo;
 import org.dromara.aigov.service.IAigModelGovernanceService;
+import org.dromara.aigov.service.IAigModelHealthProbeService;
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.core.domain.R;
 import org.dromara.common.core.validate.AddGroup;
@@ -54,6 +56,11 @@ import java.util.List;
 public class AigModelController {
 
     private final IAigModelGovernanceService modelGovernanceService;
+
+    /**
+     * 批量健康探测（M-003）。供外部 cron / SnailJob 调用，见 {@link #runHealthProbe()}。
+     */
+    private final IAigModelHealthProbeService healthProbeService;
 
     /**
      * 分页查询模型清单（sai_model_config 左连治理属性）。
@@ -136,6 +143,29 @@ public class AigModelController {
     public R<AigModelTestVo> testConnection(@NotNull(message = "主键不能为空")
                                             @PathVariable("modelId") Long modelId) {
         return R.ok(modelGovernanceService.testConnection(modelId));
+    }
+
+    /**
+     * 批量健康探测：按周期挑出需要复测的模型，逐个探测并把结果写回治理表（M-003）。
+     *
+     * <p><b>为什么需要一个显式入口（而不是只留定时任务）</b>：
+     * 本仓 {@code @EnableScheduling} 只在 {@code ruoyi-common-job} 的 {@code SnailJobConfig} 上，
+     * 而它被 {@code @ConditionalOnProperty(snail-job.enabled=true)} 门控——生产是 false。
+     * 因此<b>三个 {@code @Scheduled} 任务（任务扫描 / 审批超时扫描 / 本探测）目前都不会被触发</b>，
+     * 且不会有任何报错。既有的另外两个任务正是因为同一原因各自提供了 cron 入口：
+     * {@code POST /aigov/task/scheduler/sweep} 与 {@code POST /aigov/approval/expire-scan}。
+     * 本接口与它们对齐，使运维可以在**不改代码、不启用整个调度子系统**的前提下用外部 cron 驱动。</p>
+     *
+     * <p>行为受 {@code aigov.model.health-probe} 控制：{@code enabled=false} 时本接口
+     * 直接返回"未执行"且<b>一次外呼都不发</b>（不会绕过开关偷偷探测）。</p>
+     *
+     * @return 本轮探测汇总（含未执行原因）
+     */
+    @SaCheckPermission(AigConstants.PERM_MODEL_EDIT)
+    @RepeatSubmit
+    @PostMapping("/health-probe/run")
+    public R<AigModelHealthProbeVo> runHealthProbe() {
+        return R.ok(healthProbeService.probeOnce());
     }
 
     /**
