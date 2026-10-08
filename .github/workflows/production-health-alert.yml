@@ -53,9 +53,14 @@ jobs:
           # 确认真的会创建 issue），而不必去破坏生产。留空则用 health-check.sh 的默认值。
           HOTTER_BACKEND_PROBE_URL: ${{ inputs.probe_url }}
         run: |
-          set -uo pipefail
-          bash script/deploy/health-check.sh | tee /tmp/health-report.txt
-          echo "rc=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          # 不能写 `set -o pipefail`：health-check 非 0 退出（正是我们要捕获的信号）会让
+          # 整个 step 在到达 "echo rc=" 之前就中止，于是 rc 输出为空、告警步骤被 skip。
+          # 首次实跑就踩了这个坑（run 37763243678：脚本已判 CRITICAL，却没建 issue）。
+          set -u
+          rc=0
+          bash script/deploy/health-check.sh > /tmp/health-report.txt 2>&1 || rc=$?
+          cat /tmp/health-report.txt
+          echo "rc=${rc}" >> "$GITHUB_OUTPUT"
 
       - name: Summarize
         run: |
