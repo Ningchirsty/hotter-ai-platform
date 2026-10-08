@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {outputCandidates,outputParameterVerified,outputVerified,updateOutput,outputDefaults,observedOutputFormat} from './cloud-image-output';
+import {outputCandidates,outputParameterVerified,outputVerified,updateOutput,outputDefaults,observedOutputFormat,outputParameterStatusLabel} from './cloud-image-output';
 import type {CloudImageModelsVO} from '@/api/image/types';
 describe('independent cloud output controls',()=>{
   const status={profiles:[{model:'gpt-image-2.5-sunburst',outputProfiles:[{capability:'T2I',output:{size:'1024x1024',n:1,quality:'low',outputFormat:'png'},verifiedFields:['size','n','quality','outputFormat']}]}]} as CloudImageModelsVO;
@@ -20,5 +20,22 @@ describe('concrete measured defaults',()=>{
   it('observed PNG does not become an explicit verified format parameter',()=>{
     expect(observedOutputFormat(status,'qwen-image-3.0','EDIT')).toBe('PNG');
     expect(outputParameterVerified(status,'qwen-image-3.0','EDIT','outputFormat','png')).toBe(false);
+  });
+});
+
+describe('measured parameter outcomes',()=>{
+  const evidence={profiles:[{model:'gpt-image-2.5-sunburst',outputProfiles:[
+    {capability:'T2I',output:{size:'1024x1536',quality:'medium',outputFormat:'webp'},verifiedFields:['size'],parameterResults:{size:'PASSED',quality:'ACCEPTED_UNCONFIRMED',outputFormat:'OUTPUT_MISMATCH'}}
+  ]}]} as CloudImageModelsVO;
+  it('opens measured sizes while keeping ignored formats and unconfirmed quality blocked',()=>{
+    expect(outputVerified(evidence,'gpt-image-2.5-sunburst','T2I',{size:'1024x1536',n:1})).toBe(true);
+    expect(outputVerified(evidence,'gpt-image-2.5-sunburst','T2I',{size:'1024x1536',outputFormat:'webp'})).toBe(false);
+    expect(outputVerified(evidence,'gpt-image-2.5-sunburst','T2I',{quality:'medium'})).toBe(false);
+    expect(outputParameterStatusLabel(evidence,'gpt-image-2.5-sunburst','T2I','outputFormat','webp')).toContain('实测未生效');
+    expect(outputParameterStatusLabel(evidence,'gpt-image-2.5-sunburst','T2I','quality','medium')).toContain('生效未确认');
+  });
+  it('does not apply parameter outcomes to another ability or model',()=>{
+    expect(outputParameterStatusLabel(evidence,'gpt-image-2.5-sunburst','EDIT','outputFormat','webp')).toBe(' · 待验证');
+    expect(outputParameterStatusLabel(evidence,'gpt-image-2.5-flare','T2I','quality','medium')).toBe(' · 待验证');
   });
 });

@@ -145,7 +145,7 @@ export interface ImageTaskExecutionResult {
 
 /** 云端输出参数以逐型号、逐能力验收档位为准。 */
 export interface CloudImageOutputParams { size?: string | null; n?: number; quality?: string | null; outputFormat?: string | null; }
-export interface CloudImageOutputProfile { model: string; capability: string; label: string; output: CloudImageOutputParams; verifiedFields?: (keyof CloudImageOutputParams)[]; qualityEvidence?: string; observedFormats?: string[]; }
+export interface CloudImageOutputProfile { model: string; capability: string; label: string; output: CloudImageOutputParams; verifiedFields?: (keyof CloudImageOutputParams)[]; qualityEvidence?: string; observedFormats?: string[]; parameterResults?: Partial<Record<keyof CloudImageOutputParams, 'PASSED' | 'OUTPUT_MISMATCH' | 'ACCEPTED_UNCONFIRMED' | 'HTTP_ERROR' | 'RESULT_UNKNOWN'>>; }
 export interface CloudImageDraft {
   model: string;
   prompt: string;

@@ -113,12 +113,12 @@
         <label v-for="item in outputFields" :key="item.key">
           {{ item.label }}
           <select v-if="outputValues(item.key).length > 1" :value="outputValue(selectedOutput,item.key)" :aria-label="item.label" :disabled="busy || materialProcessing" @change="selectOutput(item.key,($event.target as HTMLSelectElement).value)">
-            <option v-for="value in outputValues(item.key)" :key="value" :value="value">{{ outputLabel(item.key,value) }}{{ outputParameterVerified(props.cloudStatus,modelId,mode,item.key,value) ? '' : ' · 待验证' }}</option>
+            <option v-for="value in outputValues(item.key)" :key="value" :value="value">{{ outputLabel(item.key,value) }}{{ outputParameterStatusLabel(props.cloudStatus,modelId,mode,item.key,value) }}</option>
           </select>
           <span v-else class="output-fixed">{{ outputLabel(item.key,outputValue(selectedOutput,item.key)) }}</span>
         </label>
       </div>
-      <p class="field-help">已验收的尺寸与数量自动填入并随任务提交；各参数独立选择，待验证选项通过验收后开放提交。</p>
+      <p class="field-help">参数按型号和创作能力分别验收，已通过的选项可提交。</p>
     </section>
 
     <section class="cloud-summary" aria-label="模型与费用信息">
@@ -141,7 +141,7 @@ import { computed, reactive, ref, watch } from 'vue';
 import { cloudModelsFor } from './cloud-models';
 import { IMAGE_CLOUD_CAPABILITIES, imageCapabilityVerified, imageCapabilitiesForModel, imageCapabilityStatusLabel, type ImageCloudCapability } from './cloud-image-capabilities';
 import CloudImageMaterials from './CloudImageMaterials.vue';
-import {outputFields,outputValue,outputCandidates,outputParameterVerified,outputVerified,updateOutput,outputDefaults,observedOutputFormat,type OutputKey} from './cloud-image-output';
+import {outputFields,outputValue,outputCandidates,outputParameterStatusLabel,outputVerified,updateOutput,outputDefaults,observedOutputFormat,type OutputKey} from './cloud-image-output';
 const props = defineProps<{ busy?: boolean; cloudStatus?: import('@/api/image/types').CloudImageModelsVO }>();
 const emit = defineEmits<{ change: [draft: import('@/api/image/types').CloudImageDraft] }>();
 function availableModel(id: string) {
@@ -205,7 +205,7 @@ function outputLabel(key:OutputKey,value:string) {
 function selectOutput(key:OutputKey,value:string) { draft.value.output=updateOutput(selectedOutput.value,key,value); }
 watch(() => [modelId.value, mode.value, draft.value.prompt, props.cloudStatus, materials.value, draft.value.output] as const, () => {
   const ready = availableModel(modelId.value) && verified(mode.value) && outputVerified(props.cloudStatus,modelId.value,mode.value,selectedOutput.value) && !materialProcessing.value && (!needsReference.value || materials.value.ready);
-  const blockReason = !verified(mode.value) ? '此能力尚未通过供应商接口验证，暂不可提交' : !availableModel(modelId.value) ? '云端 API Key 尚未配置，暂不可提交' : needsReference.value && !materials.value.ready ? '请完成参考素材与蒙版设置' : !outputVerified(props.cloudStatus,modelId.value,mode.value,selectedOutput.value) ? '所选输出参数待验证，暂不可提交' : '';
+  const blockReason = !verified(mode.value) ? '此能力尚未通过供应商接口验证，暂不可提交' : !availableModel(modelId.value) ? '云端 API Key 尚未配置，暂不可提交' : needsReference.value && !materials.value.ready ? '请完成参考素材与蒙版设置' : !outputVerified(props.cloudStatus,modelId.value,mode.value,selectedOutput.value) ? '所选输出参数尚未验证通过，暂不可提交' : '';
   emit('change', { model: modelId.value, prompt: draft.value.prompt, capability: mode.value, referenceAssetIds: needsReference.value ? materials.value.ids : [], maskAssetId: needsReference.value ? materials.value.maskId : undefined, ready, blockReason, output: selectedOutput.value });
 }, { immediate: true, deep: true });
 function formatPrice(price?: number): string {
