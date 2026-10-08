@@ -345,20 +345,27 @@ aigov:
 
   model:
     health-probe:
-      # 模型健康探测（M-003）。**默认关闭**，这里也保持关闭——请先看下面再决定是否打开。
+      # 模型健康探测（M-003）。**2026-10-08 由运维授权打开**（执行顺序 1→2→3 的第 1 步）。
       #
-      # 为什么默认关、且我不擅自打开：这套探测会**对外发起真实调用**（要连供应商）。
-      # 「探测哪些模型、多频繁、这笔探测成本谁认」是运维/成本决定，不该由一次上线替它拍板。
-      #
-      # 现状（2026-10-08 巡检）：真正参与路由的 3 个模型里没有一个"近期测过且健康"——
+      # 打开的理由（实测）：真正参与路由的模型里没有一个"近期测过且健康"——
       #   qwen2.5:7b-instruct 从未测过、qwen2.5vl:3b 有状态无时间、local-content 已 14 天未复测。
-      #   在那之前，health-check.sh 会把这类"长期没人测"报成 WARN，至少不让它继续是盲区。
+      #   不修的话 health-check.sh 会一直报 WARN（issue #42 就是这条）。
       #
-      # 打开前请注意两点：
-      #   ① 本仓的 @EnableScheduling 只在 ruoyi-common-job 的 SnailJobConfig 里；
-      #      若该模块没有被装载，本任务**不会执行且不报错**（既有两个定时任务栽过同一个坑）。
-      #   ② 建议先只对参与路由的模型探测（only-bound 默认 true），再谈全量。
-      enabled: false
+      # 成本范围（已实测，不是估计）：only-bound=true 时会探测 8 个模型，其中
+      #   LOCAL 3 个（local-content / qwen2.5:7b-instruct / qwen2.5vl:3b）**无外呼**，
+      #   EXTERNAL_API 5 个（flare / qwen-image-3.0 / qwen-image-3.0-pro /
+      #   wan2.7-image / wan2.7-image-pro）**有真实外呼**。
+      #   stale-hours=6 表示同一模型 6 小时内不会被重复探测，
+      #   因此稳态外呼量 ≈ 每个外部模型每 6 小时 1 次（≈20 次/天），与"调短周期"不成正比。
+      #
+      # ⚠️ 重要：本开关只决定**是否允许**探测，不决定**谁来触发**。
+      #   @Scheduled 需要 @EnableScheduling；本仓该注解只在 ruoyi-common-job 的
+      #   SnailJobConfig 上、且被 snail-job.enabled 门控（生产为 false，且**没有部署
+      #   SnailJob server**，17888 不可达）。所以打开本开关后仍需：
+      #     ① 外部 cron 调 POST /aigov/model/health-probe/run（第 2 步），或
+      #     ② 启用调度子系统（第 3 步）。
+      #   否则它只是一个"允许但没人触发"的开关——这正是 R65 记下的那个坑。
+      enabled: true
       # 探测周期（毫秒，默认 30 分钟）。fixedDelay 语义：实际间隔 = 本轮耗时 + 该值。
       interval-ms: 1800000
       # 只探测"有启用绑定"的模型：没绑定的即使不健康也不影响任何一次路由，为它们付费没有收益。
