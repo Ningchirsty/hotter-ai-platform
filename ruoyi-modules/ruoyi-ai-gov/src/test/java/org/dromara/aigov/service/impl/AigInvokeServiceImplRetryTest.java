@@ -13,6 +13,7 @@ import org.dromara.aigov.enums.AigRouteDecisionEnum;
 import org.dromara.aigov.helper.AigAuditContext;
 import org.dromara.aigov.helper.AigAuditRecorder;
 import org.dromara.aigov.mapper.AigModelViewMapper;
+import org.dromara.aigov.mapper.AigPolicyDecisionLogMapper;
 import org.dromara.aigov.service.IAigRouteService;
 import org.dromara.aigov.service.invoker.ModelInvokeRequest;
 import org.dromara.aigov.service.invoker.ModelInvokeResult;
@@ -186,7 +187,8 @@ class AigInvokeServiceImplRetryTest {
         // 而 any(Class) 走 instanceof 语义、**不匹配 null**，会静默打不中桩。
         when(routeService.decide(any(), any(), nullable(AigRouteHint.class))).thenReturn(decision);
         AigInvokeServiceImpl service = new AigInvokeServiceImpl(routeService, auditRecorder,
-            List.of(invoker), modelViewMapper, retryProperties, mock(IAigUserQuotaService.class), mock(IAigCallApprovalService.class));
+            List.of(invoker), modelViewMapper, retryProperties, mock(IAigUserQuotaService.class),
+            mock(IAigCallApprovalService.class), mock(AigPolicyDecisionLogMapper.class));
         AigInvokeBo bo = new AigInvokeBo();
         bo.setCapabilityCode(CAPABILITY);
         bo.setDataLevel(AigDataLevelEnum.INTERNAL.getCode());

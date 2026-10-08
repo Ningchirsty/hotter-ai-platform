@@ -14,6 +14,7 @@ import org.dromara.aigov.enums.AigRouteDecisionEnum;
 import org.dromara.aigov.helper.AigAuditContext;
 import org.dromara.aigov.helper.AigAuditRecorder;
 import org.dromara.aigov.mapper.AigModelViewMapper;
+import org.dromara.aigov.mapper.AigPolicyDecisionLogMapper;
 import org.dromara.aigov.service.IAigRouteService;
 import org.dromara.aigov.service.invoker.ModelInvokeRequest;
 import org.dromara.aigov.service.invoker.ModelInvokeResult;
@@ -247,7 +248,8 @@ class AigInvokeServiceImplFallbackTest {
         when(routeService.decide(any(), any(), nullable(AigRouteHint.class))).thenReturn(decision);
 
         AigInvokeServiceImpl service = new AigInvokeServiceImpl(routeService, auditRecorder,
-            invokers, modelViewMapper, retryProperties, mock(IAigUserQuotaService.class), mock(IAigCallApprovalService.class));
+            invokers, modelViewMapper, retryProperties, mock(IAigUserQuotaService.class),
+            mock(IAigCallApprovalService.class), mock(AigPolicyDecisionLogMapper.class));
         AigInvokeBo bo = new AigInvokeBo();
         bo.setCapabilityCode(CAPABILITY);
         bo.setDataLevel(AigDataLevelEnum.INTERNAL.getCode());

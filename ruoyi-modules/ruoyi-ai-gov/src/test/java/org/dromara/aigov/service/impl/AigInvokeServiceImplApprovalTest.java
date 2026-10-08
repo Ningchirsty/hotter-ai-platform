@@ -16,6 +16,7 @@ import org.dromara.aigov.enums.AigRouteDecisionEnum;
 import org.dromara.aigov.helper.AigAuditContext;
 import org.dromara.aigov.helper.AigAuditRecorder;
 import org.dromara.aigov.mapper.AigModelViewMapper;
+import org.dromara.aigov.mapper.AigPolicyDecisionLogMapper;
 import org.dromara.aigov.service.IAigCallApprovalService;
 import org.dromara.aigov.service.IAigRouteService;
 import org.dromara.aigov.service.IAigUserQuotaService;
@@ -116,7 +117,8 @@ class AigInvokeServiceImplApprovalTest {
 
     private AigInvokeServiceImpl service(StubInvoker invoker) {
         return new AigInvokeServiceImpl(routeService, auditRecorder, List.of(invoker),
-            modelViewMapper, retryProperties, quotaService, approvalService);
+            modelViewMapper, retryProperties, quotaService, approvalService,
+            mock(AigPolicyDecisionLogMapper.class));
     }
 
     private static AigInvokeBo bo() {

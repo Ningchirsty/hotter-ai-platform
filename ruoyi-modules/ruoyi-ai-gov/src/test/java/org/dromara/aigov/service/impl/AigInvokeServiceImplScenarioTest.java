@@ -13,6 +13,7 @@ import org.dromara.aigov.enums.AigRouteDecisionEnum;
 import org.dromara.aigov.helper.AigAuditContext;
 import org.dromara.aigov.helper.AigAuditRecorder;
 import org.dromara.aigov.mapper.AigModelViewMapper;
+import org.dromara.aigov.mapper.AigPolicyDecisionLogMapper;
 import org.dromara.aigov.service.IAigRouteService;
 import org.dromara.aigov.service.invoker.ModelInvoker;
 import org.dromara.common.core.utils.StringUtils;
@@ -84,7 +85,8 @@ class AigInvokeServiceImplScenarioTest {
 
     private AigInvokeServiceImpl service() {
         return new AigInvokeServiceImpl(routeService, auditRecorder, List.<ModelInvoker>of(),
-            modelViewMapper, new AigRetryProperties(), mock(IAigUserQuotaService.class), mock(IAigCallApprovalService.class));
+            modelViewMapper, new AigRetryProperties(), mock(IAigUserQuotaService.class),
+            mock(IAigCallApprovalService.class), mock(AigPolicyDecisionLogMapper.class));
     }
 
     /**

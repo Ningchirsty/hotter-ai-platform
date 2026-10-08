@@ -28,6 +28,31 @@ public class AigRouteDecision implements Serializable {
     private String decision;
 
     /**
+     * 命中的路由策略ID（{@code aig_route_policy.policy_id}）。
+     *
+     * <p><b>为什么要有这个字段</b>：此前它只出现在 {@code policyHits} 的文案里
+     * （「命中路由策略 policyId=…」），想回答"上周三那次外发是谁批准的、命中了哪条策略"
+     * 只能去翻文本。M-005 的决策账本（{@code aig_policy_decision_log}）要求这些值
+     * <b>结构化可查</b>，因此把它们提升为字段，让决策对象自足。</p>
+     *
+     * <p>无策略命中时为 null（例如未配置该「能力 × 数据等级」的策略）。</p>
+     */
+    private Long policyId;
+
+    /**
+     * 本次生效的 {@code allow_external}（已含 STRICT 级强制置 N 之后的值）。
+     *
+     * <p>记的是<b>实际生效</b>的值而不是策略表里的原值：STRICT 资料即便策略写着 Y，
+     * 引擎也会强制按不允许外发处理，账本必须反映真实生效的口径。</p>
+     */
+    private String allowExternal;
+
+    /**
+     * 本次策略的 {@code fallback_to_manual}（无候选时是否转人工）。
+     */
+    private String fallbackToManual;
+
+    /**
      * 命中的模型ID
      */
     private Long modelId;

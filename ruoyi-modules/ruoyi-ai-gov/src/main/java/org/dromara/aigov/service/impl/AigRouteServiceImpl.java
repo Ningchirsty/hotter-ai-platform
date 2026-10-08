@@ -213,6 +213,12 @@ public class AigRouteServiceImpl implements IAigRouteService {
             + "，allowExternal=" + policy.getAllowExternal()
             + "，requireApproval=" + policy.getRequireApproval()
             + "，fallbackToManual=" + policy.getFallbackToManual());
+        // M-005 决策账本要用：把策略身份与「实际生效」的外发口径落成结构化字段。
+        // allowExternal 此处记的是上面经过 STRICT 强制置 N 之后的**生效值**，不是策略表原值 ——
+        // 账本要能回答"那次到底允不允许外发"，记原值会在 STRICT 资料上给出相反答案。
+        decision.setPolicyId(policy.getPolicyId());
+        decision.setAllowExternal(allowExternal ? YES : "N");
+        decision.setFallbackToManual(policy.getFallbackToManual());
         // 把「是否需要审批」作为结构化字段转达给调用入口（C3）：
         // 这里只读出要求、不做判定——授权按「人 × 能力 × 数据等级」授，
         // 而路由引擎拿不到调用人，判定必须在统一调用入口用同一处的调用人去做

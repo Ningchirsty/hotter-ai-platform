@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.aigov.config.AigRetryProperties;
 import org.dromara.aigov.domain.bo.AigInvokeBo;
+import org.dromara.aigov.domain.AigPolicyDecisionLog;
 import org.dromara.aigov.domain.vo.AigInvokeVo;
 import org.dromara.aigov.domain.vo.AigModelVo;
 import org.dromara.aigov.domain.vo.AigRouteCandidate;
@@ -20,6 +21,7 @@ import org.dromara.aigov.helper.AigAuditContext;
 import org.dromara.aigov.helper.AigAuditRecorder;
 import org.dromara.aigov.helper.AigOutputSchemaValidator;
 import org.dromara.aigov.mapper.AigModelViewMapper;
+import org.dromara.aigov.mapper.AigPolicyDecisionLogMapper;
 import org.dromara.aigov.service.IAigInvokeService;
 import org.dromara.aigov.service.IAigCallApprovalService;
 import org.dromara.aigov.service.IAigUserQuotaService;
@@ -31,6 +33,7 @@ import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -96,11 +99,20 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
      */
     private final IAigCallApprovalService approvalService;
 
+    /**
+     * 策略决策账本（M-005）。
+     *
+     * <p>只在 {@link #invoke} 写：{@link #dryRun} 是<b>预检</b>不是决策执行，刻意不写
+     * （否则每次预览都会污染账本，"上周三到底发生过几次外发"就查不准了）。</p>
+     */
+    private final AigPolicyDecisionLogMapper policyDecisionLogMapper;
+
     @Override
     public AigInvokeVo dryRun(AigInvokeBo bo) {
         AigDataLevelEnum dataLevel = parseDataLevel(bo);
         AigRouteDecision decision = routeService.decide(bo.getCapabilityCode(), dataLevel, routeHint(bo));
         // dryRun 只做决策预览，不产生审计记录，因此不生成 traceId
+        // 同理**不写决策账本**：预检不是决策执行，写进去会让账本无法回答"实际发生过什么"
         return toVo(null, decision, null, decision.getReason());
     }
 
@@ -114,6 +126,13 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
         AigRouteDecision decision = routeService.decide(bo.getCapabilityCode(), dataLevel, routeHint(bo));
         // 3. 组装审计上下文；无论成败都在 finally 落库
         AigAuditContext audit = buildAuditContext(traceId, bo, dataLevel, decision);
+        // 3.5 M-005 策略决策账本：**每次真实调用路径都落且只落一行**（dryRun 不落）。
+        //     位置选在这里（审计上下文组好之后、任何分支之前）的理由：
+        //       * DENIED / MANUAL / APPROVAL_REQUIRED 都是「决策结论」，都必须留证；
+        //         若写在下面的 try 里，那几条早期 return 会漏记——而被拒的调用恰恰最需要举证。
+        //       * decide() 是纯判定，写库放它里面会污染它的可测性。
+        //     model_id / external_call 在 finally 里按**实际执行的那个候选**回填（见下）。
+        AigPolicyDecisionLog decisionLog = recordPolicyDecision(traceId, bo, dataLevel, decision, audit);
         try {
             if (AigRouteDecisionEnum.DENIED.getCode().equals(decision.getDecision())) {
                 // 4. 策略拒绝：不调用模型
@@ -299,8 +318,111 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
             vo.setPendingConfirm(decision.getHumanConfirmPoints());
             return vo;
         } finally {
+            // 账本先按「实际执行」回填再落审计：两个 finally 都要执行，
+            // 但账本读的是 audit 的最终值，顺序上必须先回填。
+            finalizePolicyDecision(decisionLog, audit);
             auditRecorder.record(audit);
         }
+    }
+
+    /**
+     * M-005：落一行策略决策账本。
+     *
+     * <p><b>绝不抛异常</b>：账本是<b>举证</b>用的旁路，不能因为它写失败而让一次正常调用失败。
+     * 与 {@code AigAuditRecorder} 同一取舍——记录失败只打日志。</p>
+     *
+     * @param traceId   调用链ID
+     * @param bo        调用入参
+     * @param dataLevel 本次数据等级
+     * @param decision  路由决策
+     * @param audit     审计上下文（取调用人与 Agent 版本归属）
+     * @return 已插入的账本行（供 finally 回填）；写失败返回 null
+     */
+    private AigPolicyDecisionLog recordPolicyDecision(String traceId, AigInvokeBo bo,
+                                                     AigDataLevelEnum dataLevel,
+                                                     AigRouteDecision decision,
+                                                     AigAuditContext audit) {
+        try {
+            AigPolicyDecisionLog row = new AigPolicyDecisionLog();
+            row.setTraceId(traceId);
+            row.setCapabilityCode(bo.getCapabilityCode());
+            row.setDataLevel(dataLevel.getCode());
+            row.setDecision(decision.getDecision());
+            // 决策当时的主候选；若发生 fallback，finally 里按实际执行者回填
+            row.setModelId(decision.getModelId());
+            row.setModelKey(decision.getModelKey());
+            row.setDeploymentType(decision.getDeploymentType());
+            row.setPolicyId(decision.getPolicyId());
+            row.setAllowExternal(decision.getAllowExternal());
+            row.setApprovalRequired(decision.isApprovalRequired() ? "Y" : "N");
+            // 默认不外发：DENIED/MANUAL 恒为 N；MODEL 在 finally 里按部署类型回填
+            row.setExternalCall("N");
+            row.setReason(truncate(decision.getReason(), 500));
+            row.setExcludedJson(truncate(String.join(" | ", decision.getPolicyHits()), 2000));
+            row.setCallerId(safeCallerId(audit));
+            row.setAgentVersionId(audit.getAgentVersionId());
+            row.setOperateTime(LocalDateTime.now());
+            policyDecisionLogMapper.insert(row);
+            return row;
+        } catch (Exception e) {
+            log.error("策略决策账本写入失败（不影响本次调用）, traceId={}, capability={}",
+                traceId, bo.getCapabilityCode(), e);
+            return null;
+        }
+    }
+
+    /**
+     * M-005：按<b>实际执行的候选</b>回填账本，使它与审计一致。
+     *
+     * <p>为什么必须回填：有序 fallback 之后真正跑的是备选模型。若账本停在主候选，
+     * {@code model_id} 与 {@code external_call} 都会是假账——后者尤其严重：
+     * 主候选本地、备选外部时，假账会把「数据外发过」记成「没外发」。</p>
+     *
+     * @param row   账本行（null 表示写入已失败，直接跳过）
+     * @param audit 审计上下文（已按实际执行者更新）
+     */
+    private void finalizePolicyDecision(AigPolicyDecisionLog row, AigAuditContext audit) {
+        if (row == null || row.getDecisionId() == null) {
+            return;
+        }
+        try {
+            row.setModelId(audit.getModelId());
+            row.setModelKey(audit.getModelKey());
+            row.setDeploymentType(audit.getDeploymentType());
+            row.setExternalCall(audit.isExternalCall() ? "Y" : "N");
+            policyDecisionLogMapper.updateById(row);
+        } catch (Exception e) {
+            log.error("策略决策账本回填失败（账本可能停在主候选）, decisionId={}",
+                row.getDecisionId(), e);
+        }
+    }
+
+    /**
+     * 解析调用人；解析失败按「无调用人」处理，不让账本因它写不进去。
+     *
+     * @param audit 审计上下文
+     * @return 调用人ID；取不到返回 null
+     */
+    private Long safeCallerId(AigAuditContext audit) {
+        try {
+            return AigAuditRecorder.resolveCallerId(audit);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * 截断到列宽，避免超长文本让整行插入失败。
+     *
+     * @param value 原值
+     * @param max   最大长度
+     * @return 截断后的值
+     */
+    private static String truncate(String value, int max) {
+        if (value == null) {
+            return null;
+        }
+        return value.length() <= max ? value : value.substring(0, max);
     }
 
     /**
