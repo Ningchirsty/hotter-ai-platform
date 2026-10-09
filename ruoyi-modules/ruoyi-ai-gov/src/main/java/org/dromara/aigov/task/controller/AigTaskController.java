@@ -7,6 +7,7 @@ import jakarta.validation.groups.Default;
 import lombok.RequiredArgsConstructor;
 import org.dromara.aigov.constant.AigConstants;
 import org.dromara.aigov.task.domain.AigTask;
+import org.dromara.aigov.task.domain.bo.AigTaskCreateBo;
 import org.dromara.aigov.task.domain.bo.AigTaskExecuteBo;
 import org.dromara.aigov.task.domain.bo.AigTaskQueryBo;
 import org.dromara.aigov.task.domain.bo.AigTaskResultSelectBo;
@@ -36,13 +37,17 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * AI 统一任务 控制层（只读）。
+ * AI 统一任务 控制层。
  *
  * <p><b>本控制器刻意不提供「改状态」的接口</b>：状态变更必须经
  * {@link IAigTaskService#transition}，它带状态机校验与乐观锁；
  * 若在这里开一个「直接落某个状态」的口子，等于把编排层唯一的正确性保证绕过去了。
  * 人工动作（取消/重试/复核）各自有语义明确的专用接口，且都要求
  * {@code aig:task:operate}。</p>
+ *
+ * <p>唯一例外的写入是<b>建任务</b>（{@code POST /aigov/task}）：它只创建
+ * {@code DRAFT} 并把快照冻结，状态推进仍由调度器与既有动作负责——
+ * 建任务不是"改状态"，而是把"运维手工起一条平台任务"从"直接写库"拉回正规入口。</p>
  *
  * @author ai-gov
  */
@@ -57,6 +62,31 @@ public class AigTaskController {
     private final IAigTaskScheduler taskScheduler;
 
     private final IAigTaskExecutor taskExecutor;
+
+    /**
+     * 登记一条<b>平台执行</b>的任务（人工/运维入口）。
+     *
+     * <p><b>为什么需要它</b>：此前任务只能由业务域在进程内创建（{@code IAigTaskService.create}），
+     * HTTP 面只有查询/取消/重放/执行——于是"运维想手工建一条任务跑一次"这件事<b>只能靠直接写库</b>，
+     * 而写库会绕过快照冻结、幂等键与数据等级收紧。补这个接口是为了让那条路有正规入口，
+     * 不是为了给业务域用（业务域仍应进程内建任务，少一次 HTTP 往返与鉴权往返）。</p>
+     *
+     * <p><b>建出来的是 {@code DRAFT}</b>：策略预检由调度器扫描驱动（{@code DRAFT → POLICY_CHECKING →
+     * QUEUED/NEED_HUMAN/REJECTED}），因此调用方拿到的是任务ID，随后应查详情看它落到哪；
+     * 这里刻意不"建完直接入队"——那会把策略校验这一步跳过。</p>
+     *
+     * <p><b>权限沿用 {@code aig:task:operate}</b>：建任务会真的产生一次平台执行
+     * （可能计费），它与"取消/重放/执行"是同一类动作；不新开权限点也避免多一个要种子菜单行的权限码。</p>
+     *
+     * @param bo 创建入参（任务类型、能力编码、数据等级、不可变输入快照 JSON 等）
+     * @return 任务ID
+     */
+    @SaCheckPermission(AigConstants.PERM_TASK_OPERATE)
+    @RepeatSubmit
+    @PostMapping
+    public R<Long> create(@Validated @RequestBody AigTaskCreateBo bo) {
+        return R.ok(taskService.create(bo));
+    }
 
     /**
      * 分页查询任务。
