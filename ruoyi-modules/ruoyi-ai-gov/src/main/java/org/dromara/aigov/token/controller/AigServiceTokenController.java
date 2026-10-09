@@ -158,8 +158,8 @@ public class AigServiceTokenController {
             return "注意：本环境未开启服务令牌认证（aigov.service-token.enabled=false），"
                 + "此令牌当前不会被接受；请先确认开关与令牌要部署到哪个环境";
         }
-        return "请在请求头 " + properties.getHeaderName() + " 中携带该令牌（生效路径："
-            + String.join(",", properties.getPathPatterns()) + "）";
+        return "请在请求头 " + properties.getHeaderName() + " 中携带该令牌，并同时携带平台约定的 "
+            + "clientid 请求头（生效路径：" + String.join(",", properties.getPathPatterns()) + "）";
     }
 
 }

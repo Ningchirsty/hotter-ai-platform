@@ -115,12 +115,18 @@ class AigServiceTokenServiceImplTest {
     }
 
     @Test
-    @DisplayName("★ 拒绝签发含通配 scope（*）的令牌：* 会让'默认拒绝'当场失效")
+    @DisplayName("★ 拒绝签发含通配 scope 的令牌：单独 * 与内嵌 *（aig:*）都不行")
     void issueRejectsWildcardScope() {
-        ServiceException ex = assertThrows(ServiceException.class,
+        ServiceException lone = assertThrows(ServiceException.class,
             () -> service.issue("wild-svc", "aig:task:list,*", null, null));
+        assertTrue(lone.getMessage().contains("*"), "报错要指出是通配符被拒");
 
-        assertTrue(ex.getMessage().contains("*"), "报错要指出是通配符被拒");
+        // 内嵌通配符同样拒：平台判定是"先精确、再对已授权限做通配匹配"，
+        // 所以库里存 aig:* 会匹配上 aig:model:edit 这类远宽于字面的权限
+        ServiceException embedded = assertThrows(ServiceException.class,
+            () -> service.issue("wild-svc-2", "aig:*", null, null));
+        assertTrue(embedded.getMessage().contains("aig:*"), "报错要点名是哪一条 scope 越界了");
+
         verify(tokenMapper, never()).insert(any(AigServiceToken.class));
     }
 

@@ -190,19 +190,28 @@ public class AigServiceTokenServiceImpl implements IAigServiceTokenService {
     }
 
     /**
-     * 拒绝签发"能管理服务令牌"或"通配"的 scope（防止机器身份自我提权）。
+     * 拒绝签发"含通配符"或"能管理服务令牌"的 scope（防止越权与自我提权）。
      *
      * <p>为什么要在<b>签发侧</b>拦：scope 会被直接当成权限码装进会话（见登录适配器），
      * 所以只要库里存在 {@code aig:service-token:issue} 这样的 scope，那把令牌就能调用
      * 签发接口造出新令牌（或给自己续期）。控制台里"把管理接口藏起来"不是约束——
      * 约束必须是<b>这个组合根本建不出来</b>。</p>
      *
+     * <p><b>为什么是"含 {@code *} 就拒"，而不是只拒单独的 {@code *}</b>：实测（反编译
+     * {@code SaStrategy#hasElement} + {@code SaFoxUtil#vagueMatch}）平台的权限判定是
+     * "先精确匹配，再对每一条已授权限做通配匹配"，也就是说库里存着 {@code aig:*} 时，
+     * 它会匹配上 {@code aig:model:edit} 这类**远宽于字面**的权限。而本能力的语义是
+     * "照着清单精确授权"（见 {@code AigServiceIdentity#hasScope}）——
+     * 两者不一致时，宽的那个会生效。所以宁可签发时报错，也不让一条读起来很窄的令牌
+     * 实际很宽。</p>
+     *
      * @param scopes 归一化后的权限码集合
      */
     private void rejectSelfEscalatingScopes(Set<String> scopes) {
         for (String scope : scopes) {
-            if ("*".equals(scope)) {
-                throw new ServiceException("不接受通配 scope（*）：请显式列出需要的权限码");
+            if (scope.contains("*")) {
+                throw new ServiceException("不接受含通配符的 scope（" + scope
+                    + "）：它会匹配上远宽于字面的权限，请显式列出需要的权限码");
             }
             if (scope.startsWith(AigConstants.SERVICE_TOKEN_PERM_PREFIX)) {
                 throw new ServiceException("不允许把令牌管理权限（" + scope

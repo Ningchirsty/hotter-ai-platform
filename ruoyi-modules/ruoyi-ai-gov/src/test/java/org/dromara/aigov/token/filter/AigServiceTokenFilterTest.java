@@ -6,9 +6,12 @@ import cn.dev33.satoken.stp.StpUtil;
 import org.dromara.aigov.token.config.AigServiceTokenProperties;
 import org.dromara.aigov.token.domain.AigServiceIdentity;
 import org.dromara.aigov.token.holder.AigServiceIdentityHolder;
+import org.dromara.aigov.token.service.IAigServiceLoginAdapter;
 import org.dromara.aigov.token.service.IAigServiceTokenService;
 import org.dromara.aigov.token.service.impl.AigServiceLoginAdapterImpl;
+import org.dromara.common.core.utils.ServletUtils;
 import org.dromara.common.satoken.core.service.SaPermissionImpl;
+import org.dromara.common.satoken.utils.LoginHelper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -26,10 +29,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -48,6 +54,11 @@ import static org.mockito.Mockito.when;
 @Tag("prod")
 class AigServiceTokenFilterTest {
 
+    /**
+     * 平台既有的客户端标识（本机内测实例的 sys_client 里那个）。
+     */
+    private static final String CLIENT_ID = "e5cd7e4891bf95d1d19206ce24a7b32e";
+
     private IAigServiceTokenService tokenService;
     private AigServiceTokenFilter filter;
     private AigServiceTokenProperties properties;
@@ -57,6 +68,10 @@ class AigServiceTokenFilterTest {
         SaTokenContextMockUtil.setMockContext();
         // Spring 启动时由 SaTokenConfig 设置；单测里手工装上平台真实实现
         cn.dev33.satoken.SaManager.setStpInterface(new SaPermissionImpl());
+        // extra（clientid）只在配置了 jwt-secret-key 时可用，否则 StpUtil.getExtra 抛 ApiDisabled。
+        // 生产 application.yml 里配了，所以这里也补上，否则测不到真实会用到的路径。
+        cn.dev33.satoken.SaManager.getConfig().setJwtSecretKey(
+            "r78-unit-test-secret-key-0123456789abcdef0123456789abcdef");
         tokenService = mock(IAigServiceTokenService.class);
         properties = new AigServiceTokenProperties();
         filter = new AigServiceTokenFilter(tokenService, new AigServiceLoginAdapterImpl(properties), properties);
@@ -89,8 +104,7 @@ class AigServiceTokenFilterTest {
     @DisplayName("★ 令牌无效/停用/过期 → 401 且不继续；不回退到会话认证")
     void invalidTokenIsRejectedAndDoesNotFallBackToSession() throws Exception {
         when(tokenService.authenticate(any(), any())).thenReturn(Optional.empty());
-        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/aigov/model/page");
-        request.addHeader("X-Service-Token", "hsvc_deadbeef");
+        MockHttpServletRequest request = serviceRequest("/aigov/model/page", "hsvc_deadbeef");
         MockHttpServletResponse response = new MockHttpServletResponse();
         AtomicBoolean chainCalled = new AtomicBoolean(false);
 
@@ -102,14 +116,30 @@ class AigServiceTokenFilterTest {
     }
 
     @Test
+    @DisplayName("★ 带令牌但缺 clientid → 401 且点明原因；且不打库（快速失败）")
+    void missingClientIdIsRejectedWithReadableReason() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/aigov/model/page");
+        request.addHeader("X-Service-Token", "hsvc_valid");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AtomicBoolean chainCalled = new AtomicBoolean(false);
+
+        filter.doFilter(request, response, (req, res) -> chainCalled.set(true));
+
+        assertFalse(chainCalled.get());
+        assertEquals(401, response.getStatus());
+        assertTrue(response.getContentAsString().contains("clientid"), "必须点明缺的是 clientid");
+        // 缺 clientid 的请求一定走不通，没必要先去查一次库
+        verify(tokenService, never()).authenticate(any(), any());
+    }
+
+    @Test
     @DisplayName("★ 令牌有效 → 身份对、scope 变成权限、越权被拒（默认拒绝）、holder 用后即清")
     void validTokenBecomesIdentityAndScopesBecomePermissions() throws Exception {
         AigServiceIdentity identity = new AigServiceIdentity(4242L, "vibeposter-worker",
             Set.of("aig:capability:query"));
         when(tokenService.authenticate(any(), any())).thenReturn(Optional.of(identity));
 
-        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/aigov/invoke/brief_precheck");
-        request.addHeader("X-Service-Token", "hsvc_valid");
+        MockHttpServletRequest request = serviceRequest("/aigov/invoke/brief_precheck", "hsvc_valid");
         MockHttpServletResponse response = new MockHttpServletResponse();
         AtomicReference<String> loginIdInChain = new AtomicReference<>();
         AtomicReference<String> principalInChain = new AtomicReference<>();
@@ -127,6 +157,10 @@ class AigServiceTokenFilterTest {
         assertEquals(200, response.getStatus(), "认证通过后请求应正常继续");
         assertEquals("service:4242", loginIdInChain.get(), "会话登录标识应为 service:<tokenId>");
         assertEquals("service:vibeposter-worker", principalInChain.get(), "holder 应提供可读 principal");
+        // 注：clientid 是否真的写进了 token 扩展，这里测不了——StpUtil.getExtra 需要 sa-token-jwt
+        // （只在 ruoyi-admin 的依赖树里），本模块单测 JVM 没有它，调用会抛 ApiDisabled。
+        // 这一条由本地端到端验证覆盖：带上服务令牌但故意用不匹配的 clientid，
+        // 平台拦截器会以"客户端ID与Token不匹配"拒绝——能拒绝就说明扩展里确实存了值。
         assertTrue(scopedPermissionOk.get(), "令牌授权范围内的权限校验必须通过");
         assertTrue(foreignPermissionDenied.get(), "★ 未授权的权限必须被拒（默认拒绝）");
         assertNull(AigServiceIdentityHolder.current(), "★ 请求结束后必须清理 holder（线程复用会串号）");
@@ -138,8 +172,7 @@ class AigServiceTokenFilterTest {
         AigServiceIdentity identity = new AigServiceIdentity(5001L, "no-scope", Set.of());
         when(tokenService.authenticate(any(), any())).thenReturn(Optional.of(identity));
 
-        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/aigov/model/page");
-        request.addHeader("X-Service-Token", "hsvc_noscope");
+        MockHttpServletRequest request = serviceRequest("/aigov/model/page", "hsvc_noscope");
         MockHttpServletResponse response = new MockHttpServletResponse();
         AtomicReference<Boolean> anyPermissionDenied = new AtomicReference<>();
 
@@ -171,6 +204,75 @@ class AigServiceTokenFilterTest {
         // 因为那才是会变成线上间歇 401 的性质。
     }
 
+    @Test
+    @DisplayName("★ 登录期间必须绑定请求上下文，且用后复位（否则平台登录监听器 NPE → 线上 500）")
+    void requestContextIsBoundDuringLoginAndResetAfterwards() throws Exception {
+        AigServiceIdentity identity = new AigServiceIdentity(7001L, "ctx-svc", Set.of("aig:capability:query"));
+        when(tokenService.authenticate(any(), any())).thenReturn(Optional.of(identity));
+        AtomicReference<jakarta.servlet.http.HttpServletRequest> seenDuringLogin = new AtomicReference<>();
+        AtomicReference<String> clientIdSeen = new AtomicReference<>();
+        // 用假适配器替换真实登录：真实登录需要 Spring 容器（它触发平台的登录成功监听器）
+        IAigServiceLoginAdapter fakeAdapter = (id, cid) -> {
+            seenDuringLogin.set(ServletUtils.getRequest());
+            clientIdSeen.set(cid);
+        };
+        AigServiceTokenFilter filterWithFakeLogin =
+            new AigServiceTokenFilter(tokenService, fakeAdapter, properties);
+
+        MockHttpServletRequest request = serviceRequest("/aigov/model/page", "hsvc_ctx");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filterWithFakeLogin.doFilter(request, response, (req, res) -> { });
+
+        // 这条断言对应真机上真实发生过的 NPE：
+        // UserLoginSuccessListener 直接写 ServletUtils.getRequest().getHeader("User-Agent")，
+        // 过滤器阶段若没绑定 RequestContextHolder，getRequest() 就是 null
+        assertSame(request, seenDuringLogin.get(),
+            "★ 登录期间 ServletUtils.getRequest() 必须正是本次请求（否则监听器 NPE → 500）");
+        assertNull(ServletUtils.getRequest(), "登录后必须复位：线程复用不能把绑定留给下一个请求");
+        assertEquals(CLIENT_ID, clientIdSeen.get(), "登录时必须把本次请求的 clientid 交给适配器");
+    }
+
+    @Test
+    @DisplayName("★ 机器调用方不带 User-Agent → 补合成值，登录态里 browser 仍有效（平台 UA 解析没判空）")
+    void missingUserAgentIsSynthesized() throws Exception {
+        AigServiceIdentity identity = new AigServiceIdentity(8001L, "cron-svc", Set.of("aig:capability:query"));
+        when(tokenService.authenticate(any(), any())).thenReturn(Optional.of(identity));
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/aigov/model/page");
+        request.addHeader("X-Service-Token", "hsvc_noua");
+        request.addHeader(LoginHelper.CLIENT_KEY, CLIENT_ID);
+        // 刻意不加 User-Agent：模拟"机器调用方只用 curl/最小客户端"的情形
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AtomicReference<String> userAgentInChain = new AtomicReference<>();
+        AtomicReference<String> browserInLoginUser = new AtomicReference<>();
+
+        filter.doFilter(request, response, (req, res) -> {
+            userAgentInChain.set(((jakarta.servlet.http.HttpServletRequest) req).getHeader("User-Agent"));
+            // 平台在登录时就是拿 UA 去填这两个字段的；它们有值 = 合成 UA 真的可被解析
+            browserInLoginUser.set(LoginHelper.getLoginUser().getBrowser());
+        });
+
+        assertEquals(200, response.getStatus(), "缺 UA 不该让请求失败");
+        assertEquals("service-token/cron-svc", userAgentInChain.get(), "合成值要能指认是哪个服务");
+        assertNotNull(browserInLoginUser.get(), "登录态里的 browser 必须有值（平台 UA 解析没有判空）");
+    }
+
+    /**
+     * 构造一个带服务令牌与 clientid 的请求（clientid 是平台登录态的既有约定，两者缺一不可）。
+     *
+     * @param uri      请求地址
+     * @param rawToken 原始服务令牌
+     * @return 请求
+     */
+    private MockHttpServletRequest serviceRequest(String uri, String rawToken) {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", uri);
+        request.addHeader("X-Service-Token", rawToken);
+        request.addHeader(LoginHelper.CLIENT_KEY, CLIENT_ID);
+        // 真实 HTTP 客户端都会带 UA；不带的情况由 missingUserAgentIsSynthesized 单独覆盖
+        request.addHeader("User-Agent", "r78-test-client/1.0");
+        return request;
+    }
+
     /**
      * 走一遍过滤器并返回本次请求拿到的 Sa-Token 令牌值。
      *
@@ -180,8 +282,7 @@ class AigServiceTokenFilterTest {
      * @throws Exception 过滤器异常
      */
     private String tokenValueAfterFilterPass(String raw, AtomicBoolean permissionSeen) throws Exception {
-        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/aigov/model/page");
-        request.addHeader("X-Service-Token", raw);
+        MockHttpServletRequest request = serviceRequest("/aigov/model/page", raw);
         MockHttpServletResponse response = new MockHttpServletResponse();
         AtomicReference<String> tokenValue = new AtomicReference<>();
         filter.doFilter(request, response, (req, res) -> {

@@ -22,7 +22,7 @@ import java.time.LocalDateTime;
  * <ol>
  *     <li><b>只存哈希</b>：{@link #tokenHash} 是 SHA-256，明文只在创建时返回一次；</li>
  *     <li><b>默认拒绝</b>：{@link #scopes} 为空表示不授予任何操作，而不是"默认给全部"；</li>
- *     <li><b>可吊销、可过期</b>：{@link #enabled} / {@link #expiresAt} / {@link #status} 相互独立，
+ *     <li><b>可吊销、可过期</b>：{@link #status} 与 {@link #expiresAt} 相互独立，
  *         吊销不删行，保留审计痕迹。</li>
  * </ol>
  *

@@ -43,8 +43,11 @@ public class AigServiceTokenIssueBo implements Serializable {
      *
      * <p>这里填的是平台既有的权限码，不是另造一套：scope 会被直接装进会话权限，
      * 因此"令牌能做什么"与"人的角色能做什么"用同一套口径表达，审计里可以直接对齐。</p>
+     *
+     * <p>长度上限<b>与列宽一致</b>（{@code aig_service_token.scopes} 是 {@code varchar(500)}）：
+     * 不一致时超长入参会穿到数据库才被拒，使用者看到的是一句与权限无关的报错。</p>
      */
-    @Size(max = 1000, message = "授权范围长度不能超过 1000", groups = {AddGroup.class})
+    @Size(max = 500, message = "授权范围长度不能超过 500", groups = {AddGroup.class})
     private String scopes;
 
     /**

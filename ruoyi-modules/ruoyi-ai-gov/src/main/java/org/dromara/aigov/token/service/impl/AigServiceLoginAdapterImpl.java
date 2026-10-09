@@ -49,13 +49,13 @@ public class AigServiceLoginAdapterImpl implements IAigServiceLoginAdapter {
     private final AigServiceTokenProperties properties;
 
     @Override
-    public void login(AigServiceIdentity identity) {
+    public void login(AigServiceIdentity identity, String clientId) {
         LoginUser loginUser = new LoginUser();
         loginUser.setUserType(USER_TYPE_SERVICE);
         loginUser.setUserId(identity.tokenId());
         loginUser.setUsername(identity.principal());
         loginUser.setNickname("服务：" + identity.name());
-        loginUser.setClientKey(USER_TYPE_SERVICE);
+        loginUser.setClientKey(clientId);
         loginUser.setDeviceType(USER_TYPE_SERVICE);
         loginUser.setMenuPermission(new LinkedHashSet<>(identity.scopes()));
         loginUser.setRolePermission(new LinkedHashSet<>());
@@ -69,6 +69,15 @@ public class AigServiceLoginAdapterImpl implements IAigServiceLoginAdapter {
         // 允许并发：false 会让后一次登录踢掉前一次，正在执行的那个请求会莫名 401
         param.setIsConcurrent(Boolean.TRUE);
         // 刻意不设 isShare：实测它并不能把同一身份的会话合并，留着只会让人以为已经复用
+        //
+        // clientid 必须进 token 扩展：平台的 SecurityConfig 拦截器会做
+        // StpUtil.getExtra("clientid").toString() 与请求头的比对（硬取，没有判空），
+        // 缺了它每个"已授权"的请求都会 NPE → 500。这是真机跑出来的（单测没有那个拦截器）。
+        //
+        // 注意语义：这是"随请求绑定"——每次认证都用本次请求的 clientid，因此换了 clientid 也能通过。
+        // 也就是说对机器身份而言 clientid **不是**第二因子（机器凭据就是令牌本身，授权看 scope）。
+        // 若将来要让它成为约束，得在签发时绑定并存列（要改表），那是另一个决定。
+        param.setExtra(LoginHelper.CLIENT_KEY, clientId);
         LoginHelper.login(loginUser, param);
     }
 
