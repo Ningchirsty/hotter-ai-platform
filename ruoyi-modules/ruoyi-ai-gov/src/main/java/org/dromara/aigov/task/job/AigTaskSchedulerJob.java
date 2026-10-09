@@ -16,9 +16,11 @@ import org.springframework.stereotype.Component;
  *     <li><b>单实例 / 简单部署</b>：置 {@code aigov.task.scheduler.enabled=true}，
  *         由本类按 {@code aigov.task.scheduler.interval-ms} 周期调用。
  *         <b>前提是容器启用了 {@code @EnableScheduling}</b>——本模块自带的启用点是
- *         {@code AigSchedulingConfig}（{@code aigov.scheduling.enabled}）。该开关打开后
- *         本类是否生效，仍取决于它自己的 {@code enabled}：**生产目前为关闭**
- *         （本类从未在生产跑过，且它会改任务状态，打开属于一次独立变更，需单独评估）。</li>
+ *         {@code AigSchedulingConfig}（{@code aigov.scheduling.enabled}）。
+ *         <b>生产已于 2026-10-09 采用本路径</b>：两个开关都在 {@code application-prod.yml}
+ *         里显式为 true（此前本类从未在生产跑过——不是坏了，而是没有任何触发器）。
+ *         启用当天用生产夹具做过对照验证：PLATFORM 的陈旧 RETRY_WAIT 会被推进，
+ *         EXTERNAL 的原样不动。</li>
  *     <li><b>集群 / 已有调度平台</b>：保持 {@code enabled=false}，改由 SnailJob
  *         （本仓既有的调度机制）或运维 cron 调用
  *         {@code POST /aigov/task/scheduler/sweep}。多实例同时触发也不会重复推进——

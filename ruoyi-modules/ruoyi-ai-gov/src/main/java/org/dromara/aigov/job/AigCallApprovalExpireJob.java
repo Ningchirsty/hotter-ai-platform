@@ -16,9 +16,10 @@ import org.springframework.stereotype.Component;
  *     <li><b>单实例 / 简单部署</b>：置 {@code aigov.approval.expire-scan-enabled=true}，
  *         由本类按 {@code aigov.approval.expire-scan-interval-ms} 周期扫描。
  *         <b>前提是容器启用了 {@code @EnableScheduling}</b>——本模块自带的启用点是
- *         {@code AigSchedulingConfig}（{@code aigov.scheduling.enabled}）。该开关打开后
- *         本类是否生效，仍取决于它自己的 {@code expire-scan-enabled}：**生产目前为关闭**
- *         （本类从未在生产跑过，打开它属于一次独立的变更，需单独评估）。</li>
+ *         {@code AigSchedulingConfig}（{@code aigov.scheduling.enabled}）。
+ *         <b>生产已于 2026-10-09 采用本路径</b>：两个开关都在 {@code application-prod.yml}
+ *         里显式为 true（此前本类从未在生产跑过——不是坏了，而是没有任何触发器）。
+ *         启用当天用生产夹具证明过：到期的 PENDING 会被置为 EXPIRED，未到期的原样不动。</li>
  *     <li><b>集群 / 已有调度平台</b>：保持默认关闭，由 SnailJob 或运维 cron 调
  *         {@code POST /aigov/approval/expire-scan}。多实例同时调也不会重复计数——
  *         只更新仍是 PENDING 的行。</li>
