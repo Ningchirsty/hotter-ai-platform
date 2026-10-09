@@ -305,6 +305,13 @@ public class AigAgentRegistryServiceImpl implements IAigAgentRegistryService {
         }
         AigGoldenCaseEvidence evidence = evaluationService.goldenCaseEvidence(type.getCode(), id);
         if (evidence != null && evidence.satisfied()) {
+            // 人工产出的结论也放行（2026-10-09 裁定：平台没有该对象执行器时，由管理员来评测），
+            // 但必须在日志里留下"这次放行靠的是人填的结论"——发布记录要能回答"凭什么放行"
+            if (evidence.hasAdminProducedCases()) {
+                log.warn("发布门槛「黄金用例」由人工产出的结论满足, targetType={}, targetVersionId={}, "
+                    + "人工录入的用例={}（executed_by=ADMIN）", type.getCode(), id,
+                    evidence.adminCaseCodes());
+            }
             return;
         }
         String reason = evidence == null ? "评测证据不可用" : evidence.reason();

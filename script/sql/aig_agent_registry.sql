@@ -307,6 +307,7 @@ create table if not exists aig_evaluation_run (
     case_id            bigint(20)      not null                   comment '所用黄金用例ID',
     provider_id        bigint(20)      default null               comment '实际执行的 Provider（跟着实际候选走，便于按供应商复盘）',
     model_code         varchar(100)    default null               comment '实际使用的模型编码',
+    executed_by        varchar(16)     not null default 'PLATFORM' comment '结论产出方（PLATFORM=平台执行器跑的；ADMIN=管理员人工评测后录入。两者可信度来源不同，必须能分开看）',
     external_call      char(1)         not null default 'N'       comment '本次是否发生外部调用（Y/N）',
     score_json         longtext        default null               comment '打分明细（逐项分数与依据）',
     total_score        decimal(6,2)    default null               comment '总分（算不出留空，禁止填0冒充）',

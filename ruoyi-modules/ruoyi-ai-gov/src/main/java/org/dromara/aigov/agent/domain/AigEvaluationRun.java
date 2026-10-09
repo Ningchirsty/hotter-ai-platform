@@ -75,6 +75,15 @@ public class AigEvaluationRun extends BaseEntity implements Serializable {
     private String modelCode;
 
     /**
+     * 结论产出方（{@code PLATFORM}=平台执行器跑的；{@code ADMIN}=管理员人工评测后录入）。
+     *
+     * <p>见 {@link org.dromara.aigov.agent.enums.AigEvaluationExecutorEnum}：发布门槛只认
+     * {@code result_status=PASS}，不区分谁产出的；两种来源都合法但可信度来源不同，
+     * 因此必须能在库里分开，而不是把人工结论伪装成机器结论。</p>
+     */
+    private String executedBy;
+
+    /**
      * 本次是否发生外部调用（Y/N）
      */
     private String externalCall;

@@ -13,6 +13,7 @@ import org.dromara.aigov.agent.domain.AigEvaluationRun;
 import org.dromara.aigov.agent.domain.AigPackage;
 import org.dromara.aigov.agent.domain.AigPackageVersion;
 import org.dromara.aigov.agent.domain.bo.AigEvaluationCaseBo;
+import org.dromara.aigov.agent.domain.bo.AigEvaluationManualRunBo;
 import org.dromara.aigov.agent.domain.bo.AigEvaluationReviewBo;
 import org.dromara.aigov.agent.domain.bo.AigEvaluationRunBo;
 import org.dromara.aigov.agent.enums.AigEvaluationReviewEnum;
@@ -58,6 +59,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -738,6 +740,226 @@ class AigEvaluationServiceImplTest {
         bo.setCaseCodes(caseCodes);
         bo.setOperatorId(9L);
         return bo;
+    }
+
+    // ---------------------------------------------------------------- 人工评测录入（2026-10-09 裁定）
+
+    /**
+     * 模拟「平台没有该对象的评测执行器」——这正是人工录入存在的理由。
+     */
+    private void withoutExecutors() {
+        subjectRegistry.setSubjects(List.of());
+    }
+
+    /**
+     * 造一个人工评测入参。
+     *
+     * @param entries 用例编码 → 结论
+     */
+    private static AigEvaluationManualRunBo manualBo(String method, String... entries) {
+        AigEvaluationManualRunBo bo = new AigEvaluationManualRunBo();
+        bo.setTargetType(AigReleaseTargetTypeEnum.AGENT_VERSION.getCode());
+        bo.setTargetVersionId(VERSION_ID);
+        bo.setMethod(method);
+        bo.setOperatorId(7L);
+        List<AigEvaluationManualRunBo.AigEvaluationManualCaseBo> cases = new ArrayList<>();
+        for (int i = 0; i + 1 < entries.length; i += 2) {
+            AigEvaluationManualRunBo.AigEvaluationManualCaseBo item =
+                new AigEvaluationManualRunBo.AigEvaluationManualCaseBo();
+            item.setCaseCode(entries[i]);
+            item.setVerdict(entries[i + 1]);
+            cases.add(item);
+        }
+        bo.setCases(cases);
+        return bo;
+    }
+
+    @Test
+    @DisplayName("人工录入：平台没有执行器时能产出证据，且行上标着 executed_by=ADMIN")
+    void manualRunRecordsAdminEvidence() {
+        withoutExecutors();
+        stubAgentVersion("{\"golden_cases\":[\"" + CASE_A + "\"]}", null);
+        stubCase(CASE_A, "{\"required_paths\":[\"a\"]}", null);
+
+        List<AigEvaluationRun> runs = service.recordManualRuns(
+            manualBo("在本地环境按用例逐条人工核对，输入快照同用例", CASE_A, "PASS"));
+
+        assertEquals(1, runs.size());
+        AigEvaluationRun run = runs.get(0);
+        assertEquals("ADMIN", run.getExecutedBy(), "人工结论必须与机器结论在库里分得开");
+        assertEquals(AigEvaluationStatusEnum.PASS.getCode(), run.getResultStatus());
+        assertEquals("N", run.getExternalCall());
+        assertEquals(7L, run.getCreateBy());
+        assertTrue(run.getRemark().startsWith("人工评测（管理员）："), run.getRemark());
+        assertTrue(run.getScoreJson().contains("\"mode\":\"MANUAL\""), run.getScoreJson());
+        assertNull(run.getCostAmount(), "未上报成本要留空：未知不能用 0 冒充");
+        verify(agentVersionMapper).update(isNull(), any());
+    }
+
+    @Test
+    @DisplayName("人工录入：照样不许挑着录（集合必须等于版本声明的集合）")
+    void manualRunRefusesCherryPicking() {
+        withoutExecutors();
+        stubAgentVersion("{\"golden_cases\":[\"" + CASE_A + "\",\"" + CASE_B + "\"]}", null);
+        stubCase(CASE_A, "{\"required_paths\":[\"a\"]}", null);
+        stubCase(CASE_B, "{\"required_paths\":[\"a\"]}", null);
+
+        ServiceException error = assertThrows(ServiceException.class,
+            () -> service.recordManualRuns(manualBo("只看了一条", CASE_A, "PASS")));
+        assertTrue(error.getMessage().contains("不一致"), error.getMessage());
+        verify(runMapper, never()).insert(any(AigEvaluationRun.class));
+
+        ServiceException missing = assertThrows(ServiceException.class,
+            () -> service.recordManualRuns(manualBo("一条都没给")));
+        assertTrue(missing.getMessage().contains("必须逐条给出结论"), missing.getMessage());
+    }
+
+    @Test
+    @DisplayName("人工录入：平台有该对象执行器时拒绝——人工录入不能变成绕过平台判据的通道")
+    void manualRunRefusesWhenExecutorExists() {
+        stubAgentVersion("{\"golden_cases\":[\"" + CASE_A + "\"]}", null);
+        stubCase(CASE_A, "{\"required_paths\":[\"a\"]}", null);
+
+        ServiceException error = assertThrows(ServiceException.class,
+            () -> service.recordManualRuns(manualBo("绕过判据", CASE_A, "PASS")));
+        assertTrue(error.getMessage().contains("请走机器评测"), error.getMessage());
+        verify(runMapper, never()).insert(any(AigEvaluationRun.class));
+    }
+
+    @Test
+    @DisplayName("人工录入：阶段/方式/操作人/结论取值四道前置校验，缺一不可")
+    void manualRunValidations() {
+        withoutExecutors();
+        stubAgentVersion("{\"golden_cases\":[\"" + CASE_A + "\"]}", null);
+        stubCase(CASE_A, "{\"required_paths\":[\"a\"]}", null);
+
+        AigEvaluationManualRunBo noMethod = manualBo("  ", CASE_A, "PASS");
+        assertTrue(assertThrows(ServiceException.class, () -> service.recordManualRuns(noMethod))
+            .getMessage().contains("方法与依据"), "写不出方法与依据的人工 PASS 只是一句主张");
+
+        AigEvaluationManualRunBo noOperator = manualBo("核对过", CASE_A, "PASS");
+        noOperator.setOperatorId(null);
+        assertTrue(assertThrows(ServiceException.class, () -> service.recordManualRuns(noOperator))
+            .getMessage().contains("操作人"));
+
+        AigEvaluationManualRunBo badVerdict = manualBo("核对过", CASE_A, "ERROR");
+        assertTrue(assertThrows(ServiceException.class, () -> service.recordManualRuns(badVerdict))
+            .getMessage().contains("只接受 PASS/FAIL"));
+
+        // 版本还没到 SANDBOX_TESTED：人工录入与机器评测同一口径，不在这个阶段取证
+        AigAgentVersion draft = new AigAgentVersion();
+        draft.setAgentVersionId(VERSION_ID);
+        draft.setAgentId(AGENT_ID);
+        draft.setVersion("1.2.0");
+        draft.setReleaseStatus("DRAFT");
+        draft.setConfigJson("{\"golden_cases\":[\"" + CASE_A + "\"]}");
+        when(agentVersionMapper.selectById(VERSION_ID)).thenReturn(draft);
+        stubAgentDefinition();
+        assertTrue(assertThrows(ServiceException.class,
+            () -> service.recordManualRuns(manualBo("核对过", CASE_A, "PASS")))
+            .getMessage().contains("SANDBOX_TESTED"));
+        verify(runMapper, never()).insert(any(AigEvaluationRun.class));
+    }
+
+    @Test
+    @DisplayName("人工录入：用例声明了成本范围就必须上报成本（未上报≠在范围内）")
+    void manualRunEnforcesCostRange() {
+        withoutExecutors();
+        stubAgentVersion("{\"golden_cases\":[\"" + CASE_A + "\"]}", null);
+        when(caseMapper.selectOne(argThatWrapper(CASE_A))).thenReturn(caseEntity(CASE_A,
+            "{\"required_paths\":[\"a\"]}", null, BigDecimal.ZERO, BigDecimal.ZERO));
+
+        AigEvaluationManualRunBo bo = manualBo("核对过", CASE_A, "PASS");
+        assertTrue(assertThrows(ServiceException.class, () -> service.recordManualRuns(bo))
+            .getMessage().contains("未上报成本"), "拿未知当合规");
+
+        bo.setCostAmount(new BigDecimal("12.5"));
+        assertTrue(assertThrows(ServiceException.class, () -> service.recordManualRuns(bo))
+            .getMessage().contains("超出用例声明的范围"));
+
+        bo.setCostAmount(BigDecimal.ZERO);
+        List<AigEvaluationRun> runs = service.recordManualRuns(bo);
+        assertEquals(0, BigDecimal.ZERO.compareTo(runs.get(0).getCostAmount()));
+        // 三次调用里只有最后一次落库：前两次都被成本口径挡在写账本之前
+        verify(runMapper, times(1)).insert(any(AigEvaluationRun.class));
+    }
+
+    @Test
+    @DisplayName("人工录入：含 Rubric 的用例仍然走一次复核（录结论的人与复核的人不该合并）")
+    void manualRunKeepsRubricReviewStep() {
+        withoutExecutors();
+        stubAgentVersion("{\"golden_cases\":[\"" + CASE_A + "\"]}", null);
+        stubCase(CASE_A, null, "{\"criteria\":\"看文案\"}");
+
+        List<AigEvaluationRun> runs = service.recordManualRuns(
+            manualBo("按 Rubric 逐条看过", CASE_A, "PASS"));
+
+        assertEquals(AigEvaluationReviewEnum.MANUAL.getCode(), runs.get(0).getReviewResult(),
+            "人工录入 PASS 解决的是「谁产出结论」，不是「另一个人认不认」");
+
+        // 而证据在复核通过之前不算满足
+        when(runMapper.selectList(any())).thenReturn(List.of(runs.get(0)));
+        AigGoldenCaseEvidence evidence = service.goldenCaseEvidence(
+            AigReleaseTargetTypeEnum.AGENT_VERSION.getCode(), VERSION_ID);
+        assertFalse(evidence.satisfied());
+        assertEquals(AigGoldenCaseEvidence.VERDICT_REVIEW_MANUAL, evidence.caseVerdicts().get(CASE_A));
+    }
+
+    @Test
+    @DisplayName("证据：人工录入的 PASS 也放行，但把 executed_by=ADMIN 的用例带在证据里")
+    void evidenceCarriesAdminProducedCases() {
+        stubAgentVersion("{\"golden_cases\":[\"" + CASE_A + "\"]}", null);
+        stubCase(CASE_A, "{\"required_paths\":[\"a\"]}", null);
+        AigEvaluationRun manual = run(CASE_A, AigEvaluationStatusEnum.PASS.getCode(), null);
+        manual.setExecutedBy("ADMIN");
+        when(runMapper.selectList(any())).thenReturn(List.of(manual));
+
+        AigGoldenCaseEvidence evidence = service.goldenCaseEvidence(
+            AigReleaseTargetTypeEnum.AGENT_VERSION.getCode(), VERSION_ID);
+
+        assertTrue(evidence.satisfied(), "门槛对两种来源一视同仁（2026-10-09 裁定：管理员来评测）");
+        assertTrue(evidence.hasAdminProducedCases());
+        assertEquals(List.of(CASE_A), evidence.adminCaseCodes());
+
+        // 平台跑出来的不标人工来源
+        AigEvaluationRun platform = run(CASE_A, AigEvaluationStatusEnum.PASS.getCode(), null);
+        platform.setExecutedBy("PLATFORM");
+        when(runMapper.selectList(any())).thenReturn(List.of(platform));
+        AigGoldenCaseEvidence machine = service.goldenCaseEvidence(
+            AigReleaseTargetTypeEnum.AGENT_VERSION.getCode(), VERSION_ID);
+        assertFalse(machine.hasAdminProducedCases());
+        assertTrue(machine.adminCaseCodes().isEmpty());
+    }
+
+    @Test
+    @DisplayName("机器评测：运行行标着 executed_by=PLATFORM（不能与人工结论混为一谈）")
+    void machineRunIsMarkedPlatform() {
+        stubAgentVersion("{\"golden_cases\":[\"" + CASE_A + "\"]}", null);
+        stubCase(CASE_A, "{\"required_paths\":[\"a\"]}", null);
+        subject.outcome = new AigEvaluationOutcome("{\"a\":1}", true, BigDecimal.ZERO, 3L, null,
+            null, false, null);
+
+        List<AigEvaluationRun> runs = service.runEvaluation(runBo(List.of(CASE_A)));
+
+        assertEquals("PLATFORM", runs.get(0).getExecutedBy());
+    }
+
+    @Test
+    @DisplayName("执行器注册表探针：0 个/多个都不算「平台能自己跑」（多个是配置错误，不能把对象锁死）")
+    void registryProbeOnlyCountsExactlyOne() {
+        assertTrue(subjectRegistry.hasSingleExecutor(
+            AigReleaseTargetTypeEnum.AGENT_VERSION.getCode(), AGENT_CODE));
+        assertFalse(subjectRegistry.hasSingleExecutor(
+            AigReleaseTargetTypeEnum.AGENT_VERSION.getCode(), "third_party_agent"));
+        assertFalse(subjectRegistry.hasSingleExecutor(
+            AigReleaseTargetTypeEnum.PACKAGE_VERSION.getCode(), AGENT_CODE));
+
+        subjectRegistry.setSubjects(List.of(
+            new FakeSubject(AigReleaseTargetTypeEnum.AGENT_VERSION.getCode(), AGENT_CODE),
+            new FakeSubject(AigReleaseTargetTypeEnum.AGENT_VERSION.getCode(), AGENT_CODE)));
+        assertFalse(subjectRegistry.hasSingleExecutor(
+            AigReleaseTargetTypeEnum.AGENT_VERSION.getCode(), AGENT_CODE),
+            "重复注册是配置错误，不该变成一道没人能过的门");
     }
 
 }

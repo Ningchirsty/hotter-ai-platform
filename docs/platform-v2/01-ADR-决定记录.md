@@ -1,6 +1,6 @@
 # 0-2 ADR-001~008 决定记录
 
-> 状态：**完成**（2026-10-08；ADR-008/009 于同日追加；**ADR-010~013 于 2026-10-09 追加**）
+> 状态：**完成**（2026-10-08；ADR-008/009 于同日追加；**ADR-010~014 于 2026-10-09 追加**）
 > 每条 ADR 给：**决定** / **依据** / **落地为可执行契约的方式** / **被否决的替代方案**。
 > "已核实"项均指读了源码或查了生产。
 
@@ -308,6 +308,24 @@ private static final Map<String, Map<String, String>> LATEST = Map.of( ... );
 
 ---
 
+## ADR-014 没有平台评测执行器的对象：由**管理员人工评测**产出黄金用例证据 —— **接受**（2026-10-09 追加）
+
+| 项 | 内容 |
+|---|---|
+| **决定** | 新增 `POST /aigov/evaluation/manual-run`：管理员按用例给出 PASS/FAIL，平台把它登记为**人工产出**的评测运行（`aig_evaluation_run.executed_by='ADMIN'`），从而满足 `GOLDEN_CASE` 门槛、使版本可以推进到 `CANDIDATE` |
+| **依据（实测，见 `00-基线修订补遗.md` §五）** | ①平台侧 `IAigEvaluationSubject` 只有 4 个实现，**全部只 `supports(AGENT_VERSION, creative_*)`**；②Package 安装带入的第三方 Agent 与 Package 版本**结构上取不到任何评测结论**，而执行器注册表是设计上的"业务模块按需注册"；③生产 `aig_agent_version` **4 行全为 `STABLE`**、`aig_evaluation_run` **0 行**——`assertGoldenCaseEvidence` 与 `assertCanaryEvidence` **从未被真实触发过**，`CANDIDATE` 至今没有对象到达过。即：门槛存在、判据正确、但**没有任何对象能走到它前面** |
+| **落地方式** | 新列 `aig_evaluation_run.executed_by`（`PLATFORM`/`ADMIN`，存量回填 `PLATFORM`）+ `AigEvaluationManualRunBo` + `AigEvaluationExecutorEnum` + 服务层 `recordManualRuns`；机器路径也显式写 `PLATFORM`；证据对象 `AigGoldenCaseEvidence` 增加 `adminCaseCodes`，发布门槛在放行时 `log.warn` 记下"这次靠人工结论放行" |
+| **不放松的四条（与机器评测同一口径）** | ①只对 `SANDBOX_TESTED` 的版本取证（证据必须产生在门槛要求它的阶段）；②用例集合必须**等于**版本声明的集合、每条都要给 PASS/FAIL（不许挑着录、不许留空）；③**有平台执行器的对象拒绝走这条**——否则人工录入就成了绕过平台判据的通道；④用例声明了成本范围时必须上报成本（未上报≠在范围内） |
+| **为什么必须有 `executed_by` 这一列** | 门槛只认 `result_status=PASS`，不区分谁产出的。两种来源都合法，但**可信度来源不同**：机器结论 = "平台的判据在同样输入上判过了"；人工结论 = "一个人看了并签了字"。没有这一列，人工结论会**伪装成机器结论**——这正是本 ADR 最不能出的问题。不写进 `remark` 的理由：remark 会被人工复核**追加**，性质放在会变的地方等于没放 |
+| **保留的第二道判断** | 含 `rubric_json` 的用例，人工录入 PASS 后仍写 `review_result=MANUAL`，须再走一次 `/aigov/evaluation/review`。人工录入解决的是"谁产出结论"，复核解决的是"另一个人认不认"——两者合并等于顺手取消了复核环节 |
+| **权限口径** | 复用 `aig:evaluation:run`（"能跑评测的人才能录人工结论"）。理由：两者是同一件事（产出评测结论）的两种取证方式，拆开会出现"能录结论但看不了评测"的怪权限。将来若要求"只有平台管理员能录"，换成独立权限即可——服务层判据不依赖权限名 |
+| **否决的替代（a）：补一个平台侧沙箱执行器** | 否决（本轮）。那需要先有沙箱运行时（属 F-02/F-06 一带），而它解决的是"平台能不能执行第三方代码"，与"这个版本该不该进灰度"不是同一个问题；在沙箱就位前，让门槛一直无人可过并不比人工结论更安全，只是**看不见**而已 |
+| **否决的替代（b）：让 `runEvaluation` 接受一坨人工结论** | 否决。同一条路由两个语义，读代码的人无法从调用方式上看出这次是平台判的还是人填的 |
+| **否决的替代（c）：把人工结论直接写进 `aig_release_event`** | 否决。发布事件是"谁在何时推进了状态"，不是评测证据；写在那里就绕开了评测账本，等于取消 `goldenCaseEvidence` 这条唯一判据 |
+| **必须同时接受的限制** | ①人工结论的**质量取决于人**：平台只能强制"方法与依据必填 + 操作人必填 + 逐条 PASS/FAIL"，不能验证人真的跑过；②`aig:evaluation:run` 这一档权限的人都能录，**没有做到"只有平台管理员"**；③**未接入前端页面**（本轮只落接口、类型与权限，页面表单未做）；④`executed_by` 不参与门槛判定（不阻断），只做**可见性**——把它做成"人工结论不算数"就等于本 ADR 没有落地 |
+
+---
+
 ## 决定汇总
 
 | ADR | 决定 | 关键修改/前置 |
@@ -325,3 +343,4 @@ private static final Map<String, Map<String, String>> LATEST = Map.of( ... );
 | 011 | 接受（2026-10-09 追加） | 策略决策落到任务上：`policy_result` 用 **PASS/REJECT/MANUAL**（映射唯一实现），写事件 `AI_TASK_POLICY_DECIDED`；细因 `reasonCode` 用**契约镜像枚举**且**只在无歧义时写**（认不出留空，不猜）；`taskId` 带进调用入参以填决策账本的 `task_id` |
 | 013 | 接受（2026-10-09 追加） | 新增**包体内容安全检查**（F-02 第一切片）：只扫 ZIP、内存流、逐条带上限读；发现只映射既有的五条规则码（不新造码）；不通过整笔拒绝；**没扫必须显式标记**（scanned=false）。未决：被拒包体要不要留证据行 |
 | 012 | 接受（2026-10-09 追加） | 暴露 **`POST /aigov/task/callback`**：签名/Provider 走请求头（签原始字节）、按结论返回**真实 HTTP 状态码**、**IP 限流**、裸请求/坏 JSON 不写账本；该路径**必须同时**进 `security.excludes` 与 `xss.excludeUrls`（后者会重写请求体导致签名全废）；回调声明的错误码由平台归类；进度 best-effort |
+| 014 | 接受（2026-10-09 追加） | 平台没有该对象执行器时，**由管理员人工评测产出 `GOLDEN_CASE` 证据**（`POST /aigov/evaluation/manual-run`，行上标 `executed_by=ADMIN`）。不放松四条：只对 `SANDBOX_TESTED` 取证、集合等于声明集合且逐条 PASS/FAIL、**有执行器的对象拒绝走这条**、声明了成本范围必须上报成本。含 Rubric 的用例仍须再走一次复核 |

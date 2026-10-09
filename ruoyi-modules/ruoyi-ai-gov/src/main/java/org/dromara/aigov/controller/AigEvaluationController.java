@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.dromara.aigov.agent.domain.AigEvaluationCase;
 import org.dromara.aigov.agent.domain.AigEvaluationRun;
 import org.dromara.aigov.agent.domain.bo.AigEvaluationCaseBo;
+import org.dromara.aigov.agent.domain.bo.AigEvaluationManualRunBo;
 import org.dromara.aigov.agent.domain.bo.AigEvaluationReviewBo;
 import org.dromara.aigov.agent.domain.bo.AigEvaluationRunBo;
 import org.dromara.aigov.agent.domain.vo.AigEvaluationCaseVo;
@@ -129,6 +130,24 @@ public class AigEvaluationController {
     @PostMapping("/run")
     public R<List<AigEvaluationRun>> runEvaluation(@RequestBody @Validated AigEvaluationRunBo bo) {
         return R.ok(evaluationService.runEvaluation(bo));
+    }
+
+    /**
+     * <b>人工评测录入</b>：平台没有该对象的评测执行器时，由管理员产出黄金用例证据。
+     *
+     * <p><b>为什么它和 {@code /run} 是同一个权限</b>：两者都是"产出评测结论"这件事的两种取证
+     * 方式（一个由平台判据判、一个由管理员判）。能跑评测的人才能录人工结论——否则要么出现
+     * "能录结论但看不了评测"的怪权限，要么把录入门槛降到比跑评测更低，那才是真的放宽。
+     * 若将来要求"只有平台管理员能录"，把它换成独立权限即可（服务层判据不依赖权限名）。</p>
+     *
+     * @param bo 人工评测入参（方法与依据、逐用例结论、操作人）
+     * @return 本次产生的运行行
+     */
+    @SaCheckPermission(AigConstants.PERM_EVALUATION_RUN)
+    @RepeatSubmit
+    @PostMapping("/manual-run")
+    public R<List<AigEvaluationRun>> manualRun(@RequestBody @Validated AigEvaluationManualRunBo bo) {
+        return R.ok(evaluationService.recordManualRuns(bo));
     }
 
     /**

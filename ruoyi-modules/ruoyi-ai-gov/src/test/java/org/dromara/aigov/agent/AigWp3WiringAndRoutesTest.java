@@ -1,5 +1,6 @@
 package org.dromara.aigov.agent;
 
+import org.dromara.aigov.agent.domain.bo.AigEvaluationManualRunBo;
 import org.dromara.aigov.agent.domain.bo.AigPackageQueryBo;
 import org.dromara.aigov.agent.domain.vo.AigPackageVo;
 import org.dromara.aigov.agent.enums.AigReleaseStatusEnum;
@@ -43,6 +44,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.mockito.ArgumentCaptor;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import tools.jackson.databind.json.JsonMapper;
@@ -204,6 +206,22 @@ class AigWp3WiringAndRoutesTest {
                 .content("{\"runId\":1,\"reviewResult\":\"PASS\"}"))
             .andExpect(status().isOk());
         verify(evaluationService).reviewRun(any());
+
+        // 人工评测录入（2026-10-09 裁定：平台没有该对象执行器时由管理员产出证据）：
+        // 路由与嵌套请求体（cases[]）的绑定都要通，否则页面填完提交只会 404/400
+        mockMvc.perform(post("/aigov/evaluation/manual-run")
+                .contentType("application/json")
+                .content("{\"targetType\":\"AGENT_VERSION\",\"targetVersionId\":1,"
+                    + "\"method\":\"本地逐条核对\",\"operatorId\":9,"
+                    + "\"cases\":[{\"caseCode\":\"case-a\",\"verdict\":\"PASS\"}]}"))
+            .andExpect(status().isOk());
+        ArgumentCaptor<AigEvaluationManualRunBo> manualBo =
+            ArgumentCaptor.forClass(AigEvaluationManualRunBo.class);
+        verify(evaluationService).recordManualRuns(manualBo.capture());
+        assertThat(manualBo.getValue().getMethod()).isEqualTo("本地逐条核对");
+        assertThat(manualBo.getValue().getCases()).hasSize(1);
+        assertThat(manualBo.getValue().getCases().get(0).getCaseCode()).isEqualTo("case-a");
+        assertThat(manualBo.getValue().getCases().get(0).getVerdict()).isEqualTo("PASS");
 
         // 上传（multipart：包体 + Manifest 表单字段）与安装：绑定能走通
         mockMvc.perform(multipart("/aigov/agent/package/upload")

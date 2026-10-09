@@ -58,6 +58,11 @@ export interface AigEvaluationRunVO extends BaseEntity {
   caseId?: string | number;
   providerId?: string | number;
   modelCode?: string;
+  /**
+   * 结论产出方：PLATFORM=平台执行器跑的；ADMIN=管理员人工评测后录入。
+   * 同一条用例两次都是 PASS，一次平台跑的、一次人填的，对读的人完全是两件事，列表页必须显示。
+   */
+  executedBy?: string;
   externalCall?: string;
   totalScore?: number;
   /** 人工复核结论：PASS / FAIL / MANUAL（待复核）/ null（不要求复核） */
@@ -103,4 +108,36 @@ export interface AigGoldenCaseEvidence {
   declaredCaseCodes?: string[];
   caseVerdicts?: Record<string, string>;
   reason?: string;
+  /**
+   * 其中结论由管理员人工评测录入（executed_by=ADMIN）的用例编码。
+   * 门槛对两种来源一视同仁（都认 PASS），但来源必须看得见——机器结论的可信度来自
+   * 「平台判据在同样输入上判过了」，人工结论的可信度来自「一个人看了并签了字」。
+   */
+  adminCaseCodes?: string[];
+}
+
+/** 人工评测录入入参（平台没有该对象的执行器时，由管理员产出证据） */
+export interface AigEvaluationManualRunForm {
+  targetType: string;
+  targetVersionId: string | number;
+  /** 逐用例结论，必须覆盖版本声明的全部黄金用例 */
+  cases: AigEvaluationManualCase[];
+  /** 评测方法与依据（必填）：在哪个环境、用什么输入、按什么标准看的 */
+  method: string;
+  operatorId?: string | number;
+  /** 平台侧是否发生外部调用（Y/N，默认 N）；在外部环境跑出来的要如实填 Y */
+  externalCall?: string;
+  /** 实际成本；用例声明了成本范围时必填（未上报不能当作在范围内） */
+  costAmount?: number;
+  remark?: string;
+}
+
+/** 人工评测的单条用例结论 */
+export interface AigEvaluationManualCase {
+  caseCode: string;
+  /** 只接受 PASS / FAIL */
+  verdict: string;
+  /** 证据引用（报告链接/截图/工单号） */
+  evidenceRef?: string;
+  note?: string;
 }

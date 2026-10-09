@@ -13,11 +13,13 @@ import org.dromara.aigov.agent.domain.AigPackageVersion;
 import org.dromara.aigov.agent.domain.AigSkill;
 import org.dromara.aigov.agent.domain.AigSkillVersion;
 import org.dromara.aigov.agent.domain.bo.AigEvaluationCaseBo;
+import org.dromara.aigov.agent.domain.bo.AigEvaluationManualRunBo;
 import org.dromara.aigov.agent.domain.bo.AigEvaluationReviewBo;
 import org.dromara.aigov.agent.domain.bo.AigEvaluationRunBo;
 import org.dromara.aigov.agent.domain.vo.AigEvaluationCaseVo;
 import org.dromara.aigov.agent.domain.vo.AigEvaluationRunVo;
 import org.dromara.aigov.agent.enums.AigEvaluationCaseTypeEnum;
+import org.dromara.aigov.agent.enums.AigEvaluationExecutorEnum;
 import org.dromara.aigov.agent.enums.AigEvaluationReviewEnum;
 import org.dromara.aigov.agent.enums.AigEvaluationStatusEnum;
 import org.dromara.aigov.agent.enums.AigReleaseStatusEnum;
@@ -315,6 +317,209 @@ public class AigEvaluationServiceImpl implements IAigEvaluationService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
+    public List<AigEvaluationRun> recordManualRuns(AigEvaluationManualRunBo bo) {
+        if (bo == null || bo.getTargetVersionId() == null) {
+            throw new ServiceException("评测对象与版本ID不能为空");
+        }
+        // 操作人必填：没有操作人的评测结论无法追责，也就不能当作证据——
+        // 这正是"人工录入"与"机器跑出来"最容易被混为一谈的地方
+        if (bo.getOperatorId() == null) {
+            throw new ServiceException("人工评测必须记录操作人（管理员）："
+                + "没有署名的评测结论无法追溯，也就不能当作放行证据");
+        }
+        if (StringUtils.isBlank(bo.getMethod())) {
+            throw new ServiceException("必须写明评测方法与依据（在哪个环境、用什么输入、按什么标准看的）："
+                + "机器结论的可信度来自「判据在同样输入上判过了」，人工结论的可信度<b>只能</b>来自这句话");
+        }
+        AigReleaseTargetTypeEnum type = requireType(bo.getTargetType());
+        TargetVersion target = loadTarget(type, bo.getTargetVersionId());
+        if (AigReleaseStatusEnum.find(target.status()) != AigReleaseStatusEnum.SANDBOX_TESTED) {
+            throw new ServiceException("评测只对 SANDBOX_TESTED 的版本进行："
+                + type.getCode() + " #" + target.id() + " 当前是 " + target.status()
+                + "。人工录入与机器评测在这一点上口径相同：证据必须产生在门槛要求它的那个阶段");
+        }
+        List<String> declared = target.goldenCases();
+        if (declared == null) {
+            throw new ServiceException("读不出黄金用例集合：" + target.sourceName()
+                + " 不是合法 JSON（对象中应有 golden_cases 数组）");
+        }
+        if (declared.isEmpty()) {
+            throw new ServiceException("该版本没有声明黄金用例集合（" + target.sourceName()
+                + ".golden_cases）：没有评测集合就无法证明「黄金用例通过」");
+        }
+        // 平台自己能跑的对象不许人工录入：否则这条路径就成了绕过平台判据的通道
+        if (subjectRegistry.hasSingleExecutor(type.getCode(), target.subjectCode())) {
+            throw new ServiceException("该对象有平台评测执行器（" + type.getCode() + ":"
+                + target.subjectCode() + "），请走机器评测（POST /aigov/evaluation/run）："
+                + "人工录入只在平台没有该对象执行器时使用，否则它会变成绕过判据的通道");
+        }
+
+        Map<String, AigEvaluationManualRunBo.AigEvaluationManualCaseBo> byCode = new LinkedHashMap<>();
+        if (bo.getCases() != null) {
+            for (AigEvaluationManualRunBo.AigEvaluationManualCaseBo item : bo.getCases()) {
+                if (item == null || StringUtils.isBlank(item.getCaseCode())) {
+                    throw new ServiceException("逐用例结论里存在空的用例编码");
+                }
+                String code = item.getCaseCode().trim();
+                if (byCode.putIfAbsent(code, item) != null) {
+                    throw new ServiceException("逐用例结论里用例编码重复：" + code);
+                }
+            }
+        }
+        if (byCode.isEmpty()) {
+            throw new ServiceException("必须逐条给出结论，且应覆盖版本声明的全部黄金用例：声明=" + declared);
+        }
+        if (!byCode.keySet().equals(new LinkedHashSet<>(declared))) {
+            throw new ServiceException("本次用例集合与版本声明的黄金用例集合不一致：声明=" + declared
+                + "、本次=" + byCode.keySet() + "。人工录入同样不许挑着录——能挑着录，"
+                + "就能用最容易过的用例换一个「黄金用例通过」");
+        }
+
+        List<AigEvaluationRun> runs = new ArrayList<>();
+        for (String caseCode : declared) {
+            AigEvaluationCase evaluationCase = findEnabledCase(caseCode);
+            runs.add(recordManualOne(type, target, evaluationCase, byCode.get(caseCode), bo));
+        }
+        attachEvaluationRun(type, target.id(), runs.get(runs.size() - 1).getRunId());
+        log.info("人工评测录入完成, target={}#{}, operatorId={}, cases={}", type.getCode(), target.id(),
+            bo.getOperatorId(), statusesOf(runs));
+        return runs;
+    }
+
+    /**
+     * 录入一条人工结论。
+     *
+     * <p><b>为什么含 Rubric 的用例仍写 {@code review_result=MANUAL}</b>：人工录入 PASS
+     * 解决的是「谁产出评测结论」，而 Rubric 复核解决的是「另一个人认不认这个结论」。
+     * 这两道判断合并，本功能就等于顺手取消了复核环节——所以保留，由
+     * {@code /aigov/evaluation/review} 再走一步（与机器评测路径完全一致）。</p>
+     *
+     * @param type           对象类型
+     * @param target         目标版本
+     * @param evaluationCase 用例
+     * @param item           该条人工结论
+     * @param bo             整体入参（方法与操作人）
+     * @return 运行行
+     */
+    private AigEvaluationRun recordManualOne(AigReleaseTargetTypeEnum type, TargetVersion target,
+                                             AigEvaluationCase evaluationCase,
+                                             AigEvaluationManualRunBo.AigEvaluationManualCaseBo item,
+                                             AigEvaluationManualRunBo bo) {
+        AigEvaluationStatusEnum status = AigEvaluationStatusEnum.find(item.getVerdict());
+        if (status != AigEvaluationStatusEnum.PASS && status != AigEvaluationStatusEnum.FAIL) {
+            throw new ServiceException("用例 " + evaluationCase.getCaseCode()
+                + " 的人工结论只接受 PASS/FAIL（实际：" + item.getVerdict() + "）。"
+                + "判不了就不要录：门槛只认 PASS，而用 ERROR 表达「没跑」会让排查方向跑偏");
+        }
+        checkManualCost(evaluationCase, bo.getCostAmount());
+
+        AigEvaluationRun run = new AigEvaluationRun();
+        run.setRunNo(newRunNo());
+        run.setTargetType(type.getCode());
+        run.setTargetVersionId(target.id());
+        run.setCaseId(evaluationCase.getCaseId());
+        run.setExecutedBy(AigEvaluationExecutorEnum.ADMIN.getCode());
+        run.setExternalCall(YES.equalsIgnoreCase(StringUtils.trim(bo.getExternalCall())) ? YES : NO);
+        run.setResultStatus(status.getCode());
+        run.setReviewResult(StringUtils.isNotBlank(evaluationCase.getRubricJson())
+            && status == AigEvaluationStatusEnum.PASS
+            ? AigEvaluationReviewEnum.MANUAL.getCode() : null);
+        run.setScoreJson(toJson(manualDetail(item, bo)));
+        // 成本照调用方给的原样落库（未给=null=未知）：未知不能用 0 冒充，这一条对人工录入同样成立
+        run.setCostAmount(bo.getCostAmount());
+        run.setOperateTime(LocalDateTime.now());
+        run.setDelFlag(STATUS_NORMAL);
+        run.setCreateBy(bo.getOperatorId());
+        run.setRemark(StringUtils.substring(manualRemark(item, bo), 0, REMARK_MAX));
+        runMapper.insert(run);
+        log.info("人工评测录入, runNo={}, case={}, verdict={}, operatorId={}, 待人工复核={}",
+            run.getRunNo(), evaluationCase.getCaseCode(), status.getCode(), bo.getOperatorId(),
+            AigEvaluationReviewEnum.MANUAL.getCode().equals(run.getReviewResult()));
+        return run;
+    }
+
+    /**
+     * 人工结论的成本口径检查（与机器路径同一精神：未上报不能当作在范围内）。
+     *
+     * @param evaluationCase 用例
+     * @param costAmount     本次上报的成本（可空 = 未上报）
+     */
+    private static void checkManualCost(AigEvaluationCase evaluationCase, BigDecimal costAmount) {
+        BigDecimal max = evaluationCase.getCostMax();
+        BigDecimal min = evaluationCase.getCostMin();
+        if (max == null && min == null) {
+            return;
+        }
+        String range = "[" + (min == null ? "-" : min.toPlainString()) + ", "
+            + (max == null ? "-" : max.toPlainString()) + "]";
+        if (costAmount == null) {
+            throw new ServiceException("用例 " + evaluationCase.getCaseCode() + " 声明了成本范围 " + range
+                + "，但本次未上报成本：未上报不能当作在范围内（那是拿未知当合规）。"
+                + "确定没花钱就填 0");
+        }
+        if (costAmount.compareTo(BigDecimal.ZERO) < 0) {
+            throw new ServiceException("上报的成本不能为负：" + costAmount);
+        }
+        if (max != null && costAmount.compareTo(max) > 0) {
+            throw new ServiceException("成本 " + costAmount.toPlainString() + " 超出用例声明的范围 " + range);
+        }
+        if (min != null && costAmount.compareTo(min) < 0) {
+            throw new ServiceException("成本 " + costAmount.toPlainString() + " 低于用例声明的范围 " + range);
+        }
+    }
+
+    /**
+     * 人工结论的打分明细（落 {@code score_json}，mode=MANUAL 与规则判据区分开）。
+     *
+     * @param item 该条结论
+     * @param bo   整体入参
+     * @return 明细
+     */
+    private static Map<String, Object> manualDetail(AigEvaluationManualRunBo.AigEvaluationManualCaseBo item,
+                                                    AigEvaluationManualRunBo bo) {
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("mode", "MANUAL");
+        detail.put("executedBy", AigEvaluationExecutorEnum.ADMIN.getCode());
+        detail.put("verdict", StringUtils.trim(item.getVerdict()));
+        detail.put("method", StringUtils.trim(bo.getMethod()));
+        detail.put("operatorId", bo.getOperatorId());
+        detail.put("recordedAt", LocalDateTime.now().toString());
+        if (StringUtils.isNotBlank(item.getEvidenceRef())) {
+            detail.put("evidenceRef", StringUtils.trim(item.getEvidenceRef()));
+        }
+        if (StringUtils.isNotBlank(item.getNote())) {
+            detail.put("note", StringUtils.trim(item.getNote()));
+        }
+        detail.put("externalCall", YES.equalsIgnoreCase(StringUtils.trim(bo.getExternalCall())) ? YES : NO);
+        detail.put("costAmount", bo.getCostAmount() == null ? "未上报" : bo.getCostAmount());
+        return detail;
+    }
+
+    /**
+     * 人工结论的 remark（方法与证据引用写在最前面，复核追加在后面）。
+     *
+     * @param item 该条结论
+     * @param bo   整体入参
+     * @return 备注文本
+     */
+    private static String manualRemark(AigEvaluationManualRunBo.AigEvaluationManualCaseBo item,
+                                       AigEvaluationManualRunBo bo) {
+        StringBuilder sb = new StringBuilder("人工评测（管理员）：");
+        sb.append(StringUtils.trim(bo.getMethod()));
+        if (StringUtils.isNotBlank(item.getEvidenceRef())) {
+            sb.append(" ｜证据：").append(StringUtils.trim(item.getEvidenceRef()));
+        }
+        if (StringUtils.isNotBlank(item.getNote())) {
+            sb.append(" ｜说明：").append(StringUtils.trim(item.getNote()));
+        }
+        if (StringUtils.isNotBlank(bo.getRemark())) {
+            sb.append(" ｜").append(StringUtils.trim(bo.getRemark()));
+        }
+        return sb.toString();
+    }
+
+    @Override
     public AigEvaluationRun getRun(Long runId) {
         if (runId == null) {
             throw new ServiceException("运行ID不能为空");
@@ -439,6 +644,7 @@ public class AigEvaluationServiceImpl implements IAigEvaluationService {
 
         Map<String, String> verdicts = new LinkedHashMap<>();
         List<String> blockers = new ArrayList<>();
+        List<String> adminCases = new ArrayList<>();
         Set<Long> latestRunIds = new LinkedHashSet<>();
         for (String caseCode : declared) {
             AigEvaluationCase evaluationCase = caseMapper.selectOne(new LambdaQueryWrapper<AigEvaluationCase>()
@@ -464,6 +670,12 @@ public class AigEvaluationServiceImpl implements IAigEvaluationService {
             latestRunIds.add(run.getRunId());
             String verdict = deletedIsNewer ? AigGoldenCaseEvidence.VERDICT_DELETED_NEWER : verdictOf(run);
             verdicts.put(caseCode, verdict);
+            // 这条结论是谁产出的：门槛对两种来源一视同仁（都认 PASS），但来源必须带在证据里，
+            // 评审才不用逐条去翻运行明细。被删除的那条不算（它已经不是"最近一次"了）
+            if (!deletedIsNewer
+                && AigEvaluationExecutorEnum.ADMIN.getCode().equalsIgnoreCase(run.getExecutedBy())) {
+                adminCases.add(caseCode);
+            }
             if (deletedIsNewer) {
                 blockers.add("用例 " + caseCode + " 有一条比现存最近一次更新的运行被逻辑删除（#"
                     + deleted.getRunId() + " " + deleted.getRunNo() + "，结论 " + deleted.getResultStatus()
@@ -485,9 +697,10 @@ public class AigEvaluationServiceImpl implements IAigEvaluationService {
         }
 
         if (!blockers.isEmpty()) {
-            return AigGoldenCaseEvidence.blocked(declared, verdicts, listing(blockers));
+            return AigGoldenCaseEvidence.blocked(declared, verdicts, listing(blockers))
+                .withAdminCases(adminCases);
         }
-        return AigGoldenCaseEvidence.satisfied(declared, verdicts);
+        return AigGoldenCaseEvidence.satisfied(declared, verdicts).withAdminCases(adminCases);
     }
 
     /**
@@ -508,6 +721,7 @@ public class AigEvaluationServiceImpl implements IAigEvaluationService {
         run.setTargetType(type.getCode());
         run.setTargetVersionId(target.id());
         run.setCaseId(evaluationCase.getCaseId());
+        run.setExecutedBy(AigEvaluationExecutorEnum.PLATFORM.getCode());
         run.setExternalCall(NO);
         run.setResultStatus(AigEvaluationStatusEnum.RUNNING.getCode());
         run.setOperateTime(LocalDateTime.now());

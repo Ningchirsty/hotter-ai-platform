@@ -4,6 +4,7 @@ import type {
   AigEvaluationCaseDetail,
   AigEvaluationCaseForm,
   AigEvaluationCaseVO,
+  AigEvaluationManualRunForm,
   AigEvaluationReviewForm,
   AigEvaluationRunDetail,
   AigEvaluationRunForm,
@@ -67,6 +68,18 @@ export function runEvaluation(data: AigEvaluationRunForm): AxiosPromise<AigEvalu
 export function reviewRun(data: AigEvaluationReviewForm) {
   return request({
     url: '/aigov/evaluation/review',
+    method: 'post',
+    data: data
+  });
+}
+
+/**
+ * 人工评测录入（平台没有该对象的执行器时，由管理员产出黄金用例证据）。
+ * 录入的行一律带 executed_by=ADMIN，与机器结论在库里、在证据里都能分开看。
+ */
+export function manualRun(data: AigEvaluationManualRunForm): AxiosPromise<AigEvaluationRunDetail[]> {
+  return request({
+    url: '/aigov/evaluation/manual-run',
     method: 'post',
     data: data
   });

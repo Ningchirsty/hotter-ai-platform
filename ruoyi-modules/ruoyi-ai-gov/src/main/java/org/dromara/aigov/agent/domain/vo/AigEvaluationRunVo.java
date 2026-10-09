@@ -57,6 +57,14 @@ public class AigEvaluationRunVo implements Serializable {
     private String modelCode;
 
     /**
+     * 结论产出方（PLATFORM=平台执行器跑的；ADMIN=管理员人工评测后录入）
+     *
+     * <p>列表页必须带上它：同一条用例两次都是 PASS，一次是平台跑的、一次是人填的，
+     * 对读的人完全是两件事。</p>
+     */
+    private String executedBy;
+
+    /**
      * 是否发生外部调用（Y/N）
      */
     private String externalCall;

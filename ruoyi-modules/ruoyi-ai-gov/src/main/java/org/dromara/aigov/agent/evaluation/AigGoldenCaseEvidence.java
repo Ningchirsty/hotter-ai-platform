@@ -16,13 +16,18 @@ import java.util.Map;
  * @param declaredCaseCodes 版本声明的黄金用例编码（有序）
  * @param caseVerdicts    逐用例结论（编码 → PASS/FAIL/ERROR/RUNNING/NO_RUN/REVIEW_MANUAL/REVIEW_FAIL）
  * @param reason          不满足时的可读原因（满足时为 null）
+ * @param adminCaseCodes  其中「结论由管理员人工评测录入」（{@code executed_by=ADMIN}）的用例编码。
+ *                        门槛对两种来源一视同仁（都认 PASS），但<b>来源必须看得见</b>——
+ *                        机器结论的可信度来自"平台判据在同样输入上判过了"，人工结论的可信度
+ *                        来自"一个人看了并签了字"。把这条带在证据里，评审才不用逐条去翻运行明细。
  * @author ai-gov
  */
 public record AigGoldenCaseEvidence(
     boolean satisfied,
     List<String> declaredCaseCodes,
     Map<String, String> caseVerdicts,
-    String reason
+    String reason,
+    List<String> adminCaseCodes
 ) {
 
     /**
@@ -54,7 +59,7 @@ public record AigGoldenCaseEvidence(
     public static final String VERDICT_DELETED_NEWER = "DELETED_NEWER";
 
     /**
-     * 构造「不满足」结论。
+     * 构造「不满足」结论（无人工来源信息）。
      *
      * @param declared  声明的用例
      * @param verdicts  逐用例结论
@@ -64,11 +69,11 @@ public record AigGoldenCaseEvidence(
     public static AigGoldenCaseEvidence blocked(List<String> declared, Map<String, String> verdicts,
                                                 String reason) {
         return new AigGoldenCaseEvidence(false, declared,
-            verdicts == null ? Map.of() : new LinkedHashMap<>(verdicts), reason);
+            verdicts == null ? Map.of() : new LinkedHashMap<>(verdicts), reason, List.of());
     }
 
     /**
-     * 构造「满足」结论。
+     * 构造「满足」结论（无人工来源信息）。
      *
      * @param declared 声明的用例
      * @param verdicts 逐用例结论
@@ -76,7 +81,34 @@ public record AigGoldenCaseEvidence(
      */
     public static AigGoldenCaseEvidence satisfied(List<String> declared, Map<String, String> verdicts) {
         return new AigGoldenCaseEvidence(true, declared,
-            verdicts == null ? Map.of() : new LinkedHashMap<>(verdicts), null);
+            verdicts == null ? Map.of() : new LinkedHashMap<>(verdicts), null, List.of());
+    }
+
+    /**
+     * 附上「结论由管理员人工评测录入」的用例编码。
+     *
+     * <p>做成 wither 而不是往上面两个工厂加入参：调用点有十几处（含既有测试），
+     * 而这件事只有 {@code goldenCaseEvidence} 一处知道。加参数会把"谁产出的"这个问题
+     * 塞给每一个只需要"过没过"的调用方。</p>
+     *
+     * @param adminCaseCodes 人工录入的用例编码（空则原样返回）
+     * @return 新的证据对象
+     */
+    public AigGoldenCaseEvidence withAdminCases(List<String> adminCaseCodes) {
+        if (adminCaseCodes == null || adminCaseCodes.isEmpty()) {
+            return this;
+        }
+        return new AigGoldenCaseEvidence(satisfied, declaredCaseCodes, caseVerdicts, reason,
+            List.copyOf(adminCaseCodes));
+    }
+
+    /**
+     * 是否有用例的结论来自人工录入。
+     *
+     * @return 有则 true
+     */
+    public boolean hasAdminProducedCases() {
+        return adminCaseCodes != null && !adminCaseCodes.isEmpty();
     }
 
     /**

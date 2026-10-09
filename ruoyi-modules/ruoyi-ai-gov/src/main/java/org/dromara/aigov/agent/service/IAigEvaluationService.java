@@ -3,6 +3,7 @@ package org.dromara.aigov.agent.service;
 import org.dromara.aigov.agent.domain.AigEvaluationCase;
 import org.dromara.aigov.agent.domain.AigEvaluationRun;
 import org.dromara.aigov.agent.domain.bo.AigEvaluationCaseBo;
+import org.dromara.aigov.agent.domain.bo.AigEvaluationManualRunBo;
 import org.dromara.aigov.agent.domain.bo.AigEvaluationReviewBo;
 import org.dromara.aigov.agent.domain.bo.AigEvaluationRunBo;
 import org.dromara.aigov.agent.domain.vo.AigEvaluationCaseVo;
@@ -106,6 +107,29 @@ public interface IAigEvaluationService {
      * @return 本次产生的运行行（一条用例一行，按入参顺序）
      */
     List<AigEvaluationRun> runEvaluation(AigEvaluationRunBo bo);
+
+    /**
+     * <b>人工评测录入</b>：管理员按用例给出结论，平台如实登记为「人工产出」的证据。
+     *
+     * <p><b>为什么需要它</b>：{@link #runEvaluation} 要求目标对象有 {@code IAigEvaluationSubject}
+     * 实现，而执行器由业务模块按需注册。Package 安装带入的第三方 Agent 与 Package 版本本身
+     * <b>结构上取不到任何评测结论</b>，于是「黄金用例通过」这道门槛永远无法满足，
+     * 版本永远到不了 {@code CANDIDATE}。2026-10-09 的裁定是：<b>由管理员来评测</b>，
+     * 平台把这件事如实记下来。</p>
+     *
+     * <p><b>不放松的四条</b>（与机器评测一致，只换了产出方）：</p>
+     * <ol>
+     *     <li>只对 {@code SANDBOX_TESTED} 的版本取证；</li>
+     *     <li>用例集合必须等于版本声明的集合，且每条都要给出 PASS/FAIL；</li>
+     *     <li><b>有平台执行器的对象不许走这条</b>——否则人工录入就成了绕过平台判据的通道；</li>
+     *     <li>用例声明了成本范围时必须上报成本（未上报不能当作在范围内）。</li>
+     * </ol>
+     * <p>写入的行一律带 {@code executed_by=ADMIN}，与机器结论在库里、在证据里都能分开看。</p>
+     *
+     * @param bo 人工评测入参
+     * @return 本次产生的运行行（一条用例一行，按声明顺序）
+     */
+    List<AigEvaluationRun> recordManualRuns(AigEvaluationManualRunBo bo);
 
     /**
      * 取运行明细。

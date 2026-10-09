@@ -77,6 +77,34 @@ public class AigEvaluationSubjectRegistry {
     }
 
     /**
+     * 是否存在<b>唯一</b>的评测执行器（不抛异常，供「该不该走人工录入」判断）。
+     *
+     * <p>与 {@link #find} 的区别：这个方法是<b>探针</b>，用来回答"平台能不能自己跑"，
+     * 而不是"给我那个执行器"。因此：</p>
+     * <ul>
+     *     <li>0 个 → false：平台没有该对象的执行器，人工录入是唯一可取到证据的途径；</li>
+     *     <li>1 个 → true：平台能自己跑，人工录入不该被用来绕过判据；</li>
+     *     <li>多个 → false：那是重复注册的配置错误（{@link #find} 会拒绝执行）。
+     *         这里刻意<b>不</b>当成"有执行器"——否则重复注册会把对象锁死在
+     *         「机器评测跑不了、人工录入也不许」的死角里，而配置错误应当由报错暴露，
+     *         不该变成一道没人能过的门。</li>
+     * </ul>
+     *
+     * @param targetType  评测对象类型
+     * @param subjectCode 评测对象编码
+     * @return 恰好一个执行器返回 true
+     */
+    public boolean hasSingleExecutor(String targetType, String subjectCode) {
+        int matched = 0;
+        for (IAigEvaluationSubject subject : subjects) {
+            if (subject.supports(targetType, subjectCode)) {
+                matched++;
+            }
+        }
+        return matched == 1;
+    }
+
+    /**
      * 已注册执行器的自述清单（报错时附上）。
      *
      * @return 可读清单；一个都没有时返回「（空）」
