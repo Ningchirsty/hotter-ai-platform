@@ -11,6 +11,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -184,6 +185,62 @@ class AigCanaryEvidenceTest {
         assertEquals(0L, e.severeErrorCount());
         assertTrue(e.severeByClass().isEmpty(), "非严重分类不该出现在严重明细里");
         assertTrue(e.satisfied(), "5% 恰好在上限内应当达标：" + e.reason());
+    }
+
+    @Test
+    @DisplayName("★ 安全隔离算严重：一次命中即否决（可疑输入与版本强相关）")
+    void securityQuarantineIsSevere() {
+        String code = AigErrorClassEnum.SECURITY_QUARANTINE.getCode();
+
+        assertTrue(AigCanaryEvidence.isSevere(code),
+            "它不是「这次没成功」，是「这次不该发生」——重试一万次也不会变好");
+
+        AigCanaryEvidence e = evaluate(100L, 1L, Map.of(code, 1L));
+        assertFalse(e.satisfied());
+        assertEquals(1L, e.severeErrorCount());
+        assertEquals(1L, e.severeByClass().get(code));
+    }
+
+    @Test
+    @DisplayName("V2 另两类（制品不合格 / 工具失败）刻意不算严重：一次工具抖动不该掐断灰度")
+    void v2RetryableOrArtifactClassesAreNotSevere() {
+        String artifact = AigErrorClassEnum.ARTIFACT_INVALID.getCode();
+        String tool = AigErrorClassEnum.TOOL_FAILED.getCode();
+
+        assertFalse(AigCanaryEvidence.isSevere(artifact), "可能只是这份输入特殊");
+        assertFalse(AigCanaryEvidence.isSevere(tool),
+            "契约里明确标了可重试——把可重试的错误算成「一次即否决」会让灰度被抖动掐断");
+
+        // 不严重 ≠ 不计入：两者仍然算失败（判据 b）
+        AigCanaryEvidence e = evaluate(100L, 5L,
+            Map.of(artifact, 3L, tool, 2L));
+        assertEquals(0L, e.severeErrorCount());
+        assertTrue(e.severeByClass().isEmpty());
+        assertTrue(e.satisfied(), "5% 恰好在上限内应当达标：" + e.reason());
+    }
+
+    @Test
+    @DisplayName("★ 严重分类必须逐一来自 AigErrorClassEnum（改名/写错要编译期或这里就炸）")
+    void severeCodesComeFromEnumAndTheSetIsExact() {
+        // 每一条都必须是枚举里真实存在的码：能取到枚举即证明不是手写字符串。
+        for (String code : AigCanaryEvidence.SEVERE_CLASS_CODES) {
+            assertNotNull(AigErrorClassEnum.find(code),
+                "严重分类 " + code + " 在 AigErrorClassEnum 里不存在——枚举改名后这里会先炸");
+        }
+        assertEquals(AigCanaryEvidence.SEVERE_CLASS_CODES.size(),
+            new java.util.LinkedHashSet<>(AigCanaryEvidence.SEVERE_CLASS_CODES).size(),
+            "严重分类不该有重复项");
+
+        // 精确集合：改这个集合必须是有意的（多一类会误否决灰度，少一类会安静地放行）
+        assertEquals(java.util.Set.of(
+                AigErrorClassEnum.POLICY_DENIED.getCode(),
+                AigErrorClassEnum.INVALID_REQUEST.getCode(),
+                AigErrorClassEnum.OUTPUT_UNPARSABLE.getCode(),
+                AigErrorClassEnum.AUTH_FAILED.getCode(),
+                AigErrorClassEnum.QUOTA_EXCEEDED.getCode(),
+                AigErrorClassEnum.SECURITY_QUARANTINE.getCode()),
+            new java.util.LinkedHashSet<>(AigCanaryEvidence.SEVERE_CLASS_CODES),
+            "严重分类集合变了：确认是刻意的，而不是顺手加/删了一类");
     }
 
     @Test

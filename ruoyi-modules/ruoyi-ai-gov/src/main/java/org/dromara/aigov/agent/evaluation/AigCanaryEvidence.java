@@ -1,5 +1,7 @@
 package org.dromara.aigov.agent.evaluation;
 
+import org.dromara.aigov.enums.AigErrorClassEnum;
+
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -81,15 +83,34 @@ public record AigCanaryEvidence(
      *     <li>{@code AUTH_FAILED}：鉴权失败——平台凭据错，这段时间的调用都会失败，
      *         拿它当"灰度表现"是在评价一个坏掉的通道，不是评价这个版本；</li>
      *     <li>{@code QUOTA_EXCEEDED}：额度/余额不足——同上，外部资源断供期间的表现不可作证据。</li>
+     *     <li>{@code SECURITY_QUARANTINE}（V2 追加，2026-10-09 加入）：命中提示词注入/越权脚本一类
+     *         信号——它不是"这次没成功"，而是"这次不该发生"。判据与上面几条一致（重试一万次不会变好），
+     *         而且它与版本强相关：可疑输入是<b>这个版本</b>的提示词/工具链放进来的。
+     *         它也是 V2 三类里唯一要求<b>熔断</b>的一类（见 {@link AigErrorClassEnum}）。</li>
      * </ul>
      *
      * <p><b>刻意不算严重的：</b>{@code RATE_LIMITED} / {@code TIMEOUT} / {@code UNAVAILABLE}
      * 是上游临时状态，{@code UNKNOWN} 是未能归类——它们都<b>仍然计入失败率</b>（判据 b），
      * 只是不单独触发"一次即否决"。把 {@code UNKNOWN} 也算严重会让一个认不出的偶发抖动
      * 否决整轮灰度，而它已经有了失败率这道闸。</p>
+     *
+     * <p><b>V2 的另两类（{@code ARTIFACT_INVALID} / {@code TOOL_FAILED}）同样刻意不算严重</b>：
+     * 前者是"这次产出的制品不合格"（可能只是这份输入特殊），后者是工具瞬时失败
+     * （契约里明确标了 {@code retryable=true}）——把可重试的错误算成"一次即否决"，
+     * 会让灰度被一次工具抖动掐断。二者仍计入失败率。</p>
+     *
+     * <p><b>为什么用枚举取码而不是字符串字面量</b>：这些码必须与 {@link AigErrorClassEnum} 对齐，
+     * 而字面量写错或改名时**不会有任何编译错误**，只表现为"某一类悄悄不再算严重"——
+     * 那正是这条判据最怕的失效方式（安静地少拦一类）。改成 {@code getCode()} 后枚举改名会直接编译不过；
+     * 枚举本身又由 {@code AigContractEnumDriftTest} 与契约 JSON 钉住。</p>
      */
     public static final List<String> SEVERE_CLASS_CODES = List.of(
-        "POLICY_DENIED", "INVALID_REQUEST", "OUTPUT_UNPARSABLE", "AUTH_FAILED", "QUOTA_EXCEEDED");
+        AigErrorClassEnum.POLICY_DENIED.getCode(),
+        AigErrorClassEnum.INVALID_REQUEST.getCode(),
+        AigErrorClassEnum.OUTPUT_UNPARSABLE.getCode(),
+        AigErrorClassEnum.AUTH_FAILED.getCode(),
+        AigErrorClassEnum.QUOTA_EXCEEDED.getCode(),
+        AigErrorClassEnum.SECURITY_QUARANTINE.getCode());
 
     /**
      * 某个错误分类是否算「严重」。

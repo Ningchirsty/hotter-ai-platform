@@ -132,6 +132,11 @@ public enum AigErrorClassEnum {
      * <p>命中提示词注入/越权脚本一类信号。不重试、不换候选、转人工，并且**立即熔断**——
      * 这是本枚举里除鉴权/额度之外唯一要求熔断的一类，因为它的默认假设是"这条链路已被污染"，
      * 继续调用只会把同一份可疑输入送到更多 Provider。</p>
+     *
+     * <p><b>对灰度判据的影响</b>：本类<b>在</b>
+     * {@code AigCanaryEvidence.SEVERE_CLASS_CODES} 里——判据与其他几类一致
+     * （重试一万次也不会变好），而且它与版本强相关：可疑输入是<b>这个版本</b>的
+     * 提示词/工具链放进来的。一次命中即否决（默认允许 0 个）。</p>
      */
     SECURITY_QUARANTINE("SECURITY_QUARANTINE", "安全隔离（提示词注入/越权脚本）", false, true, true, false),
 
