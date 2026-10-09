@@ -2,6 +2,12 @@ name: Frontend CI
 
 on:
   push:
+    # 纯文档推送不再跑全量前端 CI（2026-10-09，运维要求）。
+    # 与 backend ci.yml 同一口径：只过滤 push，不动 pull_request（原因见 ci.yml 的注释：
+    # 分支保护把 CI 设为必需检查时，被跳过的 PR 会永远等不到检查）。
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
   pull_request:
   workflow_dispatch:
 

@@ -2,6 +2,17 @@ name: Backend CI
 
 on:
   push:
+    # 纯文档推送不再跑全量 CI（2026-10-09，运维要求）。
+    #   * docs/** 与任何 .md 都不参与构建，也不被任何测试读取（已 grep 确认）。
+    #   * ⚠️ 刻意**不忽略** script/sql/**：后端测试 AigPermissionSeedCoverageTest 会读菜单/权限脚本，
+    #     只改 SQL 也必须跑 CI，否则"新权限没人种"这类问题会漏到线上（真发生过）。
+    #   * ⚠️ 刻意**不动 pull_request**：若将来分支保护把本工作流设为必需检查，
+    #     被 paths-ignore 跳过的 PR 会永远等不到那个检查（GitHub 的已知坑）。
+    #   * 顺带的取舍：被跳过的提交不会产出镜像；发布走的是显式 digest（见 deploy-poc.yml），
+    #     不依赖"每个提交都有一个镜像"，所以这不影响发布通道。
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
   pull_request:
   workflow_dispatch:
 
