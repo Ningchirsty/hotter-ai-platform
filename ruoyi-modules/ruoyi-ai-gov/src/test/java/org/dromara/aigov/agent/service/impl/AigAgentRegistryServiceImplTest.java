@@ -10,6 +10,7 @@ import org.dromara.aigov.agent.domain.AigAgentVersion;
 import org.dromara.aigov.agent.domain.AigPackage;
 import org.dromara.aigov.agent.domain.AigPackageVersion;
 import org.dromara.aigov.agent.domain.AigReleaseEvent;
+import org.dromara.aigov.agent.domain.AigSandboxRun;
 import org.dromara.aigov.agent.domain.bo.AigAgentBindingBo;
 import org.dromara.aigov.agent.domain.bo.AigReleaseAdvanceBo;
 import org.dromara.aigov.agent.enums.AigPackageRejectRuleEnum;
@@ -18,6 +19,7 @@ import org.dromara.aigov.agent.enums.AigReleaseStatusEnum;
 import org.dromara.aigov.agent.enums.AigReleaseTargetTypeEnum;
 import org.dromara.aigov.agent.evaluation.AigCanaryEvidence;
 import org.dromara.aigov.agent.evaluation.AigGoldenCaseEvidence;
+import org.dromara.aigov.agent.evaluation.AigSandboxRunEvidence;
 import org.dromara.aigov.agent.manifest.AigManifestScanResult;
 import org.dromara.aigov.agent.manifest.AigPackageManifestValidator;
 import org.dromara.aigov.agent.mapper.AigAgentBindingMapper;
@@ -28,6 +30,7 @@ import org.dromara.aigov.agent.mapper.AigReleaseEventMapper;
 import org.dromara.aigov.agent.mapper.AigSkillVersionMapper;
 import org.dromara.aigov.agent.service.IAigCanaryEvidenceService;
 import org.dromara.aigov.agent.service.IAigEvaluationService;
+import org.dromara.aigov.agent.service.IAigSandboxRunService;
 import org.dromara.common.core.exception.ServiceException;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -108,6 +111,7 @@ class AigAgentRegistryServiceImplTest {
     private AigPackageMapper packageMapper;
     private IAigEvaluationService evaluationService;
     private IAigCanaryEvidenceService canaryEvidenceService;
+    private IAigSandboxRunService sandboxRunService;
     private AigAgentRegistryServiceImpl service;
 
     @BeforeAll
@@ -131,10 +135,11 @@ class AigAgentRegistryServiceImplTest {
         packageMapper = mock(AigPackageMapper.class);
         evaluationService = mock(IAigEvaluationService.class);
         canaryEvidenceService = mock(IAigCanaryEvidenceService.class);
+        sandboxRunService = mock(IAigSandboxRunService.class);
         service = new AigAgentRegistryServiceImpl(agentVersionMapper, skillVersionMapper,
             packageVersionMapper, releaseEventMapper, bindingMapper, packageMapper,
             new AigPackageManifestValidator(JsonMapper.builder().build()), evaluationService,
-            canaryEvidenceService);
+            canaryEvidenceService, sandboxRunService);
         // 默认：黄金用例证据「已满足」（需要它的用例各自再覆盖）
         when(evaluationService.goldenCaseEvidence(any(), any()))
             .thenReturn(AigGoldenCaseEvidence.satisfied(List.of(), Map.of()));
@@ -142,6 +147,8 @@ class AigAgentRegistryServiceImplTest {
         // （100 次调用、0 失败、0 严重错误），而不是凭空造一个 satisfied=true——
         // 否则这条桩会把判定逻辑的缺陷一起掩盖掉
         when(canaryEvidenceService.canaryEvidence(any(), any())).thenReturn(satisfiedCanary());
+        // 默认：沙箱证据「已跑通」（同样是走真实判定得来的，见 satisfiedSandbox）
+        when(sandboxRunService.sandboxRunEvidence(any(), any())).thenReturn(satisfiedSandbox());
         // 默认：条件更新命中 1 行、事件写入成功
         when(agentVersionMapper.update(isNull(), any())).thenReturn(1);
         when(packageVersionMapper.update(isNull(), any())).thenReturn(1);
@@ -160,6 +167,28 @@ class AigAgentRegistryServiceImplTest {
         LocalDateTime to = LocalDateTime.now();
         return AigCanaryEvidence.evaluate(to.minusHours(1), to, 100L, 0L, Map.of(),
             new AigCanaryEvidence.Thresholds(50, 0.05, 0));
+    }
+
+    /**
+     * 造一个「沙箱跑通」的证据：退出码 0、未超时、无网。
+     *
+     * <p>与 {@link #satisfiedCanary()} 同因：走真实的 {@code evaluate}，
+     * 不直接造 {@code satisfied=true}——否则判据写错时这条桩会替它遮掩。</p>
+     *
+     * @return 证据结论
+     */
+    private static AigSandboxRunEvidence satisfiedSandbox() {
+        AigSandboxRun row = new AigSandboxRun();
+        row.setSandboxRunId(1L);
+        row.setJobId("job-1");
+        row.setImageRef("nginx@sha256:" + "a".repeat(64));
+        row.setExitCode(0);
+        row.setTimedOut(false);
+        row.setNetwork("none");
+        row.setDurationMs(250L);
+        row.setArtifactCount(2);
+        row.setCreateTime(LocalDateTime.now());
+        return AigSandboxRunEvidence.evaluate(row);
     }
 
     /**
@@ -347,6 +376,61 @@ class AigAgentRegistryServiceImplTest {
             List.of(AigReleaseGateEnum.MANIFEST_VALIDATION.getCode())));
 
         verify(canaryEvidenceService, never()).canaryEvidence(any(), any());
+    }
+
+    @Test
+    @DisplayName("不声明 SANDBOX_RUN 门槛时不去查沙箱证据（只有声明了才要求拿得出证据）")
+    void sandboxEvidenceNotQueriedWhenGateNotClaimed() {
+        stubVersion("DRAFT", "GENERAL");
+
+        service.advanceRelease(bo("DRAFT", "VALIDATED",
+            List.of(AigReleaseGateEnum.MANIFEST_VALIDATION.getCode())));
+
+        verify(sandboxRunService, never()).sandboxRunEvidence(any(), any());
+    }
+
+    @Test
+    @DisplayName("声明「沙箱已跑通」而库里没有证据 → 拒绝推进（这道门槛原先只看声明）")
+    void sandboxRunGateNeedsEvidence() {
+        stubVersion("VALIDATED", "GENERAL");
+        when(sandboxRunService.sandboxRunEvidence(any(), any()))
+            .thenReturn(AigSandboxRunEvidence.unavailable("该版本没有任何沙箱运行记录"));
+
+        ServiceException error = assertThrows(ServiceException.class,
+            () -> service.advanceRelease(bo("VALIDATED", "SANDBOX_TESTED",
+                List.of(AigReleaseGateEnum.SANDBOX_RUN.getCode()))));
+
+        assertTrue(error.getMessage().contains("沙箱"), error.getMessage());
+        assertTrue(error.getMessage().contains("没有任何沙箱运行记录"), error.getMessage());
+        verify(agentVersionMapper, never()).update(isNull(), any());
+    }
+
+    @Test
+    @DisplayName("最近一次沙箱运行没跑通（超时/有网/非零退出）→ 拒绝推进，并说明实测数字")
+    void sandboxRunGateRejectsFailedLatestRun() {
+        stubVersion("VALIDATED", "GENERAL");
+        // 走真实判定：超时被杀 + 允许了出网，两项都不满足
+        AigSandboxRun failed = new AigSandboxRun();
+        failed.setSandboxRunId(9L);
+        failed.setJobId("job-9");
+        failed.setImageRef("nginx@sha256:" + "b".repeat(64));
+        failed.setExitCode(137);
+        failed.setTimedOut(true);
+        failed.setNetwork("bridge");
+        failed.setDurationMs(60_000L);
+        failed.setArtifactCount(0);
+        failed.setCreateTime(LocalDateTime.now());
+        when(sandboxRunService.sandboxRunEvidence(any(), any()))
+            .thenReturn(AigSandboxRunEvidence.evaluate(failed));
+
+        ServiceException error = assertThrows(ServiceException.class,
+            () -> service.advanceRelease(bo("VALIDATED", "SANDBOX_TESTED",
+                List.of(AigReleaseGateEnum.SANDBOX_RUN.getCode()))));
+
+        assertTrue(error.getMessage().contains("超时"), error.getMessage());
+        assertTrue(error.getMessage().contains("bridge"), error.getMessage());
+        assertTrue(error.getMessage().contains("137"), error.getMessage());
+        verify(agentVersionMapper, never()).update(isNull(), any());
     }
 
     @Test

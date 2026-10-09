@@ -241,6 +241,20 @@ public interface AigConstants {
     String PERM_PACKAGE_DISABLE = "aig:package:disable";
 
     /**
+     * 沙箱运行登记（把宿主侧执行器的 result.json 登记为 SANDBOX_RUN 门槛的证据）
+     *
+     * <p>单独授权而不是复用「看清单」：它直接决定版本能否从 VALIDATED 走到 SANDBOX_TESTED，
+     * 与查看不是同一件事（口径同 {@link #PERM_EVALUATION_MANUAL}）。</p>
+     */
+    String PERM_SANDBOX_RECORD = "aig:sandbox:record";
+
+    /**
+     * 沙箱运行证据查看（某个版本有没有跑过、为什么不满足）
+     */
+    String PERM_SANDBOX_LIST = "aig:sandbox:list";
+
+
+    /**
      * 人均配额清单（读）：谁有多少额度、当前用了多少
      */
     String PERM_QUOTA_LIST = "aig:quota:list";

@@ -26,6 +26,7 @@ import org.dromara.aigov.agent.mapper.AigSkillVersionMapper;
 import org.dromara.aigov.agent.service.IAigAgentRegistryQueryService;
 import org.dromara.aigov.agent.service.IAigAgentRegistryService;
 import org.dromara.aigov.agent.service.IAigCanaryEvidenceService;
+import org.dromara.aigov.agent.service.IAigSandboxRunService;
 import org.dromara.aigov.agent.service.IAigEvaluationService;
 import org.dromara.aigov.agent.service.IAigPackageService;
 import org.dromara.aigov.agent.service.impl.AigAgentRegistryQueryServiceImpl;
@@ -373,10 +374,11 @@ class AigWp3WiringAndRoutesTest {
                                                  AigPackageMapper packageMapper,
                                                  AigPackageManifestValidator manifestValidator,
                                                  IAigEvaluationService evaluationService,
-                                                 IAigCanaryEvidenceService canaryEvidenceService) {
+                                                 IAigCanaryEvidenceService canaryEvidenceService,
+                                                 IAigSandboxRunService sandboxRunService) {
             return new AigAgentRegistryServiceImpl(agentVersionMapper, skillVersionMapper,
                 packageVersionMapper, releaseEventMapper, bindingMapper, packageMapper,
-                manifestValidator, evaluationService, canaryEvidenceService);
+                manifestValidator, evaluationService, canaryEvidenceService, sandboxRunService);
         }
 
         @Bean
@@ -397,6 +399,13 @@ class AigWp3WiringAndRoutesTest {
             // AigCanaryEvidenceTest / AigCanaryEvidenceServiceTest 里测；这里用替身，
             // 免得为了起上下文去连审计表
             return mock(IAigCanaryEvidenceService.class);
+        }
+
+        @Bean
+        IAigSandboxRunService sandboxRunService() {
+            // 同上：沙箱证据的判据在 AigSandboxRunEvidenceTest / AigSandboxRunServiceImplTest 里测，
+            // 装配测试只要求这个 Bean 在位（发布推进的门槛断言依赖它）
+            return mock(IAigSandboxRunService.class);
         }
 
         @Bean

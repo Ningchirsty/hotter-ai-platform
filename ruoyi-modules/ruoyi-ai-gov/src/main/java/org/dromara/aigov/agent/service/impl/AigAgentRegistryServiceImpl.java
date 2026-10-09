@@ -18,6 +18,7 @@ import org.dromara.aigov.agent.enums.AigReleaseStatusEnum;
 import org.dromara.aigov.agent.enums.AigReleaseTargetTypeEnum;
 import org.dromara.aigov.agent.evaluation.AigCanaryEvidence;
 import org.dromara.aigov.agent.evaluation.AigGoldenCaseEvidence;
+import org.dromara.aigov.agent.evaluation.AigSandboxRunEvidence;
 import org.dromara.aigov.agent.manifest.AigManifestScanResult;
 import org.dromara.aigov.agent.manifest.AigPackageIdentity;
 import org.dromara.aigov.agent.manifest.AigPackageManifestValidator;
@@ -30,6 +31,7 @@ import org.dromara.aigov.agent.mapper.AigSkillVersionMapper;
 import org.dromara.aigov.agent.service.IAigAgentRegistryService;
 import org.dromara.aigov.agent.service.IAigCanaryEvidenceService;
 import org.dromara.aigov.agent.service.IAigEvaluationService;
+import org.dromara.aigov.agent.service.IAigSandboxRunService;
 import org.dromara.aigov.agent.state.AigReleaseStateMachine;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
@@ -88,6 +90,8 @@ public class AigAgentRegistryServiceImpl implements IAigAgentRegistryService {
     private final IAigEvaluationService evaluationService;
 
     private final IAigCanaryEvidenceService canaryEvidenceService;
+
+    private final IAigSandboxRunService sandboxRunService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -148,6 +152,11 @@ public class AigAgentRegistryServiceImpl implements IAigAgentRegistryService {
         // 其余门槛的证据各在别处（人工批准落 approved_by、曾 STABLE 过查发布事件账本），
         // 唯独这一条以前是「调用方说过了就过了」——那正是「不生效也不会报错」的那一类。
         assertManifestScanEvidence(type, row.scanResult(), passed);
+
+        // 「沙箱跑通了」此前同样只凭声明：这道门槛是唯一能证明"这段外部代码真的在隔离环境里
+        // 跑起来过"的一环（ADR-015）。证据是沙箱运行账本（宿主侧 worker 的 result.json 登记），
+        // 判据只实现一次（IAigSandboxRunService#sandboxRunEvidence），这里只消费结论。
+        assertSandboxRunEvidence(type, bo.getTargetVersionId(), passed);
 
         // 同理，「黄金用例通过」也不能只凭声明：证据是评测账本（§13.2）。
         // 判据只实现一次（IAigEvaluationService#goldenCaseEvidence），这里只消费结论。
@@ -318,6 +327,41 @@ public class AigAgentRegistryServiceImpl implements IAigAgentRegistryService {
         String verdicts = evidence == null ? "" : "逐用例结论：" + evidence.verdictSummary() + "。";
         throw new ServiceException("不允许声明「黄金用例已通过」而库里没有证据：" + reason + "。"
             + verdicts + "请先对版本声明的黄金用例集合跑一遍评测并取得通过"
+            + "（对象 " + type.getCode() + " #" + id + "）");
+    }
+
+    /**
+     * 落实「沙箱跑通」这道门槛的证据要求（{@code VALIDATED → SANDBOX_TESTED}）。
+     *
+     * <p><b>这道门槛此前是纯声明</b>：五个门槛里，Manifest 校验看 {@code scan_result}、
+     * 黄金用例看评测账本、灰度看调用审计、人工批准落 {@code approved_by}，
+     * 只有「在沙箱跑通了」没有任何可查的东西——而它恰恰是<b>唯一</b>能证明这段（外部的、
+     * 不可信的）代码真的在隔离环境里跑起来过的一环。</p>
+     *
+     * <p>证据是沙箱运行账本里<b>该版本最近一次</b>运行（判据见 {@link AigSandboxRunEvidence}：
+     * 退出码 0、未超时、无网）。三类对象一视同仁：Agent/Skill/Package 版本都要能证明
+     * "带进来的东西跑得起来"。</p>
+     *
+     * @param type   对象类型
+     * @param id     对象版本ID
+     * @param passed 本次声明的已通过门槛
+     */
+    private void assertSandboxRunEvidence(AigReleaseTargetTypeEnum type, Long id,
+                                         Set<AigReleaseGateEnum> passed) {
+        if (!passed.contains(AigReleaseGateEnum.SANDBOX_RUN)) {
+            return;
+        }
+        AigSandboxRunEvidence evidence = sandboxRunService.sandboxRunEvidence(type.getCode(), id);
+        if (evidence != null && evidence.satisfied()) {
+            log.info("发布门槛「沙箱跑通」由账本证据满足, targetType={}, targetVersionId={}, {}",
+                type.getCode(), id, evidence.verdictSummary());
+            return;
+        }
+        String reason = evidence == null ? "证据不可用" : evidence.reason();
+        String detail = evidence == null ? "" : "实测：" + evidence.verdictSummary() + "。";
+        throw new ServiceException("不允许声明「沙箱已跑通」而库里没有证据：" + reason + "。"
+            + detail + "请先在宿主机跑一次沙箱作业（script/deploy/sandbox-worker.sh），"
+            + "把执行器输出的 result.json 原样登记进来"
             + "（对象 " + type.getCode() + " #" + id + "）");
     }
 
