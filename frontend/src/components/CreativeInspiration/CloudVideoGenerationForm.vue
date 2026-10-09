@@ -162,7 +162,7 @@
       <div v-if="costQuote" class="fee-metrics">
         <div class="fee-metric">
           <span>消耗单价</span>
-          <strong>{{ formatUsd(costQuote.unitPrice) }}</strong>
+          <strong>{{ formatCnyFromUsd(costQuote.unitPrice) }}</strong>
           <small>{{ costQuote.unitLabel }}</small>
         </div>
         <div class="fee-metric">
@@ -176,8 +176,8 @@
         <div class="fee-metric fee-total">
           <span>{{ costQuote.referenceVideoExtra ? '预计基础费用 · 参考视频另计' : '当前视频预计费用' }}</span>
           <strong>
-            {{ formatUsd(costQuote.estimatedUsd) }}
-            <em>美元</em>
+            {{ formatCnyFromUsd(costQuote.estimatedUsd) }}
+            <em>人民币</em>
           </strong>
         </div>
       </div>
@@ -189,11 +189,11 @@
       <details class="fee-combinations">
         <summary>查看时长 × 分辨率组合费用（{{ selected.durations.length * selected.resolutions.length }} 组）</summary>
         <p class="fee-note">
-          {{ labels[draft.capability] }} · 公开倍率 {{ VIDEO_PRICING.groupRatio }} 倍 · 美元。点击报价可选择该组合。
+          {{ labels[draft.capability] }} · 公开倍率 {{ VIDEO_PRICING.groupRatio }} 倍 · 人民币。点击报价可选择该组合。
         </p>
         <div class="fee-table-scroll" tabindex="0" aria-label="时长与分辨率组合报价表">
           <table class="fee-table">
-            <caption class="sr-only">{{ draft.model }} {{ labels[draft.capability] }}组合预计费用，美元</caption>
+            <caption class="sr-only">{{ draft.model }} {{ labels[draft.capability] }}组合预计费用，人民币</caption>
             <thead>
               <tr>
                 <th scope="col">时长</th>
@@ -236,6 +236,10 @@
         <a :href="VIDEO_PRICING.source" target="_blank" rel="noopener noreferrer">蓝章鱼公开价格 ↗</a>
         <time>{{ pricingDate }} 核对</time>
       </div>
+      <p class="fee-note">
+        人民币按蓝章鱼公开汇率快照换算：1 美元 = {{ VIDEO_PRICING.displayCurrency.usdToCny }} 元
+        （{{ exchangeRateDate }} 更新）。
+      </p>
       <p class="fee-note fee-settlement">预计费用以公开媒体分组倍率计算，实际以账号通道结算为准。</p>
     </section>
     <div class="cloud-summary">
@@ -263,7 +267,7 @@ import {
 } from '@/api/video/cloud';
 import {
   calculateVideoCost,
-  formatUsd,
+  formatCnyFromUsd,
   videoRateLabel,
   videoStartingRate,
   videoOptionQuote,
@@ -306,7 +310,7 @@ const costQuote = computed(() => calculateVideoCost(draft));
 const priceGrid = computed(() => videoPriceGrid(selected.value, draft));
 function quoteFee(quote: VideoCostQuote | undefined) {
   if (!quote) return '暂无报价';
-  return `${quote.approximate ? '约 ' : ''}${formatUsd(quote.estimatedUsd)}${quote.referenceVideoExtra ? ' + 参考视频费' : ''}`;
+  return `${quote.approximate ? '约 ' : ''}${formatCnyFromUsd(quote.estimatedUsd)}${quote.referenceVideoExtra ? ' + 参考视频费' : ''}`;
 }
 function optionFee(
   profile: VideoCloudProfile,
@@ -319,6 +323,7 @@ function selectPriceCombination(seconds: number, resolution: string) {
   draft.seconds = seconds;
   draft.resolution = resolution;
 }
+const exchangeRateDate = VIDEO_PRICING.displayCurrency.updatedAt.slice(0, 16).replace('T', ' ');
 const pricingDate = VIDEO_PRICING.checkedAt.slice(0, 16).replace('T', ' ');
 function groupRate(group: string) {
   return videoStartingRate(profiles.filter(p => p.group === group));

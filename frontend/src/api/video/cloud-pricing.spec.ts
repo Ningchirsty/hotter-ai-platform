@@ -7,7 +7,8 @@ import {
   videoRateLabel,
   videoStartingRate,
   videoOptionQuote,
-  videoPriceGrid
+  videoPriceGrid,
+  formatCnyFromUsd
 } from './cloud-pricing';
 const draft = (model: string, resolution: string, seconds: number) => ({ model, resolution, seconds, references: [] });
 describe('Cloud video fee estimates', () => {
@@ -56,9 +57,9 @@ describe('Cloud video fee estimates', () => {
   });
   it('mode labels and group starting rates reflect the selected model tariff', () => {
     const profiles = VIDEO_CLOUD_PROFILES.filter(p => p.group === 'Seedance 2.0');
-    expect(videoStartingRate(profiles)).toContain('$1.60');
+    expect(videoStartingRate(profiles)).toContain(formatCnyFromUsd(1.6));
     const turbo = VIDEO_CLOUD_PROFILES.find(p => p.id === 'kling-3.0-turbo')!;
-    expect(videoRateLabel(turbo, '1080p')).toContain('$0.163');
+    expect(videoRateLabel(turbo, '1080p')).toContain(formatCnyFromUsd(0.163));
   });
 });
 
@@ -112,5 +113,45 @@ describe('Video capability and output-option quotes', () => {
       videoOptionQuote(profile, current, { capability: 'T2V' })?.estimatedUsd
     );
     expect(videoOptionQuote(profile, current, { capability: 'FL2V' })?.multiplier).toBe(1);
+  });
+});
+
+describe('Provider RMB display conversion', () => {
+  it('converts with the provider CNY display rate, without changing USD billing or group ratio', () => {
+    const d = draft('wan2.7-t2v', '720p', 5);
+    const before = structuredClone(d);
+    const q = calculateVideoCost(d)!;
+    expect(q.unitPrice).toBe(0.0816);
+    expect(q.estimatedUsd).toBeCloseTo(0.408);
+    expect(q.multiplier).toBe(1);
+    expect(q.unitLabel).toBe('元 / 视频秒');
+    expect(formatCnyFromUsd(q.estimatedUsd)).toBe('¥2.7398');
+    expect(q.formula).toContain('¥0.548');
+    expect(q.formula).not.toContain('$');
+    expect(d).toEqual(before);
+    expect(VIDEO_PRICING.displayCurrency.rateField).toBe('usd_cny_rate');
+    expect(VIDEO_PRICING.displayCurrency.usdToCny).toBe(6.715255);
+  });
+  it.each(VIDEO_CLOUD_PROFILES.map(p => [p.id, p] as const))('%s displays RMB for every option', (_id, p) => {
+    expect(videoStartingRate([p])).toContain('¥');
+    expect(videoStartingRate([p])).not.toContain('$');
+    for (const resolution of p.resolutions) {
+      expect(videoRateLabel(p, resolution)).toContain('¥');
+      const grid = videoPriceGrid(p, { ...draft(p.id, resolution, p.durations[0]), capability: p.capabilities[0] });
+      for (const row of grid) for (const cell of row.cells) {
+        expect(cell.quote!.formula).toContain('¥');
+        expect(cell.quote!.formula).not.toContain('$');
+        expect(cell.quote!.unitLabel).toContain('元');
+      }
+    }
+  });
+  it('converts token tariffs and reference-video base fees once, retaining incomplete-cost markers', () => {
+    const q = calculateVideoCost({ ...draft('doubao-seedance-2-5-260628', '720p', 5), references: [{assetId: '1', role: 'reference_video' as const}] })!;
+    expect(q.unitLabel).toBe('元 / 百万计费 Token');
+    expect(q.estimatedTokens).toBe(108000);
+    expect(q.referenceVideoExtra).toBe(true);
+    expect(q.approximate).toBe(true);
+    expect(formatCnyFromUsd(q.unitPrice)).toBe(formatCnyFromUsd(4.84));
+    expect(formatCnyFromUsd(q.estimatedUsd)).toBe(formatCnyFromUsd(4.84 * 0.108));
   });
 });
