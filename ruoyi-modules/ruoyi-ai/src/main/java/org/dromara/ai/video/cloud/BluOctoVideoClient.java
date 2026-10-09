@@ -19,9 +19,15 @@ public class BluOctoVideoClient {
     public record RemoteTask(String id, String protocol) { }
     private final VideoCloudProperties properties;
     private final ObjectMapper mapper = new ObjectMapper();
-    private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15))
-        .followRedirects(HttpClient.Redirect.NEVER).build();
-    public BluOctoVideoClient(VideoCloudProperties properties) { this.properties = properties; }
+    private final HttpClient http;
+    public BluOctoVideoClient(VideoCloudProperties properties) {
+        this(properties, HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15))
+            .followRedirects(HttpClient.Redirect.NEVER).build());
+    }
+    BluOctoVideoClient(VideoCloudProperties properties, HttpClient http) {
+        this.properties = properties;
+        this.http = http;
+    }
 
     /** 按型号契约构造供应商参数，避免将前端字段原样透传。 */
     public static Map<String,Object> payload(CloudVideoRequest request, String family,
@@ -96,9 +102,16 @@ public class BluOctoVideoClient {
         throw error("CLOUD_RESULT_UNKNOWN","供应商返回未知视频状态，请核对任务记录");
     }
     public byte[] download(RemoteTask remote) {
-        // 网关受控内容端点，密钥不会发送给供应商返回的第三方 URL。
-        String path=remote.protocol().equals("openai")?"/v1/videos/"+remote.id()+"/content":"/v1/tasks/"+remote.id()+"/artifacts/"+artifactKey(json("GET","/v1/tasks/"+remote.id()+"/artifacts",null))+"/content";
-        return exchange("GET",path,null,128*1024*1024);
+        if (!remote.id().matches("[A-Za-z0-9_-]{1,160}")) throw error("CLOUD_RESULT_UNKNOWN", "任务 ID 不合法");
+        // 兼容视频别名失效时，只读取同一任务的实际产物；绝不重新生成或转发密钥到媒体域名。
+        if (remote.protocol().equals("openai")) {
+            try { return exchange("GET", "/v1/videos/"+remote.id()+"/content", null, 128*1024*1024); }
+            catch (VideoTaskException e) {
+                if (!List.of("CLOUD_ARTIFACT_EXPIRED", "CLOUD_ARTIFACT_MISSING").contains(e.getErrorCode())) throw e;
+            }
+        }
+        String key=artifactKey(json("GET", "/v1/tasks/"+remote.id()+"/artifacts", null));
+        return exchange("GET", "/v1/tasks/"+remote.id()+"/artifacts/"+key+"/content", null, 128*1024*1024);
     }
     static String artifactKey(JsonNode response) {
         JsonNode artifacts=response.isArray()?response:response.path("artifacts");
@@ -121,11 +134,34 @@ public class BluOctoVideoClient {
             if(body!=null)b.header("Content-Type","application/json").POST(HttpRequest.BodyPublishers.ofString(body));else b.GET();
             HttpResponse<java.io.InputStream> r=http.send(b.build(),HttpResponse.BodyHandlers.ofInputStream());
             try(var in=r.body()) {
-                if(r.statusCode()<200||r.statusCode()>299)throw error(method.equals("POST")?"CLOUD_RESULT_UNKNOWN":"CLOUD_QUERY_FAILED","蓝章鱼视频接口返回 HTTP "+r.statusCode());
+                if(r.statusCode()<200||r.statusCode()>299)throw providerError(method,path,r.statusCode(),in.readNBytes(8192));
                 byte[] bytes=in.readNBytes(maxBytes+1);if(bytes.length>maxBytes)throw error("CLOUD_RESULT_UNKNOWN","云端视频响应超过大小限制");return bytes;
             }
         } catch(InterruptedException e){Thread.currentThread().interrupt();throw error("CLOUD_RESULT_UNKNOWN","云端视频等待中断，请核对供应商记录");}
         catch(VideoTaskException e){throw e;}catch(Exception e){throw error(method.equals("POST")?"CLOUD_RESULT_UNKNOWN":"CLOUD_QUERY_FAILED","云端视频网络异常，请核对供应商记录，不自动重新生成");}
+    }
+    /** 只返回预定义诊断信息，不向任务详情暴露供应商原文、签名 URL 或凭据。 */
+    private VideoTaskException providerError(String method,String path,int status,byte[] body) {
+        String code="", message="";
+        try {
+            JsonNode value=mapper.readTree(body), detail=value.path("error");
+            code=detail.path("code").asText(value.path("code").asText());
+            message=detail.path("message").asText(value.path("message").asText());
+        } catch(Exception ignored) { /* 非 JSON 错误仍保留 HTTP 状态。 */ }
+        String suffix="（HTTP "+status+"）";
+        if(method.equals("POST") && status==400 && message.contains("is not served by this plugin"))
+            return error("CLOUD_PLUGIN_UNSUPPORTED","蓝章鱼当前插件未声明支持该型号，请核对实例插件版本和模型路由；未自动切换接口重新生成"+suffix);
+        if(path.endsWith("/content")) {
+            if(code.equals("artifact_upstream_auth_failed"))
+                return error("CLOUD_ARTIFACT_AUTH_FAILED","视频已生成，但蓝章鱼读取上游成片的鉴权失败；保留原任务等待恢复，无需重新生成"+suffix);
+            if(code.equals("artifact_plugin_error"))
+                return error("CLOUD_ARTIFACT_PLUGIN_FAILED","视频已生成，但蓝章鱼插件无法读取产物；请修复网关插件后恢复原任务"+suffix);
+            if(status==410 || code.equals("artifact_gone"))
+                return error("CLOUD_ARTIFACT_EXPIRED","蓝章鱼成片内容接口失效，请恢复原任务产物"+suffix);
+            if(status==404 || code.equals("artifact_not_found"))
+                return error("CLOUD_ARTIFACT_MISSING","蓝章鱼未找到该任务的视频产物，请核对原任务"+suffix);
+        }
+        return error(method.equals("POST")?"CLOUD_RESULT_UNKNOWN":"CLOUD_QUERY_FAILED","蓝章鱼视频接口返回 HTTP "+status);
     }
     private static VideoTaskException error(String code,String message){return new VideoTaskException(code,message);}
 }
