@@ -110,6 +110,32 @@ public enum AigErrorClassEnum {
     OUTPUT_UNPARSABLE("OUTPUT_UNPARSABLE", "结果不可解析", false, true, false, true),
 
     /**
+     * 制品级校验失败（V2 追加，契约 §4 / {@code contract/error-codes.json}）。
+     *
+     * <p>MIME/大小/哈希不符等——**与模型调用无关**，所以它不该被当成 Provider 故障：
+     * 不重试、不换候选（换一家模型同样产出坏制品），要人看一眼。</p>
+     */
+    ARTIFACT_INVALID("ARTIFACT_INVALID", "制品校验失败（MIME/大小/哈希不符）", false, true, false, false),
+
+    /**
+     * 工具调用失败（V2 追加，契约 §4）。契约里对应 {@code TOOL_FAILED_RETRYABLE} 一行，取码 {@code TOOL_FAILED}。
+     *
+     * <p><b>为什么单列一类</b>：工具不是模型 Provider——它失败通常与"这一家的模型好不好"无关，
+     * 所以 {@code worthFallback=false}（换模型解决不了工具挂），但可重试。
+     * 把它并进 {@link #UNAVAILABLE} 会让"换候选"这条动作被触发，而那是错的。</p>
+     */
+    TOOL_FAILED("TOOL_FAILED", "工具调用失败（可重试）", true, false, false, false),
+
+    /**
+     * 安全隔离（V2 追加，契约 §4）：必须**立即隔离并告警**。
+     *
+     * <p>命中提示词注入/越权脚本一类信号。不重试、不换候选、转人工，并且**立即熔断**——
+     * 这是本枚举里除鉴权/额度之外唯一要求熔断的一类，因为它的默认假设是"这条链路已被污染"，
+     * 继续调用只会把同一份可疑输入送到更多 Provider。</p>
+     */
+    SECURITY_QUARANTINE("SECURITY_QUARANTINE", "安全隔离（提示词注入/越权脚本）", false, true, true, false),
+
+    /**
      * 未能归类：不重试、不自动转人工；**值得换候选**。
      *
      * <p>这里的取舍与 {@link #retryable} 刻意不同：重试是向<b>同一个</b> Provider 再要一次

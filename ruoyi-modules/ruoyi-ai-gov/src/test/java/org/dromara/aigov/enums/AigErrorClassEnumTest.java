@@ -29,19 +29,22 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class AigErrorClassEnumTest {
 
     @Test
-    @DisplayName("处置矩阵：可重试只有限流/超时/不可用三类")
+    @DisplayName("处置矩阵：可重试＝限流/超时/不可用 + 工具调用失败（V2 追加）")
     void retryableSetIsExact() {
         List<AigErrorClassEnum> retryable = Arrays.stream(AigErrorClassEnum.values())
             .filter(AigErrorClassEnum::isRetryable)
             .toList();
         assertEquals(
-            List.of(AigErrorClassEnum.RATE_LIMITED, AigErrorClassEnum.TIMEOUT, AigErrorClassEnum.UNAVAILABLE),
+            List.of(AigErrorClassEnum.RATE_LIMITED, AigErrorClassEnum.TIMEOUT,
+                AigErrorClassEnum.UNAVAILABLE, AigErrorClassEnum.TOOL_FAILED),
             retryable,
-            "可重试集合一旦被扩大，参数错误与鉴权失败也会被反复重试");
+            "可重试集合一旦被扩大，参数错误与鉴权失败也会被反复重试；"
+                + "TOOL_FAILED（V2 追加）进来是因为工具失败通常是瞬时的，"
+                + "但它**不换候选**——换模型解决不了工具挂（见 worthFallback 那一条）");
     }
 
     @Test
-    @DisplayName("处置矩阵：转人工＝参数/Schema、权限外发、结果不可解析 + 额度不足 + 需要调用审批")
+    @DisplayName("处置矩阵：转人工＝参数/Schema、权限外发、结果不可解析、额度不足、需要审批 + 制品校验/安全隔离（V2 追加）")
     void needsHumanSetIsExact() {
         List<AigErrorClassEnum> needsHuman = Arrays.stream(AigErrorClassEnum.values())
             .filter(AigErrorClassEnum::isNeedsHuman)
@@ -49,22 +52,28 @@ class AigErrorClassEnumTest {
         assertEquals(
             List.of(AigErrorClassEnum.INVALID_REQUEST, AigErrorClassEnum.POLICY_DENIED,
                 AigErrorClassEnum.APPROVAL_REQUIRED, AigErrorClassEnum.QUOTA_EXCEEDED,
-                AigErrorClassEnum.OUTPUT_UNPARSABLE),
+                AigErrorClassEnum.OUTPUT_UNPARSABLE, AigErrorClassEnum.ARTIFACT_INVALID,
+                AigErrorClassEnum.SECURITY_QUARANTINE),
             needsHuman,
             "应转人工的集合即设计 §13.3「不重试、转 NEED_HUMAN」的三种情形，"
                 + "外加额度不足——它要人去做充值/申请预算这个具体动作，"
                 + "而且处置完成后任务可以重排继续；"
                 + "外加需要调用审批（C3）——它同样要人去做一件具体的事（提交申请/批准），"
-                + "做完之后同一份预案就能继续跑");
+                + "做完之后同一份预案就能继续跑；"
+                + "外加 V2 追加的两类：制品校验失败（人在回路才能判断这份制品能不能用）、"
+                + "安全隔离（命中注入/越权信号时必须有人看一眼，不能自动放行）");
     }
 
     @Test
-    @DisplayName("会熔断的两类：密钥错了继续调用只会把账号打到风控；额度没恢复前调用必然同样失败")
+    @DisplayName("会熔断的三类：密钥错了只会把账号打到风控、额度未恢复调用必然同样失败、安全隔离要立刻掐断")
     void circuitBreakingClassesAreExact() {
         List<AigErrorClassEnum> breaking = Arrays.stream(AigErrorClassEnum.values())
             .filter(AigErrorClassEnum::isCircuitBreak)
             .toList();
-        assertEquals(List.of(AigErrorClassEnum.AUTH_FAILED, AigErrorClassEnum.QUOTA_EXCEEDED), breaking);
+        assertEquals(List.of(AigErrorClassEnum.AUTH_FAILED, AigErrorClassEnum.QUOTA_EXCEEDED,
+                AigErrorClassEnum.SECURITY_QUARANTINE), breaking,
+            "SECURITY_QUARANTINE（V2 追加）是第三种要求熔断的：它的默认假设是"
+                + "「这条链路已被污染」，继续调用只会把同一份可疑输入送到更多 Provider");
     }
 
     @Test
@@ -116,15 +125,19 @@ class AigErrorClassEnumTest {
     }
 
     @Test
-    @DisplayName("换候选（fallback）集合：入参类与策略类不换——换谁都一样被拒")
+    @DisplayName("换候选（fallback）集合：入参类、策略类与 V2 三类都不换——换谁都一样")
     void worthFallbackSetIsExact() {
         List<AigErrorClassEnum> noFallback = Arrays.stream(AigErrorClassEnum.values())
             .filter(item -> !item.isWorthFallback())
             .toList();
         assertEquals(List.of(AigErrorClassEnum.INVALID_REQUEST, AigErrorClassEnum.POLICY_DENIED,
-                AigErrorClassEnum.APPROVAL_REQUIRED), noFallback,
+                AigErrorClassEnum.APPROVAL_REQUIRED, AigErrorClassEnum.ARTIFACT_INVALID,
+                AigErrorClassEnum.TOOL_FAILED, AigErrorClassEnum.SECURITY_QUARANTINE), noFallback,
             "入参错误与策略拒绝换候选只是把同一个失败乘以候选数；"
-                + "需要调用审批同理——换一家 Provider 一样要审批，顺延只会多烧几次调用");
+                + "需要调用审批同理——换一家 Provider 一样要审批，顺延只会多烧几次调用；"
+                + "V2 追加的三类也不该换：制品校验失败（换模型同样产出坏制品——问题在制品不在模型）、"
+                + "工具调用失败（工具不是 Provider，换模型解决不了工具挂）、"
+                + "安全隔离（换一家等于把可疑输入再送一处）");
     }
 
     @Test

@@ -52,7 +52,41 @@ public enum AigTaskEventTypeEnum {
     /**
      * 人工复核结论
      */
-    AI_TASK_REVIEWED("AI_TASK_REVIEWED", "人工复核");
+    AI_TASK_REVIEWED("AI_TASK_REVIEWED", "人工复核"),
+
+    // ---- 以下五项是 V2 追加（Execution Contract v1 §三，见 contract/execution-event.schema.json）----
+    // 契约把词表定在**同一个枚举**上（红线 1：不发明第二套词表），所以这里补齐；
+    // 其中 STEP_* 与 ARTIFACT_ADDED 的**写入方**要等各自的能力落地（`aig_task_step` / `aig_task_artifact`
+    // 目前都不存在，见 00-基线修订补遗 §制品），`POLICY_DECIDED` 的写入方是决策账本
+    // （`aig_policy_decision_log` 已存在，但尚未回写任务事件）。
+    // 先把词表补齐的理由：枚举是"平台认得的词"，缺词会让将来的写入方各自造一个近义名，
+    // 而契约明令禁止第二套词表；AigContractEnumDriftTest 会把这条一致性钉住。
+
+    /**
+     * 逐节点：节点开始（V2 追加，设计文档 §10 的三层编排）
+     */
+    AI_TASK_STEP_STARTED("AI_TASK_STEP_STARTED", "节点开始"),
+
+    /**
+     * 逐节点：节点成功（V2 追加）
+     */
+    AI_TASK_STEP_SUCCEEDED("AI_TASK_STEP_SUCCEEDED", "节点成功"),
+
+    /**
+     * 逐节点：节点失败（V2 追加）
+     */
+    AI_TASK_STEP_FAILED("AI_TASK_STEP_FAILED", "节点失败"),
+
+    /**
+     * 制品入库（V2 追加）：制品账本落一条，与"结果回写"区分——结果可以没有制品，制品也可以多份
+     */
+    AI_TASK_ARTIFACT_ADDED("AI_TASK_ARTIFACT_ADDED", "制品入库"),
+
+    /**
+     * 策略决策留痕（V2 追加）：与 {@link #AI_TASK_STATUS_CHANGED} 区分——
+     * 决策说了什么（PASS/REJECT/MANUAL 与理由）不是状态迁移本身
+     */
+    AI_TASK_POLICY_DECIDED("AI_TASK_POLICY_DECIDED", "策略决策");
 
     /**
      * 编码
