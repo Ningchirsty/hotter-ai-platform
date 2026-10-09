@@ -192,9 +192,12 @@ fi
 #   本仓 @EnableScheduling 原先只在 ruoyi-common-job 的 SnailJobConfig 上，而它被
 #   @ConditionalOnProperty(snail-job.enabled=true) 门控（生产为 false），
 #   => **任务状态机扫描 / 审批超时扫描 / 健康探测一个都不会被触发，而且不报错、不留日志**。
-#   2026-10-08 第 3 步已用 aigov.scheduling.enabled=true 打开调度，**但只激活了健康探测**：
-#   另外两个写操作任务各自被自己的开关门控，生产**仍是关闭**（这是有意的，见 ADR-009）。
-#   所以本项检查依然必要——它守的是"该被扫掉的悬挂行没有被扫掉"。
+#   2026-10-08 第 3 步已用 aigov.scheduling.enabled=true 打开调度，但当时**只激活了健康探测**：
+#   另外两个写操作任务各自被自己的开关门控、生产为关闭（那是有意的，见 ADR-009）。
+#   2026-10-09 运维决定把这两个开关也打开（走 JVM 内调度，不再考虑外部 cron），并用生产夹具
+#   做过正反例验证（RETRY_WAIT+PLATFORM → QUEUED、到期 PENDING → EXPIRED、反例不动）。
+#   因此本项检查的**含义变了**：它现在守的是"三个扫描都该在跑，却没有真的在跑"——
+#   一旦报警，第一嫌疑是调度被关掉/回滚，而不是"设计上就没开"。
 #   当前 aig_task 与 aig_call_approval 都是 0 行，所以"看不出问题"；
 #   一旦有数据，症状才会出现（过期审批一直挂着、失败任务不再自动重试）。
 # 判据用**"不该存在的悬挂行"**，而不是去猜调度器状态：
@@ -216,13 +219,16 @@ if docker inspect "$MYSQL_CONTAINER" >/dev/null 2>&1; then
   if [[ "$overdue" =~ ^[0-9]+$ ]]; then
     if [ "$overdue" -gt 0 ] || [ "$stuck" -gt 0 ]; then
       report "[WARN] background jobs look inactive: overdue_pending_approvals=$overdue, stuck_tasks=$stuck"
-      report "           these rows SHOULD have been swept. The two write-sweeps are still switched off"
-      report "           on purpose (aigov.approval.expire-scan-enabled / aigov.task.scheduler.enabled)."
-      report "           Either enable one, or trigger manually: POST /aigov/approval/expire-scan"
-      report "           , POST /aigov/task/scheduler/sweep"
+      report "           these rows SHOULD have been swept. Both write-sweeps are ENABLED in prod"
+      report "           (aigov.approval.expire-scan-enabled / aigov.task.scheduler.enabled),"
+      report "           so this means they are not actually running. Check, in order:"
+      report "             1) startup log has '已启用调度子系统' (aigov.scheduling.enabled=true);"
+      report "             2) backend log has 扫描/探测 lines within the last hour;"
+      report "             3) trigger manually to separate 'job broken' from 'job off':"
+      report "                POST /aigov/approval/expire-scan | POST /aigov/task/scheduler/sweep"
       warn=$((warn + 1))
     else
-      report "[ok] no overdue approvals / stuck tasks (background sweeps not yet needed)"
+      report "[ok] no overdue approvals / stuck tasks (sweeps enabled, nothing is behind)"
     fi
   else
     report "[WARN] could not read background-job backlog from $MYSQL_CONTAINER"

@@ -129,8 +129,29 @@ WARN is the same as no alarm. Enabled-but-unbound models are now reported as a
 separate `[note]`: that is a hygiene decision for the owner, not an availability
 incident.
 
-Probes run **in-process** (`aigov.scheduling.enabled=true` plus
-`aigov.model.health-probe.enabled=true`), so for a routable model staleness really
+> **2026-10-09:** the two models behind that permanent WARN — `nvidia` (id 6) and
+> `openrouter/free` (id 7) — have been **disabled** (`is_enabled=0`), changed through
+> `PUT /aigov/model/base` so it lands in the oper log (`AI模型主数据`) rather than as a
+> hand-written UPDATE. Both had 0 capability bindings and 0 audit rows, so nothing routed
+> to them; `openrouter/free` keeps `is_default=1`, which only affects list ordering (no
+> code selects a model by that flag — verified by grep). Rollback: the same endpoint with
+> `isEnabled=true`.
+
+**The background-job check assumes all three jobs are enabled** (2026-10-09:
+`aigov.task.scheduler.enabled` and `aigov.approval.expire-scan-enabled` were switched on in
+`application-prod.yml`, after a production fixture test with positive *and* negative
+controls: a stale `RETRY_WAIT`+`PLATFORM` task advanced to `QUEUED` while the `EXTERNAL`
+one stayed put, and a past-due `PENDING` approval became `EXPIRED` while a future one did
+not). It looks for rows that **should have been swept** (`PENDING` past `expire_time`;
+`RETRY_WAIT/QUEUED` older than a day). Because the sweeps are now on, finding such rows
+means the scheduler is **not actually running** — not that the feature is off on purpose —
+so the WARN text tells the operator to check the startup line and the backend log, then
+trigger the endpoints manually to separate "broken" from "off".
+
+Probes run **in-process** (`aigov.scheduling.enabled=true`, plus one switch per job:
+`aigov.model.health-probe.enabled`, `aigov.task.scheduler.enabled`,
+`aigov.approval.expire-scan-enabled` — all three `true` in production since 2026-10-09),
+so for a routable model staleness really
 does mean the scheduler is not running; check the startup log for the
 `org.dromara.aigov.config.AigSchedulingConfig` line.
 
