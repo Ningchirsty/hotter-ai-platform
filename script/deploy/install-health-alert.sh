@@ -61,6 +61,10 @@ if [ ! -f "$CONF_DIR/config" ]; then
 #GH_REPO=Ningchirsty/hotter-ai-platform
 #GH_LABEL=ops/health-alert
 
+# 飞书/钉钉的自定义机器人常要求消息里含"自定义关键词"，否则拒收。
+# 填了它，脚本会把关键词放进每条告警正文（配套 WEBHOOK_URL 使用）。
+#WEBHOOK_KEYWORD=hotter
+
 # 持续异常时最多多久提醒一次（分钟）
 REPEAT_MINUTES=30
 EOF

@@ -130,6 +130,13 @@ host: $host   utc: $(date -u '+%Y-%m-%dT%H:%M:%SZ')   rc=$rc   action=$action
 
 $report"
 
+# 有些机器人平台要求消息里必须含某个"自定义关键词"，否则直接拒收（飞书/钉钉都有这一项）。
+# 配了 WEBHOOK_KEYWORD 就把它放进每条消息里，避免"装了却发不出去"。
+if [ -n "${WEBHOOK_KEYWORD:-}" ]; then
+  body="$WEBHOOK_KEYWORD
+$body"
+fi
+
 # ---- 通知：webhook 优先（不需要 GitHub 凭据），否则用 GitHub issue ----
 notify_webhook() {
   kind="text"
@@ -141,6 +148,9 @@ notify_webhook() {
   if [ "$DRY_RUN" = 1 ]; then
     log "DRY: would POST $WEBHOOK_URL with ${#payload} bytes"
     echo "DRY: would POST webhook ($kind) ${#payload} bytes"
+    # 打印正文预览：既能确认"关键词有没有被带上"，也让 --dry-run 真正可用。
+    # 正文是巡检报告，不含任何密钥（只有容器名、计数与判定）。
+    echo "DRY: payload preview: $(printf '%s' "$body" | head -c 220 | tr '\n' ' ')"
     return 0
   fi
   code=$(curl -s -o /dev/null -m 15 -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
