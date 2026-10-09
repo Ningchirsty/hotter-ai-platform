@@ -56,8 +56,6 @@ public class VideoCloudController extends BaseController {
     @ExceptionHandler(VideoTaskException.class)
     public R<Void> invalid(VideoTaskException e){return R.fail(400,e.getMessage());}
     private String tenant(){
-        Long user=LoginHelper.getUserId();if(user==null)throw VideoTaskException.invalidContract("当前未登录");
-        var tenants=jdbc.queryForList("SELECT tenant_id FROM sys_user WHERE user_id = ?",String.class,user);
-        if(tenants.isEmpty()||tenants.getFirst()==null||tenants.getFirst().isBlank())throw VideoTaskException.invalidContract("无法确认租户归属");return tenants.getFirst();
+        return VideoCloudTenantResolver.resolve(jdbc,LoginHelper.getUserId());
     }
 }
