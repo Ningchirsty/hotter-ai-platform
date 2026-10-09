@@ -63,6 +63,7 @@ public class VideoCloudService {
             var asset=repository.requireOwnedAsset(ref.assetId(),tenant,user);
             String expected=ref.role().equals("reference_video")?"VIDEO":ref.role().equals("reference_audio")?"AUDIO":"IMAGE";
             if(!expected.equals(asset.assetType())||asset.sizeBytes()==null||asset.sizeBytes()>64L*1024*1024)throw VideoTaskException.invalidContract("素材类型或大小与创作能力不匹配");
+            if(request.model().equals("wan2.7-i2v")&&ref.role().equals("first_frame"))validateReferenceRatio(request,asset.width(),asset.height());
             if(expected.equals("VIDEO")&&(asset.durationMillis()==null||asset.durationMillis()>profile(request.model()).path("maxVideoSeconds").asLong(15)*1000))throw VideoTaskException.invalidContract("参考视频需完成时长探测且不超过该型号时长上限");
             if(expected.equals("VIDEO"))videoMillis+=asset.durationMillis();
             if(expected.equals("AUDIO")){if(asset.durationMillis()==null||asset.durationMillis()<=0)throw VideoTaskException.invalidContract("参考音频需完成时长探测");audioMillis+=asset.durationMillis();}
@@ -124,6 +125,11 @@ public class VideoCloudService {
             verification.passed(request,id);
             event(id,tenant,"SUCCEEDED","云端视频已归档，可在我的任务播放");
         }catch(Exception e){if(e instanceof InterruptedException)Thread.currentThread().interrupt();repository.markFailedIfActive(id,e instanceof VideoTaskException ve?ve.getErrorCode():"CLOUD_RESULT_UNKNOWN",e instanceof VideoTaskException?e.getMessage():"云端视频执行中断，请核对供应商记录");event(id,tenant,"FAILED","云端任务未通过验收，不自动重新生成；请核对任务详情");}
+    }
+    static void validateReferenceRatio(CloudVideoRequest request,Integer width,Integer height) {
+        if(width==null||height==null||width<=0||height<=0)throw VideoTaskException.invalidContract("首帧图片需完成尺寸检测");
+        String[] parts=request.ratio().split(":");double ratio=Double.parseDouble(parts[0])/Double.parseDouble(parts[1]);
+        if(Math.abs((double)width/height-ratio)>ratio*.02)throw VideoTaskException.invalidContract("Wan 图生视频沿用首帧比例，请选择与图片一致的画面比例");
     }
     static void validateOutput(CloudVideoRequest request,int width,int height) {
         int expected=switch(request.resolution()){case "480p"->480;case "720p"->720;case "768p"->768;case "1080p"->1080;case "4k"->2160;default->0;};

@@ -30,4 +30,13 @@ class CloudVideoServiceTest {
   verify(repo,never()).transition(anyLong(),any(),any(),any(),any());
  }
  @Test void externalReferenceNeedsReadAddress(){var r=new CloudVideoRequest("wan2.7-i2v","I2V","scene",5,"720p","16:9",List.of(new CloudVideoRequest.Reference(1,"first_frame")),true,null,null,"key");when(props.getVerifiedVariants()).thenReturn(List.of(VideoCloudVerification.variant(r)));assertThrows(VideoTaskException.class,()->service.create(r,"tenant",7,1L));verify(repo,never()).insertTask(any());}
+ @Test void portraitReferenceCannotChargeForLandscapeVideo(){
+  var r=new CloudVideoRequest("wan2.7-i2v","I2V","scene",5,"720p","16:9",List.of(new CloudVideoRequest.Reference(1,"first_frame")),true,null,null,"key");
+  when(props.getVerifiedVariants()).thenReturn(List.of(VideoCloudVerification.variant(r)));
+  when(props.getPublicAssetBaseUrl()).thenReturn("https://pm.hottter.cn/prod-api");
+  when(repo.requireOwnedAsset(1,"tenant",7)).thenReturn(new VideoTaskRepository.AssetRow(1L,"tenant",7L,null,"IMAGE","UPLOAD","portrait.png","key","image/png",100L,null,720,1280,null,null));
+  assertThrows(VideoTaskException.class,()->service.create(r,"tenant",7,1L));
+  verify(repo,never()).insertTask(any());
+  assertDoesNotThrow(()->VideoCloudService.validateReferenceRatio(r,1280,720));
+ }
 }
