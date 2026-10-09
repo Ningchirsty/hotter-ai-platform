@@ -1,0 +1,791 @@
+{
+  "checkedAt": "2026-10-09",
+  "source": "https://bluocto.com/pricing",
+  "excludedFamily": "HappyHorse",
+  "profiles": [
+    {
+      "id": "kling-3.0-turbo",
+      "family": "Kling",
+      "group": "Kling 3.0",
+      "mode": "极速",
+      "capabilities": [
+        "T2V",
+        "I2V",
+        "FL2V"
+      ],
+      "durations": [
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "ratios": [
+        "16:9",
+        "9:16",
+        "1:1"
+      ],
+      "protocol": "openai",
+      "maxImages": 2,
+      "hasVideoReference": false,
+      "hasAudioReference": false,
+      "hasAudioOutput": false,
+      "billingExpression": "u(\"resolution\") == \"1080p\" ? tier(\"1080p\", u(\"seconds\") * 0.163) : tier(\"720p\", u(\"seconds\") * 0.11)",
+      "verified": false,
+      "maxVideos": 3,
+      "maxAudios": 3,
+      "maxVideoSeconds": 15,
+      "hasSeed": false
+    },
+    {
+      "id": "kling-3.0-omni",
+      "family": "Kling",
+      "group": "Kling 3.0",
+      "mode": "全能",
+      "capabilities": [
+        "T2V",
+        "I2V",
+        "FL2V"
+      ],
+      "durations": [
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "ratios": [
+        "16:9",
+        "9:16",
+        "1:1"
+      ],
+      "protocol": "openai",
+      "maxImages": 2,
+      "hasVideoReference": false,
+      "hasAudioReference": false,
+      "hasAudioOutput": false,
+      "billingExpression": "u(\"resolution\") == \"720p\" ? tier(\"720p\", u(\"seconds\") * 0.0823) : u(\"resolution\") == \"1080p\" ? tier(\"1080p\", u(\"seconds\") * 0.129) : tier(\"4k\", u(\"seconds\") * 0.329)",
+      "verified": false,
+      "maxVideos": 3,
+      "maxAudios": 3,
+      "maxVideoSeconds": 15,
+      "hasSeed": false
+    },
+    {
+      "id": "wan2.7-t2v",
+      "family": "Wan",
+      "group": "Wan 2.7",
+      "mode": "文生视频",
+      "capabilities": [
+        "T2V"
+      ],
+      "durations": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "ratios": [
+        "16:9",
+        "9:16",
+        "1:1",
+        "4:3",
+        "3:4"
+      ],
+      "protocol": "alibaba",
+      "maxImages": 9,
+      "hasVideoReference": false,
+      "hasAudioReference": false,
+      "hasAudioOutput": true,
+      "billingExpression": "u(\"resolution\") == \"1080p\" ? tier(\"1080p\", u(\"seconds\") * 0.153) : tier(\"720p\", u(\"seconds\") * 0.0816)",
+      "verified": false,
+      "maxVideos": 3,
+      "maxAudios": 3,
+      "maxVideoSeconds": 15,
+      "hasSeed": true
+    },
+    {
+      "id": "doubao-seedance-2-0-260128",
+      "family": "Seedance",
+      "group": "Seedance 2.0",
+      "mode": "标准",
+      "capabilities": [
+        "T2V",
+        "I2V",
+        "FL2V",
+        "R2V"
+      ],
+      "durations": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p",
+        "4k"
+      ],
+      "ratios": [
+        "adaptive",
+        "21:9",
+        "16:9",
+        "9:16",
+        "1:1",
+        "4:3",
+        "3:4"
+      ],
+      "protocol": "doubao",
+      "maxImages": 9,
+      "hasVideoReference": true,
+      "hasAudioReference": true,
+      "hasAudioOutput": true,
+      "billingExpression": "tier(\"base\", u(\"tokens\") * 3.19 / 1000000)",
+      "verified": false,
+      "maxVideos": 3,
+      "maxAudios": 3,
+      "maxVideoSeconds": 15,
+      "hasSeed": true
+    },
+    {
+      "id": "wan3.0-video-prime",
+      "family": "Wan",
+      "group": "Wan 3.0",
+      "mode": "增强",
+      "capabilities": [
+        "T2V",
+        "I2V",
+        "FL2V",
+        "R2V"
+      ],
+      "durations": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30
+      ],
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "ratios": [
+        "16:9",
+        "9:16",
+        "1:1",
+        "4:3",
+        "3:4"
+      ],
+      "protocol": "alibaba",
+      "maxImages": 10,
+      "hasVideoReference": true,
+      "hasAudioReference": true,
+      "hasAudioOutput": true,
+      "billingExpression": "u(\"resolution\") == \"720p\" ? tier(\"720p\", u(\"seconds\") * 0.0929) : u(\"resolution\") == \"1080p\" ? tier(\"1080p\", u(\"seconds\") * 0.1629) : tier(\"480p\", u(\"seconds\") * 0.0551)",
+      "verified": false,
+      "maxVideos": 5,
+      "maxAudios": 5,
+      "maxVideoSeconds": 15,
+      "hasSeed": true
+    },
+    {
+      "id": "kling-2.5-turbo",
+      "family": "Kling",
+      "group": "kling-2.5-turbo",
+      "mode": "极速",
+      "capabilities": [
+        "T2V",
+        "I2V",
+        "FL2V"
+      ],
+      "durations": [
+        5,
+        10
+      ],
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "ratios": [
+        "16:9",
+        "9:16",
+        "1:1"
+      ],
+      "protocol": "openai",
+      "maxImages": 2,
+      "hasVideoReference": false,
+      "hasAudioReference": false,
+      "hasAudioOutput": false,
+      "billingExpression": "u(\"resolution\") == \"1080p\" ? tier(\"1080p\", u(\"seconds\") * 0.08) : tier(\"720p\", u(\"seconds\") * 0.0412)",
+      "verified": false,
+      "maxVideos": 3,
+      "maxAudios": 3,
+      "maxVideoSeconds": 15,
+      "hasSeed": false
+    },
+    {
+      "id": "doubao-seedance-2-0-mini-260615",
+      "family": "Seedance",
+      "group": "Seedance 2.0",
+      "mode": "轻量",
+      "capabilities": [
+        "T2V",
+        "I2V",
+        "FL2V",
+        "R2V"
+      ],
+      "durations": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "resolutions": [
+        "480p",
+        "720p"
+      ],
+      "ratios": [
+        "adaptive",
+        "21:9",
+        "16:9",
+        "9:16",
+        "1:1",
+        "4:3",
+        "3:4"
+      ],
+      "protocol": "doubao",
+      "maxImages": 9,
+      "hasVideoReference": true,
+      "hasAudioReference": true,
+      "hasAudioOutput": true,
+      "billingExpression": "tier(\"base\", u(\"tokens\") * 1.60 / 1000000)",
+      "verified": false,
+      "maxVideos": 3,
+      "maxAudios": 3,
+      "maxVideoSeconds": 15,
+      "hasSeed": true
+    },
+    {
+      "id": "kling-2.6",
+      "family": "Kling",
+      "group": "kling-2.6",
+      "mode": "标准",
+      "capabilities": [
+        "T2V",
+        "I2V",
+        "FL2V"
+      ],
+      "durations": [
+        5,
+        10
+      ],
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "ratios": [
+        "16:9",
+        "9:16",
+        "1:1"
+      ],
+      "protocol": "openai",
+      "maxImages": 2,
+      "hasVideoReference": false,
+      "hasAudioReference": false,
+      "hasAudioOutput": false,
+      "billingExpression": "u(\"resolution\") == \"1080p\" ? tier(\"1080p\", u(\"seconds\") * 0.08) : tier(\"720p\", u(\"seconds\") * 0.0412)",
+      "verified": false,
+      "maxVideos": 3,
+      "maxAudios": 3,
+      "maxVideoSeconds": 15,
+      "hasSeed": false
+    },
+    {
+      "id": "doubao-seedance-2-5-260628",
+      "family": "Seedance",
+      "group": "Seedance 2.5",
+      "mode": "标准",
+      "capabilities": [
+        "T2V",
+        "I2V",
+        "FL2V",
+        "R2V"
+      ],
+      "durations": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30
+      ],
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "ratios": [
+        "adaptive",
+        "21:9",
+        "16:9",
+        "9:16",
+        "1:1",
+        "4:3",
+        "3:4"
+      ],
+      "protocol": "doubao",
+      "maxImages": 30,
+      "hasVideoReference": true,
+      "hasAudioReference": true,
+      "hasAudioOutput": true,
+      "billingExpression": "tier(\"base\", u(\"tokens\") * 4.84 / 1000000)",
+      "verified": false,
+      "maxVideos": 10,
+      "maxAudios": 3,
+      "maxVideoSeconds": 30,
+      "hasSeed": true
+    },
+    {
+      "id": "MiniMax-H3",
+      "family": "MiniMax",
+      "group": "MiniMax H3",
+      "mode": "标准",
+      "capabilities": [
+        "T2V",
+        "I2V",
+        "FL2V",
+        "R2V"
+      ],
+      "durations": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "resolutions": [
+        "768p",
+        "2k"
+      ],
+      "ratios": [
+        "16:9",
+        "adaptive",
+        "21:9",
+        "9:16",
+        "1:1",
+        "4:3",
+        "3:4"
+      ],
+      "protocol": "openai",
+      "maxImages": 9,
+      "hasVideoReference": true,
+      "hasAudioReference": true,
+      "hasAudioOutput": false,
+      "billingExpression": "u(\"resolution\") == \"2k\" ? tier(\"2k\", u(\"seconds\") * 0.135) : tier(\"768p\", u(\"seconds\") * 0.083)",
+      "verified": false,
+      "maxVideos": 3,
+      "maxAudios": 3,
+      "maxVideoSeconds": 15,
+      "hasSeed": false
+    },
+    {
+      "id": "wan2.7-i2v",
+      "family": "Wan",
+      "group": "Wan 2.7",
+      "mode": "图生视频",
+      "capabilities": [
+        "I2V"
+      ],
+      "durations": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "ratios": [
+        "16:9",
+        "9:16",
+        "1:1",
+        "4:3",
+        "3:4"
+      ],
+      "protocol": "alibaba",
+      "maxImages": 9,
+      "hasVideoReference": false,
+      "hasAudioReference": false,
+      "hasAudioOutput": true,
+      "billingExpression": "u(\"resolution\") == \"1080p\" ? tier(\"1080p\", u(\"seconds\") * 0.153) : tier(\"720p\", u(\"seconds\") * 0.0816)",
+      "verified": false,
+      "maxVideos": 3,
+      "maxAudios": 3,
+      "maxVideoSeconds": 15,
+      "hasSeed": true
+    },
+    {
+      "id": "wan2.7-r2v",
+      "family": "Wan",
+      "group": "Wan 2.7",
+      "mode": "参考生视频",
+      "capabilities": [
+        "R2V"
+      ],
+      "durations": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "ratios": [
+        "16:9",
+        "9:16",
+        "1:1",
+        "4:3",
+        "3:4"
+      ],
+      "protocol": "unconfirmed",
+      "maxImages": 9,
+      "hasVideoReference": false,
+      "hasAudioReference": false,
+      "hasAudioOutput": true,
+      "billingExpression": "u(\"resolution\") == \"1080p\" ? tier(\"1080p\", u(\"seconds\") * 0.153) : tier(\"720p\", u(\"seconds\") * 0.0816)",
+      "verified": false,
+      "maxVideos": 3,
+      "maxAudios": 3,
+      "maxVideoSeconds": 15,
+      "hasSeed": true
+    },
+    {
+      "id": "wan3.0-video",
+      "family": "Wan",
+      "group": "Wan 3.0",
+      "mode": "标准",
+      "capabilities": [
+        "T2V",
+        "I2V",
+        "FL2V",
+        "R2V"
+      ],
+      "durations": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30
+      ],
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "ratios": [
+        "16:9",
+        "9:16",
+        "1:1",
+        "4:3",
+        "3:4"
+      ],
+      "protocol": "alibaba",
+      "maxImages": 10,
+      "hasVideoReference": true,
+      "hasAudioReference": true,
+      "hasAudioOutput": true,
+      "billingExpression": "u(\"resolution\") == \"720p\" ? tier(\"720p\", u(\"seconds\") * 0.0674) : u(\"resolution\") == \"1080p\" ? tier(\"1080p\", u(\"seconds\") * 0.1145) : tier(\"480p\", u(\"seconds\") * 0.0409)",
+      "verified": false,
+      "maxVideos": 5,
+      "maxAudios": 5,
+      "maxVideoSeconds": 15,
+      "hasSeed": true
+    },
+    {
+      "id": "kling-3.0",
+      "family": "Kling",
+      "group": "Kling 3.0",
+      "mode": "标准",
+      "capabilities": [
+        "T2V",
+        "I2V",
+        "FL2V"
+      ],
+      "durations": [
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "ratios": [
+        "16:9",
+        "9:16",
+        "1:1"
+      ],
+      "protocol": "openai",
+      "maxImages": 2,
+      "hasVideoReference": false,
+      "hasAudioReference": false,
+      "hasAudioOutput": false,
+      "billingExpression": "u(\"resolution\") == \"720p\" ? tier(\"720p\", u(\"seconds\") * 0.0823) : u(\"resolution\") == \"1080p\" ? tier(\"1080p\", u(\"seconds\") * 0.129) : tier(\"4k\", u(\"seconds\") * 0.329)",
+      "verified": false,
+      "maxVideos": 3,
+      "maxAudios": 3,
+      "maxVideoSeconds": 15,
+      "hasSeed": false
+    },
+    {
+      "id": "doubao-seedance-2-0-fast-260128",
+      "family": "Seedance",
+      "group": "Seedance 2.0",
+      "mode": "快速",
+      "capabilities": [
+        "T2V",
+        "I2V",
+        "FL2V",
+        "R2V"
+      ],
+      "durations": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "resolutions": [
+        "480p",
+        "720p"
+      ],
+      "ratios": [
+        "adaptive",
+        "21:9",
+        "16:9",
+        "9:16",
+        "1:1",
+        "4:3",
+        "3:4"
+      ],
+      "protocol": "doubao",
+      "maxImages": 9,
+      "hasVideoReference": true,
+      "hasAudioReference": true,
+      "hasAudioOutput": true,
+      "billingExpression": "tier(\"base\", u(\"tokens\") * 2.56 / 1000000)",
+      "verified": false,
+      "maxVideos": 3,
+      "maxAudios": 3,
+      "maxVideoSeconds": 15,
+      "hasSeed": true
+    },
+    {
+      "id": "kling-o1",
+      "family": "Kling",
+      "group": "kling-o1",
+      "mode": "标准",
+      "capabilities": [
+        "T2V",
+        "I2V",
+        "FL2V"
+      ],
+      "durations": [
+        5,
+        10
+      ],
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "ratios": [
+        "16:9",
+        "9:16",
+        "1:1"
+      ],
+      "protocol": "openai",
+      "maxImages": 2,
+      "hasVideoReference": false,
+      "hasAudioReference": false,
+      "hasAudioOutput": false,
+      "billingExpression": "u(\"resolution\") == \"720p\" ? tier(\"720p\", u(\"seconds\") * 0.0823) : u(\"resolution\") == \"1080p\" ? tier(\"1080p\", u(\"seconds\") * 0.129) : tier(\"4k\", u(\"seconds\") * 0.329)",
+      "verified": false,
+      "maxVideos": 3,
+      "maxAudios": 3,
+      "maxVideoSeconds": 15,
+      "hasSeed": false
+    }
+  ]
+}

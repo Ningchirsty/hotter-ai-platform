@@ -22,7 +22,9 @@ export interface VideoCloudStatus {
   configured: boolean;
   referenceDeliveryConfigured: boolean;
   profiles: VideoCloudProfile[];
-  verifiedModels: string[];
+  verifiedVariants: string[];
+  validationVariants: string[];
+  validationRemaining: number;
 }
 export function normalizeVideoCloudDraft(draft: VideoCloudDraft, profile: VideoCloudProfile): VideoCloudDraft {
   return {
@@ -41,4 +43,25 @@ export function normalizeVideoCloudDraft(draft: VideoCloudDraft, profile: VideoC
           ? draft.ratio
           : profile.ratios[0]
   };
+}
+
+export function videoCloudVariant(draft: VideoCloudDraft): string {
+  return [
+    draft.model,
+    draft.capability,
+    draft.seconds,
+    draft.resolution,
+    draft.ratio,
+    draft.generateAudio === true
+  ].join('|');
+}
+export function videoCloudAccess(
+  draft: VideoCloudDraft,
+  status?: VideoCloudStatus | null
+): 'verified' | 'validation' | 'pending' {
+  if (!status?.configured || draft.seed !== undefined || draft.negativePrompt?.trim()) return 'pending';
+  const key = videoCloudVariant(draft);
+  if (status.verifiedVariants?.includes(key)) return 'verified';
+  if (status.validationRemaining > 0 && status.validationVariants?.includes(key)) return 'validation';
+  return 'pending';
 }

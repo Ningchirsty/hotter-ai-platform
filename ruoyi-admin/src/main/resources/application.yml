@@ -402,3 +402,14 @@ image:
     api-key-file: ${BLUOCTO_API_KEY_FILE:}
     timeout-seconds: ${BLUOCTO_TIMEOUT_SECONDS:600}
     output-hosts: ${BLUOCTO_OUTPUT_HOSTS:bluocto.com,rolldek.com,dashscope-463f.oss-accelerate.aliyuncs.com,dashscope-7c2c.oss-accelerate.aliyuncs.com}
+
+--- # 云端视频：独立启用，复用服务端密钥文件，按实际成片验收组合开放。
+video:
+  cloud:
+    enabled: ${BLUOCTO_VIDEO_ENABLED:false}
+    api-key-file: ${BLUOCTO_VIDEO_API_KEY_FILE:}
+    public-asset-base-url: ${BLUOCTO_VIDEO_PUBLIC_ASSET_BASE_URL:}
+    verification-file: ${BLUOCTO_VIDEO_VERIFICATION_FILE:}
+    validation-limit: ${BLUOCTO_VIDEO_VALIDATION_LIMIT:0}
+    validation-user-ids: ${BLUOCTO_VIDEO_VALIDATION_USER_IDS:}
+    validation-variants: ${BLUOCTO_VIDEO_VALIDATION_VARIANTS:}

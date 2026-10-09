@@ -35,7 +35,7 @@
 
     <div v-if="activeView === 'create'" class="workbench-grid">
       <section class="studio-card create-card">
-        <GenerationSource v-model="generationSource" :busy="uploading || submitting" />
+        <GenerationSource v-model="generationSource" :busy="uploading || submitting" :cloud-label="cloudStatus?.configured ? '已接入' : '待接入'" />
         <CloudVideoGenerationForm v-show="generationSource === 'cloud'" :busy="uploading || submitting || cloudUploading"
           :status="cloudStatus" ref="cloudForm" @change="updateCloudDraft" @uploading="cloudUploading = $event" />
         <div v-show="generationSource === 'local'" class="editor-body">
@@ -608,7 +608,7 @@ import {
 } from '@/api/video';
 import Pagination from '@/components/Pagination/index.vue';
 import CloudVideoGenerationForm from '@/components/CreativeInspiration/CloudVideoGenerationForm.vue';
-import { createVideoCloudTask, listVideoCloudModels, VIDEO_CLOUD_PROFILES, type VideoCloudDraft, type VideoCloudStatus } from '@/api/video/cloud';
+import { createVideoCloudTask, videoCloudAccess, listVideoCloudModels, VIDEO_CLOUD_PROFILES, type VideoCloudDraft, type VideoCloudStatus } from '@/api/video/cloud';
 import GenerationSource from '@/components/CreativeInspiration/GenerationSource.vue';
 import CreativeInspiration from '@/components/CreativeInspiration/index.vue';
 import {
@@ -651,7 +651,7 @@ const cloudBlockReason = computed(() => {
   if(!draft||!profile)return '请选择云端视频型号';
   if(profile.protocol==='unconfirmed')return '该型号的供应商协议待确认，暂不可提交';
   if(!cloudStatus.value?.configured)return '云端视频尚未启用，本轮可选择参数进行预览';
-  if(!cloudStatus.value.verifiedModels.includes(draft.model))return '该型号尚未进行真实视频验收，暂不可提交';
+  if(videoCloudAccess(draft,cloudStatus.value)==='pending')return '当前创作能力与输出参数组合尚未通过成片验收';
   if(!draft.prompt.trim())return '请填写视频描述';
   if(draft.capability!=='T2V'&&!cloudStatus.value.referenceDeliveryConfigured)return '参考素材读取地址尚未配置';
   const roles=draft.references.map(r=>r.role);
@@ -665,6 +665,7 @@ async function loadCloudStatus(){
   catch{cloudStatus.value=null;}
 }
 watch(generationSource,source=>{if(source==='cloud')void loadCloudStatus();});
+watch(activeView,view=>{if(view==='create'&&generationSource.value==='cloud')void loadCloudStatus();});
 
 const studioViews: Array<{ key: StudioView; label: string; icon: Component }> = [
   { key: 'create', label: '创建任务', icon: MagicStick },
@@ -1216,7 +1217,7 @@ async function submitCloudTask(){
     else ElMessage.success('云端任务已提交，完成后可在我的任务播放');
     await loadTasks();
   }catch(error){ElMessage.error((await extractErrorMessage(error))??'云端视频提交失败');await loadTasks();}
-  finally{submitting.value=false;}
+  finally{submitting.value=false;await loadCloudStatus();}
 }
 
 async function submitTask() {
