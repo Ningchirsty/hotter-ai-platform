@@ -116,11 +116,22 @@ public class GlobalExceptionHandler {
 
     /**
      * 找不到路由
+     *
+     * <p><b>为什么是 warn 而不是 error</b>：路由不存在是<b>例行事件</b>——扫描器、过期的书签、
+     * 老版本前端缓存都会打到不存在的地址。原先记 error 的后果不是"多几行日志"，而是
+     * <b>把真故障淹掉</b>：2026-10-09 实测，一次发布后的 15 分钟窗口里 3 条 ERROR 全部来自
+     * 我自己的未登录探针，运维只能靠"人认得出来"来区分真假。
+     * 判定口径：<b>error = 平台自己出了问题；例行失败（未登录、路由不存在、方法不支持）
+     * 记 warn</b>。warn 一样会落盘，没有丢可见性，只是不再触发按 ERROR 的告警。</p>
+     *
+     * <p>注意<b>刻意没有</b>把 {@code ServiceException}/{@code BaseException} 一起降级：
+     * 业务拒绝是要被人看见的（例如包体安全检查不通过），那属于"要不要按 ERROR 告警"的
+     * 另一个决定，不在本次范围内。见 {@code GlobalExceptionHandlerTest} 里钉住这条边界。</p>
      */
     @ExceptionHandler(NoHandlerFoundException.class)
     public R<Void> handleNoHandlerFoundException(NoHandlerFoundException e, HttpServletRequest request) {
         String requestURI = request.getRequestURI();
-        log.error("请求地址'{}'不存在.", requestURI);
+        log.warn("请求地址'{}'不存在.", requestURI);
         return R.fail(HttpStatus.HTTP_NOT_FOUND, "请求地址不存在");
     }
 

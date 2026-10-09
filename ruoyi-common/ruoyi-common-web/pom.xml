@@ -56,6 +56,18 @@
             <groupId>cn.hutool</groupId>
             <artifactId>hutool-crypto</artifactId>
         </dependency>
+
+        <!--
+            测试依赖（2026-10-09 加）：本模块此前没有 src/test，也没有任何测试依赖，
+            于是 GlobalExceptionHandler 的日志级别只能"裸改 + 注释"。
+            加它的直接目的是让「例行失败记 warn、业务异常仍记 error」这条边界有守卫测试
+            （GlobalExceptionHandlerTest：404 断言 WARN、ServiceException 断言仍是 ERROR）。
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
 </project>

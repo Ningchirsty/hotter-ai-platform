@@ -65,6 +65,18 @@
             <artifactId>caffeine</artifactId>
         </dependency>
 
+        <!--
+            测试依赖（2026-10-09 加）：本模块此前没有 src/test，也没有任何测试依赖，
+            于是 SaTokenExceptionHandler 的日志级别只能"裸改 + 注释"。
+            加它的直接目的是让「例行失败不记 error」这条口径有守卫测试
+            （SaTokenExceptionHandlerTest：断言仍输出、但级别是 WARN）。
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
     </dependencies>
 
 </project>
