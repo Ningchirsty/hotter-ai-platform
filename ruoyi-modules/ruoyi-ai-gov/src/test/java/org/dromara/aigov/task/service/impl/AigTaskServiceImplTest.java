@@ -345,6 +345,108 @@ class AigTaskServiceImplTest {
         verify(eventMapper, never()).insert(any(AigTaskEvent.class));
     }
 
+    @Test
+    @DisplayName("★ 记录进度：列落库 + 写 AI_TASK_PROGRESSED（这一列与这个事件此前都没有写入方）")
+    void recordProgressWritesColumnAndEvent() {
+        // 服务会读两次任务：写前取旧进度（10）、写后回读（40）
+        when(taskMapper.selectById(1L)).thenReturn(runningWithProgress(10), runningWithProgress(40));
+        when(taskMapper.updateById(any(AigTask.class))).thenReturn(1);
+
+        AigTask after = service.recordProgress(1L, 5, 40, "已出图 4/10");
+
+        ArgumentCaptor<AigTask> updateCaptor = ArgumentCaptor.forClass(AigTask.class);
+        verify(taskMapper).updateById(updateCaptor.capture());
+        AigTask update = updateCaptor.getValue();
+        assertEquals(40, update.getProgress());
+        assertEquals(5, update.getVersion(), "进度写入同样要走乐观锁");
+
+        ArgumentCaptor<AigTaskEvent> eventCaptor = ArgumentCaptor.forClass(AigTaskEvent.class);
+        verify(eventMapper).insert(eventCaptor.capture());
+        AigTaskEvent event = eventCaptor.getValue();
+        assertEquals("AI_TASK_PROGRESSED", event.getEventType());
+        assertNull(event.getFromStatus(), "进度更新不是状态迁移，from/to 必须为空");
+        assertNull(event.getToStatus());
+        assertTrue(event.getDetail().contains("10% → 40%"),
+            "说明里要给出变化前后，否则事后看不出是涨了还是回退了：" + event.getDetail());
+        assertTrue(event.getDetail().contains("已出图 4/10"), event.getDetail());
+        assertEquals("{\"progress\":40}", event.getPayloadJson(),
+            "载荷按契约给 progress（0-100 的整数）");
+        assertEquals(40, after.getProgress());
+    }
+
+    @Test
+    @DisplayName("★ 同一个百分比重复回执不写：否则事件流会被固定间隔的重推刷成噪音")
+    void recordProgressSkipsUnchangedValue() {
+        when(taskMapper.selectById(1L)).thenReturn(runningWithProgress(40));
+
+        AigTask after = service.recordProgress(1L, 5, 40, "轮询回执");
+
+        assertEquals(40, after.getProgress());
+        verify(taskMapper, never()).updateById(any(AigTask.class));
+        verify(eventMapper, never()).insert(any(AigTaskEvent.class));
+    }
+
+    @Test
+    @DisplayName("★ 进度可以回退（重试从低百分比重跑），不能被当成异常拦掉")
+    void recordProgressAllowsGoingBackwards() {
+        when(taskMapper.selectById(1L)).thenReturn(runningWithProgress(80), runningWithProgress(10));
+        when(taskMapper.updateById(any(AigTask.class))).thenReturn(1);
+
+        service.recordProgress(1L, 5, 10, "第 2 次尝试重新开始");
+
+        ArgumentCaptor<AigTaskEvent> eventCaptor = ArgumentCaptor.forClass(AigTaskEvent.class);
+        verify(eventMapper).insert(eventCaptor.capture());
+        assertTrue(eventCaptor.getValue().getDetail().contains("80% → 10%"),
+            "回退也要如实记录：" + eventCaptor.getValue().getDetail());
+    }
+
+    @Test
+    @DisplayName("进度越界一律拒绝（0-100 之外的值会让页面进度条失真）")
+    void recordProgressRejectsOutOfRange() {
+        assertThrows(ServiceException.class, () -> service.recordProgress(1L, 5, null, null));
+        assertThrows(ServiceException.class, () -> service.recordProgress(1L, 5, -1, null));
+        assertThrows(ServiceException.class, () -> service.recordProgress(1L, 5, 101, null));
+        verify(taskMapper, never()).updateById(any(AigTask.class));
+    }
+
+    @Test
+    @DisplayName("★ 终态任务不再接受进度：否则会出现「已完成但进度 10%」的自相矛盾行")
+    void recordProgressRejectsTerminalTask() {
+        when(taskMapper.selectById(1L)).thenReturn(task(1L, "SUCCEEDED", 1, 6));
+
+        ServiceException ex = assertThrows(ServiceException.class,
+            () -> service.recordProgress(1L, 6, 10, "迟到的回执"));
+
+        assertTrue(ex.getMessage().contains("终态"), ex.getMessage());
+        verify(taskMapper, never()).updateById(any(AigTask.class));
+    }
+
+    @Test
+    @DisplayName("★ 成功的任务进度必须是 100：一列恒为 0 比没有这一列更坏")
+    void successSetsProgressToHundred() {
+        when(taskMapper.selectById(1L)).thenReturn(task(1L, "RUNNING", 0, 5), task(1L, "SUCCEEDED", 0, 6));
+        when(taskMapper.updateById(any(AigTask.class))).thenReturn(1);
+
+        service.transition(1L, 5, AigTaskStatusEnum.SUCCEEDED, "调用成功", null);
+
+        ArgumentCaptor<AigTask> captor = ArgumentCaptor.forClass(AigTask.class);
+        verify(taskMapper).updateById(captor.capture());
+        assertEquals(100, captor.getValue().getProgress(),
+            "已完成的任务在接口里显示 0%，读的人只能理解为「还没开始」");
+    }
+
+    /**
+     * 造一个「运行中 + 指定进度」的任务行。
+     *
+     * @param progress 当前进度
+     * @return 任务
+     */
+    private static AigTask runningWithProgress(int progress) {
+        AigTask task = task(1L, "RUNNING", 0, 5);
+        task.setProgress(progress);
+        return task;
+    }
+
     /**
      * 造一个「内存里的库」：insert 回填主键、updateById 把更新对象上的非空字段写回同一行。
      *

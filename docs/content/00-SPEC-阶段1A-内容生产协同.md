@@ -425,6 +425,19 @@ ContentParseService
 | §16.1 大文件存企业网盘/对象存储 | 复用现有 OSS，业务库存 file_ref | 已有能力 |
 | 图片 OCR | 归档 + 明确提示 | B4 |
 
+> **2026-10-09 现状注（本节是"阶段1A 当时的裁剪"，不是"今天还没有"，别混读）**
+> 生产实测（`aig_capability`）：能力目录已有 **8 个**且全部 `status='0'`，其中本文件规划的
+> `document_parse` / `brief_precheck` / `talent_match` / `deliverable_consistency` 四个之外，
+> 还有 `creative_direction_draft`（视觉方向草稿）、`creative_storyboard_draft`（分镜草稿）、
+> `visual_dna_extract`（视觉基因抽取）、`image_generation`（图像生成）——它们是后续视觉工厂
+> 各轮接入的，不在阶段1A 范围内。绑定：7 个能力各 1 条启用绑定，`image_generation` 有 5 条；
+> 路由策略 **24** 条。第一行"仅登记 3 个"是**阶段1A 当时的口径**，不再等于现状。
+> 同上，第二行"调用授权审批 / 用量配额 不做"**已被后续工作补上**：`aig_call_approval`
+> （C3：按"人 × 能力 × 数据等级"授权、带有效期、申请人不得自审）与 `aig_user_quota`
+> （按调用次数、自然日/月、超限 fail-closed）都已落地并在生产建表；评测账本
+> `aig_evaluation_case` 有 8 条黄金用例。截至本次核对，审批单/配额行/评测运行的生产行数
+> 分别为 0/0/0（表在、能力通，只是还没被真实业务用到）。
+
 ---
 
 ## 9. 验收方式

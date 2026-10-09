@@ -244,6 +244,33 @@ public interface IAigTaskService {
                                  String routeSnapshot, boolean externalCall, Long latencyMs);
 
     /**
+     * 记录任务<b>进度</b>（{@code aig_task.progress}）并写事件 {@code AI_TASK_PROGRESSED}。
+     *
+     * <p><b>为什么需要它</b>：这一列此前只在创建时被写成 {@code 0}，之后再没人动过；
+     * 事件 {@code AI_TASK_PROGRESSED}（词表里的"进度更新"）同样<b>没有任何写入方</b>。
+     * 于是「任务跑到哪一步了」这个问题在数据上无法回答——接口里那一列恒为 0，
+     * 读的人会以为"还没开始"，而任务可能已经跑完。</p>
+     *
+     * <p><b>三条口径</b>：</p>
+     * <ol>
+     *     <li><b>数值重复不写</b>：进度回执常按固定间隔重推，同一个百分比反复写会把事件流刷成噪音，
+     *         而事件流的价值正在于"每一行都是一次真实变化"；</li>
+     *     <li><b>允许回退</b>：重试会从低百分比重新开始（如 80% 失败后重跑回 10%），
+     *         把回退当异常拦掉，等于逼调用方在客户端撒谎；</li>
+     *     <li><b>终态一律拒绝</b>：已成功/已失败/已取消的任务不再接受进度——那时"跑到哪"已经
+     *         被终态回答，继续接受只会造出"已完成但进度 10%"这种自相矛盾的行。</li>
+     * </ol>
+     *
+     * @param taskId          任务ID
+     * @param expectedVersion 期望版本（乐观锁）
+     * @param progress        进度，0-100
+     * @param detail          可读说明（可空）
+     * @return 更新后的任务
+     * @throws org.dromara.common.core.exception.ServiceException 数值越界、任务不存在、已是终态或版本冲突
+     */
+    AigTask recordProgress(Long taskId, Integer expectedVersion, Integer progress, String detail);
+
+    /**
      * 人工选定候选资产（把候选置为 APPROVED 并记录选定人）。
      *
      * <p><b>这是「自动流程只筛除、不放行」的唯一出口</b>：{@link #recordResult} 会拒绝自动置

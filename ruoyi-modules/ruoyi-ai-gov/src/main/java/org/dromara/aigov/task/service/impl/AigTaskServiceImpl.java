@@ -541,6 +541,78 @@ public class AigTaskServiceImpl implements IAigTaskService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public AigTask recordProgress(Long taskId, Integer expectedVersion, Integer progress, String detail) {
+        if (taskId == null) {
+            throw new ServiceException("任务ID不能为空");
+        }
+        if (expectedVersion == null) {
+            throw new ServiceException("期望版本不能为空：记录进度同样需要乐观锁版本");
+        }
+        if (progress == null || progress < 0 || progress > 100) {
+            throw new ServiceException("进度必须在 0-100 之间，收到：" + progress);
+        }
+        AigTask current = loadTask(taskId);
+        // 终态拒绝：那时「跑到哪」已被终态回答，继续接受只会造出「已完成但进度 10%」的自相矛盾行
+        if (isTerminal(current.getStatus())) {
+            throw new ServiceException("任务已是终态（" + current.getStatus() + "），不再接受进度更新：taskId=" + taskId);
+        }
+        Integer before = current.getProgress();
+        if (before != null && before.equals(progress)) {
+            // 回执常按固定间隔重推同一个百分比：重复写会把事件流刷成噪音，而事件流的价值
+            // 正在于「每一行都是一次真实变化」
+            log.debug("进度未变化，跳过写入, taskId={}, progress={}", taskId, progress);
+            return current;
+        }
+        AigTask update = new AigTask();
+        update.setTaskId(taskId);
+        update.setVersion(expectedVersion);
+        update.setProgress(progress);
+        if (taskMapper.updateById(update) == 0) {
+            throw new ServiceException("任务已被并发修改，进度未记录：taskId=" + taskId
+                + "，期望版本=" + expectedVersion);
+        }
+        AigTask after = loadTask(taskId);
+        appendEvent(after, nextSequence(taskId), AigTaskEventTypeEnum.AI_TASK_PROGRESSED, null, null,
+            describeProgress(progress, detail, before), "{\"progress\":" + progress + "}");
+        log.info("记录任务进度, taskId={}, progress {} -> {}, detail={}", taskId, before, progress,
+            StringUtils.blankToDefault(detail, "-"));
+        return after;
+    }
+
+    /**
+     * 任务是否已到终态（终态不再接受进度更新）。
+     *
+     * @param status 状态编码
+     * @return 终态返回 true
+     */
+    private boolean isTerminal(String status) {
+        AigTaskStatusEnum value = AigTaskStatusEnum.find(status);
+        return value == AigTaskStatusEnum.SUCCEEDED || value == AigTaskStatusEnum.FAILED
+            || value == AigTaskStatusEnum.CANCELLED || value == AigTaskStatusEnum.REJECTED;
+    }
+
+    /**
+     * 组装进度事件的可读说明。
+     *
+     * @param progress 本次进度
+     * @param detail   调用方说明（可空）
+     * @param before   变化前的进度（可空）
+     * @return 说明文本
+     */
+    private String describeProgress(Integer progress, String detail, Integer before) {
+        StringBuilder text = new StringBuilder("进度 ");
+        if (before != null) {
+            text.append(before).append("% → ");
+        }
+        text.append(progress).append("%");
+        if (StringUtils.isNotBlank(detail)) {
+            text.append("，说明=").append(detail);
+        }
+        return text.toString();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public AigTask markDispatched(Long taskId, Integer expectedVersion, String providerCode,
                                   String providerJobId, boolean externalCall) {
         if (taskId == null) {
@@ -903,6 +975,11 @@ public class AigTaskServiceImpl implements IAigTaskService {
         if (to == AigTaskStatusEnum.SUCCEEDED || to == AigTaskStatusEnum.FAILED
             || to == AigTaskStatusEnum.CANCELLED) {
             update.setFinishedAt(LocalDateTime.now());
+        }
+        if (to == AigTaskStatusEnum.SUCCEEDED) {
+            // 成功即 100%：否则「已完成」的任务在接口里显示进度 0，
+            // 读的人只能理解为「还没开始」——一列恒定不变的值比没有这一列更坏
+            update.setProgress(100);
         }
     }
 

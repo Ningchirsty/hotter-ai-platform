@@ -80,6 +80,17 @@ HOTTER_KEEP_IMAGES=20 sudo bash /usr/local/sbin/image-gc.sh --dry-run   # widen 
 Digests dropped by the policy are not lost: the GHCR credential is verified to work, so
 any of them can be pulled again by digest.
 
+**`local/*` images are legacy — safe to delete.** The retention policy only covers the two
+`ghcr.io/ningchirsty/hotter-ai-platform-*` repositories, because those are the only images the
+release channel can deploy: `hotter-release` hard-validates the reference against
+`^ghcr\.io/ningchirsty/hotter-ai-platform-(backend|frontend)@sha256:[0-9a-f]{64}$` and dies on
+anything else. So a `local/hotter-backend:*` image can never be a rollback target or a
+deployment candidate — it is a leftover from the pre-GHCR build flow. On 2026-10-09 eleven such
+images (`local/hotter-{backend,frontend}:*`, `local/creative-renderer:f1-e10b243`, `node:20-slim`)
+were deleted and the root filesystem gained ~4.9GB. **Still keep** any `local/*` image that a
+running container references (e.g. `local/creative-renderer:r52`, `local/hotter-snailai-server:*`)
+— delete by the same rule as everything else: "referenced by a container" wins.
+
 
 Because `hotter-release` is root-owned and only takes effect after
 `sudo install`, both `deploy-poc.yml` and `deploy-frontend-poc.yml` also run an
