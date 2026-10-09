@@ -73,7 +73,17 @@ public class AigTaskCallbackBo implements Serializable {
     private String toStatus;
 
     /**
-     * 回调声明的错误码（失败回调时由上层归类）
+     * 回调声明的错误码（失败回调时填）。
+     *
+     * <p><b>两种形态都接受</b>：本层 {@code AigErrorClassEnum} 的编码（{@code TIMEOUT}…），
+     * 或 Provider 自有的码（{@code invalid api key}、{@code gateway_timeout}…）。
+     * 服务层用 {@code AigErrorClassEnum.classify} 归类：先认结构化码，认不出再按文本兜底，
+     * <b>都认不出就记 UNKNOWN（不猜）</b>。</p>
+     *
+     * <p><b>它决定的是「失败之后去哪」</b>：分类决定重试还是转人工（见
+     * {@code AigTaskStateMachine#restingAfterFailure}）。此前这一路把声明码整条丢掉、
+     * 一律记成 UNKNOWN，于是「Provider 说超时」的任务显示成「不知道为什么会失败」，
+     * 处置也随之偏了。</p>
      */
     @Size(max = 64, message = "错误码长度不能超过 64")
     private String errorCode;

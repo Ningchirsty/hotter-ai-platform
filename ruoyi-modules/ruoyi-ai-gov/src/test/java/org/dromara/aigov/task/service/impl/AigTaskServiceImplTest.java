@@ -1160,6 +1160,80 @@ class AigTaskServiceImplTest {
         verify(taskMapper, never()).updateById(any(AigTask.class));
     }
 
+    @Test
+    @DisplayName("★ 回调声明的失败原因必须落到任务上：此前 bo.getErrorCode() 被整条丢掉")
+    void callbackFailureCarriesDeclaredErrorClass() throws Exception {
+        when(taskMapper.selectOne(any())).thenReturn(task(1L, "RUNNING", 1, 4));
+        when(callbackMapper.selectOne(any())).thenReturn(null);
+        when(taskMapper.selectById(1L)).thenReturn(task(1L, "RUNNING", 1, 4), task(1L, "FAILED", 2, 5));
+        when(taskMapper.updateById(any(AigTask.class))).thenReturn(1);
+
+        AigCallbackVo vo = service.handleCallback(failedCallback("TIMEOUT", "上游超时"));
+
+        assertEquals("ACCEPTED", vo.getProcessResult(), "实际=" + vo.getDetail());
+        assertEquals("FAILED", vo.getTaskStatus());
+        // 停在 FAILED 的处置由错误分类决定：UNKNOWN 会停在原地，TIMEOUT 才谈得上重试。
+        // 丢掉声明码 → 记成 UNKNOWN，运维看到的就是「不知道为什么会超时」
+        ArgumentCaptor<AigTask> updateCaptor = ArgumentCaptor.forClass(AigTask.class);
+        verify(taskMapper).updateById(updateCaptor.capture());
+        assertEquals(AigErrorClassEnum.TIMEOUT.getCode(), updateCaptor.getValue().getErrorCode(),
+            "回调说 TIMEOUT，就必须记 TIMEOUT（而不是 UNKNOWN）");
+        assertTrue(updateCaptor.getValue().getErrorMessage().contains("TIMEOUT"),
+            "error_message 里要保留对方的原始声明：" + updateCaptor.getValue().getErrorMessage());
+
+        // 原始声明同时留在回调账本：任务行记归类结果，账本记「对方到底说了什么」
+        ArgumentCaptor<AigCallback> ledgerCaptor = ArgumentCaptor.forClass(AigCallback.class);
+        verify(callbackMapper).insert(ledgerCaptor.capture());
+        assertTrue(ledgerCaptor.getValue().getDetail().contains("声明错误码=TIMEOUT"),
+            "实际=" + ledgerCaptor.getValue().getDetail());
+    }
+
+    @Test
+    @DisplayName("★ Provider 自有错误码走文本兜底归类；认不出则如实记 UNKNOWN（不猜）")
+    void callbackVendorCodeIsClassifiedThenFallsBackToUnknown() throws Exception {
+        when(callbackMapper.selectOne(any())).thenReturn(null);
+        when(taskMapper.selectById(1L)).thenReturn(task(1L, "RUNNING", 1, 4), task(1L, "FAILED", 2, 5));
+        when(taskMapper.updateById(any(AigTask.class))).thenReturn(1);
+
+        when(taskMapper.selectOne(any())).thenReturn(task(1L, "RUNNING", 1, 4));
+        service.handleCallback(failedCallback("invalid api key", "上游拒绝"));
+        ArgumentCaptor<AigTask> first = ArgumentCaptor.forClass(AigTask.class);
+        verify(taskMapper).updateById(first.capture());
+        assertEquals(AigErrorClassEnum.AUTH_FAILED.getCode(), first.getValue().getErrorCode(),
+            "自有码认不出时按文本兜底（invalid api key → AUTH_FAILED），这是既有 classify 的能力");
+
+        clearInvocations(taskMapper, callbackMapper);
+        when(callbackMapper.selectOne(any())).thenReturn(null);
+        when(taskMapper.selectById(1L)).thenReturn(task(1L, "RUNNING", 1, 4), task(1L, "FAILED", 2, 5));
+        when(taskMapper.updateById(any(AigTask.class))).thenReturn(1);
+        service.handleCallback(failedCallback("vendor_code_9", "就是坏掉了"));
+        ArgumentCaptor<AigTask> second = ArgumentCaptor.forClass(AigTask.class);
+        verify(taskMapper).updateById(second.capture());
+        assertEquals(AigErrorClassEnum.UNKNOWN.getCode(), second.getValue().getErrorCode(),
+            "全认不出时记 UNKNOWN——「失败但不知道为什么」必须显式可查，不能留空");
+    }
+
+    /**
+     * 造一条「失败」回调（对 PAYLOAD 重新签名，保证验签通过）。
+     *
+     * @param errorCode 声明的错误码（可空）
+     * @param detail    说明（可空）
+     * @return 回调入参
+     */
+    private AigTaskCallbackBo failedCallback(String errorCode, String detail) {
+        AigTaskCallbackBo bo = new AigTaskCallbackBo();
+        bo.setProviderCode("bluocto");
+        bo.setProviderJobId("j-1");
+        bo.setEventId("evt-fail-" + errorCode + "-" + detail);
+        bo.setToStatus(AigTaskStatusEnum.FAILED.getCode());
+        bo.setErrorCode(errorCode);
+        bo.setDetail(detail);
+        bo.setRawPayload(PAYLOAD);
+        bo.setSignAlgorithm(AigTaskCallbackSigner.ALGORITHM);
+        bo.setSignature(signer.signHex("bluocto", PAYLOAD));
+        return bo;
+    }
+
     /**
      * 造一条既有事件（用于序号推算）。
      *

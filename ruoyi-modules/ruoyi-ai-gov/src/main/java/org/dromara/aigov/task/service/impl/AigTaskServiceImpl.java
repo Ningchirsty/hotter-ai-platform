@@ -894,9 +894,15 @@ public class AigTaskServiceImpl implements IAigTaskService {
             return stale;
         }
         try {
+            // 回调声明的失败原因必须落到任务上：此前这一路**完全丢掉了 bo.getErrorCode()**，
+            // 于是「Provider 说 TIMEOUT」的任务被记成 error_code=UNKNOWN——
+            // 而 UNKNOWN 的处置与 TIMEOUT 不同（不重试），运维翻到这一行只会更迷惑
+            AigErrorClassEnum declaredClass = classifyCallbackError(bo);
             AigTask moved = transition(task.getTaskId(), task.getVersion(), to,
-                StringUtils.blankToDefault(bo.getDetail(), "Provider 回调推进状态"), null);
-            writeCallback(task.getTaskId(), bo, payloadHash, YES, "已按回调推进状态", "ACCEPTED", NO);
+                StringUtils.blankToDefault(bo.getDetail(), "Provider 回调推进状态"), null,
+                declaredClass, callbackErrorMessage(bo));
+            writeCallback(task.getTaskId(), bo, payloadHash, YES,
+                "已按回调推进状态" + describeDeclaredError(bo, declaredClass), "ACCEPTED", NO);
             AigCallbackVo accepted = base("ACCEPTED", "已推进任务状态到 " + moved.getStatus());
             accepted.setTaskId(task.getTaskId());
             accepted.setTaskStatus(moved.getStatus());
@@ -911,6 +917,69 @@ public class AigTaskServiceImpl implements IAigTaskService {
             conflict.setTaskId(task.getTaskId());
             return conflict;
         }
+    }
+
+    /**
+     * 归类回调声明的失败原因。
+     *
+     * <p><b>为什么这里不能只认「本枚举的码」</b>：各家 Provider 回的码形态不同——
+     * 有的直接给 {@code TIMEOUT}（正好是我们的码），有的给 {@code invalid api key}、
+     * {@code gateway_timeout} 这类自有码。{@link AigErrorClassEnum#classify} 正是为此写的
+     * 三级判定（结构化码 → HTTP 状态 → 文本兜底），回调这条路只是没有 HTTP 状态可用，
+     * 于是传 null——<b>认不出照样返回 UNKNOWN，不猜</b>。</p>
+     *
+     * <p><b>把声明码也当成「文本」喂给兜底那一级</b>：{@code classify} 的第三级只扫
+     * {@code message}，若只把声明码放进第一级，像 {@code invalid api key} 这种自有码
+     * 就会既认不出、又不进文本兜底，直接落 UNKNOWN。回调这条路上「文本」本来就只有
+     * 声明码与说明两处，把它们一起给兜底那级才谈得上兜底（实测：只传 message 时
+     * {@code invalid api key} → UNKNOWN，传两段拼起来 → AUTH_FAILED）。</p>
+     *
+     * <p>没有任何声明时返回 null：由 {@code applyFailureFacts} 按 UNKNOWN 记
+     * （「失败但不知道为什么」这件事必须显式可查，而不是留一个空列）。</p>
+     *
+     * @param bo 回调入参
+     * @return 错误分类；无可归类信息时返回 null
+     */
+    private AigErrorClassEnum classifyCallbackError(AigTaskCallbackBo bo) {
+        if (StringUtils.isBlank(bo.getErrorCode()) && StringUtils.isBlank(bo.getDetail())) {
+            return null;
+        }
+        String text = (StringUtils.blankToDefault(bo.getErrorCode(), "") + " "
+            + StringUtils.blankToDefault(bo.getDetail(), "")).trim();
+        return AigErrorClassEnum.classify(bo.getErrorCode(), null, text);
+    }
+
+    /**
+     * 回调要写进 {@code error_message} 的可读原因。
+     *
+     * @param bo 回调入参
+     * @return 原因文本（可空）
+     */
+    private String callbackErrorMessage(AigTaskCallbackBo bo) {
+        String detail = StringUtils.blankToDefault(bo.getDetail(), "");
+        if (StringUtils.isBlank(bo.getErrorCode())) {
+            return detail;
+        }
+        String declared = "声明错误码=" + bo.getErrorCode();
+        return detail.isEmpty() ? declared : declared + "；" + detail;
+    }
+
+    /**
+     * 组装回调账本里关于「声明错误码」的一行说明（保留 Provider 原始声明）。
+     *
+     * <p>任务行上记的是<b>归类结果</b>，Provider 的原始码只在这里留痕——
+     * 两者都要有：前者驱动处置，后者用于对账「对方到底说了什么」。</p>
+     *
+     * @param bo            回调入参
+     * @param declaredClass 归类结果（可空）
+     * @return 说明片段（无声明时为空串）
+     */
+    private String describeDeclaredError(AigTaskCallbackBo bo, AigErrorClassEnum declaredClass) {
+        if (StringUtils.isBlank(bo.getErrorCode())) {
+            return "";
+        }
+        return "，声明错误码=" + bo.getErrorCode() + "（归类为 "
+            + (declaredClass == null ? AigErrorClassEnum.UNKNOWN.getCode() : declaredClass.getCode()) + "）";
     }
 
     /**
