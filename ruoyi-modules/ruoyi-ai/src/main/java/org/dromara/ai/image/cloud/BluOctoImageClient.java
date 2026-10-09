@@ -180,7 +180,7 @@ public class BluOctoImageClient {
                 int status = response.statusCode();
                 if (status == 401 || status == 403) throw failure("CLOUD_AUTH_FAILED", "云端 API Key 无效或没有该模型权限");
                 if (status == 429) throw failure("CLOUD_RATE_LIMITED", "云端限流或额度不足，请检查供应商控制台");
-                if (status < 200 || status >= 300) throw failure("CLOUD_HTTP_ERROR", "云端接口返回 HTTP " + status);
+                if (status < 200 || status >= 300) throw failure(status >= 400 && status < 500 ? "CLOUD_HTTP_REJECTED" : "CLOUD_HTTP_ERROR", "云端接口返回 HTTP " + status);
                 var read = new java.util.concurrent.FutureTask<byte[]>(() -> stream.readNBytes(limit + 1));
                 Thread.startVirtualThread(read);
                 byte[] body;
