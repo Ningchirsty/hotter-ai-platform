@@ -1,5 +1,7 @@
 package org.dromara.aigov.task.domain.bo;
 
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
@@ -93,5 +95,18 @@ public class AigTaskCallbackBo implements Serializable {
      */
     @Size(max = 1000, message = "说明长度不能超过 1000")
     private String detail;
+
+    /**
+     * 执行面回报的进度（0-100，可选）
+     *
+     * <p>异步执行面在 {@code RUNNING} 阶段回报进度用。平台的处理口径：
+     * 只在任务处于 {@code RUNNING}/{@code DISPATCHED} 时接受、同一个百分比不重复记账
+     * （见 {@code IAigTaskService#recordProgress}）；<b>写不进去也不让整条回调失败</b>——
+     * 进度是信息性的，为它把一次合法的状态回调整体判失败，只会让 Provider 反复重推同一件事。
+     * 未记录的原因随响应回给对方，并写日志。</p>
+     */
+    @Min(value = 0, message = "进度不能小于 0")
+    @Max(value = 100, message = "进度不能大于 100")
+    private Integer progress;
 
 }

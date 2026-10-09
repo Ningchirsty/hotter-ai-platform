@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hotter.internal/aigov/v2/contract/provider-callback.schema.json",
+  "title": "Provider Callback v1",
+  "description": "执行面（Provider / 业务域 / 外部 Agent）回调控制面的载荷。签名为 HMAC-SHA256，覆盖**原始请求体字节**，放在请求头里（X-Hotter-Signature）；因此本载荷必须原样发送、不得重新序列化。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["eventId", "providerJobId", "toStatus"],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "本次事件的幂等键（与 X-Hotter-Provider 组成唯一键）。重复投递同一 eventId 只会被记账一次。"
+    },
+    "providerJobId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "外部作业ID：平台按 (providerCode, providerJobId) 定位任务。"
+    },
+    "toStatus": {
+      "enum": ["RUNNING", "SUCCEEDED", "FAILED", "CANCELLED"],
+      "description": "执行面声明的目标状态。协议到本词表的映射由**回调适配层**负责：各家 Provider 的完成语义写法不同，让平台去猜的方向是「把失败当成功」。不在本枚举里的目标状态一律按顺序过期（ORDER_STALE）拒绝。"
+    },
+    "errorCode": {
+      "type": "string",
+      "maxLength": 64,
+      "description": "失败原因的结构化码（失败回调时填）。可以是 contract/error-codes.json 里的码（TIMEOUT…），也可以是 Provider 自有码（invalid api key…）：平台先认结构化码、再按文本兜底归类，都认不出记 UNKNOWN（不猜）。"
+    },
+    "detail": {
+      "type": "string",
+      "maxLength": 1000,
+      "description": "可读说明（写进任务 error_message 与回调账本）。禁止放密钥与受限原文。"
+    },
+    "progress": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "进度（可选）。异步执行面在 RUNNING 阶段回报进度用；平台只在任务处于 RUNNING/DISPATCHED 时接受，且**同一个百分比不重复记账**。"
+    }
+  }
+}

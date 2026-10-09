@@ -1,0 +1,7 @@
+{
+  "eventId": "evt-77a1b0c9d2",
+  "providerJobId": "job-comfy-88213",
+  "toStatus": "SUCCEEDED",
+  "detail": "渲染完成，产出 1 张 2048x2048 PNG",
+  "progress": 100
+}

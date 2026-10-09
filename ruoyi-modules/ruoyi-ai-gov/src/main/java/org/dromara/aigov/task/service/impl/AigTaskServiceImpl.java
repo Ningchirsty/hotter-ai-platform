@@ -894,16 +894,27 @@ public class AigTaskServiceImpl implements IAigTaskService {
             return stale;
         }
         try {
+            AigTask latest = task;
+            String progressNote = "";
+            if (bo.getProgress() != null) {
+                try {
+                    latest = recordProgress(task.getTaskId(), task.getVersion(), bo.getProgress(), bo.getDetail());
+                } catch (ServiceException e) {
+                    log.warn("回调携带的进度未记录, taskId={}, progress={}, 原因={}",
+                        task.getTaskId(), bo.getProgress(), e.getMessage());
+                    progressNote = "；进度未记录（" + e.getMessage() + "）";
+                }
+            }
             // 回调声明的失败原因必须落到任务上：此前这一路**完全丢掉了 bo.getErrorCode()**，
             // 于是「Provider 说 TIMEOUT」的任务被记成 error_code=UNKNOWN——
             // 而 UNKNOWN 的处置与 TIMEOUT 不同（不重试），运维翻到这一行只会更迷惑
             AigErrorClassEnum declaredClass = classifyCallbackError(bo);
-            AigTask moved = transition(task.getTaskId(), task.getVersion(), to,
+            AigTask moved = transition(task.getTaskId(), latest.getVersion(), to,
                 StringUtils.blankToDefault(bo.getDetail(), "Provider 回调推进状态"), null,
                 declaredClass, callbackErrorMessage(bo));
             writeCallback(task.getTaskId(), bo, payloadHash, YES,
                 "已按回调推进状态" + describeDeclaredError(bo, declaredClass), "ACCEPTED", NO);
-            AigCallbackVo accepted = base("ACCEPTED", "已推进任务状态到 " + moved.getStatus());
+            AigCallbackVo accepted = base("ACCEPTED", "已推进任务状态到 " + moved.getStatus() + progressNote);
             accepted.setTaskId(task.getTaskId());
             accepted.setTaskStatus(moved.getStatus());
             accepted.setAccepted(true);

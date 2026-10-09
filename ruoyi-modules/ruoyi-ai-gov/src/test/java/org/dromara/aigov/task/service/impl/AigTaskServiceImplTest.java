@@ -1234,6 +1234,64 @@ class AigTaskServiceImplTest {
         return bo;
     }
 
+    @Test
+    @DisplayName("★ 回调携带进度：先记进度再推进状态，且推进用的是记完进度后的版本")
+    void callbackRecordsProgressBeforeAdvancing() throws Exception {
+        when(taskMapper.selectOne(any())).thenReturn(task(1L, "RUNNING", 1, 4));
+        when(callbackMapper.selectOne(any())).thenReturn(null);
+        // 读序：记进度前读旧进度(40,v4) → 记完回读(60,v5) → 迁移读源状态(v5) → 迁移后回读(v6)
+        when(taskMapper.selectById(1L)).thenReturn(runningWithProgressOnVersion(40, 4),
+            runningWithProgressOnVersion(60, 5), task(1L, "RUNNING", 1, 5), task(1L, "SUCCEEDED", 1, 6));
+        when(taskMapper.updateById(any(AigTask.class))).thenReturn(1);
+
+        AigTaskCallbackBo bo = signedCallback();
+        bo.setProgress(60);
+        AigCallbackVo vo = service.handleCallback(bo);
+
+        assertEquals("ACCEPTED", vo.getProcessResult(), vo.getDetail());
+        // 进度写入的 CAS 版本是 4；状态迁移必须用写完之后的新版本，否则会被乐观锁打回
+        ArgumentCaptor<AigTask> captor = ArgumentCaptor.forClass(AigTask.class);
+        verify(taskMapper, times(2)).updateById(captor.capture());
+        assertEquals(60, captor.getAllValues().get(0).getProgress(), "先写进度");
+        assertEquals(5, captor.getAllValues().get(1).getVersion(),
+            "状态迁移要带记完进度后的版本（否则乐观锁会把它打回）");
+        assertTrue(captor.getAllValues().get(1).getStatus().contains("SUCCEEDED")
+                || "SUCCEEDED".equals(captor.getAllValues().get(1).getStatus()),
+            "第二次更新是状态迁移：" + captor.getAllValues().get(1).getStatus());
+    }
+
+    @Test
+    @DisplayName("★ 进度写不进去也不能让回调失败：原因随响应回给对方（信息性数据不阻塞关键路径）")
+    void callbackSurvivesProgressWriteFailure() throws Exception {
+        when(taskMapper.selectOne(any())).thenReturn(task(1L, "RUNNING", 1, 4));
+        when(callbackMapper.selectOne(any())).thenReturn(null);
+        // 读序：记进度时读到「不在执行态」（QUEUED）→ 进度被拒；随后迁移读源状态(RUNNING) → 回读(SUCCEEDED)
+        when(taskMapper.selectById(1L)).thenReturn(task(1L, "QUEUED", 1, 4),
+            task(1L, "RUNNING", 1, 4), task(1L, "SUCCEEDED", 1, 5));
+        when(taskMapper.updateById(any(AigTask.class))).thenReturn(1);
+
+        AigTaskCallbackBo bo = signedCallback();
+        bo.setProgress(50);
+        AigCallbackVo vo = service.handleCallback(bo);
+
+        assertEquals("ACCEPTED", vo.getProcessResult(), "进度写失败不该把整条回调判失败");
+        assertTrue(vo.getDetail().contains("进度未记录"),
+            "但也不能不声不响：原因要回给对方；实际=" + vo.getDetail());
+    }
+
+    /**
+     * 造一个「指定版本 + 指定进度」的运行中任务（用于进度 CAS 路径）。
+     *
+     * @param progress 进度
+     * @param version  版本
+     * @return 任务
+     */
+    private static AigTask runningWithProgressOnVersion(int progress, int version) {
+        AigTask task = task(1L, "RUNNING", 1, version);
+        task.setProgress(progress);
+        return task;
+    }
+
     /**
      * 造一条既有事件（用于序号推算）。
      *

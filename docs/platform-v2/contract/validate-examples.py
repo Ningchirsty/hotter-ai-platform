@@ -49,6 +49,7 @@ CASES = {
     "examples/result-succeeded.json": "execution-result.schema.json",
     "examples/error-policy-denied.json": "execution-result.schema.json",
     "examples/event-status-changed.json": "execution-event.schema.json",
+    "examples/callback-succeeded.json": "provider-callback.schema.json",
 }
 
 

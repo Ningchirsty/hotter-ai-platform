@@ -122,6 +122,9 @@ security:
     - /warm-flow-ui/config
     - /snail-chat/**
     - /api/snail/chat/**
+    # Provider 回调入口：它是机器对机器的接口，靠 HMAC 验签（AigTaskCallbackSigner）
+    # 而不是登录态。若不放这里，Sa-Token 拦截器会先要求登录，回调永远进不到业务代码
+    - /aigov/task/callback
 
 # MyBatisPlus配置
 # https://baomidou.com/config/
@@ -208,6 +211,9 @@ xss:
   excludeUrls:
     - /system/notice
     - /warm-flow/save-json
+    # Provider 回调：请求体要原样参与 HMAC 验签，而 XSS 过滤器会**重写请求体**——
+    # 不排除的话所有签名都会对不上，而且排查时看起来"密钥、算法、工具都正常"
+    - /aigov/task/callback
 
 --- # 分布式锁 lock4j 全局配置
 lock4j:
