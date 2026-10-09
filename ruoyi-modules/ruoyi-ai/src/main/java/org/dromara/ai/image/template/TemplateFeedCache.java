@@ -204,7 +204,7 @@ public class TemplateFeedCache {
         out.put("status",published(t)?"published":"maintenance");
         JsonNode profile=snapshot.profiles().get(t.path("binding").path("params_profile").asText());
         out.put("outputSize",profile==null?"":profile.path("definition").path("fixed").path("size").asText());
-        out.put("canGenerate",properties.isGenerationEnabled() && published(t)); return out;
+        out.put("canGenerate",properties.isGenerationEnabled() && properties.getVerifiedProfiles().contains(t.path("binding").path("params_profile").asText()) && published(t)); return out;
     }
     public byte[] cover(String id) {
         JsonNode t=require(id); if(!browsable()) throw new TemplateFeedException(503,"模板缓存已过期");

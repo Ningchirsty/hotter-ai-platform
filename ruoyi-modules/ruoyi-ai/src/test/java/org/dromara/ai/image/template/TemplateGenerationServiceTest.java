@@ -17,7 +17,8 @@ class TemplateGenerationServiceTest {
         jdbc=new JdbcTemplate(new DriverManagerDataSource("jdbc:h2:mem:tpl"+System.nanoTime()+";MODE=MySQL;DB_CLOSE_DELAY=-1","sa",""));
         jdbc.execute("CREATE TABLE ai_template_request (request_id VARCHAR(36) PRIMARY KEY,tenant_id VARCHAR(20),user_id BIGINT,client_request_id VARCHAR(36),request_hash VARCHAR(64),template_id VARCHAR(128),revision INT,task_id BIGINT,status VARCHAR(16),confirmed_not_submitted BOOLEAN DEFAULT FALSE,error_code VARCHAR(64),error_message VARCHAR(255),created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,UNIQUE(tenant_id,user_id,client_request_id))");
         jdbc.execute("CREATE TABLE ai_template_validation_audit (tenant_id VARCHAR(20),user_id BIGINT,template_id VARCHAR(128),rules VARCHAR(1024))");
-        cache=mock(TemplateFeedCache.class); properties=new TemplateFeedProperties(); properties.setGenerationEnabled(true); cloud=mock(ImageCloudService.class); tasks=mock(ImageTaskRepository.class);
+        jdbc.execute("CREATE TABLE ai_template_validation_budget (tenant_id VARCHAR(20),user_id BIGINT,issued INT,PRIMARY KEY(tenant_id,user_id))");
+        cache=mock(TemplateFeedCache.class); properties=new TemplateFeedProperties(); properties.setGenerationEnabled(true); properties.setVerifiedProfiles(List.of("img-square-hd","img-portrait-916")); cloud=mock(ImageCloudService.class); tasks=mock(ImageTaskRepository.class);
         var f=TemplateFeedCache.JSON.readTree(getClass().getResourceAsStream("/template-feed/full-4.json")); var t=f.path("templates").get(0);
         when(cache.require(t.path("id").asText())).thenReturn(t); when(cache.current()).thenReturn(new TemplateFeedCache.Snapshot(4,Map.of(),Map.of(),TemplateFeedCache.nodes(f.path("profiles")),java.time.Instant.now(),"")); when(cache.published(t)).thenReturn(true);
         when(cloud.createTemplate(anyString(),anyLong(),any(),any(),anyString(),anyString())).thenReturn(Map.of("taskId",123L)); when(cloud.executeTemplate(anyLong(),anyString(),anyLong())).thenReturn("ACCEPTED"); when(tasks.requireOwnedTask(123L,"a",7L)).thenReturn(Map.of("status","RUNNING"));
@@ -61,5 +62,12 @@ class TemplateGenerationServiceTest {
         ((com.fasterxml.jackson.databind.node.ObjectNode)body.path("variables")).put("injected","secret-text");
         assertThrows(TemplateFeedException.class,()->service.submit("a",7L,null,body));
         String rules=jdbc.queryForObject("SELECT rules FROM ai_template_validation_audit",String.class); assertEquals("undeclared_variable",rules); assertFalse(rules.contains("secret-text")); verifyNoInteractions(cloud);
+    }
+    @Test void paidValidationBudgetSurvivesRestartAndNeverExceedsTwoDispatches() {
+        properties.setGenerationEnabled(false); properties.setValidationUserIds(List.of(7L));
+        for(int i=0;i<3;i++) { body.put("client_request_id",UUID.randomUUID().toString()); service.submit("a",7L,null,body); }
+        verify(cloud,times(2)).createTemplate(anyString(),anyLong(),any(),any(),anyString(),anyString());
+        assertEquals(2,jdbc.queryForObject("SELECT issued FROM ai_template_validation_budget",Integer.class));
+        var restarted=new TemplateGenerationService(jdbc,cache,properties,cloud,tasks); assertFalse(restarted.canValidate("a",7L));
     }
 }
