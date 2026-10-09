@@ -1,0 +1,184 @@
+name: Production Health Alert (external)
+
+# 为什么再加一条外部探针（2026-10-09）：
+#   现有的 production-health-alert.yml 跑在 self-hosted runner 上——那是唯一能直连
+#   127.0.0.1:18082 的地方，也只有它能用 script/deploy/health-check.sh。但它有一个当时
+#   没被看出来的前提：**schedule 只在那台机器在线时才执行**。实测运行历史是
+#   01:17、07:27、10:2x、11:57、12:38、14:14、14:29，之后到当天 23:00 一次都没有——
+#   也就是说"每 5 分钟"在实际运行里并不成立，机器不在线的那几段等于没有巡检。
+#   本 workflow 跑在 **GitHub 托管 runner** 上，从公网探查，与那台机器是否在线无关，
+#   因此两条合起来才覆盖"后端整体挂了"和"宿主机/runner 不在了"两种情况。
+#
+# 判据必须看 **body**，不能看状态码：pm.hottter.cn 的 nginx 对任何路径都返回 200 +
+#   SPA 的 index.html（实测 https://pm.hottter.cn/prod-api/nope 也是 HTTP 200），
+#   所以"站点是活的"与"后端是活的"是两件事。这里要求 /prod-api/auth/code 返回
+#   **合法 JSON 且 code=200**——那段 JSON 只能由后端产生（验证码接口是 @SaIgnore 的公开口）。
+#
+# 覆盖面与不覆盖的东西（写清楚，免得被读成"什么都监控了"）：
+#   · 覆盖：公网到 nginx 到后端这条链路的可用性、后端能否产出合法响应；
+#   · 不覆盖：MySQL/Redis/MinIO/renderer 逐个组件的健康、磁盘余量、后端进程重启次数
+#     ——那些需要宿主机本地信息，仍由 self-hosted 那条巡检负责。
+on:
+  schedule:
+    # 每 5 分钟（GitHub 托管 runner；schedule 在默认分支上生效）
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      probe_base:
+        description: 'Override the base URL (used to verify the alert path itself)'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: production-health-external
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    name: Probe production from the public internet
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Probe frontend and backend
+        id: probe
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          set +e   # 自己处理失败并说清原因，不让 -e 把它变成没有输出的一行 "exit code N"
+          BASE="${{ inputs.probe_base }}"
+          if [ -z "$BASE" ]; then BASE="https://pm.hottter.cn"; fi
+          RETRY=(--retry 3 --retry-delay 2)
+          if curl --help all 2>/dev/null | grep -q -- '--retry-all-errors'; then
+            RETRY+=(--retry-all-errors)
+          fi
+          fail=0
+          report=""
+          note() { report="${report}$1"$'\n'; }
+
+          # 1) 前端（nginx 是否在服务 SPA）
+          fcode=$(curl -sS "${RETRY[@]}" -o /dev/null -w '%{http_code}' --max-time 20 "$BASE/")
+          [ "$?" -eq 0 ] || fail=1
+          note "frontend  $BASE/  ->  HTTP ${fcode:-?}"
+          [ "${fcode:-}" = "200" ] || fail=1
+
+          # 2) 后端（经 nginx 到后端；SPA 兜底是 HTML，所以这里必须解析出 JSON 的 code）
+          body=$(curl -sS "${RETRY[@]}" --max-time 20 "$BASE/prod-api/auth/code")
+          [ "$?" -eq 0 ] || fail=1
+          bcode=$(printf '%s' "$body" | sed -n 's/.*"code":\([0-9]*\).*/\1/p' | head -1)
+          note "backend   $BASE/prod-api/auth/code  ->  body code=${bcode:-none}"
+          if [ "${bcode:-}" != "200" ]; then
+            fail=1
+            note "backend body (first 200 chars): $(printf '%s' "$body" | head -c 200)"
+          fi
+
+          printf '%s\n' "$report"
+          {
+            echo "## Production health (external probe)"
+            echo
+            echo '```'
+            printf '%s\n' "$report"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          printf '%s' "$report" > /tmp/external-report.txt
+          echo "fail=$fail" >> "$GITHUB_OUTPUT"
+          if [ "$fail" -ne 0 ]; then
+            echo "::warning::公网探测判定为异常（fail=1）"
+          fi
+
+      - name: Raise or update the external alert issue
+        if: steps.probe.outputs.fail != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          set +e   # 同 production-health-alert.yml：DNS 抖动不该让本步骤悄悄中止
+          RETRY=(--retry 3 --retry-delay 2)
+          if curl --help all 2>/dev/null | grep -q -- '--retry-all-errors'; then
+            RETRY+=(--retry-all-errors)
+          fi
+          API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          auth=(-H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json"
+                -H "X-GitHub-Api-Version: 2022-11-28")
+          label="ops/health-alert-external"
+          api_failed=0
+          call() {
+            curl -sS "${RETRY[@]}" "$@"
+            local rc=$?
+            if [ "$rc" -ne 0 ]; then
+              echo "::warning::curl 退出码 $rc（目标 $API）——GitHub API 不可达或超时"
+              api_failed=1
+            fi
+            return 0
+          }
+          call -o /dev/null -X POST "${auth[@]}" "$API/labels" \
+            -d "{\"name\":\"$label\",\"color\":\"b60205\",\"description\":\"external production probe\"}"
+
+          TITLE="[生产告警·外部] 公网探测后端不可用"
+          BODY=$(jq -n --arg t "$TITLE" --arg b "$(printf '外部探针在 %s 判定异常。\n\n```\n%s\n```\n\n探针：`https://pm.hottter.cn/` 与 `/prod-api/auth/code`（要求 JSON code=200）。\n本告警来自 GitHub 托管 runner，与宿主机巡检相互独立。\n' \
+            "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$(cat /tmp/external-report.txt)")" \
+            '{title:$t, body:$b, labels:["'$label'"]}')
+
+          NUM=$(call "${auth[@]}" "$API/issues?state=open&labels=$label&per_page=5" \
+            | jq -r '.[0].number // empty')
+          if [ -n "${NUM:-}" ]; then
+            call -o /dev/null -X POST "${auth[@]}" "$API/issues/$NUM/comments" \
+              -d "$(jq -n --arg b "$(printf '再次异常于 %s\n\n```\n%s\n```' \
+                    "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$(cat /tmp/external-report.txt)")" '{body:$b}')"
+            echo "updated external alert issue #$NUM"
+          else
+            call -X POST "${auth[@]}" "$API/issues" -d "$BODY" | jq -r '"created external alert issue #\(.number) \(.html_url)"'
+          fi
+          if [ "$api_failed" -ne 0 ]; then
+            echo "::error::公网探测异常，但 GitHub API 不可达，告警 issue 可能未创建——请把这条红色 run 本身当作告警。"
+            exit 1
+          fi
+
+      - name: Close the external alert issue when healthy again
+        if: steps.probe.outputs.fail == '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          set +e
+          RETRY=(--retry 3 --retry-delay 2)
+          if curl --help all 2>/dev/null | grep -q -- '--retry-all-errors'; then
+            RETRY+=(--retry-all-errors)
+          fi
+          API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          auth=(-H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json"
+                -H "X-GitHub-Api-Version: 2022-11-28")
+          api_failed=0
+          call() {
+            curl -sS "${RETRY[@]}" "$@"
+            local rc=$?
+            if [ "$rc" -ne 0 ]; then
+              echo "::warning::curl 退出码 $rc（目标 $API）——GitHub API 不可达或超时"
+              api_failed=1
+            fi
+            return 0
+          }
+          NUM=$(call "${auth[@]}" "$API/issues?state=open&labels=ops/health-alert-external&per_page=5" \
+            | jq -r '.[0].number // empty')
+          if [ -n "${NUM:-}" ]; then
+            call -o /dev/null -X POST "${auth[@]}" "$API/issues/$NUM/comments" \
+              -d "{\"body\":\"外部探针在 $(date -u '+%Y-%m-%dT%H:%M:%SZ') 恢复正常，自动关闭。\"}"
+            call -o /dev/null -X PATCH "${auth[@]}" "$API/issues/$NUM" \
+              -d '{"state":"closed","state_reason":"completed"}'
+            echo "closed external alert issue #$NUM"
+          else
+            echo "no open external alert issue; nothing to close"
+          fi
+          if [ "$api_failed" -ne 0 ]; then
+            echo "::warning::生产健康，但 GitHub API 不可达，外部告警 issue 未能自动关闭（下次巡检会再试）。"
+          fi
+
+      - name: Fail the run so it is visible in Actions
+        if: steps.probe.outputs.fail != '0'
+        run: |
+          echo "external probe reported failure" >&2
+          exit 1

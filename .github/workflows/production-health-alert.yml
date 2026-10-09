@@ -79,15 +79,36 @@ jobs:
           RC: ${{ steps.health.outputs.rc }}
         run: |
           set -uo pipefail
-          # 用 curl 调 REST API，而不是 gh CLI：self-hosted runner 上**没有装 gh**
-          # （首次运行实测报 `gh: command not found`，exit 127）。curl 是判断平台必备，无新依赖。
+          # GitHub 给 run 注入的是 `bash -e`。2026-10-09 14:29 那次运行就是被它害的：
+          # curl 退出码 6（DNS 解析不了 api.github.com）让本步骤在**任何输出之前**中止，
+          # 日志里只剩一句 `exit code 6`，看不出是网络问题还是权限问题。
+          # 这里显式关掉 -e，自己处理失败并把它说清楚。
+          set +e
+          # curl 5 秒内解析不了域名就该重试；--retry-all-errors 只在支持的 curl 上加
+          # （旧 curl 会把未知选项当错误直接退出）。
+          RETRY=(--retry 3 --retry-delay 2)
+          if curl --help all 2>/dev/null | grep -q -- '--retry-all-errors'; then
+            RETRY+=(--retry-all-errors)
+          fi
           API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
           auth=(-H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json"
                 -H "X-GitHub-Api-Version: 2022-11-28")
           label="ops/health-alert"
+          api_failed=0
+          # 用 curl 调 REST API，而不是 gh CLI：self-hosted runner 上**没有装 gh**
+          # （首次运行实测报 `gh: command not found`，exit 127）。curl 是判断平台必备，无新依赖。
+          call() {
+            curl -sS "${RETRY[@]}" "$@"
+            local rc=$?
+            if [ "$rc" -ne 0 ]; then
+              echo "::warning::curl 退出码 $rc（目标 $API）——GitHub API 不可达或超时"
+              api_failed=1
+            fi
+            return 0
+          }
           # 标签不存在则创建（404 是正常的首次运行）
-          curl -s -o /dev/null -X POST "${auth[@]}" "$API/labels" \
-            -d "{\"name\":\"$label\",\"color\":\"d73a4a\",\"description\":\"production health alert\"}" || true
+          call -o /dev/null -X POST "${auth[@]}" "$API/labels" \
+            -d "{\"name\":\"$label\",\"color\":\"d73a4a\",\"description\":\"production health alert\"}"
 
           if [ "$RC" = "2" ]; then
             TITLE="[生产告警] 健康巡检有 WARN（未中断服务）"
@@ -99,15 +120,22 @@ jobs:
             '{title:$t, body:$b, labels:["ops/health-alert"]}')
 
           # 只维护一个 issue：按标签找 open 的，存在则评论更新，不存在则创建
-          NUM=$(curl -s "${auth[@]}" "$API/issues?state=open&labels=$label&per_page=5" \
+          NUM=$(call "${auth[@]}" "$API/issues?state=open&labels=$label&per_page=5" \
             | jq -r '.[0].number // empty')
           if [ -n "${NUM:-}" ]; then
-            curl -s -o /dev/null -X POST "${auth[@]}" "$API/issues/$NUM/comments" \
+            call -o /dev/null -X POST "${auth[@]}" "$API/issues/$NUM/comments" \
               -d "$(jq -n --arg b "$(printf '再次异常（rc=%s）于 %s\n\n```\n%s\n```' \
                     "$RC" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$(cat /tmp/health-report.txt)")" '{body:$b}')"
             echo "updated alert issue #$NUM"
           else
-            curl -s -X POST "${auth[@]}" "$API/issues" -d "$BODY" | jq -r '"created alert issue #\(.number) \(.html_url)"'
+            call -X POST "${auth[@]}" "$API/issues" -d "$BODY" | jq -r '"created alert issue #\(.number) \(.html_url)"'
+          fi
+
+          # 生产异常但告警发不出去 = 最坏的情况，必须红得显眼，并且原因可读。
+          # （即便这里不 exit 1，后面的 Fail the run 也会让 run 变红；这里是为了说清为什么。）
+          if [ "$api_failed" -ne 0 ]; then
+            echo "::error::生产巡检报告异常（rc=$RC），但 GitHub API 不可达，告警 issue 可能未创建/未更新——请把这条红色 run 本身当作告警。"
+            exit 1
           fi
 
       - name: Close the alert issue when healthy again
@@ -116,19 +144,39 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -uo pipefail
+          set +e   # 同上一处：不让 -e 把失败变成没有输出的一行 "exit code N"
+          RETRY=(--retry 3 --retry-delay 2)
+          if curl --help all 2>/dev/null | grep -q -- '--retry-all-errors'; then
+            RETRY+=(--retry-all-errors)
+          fi
           API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
           auth=(-H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json"
                 -H "X-GitHub-Api-Version: 2022-11-28")
-          NUM=$(curl -s "${auth[@]}" "$API/issues?state=open&labels=ops/health-alert&per_page=5" \
+          api_failed=0
+          call() {
+            curl -sS "${RETRY[@]}" "$@"
+            local rc=$?
+            if [ "$rc" -ne 0 ]; then
+              echo "::warning::curl 退出码 $rc（目标 $API）——GitHub API 不可达或超时"
+              api_failed=1
+            fi
+            return 0
+          }
+          NUM=$(call "${auth[@]}" "$API/issues?state=open&labels=ops/health-alert&per_page=5" \
             | jq -r '.[0].number // empty')
           if [ -n "${NUM:-}" ]; then
-            curl -s -o /dev/null -X POST "${auth[@]}" "$API/issues/$NUM/comments" \
+            call -o /dev/null -X POST "${auth[@]}" "$API/issues/$NUM/comments" \
               -d "{\"body\":\"健康巡检在 $(date -u '+%Y-%m-%dT%H:%M:%SZ') 恢复正常，自动关闭。\"}"
-            curl -s -o /dev/null -X PATCH "${auth[@]}" "$API/issues/$NUM" \
+            call -o /dev/null -X PATCH "${auth[@]}" "$API/issues/$NUM" \
               -d '{"state":"closed","state_reason":"completed"}'
             echo "closed alert issue #$NUM"
           else
             echo "no open alert issue; nothing to close"
+          fi
+          # 生产是健康的，这里失败只意味着"关不掉一条过期的告警"——那不是生产事故。
+          # 记 warn、**不**把 run 弄红：为这种事制造红色只会训练大家忽略红色。
+          if [ "$api_failed" -ne 0 ]; then
+            echo "::warning::生产健康，但 GitHub API 不可达，告警 issue 未能自动关闭（下次巡检会再试）。"
           fi
 
       - name: Fail the run so it is visible in Actions
