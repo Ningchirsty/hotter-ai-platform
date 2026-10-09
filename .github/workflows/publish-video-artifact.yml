@@ -1,0 +1,33 @@
+name: Publish verified video backend artifact
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+  packages: write
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Download tested immutable artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 37902157364 --repo Ningchirsty/hotter-ai-platform --name backend-image-da6ca77aa45c8b2c6a0668318910be58d2415f09 --dir artifact
+          cd artifact
+          sha256sum -c SHA256SUMS
+          docker load --input backend-image.tar.gz
+          test "$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' hotter-ai-platform-backend:da6ca77aa45c8b2c6a0668318910be58d2415f09)" = da6ca77aa45c8b2c6a0668318910be58d2415f09
+      - name: Publish exact tested image
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          trap 'docker logout ghcr.io' EXIT
+          image=ghcr.io/ningchirsty/hotter-ai-platform-backend:sha-da6ca77aa45c8b2c6a0668318910be58d2415f09
+          docker tag hotter-ai-platform-backend:da6ca77aa45c8b2c6a0668318910be58d2415f09 "$image"
+          docker push "$image"
+          docker inspect --format '{{index .RepoDigests 0}}' "$image" >> "$GITHUB_STEP_SUMMARY"
