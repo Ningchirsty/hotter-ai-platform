@@ -254,6 +254,40 @@ Rules for this credential:
 4. After replacing it, re-run a release to prove the pull still works
    (a silently-broken token is exactly what caused the 401/403 in the handoff note).
 
+### How to tell whether the host's registry credential still works (do **not** use curl)
+
+This matters because a wrong "the token is dead" conclusion is exactly what led to
+deleting the wrong token on 2026-10-08. On 2026-10-09 the same false alarm came up again:
+
+```bash
+# ✗ MISLEADING: a raw registry call returns 403 {"code":"DENIED","message":"invalid token"}
+#   even when the credential is perfectly good. GHCR's REST API does not accept a PAT
+#   directly as a Bearer token; the docker client does the token exchange for you.
+curl -s -H "Authorization: Bearer $GHCR_TOKEN" https://ghcr.io/v2/                         # -> 403
+curl -s -H "Authorization: Bearer $GHCR_TOKEN" https://ghcr.io/v2/<owner>/<pkg>/tags/list  # -> 403
+```
+
+```bash
+# ✓ CORRECT: exercise the path the release actually uses (docker login + pull),
+#   with a throwaway config dir so the host's real credentials are untouched.
+D=$(mktemp -d)
+printf '%s' "$GHCR_TOKEN" | DOCKER_CONFIG=$D docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+DOCKER_CONFIG=$D docker pull "ghcr.io/<owner>/<pkg>:sha-<full-sha>"   # "Login Succeeded" + a real pull = the credential is fine
+rm -rf "$D"
+```
+
+To resolve the **manifest digest** to deploy (the workflow input rejects anything but
+`ghcr.io/...@sha256:<64hex>`), use two independent sources and check that they agree:
+
+| Source | Command |
+|---|---|
+| registry (authoritative) | `docker buildx imagetools inspect <image>:sha-<sha> --format '{{.Manifest.Digest}}'` |
+| CI push log | the `sha-<sha>: digest: sha256:<64hex>` line of the *backend* image-publish job |
+| release script | it also runs `docker login` + `docker pull` itself (`hotter-release:114-119`) |
+
+`docker manifest inspect` prints the **config** digest for single-platform images — that is
+a *different* value and must not be used as the deploy input.
+
 ### Rotating it: the runbook, including how **not** to delete the wrong token
 
 GitHub Packages only accepts **classic** personal access tokens (fine-grained PATs have
