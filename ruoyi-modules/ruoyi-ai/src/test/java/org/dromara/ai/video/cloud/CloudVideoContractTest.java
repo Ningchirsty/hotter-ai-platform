@@ -21,6 +21,11 @@ class CloudVideoContractTest {
    assertThrows(VideoTaskException.class,()->bad.validate(p));
   }
  }
+ @Test void wan3UsesInstanceAdvertisedVideoCompatibilityWithoutEnablingUnverifiedVariants()throws Exception{
+  assertEquals("openai",profile("wan3.0-video").path("protocol").asText());
+  assertEquals("openai",profile("wan3.0-video-prime").path("protocol").asText());
+  assertEquals("alibaba",profile("wan2.7-t2v").path("protocol").asText());
+ }
  @Test void frameAndReferenceConstraintsAreEnforced()throws Exception{
   var p=profile("MiniMax-H3");
   assertThrows(VideoTaskException.class,()->draft(p,List.of(),"I2V").validate(p));
