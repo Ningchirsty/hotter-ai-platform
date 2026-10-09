@@ -24,6 +24,25 @@ except ImportError:  # pragma: no cover
 
 HERE = pathlib.Path(__file__).resolve().parent
 
+
+def load_json(path: pathlib.Path):
+    """读一个 JSON 文件；失败时**点名文件**而不是抛裸 traceback。
+
+    为什么不是小事：这个脚本要在 CI 里当门禁跑，而它原先遇到坏 JSON 会打出
+    `json.decoder.JSONDecodeError: ... line 1 column 1` —— **不带文件名**。
+    门禁输出里看不出是哪个文件坏了，等于让人去猜（本轮就真的踩到：一个被意外写成
+    UTF-8 BOM 的样例只报 "Unexpected UTF-8 BOM"，得自己去二分）。
+    这里统一返回 (数据, 错误信息)，由调用方汇总进 problems。
+    """
+    try:
+        return json.loads(path.read_text(encoding="utf-8")), None
+    except OSError as exc:
+        return None, f"{path.name}: 读不到（{exc}）"
+    except json.JSONDecodeError as exc:
+        return None, (f"{path.name}: 不是合法 JSON（{exc.msg}，行 {exc.lineno} 列 {exc.colno}）"
+                      f"；若提示 BOM，说明文件被写成了带 BOM 的 UTF-8")
+
+
 # 样例文件 -> 校验它的 Schema
 CASES = {
     "examples/request-detail-page.json": "execution-request.schema.json",
@@ -37,9 +56,15 @@ def main() -> int:
     problems = []
     checked = 0
     for rel, schema_name in CASES.items():
-        schema = json.loads((HERE / schema_name).read_text(encoding="utf-8"))
+        schema, err = load_json(HERE / schema_name)
+        if err:
+            problems.append(err)
+            continue
         Draft202012Validator.check_schema(schema)  # Schema 自身必须合法
-        instance = json.loads((HERE / rel).read_text(encoding="utf-8"))
+        instance, err = load_json(HERE / rel)
+        if err:
+            problems.append(err)
+            continue
         errors = sorted(Draft202012Validator(schema).iter_errors(instance),
                         key=lambda e: list(e.path))
         checked += 1
@@ -51,15 +76,22 @@ def main() -> int:
             print(f"  OK   {rel}  <-  {schema_name}")
 
     # 错误码表与 result schema 的 errorCode 枚举必须一致（防止两处漂移）
-    codes = json.loads((HERE / "error-codes.json").read_text(encoding="utf-8"))
-    declared = {c["code"] for c in codes["codes"]}
-    result = json.loads((HERE / "execution-result.schema.json").read_text(encoding="utf-8"))
-    in_schema = set(result["$defs"]["error"]["properties"]["errorCode"]["enum"])
-    if declared != in_schema:
-        problems.append("error-codes.json 与 execution-result.schema.json 的 errorCode 不一致："
-                        f"仅表中有 {sorted(declared - in_schema)}；仅 schema 有 {sorted(in_schema - declared)}")
-    else:
-        print(f"  OK   error-codes.json 与 execution-result.schema.json 一致（{len(declared)} 个码）")
+    codes, err = load_json(HERE / "error-codes.json")
+    if err:
+        problems.append(err)
+        codes = None
+    result, err = load_json(HERE / "execution-result.schema.json")
+    if err:
+        problems.append(err)
+        result = None
+    if codes is not None and result is not None:
+        declared = {c["code"] for c in codes["codes"]}
+        in_schema = set(result["$defs"]["error"]["properties"]["errorCode"]["enum"])
+        if declared != in_schema:
+            problems.append("error-codes.json 与 execution-result.schema.json 的 errorCode 不一致："
+                            f"仅表中有 {sorted(declared - in_schema)}；仅 schema 有 {sorted(in_schema - declared)}")
+        else:
+            print(f"  OK   error-codes.json 与 execution-result.schema.json 一致（{len(declared)} 个码）")
 
     print(f"\nchecked={checked} problems={len(problems)}")
     for p in problems:

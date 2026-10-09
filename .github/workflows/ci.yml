@@ -3,15 +3,17 @@ name: Backend CI
 on:
   push:
     # 纯文档推送不再跑全量 CI（2026-10-09，运维要求）。
-    #   * docs/** 与任何 .md 都不参与构建，也不被任何测试读取（已 grep 确认）。
-    #   * ⚠️ 刻意**不忽略** script/sql/**：后端测试 AigPermissionSeedCoverageTest 会读菜单/权限脚本，
+    #   * 只忽略**markdown**：docs/ 下还有非文档产物（`platform-v2/contract/*.schema.json`、
+    #     样例、`validate-examples.py`），它们由本工作流的契约校验步骤把关，
+    #     整目录忽略会让"改了契约却没人校验"——那正是要避免的静默。
+    #   * ⚠️ 不忽略 script/sql/**：后端测试 AigPermissionSeedCoverageTest 会读菜单/权限脚本，
     #     只改 SQL 也必须跑 CI，否则"新权限没人种"这类问题会漏到线上（真发生过）。
+    #   * ⚠️ 不忽略 script/deploy/**：那是生产发布与告警的实现，本工作流新增了 shell 校验步骤。
     #   * ⚠️ 刻意**不动 pull_request**：若将来分支保护把本工作流设为必需检查，
     #     被 paths-ignore 跳过的 PR 会永远等不到那个检查（GitHub 的已知坑）。
     #   * 顺带的取舍：被跳过的提交不会产出镜像；发布走的是显式 digest（见 deploy-poc.yml），
     #     不依赖"每个提交都有一个镜像"，所以这不影响发布通道。
     paths-ignore:
-      - 'docs/**'
       - '**/*.md'
   pull_request:
   workflow_dispatch:
@@ -67,6 +69,43 @@ jobs:
       #   吃过两次亏（Surefire 门禁、@EnableScheduling）。守卫同时要求：
       #   每个 *.test.mjs 都在 TEST_FLOORS 里登记（新文件不会被漏接）、通过数不低于登记下限
       #   （测试被删空/全 skip 会红）、fail=0。详见 script/ci/check-node-contract-tests.py。
+      # ---- Shell 脚本校验（2026-10-09 补：本仓此前对 *.sh **没有任何校验**）----
+      # 为什么需要：`script/deploy/**` 是生产发布与告警的实现（含 root 入口 `hotter-release`），
+      #   而一次 BOM / 行尾 / 引号失误的代价是"发布或告警静默失效"——R66 就因行尾缺陷吃过一次亏。
+      # 为什么用 `git ls-files` 而不是 glob：要覆盖**仓库里被跟踪的**脚本，且把无扩展名的
+      #   `script/deploy/hotter-release` 也算进来（漏掉它等于漏掉最要紧的那个）。
+      # 为什么只 gate 到 `--severity=error`：全量 shellcheck 在本仓当前有 17 条风格级提示
+      #   （SC2006/SC2268/SC2086/SC2034/SC2009/SC2126，2026-10-09 实测），直接开全量会训练人忽略告警；
+      #   error 级已能抓住 BOM、坏 shebang、以及真正会改变行为的引号问题。想开全量就先清那 17 条。
+      # 为什么 shellcheck 缺失要直接失败：静默跳过等于"看起来校验了、其实没有"（本项目反复强调的坑）。
+      - name: Verify shell scripts (syntax + shellcheck errors)
+        run: |
+          set -euo pipefail
+          mapfile -t scripts < <(git ls-files '*.sh' 'script/deploy/hotter-release')
+          if [ "${#scripts[@]}" -eq 0 ]; then
+            echo "no shell script found - did the discovery pattern break?" >&2
+            exit 1
+          fi
+          echo "shell scripts under check: ${#scripts[@]}"
+          printf '  %s\n' "${scripts[@]}"
+          for f in "${scripts[@]}"; do bash -n "$f"; done
+          command -v shellcheck >/dev/null 2>&1 || { echo "shellcheck missing on runner" >&2; exit 1; }
+          shellcheck --severity=error --shell=bash "${scripts[@]}"
+          echo "shell check OK"
+
+      # ---- 执行契约样例校验（阶段 0 的"契约层阻断"搬进 CI，2026-10-09）----
+      # 这个脚本自己就写着「阶段 1 应把它搬进 CI」（docs/platform-v2/contract/validate-examples.py）：
+      #   它用 JSON Schema 校验 contract/examples/ 下的每个样例，并检查 error-codes.json 与
+      #   result schema 的 errorCode 枚举一致。此前只在本地手工跑过 ⇒ 契约漂移无人拦。
+      # 用 venv 装 jsonschema：Ubuntu 24.04 的 pip 受 PEP 668 保护，直接装系统环境会被拒。
+      # 脚本缺 jsonschema 时会 exit 2（不静默跳过），这里前置安装是刻意的。
+      - name: Verify execution contract examples
+        run: |
+          set -euo pipefail
+          python3 -m venv /tmp/contract-venv
+          /tmp/contract-venv/bin/pip install --quiet --disable-pip-version-check 'jsonschema>=4'
+          /tmp/contract-venv/bin/python docs/platform-v2/contract/validate-examples.py
+
       - name: Verify workflow contracts
         run: python3 script/ci/check-node-contract-tests.py
 

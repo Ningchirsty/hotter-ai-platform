@@ -19,6 +19,12 @@ script/image/workflows/*.json text eol=lf
 # 上次踩坑的根因正是"新加的文件没有对应条目"（见上面 health-check.sh 的说明），
 # 本次又新增了 health-alert.sh / install-health-alert.sh 两个要在宿主机上跑的脚本。
 /script/deploy/*.sh text eol=lf
+# 2026-10-09：再进一步——把**全仓任何位置**的 *.sh 一次固定 LF，不再逐个目录补条目。
+# 直接动因：给 CI 加 `bash -n` 全仓扫描时发现 `script/bin/ry.sh` 与 `script/ci/fetch-ffmpeg.sh`
+# 没有条目，在 Windows 检出（core.autocrlf=true）下是 CRLF → 本地 `bash -n` 直接语法错，
+# 而 Linux 检出（CI）是 LF 通过。**同一份脚本在两处结论不同**，正是上面那条老坑的复发形态；
+# 本条把"将来任何新增 .sh"也一并覆盖。
+*.sh text eol=lf
 # 渲染模板同理（R7 踩到过）：模板文件按**文件字节**算 SHA-256 登记在 dp_layout_template，
 # requirePublished 一旦发现"渲染服务里的实时校验和 != 登记值"就**拒绝排版**。
 # 同一份模板在 Windows 检出是 CRLF、Linux 检出是 LF，sha256 不同 →
