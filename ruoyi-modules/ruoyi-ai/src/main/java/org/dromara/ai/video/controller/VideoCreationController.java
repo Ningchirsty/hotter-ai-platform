@@ -6,6 +6,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.ai.video.domain.VideoCapability;
 import org.dromara.ai.video.domain.VideoTaskStatus;
+import org.dromara.ai.video.cloud.VideoCloudService;
+import org.springframework.beans.factory.ObjectProvider;
 import org.dromara.ai.video.domain.WorkflowVersion;
 import org.dromara.ai.video.exception.VideoTaskException;
 import org.dromara.ai.video.service.AssetStorage;
@@ -95,6 +97,7 @@ public class VideoCreationController extends BaseController {
     private final WorkflowContractRegistry registry;
     private final H3TemplatePreparer preparer;
     private final VideoTaskRepository repository;
+    private final ObjectProvider<VideoCloudService> cloudService;
 
     /**
      * 后台执行器：任务提交后立即返回，真正的生成在守护线程里跑，前端轮询拿结果。
@@ -558,6 +561,7 @@ public class VideoCreationController extends BaseController {
         String tenantId = requireTenantId();
         long userId = LoginHelper.getUserId();
         Map<String, Object> task = repository.requireOwnedTask(taskId, tenantId, userId);
+        if (VideoCloudService.isCloud(task)) return R.ok(requireCloud().execute(taskId, tenantId, userId, false));
         String status = String.valueOf(task.get("status"));
         if (!VideoTaskStatus.QUEUED.name().equals(status)
             && !VideoTaskStatus.RUNNING.name().equals(status)) {
@@ -600,6 +604,7 @@ public class VideoCreationController extends BaseController {
         String tenantId = requireTenantId();
         long userId = LoginHelper.getUserId();
         Map<String, Object> task = repository.requireOwnedTask(taskId, tenantId, userId);
+        if (VideoCloudService.isCloud(task)) return R.ok(requireCloud().execute(taskId, tenantId, userId, true));
         String status = String.valueOf(task.get("status"));
         VideoTaskStatus from = VideoTaskStatus.valueOf(status);
         if (from == VideoTaskStatus.QUEUED || from == VideoTaskStatus.RUNNING) {
@@ -631,6 +636,12 @@ public class VideoCreationController extends BaseController {
     /**
      * 由任务行构造执行上下文。延迟到真正入队时才调用，队列满时不必白构造。
      */
+    private VideoCloudService requireCloud() {
+        var cloud = cloudService.getIfAvailable();
+        if (cloud == null) throw VideoTaskException.invalidContract("云端视频服务尚未启用");
+        return cloud;
+    }
+
     private VideoTaskOrchestrator.TaskContext buildContext(Map<String, Object> task,
                                                            String tenantId, long userId) {
         VideoCapability capability =

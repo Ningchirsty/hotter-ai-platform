@@ -237,18 +237,41 @@
         <time>{{ pricingDate }} 核对</time>
       </div>
       <p class="fee-note">
-        人民币按蓝章鱼公开汇率快照换算：1 美元 = {{ VIDEO_PRICING.displayCurrency.usdToCny }} 元
-        （{{ exchangeRateDate }} 更新）。
+        人民币按蓝章鱼公开汇率快照换算：1 美元 = {{ VIDEO_PRICING.displayCurrency.usdToCny }} 元 （{{
+          exchangeRateDate
+        }}
+        更新）。
       </p>
       <p class="fee-note fee-settlement">预计费用以公开媒体分组倍率计算，实际以账号通道结算为准。</p>
     </section>
+    <div v-if="status?.validationVariants?.length" class="cloud-field">
+      <label>本批次真实验收 · 剩余 {{ status.validationRemaining }} 次</label>
+      <div class="cloud-capabilities">
+        <button
+          v-for="variant in status.validationVariants"
+          :key="variant"
+          type="button"
+          :disabled="busy"
+          @click="selectValidation(variant)"
+        >
+          {{ variant.split('|')[0] }} · {{ labels[variant.split('|')[1]] }}
+          <small>{{ variant.split('|')[2] }} 秒 · {{ variant.split('|')[3] }} · {{ variant.split('|')[4] }}</small>
+        </button>
+      </div>
+    </div>
     <div class="cloud-summary">
       <span>
         {{ selected.family }} · {{ selected.mode }} · {{ draft.resolution.toUpperCase() }} · {{ draft.seconds }} 秒
       </span>
       <p>
         {{ status?.configured ? '服务端已配置蓝章鱼' : '服务端尚未启用云端视频' }} ·
-        {{ status?.verifiedModels?.includes(draft.model) ? '该型号已完成真实验收' : '真实成片验收待完成' }}
+        {{
+          videoCloudAccess(draft, status) === 'verified'
+            ? '当前参数组合已完成真实验收'
+            : videoCloudAccess(draft, status) === 'validation'
+              ? '本批次一次性验收，可真实提交'
+              : '当前参数组合待成片验收'
+        }}
       </p>
       <p v-if="selected.protocol === 'unconfirmed'">该型号的参考视频协议尚未获得供应商接口依据。</p>
     </div>
@@ -258,6 +281,7 @@
 import { computed, reactive, ref, watch } from 'vue';
 import {
   VIDEO_CLOUD_PROFILES,
+  videoCloudAccess,
   normalizeVideoCloudDraft,
   uploadVideoCloudAsset,
   type VideoCloudDraft,
@@ -275,6 +299,22 @@ import {
   type VideoCostQuote,
   VIDEO_PRICING
 } from '@/api/video/cloud-pricing';
+function selectValidation(variant: string) {
+  const [model, capability, seconds, resolution, ratio, audio] = variant.split('|');
+  const profile = profiles.find(p => p.id === model);
+  if (!profile) return;
+  selectProfile(profile);
+  Object.assign(draft, {
+    model,
+    capability,
+    seconds: Number(seconds),
+    resolution,
+    ratio,
+    generateAudio: profile.hasAudioOutput ? audio === 'true' : undefined,
+    seed: undefined,
+    negativePrompt: undefined
+  });
+}
 const props = defineProps<{ busy?: boolean; status?: VideoCloudStatus | null }>();
 const emit = defineEmits<{ change: [draft: VideoCloudDraft]; uploading: [value: boolean] }>();
 const profiles = VIDEO_CLOUD_PROFILES;
