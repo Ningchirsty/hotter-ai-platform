@@ -19,6 +19,8 @@ import org.dromara.aigov.agent.domain.vo.AigPackageRegisterVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageStatusVo;
 import org.dromara.aigov.agent.manifest.AigPackageManifestValidator;
 import org.dromara.aigov.config.AigPackageProperties;
+import org.dromara.aigov.agent.config.AigPackageSecurityProperties;
+import org.dromara.aigov.agent.helper.AigPackageArchiveScanner;
 import org.dromara.aigov.agent.helper.IAigPackageBodyStore;
 import org.dromara.aigov.agent.mapper.AigAgentMapper;
 import org.dromara.aigov.agent.mapper.AigAgentVersionMapper;
@@ -136,7 +138,8 @@ class AigPackageServiceImplTest {
         service = new AigPackageServiceImpl(packageMapper, packageVersionMapper, installLogMapper,
             agentMapper, agentVersionMapper, skillMapper, skillVersionMapper,
             new AigPackageManifestValidator(JsonMapper.builder().build()),
-            registryService, packageProperties, bodyStore, JsonMapper.builder().build());
+            registryService, packageProperties, bodyStore,
+            new AigPackageArchiveScanner(new AigPackageSecurityProperties()), JsonMapper.builder().build());
 
         when(packageMapper.insert(any(AigPackage.class))).thenAnswer(invocation -> {
             invocation.<AigPackage>getArgument(0).setPackageId(PKG_ID);

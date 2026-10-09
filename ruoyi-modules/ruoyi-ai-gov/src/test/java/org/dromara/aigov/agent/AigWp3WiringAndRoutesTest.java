@@ -5,6 +5,8 @@ import org.dromara.aigov.agent.domain.vo.AigPackageVo;
 import org.dromara.aigov.agent.enums.AigReleaseStatusEnum;
 import org.dromara.aigov.agent.evaluation.AigEvaluationSubjectRegistry;
 import org.dromara.aigov.agent.evaluation.AigExpectedRuleChecker;
+import org.dromara.aigov.agent.config.AigPackageSecurityProperties;
+import org.dromara.aigov.agent.helper.AigPackageArchiveScanner;
 import org.dromara.aigov.agent.helper.IAigPackageBodyStore;
 import org.dromara.aigov.agent.manifest.AigPackageManifestValidator;
 import org.dromara.aigov.agent.mapper.AigAgentBindingMapper;
@@ -395,11 +397,23 @@ class AigWp3WiringAndRoutesTest {
                                           AigPackageManifestValidator manifestValidator,
                                           IAigAgentRegistryService registryService,
                                           AigPackageProperties packageProperties,
+                                          AigPackageSecurityProperties packageSecurityProperties,
                                           IAigPackageBodyStore packageBodyStore,
                                           JsonMapper jsonMapper) {
             return new AigPackageServiceImpl(packageMapper, packageVersionMapper, installLogMapper,
                 agentMapper, agentVersionMapper, skillMapper, skillVersionMapper, manifestValidator,
-                registryService, packageProperties, packageBodyStore, jsonMapper);
+                registryService, packageProperties, packageBodyStore,
+                new AigPackageArchiveScanner(packageSecurityProperties), jsonMapper);
+        }
+
+        @Bean
+        AigPackageSecurityProperties packageSecurityProperties() {
+            return new AigPackageSecurityProperties();
+        }
+
+        @Bean
+        AigPackageArchiveScanner packageArchiveScanner(AigPackageSecurityProperties properties) {
+            return new AigPackageArchiveScanner(properties);
         }
 
         @Bean

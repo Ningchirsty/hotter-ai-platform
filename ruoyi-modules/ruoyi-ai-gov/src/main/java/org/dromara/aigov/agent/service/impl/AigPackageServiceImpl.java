@@ -21,6 +21,8 @@ import org.dromara.aigov.agent.domain.vo.AigPackageStatusVo;
 import org.dromara.aigov.agent.enums.AigPackageInstallActionEnum;
 import org.dromara.aigov.agent.enums.AigReleaseStatusEnum;
 import org.dromara.aigov.agent.enums.AigReleaseTargetTypeEnum;
+import org.dromara.aigov.agent.helper.AigArchiveScanResult;
+import org.dromara.aigov.agent.helper.AigPackageArchiveScanner;
 import org.dromara.aigov.agent.helper.IAigPackageBodyStore;
 import org.dromara.aigov.agent.manifest.AigManifestAgentSpec;
 import org.dromara.aigov.agent.manifest.AigManifestScanResult;
@@ -154,6 +156,14 @@ public class AigPackageServiceImpl implements IAigPackageService {
      */
     private final IAigPackageBodyStore bodyStore;
 
+    /**
+     * 包体（压缩包）安全检查器（F-02）。
+     *
+     * <p>与 {@link #manifestValidator} 分工：后者查"包声明了什么"，前者查"包里装了什么"。
+     * 少了它，一个 Manifest 干净、包里塞着 {@code install.sh} 的包会被照单收下。</p>
+     */
+    private final AigPackageArchiveScanner archiveScanner;
+
     private final JsonMapper jsonMapper;
 
     @Override
@@ -192,9 +202,21 @@ public class AigPackageServiceImpl implements IAigPackageService {
                 + "。上传说的是「这份包体就是 Manifest 描述的那一份」，不一致就不落库");
         }
 
+        // 包体内容检查（F-02）：声明与哈希都对，不代表"包里没有不该有的东西"。
+        // 放在落库之前：不通过就整笔拒绝（与 Manifest 拒绝同一口径——见 F-02 里
+        // 仍待决策的「被拒包体要不要留证据行」，本轮沿用既有的"不落库 + 可读原因"）
+        AigArchiveScanResult archive = archiveScanner.scan(body);
+        if (!archive.isPass()) {
+            throw new ServiceException("包体安全检查未通过，未登记任何东西：命中 "
+                + archive.hitRuleCodes() + "；" + archive.getDetail());
+        }
+        if (!archive.isScanned()) {
+            // 没扫 ≠ 通过：留痕，便于回答"这个包当初到底查过没有"
+            log.info("包体未做内容检查, packageCode={}, 原因={}", manifest.packageCode(), archive.getDetail());
+        }
+
         AigPackage pkg = packageMapper.selectOne(new LambdaQueryWrapper<AigPackage>()
-            .eq(AigPackage::getPackageCode, manifest.packageCode()));
-        if (pkg == null) {
+            .eq(AigPackage::getPackageCode, manifest.packageCode()));        if (pkg == null) {
             pkg = new AigPackage();
             pkg.setPackageCode(manifest.packageCode());
             pkg.setPackageName(manifest.name());
