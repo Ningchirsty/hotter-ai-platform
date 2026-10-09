@@ -71,19 +71,32 @@
           <el-button v-hasPermi="['aig:evaluation:run']" type="primary" icon="VideoPlay" @click="openRun">
             跑评测
           </el-button>
+          <el-button v-hasPermi="['aig:evaluation:run']" type="warning" plain icon="EditPen" @click="openManual">
+            人工录入
+          </el-button>
         </el-form-item>
       </el-form>
 
       <el-alert v-if="evidenceText" :type="evidenceOk ? 'success' : 'warning'" :closable="false" class="mb-2">
         {{ evidenceText }}
       </el-alert>
+      <el-alert v-if="evidenceAdminText" type="warning" :closable="false" class="mb-2">
+        {{ evidenceAdminText }}
+      </el-alert>
 
       <el-table v-loading="runLoading" border :data="runList">
         <el-table-column label="运行编号" align="center" prop="runNo" width="230" show-overflow-tooltip />
-        <el-table-column label="用例" align="center" prop="caseId" width="180" show-overflow-tooltip />
+        <el-table-column label="用例" align="center" width="220" show-overflow-tooltip>
+          <template #default="scope">{{ caseLabel(scope.row) }}</template>
+        </el-table-column>
         <el-table-column label="结论" align="center" width="110">
           <template #default="scope">
             <el-tag :type="runTagType(scope.row.resultStatus)">{{ scope.row.resultStatus }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="产出方" align="center" width="120">
+          <template #default="scope">
+            <el-tag :type="executorTagType(scope.row.executedBy)">{{ executorLabel(scope.row.executedBy) }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="人工复核" align="center" width="120">
@@ -203,6 +216,64 @@
       </template>
     </el-dialog>
 
+    <!-- 人工评测录入（平台没有该对象的评测执行器时，由管理员产出证据） -->
+    <el-dialog v-model="manualVisible" title="人工评测录入" width="820px" append-to-body>
+      <el-alert type="warning" :closable="false" class="mb-2">
+        这条路径<b>只用于平台没有该对象执行器的情形</b>（第三方 Agent、Package 版本）。
+        平台能自己跑的对象会被服务端拒绝并要求走「跑评测」——否则人工录入就成了绕过判据的通道。
+        录入的行会标成<b>产出方=人工</b>，评审看得见「这条 PASS 是平台跑的还是人填的」。
+      </el-alert>
+      <el-form label-width="120px">
+        <el-form-item label="对象">
+          <el-input :model-value="targetType + ' #' + targetVersionId" disabled />
+        </el-form-item>
+        <el-form-item label="评测方法与依据" required>
+          <el-input
+            v-model="manualForm.method"
+            type="textarea"
+            :rows="3"
+            placeholder="在哪个环境、用什么输入、按什么标准看的。写不出这句话的人工 PASS 在评审眼里只是一句主张"
+          />
+        </el-form-item>
+        <el-form-item label="逐用例结论" required>
+          <el-table border size="small" :data="manualCases" style="width: 100%">
+            <el-table-column label="用例" align="center" prop="caseCode" width="240" show-overflow-tooltip />
+            <el-table-column label="结论" align="center" width="190">
+              <template #default="scope">
+                <el-radio-group v-model="scope.row.verdict">
+                  <el-radio value="PASS">通过</el-radio>
+                  <el-radio value="FAIL">不通过</el-radio>
+                </el-radio-group>
+              </template>
+            </el-table-column>
+            <el-table-column label="证据引用" align="center">
+              <template #default="scope">
+                <el-input v-model="scope.row.evidenceRef" placeholder="报告链接/截图/工单号" />
+              </template>
+            </el-table-column>
+          </el-table>
+          <div v-if="!manualCases.length" class="hint-inline">该版本没有声明黄金用例集合，无法录入</div>
+        </el-form-item>
+        <el-form-item label="平台侧外呼">
+          <el-radio-group v-model="manualForm.externalCall">
+            <el-radio value="N">没有（平台自身不调模型）</el-radio>
+            <el-radio value="Y">有（在外部环境跑过，方法里写明）</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="实际成本（USD）">
+          <el-input v-model.number="manualForm.costAmount" placeholder="可空；确定没花钱就填 0" style="width: 200px" />
+          <span class="hint-inline">用例声明了成本范围时<b>必须填</b>：未上报不等于在范围内</span>
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="manualForm.remark" type="textarea" :rows="2" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="manualVisible = false">取消</el-button>
+        <el-button type="primary" @click="submitManual">提交录入</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 人工复核 -->
     <el-dialog v-model="reviewVisible" title="人工复核" width="520px" append-to-body>
       <el-form label-width="110px">
@@ -235,11 +306,23 @@
 </template>
 
 <script setup lang="ts">
-import { caseEvidence, defineCase, getCase, listCase, listRun, reviewRun, runEvaluation, declaredCases } from '@/api/aigov/evaluation';
+import {
+  caseEvidence,
+  defineCase,
+  getCase,
+  listCase,
+  listRun,
+  manualRun,
+  reviewRun,
+  runEvaluation,
+  declaredCases
+} from '@/api/aigov/evaluation';
 import type {
   AigEvaluationCaseDetail,
   AigEvaluationCaseForm,
   AigEvaluationCaseVO,
+  AigEvaluationManualCase,
+  AigEvaluationManualRunForm,
   AigEvaluationReviewForm,
   AigEvaluationRunForm,
   AigEvaluationRunVO
@@ -258,8 +341,10 @@ const { loading: runLoading, withLoading: withRunLoading } = useLoading(true);
 const caseVisible = ref(false);
 const defineVisible = ref(false);
 const runVisible = ref(false);
+const manualVisible = ref(false);
 const reviewVisible = ref(false);
 const evidenceText = ref('');
+const evidenceAdminText = ref('');
 const evidenceOk = ref(false);
 const defineFormRef = ref<ElFormInstance>();
 const targetType = ref('AGENT_VERSION');
@@ -285,6 +370,16 @@ const defineRules = {
 
 const runForm = ref<AigEvaluationRunForm>({ targetType: 'AGENT_VERSION', targetVersionId: '', caseCodes: [] });
 const reviewForm = ref<AigEvaluationReviewForm>({ runId: '', reviewResult: 'PASS', remark: '' });
+const manualCases = ref<AigEvaluationManualCase[]>([]);
+const manualForm = ref<AigEvaluationManualRunForm>({
+  targetType: 'AGENT_VERSION',
+  targetVersionId: '',
+  cases: [],
+  method: '',
+  externalCall: 'N',
+  costAmount: undefined,
+  remark: ''
+});
 
 /** 运行结论标签色（FAIL 与 ERROR 分开：前者是被测对象的问题，后者是环境/用例的问题） */
 const runTagType = (value?: string): 'success' | 'danger' | 'warning' | 'info' | undefined => {
@@ -292,6 +387,27 @@ const runTagType = (value?: string): 'success' | 'danger' | 'warning' | 'info' |
   if (value === 'FAIL') return 'danger';
   if (value === 'ERROR') return 'warning';
   return 'info';
+};
+
+/**
+ * 产出方标签色。
+ * ADMIN 用 warning 而不是 success：它不是"更好的结果"，而是"另一类证据"——
+ * 机器结论的可信度来自平台判据，人工结论来自一个人签了字，读的人必须一眼分得开。
+ */
+const executorTagType = (value?: string): 'success' | 'danger' | 'warning' | 'info' | undefined => {
+  return value === 'ADMIN' ? 'warning' : 'info';
+};
+
+/** 产出方可读名（历史行为空时按平台执行器算——存量行回填的就是 PLATFORM） */
+const executorLabel = (value?: string): string => {
+  if (value === 'ADMIN') return '人工录入';
+  return '平台执行器';
+};
+
+/** 运行时显示用例编码（列表里只有 caseId，读不出是哪条用例） */
+const caseLabel = (row: AigEvaluationRunVO): string => {
+  const hit = caseList.value.find((item) => String(item.caseId) === String(row.caseId));
+  return hit?.caseCode || String(row.caseId ?? '');
 };
 
 /** 复核标签色（MANUAL=待复核，与「通过」不是一回事） */
@@ -369,6 +485,11 @@ const loadEvidence = async () => {
   evidenceText.value = data?.satisfied
     ? '黄金用例已通过：' + verdicts
     : '未通过：' + (data?.reason || '') + (verdicts ? '（逐用例：' + verdicts + '）' : '');
+  // 门槛对两种来源一视同仁，但来源必须看得见：这条提示是"这次放行靠的是人填的结论"的唯一界面线索
+  const adminCases = data?.adminCaseCodes || [];
+  evidenceAdminText.value = adminCases.length
+    ? '其中 ' + adminCases.length + ' 条结论由管理员人工评测录入（产出方=人工）：' + adminCases.join('、')
+    : '';
 };
 
 /** 打开跑评测（按版本声明的集合预填） */
@@ -399,6 +520,56 @@ const submitRun = async () => {
   modal.msgSuccess('本次产生 ' + runs.length + ' 条运行记录');
   runVisible.value = false;
   await loadRuns();
+};
+
+/** 打开人工评测录入（按版本声明的集合预填，逐条默认"通过"，由人逐条改） */
+const openManual = async () => {
+  if (!targetVersionId.value) {
+    modal.msgError('请先填对象版本ID');
+    return;
+  }
+  const res = await declaredCases(targetType.value, targetVersionId.value);
+  const codes = res.data || [];
+  manualCases.value = codes.map((code) => ({ caseCode: code, verdict: 'PASS', evidenceRef: '' }));
+  manualForm.value = {
+    targetType: targetType.value,
+    targetVersionId: targetVersionId.value,
+    cases: [],
+    method: '',
+    externalCall: 'N',
+    costAmount: undefined,
+    remark: ''
+  };
+  manualVisible.value = true;
+};
+
+/** 提交人工评测录入 */
+const submitManual = async () => {
+  if (!manualCases.value.length) {
+    modal.msgError('该版本没有声明黄金用例集合，无法录入');
+    return;
+  }
+  if (!manualForm.value.method || !manualForm.value.method.trim()) {
+    modal.msgError('必须写明评测方法与依据');
+    return;
+  }
+  const missing = manualCases.value.filter((item) => !item.verdict);
+  if (missing.length) {
+    modal.msgError('每条用例都要给出结论：' + missing.map((item) => item.caseCode).join('、'));
+    return;
+  }
+  await modal.confirm(
+    '提交后这批结论会作为「黄金用例通过」的证据（产出方=人工），并可能被用于推进发布状态。确认提交？'
+  );
+  const res = await manualRun({
+    ...manualForm.value,
+    cases: manualCases.value.map((item) => ({ ...item }))
+  });
+  const runs = res.data || [];
+  modal.msgSuccess('已录入 ' + runs.length + ' 条人工结论');
+  manualVisible.value = false;
+  await loadRuns();
+  await loadEvidence();
 };
 
 /** 打开复核 */
