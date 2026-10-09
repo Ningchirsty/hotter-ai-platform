@@ -250,16 +250,32 @@ sudo chmod 600 /opt/ai-video-poc/.env && sudo grep -c '^GHCR_TOKEN=' /opt/ai-vid
 ```
 
 **⚠️ Which token to revoke.** More than one classic token can carry `repo`, and deleting
-the wrong one breaks `git push` from a developer machine. Discriminate by **scope list**,
-not by name:
+the wrong one breaks either the deploy path or `git push`. Discriminate by **scope list**:
 
-| Token | Scopes shown | Meaning | Action |
+| Token | Scopes | Meaning | Action |
 |---|---|---|---|
 | host registry credential (old) | `read:packages, repo` | what this runbook replaces | **revoke** once the new one is verified |
+| host registry credential (new) | `read:packages` | the replacement | **keep** |
 | developer git credential | `gist, repo, workflow` | needed to `git push` (and to push `.github/workflows/*`) | **keep** |
 
-If a candidate's scopes are unclear, leave it alone and ask — a wrong deletion costs more
-than a late one.
+**How this went wrong once (2026-10-08), so it does not repeat:** the instruction was
+"delete the one whose scopes show `read:packages, repo`", but the classic-token **list
+view does not display scopes** — so the operator deleted by name and removed the **new**
+token, which silently broke `docker login` for the next release (deploys are manual, so
+nothing was mid-flight and production stayed up; the still-valid old token was restored
+from the backup in `~5` minutes and a release was re-run to prove the pull worked).
+
+Therefore:
+
+1. **Never delete anything until the replacement is installed AND a release has been
+   re-run to prove the pull works.** Delete last, not first.
+2. Identify a token by **clicking its name** and reading the scopes — not by name, not by
+   the list view.
+3. If two candidates are plausible, stop and ask. A late deletion costs nothing; a wrong
+   one costs a broken release path (or a broken `git push`).
+4. Keep the pre-swap `.env` backup until step 1 has passed, then remove it — it contains
+   the retired credential *and* the other live secrets.
+
 
 
 ## To roll code back, dispatch the same workflow with the previously recorded image
