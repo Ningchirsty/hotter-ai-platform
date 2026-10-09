@@ -198,6 +198,16 @@ public interface AigConstants {
     String PERM_EVALUATION_RUN = "aig:evaluation:run";
 
     /**
+     * 人工评测录入（平台没有该对象的执行器时，由管理员产出黄金用例证据）
+     *
+     * <p><b>为什么从 {@link #PERM_EVALUATION_RUN} 拆出来独立授权</b>：两者都是"产出评测结论"，
+     * 但机器评测的可信度来自<b>平台的判据在同样输入上判过了</b>，人工录入的可信度只来自
+     * <b>一个人签了字</b>——而它直接决定版本能不能进灰度。按 ADR-014「由管理员来评测」的口径
+     * 收紧为管理角色：能跑评测不等于能录人工结论。</p>
+     */
+    String PERM_EVALUATION_MANUAL = "aig:evaluation:manual";
+
+    /**
      * 人工复核评测结论（Rubric 用例的最后一道判断）
      *
      * <p>按设计 §5.4/§6.3-5，三方审批分别是业务 Owner / AI 管理员 / 平台管理员，

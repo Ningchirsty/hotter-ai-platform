@@ -143,7 +143,7 @@ public class AigEvaluationController {
      * @param bo 人工评测入参（方法与依据、逐用例结论、操作人）
      * @return 本次产生的运行行
      */
-    @SaCheckPermission(AigConstants.PERM_EVALUATION_RUN)
+    @SaCheckPermission(AigConstants.PERM_EVALUATION_MANUAL)
     @RepeatSubmit
     @PostMapping("/manual-run")
     public R<List<AigEvaluationRun>> manualRun(@RequestBody @Validated AigEvaluationManualRunBo bo) {

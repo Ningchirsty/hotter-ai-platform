@@ -71,7 +71,7 @@
           <el-button v-hasPermi="['aig:evaluation:run']" type="primary" icon="VideoPlay" @click="openRun">
             跑评测
           </el-button>
-          <el-button v-hasPermi="['aig:evaluation:run']" type="warning" plain icon="EditPen" @click="openManual">
+          <el-button v-hasPermi="['aig:evaluation:manual']" type="warning" plain icon="EditPen" @click="openManual">
             人工录入
           </el-button>
         </el-form-item>

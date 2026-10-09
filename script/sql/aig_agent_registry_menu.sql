@@ -177,6 +177,16 @@ select 1768000000000000035, '评测人工复核', 1763000000000000001, 103, '', 
     and not exists (select 1 from (select perms from sys_menu) p
                      where p.perms = 'aig:evaluation:review');
 
+insert into sys_menu (menu_id, menu_name, parent_id, order_num, path, component, is_frame, is_cache,
+                      menu_type, visible, status, perms, icon, create_dept, create_by, create_time, remark)
+select 1768000000000000036, '人工评测录入', 1763000000000000001, 104, '', '', 'N', 'Y', 'F', '0', '0',
+       'aig:evaluation:manual', '#', 1761000000000000103, 1761100000000000001, sysdate(),
+       'ADR-014：平台没有该对象执行器时由管理员人工评测产出证据；比「跑评测」更严，故独立授权'
+  where not exists (select 1 from (select menu_id from sys_menu) t
+                     where t.menu_id = 1768000000000000036)
+    and not exists (select 1 from (select perms from sys_menu) p
+                     where p.perms = 'aig:evaluation:manual');
+
 -- ----------------------------
 -- 三点五、Package 上传与安装（本轮新增）
 --   上传：携包体登记包与版本（包体哈希由服务端算并与 Manifest 声明比对）；
@@ -229,7 +239,7 @@ select 1763100000000000001, menu_id from sys_menu
                  'aig:package:list', 'aig:package:query', 'aig:package:scan',
                  'aig:package:upload', 'aig:package:install', 'aig:package:disable',
                  'aig:evaluation:list', 'aig:evaluation:query', 'aig:evaluation:define',
-                 'aig:evaluation:run', 'aig:evaluation:review');
+                 'aig:evaluation:run', 'aig:evaluation:manual', 'aig:evaluation:review');
 
 insert ignore into sys_role_menu (role_id, menu_id)
 select 1763100000000000002, menu_id from sys_menu
