@@ -196,6 +196,10 @@ chmod -R a+rX "$ABS_WORK" 2>/dev/null || true
 chmod -R a+rX "$ABS_WORK" 2>/dev/null || true
 
 # 产物清单：只列工作目录里的常规文件，排除执行器自己的日志；逐个算 sha256。
+# R100 实测到的坑：这里原来 printf **没有 \n**，两个产物被拼成同一行 `{...}{...}`，
+# 而 paste -sd, 是按"行"插分隔符的，于是逗号根本没插上 —— 产物 ≥2 个时结果 JSON 非法。
+# slice-1 的 12/12 证明每个作业都只产 1 个文件，所以这条路径当时是"通过"的。
+# 教训：产物为 0/1 个的用例覆盖不到拼接逻辑，必须有 ≥2 个产物的用例。
 ARTIFACTS="[]"
 if command -v sha256sum >/dev/null 2>&1; then
   ARTIFACTS="$(
@@ -203,18 +207,28 @@ if command -v sha256sum >/dev/null 2>&1; then
     find . -type f ! -name '.sandbox-*' -printf '%P\n' | LC_ALL=C sort | while IFS= read -r f; do
       size=$(stat -c %s -- "$f")
       hash=$(sha256sum -- "$f" | cut -d' ' -f1)
-      printf '{"path":"%s","bytes":%s,"sha256":"%s"}' "$f" "$size" "$hash"
+      printf '{"path":"%s","bytes":%s,"sha256":"%s"}\n' "$f" "$size" "$hash"
     done | paste -sd, - | sed 's/^/[/; s/$/]/'
   )"
   [ -n "$ARTIFACTS" ] || ARTIFACTS="[]"
 fi
 
 # 结果：**只有一行 JSON**，便于调用方解析；不把容器输出混进来（那是文件里的东西）。
-printf '{"jobId":"%s","image":"%s","exitCode":%s,"timedOut":%s,"durationMs":%s,"network":"%s","scratchFreeMb":%s,"artifacts":%s}\n' \
-  "$JOB_ID" "$IMAGE" "$RC" "$TIMED_OUT" "$DURATION_MS" \
-  "$([ "$ALLOW_NETWORK" = "1" ] && echo bridge || echo none)" \
-  "$(df -Pm "$SCRATCH_ABS" 2>/dev/null | awk 'NR==2{printf "%d", $4}')" \
-  "$ARTIFACTS"
+RESULT_LINE="$(
+  printf '{"jobId":"%s","image":"%s","exitCode":%s,"timedOut":%s,"durationMs":%s,"network":"%s","scratchFreeMb":%s,"artifacts":%s}' \
+    "$JOB_ID" "$IMAGE" "$RC" "$TIMED_OUT" "$DURATION_MS" \
+    "$([ "$ALLOW_NETWORK" = "1" ] && echo bridge || echo none)" \
+    "$(df -Pm "$SCRATCH_ABS" 2>/dev/null | awk 'NR==2{printf "%d", $4}')" \
+    "$ARTIFACTS"
+)"
+# 自检：结果行是给机器读的凭据，宁可不输出也不能输出半截。
+# 不引入 jq 依赖（执行器只要求 sha256sum），但有 jq 就必须过这一关。
+if command -v jq >/dev/null 2>&1; then
+  if ! printf '%s' "$RESULT_LINE" | jq -e . >/dev/null 2>&1; then
+    die "结果行不是合法 JSON，拒绝输出：$RESULT_LINE"
+  fi
+fi
+printf '%s\n' "$RESULT_LINE"
 
 # 执行器视角的成功 = 容器跑完；容器自身非零退出由调用方按 exitCode 判断（业务失败不是执行器故障）
 exit 0
