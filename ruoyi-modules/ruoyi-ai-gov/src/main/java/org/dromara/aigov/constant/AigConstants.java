@@ -266,6 +266,38 @@ public interface AigConstants {
     String PERM_APPROVAL_APPROVE = "aig:approval:approve";
 
     /**
+     * 服务令牌管理权限码的公共前缀。
+     *
+     * <p><b>它同时是一条安全边界</b>：签发令牌时，凡以此前缀开头的 scope 一律拒绝
+     * （见 {@code AigServiceTokenServiceImpl#issue}）。机器身份若能管理令牌，
+     * 就能自我提权/自我续期——这条通道必须在<b>源头不可表达</b>，
+     * 而不是只靠"管理接口的 URL 机器访问不到"。</p>
+     *
+     * <p><b>刻意不以 {@code PERM_} 开头</b>：{@code AigPermissionSeedCoverageTest} 把
+     * "名字以 {@code PERM_} 开头的静态 String" 当作权限串、要求必须在菜单脚本里种子，
+     * 而前缀本身不是一个权限码（它没有对应的菜单行）。名字若图好看写成
+     * {@code PERM_SERVICE_TOKEN_PREFIX}，那条守卫会误报——把常量叫成它真实的东西更省事。</p>
+     */
+    String SERVICE_TOKEN_PERM_PREFIX = "aig:service-token:";
+
+    /**
+     * 服务令牌清单（读）：有哪些机器身份、各自能做什么、最近谁在用
+     */
+    String PERM_SERVICE_TOKEN_LIST = SERVICE_TOKEN_PERM_PREFIX + "list";
+
+    /**
+     * 签发服务令牌（写）：<b>明文只在签发那一刻可见一次</b>，因此这是"发凭据"的动作，
+     * 与"看清单"分开授权。
+     */
+    String PERM_SERVICE_TOKEN_ISSUE = SERVICE_TOKEN_PERM_PREFIX + "issue";
+
+    /**
+     * 停用服务令牌（写）：影响面是"某个正在跑的外部调用方立刻全部 401"，
+     * 因此与签发分开授权。
+     */
+    String PERM_SERVICE_TOKEN_REVOKE = SERVICE_TOKEN_PERM_PREFIX + "revoke";
+
+    /**
      * 系统提交者ID：任务由调度器/Agent 发起（无登录上下文）时，{@code create_by} 用它占位。
      *
      * <p><b>为什么不能留 NULL</b>：{@code aig_task.create_by} 同时是幂等唯一键

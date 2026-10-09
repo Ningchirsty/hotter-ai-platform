@@ -65,7 +65,7 @@ class AigServiceTokenServiceImplTest {
             return 1;
         });
 
-        IAigServiceTokenService.IssuedToken issued = service.issue("vibeposter-worker", "aigov:invoke", null, "试点");
+        IAigServiceTokenService.IssuedToken issued = service.issue("vibeposter-worker", "aig:capability:query", null, "试点");
 
         ArgumentCaptor<AigServiceToken> captor = ArgumentCaptor.forClass(AigServiceToken.class);
         verify(tokenMapper).insert(captor.capture());
@@ -86,7 +86,7 @@ class AigServiceTokenServiceImplTest {
         when(tokenMapper.selectCount(any())).thenReturn(1L);
 
         ServiceException ex = assertThrows(ServiceException.class,
-            () -> service.issue("dup-name", "aigov:invoke", null, null));
+            () -> service.issue("dup-name", "aig:capability:query", null, null));
         assertTrue(ex.getMessage().contains("dup-name"), "报错要点名是哪个服务名冲突了");
         verify(tokenMapper, never()).insert(any(AigServiceToken.class));
     }
@@ -115,6 +115,26 @@ class AigServiceTokenServiceImplTest {
     }
 
     @Test
+    @DisplayName("★ 拒绝签发含通配 scope（*）的令牌：* 会让'默认拒绝'当场失效")
+    void issueRejectsWildcardScope() {
+        ServiceException ex = assertThrows(ServiceException.class,
+            () -> service.issue("wild-svc", "aig:task:list,*", null, null));
+
+        assertTrue(ex.getMessage().contains("*"), "报错要指出是通配符被拒");
+        verify(tokenMapper, never()).insert(any(AigServiceToken.class));
+    }
+
+    @Test
+    @DisplayName("★ 拒绝把令牌管理权限签发给机器身份（防自我提权）：这个组合必须建不出来")
+    void issueRejectsTokenManagementScopes() {
+        ServiceException ex = assertThrows(ServiceException.class,
+            () -> service.issue("escalator", "aig:capability:query,aig:service-token:issue", null, null));
+
+        assertTrue(ex.getMessage().contains("aig:service-token:issue"), "报错要点名是哪个 scope 越界了");
+        verify(tokenMapper, never()).insert(any(AigServiceToken.class));
+    }
+
+    @Test
     @DisplayName("★ scopes 为空 = 默认拒绝（不是默认全给）")
     void emptyScopesMeanNoPermission() {
         AigServiceToken row = liveToken(7L, "reader", null);
@@ -130,21 +150,21 @@ class AigServiceTokenServiceImplTest {
     @Test
     @DisplayName("★ 权限是精确匹配，不做通配展开（权限必须能一眼看清）")
     void scopesMatchExactly() {
-        AigServiceToken row = liveToken(8L, "invoker", "aigov:invoke:brief_precheck");
+        AigServiceToken row = liveToken(8L, "invoker", "aig:capability:query");
         when(tokenMapper.selectOne(any())).thenReturn(row);
 
         AigServiceIdentity id = service.authenticate("hsvc_x", null).orElseThrow();
 
-        assertTrue(id.hasScope("aigov:invoke:brief_precheck"));
-        assertFalse(id.hasScope("aigov:invoke"), "前缀不算授权");
-        assertFalse(id.hasScope("aigov:invoke:brief_precheck2"), "更长的不算授权");
+        assertTrue(id.hasScope("aig:capability:query"));
+        assertFalse(id.hasScope("aig:capability"), "前缀不算授权");
+        assertFalse(id.hasScope("aig:capability:query2"), "更长的不算授权");
         assertEquals("service:invoker", id.principal(), "principal 由服务端推导，格式为 service:<name>");
     }
 
     @Test
     @DisplayName("★ 已停用的令牌必须拒绝")
     void authenticateRejectsDisabledToken() {
-        AigServiceToken row = liveToken(9L, "disabled-svc", "aigov:invoke");
+        AigServiceToken row = liveToken(9L, "disabled-svc", "aig:capability:query");
         row.setStatus("1");
         when(tokenMapper.selectOne(any())).thenReturn(row);
 
@@ -154,12 +174,12 @@ class AigServiceTokenServiceImplTest {
     @Test
     @DisplayName("★ 已过期的令牌必须拒绝；未到期的正常放行")
     void authenticateRejectsExpiredToken() {
-        AigServiceToken expired = liveToken(10L, "expired-svc", "aigov:invoke");
+        AigServiceToken expired = liveToken(10L, "expired-svc", "aig:capability:query");
         expired.setExpiresAt(LocalDateTime.now().minusMinutes(1));
         when(tokenMapper.selectOne(any())).thenReturn(expired);
         assertTrue(service.authenticate("hsvc_x", null).isEmpty(), "过期必须拒绝");
 
-        AigServiceToken valid = liveToken(11L, "valid-svc", "aigov:invoke");
+        AigServiceToken valid = liveToken(11L, "valid-svc", "aig:capability:query");
         valid.setExpiresAt(LocalDateTime.now().plusDays(1));
         when(tokenMapper.selectOne(any())).thenReturn(valid);
         assertTrue(service.authenticate("hsvc_x", null).isPresent(), "未到期应放行");
@@ -181,13 +201,13 @@ class AigServiceTokenServiceImplTest {
     @Test
     @DisplayName("★ last_used 节流：刚更新过就不写库，超过间隔才写")
     void lastUsedUpdateIsThrottled() {
-        AigServiceToken fresh = liveToken(12L, "busy-svc", "aigov:invoke");
+        AigServiceToken fresh = liveToken(12L, "busy-svc", "aig:capability:query");
         fresh.setLastUsedAt(LocalDateTime.now().minusSeconds(5));
         when(tokenMapper.selectOne(any())).thenReturn(fresh);
         assertTrue(service.authenticate("hsvc_x", "10.0.0.9").isPresent());
         verify(tokenMapper, never()).updateById(any(AigServiceToken.class));
 
-        AigServiceToken stale = liveToken(13L, "busy-svc2", "aigov:invoke");
+        AigServiceToken stale = liveToken(13L, "busy-svc2", "aig:capability:query");
         stale.setLastUsedAt(LocalDateTime.now().minusMinutes(5));
         when(tokenMapper.selectOne(any())).thenReturn(stale);
         assertTrue(service.authenticate("hsvc_x", "10.0.0.9").isPresent());
@@ -200,7 +220,7 @@ class AigServiceTokenServiceImplTest {
     @Test
     @DisplayName("★ 审计写入失败不能把人挡在门外（认证仍应成功）")
     void touchFailureDoesNotBreakAuthentication() {
-        AigServiceToken row = liveToken(14L, "svc", "aigov:invoke");
+        AigServiceToken row = liveToken(14L, "svc", "aig:capability:query");
         row.setLastUsedAt(LocalDateTime.now().minusHours(1));
         when(tokenMapper.selectOne(any())).thenReturn(row);
         when(tokenMapper.updateById(any(AigServiceToken.class)))

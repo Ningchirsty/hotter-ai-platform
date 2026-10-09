@@ -59,12 +59,18 @@ public interface IAigServiceTokenService {
     /**
      * 签发结果。明文只在这个 record 里出现一次。
      *
+     * <p>{@code scopes} 返回的是<b>归一化后真正落库</b>的串（而不是调用方提交的原文），
+     * 否则"界面上看到的授权范围"与"库里生效的范围"会在空格/重复项上悄悄不一致。</p>
+     *
      * @param tokenId        令牌ID
      * @param name           服务名
      * @param plaintextToken 明文令牌（**唯一一次**可见）
      * @param tokenPrefix    前缀，用于日后人工指认
+     * @param scopes         归一化后落库的权限码串
+     * @param expiresAt      到期时间（null = 不过期）
      */
-    record IssuedToken(Long tokenId, String name, String plaintextToken, String tokenPrefix) {
+    record IssuedToken(Long tokenId, String name, String plaintextToken, String tokenPrefix,
+                       String scopes, LocalDateTime expiresAt) {
     }
 
 }

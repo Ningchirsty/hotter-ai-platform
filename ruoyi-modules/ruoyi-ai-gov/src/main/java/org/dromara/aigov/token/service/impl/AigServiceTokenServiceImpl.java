@@ -3,6 +3,7 @@ package org.dromara.aigov.token.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.dromara.aigov.constant.AigConstants;
 import org.dromara.aigov.token.domain.AigServiceIdentity;
 import org.dromara.aigov.token.domain.AigServiceToken;
 import org.dromara.aigov.token.domain.vo.AigServiceTokenVo;
@@ -88,12 +89,15 @@ public class AigServiceTokenServiceImpl implements IAigServiceTokenService {
             throw new ServiceException("服务名已存在（未删除的令牌里同名只允许一把）：" + trimmed);
         }
 
+        Set<String> scopeSet = parseScopes(scopes);
+        rejectSelfEscalatingScopes(scopeSet);
+
         String plaintext = generateToken();
         AigServiceToken entity = new AigServiceToken();
         entity.setName(trimmed);
         entity.setTokenHash(sha256Hex(plaintext));
         entity.setTokenPrefix(plaintext.substring(0, DISPLAY_PREFIX_LENGTH));
-        entity.setScopes(normalizeScopes(scopes));
+        entity.setScopes(String.join(",", scopeSet));
         entity.setExpiresAt(expiresAt);
         entity.setStatus(STATUS_NORMAL);
         entity.setDelFlag(DEL_FLAG_NORMAL);
@@ -101,7 +105,8 @@ public class AigServiceTokenServiceImpl implements IAigServiceTokenService {
         tokenMapper.insert(entity);
         log.info("签发服务令牌: tokenId={}, name={}, scopes=[{}], expiresAt={}",
             entity.getTokenId(), trimmed, entity.getScopes(), expiresAt);
-        return new IssuedToken(entity.getTokenId(), trimmed, plaintext, entity.getTokenPrefix());
+        return new IssuedToken(entity.getTokenId(), trimmed, plaintext, entity.getTokenPrefix(),
+            entity.getScopes(), expiresAt);
     }
 
     @Override
@@ -185,20 +190,32 @@ public class AigServiceTokenServiceImpl implements IAigServiceTokenService {
     }
 
     /**
-     * 归一化 scopes：去空白、去空项、去重，并保持书写顺序。
+     * 拒绝签发"能管理服务令牌"或"通配"的 scope（防止机器身份自我提权）。
      *
-     * @param raw 原始逗号分隔串
-     * @return 归一化后的串（可能为空串 = 不授予任何操作）
+     * <p>为什么要在<b>签发侧</b>拦：scope 会被直接当成权限码装进会话（见登录适配器），
+     * 所以只要库里存在 {@code aig:service-token:issue} 这样的 scope，那把令牌就能调用
+     * 签发接口造出新令牌（或给自己续期）。控制台里"把管理接口藏起来"不是约束——
+     * 约束必须是<b>这个组合根本建不出来</b>。</p>
+     *
+     * @param scopes 归一化后的权限码集合
      */
-    private String normalizeScopes(String raw) {
-        return String.join(",", parseScopes(raw));
+    private void rejectSelfEscalatingScopes(Set<String> scopes) {
+        for (String scope : scopes) {
+            if ("*".equals(scope)) {
+                throw new ServiceException("不接受通配 scope（*）：请显式列出需要的权限码");
+            }
+            if (scope.startsWith(AigConstants.SERVICE_TOKEN_PERM_PREFIX)) {
+                throw new ServiceException("不允许把令牌管理权限（" + scope
+                    + "）签发给机器身份：那等于让机器自我提权/自我续期，请由人的账号操作");
+            }
+        }
     }
 
     /**
-     * 解析 scopes 为不可变集合。
+     * 解析 scopes 为不可变集合（去空白、去空项、去重，保持书写顺序）。
      *
-     * @param raw 原始串
-     * @return 权限码集合
+     * @param raw 原始逗号分隔串
+     * @return 权限码集合（可能为空集 = 不授予任何操作）
      */
     private Set<String> parseScopes(String raw) {
         Set<String> result = new LinkedHashSet<>();
