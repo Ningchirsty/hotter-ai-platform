@@ -13,6 +13,8 @@ import java.util.List;
 public class TemplateFeedProperties {
     private boolean enabled;
     private boolean generationEnabled;
+    private List<String> verifiedProfiles = List.of();
+    private List<Long> validationUserIds = List.of();
     private String keyFile = "";
     private String cacheDirectory = "./temp/image-template-feed";
     private String publicBaseUrl = "https://pm.hottter.cn/prod-api/image/templates";

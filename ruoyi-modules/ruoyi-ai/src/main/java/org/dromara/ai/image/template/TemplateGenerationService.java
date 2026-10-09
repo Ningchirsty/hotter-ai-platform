@@ -40,13 +40,23 @@ public class TemplateGenerationService {
             throw e;
         }
         if(built.revision()!=template.path("revision").asInt()) throw new TemplateFeedException(409,"模板已更新，请重新选择");
-        if(!properties.isGenerationEnabled() || !cache.published(template)) throw new TemplateFeedException(422,"模板维护中，暂不可生成");
+        boolean approved=properties.isGenerationEnabled() && properties.getVerifiedProfiles().contains(template.path("binding").path("params_profile").asText());
+        boolean validation=properties.getValidationUserIds().contains(user) && !approved;
+        if((!approved && !validation) || !cache.published(template)) throw new TemplateFeedException(422,"模板维护中，暂不可生成");
         String request=UUID.randomUUID().toString();
         try {
             jdbc.update("INSERT INTO ai_template_request (request_id,tenant_id,user_id,client_request_id,request_hash,template_id,revision,status) VALUES (?,?,?,?,?,?,?,'pending')",
                 request,tenant,user,built.clientId().toString(),built.hash(),id,built.revision());
         } catch(DuplicateKeyException e) { prior=findClient(tenant,user,built.clientId().toString()); if(prior==null) throw e; same(prior,built.hash()); return status(tenant,user,String.valueOf(prior.get("request_id"))); }
-        // INSERT 已提交才发起任务；后续异常不删除幂等行，不因响应丢失重发。
+        if(validation) {
+            jdbc.update("INSERT INTO ai_template_validation_budget (tenant_id,user_id,issued) VALUES (?,?,0) ON DUPLICATE KEY UPDATE issued=issued",tenant,user);
+            int reserved=jdbc.update("UPDATE ai_template_validation_budget SET issued=issued+1 WHERE tenant_id=? AND user_id=? AND issued<2",tenant,user);
+            if(reserved==0) {
+                jdbc.update("UPDATE ai_template_request SET status='failed',error_code='validation_budget',error_message='本轮2次验收额度已用完' WHERE request_id=? AND status='pending'",request);
+                return status(tenant,user,request);
+            }
+        }
+        // INSERT 和验收额度已提交才发起任务；后续异常不删除幂等行，不因响应丢失重发。
         try {
             var created=cloud.createTemplate(tenant,user,dept,built.input(),template.path("title").path("zh").asText(),"tpl-"+request);
             long task=((Number)created.get("taskId")).longValue();
@@ -111,7 +121,8 @@ public class TemplateGenerationService {
         if("archived".equals(current.get("status"))) throw new TemplateFeedException(409,"请求已归档");
         var row=jdbc.queryForList("SELECT template_id,revision FROM ai_template_request WHERE request_id=? AND tenant_id=? AND user_id=?",id,tenant,user).getFirst();
         cache.refresh(); JsonNode template=cache.require(String.valueOf(row.get("template_id")));
-        if(!properties.isGenerationEnabled() || !cache.published(template) || template.path("revision").asInt()!=((Number)row.get("revision")).intValue()) throw new TemplateFeedException(409,"模板已更新或维护中，不能恢复此请求");
+        boolean approved=properties.isGenerationEnabled() && properties.getVerifiedProfiles().contains(template.path("binding").path("params_profile").asText());
+        if((!approved && !properties.getValidationUserIds().contains(user)) || !cache.published(template) || template.path("revision").asInt()!=((Number)row.get("revision")).intValue()) throw new TemplateFeedException(409,"模板已更新或维护中，不能恢复此请求");
         int claimed=jdbc.update("UPDATE ai_template_request SET status='pending',confirmed_not_submitted=FALSE,updated_at=CURRENT_TIMESTAMP WHERE request_id=? AND tenant_id=? AND user_id=? AND status='unknown' AND confirmed_not_submitted=TRUE",id,tenant,user);
         if(claimed==0) throw new TemplateFeedException(409,"未确认请求从未到达供应商，不能重试；请先对账");
         try {
@@ -125,5 +136,10 @@ public class TemplateGenerationService {
     public void recover() {
         try { for(var row:jdbc.queryForList("SELECT * FROM ai_template_request WHERE status IN ('pending','submitted','unknown') ORDER BY updated_at LIMIT 100")) { try { reconcile(row); } catch(Exception ignored) { /* 保留单条未知状态，继续查询其他请求。 */ } } }
         catch(Exception ignored) { /* 未执行迁移时不拖垮其他模块；生成入口将明确失败。 */ }
+    }
+    public boolean canValidate(String tenant,long user) {
+        if(!properties.getValidationUserIds().contains(user)) return false;
+        var rows=jdbc.queryForList("SELECT issued FROM ai_template_validation_budget WHERE tenant_id=? AND user_id=?",tenant,user);
+        return rows.isEmpty() || ((Number)rows.getFirst().get("issued")).intValue()<2;
     }
 }

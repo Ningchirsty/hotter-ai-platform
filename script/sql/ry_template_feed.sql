@@ -28,3 +28,10 @@ CREATE TABLE IF NOT EXISTS ai_template_validation_audit (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   KEY ix_template_audit_time (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS ai_template_validation_budget (
+  tenant_id VARCHAR(20) NOT NULL,
+  user_id BIGINT NOT NULL,
+  issued INT NOT NULL DEFAULT 0,
+  PRIMARY KEY (tenant_id, user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

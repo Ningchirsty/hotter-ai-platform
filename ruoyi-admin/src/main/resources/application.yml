@@ -409,6 +409,8 @@ image:
     cache-directory: ${BLUOCTO_FEED_CACHE_DIRECTORY:./temp/image-template-feed}
     public-base-url: ${BLUOCTO_FEED_PUBLIC_BASE_URL:https://pm.hottter.cn/prod-api/image/templates}
     generation-enabled: ${BLUOCTO_FEED_GENERATION_ENABLED:false}
+    verified-profiles: ${BLUOCTO_FEED_VERIFIED_PROFILES:}
+    validation-user-ids: ${BLUOCTO_FEED_VALIDATION_USER_IDS:}
   cloud:
     enabled: ${BLUOCTO_ENABLED:false}
     api-key-file: ${BLUOCTO_API_KEY_FILE:}
