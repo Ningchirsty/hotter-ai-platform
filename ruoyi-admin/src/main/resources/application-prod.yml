@@ -384,11 +384,12 @@ aigov:
     # 只是"什么都没发生"（R65 记下的坑，也是本项要关掉的静默失效）。
     #
     # 生效范围（逐个核对过，不是估计）：本仓共 3 个 @Scheduled，全部在 ruoyi-ai-gov：
-    #   ① AigModelHealthProbeJob   ← 本开关打开后**唯一**会被激活的任务（其自身开关已为 true）
-    #   ② AigTaskSchedulerJob      ← 被 aigov.task.scheduler.enabled 门控，本文件未设置 → 仍关闭
-    #   ③ AigCallApprovalExpireJob ← 被 aigov.approval.expire-scan-enabled 门控，本文件未设置 → 仍关闭
-    # 也就是说：打开本开关**不会**顺带把两个"从未在生产跑过的写操作任务"上线。
-    # ⚠️ 但后处理器是全局的：将来任何人新增 @Scheduled，都会随本开关一起上线。
+    #   ① AigModelHealthProbeJob   ← 2026-10-08 打开后即生效（其自身开关已为 true）
+    #   ② AigTaskSchedulerJob      ← 见本文件末尾 aigov.task.scheduler
+    #   ③ AigCallApprovalExpireJob ← 见本文件末尾 aigov.approval
+    # 2026-10-09 更新：②③ 的开关已在本次一并打开（理由与验证方式写在各自块的注释里）。
+    # 在此之前它们在生产**从未跑过**——注意"没跑"不等于"没生效报错"，只是什么都不发生。
+    # ⚠️ 后处理器是全局的：将来任何人新增 @Scheduled，都会随本开关一起上线。
     #
     # 第 2 步（外部 cron 调 POST /aigov/model/health-probe/run）**未采用**，原因是实测的：
     #   三个入口都有 @SaCheckPermission，而机器登录唯一通道 /auth/login 必须过图形验证码
@@ -401,3 +402,43 @@ aigov:
     #
     # 回滚：改回 false 重新发布即可（无需改代码），或直接回滚到上一个镜像。
     enabled: true
+
+  task:
+    scheduler:
+      # 任务调度扫描（设计 §9.2 的 RETRY_WAIT→QUEUED 与"在途超时"两条边）。
+      # **2026-10-09 由运维授权打开**：这条边此前在生产从没走过——不是因为坏，而是因为
+      #   没有任何触发器（第 2 步"外部 cron"当年被跳过，第 3 步只激活了健康探测）。
+      #
+      # 它做什么（精确到判据，避免"以为它在重试"）：
+      #   · RETRY_WAIT + execution_mode=PLATFORM + 停留超过 retry-delay-seconds → 转 QUEUED；
+      #     ⚠️ 转 QUEUED 只是**重新排队**：平台没有自动消费 QUEUED 的循环
+      #     （唯一执行入口是 POST /aigov/task/{id}/execute，人工/业务侧调用）。
+      #     所以它不会自己把外呼量放大；它做的是"把重试的门重新打开"。
+      #   · DISPATCHED/RUNNING + PLATFORM + 超过 timeout-seconds 无任何更新 → 记 TIMEOUT 失败，
+      #     走 FAILED → RETRY_WAIT / NEED_HUMAN（超时按**可恢复**错误处理）。
+      #   · **刻意只碰 PLATFORM**：业务域自己执行（EXTERNAL）的任务被重新入队会再执行一遍
+      #     （两份产出、两次计费），那是业务域的决定，平台不替它做。
+      #
+      # 并发安全（多实例/双触发都不会重复处理）：推进走乐观锁，抢输的计入 skipped；
+      #   代码里对"状态已变/版本不符"是**跳过**而不是报错。单元测试 11 例覆盖。
+      enabled: true
+      # 扫描周期（毫秒）。fixedDelay 语义：本轮跑完再计时，不会叠加。
+      interval-ms: 60000
+      # 单轮最多处理几条（防一次扫描把库压住）。改大前先想清楚：这里每条都会改任务状态。
+      batch-size: 50
+      # RETRY_WAIT 停留多久算"可以重排"。
+      retry-delay-seconds: 60
+      # 在途多久没有任何 update_time 变化就判超时失败（判据用 update_time 而不是 started_at：
+      # 异步 Provider 可能提交很久后才开始跑，started_at 会是空）。
+      timeout-seconds: 1800
+
+  approval:
+    # 审批单超时扫描：把 `PENDING 且 expire_time <= now` 的单子置为「已超时」。
+    # **2026-10-09 由运维授权打开**（与 aigov.task.scheduler 同一批、同一理由）。
+    #
+    # 影响面：一条 UPDATE（没有批量上限）——单子多时它就是一条大语句；
+    #   幂等：置为 EXPIRED 后不再满足 `status=PENDING`，重复跑不会重复计数。
+    #   它**不改**审批结论本身，只把"没人处理且已过期"这件事记录下来。
+    expire-scan-enabled: true
+    # 扫描周期（毫秒，默认 5 分钟）。
+    expire-scan-interval-ms: 300000
