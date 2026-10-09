@@ -61,10 +61,14 @@ jobs:
       # 模板里不残留样例提示词。
       # 此前这些测试**没有接进 CI**（只在 README 里要求人工跑），结果视频契约的状态与断言
       # 长期不一致却无人发现；本次把两个模块都纳入，避免同类问题再次静默。
+      #
+      # 2026-10-09：不再直接写两条 `node --test` 命令，改为守卫脚本——
+      #   `node --test` 在"文件里没有测试"时**仍然退出 0**，而本仓已经因为"静默没跑"
+      #   吃过两次亏（Surefire 门禁、@EnableScheduling）。守卫同时要求：
+      #   每个 *.test.mjs 都在 TEST_FLOORS 里登记（新文件不会被漏接）、通过数不低于登记下限
+      #   （测试被删空/全 skip 会红）、fail=0。详见 script/ci/check-node-contract-tests.py。
       - name: Verify workflow contracts
-        run: |
-          node --test script/video/workflows/import-h3.test.mjs
-          node --test script/image/workflows/image-contracts.test.mjs
+        run: python3 script/ci/check-node-contract-tests.py
 
       - name: Upload test reports
         if: ${{ always() && github.event_name == 'workflow_dispatch' }}
