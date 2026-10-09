@@ -1,303 +1,445 @@
 <template>
-  <div class="cloud-editor editor-body" :aria-label="media === 'video' ? '云端视频创建任务' : '云端图像创建任务'">
+  <div class="cloud-editor editor-body" aria-label="云端视频创建任务">
     <div class="cloud-heading">
       <div>
-        <span>创建任务 · 云端</span>
-        <h2>{{ capabilityInfo.name }}</h2>
+        <span>创建任务 · 云端视频</span>
+        <h2>{{ selected.group }}</h2>
       </div>
-      <b>待接入</b>
+      <b>蓝章鱼</b>
     </div>
-    <p class="cloud-notice">可选择模型并配置草稿；外部 API 接入后开放提交。</p>
     <div class="cloud-field">
-      <label>云端生成模型</label>
-      <div class="cloud-models" aria-label="云端模型">
+      <label>视频生成模型</label>
+      <div class="cloud-models">
         <button
-          v-for="item in models"
-          :key="item.id"
-          type="button"
-          :class="{ active: modelId === item.id }"
-          :aria-pressed="modelId === item.id"
+          v-for="group in groups"
+          :key="group"
+          :class="{ active: selected.group === group }"
           :disabled="busy"
-          @click="selectModel(item)"
+          type="button"
+          @click="selectProfile(profiles.find(p => p.group === group)!)"
         >
-          <span>
-            <strong>{{ item.name }}</strong>
-            <em>待接入</em>
-          </span>
-          <small>{{ item.provider }}</small>
-          <p>{{ item.description }}</p>
+          <strong>{{ group }}</strong>
+          <small>
+            {{ profiles.filter(p => p.group === group).length }} 个型号 ·
+            {{ profiles.find(p => p.group === group)?.family }}
+          </small>
+          <small class="rate-caption">{{ groupRate(group) }} · {{ VIDEO_PRICING.groupRatio }} 倍</small>
         </button>
       </div>
-      <div class="model-documentation">
-        <span>候选模型 · 未配置服务</span>
-        <a :href="model.docs" target="_blank" rel="noopener noreferrer">官方能力说明 ↗</a>
+    </div>
+    <div class="cloud-field">
+      <label>模型模式</label>
+      <div class="cloud-capabilities">
+        <button
+          v-for="profile in variants"
+          :key="profile.id"
+          type="button"
+          :class="{ active: profile.id === draft.model }"
+          :disabled="busy"
+          @click="selectProfile(profile)"
+        >
+          {{ profile.mode }}
+          <small class="rate-caption">{{ videoRateLabel(profile, draft.resolution) }}</small>
+          <small class="option-price">{{ optionFee(profile) }} · {{ VIDEO_PRICING.groupRatio }} 倍</small>
+        </button>
       </div>
+      <p class="field-help model-id">{{ draft.model }}</p>
     </div>
     <div class="cloud-field">
       <label>创作能力</label>
-      <div class="cloud-capabilities" aria-label="云端创作能力">
+      <div class="cloud-capabilities">
         <button
-          v-for="code in model.capabilities"
+          v-for="code in selected.capabilities"
           :key="code"
           type="button"
-          :class="{ active: capability === code }"
-          :aria-pressed="capability === code"
+          :class="{ active: draft.capability === code }"
           :disabled="busy"
-          @click="capability = code"
+          @click="selectCapability(code)"
         >
-          {{ CLOUD_CAPABILITIES[code].name }}
+          {{ labels[code] }}
+          <small class="rate-caption">
+            {{ videoRateLabel(selected, draft.resolution) }} · {{ VIDEO_PRICING.groupRatio }} 倍
+          </small>
+          <small class="option-price">{{ optionFee(selected, { capability: code }) }}</small>
         </button>
       </div>
-      <p class="field-help">{{ capabilityInfo.description }} · 仅展示所选模型支持的能力</p>
     </div>
-    <div v-if="slots.length" class="cloud-field">
-      <label>创作素材</label>
-      <p class="field-help">仅在本机预览，当前不会上传至外部服务。单张不超过 10 MB。</p>
-      <div class="cloud-materials">
-        <div v-for="slot in slots" :key="slot.key" class="material-slot">
-          <label :for="`${media}-cloud-${slot.key}`">
-            {{ slot.label }}
-            <em v-if="slot.required">*</em>
-            <small v-else>可选</small>
-          </label>
-          <div v-if="material(slot.key)" class="material-preview">
-            <img :src="material(slot.key)?.url" :alt="slot.label" />
-            <span>{{ material(slot.key)?.file.name }}</span>
-            <button type="button" :disabled="busy" :aria-label="`移除${slot.label}`" @click="removeMaterial(slot.key)">
-              移除
-            </button>
-          </div>
+    <div v-if="draft.capability !== 'T2V'" class="cloud-field">
+      <label>参考素材</label>
+      <p class="field-help">
+        {{
+          draft.capability === 'FL2V'
+            ? '分别添加首帧和尾帧'
+            : draft.capability === 'I2V'
+              ? '添加首帧图片'
+              : '添加参考图片，以及模型支持的视频／音频素材'
+        }}
+      </p>
+      <p v-if="!status?.referenceDeliveryConfigured" class="field-help">参考素材上传待云端视频服务接入后开放。</p>
+      <div v-for="slot in slots" :key="slot.role" class="material-slot">
+        <label>
+          {{ slot.label }}
           <input
-            :id="`${media}-cloud-${slot.key}`"
             type="file"
-            accept="image/jpeg,image/png,image/webp,image/bmp,image/gif"
-            :disabled="busy"
-            @change="chooseMaterial($event, slot.key)"
+            :accept="slot.accept"
+            :multiple="slot.multiple"
+            :disabled="busy || uploading || !status?.referenceDeliveryConfigured"
+            @change="choose($event, slot.role, slot.multiple)"
           />
-        </div>
+        </label>
       </div>
-      <p v-if="materialError" class="field-error" role="alert">{{ materialError }}</p>
-    </div>
-    <div v-if="capability === 'EXTEND'" class="cloud-field">
-      <label :for="`${media}-cloud-source-task`">原视频任务</label>
-      <input :id="`${media}-cloud-source-task`" type="text" disabled placeholder="接入后选择 Veo 已完成任务" />
-      <p class="field-help">仅支持该模型此前生成的视频；正式接入后从我的任务选择，不能使用任意参考视频。</p>
+      <div v-for="(item, i) in materials" :key="item.assetId" class="material-preview">
+        <span>{{ item.name }} · {{ roleLabels[item.role] }}</span>
+        <button type="button" :disabled="busy" @click="remove(i)">移除</button>
+      </div>
+      <p v-if="uploading" class="field-help">正在上传参考素材…</p>
+      <p v-if="error" class="field-error" role="alert">{{ error }}</p>
     </div>
     <div class="cloud-field">
-      <label :for="`${media}-cloud-prompt`">
-        {{ media === 'video' ? '视频描述' : '创作描述' }}
-        <em>*</em>
-      </label>
+      <label for="video-cloud-prompt">视频描述</label>
       <textarea
-        :id="`${media}-cloud-prompt`"
+        id="video-cloud-prompt"
         v-model="draft.prompt"
+        rows="5"
+        maxlength="10000"
         :disabled="busy"
-        :maxlength="promptLimit"
-        rows="4"
-        :placeholder="
-          media === 'video'
-            ? '描述主体、场景、镜头运动，以及希望呈现的氛围…'
-            : '描述画面、构图、风格，或希望修改的部分…'
-        "
+        placeholder="描述主体、场景、镜头运动、风格和对白…"
       />
-      <div class="text-count">{{ draft.prompt.length }} / {{ promptLimit }} 字符</div>
     </div>
     <div class="cloud-field">
-      <label>输出参数</label>
+      <label>输出设置</label>
       <div class="parameter-grid">
-        <label :for="`${media}-cloud-output`">
-          {{ media === 'video' ? '清晰度' : '图像尺寸' }}
-          <select :id="`${media}-cloud-output`" v-model="draft.output" :disabled="busy">
-            <option v-for="option in outputs" :key="option.value" :value="option.value">{{ option.label }}</option>
-          </select>
-        </label>
-        <label v-if="media === 'video'" :for="`${media}-cloud-duration`">
+        <label>
           视频时长
-          <select :id="`${media}-cloud-duration`" v-model="draft.duration" :disabled="busy">
-            <option v-for="seconds in durations" :key="seconds" :value="seconds">{{ seconds }} 秒</option>
-          </select>
-        </label>
-        <label v-if="model.id === 'veo-3.1-generate-preview' && capability !== 'EXTEND'" :for="`${media}-cloud-ratio`">
-          画面比例
-          <select :id="`${media}-cloud-ratio`" v-model="draft.ratio" :disabled="busy">
-            <option>16:9</option>
-            <option>9:16</option>
-          </select>
-        </label>
-        <label v-if="media === 'image'" :for="`${media}-cloud-count`">
-          生成数量
-          <select :id="`${media}-cloud-count`" v-model="draft.count" :disabled="busy">
-            <option v-for="count in model.id === 'qwen-image-edit-plus' ? 6 : 1" :key="count" :value="count">
-              {{ count }} 张
+          <select v-model.number="draft.seconds" :disabled="busy">
+            <option v-for="n in selected.durations" :key="n" :value="n">
+              {{ n }} 秒 · {{ optionFee(selected, { seconds: n }) }}
             </option>
           </select>
         </label>
+        <label>
+          分辨率
+          <select v-model="draft.resolution" :disabled="busy">
+            <option v-for="n in selected.resolutions" :key="n" :value="n">
+              {{ n.toUpperCase() }} · {{ optionFee(selected, { resolution: n }) }}
+            </option>
+          </select>
+        </label>
+        <label>
+          画面比例
+          <select v-model="draft.ratio" :disabled="busy">
+            <option v-for="n in availableRatios" :key="n" :value="n">{{ n === 'adaptive' ? '自适应' : n }}</option>
+          </select>
+        </label>
+        <label>
+          输出格式
+          <select disabled>
+            <option>MP4</option>
+          </select>
+        </label>
       </div>
-      <p v-if="media === 'video'" class="field-help">{{ outputHint }}</p>
-      <p v-if="model.id === 'veo-3.1-generate-preview'" class="field-help">
-        原生生成音频，可在视频描述中加入对白、音乐或环境声。
-      </p>
     </div>
     <details class="cloud-advanced">
-      <summary>高级参数</summary>
-      <div v-if="media === 'image' || model.id === 'veo-3.1-generate-preview'" class="cloud-field">
-        <label :for="`${media}-cloud-negative`">
-          反向描述
-          <small>可选</small>
-        </label>
-        <textarea
-          :id="`${media}-cloud-negative`"
-          v-model="draft.negativePrompt"
-          :disabled="busy"
-          maxlength="500"
-          rows="2"
-          placeholder="不希望出现在画面中的内容…"
-        />
-      </div>
-      <div v-if="media === 'image'" class="cloud-field">
-        <label :for="`${media}-cloud-seed`">
-          随机种子
-          <small>留空为随机</small>
-        </label>
-        <input
-          :id="`${media}-cloud-seed`"
-          v-model="draft.seed"
-          type="number"
-          min="0"
-          max="2147483647"
-          :disabled="busy"
-          placeholder="0 – 2147483647"
-        />
-      </div>
-      <label v-if="model.id !== 'veo-3.1-generate-preview'" class="check-field">
-        <input v-model="draft.optimize" type="checkbox" :disabled="busy" />
-        智能优化提示词
+      <summary>高级设置</summary>
+      <label v-if="selected.hasAudioOutput" class="check-field">
+        <input v-model="draft.generateAudio" type="checkbox" :disabled="busy" />
+        生成音频
       </label>
-      <label v-if="media === 'image'" class="check-field">
-        <input v-model="draft.watermark" type="checkbox" :disabled="busy" />
-        添加模型水印
-      </label>
+      <div v-if="selected.hasSeed" class="cloud-field">
+        <label>随机种子（可选）</label>
+        <input v-model.number="draft.seed" type="number" min="0" max="2147483647" :disabled="busy" />
+      </div>
+      <div v-if="selected.family === 'Wan'" class="cloud-field">
+        <label>反向描述</label>
+        <textarea v-model="draft.negativePrompt" maxlength="500" :disabled="busy" rows="2" />
+      </div>
     </details>
+    <section class="video-fee-panel" aria-label="云端视频计费信息" aria-live="polite">
+      <div class="fee-heading">
+        <strong>计费信息</strong>
+        <span>{{ labels[draft.capability] }} · {{ draft.resolution.toUpperCase() }} · {{ draft.seconds }} 秒</span>
+      </div>
+      <div v-if="costQuote" class="fee-metrics">
+        <div class="fee-metric">
+          <span>消耗单价</span>
+          <strong>{{ formatUsd(costQuote.unitPrice) }}</strong>
+          <small>{{ costQuote.unitLabel }}</small>
+        </div>
+        <div class="fee-metric">
+          <span>计费倍率</span>
+          <strong>
+            {{ costQuote.multiplier }}
+            <em>倍</em>
+          </strong>
+          <small>媒体分组公开倍率</small>
+        </div>
+        <div class="fee-metric fee-total">
+          <span>{{ costQuote.referenceVideoExtra ? '预计基础费用 · 参考视频另计' : '当前视频预计费用' }}</span>
+          <strong>
+            {{ formatUsd(costQuote.estimatedUsd) }}
+            <em>美元</em>
+          </strong>
+        </div>
+      </div>
+      <p v-if="costQuote" class="fee-formula">{{ costQuote.formula }}</p>
+      <p class="fee-note">
+        当前型号：{{ draft.model }} · {{ selected.mode }}。公开计费表达式未单列创作能力或音频加价，按该型号的秒数／Token
+        规则计算。
+      </p>
+      <details class="fee-combinations">
+        <summary>查看时长 × 分辨率组合费用（{{ selected.durations.length * selected.resolutions.length }} 组）</summary>
+        <p class="fee-note">
+          {{ labels[draft.capability] }} · 公开倍率 {{ VIDEO_PRICING.groupRatio }} 倍 · 美元。点击报价可选择该组合。
+        </p>
+        <div class="fee-table-scroll" tabindex="0" aria-label="时长与分辨率组合报价表">
+          <table class="fee-table">
+            <caption class="sr-only">{{ draft.model }} {{ labels[draft.capability] }}组合预计费用，美元</caption>
+            <thead>
+              <tr>
+                <th scope="col">时长</th>
+                <th v-for="resolution in selected.resolutions" :key="resolution" scope="col">
+                  {{ resolution.toUpperCase() }}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="fee-unit-row">
+                <th scope="row">消耗单价</th>
+                <td v-for="resolution in selected.resolutions" :key="resolution">
+                  {{ videoRateLabel(selected, resolution) }}
+                </td>
+              </tr>
+              <tr v-for="row in priceGrid" :key="row.seconds">
+                <th scope="row">{{ row.seconds }} 秒</th>
+                <td v-for="cell in row.cells" :key="cell.resolution">
+                  <button
+                    type="button"
+                    :disabled="busy || !cell.quote"
+                    :class="{ active: draft.seconds === row.seconds && draft.resolution === cell.resolution }"
+                    :aria-pressed="draft.seconds === row.seconds && draft.resolution === cell.resolution"
+                    :aria-label="`${row.seconds} 秒 ${cell.resolution} ${quoteFee(cell.quote)}`"
+                    @click="selectPriceCombination(row.seconds, cell.resolution)"
+                  >
+                    {{ quoteFee(cell.quote) }}
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </details>
+      <p v-if="costQuote?.approximate" class="fee-note">按所选清晰度的公开 16:9 样例估算，实际按计费 Token 结算。</p>
+      <p v-if="costQuote?.referenceVideoExtra" class="fee-note">以上不含参考视频产生的额外 Token 费用。</p>
+      <p v-if="costQuote?.channelPriceMayVary" class="fee-note">该型号存在不同通道价格，当前显示公开模型报价。</p>
+      <p v-if="!costQuote" class="fee-note">当前参数没有可用的公开报价。</p>
+      <div class="fee-source">
+        <a :href="VIDEO_PRICING.source" target="_blank" rel="noopener noreferrer">蓝章鱼公开价格 ↗</a>
+        <time>{{ pricingDate }} 核对</time>
+      </div>
+      <p class="fee-note fee-settlement">预计费用以公开媒体分组倍率计算，实际以账号通道结算为准。</p>
+    </section>
     <div class="cloud-summary">
-      <span>{{ model.provider }} · {{ model.name }}</span>
-      <strong>费用待配置</strong>
-      <p>接入后根据所选参数显示预估费用。</p>
+      <span>
+        {{ selected.family }} · {{ selected.mode }} · {{ draft.resolution.toUpperCase() }} · {{ draft.seconds }} 秒
+      </span>
+      <p>
+        {{ status?.configured ? '服务端已配置蓝章鱼' : '服务端尚未启用云端视频' }} ·
+        {{ status?.verifiedModels?.includes(draft.model) ? '该型号已完成真实验收' : '真实成片验收待完成' }}
+      </p>
+      <p v-if="selected.protocol === 'unconfirmed'">该型号的参考视频协议尚未获得供应商接口依据。</p>
     </div>
-    <p class="field-help">右侧灵感目前匹配已接入的本地模型；应用其创作方向会切换回本地生成。</p>
   </div>
 </template>
-
 <script setup lang="ts">
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
-import type { CreativeMedia } from './types';
+import { computed, reactive, ref, watch } from 'vue';
 import {
-  CLOUD_CAPABILITIES,
-  cloudDurations,
-  cloudMaterialSlots,
-  cloudModelsFor,
-  cloudOutputOptions,
-  createCloudDraft,
-  type CloudCapability,
-  type CloudDraft,
-  type CloudModel
-} from './cloud-models';
-const props = defineProps<{ media: CreativeMedia; busy?: boolean }>();
-const models = computed(() => cloudModelsFor(props.media));
-const modelId = ref(models.value[0].id);
-const model = computed(() => models.value.find(item => item.id === modelId.value)!);
-const capability = ref<CloudCapability>(model.value.capabilities[0]);
-const capabilityInfo = computed(() => CLOUD_CAPABILITIES[capability.value]);
-const drafts = reactive<Record<string, CloudDraft>>({});
-const draftKey = computed(() => `${modelId.value}:${capability.value}`);
-watch(
-  draftKey,
-  key => {
-    drafts[key] ??= createCloudDraft(model.value, capability.value);
-  },
-  { immediate: true, flush: 'sync' }
+  VIDEO_CLOUD_PROFILES,
+  normalizeVideoCloudDraft,
+  uploadVideoCloudAsset,
+  type VideoCloudDraft,
+  type VideoCloudProfile,
+  type VideoCloudStatus,
+  type VideoCloudReference
+} from '@/api/video/cloud';
+import {
+  calculateVideoCost,
+  formatUsd,
+  videoRateLabel,
+  videoStartingRate,
+  videoOptionQuote,
+  videoPriceGrid,
+  type VideoCostQuote,
+  VIDEO_PRICING
+} from '@/api/video/cloud-pricing';
+const props = defineProps<{ busy?: boolean; status?: VideoCloudStatus | null }>();
+const emit = defineEmits<{ change: [draft: VideoCloudDraft]; uploading: [value: boolean] }>();
+const profiles = VIDEO_CLOUD_PROFILES;
+const labels: Record<string, string> = { T2V: '文生视频', I2V: '图生视频', FL2V: '首尾帧视频', R2V: '多素材参考视频' };
+const roleLabels: Record<string, string> = {
+  first_frame: '首帧',
+  last_frame: '尾帧',
+  reference_image: '参考图片',
+  reference_video: '参考视频',
+  reference_audio: '参考音频'
+};
+const first = profiles[0];
+const draft = reactive<VideoCloudDraft>({
+  model: first.id,
+  capability: first.capabilities[0],
+  prompt: '',
+  seconds: first.durations[0],
+  resolution: first.resolutions[0],
+  ratio: first.ratios[0],
+  references: [],
+  generateAudio: first.hasAudioOutput ? true : undefined,
+  negativePrompt: ''
+});
+const selected = computed(() => profiles.find(p => p.id === draft.model)!);
+const availableRatios = computed(() =>
+  selected.value.ratios.filter(
+    r => !(selected.value.family === 'MiniMax' && draft.capability === 'T2V' && r === 'adaptive')
+  )
 );
-const draft = computed(() => drafts[draftKey.value]);
-const outputs = computed(() => cloudOutputOptions(model.value, capability.value));
-const durations = computed(() => cloudDurations(model.value, capability.value, draft.value.output));
-const slots = computed(() => cloudMaterialSlots(capability.value));
-const promptLimit = computed(() => (props.media === 'image' ? 800 : 2000));
-const outputHint = computed(() =>
-  modelId.value === 'MiniMax-Hailuo-2.3'
-    ? '768P 支持 6 / 10 秒；1080P 仅支持 6 秒。'
-    : capability.value === 'EXTEND'
-      ? '续写仅支持 720P；时长参数固定为 8 秒。'
-      : capability.value === 'R2V'
-        ? '多图参考时长固定为 8 秒。'
-        : '720P 支持 4 / 6 / 8 秒；1080P、4K 仅支持 8 秒。'
-);
-watch(
-  durations,
-  options => {
-    if (options.length && !options.includes(draft.value.duration)) draft.value.duration = options[0];
-  },
-  { immediate: true }
-);
-function selectModel(next: CloudModel) {
-  modelId.value = next.id;
-  if (!next.capabilities.includes(capability.value)) capability.value = next.capabilities[0];
-  materialError.value = '';
+const groups = [...new Set(profiles.map(p => p.group))];
+const variants = computed(() => profiles.filter(p => p.group === selected.value.group));
+const costQuote = computed(() => calculateVideoCost(draft));
+const priceGrid = computed(() => videoPriceGrid(selected.value, draft));
+function quoteFee(quote: VideoCostQuote | undefined) {
+  if (!quote) return '暂无报价';
+  return `${quote.approximate ? '约 ' : ''}${formatUsd(quote.estimatedUsd)}${quote.referenceVideoExtra ? ' + 参考视频费' : ''}`;
 }
-interface LocalMaterial {
-  file: File;
-  url: string;
+function optionFee(
+  profile: VideoCloudProfile,
+  option: Partial<Pick<VideoCloudDraft, 'capability' | 'resolution' | 'seconds'>> = {}
+) {
+  return `预计 ${quoteFee(videoOptionQuote(profile, draft, option))}`;
 }
-const materials = reactive<Record<string, Record<string, LocalMaterial>>>({});
-const materialError = ref('');
-function material(key: string): LocalMaterial | undefined {
-  return materials[draftKey.value]?.[key];
+function selectPriceCombination(seconds: number, resolution: string) {
+  if (props.busy || !videoOptionQuote(selected.value, draft, { seconds, resolution })) return;
+  draft.seconds = seconds;
+  draft.resolution = resolution;
 }
-function removeMaterial(key: string) {
-  const selected = material(key);
-  if (selected) URL.revokeObjectURL(selected.url);
-  if (materials[draftKey.value]) delete materials[draftKey.value][key];
+const pricingDate = VIDEO_PRICING.checkedAt.slice(0, 16).replace('T', ' ');
+function groupRate(group: string) {
+  return videoStartingRate(profiles.filter(p => p.group === group));
 }
-function chooseMaterial(event: Event, key: string) {
+const materials = ref<(VideoCloudReference & { name: string })[]>([]);
+const uploading = ref(false);
+const error = ref('');
+const slots = computed(() => {
+  const image = (role: VideoCloudReference['role'], label: string, multiple = false) => ({
+    role,
+    label,
+    accept: 'image/png,image/jpeg,image/webp',
+    multiple
+  });
+  if (draft.capability === 'I2V') return [image('first_frame', '首帧图片')];
+  if (draft.capability === 'FL2V') return [image('first_frame', '首帧图片'), image('last_frame', '尾帧图片')];
+  if (draft.capability !== 'R2V') return [];
+  return [
+    image('reference_image', `参考图片 · 最多 ${selected.value.maxImages} 张`, true),
+    ...(selected.value.hasVideoReference
+      ? [{ role: 'reference_video' as const, label: '参考视频', accept: 'video/mp4', multiple: true }]
+      : []),
+    ...(selected.value.hasAudioReference
+      ? [{ role: 'reference_audio' as const, label: '参考音频', accept: 'audio/mpeg,audio/wav', multiple: true }]
+      : [])
+  ];
+});
+function resetMaterials() {
+  materials.value = [];
+  draft.references = [];
+  error.value = '';
+}
+function selectProfile(p: VideoCloudProfile) {
+  Object.assign(draft, normalizeVideoCloudDraft(draft, p));
+  resetMaterials();
+}
+function selectCapability(code: string) {
+  draft.capability = code;
+  Object.assign(draft, normalizeVideoCloudDraft(draft, selected.value));
+  resetMaterials();
+}
+function remove(i: number) {
+  materials.value.splice(i, 1);
+  draft.references = materials.value.map(({ assetId, role }) => ({ assetId, role }));
+}
+async function choose(event: Event, role: VideoCloudReference['role'], multiple: boolean) {
   const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
+  const files = [...(input.files ?? [])];
   input.value = '';
-  if (!file) return;
-  if (
-    !['image/jpeg', 'image/png', 'image/webp', 'image/bmp', 'image/gif'].includes(file.type) ||
-    file.size > 10 * 1024 * 1024
-  ) {
-    materialError.value = '请选择不超过 10 MB 的 JPG、PNG、WEBP、BMP 或 GIF 图片。';
+  error.value = '';
+  const max = role.includes('frame')
+    ? 1
+    : role === 'reference_image'
+      ? selected.value.maxImages
+      : role === 'reference_video'
+        ? selected.value.maxVideos
+        : selected.value.maxAudios;
+  if (files.length + (multiple ? materials.value.filter(m => m.role === role).length : 0) > max) {
+    error.value = `该素材最多 ${max} 个`;
     return;
   }
-  removeMaterial(key);
-  (materials[draftKey.value] ??= {})[key] = { file, url: URL.createObjectURL(file) };
-  materialError.value = '';
+  if (files.some(f => f.size > 64 * 1024 * 1024)) {
+    error.value = '单个素材不能超过 64 MB';
+    return;
+  }
+  uploading.value = true;
+  emit('uploading', true);
+  try {
+    if (!multiple) materials.value = materials.value.filter(m => m.role !== role);
+    for (const file of files) {
+      const res = await uploadVideoCloudAsset(file);
+      if (!res.data?.assetId) throw new Error('素材上传未返回 ID');
+      materials.value.push({ assetId: res.data.assetId, role, name: file.name });
+    }
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : '素材上传失败';
+  } finally {
+    draft.references = materials.value.map(({ assetId, role }) => ({ assetId, role }));
+    uploading.value = false;
+    emit('uploading', false);
+  }
 }
-watch(capability, () => {
-  materialError.value = '';
-});
-onBeforeUnmount(() =>
-  Object.values(materials).forEach(group => Object.values(group).forEach(item => URL.revokeObjectURL(item.url)))
+function applyDraft(input: VideoCloudDraft) {
+  const p = profiles.find(p => p.id === input.model);
+  if (!p) return;
+  Object.assign(draft, normalizeVideoCloudDraft({ ...input, idempotencyKey: undefined }, p));
+  materials.value = input.references.map(r => ({ ...r, name: `已上传素材 ${r.assetId}` }));
+  error.value = '';
+}
+defineExpose({ applyDraft });
+watch(
+  draft,
+  () =>
+    emit('change', {
+      ...draft,
+      seed: typeof draft.seed === 'number' && Number.isFinite(draft.seed) ? draft.seed : undefined,
+      references: draft.references.map(r => ({ ...r }))
+    }),
+  { deep: true, immediate: true }
 );
 </script>
-
 <style scoped>
 .cloud-editor {
-  min-width: 0;
   color: var(--t1);
+  min-width: 0;
 }
 .cloud-heading {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
 }
-.cloud-heading span {
+.cloud-heading span,
+.field-help,
+.cloud-summary p {
+  font-size: 11px;
   color: var(--t2);
-  font-size: 12px;
+  line-height: 1.7;
 }
 .cloud-heading h2 {
-  margin: 6px 0 0;
   font-size: 22px;
+  margin: 6px 0;
 }
 .cloud-heading b {
   color: var(--p);
@@ -305,254 +447,311 @@ onBeforeUnmount(() =>
   padding: 5px 9px;
   border-radius: 6px;
   font-size: 11px;
-  white-space: nowrap;
-}
-.cloud-notice {
-  padding: 10px 12px;
-  background: var(--tint);
-  color: var(--p);
-  border-radius: 8px;
-  font-size: 12px;
-  line-height: 1.7;
 }
 .cloud-field {
   margin: 20px 0;
 }
 .cloud-field > label {
   display: block;
-  margin-bottom: 9px;
   font-size: 13px;
   font-weight: 600;
+  margin-bottom: 9px;
 }
-.cloud-editor em {
-  color: var(--p);
-  font-style: normal;
-}
-.cloud-editor small {
-  color: var(--t2);
-  font-size: 11px;
-  font-weight: 400;
-}
-.cloud-models {
+.cloud-models,
+.cloud-capabilities,
+.parameter-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 9px;
 }
-.cloud-models button {
-  padding: 12px 10px;
-  background: var(--surface);
-  color: var(--t1);
+.cloud-models button,
+.cloud-capabilities button {
   border: 1px solid var(--line2);
   border-radius: 9px;
+  background: var(--surface);
+  color: var(--t1);
+  padding: 12px;
   text-align: left;
   cursor: pointer;
-  min-width: 0;
 }
-.cloud-models button.active,
-.cloud-capabilities button.active {
+.cloud-models .active,
+.cloud-capabilities .active {
   border-color: var(--p);
   background: var(--tint);
   color: var(--p);
 }
-.cloud-models span {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 5px;
-}
-.cloud-models strong {
-  font-size: 13px;
-  overflow-wrap: anywhere;
-}
-.cloud-models em {
-  font-size: 10px;
-}
 .cloud-models small {
   display: block;
-  margin-top: 6px;
-}
-.cloud-models p {
+  margin-top: 7px;
   color: var(--t2);
-  margin: 6px 0 0;
-  font-size: 11px;
-  line-height: 1.6;
-}
-.model-documentation {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 11px;
-  color: var(--t2);
-  margin-top: 10px;
-}
-.model-documentation a {
-  color: var(--p);
-  text-decoration: none;
-}
-.cloud-capabilities {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-.cloud-capabilities button {
-  border: 1px solid var(--line2);
-  color: var(--t2);
-  background: var(--surface);
-  padding: 9px 5px;
-  border-radius: 7px;
-  cursor: pointer;
-  font-size: 12px;
-}
-.field-help {
-  font-size: 11px;
-  color: var(--t2);
-  line-height: 1.7;
-  margin: 8px 0;
-}
-.cloud-materials {
-  display: grid;
-  gap: 9px;
-}
-.material-slot {
-  min-width: 0;
-  padding: 10px;
-  border: 1px dashed var(--line2);
-  border-radius: 8px;
-  background: var(--sunken);
-}
-.material-slot > label {
-  font-size: 12px;
-  display: block;
-  margin-bottom: 7px;
-}
-.cloud-editor input[type='file'] {
-  width: 100%;
-  font-size: 11px;
-  color: var(--t2);
-}
-.cloud-editor input[type='file']::file-selector-button {
-  border: 1px solid var(--line2);
-  color: var(--p);
-  background: var(--surface);
-  border-radius: 5px;
-  padding: 6px 8px;
-  margin-right: 8px;
-  cursor: pointer;
-}
-.material-preview {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
   font-size: 11px;
 }
-.material-preview img {
-  width: 48px;
-  height: 48px;
-  object-fit: cover;
-  border-radius: 5px;
-}
-.material-preview span {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.material-preview button {
-  border: 0;
-  background: none;
-  color: var(--p);
-  cursor: pointer;
-}
-.cloud-editor textarea,
-.cloud-editor select,
-.cloud-editor input[type='text'],
-.cloud-editor input[type='number'] {
+.cloud-editor :is(select, textarea) {
   box-sizing: border-box;
   width: 100%;
-  min-width: 0;
   border: 1px solid var(--line2);
   background: var(--sunken);
   color: var(--t1);
-  border-radius: 7px;
   padding: 9px;
+  border-radius: 7px;
   font: inherit;
   font-size: 12px;
+  margin-top: 7px;
 }
 .cloud-editor textarea {
   resize: vertical;
   line-height: 1.8;
 }
-.cloud-editor textarea::placeholder,
-.cloud-editor input::placeholder {
-  color: var(--t3);
-}
-.cloud-editor :is(button, input, textarea, select):focus-visible {
-  outline: 2px solid var(--p);
-  outline-offset: 2px;
-}
-.cloud-editor :disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-.text-count {
-  text-align: right;
-  color: var(--t2);
-  margin-top: 4px;
-  font-size: 10px;
-}
-.parameter-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
 .parameter-grid label {
   font-size: 12px;
   color: var(--t2);
-  min-width: 0;
-}
-.parameter-grid select {
-  display: block;
-  margin-top: 7px;
 }
 .cloud-advanced {
   border-top: 1px solid var(--line);
   padding-top: 14px;
   font-size: 12px;
 }
-.cloud-advanced summary {
-  cursor: pointer;
-  color: var(--t2);
-}
 .check-field {
   display: flex;
   align-items: center;
-  gap: 7px;
-  margin: 12px 0;
-}
-.check-field input {
-  accent-color: var(--p);
+  gap: 8px;
+  margin: 14px 0;
 }
 .cloud-summary {
   background: var(--sunken);
-  border-radius: 8px;
   padding: 12px;
+  border-radius: 8px;
   margin-top: 20px;
-  font-size: 11px;
-  line-height: 1.7;
+  font-size: 12px;
 }
-.cloud-summary strong {
+.material-slot {
+  padding: 10px;
+  border: 1px dashed var(--line2);
+  border-radius: 8px;
+  margin: 8px 0;
+  font-size: 12px;
+}
+.material-slot input {
   display: block;
-  color: var(--p);
-  margin-top: 6px;
-  font-size: 13px;
+  margin-top: 8px;
+  max-width: 100%;
 }
-.cloud-summary p {
-  margin: 5px 0 0;
-  color: var(--t2);
+.material-preview {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.material-preview button {
+  color: var(--p);
+  border: 0;
+  background: none;
+  cursor: pointer;
 }
 .field-error {
   color: #b94358;
   font-size: 12px;
+}
+.model-id {
+  overflow-wrap: anywhere;
+}
+.cloud-editor :disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.cloud-editor :focus-visible {
+  outline: 2px solid var(--p);
+  outline-offset: 2px;
+}
+
+.rate-caption {
+  display: block;
+  margin-top: 7px;
+  color: var(--t2);
+  font-size: 10px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.video-fee-panel {
+  margin-top: 20px;
+  padding: 15px;
+  border: 1px solid var(--line2);
+  border-radius: 10px;
+  background: var(--sunken);
+}
+.fee-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+.fee-heading > span {
+  font-size: 11px;
+  color: var(--t2);
+}
+.fee-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.fee-metric {
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  min-width: 0;
+}
+.fee-metric > span,
+.fee-metric > small {
+  display: block;
+  font-size: 11px;
+  color: var(--t2);
+  line-height: 1.6;
+}
+.fee-metric > strong {
+  display: block;
+  font-size: 21px;
+  line-height: 1.6;
+  color: var(--t1);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.fee-metric em {
+  font-size: 11px;
+  font-weight: 400;
+  font-style: normal;
+  color: var(--t2);
+  margin-left: 6px;
+}
+.fee-total {
+  grid-column: 1/-1;
+  border-color: var(--p);
+  background: var(--tint);
+}
+.fee-total > strong {
+  color: var(--p);
+  font-size: 25px;
+}
+.fee-formula {
+  font-size: 11px;
+  color: var(--t1);
+  line-height: 1.7;
+  margin: 12px 0 6px;
+  overflow-wrap: anywhere;
+}
+.fee-note {
+  font-size: 10px;
+  color: var(--t2);
+  line-height: 1.7;
+  margin: 5px 0;
+}
+.fee-source {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 7px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 10px;
+  color: var(--t2);
+}
+.fee-source a {
+  color: var(--p);
+  text-decoration: none;
+}
+.fee-source a:hover {
+  text-decoration: underline;
+}
+.fee-settlement {
+  margin-bottom: 0;
+}
+
+.option-price {
+  display: block;
+  margin-top: 4px;
+  color: var(--p);
+  font-size: 11px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.fee-combinations {
+  margin: 12px 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.fee-combinations > summary {
+  font-size: 12px;
+  color: var(--p);
+  cursor: pointer;
+  line-height: 1.7;
+}
+.fee-table-scroll {
+  max-height: 285px;
+  overflow: auto;
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.fee-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 11px;
+  background: var(--surface);
+}
+.fee-table th,
+.fee-table td {
+  padding: 7px;
+  border-bottom: 1px solid var(--line);
+  text-align: center;
+  min-width: 70px;
+}
+.fee-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--sunken);
+  z-index: 1;
+}
+.fee-table tbody th {
+  font-weight: 500;
+  color: var(--t2);
+  white-space: nowrap;
+}
+.fee-unit-row td {
+  font-size: 10px;
+  color: var(--t2);
+  line-height: 1.6;
+}
+.fee-table button {
+  width: 100%;
+  padding: 6px 4px;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 5px;
+  color: var(--t1);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.fee-table button:hover,
+.fee-table button.active {
+  border-color: var(--p);
+  background: var(--tint);
+  color: var(--p);
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 </style>
