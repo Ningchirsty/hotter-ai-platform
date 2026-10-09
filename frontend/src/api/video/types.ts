@@ -84,7 +84,7 @@ export interface VideoTaskVO {
   id: number | string;
   taskNo: string;
   taskName?: string | null;
-  capabilityCode: VideoCapabilityCode;
+  capabilityCode: VideoCapabilityCode | 'R2V';
   workflowCode: string;
   modelCode?: string | null;
   status: VideoTaskStatus;

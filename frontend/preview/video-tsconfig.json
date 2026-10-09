@@ -1,0 +1,9 @@
+{
+  "extends": "../tsconfig.json",
+  "include": [
+    "../src/views/video/index.vue",
+    "../src/api/video/cloud*.ts",
+    "../src/components/CreativeInspiration/CloudVideoGenerationForm.vue",
+    "../src/**/*.d.ts"
+  ]
+}

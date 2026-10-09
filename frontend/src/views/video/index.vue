@@ -36,7 +36,8 @@
     <div v-if="activeView === 'create'" class="workbench-grid">
       <section class="studio-card create-card">
         <GenerationSource v-model="generationSource" :busy="uploading || submitting" />
-        <CloudGenerationForm v-show="generationSource === 'cloud'" media="video" :busy="uploading || submitting" />
+        <CloudVideoGenerationForm v-show="generationSource === 'cloud'" :busy="uploading || submitting || cloudUploading"
+          :status="cloudStatus" ref="cloudForm" @change="updateCloudDraft" @uploading="cloudUploading = $event" />
         <div v-show="generationSource === 'local'" class="editor-body">
           <div class="section-heading">
             <div>
@@ -293,7 +294,7 @@
             v-hasPermi="['video:creation:submit']"
             type="button"
             class="submit-button"
-            :disabled="!canSubmit || submitting || uploading"
+            :disabled="!canSubmit || submitting || uploading || cloudUploading"
             :title="canSubmit ? '提交并生成视频' : submitBlockReason"
             @click="submitTask"
           >
@@ -302,13 +303,13 @@
               submitting
                 ? '提交中…'
                 : generationSource === 'cloud'
-                  ? '云端服务待接入'
+                  ? (canSubmit ? '提交云端视频' : '暂不可提交')
                   : canSubmit
                     ? '提交生成'
                     : '暂不可提交'
             }}
           </button>
-          <span>{{ submitBlockReason || '提交后将经服务端填充模板并交由 ComfyUI 执行' }}</span>
+          <span>{{ submitBlockReason || (generationSource === 'cloud' ? '提交后由平台后端调用蓝章鱼，成片归档至我的任务' : '提交后将经服务端填充模板并交由 ComfyUI 执行') }}</span>
         </div>
       </section>
 
@@ -606,7 +607,8 @@ import {
   uploadVideoAsset
 } from '@/api/video';
 import Pagination from '@/components/Pagination/index.vue';
-import CloudGenerationForm from '@/components/CreativeInspiration/CloudGenerationForm.vue';
+import CloudVideoGenerationForm from '@/components/CreativeInspiration/CloudVideoGenerationForm.vue';
+import { createVideoCloudTask, listVideoCloudModels, VIDEO_CLOUD_PROFILES, type VideoCloudDraft, type VideoCloudStatus } from '@/api/video/cloud';
 import GenerationSource from '@/components/CreativeInspiration/GenerationSource.vue';
 import CreativeInspiration from '@/components/CreativeInspiration/index.vue';
 import {
@@ -634,6 +636,36 @@ type TaskFilterKey = 'all' | VideoTaskStatus;
 const activeView = ref<StudioView>('create');
 const generationSource = ref<GenerationSourceType>('local');
 const appliedInspirationTitle = ref('');
+const cloudForm = ref<InstanceType<typeof CloudVideoGenerationForm>>();
+const cloudDraft = ref<VideoCloudDraft>();
+const cloudStatus = ref<VideoCloudStatus|null>(null);
+const cloudUploading = ref(false);
+let cloudIdempotencyKey = '';
+function updateCloudDraft(draft:VideoCloudDraft){
+  if(JSON.stringify(cloudDraft.value)!==JSON.stringify(draft))cloudIdempotencyKey='';
+  cloudDraft.value=draft;
+}
+const cloudBlockReason = computed(() => {
+  const draft=cloudDraft.value;
+  const profile=VIDEO_CLOUD_PROFILES.find(p=>p.id===draft?.model);
+  if(!draft||!profile)return '请选择云端视频型号';
+  if(profile.protocol==='unconfirmed')return '该型号的供应商协议待确认，暂不可提交';
+  if(!cloudStatus.value?.configured)return '云端视频尚未启用，本轮可选择参数进行预览';
+  if(!cloudStatus.value.verifiedModels.includes(draft.model))return '该型号尚未进行真实视频验收，暂不可提交';
+  if(!draft.prompt.trim())return '请填写视频描述';
+  if(draft.capability!=='T2V'&&!cloudStatus.value.referenceDeliveryConfigured)return '参考素材读取地址尚未配置';
+  const roles=draft.references.map(r=>r.role);
+  if(draft.capability==='I2V'&&(roles.length!==1||roles[0]!=='first_frame'))return '请上传首帧图片';
+  if(draft.capability==='FL2V'&&(roles.length!==2||!roles.includes('first_frame')||!roles.includes('last_frame')))return '请上传首帧与尾帧图片';
+  if(draft.capability==='R2V'&&!roles.length)return '请添加参考素材';
+  return cloudUploading.value?'正在上传参考素材…':'';
+});
+async function loadCloudStatus(){
+  try{const res=await listVideoCloudModels();cloudStatus.value=res.data??null;}
+  catch{cloudStatus.value=null;}
+}
+watch(generationSource,source=>{if(source==='cloud')void loadCloudStatus();});
+
 const studioViews: Array<{ key: StudioView; label: string; icon: Component }> = [
   { key: 'create', label: '创建任务', icon: MagicStick },
   { key: 'tasks', label: '我的任务', icon: Document },
@@ -845,7 +877,7 @@ const currentWorkflow = computed(
  * 只有 PUBLISHED 才允许在正式环境提交。
  * 未读取到已发布且可提交的工作流时，保持禁用并提示真实原因。
  */
-const canSubmit = computed(() => canSubmitLocal(generationSource.value, currentWorkflow.value));
+const canSubmit = computed(() => generationSource.value==='cloud' ? !cloudBlockReason.value : canSubmitLocal(generationSource.value, currentWorkflow.value));
 
 /**
  * 当前工作流允许的输出档位（清晰度）。
@@ -941,7 +973,7 @@ watch(
 );
 
 const submitBlockReason = computed(() => {
-  if (generationSource.value === 'cloud') return '云端 API 待接入，当前可配置草稿，暂不支持提交';
+  if (generationSource.value === 'cloud') return cloudBlockReason.value;
   if (!workflows.value.length) return '正在读取工作流状态…';
   const workflow = currentWorkflow.value;
   if (!workflow) return `${currentWorkflowCode.value} 尚未在服务端注册`;
@@ -1169,7 +1201,27 @@ function optimizePrompt() {
  *
  * 提交前再次校验 workPermit（后端也会独立校验，前端禁用只是体验层）。
  */
+async function submitCloudTask(){
+  if(!cloudDraft.value||cloudBlockReason.value)return;
+  submitting.value=true;
+  if(!cloudIdempotencyKey)cloudIdempotencyKey=`cloud-video-${crypto.randomUUID()}`;
+  try{
+    const created=await createVideoCloudTask({...cloudDraft.value,idempotencyKey:cloudIdempotencyKey});
+    const id=created.data?.taskId;
+    if(id===undefined)throw new Error('创建任务未返回 ID');
+    taskPage.pageNum=1;taskFilter.value='all';taskKeyword.value='';activeView.value='tasks';
+    startTaskPolling(id);await loadTasks();
+    const executed=await executeVideoTask(id);
+    if(executed.data?.outcome==='QUEUE_FULL')ElMessage.warning('云端执行队列已满，任务已保留；稍后点击再次执行');
+    else ElMessage.success('云端任务已提交，完成后可在我的任务播放');
+    await loadTasks();
+  }catch(error){ElMessage.error((await extractErrorMessage(error))??'云端视频提交失败');await loadTasks();}
+  finally{submitting.value=false;}
+}
+
 async function submitTask() {
+  if(generationSource.value==='cloud'){await submitCloudTask();return;}
+
   if (!canSubmit.value || submitting.value || uploading.value) {
     ElMessage.warning(submitBlockReason.value || '请等待当前操作完成');
     return;
@@ -1539,7 +1591,18 @@ async function cancelTask(task: VideoTaskVO) {
   }
 }
 
-function recreateTask(task: VideoTaskVO) {
+async function recreateTask(task: VideoTaskVO) {
+  if(task.workflowCode==='cloud-bluocto-video'){
+    try{
+      const detail=(await getVideoTask(task.id)).data;
+      const snapshot=typeof detail?.inputJson==='string'?JSON.parse(detail.inputJson):detail?.inputJson;
+      if(!snapshot?.request)throw new Error('云端任务参数快照缺失');
+      generationSource.value='cloud';cloudForm.value?.applyDraft(snapshot.request);
+      cloudIdempotencyKey='';activeView.value='create';window.scrollTo({top:0,behavior:'smooth'});
+    }catch(error){ElMessage.error((await extractErrorMessage(error))??'读取云端任务参数失败');}
+    return;
+  }
+  generationSource.value='local';
   const module = VIDEO_MODULES.find(item => item.code === task.capabilityCode);
   if (module) selectModule(module);
   const model = VIDEO_MODELS.find(item => item.code === task.modelCode);
@@ -1630,7 +1693,7 @@ function formatFileSize(size: number) {
 }
 
 function moduleName(code: string) {
-  return VIDEO_MODULES.find(item => item.code === code)?.name ?? code;
+  return code==='R2V'?'多素材参考视频':VIDEO_MODULES.find(item => item.code === code)?.name ?? code;
 }
 
 function modelName(code?: string | null) {
