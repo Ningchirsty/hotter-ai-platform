@@ -286,6 +286,41 @@ else
   fi
 fi
 
+# ---- 9) 渲染服务（2026-10-09 补：同一类"绿着但坏了"的盲点） ----
+# creative-renderer 是内容/视觉模块的**生产依赖**，而且不在第 8 项的 DEP_CONTAINERS 里：
+#   · 后端默认连 http://creative-renderer:8090（RendererClient @Value 默认值）；
+#   · 前端在它挂掉时明确提示「渲染服务不可达，无法排版」——也就是**用户可见的功能失效**；
+#   · 它同样**没有 healthcheck**（实测 health=none），且不向宿主机发布端口 ⇒ 与 MinIO 一样
+#     只能从后端容器里探。
+# 为什么不能只看"容器在跑"：它的 /health 返回 {status, browser, version}，其中 browser 表示
+#   Chromium 是否真的起来了。容器活着但 Chromium 崩掉时，端口照样通、排版却全废——那正是
+#   本项要抓的形态（所以要求 browser=true，而不是只要求 http=200）。
+# 级别取 CRITICAL，与第 8 项对依赖服务的口径一致（"功能坏了但告警绿的"是最危险的一类）。
+#   若将来内容/视觉模块下线，把本项整段删掉或把 HOTTER_RENDERER_CONTAINER 指向空即可。
+RENDERER_CONTAINER="${HOTTER_RENDERER_CONTAINER:-creative-renderer}"
+RENDERER_PROBE_URL="${HOTTER_RENDERER_PROBE_URL:-http://creative-renderer:8090/health}"
+if ! docker inspect "$RENDERER_CONTAINER" >/dev/null 2>&1; then
+  report "[CRITICAL] renderer container missing: $RENDERER_CONTAINER"
+  report "           rendering/排版 would fail (frontend shows 渲染服务不可达)"
+  critical=$((critical + 1))
+elif [ "$(docker inspect "$RENDERER_CONTAINER" --format '{{.State.Status}}')" != "running" ]; then
+  report "[CRITICAL] renderer container $RENDERER_CONTAINER state=$(docker inspect "$RENDERER_CONTAINER" --format '{{.State.Status}}') (expected running)"
+  critical=$((critical + 1))
+elif ! docker exec "$BACKEND_CONTAINER" sh -c 'command -v curl >/dev/null 2>&1' 2>/dev/null; then
+  # 探不了 ≠ 探过了没问题（与存储那一项同一原则：不能静默算通过）
+  report "[WARN] cannot probe renderer: no curl inside $BACKEND_CONTAINER"
+  warn=$((warn + 1))
+else
+  rbody=$(docker exec "$BACKEND_CONTAINER" curl -s -m 10 "$RENDERER_PROBE_URL" 2>/dev/null | tr -d ' \n' || true)
+  if printf '%s' "$rbody" | grep -q '"status":"ok"' && printf '%s' "$rbody" | grep -q '"browser":true'; then
+    report "[ok] renderer: $RENDERER_PROBE_URL -> status=ok browser=true"
+  else
+    report "[CRITICAL] renderer not rendering: $RENDERER_PROBE_URL -> ${rbody:-(no response)}"
+    report "           container is running but browser=false/absent: 排版与交付会失败"
+    critical=$((critical + 1))
+  fi
+fi
+
 report ""
 report "=== summary: critical=$critical warn=$warn ==="
 if [ "$critical" -gt 0 ]; then

@@ -105,8 +105,23 @@ Manual run / local check: `bash script/deploy/health-check.sh`
 
 `health-check.sh` covers: backend JSON probe, both containers' health/restart
 count, free disk, rollback target present, stale `previous-*` count, model-probe
-freshness, background-job backlog, and **dependency health** (MySQL, Redis, MinIO)
-plus a **storage liveness probe**.
+freshness, background-job backlog, **dependency health** (MySQL, Redis, MinIO),
+**storage liveness**, and the **render service** (`creative-renderer`).
+
+**Why the render service is now covered** (added 2026-10-09, same reasoning that added
+MinIO): `creative-renderer` is a real production dependency — `RendererClient` defaults to
+`http://creative-renderer:8090` and the frontend tells the user 渲染服务不可达 when it is
+down — yet it was in *no* check (not in `DEP_CONTAINERS`, and it has no container
+healthcheck: measured `health=none`). Its port is not published, so like MinIO the probe
+runs **from inside the backend container**. A container-state check alone would not be
+enough: `/health` returns `{status, browser, version}`, and a running container whose
+Chromium failed still answers the port while layout/排版 is completely broken — so the
+check requires `status=ok` **and** `browser=true`. Severity is CRITICAL, matching the
+dependency-service rule above ("feature broken while the alarm stays green" is the worst
+class). Verified both ways: the live service reports ok, and pointing the probe at a dead
+port / a missing container both produce CRITICAL with exit code 1 (so the alarm fires).
+Overridable with `HOTTER_RENDERER_CONTAINER` / `HOTTER_RENDERER_PROBE_URL`; if the content
+and visual modules are retired, delete this block.
 
 **Why dependencies are checked separately** (added 2026-10-08, after asking "what
 could be broken while this alarm stays green?"): the backend probe hits
