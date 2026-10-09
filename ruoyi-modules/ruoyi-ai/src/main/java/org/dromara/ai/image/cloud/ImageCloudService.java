@@ -77,12 +77,24 @@ public class ImageCloudService {
     }
 
     public Map<String, Object> create(String tenant, long user, Long dept, CloudImageRequest input, String taskName, String idempotencyKey) {
+        if (idempotencyKey != null && idempotencyKey.startsWith("tpl-")) throw invalid("模板请求须使用模板专用入口");
+        return createBound(tenant,user,dept,input,taskName,idempotencyKey,false);
+    }
+
+    /** 服务端模板适配器调用，浏览器无法进入此内部入口。 */
+    public Map<String,Object> createTemplate(String tenant,long user,Long dept,CloudImageRequest input,String taskName,String idempotencyKey) {
+        if(idempotencyKey==null || !idempotencyKey.matches("tpl-[a-f0-9-]{36}")) throw invalid("模板幂等键无效");
+        org.dromara.ai.image.template.TemplateRequestBuilder.requireTemplateInput(input);
+        return createBound(tenant,user,dept,input,taskName,idempotencyKey,true);
+    }
+
+    private Map<String,Object> createBound(String tenant,long user,Long dept,CloudImageRequest input,String taskName,String idempotencyKey,boolean template) {
         client.requireConfigured();
-        verify(input);
+        if(template) org.dromara.ai.image.template.TemplateRequestBuilder.requireTemplateInput(input); else verify(input);
         input.inputs(repository, assets, tenant, user);
         String model = input.model(), prompt = input.prompt();
         if (!BluOctoImageClient.MODELS.contains(model)) throw invalid("请选择已接入的云端图像模型");
-        if (prompt == null || prompt.isBlank() || prompt.length() > 1000) throw invalid("创作描述须为 1–1000 个字符");
+        if (prompt == null || prompt.isBlank() || prompt.length() > (template ? 8000 : 1000)) throw invalid(template ? "模板提示词须为 1–8000 个字符" : "创作描述须为 1–1000 个字符");
         if (taskName != null && taskName.length() > 255) throw invalid("任务名称过长");
         if (idempotencyKey == null || !idempotencyKey.matches("[A-Za-z0-9_-]{8,128}")) throw invalid("缺少有效的提交幂等键");
         Long existing = repository.findByIdempotencyKey(tenant, user, idempotencyKey);
@@ -115,14 +127,18 @@ public class ImageCloudService {
         return Map.of("taskId", id, "taskNo", task.get("task_no"), "status", task.get("status"), "idempotent", true);
     }
 
-    public String execute(long id, String tenant, long user) {
+    public String execute(long id, String tenant, long user) { return executeBound(id,tenant,user,false); }
+    public String executeTemplate(long id,String tenant,long user) { return executeBound(id,tenant,user,true); }
+    private String executeBound(long id,String tenant,long user,boolean template) {
         Map<String, Object> task = repository.requireOwnedTask(id, tenant, user);
         if (!isCloud(task)) throw invalid("任务不是云端任务");
+        boolean templateTask=String.valueOf(task.get("idempotency_key")).startsWith("tpl-");
+        if(templateTask != template) throw invalid("模板任务须通过模板请求账本执行");
         String status = String.valueOf(task.get("status"));
         if ("RUNNING".equals(status)) return "ALREADY_CLAIMED";
         if (!"QUEUED".equals(status)) throw invalid("任务当前状态不可执行");
         client.requireConfigured();
-        verify(request(task));
+        if(template) org.dromara.ai.image.template.TemplateRequestBuilder.requireTemplateInput(request(task)); else verify(request(task));
         return dispatch.dispatch(id, () -> {
             int seq = repository.listEvents(id, tenant).stream()
                 .mapToInt(row -> ((Number) row.get("sequence")).intValue()).max().orElse(0);
@@ -134,6 +150,7 @@ public class ImageCloudService {
 
     public String retry(long id, String tenant, long user) {
         Map<String, Object> task = repository.requireOwnedTask(id, tenant, user);
+        if(String.valueOf(task.get("idempotency_key")).startsWith("tpl-")) throw invalid("模板请求须先对账，请使用模板恢复入口");
         if (!isCloud(task)) throw invalid("任务不是云端任务");
         ImageTaskStatus status = ImageTaskStatus.valueOf(String.valueOf(task.get("status")));
         if (status == ImageTaskStatus.RUNNING || status == ImageTaskStatus.QUEUED) return execute(id, tenant, user);
@@ -152,7 +169,7 @@ public class ImageCloudService {
             if (!isCloud(task)) throw invalid("任务来源不匹配");
             event(context, "SUBMITTED", "请求云端生成，不自动重试付费请求");
             CloudImageRequest request = request(task);
-            verify(request);
+            if(String.valueOf(task.get("idempotency_key")).startsWith("tpl-")) org.dromara.ai.image.template.TemplateRequestBuilder.requireTemplateInput(request); else verify(request);
             List<byte[]> outputs = request.output().custom() ? client.generateBatch(request, request.inputs(repository, assets, context.tenantId(), context.userId()))
                 : List.of("T2I".equals(request.capability()) ? client.generate(request.model(),request.prompt())
                     : client.generate(request,request.inputs(repository,assets,context.tenantId(),context.userId())));
@@ -203,7 +220,9 @@ public class ImageCloudService {
             String code = e instanceof ImageTaskException error ? error.getErrorCode() : "CLOUD_ARCHIVE_FAILED";
             String message = e instanceof ImageTaskException ? e.getMessage() : "云端结果归档失败，请先核对供应商记录";
             // 已发出请求后的归档失败不能自动重新生成，会产生重复费用。
-            if (!List.of("CLOUD_AUTH_FAILED", "CLOUD_RATE_LIMITED", "CLOUD_NOT_CONFIGURED").contains(code)) {
+            boolean templateTask=String.valueOf(repository.requireOwnedTask(context.taskId(),context.tenantId(),context.userId()).get("idempotency_key")).startsWith("tpl-");
+            if (templateTask ? !List.of("CLOUD_AUTH_FAILED","CLOUD_HTTP_REJECTED","CLOUD_NOT_CONFIGURED").contains(code)
+                : !List.of("CLOUD_AUTH_FAILED", "CLOUD_RATE_LIMITED", "CLOUD_NOT_CONFIGURED").contains(code)) {
                 code = "CLOUD_RESULT_UNKNOWN";
             }
             repository.markFailedIfActive(context.taskId(), code, message);
