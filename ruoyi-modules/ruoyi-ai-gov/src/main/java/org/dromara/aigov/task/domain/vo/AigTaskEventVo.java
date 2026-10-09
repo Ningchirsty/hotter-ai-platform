@@ -45,6 +45,20 @@ public class AigTaskEventVo implements Serializable {
 
     private Integer attemptNo;
 
+    /**
+     * 事件载荷（JSON 文本；契约 {@code execution-event.schema.json} 的 {@code payload}）。
+     *
+     * <p><b>为什么必须下发</b>：这一列一直有写入方（进度 {@code {"progress":N}}、制品
+     * {@code {"artifactIds":[…]}}、策略决策 {@code {"reasonCode":…,"errorCode":…}}），
+     * 但视图里没有这个字段——于是<b>写进库的载荷谁都读不到</b>：界面拿不到、
+     * 契约消费方也拿不到。它是"机器读的那一份"（{@code detail} 是给人读的那一份），
+     * 两者缺一不可。</p>
+     *
+     * <p>这是在线端到端验证时发现的：库里 {@code payload_json='{"artifactIds":["…"]}'}，
+     * 而 {@code /aigov/task/{id}} 返回的事件里该字段为空（不是没写，是没下发）。</p>
+     */
+    private String payloadJson;
+
     private String detail;
 
     private Long actorId;

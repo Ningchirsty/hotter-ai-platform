@@ -22,6 +22,7 @@ import org.dromara.aigov.task.domain.bo.AigTaskReviewBo;
 import org.dromara.aigov.task.domain.vo.AigCallbackVo;
 import org.dromara.aigov.task.domain.vo.AigTaskDetailVo;
 import org.dromara.aigov.task.domain.vo.AigTaskVo;
+import org.dromara.aigov.task.enums.AigTaskEventTypeEnum;
 import org.dromara.aigov.task.enums.AigTaskExecutionModeEnum;
 import org.dromara.aigov.task.enums.AigTaskStatusEnum;
 import org.dromara.aigov.task.helper.AigTaskActorProvider;
@@ -1290,6 +1291,30 @@ class AigTaskServiceImplTest {
         AigTask task = task(1L, "RUNNING", 1, version);
         task.setProgress(progress);
         return task;
+    }
+
+    @Test
+    @DisplayName("★ 任务详情必须下发事件的 payload：写进库的载荷不能只有数据库看得见")
+    void detailExposesEventPayload() {
+        when(taskMapper.selectById(1L)).thenReturn(task(1L, "RUNNING", 1, 4));
+        when(snapshotMapper.selectList(any())).thenReturn(List.of());
+        when(resultMapper.selectList(any())).thenReturn(List.of());
+        AigTaskEvent withPayload = new AigTaskEvent();
+        withPayload.setEventId(9L);
+        withPayload.setTaskId(1L);
+        withPayload.setSequence(1);
+        withPayload.setEventType(AigTaskEventTypeEnum.AI_TASK_ARTIFACT_ADDED.getCode());
+        withPayload.setPayloadJson("{\"artifactIds\":[\"2108493529573007361\"]}");
+        withPayload.setDetail("制品入库");
+        when(eventMapper.selectList(any())).thenReturn(List.of(withPayload));
+
+        AigTaskDetailVo detail = service.getDetail(1L);
+
+        assertEquals(1, detail.getEvents().size());
+        assertEquals("{\"artifactIds\":[\"2108493529573007361\"]}", detail.getEvents().get(0).getPayloadJson(),
+            "载荷是契约里给机器读的那一份；视图漏了它，等于写进库也白写");
+        assertEquals("制品入库", detail.getEvents().get(0).getEventTypeLabel(),
+            "可读标签仍要在（那是给人读的那一份）");
     }
 
     /**
