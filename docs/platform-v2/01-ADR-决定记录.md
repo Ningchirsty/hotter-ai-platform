@@ -364,7 +364,8 @@ private static final Map<String, Map<String, String>> LATEST = Map.of( ... );
 | **登记接口的两个刻意设计** | ①**只收原文，不收"你自己填的退出码"**：分别收字段就等于允许提交一份库里没有原文支撑的结论；②**缺字段一律拒绝，绝不按默认值补**——尤其 `network` 与 `timedOut`，缺了就不能采信，若默认成 `none`/`false`，这份证据就变成**由登记代码制造出来的**，恰好把要证明的那件事补上了。③`result.json` 里的 `jobId` 必须与请求一致，防止把 A 作业的结果记到 B 名下 |
 | **权限** | `aig:sandbox:record`（登记，直接决定能否从 VALIDATED 走到 SANDBOX_TESTED）与 `aig:sandbox:list`（查看），**只授 aig_admin**；口径同 `aig:evaluation:manual` |
 | **测试** | `AigSandboxRunEvidenceTest` 6 例（四条判据逐条钉 + 缺字段不算通过）、`AigSandboxRunServiceImplTest` 11 例（正例含原文哈希独立复算、缺 network/timedOut 拒绝、类型不对拒绝、jobId 不一致拒绝、目标版本不存在拒绝、重复登记报错、证据查询不抛异常）、注册中心新增 3 例（未声明不查证据、无证据拒绝推进、最近一次没跑通拒绝推进并回显实测数字） |
-| **仍未做** | ①**产物还没取走登记到 `aig_task_artifact`**（账本只记了产物的名字/大小/哈希，产物本体还在宿主 scratch 上，scratch 是 tmpfs、重启即清空）；②`HUMAN_APPROVAL` 同样没有证据校验（它靠 `approved_by` 留痕，但"三方"是不是真的三方没有校验）；③**镜像白名单内容仍是未决项**；④前端还没有登记入口（当前只有接口 + 运维手册里的步骤） |
+| **生产实测（R101c，0 失败）** | 先在目标库建表与授权（`sys_menu` 415→417、`sys_role_menu` 880→882、新表 16 列 0 行、0 个未授权权限；先备份 `sys_menu`/`sys_role_menu` 到宿主 `/tmp`），再发布后端镜像，然后**以管理员身份在生产上跑完整条链**：①路由已注册（401 非 404）；②对一个已有版本查证据 → `satisfied=false` 且原因"该版本没有任何沙箱运行记录"；③临时版本的 `DRAFT→VALIDATED` 不受新断言影响；④声明 `SANDBOX_RUN` 推进 → **被拒**且错误消息点名该门槛与原因；⑤宿主机真跑一次沙箱作业（2 个产物、无网、`exitCode=0`）；⑥登记时三种字段级拒绝都生效（jobId 不一致、**缺 network 被拒而非默认成 none**、版本不存在），且拒绝路径**一行都没写库**；⑦登记成功，库里的 `result_sha256` 与宿主独立 `sha256sum` 一致，`recorded_by` 是管理员ID；⑧重复登记被两层各拦一次（`@RepeatSubmit` 拦同体重放，**`job_id` 唯一键拦同 jobId 异体**并给出"已经登记过"）；⑨证据转为 `satisfied=true`，同一推进请求这次**放行**且 `sandbox_tested_at` 落库；⑩清理后回到原状：临时版本 0 行、发布事件 0 行、账本 0 行、`aig_agent_version` 回到 4、**白名单删除（恢复 fail-closed）**、无残留容器、作业目录为空 |
+| **仍未做** | ①**产物还没取走登记到 `aig_task_artifact`**（账本只记了产物的名字/大小/哈希，产物本体还在宿主 scratch 上，scratch 是 tmpfs、重启即清空）；②`HUMAN_APPROVAL` 同样没有证据校验（它靠 `approved_by` 留痕，但"三方"是不是真的三方没有校验）；③**镜像白名单内容仍是未决项**（当前不存在 ⇒ 所有作业被拒，这是刻意的 fail-closed；要让闸门可过，运维必须先决定并写入允许的镜像摘要）；④前端还没有登记入口（当前只有接口 + 运维手册里的步骤）；⑤worker 仍无常驻单元 |
 
 ---
 
