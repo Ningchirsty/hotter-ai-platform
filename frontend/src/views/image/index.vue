@@ -223,6 +223,7 @@
         :busy="uploading || submitting"
         :applied-title="appliedInspirationTitle"
         @apply="applyCreativeInspiration"
+        @task-created="loadTasks()"
       />
     </div>
 

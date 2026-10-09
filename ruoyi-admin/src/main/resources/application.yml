@@ -403,6 +403,12 @@ spring.ai.mcp:
 
 --- # 云端图像：默认关闭，密钥文件仅在后端读取，禁止写到前端环境变量。
 image:
+  template-feed:
+    enabled: ${BLUOCTO_FEED_ENABLED:false}
+    key-file: ${BLUOCTO_FEED_KEY_FILE:}
+    cache-directory: ${BLUOCTO_FEED_CACHE_DIRECTORY:./temp/image-template-feed}
+    public-base-url: ${BLUOCTO_FEED_PUBLIC_BASE_URL:https://pm.hottter.cn/prod-api/image/templates}
+    generation-enabled: ${BLUOCTO_FEED_GENERATION_ENABLED:false}
   cloud:
     enabled: ${BLUOCTO_ENABLED:false}
     api-key-file: ${BLUOCTO_API_KEY_FILE:}
