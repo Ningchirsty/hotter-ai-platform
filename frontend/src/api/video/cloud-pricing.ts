@@ -15,13 +15,13 @@ const prices: VideoPrice[] = snapshot.models;
 export function getVideoPrice(model: string) {
   return prices.find(p => p.model === model);
 }
-export function formatUsd(amount: number) {
-  return new Intl.NumberFormat('en-US', {
+export function formatCnyFromUsd(amountUsd: number) {
+  return new Intl.NumberFormat('zh-CN', {
     style: 'currency',
-    currency: 'USD',
+    currency: 'CNY',
     minimumFractionDigits: 2,
     maximumFractionDigits: 4
-  }).format(amount);
+  }).format(amountUsd * snapshot.displayCurrency.usdToCny);
 }
 export interface VideoCostQuote {
   unitPrice: number;
@@ -56,10 +56,10 @@ export function calculateVideoCost(
   if (price.unit === 'second')
     return {
       unitPrice,
-      unitLabel: '美元 / 视频秒',
+      unitLabel: '元 / 视频秒',
       multiplier,
       estimatedUsd: unitPrice * draft.seconds * multiplier,
-      formula: `${draft.seconds} 秒 × ${formatUsd(unitPrice)} / 秒 × ${multiplier} 倍`,
+      formula: `${draft.seconds} 秒 × ${formatCnyFromUsd(unitPrice)} / 秒 × ${multiplier} 倍`,
       referenceVideoExtra: false,
       approximate: false,
       channelPriceMayVary: price.channelPriceMayVary
@@ -70,11 +70,11 @@ export function calculateVideoCost(
   const estimatedTokens = Math.ceil(tokensPerSecond * draft.seconds);
   return {
     unitPrice,
-    unitLabel: '美元 / 百万计费 Token',
+    unitLabel: '元 / 百万计费 Token',
     multiplier,
     estimatedUsd: ((unitPrice * estimatedTokens) / 1000000) * multiplier,
     estimatedTokens,
-    formula: `约 ${estimatedTokens.toLocaleString('zh-CN')} Token × ${formatUsd(unitPrice)} / 百万 Token × ${multiplier} 倍`,
+    formula: `约 ${estimatedTokens.toLocaleString('zh-CN')} Token × ${formatCnyFromUsd(unitPrice)} / 百万 Token × ${multiplier} 倍`,
     referenceVideoExtra,
     approximate: true,
     channelPriceMayVary: price.channelPriceMayVary
@@ -84,21 +84,21 @@ export function videoRateLabel(profile: VideoCloudProfile, resolution: string) {
   const price = getVideoPrice(profile.id);
   if (!price) return '单价待公布';
   if (price.unit === 'million_tokens' && price.usdPerMillionTokens !== null)
-    return `${formatUsd(price.usdPerMillionTokens)} / 百万 Token`;
+    return `${formatCnyFromUsd(price.usdPerMillionTokens)} / 百万 Token`;
   const effective = profile.resolutions.includes(resolution) ? resolution : profile.resolutions[0];
   const amount = price.usdPerSecond[effective];
-  return typeof amount === 'number' ? `${effective.toUpperCase()} · ${formatUsd(amount)} / 秒` : '单价待公布';
+  return typeof amount === 'number' ? `${effective.toUpperCase()} · ${formatCnyFromUsd(amount)} / 秒` : '单价待公布';
 }
 export function videoStartingRate(profiles: VideoCloudProfile[]) {
   const list = profiles.map(p => getVideoPrice(p.id)).filter((p): p is VideoPrice => !!p);
   if (!list.length) return '单价待公布';
   if (list.every(p => p.unit === 'million_tokens'))
-    return `${formatUsd(Math.min(...list.map(p => p.usdPerMillionTokens!)))} 起 / 百万 Token`;
+    return `${formatCnyFromUsd(Math.min(...list.map(p => p.usdPerMillionTokens!)))} 起 / 百万 Token`;
   if (list.every(p => p.unit === 'second')) {
     const amounts = profiles
       .flatMap(p => p.resolutions.map(r => getVideoPrice(p.id)?.usdPerSecond[r]))
       .filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
-    if (amounts.length) return `${formatUsd(Math.min(...amounts))} 起 / 秒`;
+    if (amounts.length) return `${formatCnyFromUsd(Math.min(...amounts))} 起 / 秒`;
   }
   return '按所选型号计费';
 }
