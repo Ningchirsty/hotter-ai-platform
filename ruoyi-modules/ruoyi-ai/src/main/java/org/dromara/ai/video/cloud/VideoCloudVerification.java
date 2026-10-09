@@ -47,6 +47,13 @@ public class VideoCloudVerification {
         if (!verified(request) && (advancedUntested(request) || !candidates(user).contains(variant(request))))
             throw new VideoTaskException("CLOUD_UNVERIFIED", "当前创作能力与输出参数组合尚未通过成片验收");
     }
+    /** 恢复已有远端任务只允许已验收组合或属于原验收操作者的原任务。 */
+    public synchronized void requireRecovery(CloudVideoRequest request, long user, long taskId) {
+        Attempt attempt = state.attempts().get(request.model());
+        if (advancedUntested(request) || (!verified(request) &&
+            (!validationActor(user) || attempt == null || attempt.taskId() != taskId || !attempt.variant().equals(variant(request)))))
+            throw new VideoTaskException("CLOUD_UNVERIFIED", "该任务不具备恢复成片的验收记录");
+    }
     /** 与正常已验收生成隔离；同一型号在本批次最多一次。 */
     public synchronized void reserve(CloudVideoRequest request, long user, long taskId) {
         if (verified(request)) return;

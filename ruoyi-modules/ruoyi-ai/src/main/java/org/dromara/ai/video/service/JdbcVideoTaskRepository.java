@@ -67,7 +67,7 @@ public class JdbcVideoTaskRepository implements VideoTaskRepository {
     public AssetRow requireOwnedAsset(long assetId, String tenantId, long userId) {
         List<AssetRow> rows = jdbc.query("""
             SELECT id, tenant_id, user_id, task_id, asset_type, source_kind, original_name,
-                   storage_key, content_type, size_bytes, checksum
+                   storage_key, content_type, size_bytes, checksum, width, height, duration_ms, create_dept
             FROM video_asset
             WHERE id = ? AND tenant_id = ? AND user_id = ? AND del_flag = '0'
             """,
@@ -77,7 +77,8 @@ public class JdbcVideoTaskRepository implements VideoTaskRepository {
                 rs.getString("source_kind"), rs.getString("original_name"),
                 rs.getString("storage_key"), rs.getString("content_type"),
                 (Long) rs.getObject("size_bytes"), rs.getString("checksum"),
-                null, null, null, null),
+                (Integer) rs.getObject("width"), (Integer) rs.getObject("height"),
+                (Long) rs.getObject("duration_ms"), (Long) rs.getObject("create_dept")),
             assetId, tenantId, userId);
         if (rows.isEmpty()) {
             throw VideoTaskException.assetNotFound("素材不存在或无权访问");
