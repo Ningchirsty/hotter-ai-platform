@@ -7,10 +7,12 @@ import org.dromara.aigov.agent.evaluation.AigEvaluationSubjectRegistry;
 import org.dromara.aigov.agent.evaluation.AigExpectedRuleChecker;
 import org.dromara.aigov.agent.config.AigPackageSecurityProperties;
 import org.dromara.aigov.agent.helper.AigPackageArchiveScanner;
+import org.dromara.aigov.agent.helper.AigPackageRejectionRecorder;
 import org.dromara.aigov.agent.helper.IAigPackageBodyStore;
 import org.dromara.aigov.agent.manifest.AigPackageManifestValidator;
 import org.dromara.aigov.agent.mapper.AigAgentBindingMapper;
 import org.dromara.aigov.agent.mapper.AigAgentMapper;
+import org.dromara.aigov.agent.mapper.AigPackageRejectionMapper;
 import org.dromara.aigov.agent.mapper.AigAgentVersionMapper;
 import org.dromara.aigov.agent.mapper.AigEvaluationCaseMapper;
 import org.dromara.aigov.agent.mapper.AigEvaluationRunMapper;
@@ -278,6 +280,11 @@ class AigWp3WiringAndRoutesTest {
         }
 
         @Bean
+        AigPackageRejectionMapper packageRejectionMapper() {
+            return mock(AigPackageRejectionMapper.class);
+        }
+
+        @Bean
         AigPackageVersionMapper packageVersionMapper() {
             return mock(AigPackageVersionMapper.class);
         }
@@ -399,11 +406,17 @@ class AigWp3WiringAndRoutesTest {
                                           AigPackageProperties packageProperties,
                                           AigPackageSecurityProperties packageSecurityProperties,
                                           IAigPackageBodyStore packageBodyStore,
+                                          AigPackageRejectionRecorder rejectionRecorder,
                                           JsonMapper jsonMapper) {
             return new AigPackageServiceImpl(packageMapper, packageVersionMapper, installLogMapper,
                 agentMapper, agentVersionMapper, skillMapper, skillVersionMapper, manifestValidator,
                 registryService, packageProperties, packageBodyStore,
-                new AigPackageArchiveScanner(packageSecurityProperties), jsonMapper);
+                new AigPackageArchiveScanner(packageSecurityProperties), rejectionRecorder, jsonMapper);
+        }
+
+        @Bean
+        AigPackageRejectionRecorder packageRejectionRecorder(AigPackageRejectionMapper mapper) {
+            return new AigPackageRejectionRecorder(mapper);
         }
 
         @Bean

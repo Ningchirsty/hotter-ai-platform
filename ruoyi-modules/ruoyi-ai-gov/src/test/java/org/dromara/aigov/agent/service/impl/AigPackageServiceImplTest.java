@@ -17,10 +17,12 @@ import org.dromara.aigov.agent.domain.vo.AigPackageDisableVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageInstallVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageRegisterVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageStatusVo;
+import org.dromara.aigov.agent.enums.AigPackageRejectRuleEnum;
 import org.dromara.aigov.agent.manifest.AigPackageManifestValidator;
 import org.dromara.aigov.config.AigPackageProperties;
 import org.dromara.aigov.agent.config.AigPackageSecurityProperties;
 import org.dromara.aigov.agent.helper.AigPackageArchiveScanner;
+import org.dromara.aigov.agent.helper.AigPackageRejectionRecorder;
 import org.dromara.aigov.agent.helper.IAigPackageBodyStore;
 import org.dromara.aigov.agent.mapper.AigAgentMapper;
 import org.dromara.aigov.agent.mapper.AigAgentVersionMapper;
@@ -108,6 +110,7 @@ class AigPackageServiceImplTest {
     private IAigAgentRegistryService registryService;
     private IAigPackageBodyStore bodyStore;
     private AigPackageProperties packageProperties;
+    private AigPackageRejectionRecorder rejectionRecorder;
     private AigPackageServiceImpl service;
 
     @BeforeAll
@@ -134,12 +137,14 @@ class AigPackageServiceImplTest {
         skillVersionMapper = mock(AigSkillVersionMapper.class);
         registryService = mock(IAigAgentRegistryService.class);
         bodyStore = mock(IAigPackageBodyStore.class);
+        rejectionRecorder = mock(AigPackageRejectionRecorder.class);
         packageProperties = new AigPackageProperties();
         service = new AigPackageServiceImpl(packageMapper, packageVersionMapper, installLogMapper,
             agentMapper, agentVersionMapper, skillMapper, skillVersionMapper,
             new AigPackageManifestValidator(JsonMapper.builder().build()),
             registryService, packageProperties, bodyStore,
-            new AigPackageArchiveScanner(new AigPackageSecurityProperties()), JsonMapper.builder().build());
+            new AigPackageArchiveScanner(new AigPackageSecurityProperties()), rejectionRecorder,
+            JsonMapper.builder().build());
 
         when(packageMapper.insert(any(AigPackage.class))).thenAnswer(invocation -> {
             invocation.<AigPackage>getArgument(0).setPackageId(PKG_ID);
@@ -245,15 +250,60 @@ class AigPackageServiceImplTest {
         verify(packageMapper, never()).insert(any(AigPackage.class));
         verify(packageVersionMapper, never()).insert(any(AigPackageVersion.class));
         verify(installLogMapper, never()).insert(any(AigPackageInstallLog.class));
+        // 证据先落（独立事务）：被拒的"对方交了什么"必须留下来
+        verify(rejectionRecorder).record(any(), any(), eq("pkg.zip"), any(), any(),
+            eq(AigPackageRejectionRecorder.REASON_CHECKSUM_MISMATCH), any(), any(), eq(1L));
     }
 
     @Test
-    @DisplayName("Manifest 解析不出来：不登记任何东西")
+    @DisplayName("Manifest 解析不出来：不登记任何东西，但**留下证据行**")
     void registerRejectsUnparseableManifest() {
         ServiceException error = assertThrows(ServiceException.class,
             () -> service.register(bo("{oops"), BODY.getBytes(StandardCharsets.UTF_8), "pkg.zip", 1L));
         assertTrue(error.getMessage().contains("无法解析"), error.getMessage());
         verify(packageVersionMapper, never()).insert(any(AigPackageVersion.class));
+        // 连包编码都解析不出来时也要留痕：否则"有人传了畸形 Manifest"只剩 oper_log
+        verify(rejectionRecorder).record(isNull(), isNull(), eq("pkg.zip"), any(), any(),
+            eq(AigPackageRejectionRecorder.REASON_MANIFEST_INVALID), any(), any(), eq(1L));
+    }
+
+    @Test
+    @DisplayName("★ 包体内容不安全：留证据行（带命中规则）并整笔拒绝——ADR-013 的落地")
+    void registerRejectsUnsafeArchiveAndKeepsEvidence() {
+        byte[] risky = zipWith("install.sh", "echo hi");
+        ServiceException error = assertThrows(ServiceException.class,
+            () -> service.register(bo(manifest(DigestUtil.sha256Hex(risky), "[]", null, "SKILL", "INTERNAL")),
+                risky, "pkg.zip", 9L));
+
+        assertTrue(error.getMessage().contains("包体安全检查未通过"), error.getMessage());
+        ArgumentCaptor<String> rulesCaptor = ArgumentCaptor.forClass(String.class);
+        verify(rejectionRecorder).record(eq("vision-planning-skill"), eq("1.0.0"), eq("pkg.zip"), any(),
+            eq(DigestUtil.sha256Hex(risky)),
+            eq(AigPackageRejectionRecorder.REASON_ARCHIVE_UNSAFE), rulesCaptor.capture(), any(), eq(9L));
+        assertTrue(rulesCaptor.getValue().contains(
+            AigPackageRejectRuleEnum.UNBOUNDED_CODE_EXECUTION.getCode()),
+            "证据里要写明命中哪条规则：" + rulesCaptor.getValue());
+        verify(packageVersionMapper, never()).insert(any(AigPackageVersion.class));
+    }
+
+    /**
+     * 造一个单条目 ZIP（用于包体检查的用例）。
+     *
+     * @param name    条目名
+     * @param content 条目内容
+     * @return ZIP 字节
+     */
+    private static byte[] zipWith(String name, String content) {
+        try (java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+             java.util.zip.ZipOutputStream zip = new java.util.zip.ZipOutputStream(out)) {
+            zip.putNextEntry(new java.util.zip.ZipEntry(name));
+            zip.write(content.getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+            zip.finish();
+            return out.toByteArray();
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     @Test

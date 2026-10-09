@@ -23,6 +23,7 @@ import org.dromara.aigov.agent.enums.AigReleaseStatusEnum;
 import org.dromara.aigov.agent.enums.AigReleaseTargetTypeEnum;
 import org.dromara.aigov.agent.helper.AigArchiveScanResult;
 import org.dromara.aigov.agent.helper.AigPackageArchiveScanner;
+import org.dromara.aigov.agent.helper.AigPackageRejectionRecorder;
 import org.dromara.aigov.agent.helper.IAigPackageBodyStore;
 import org.dromara.aigov.agent.manifest.AigManifestAgentSpec;
 import org.dromara.aigov.agent.manifest.AigManifestScanResult;
@@ -164,6 +165,11 @@ public class AigPackageServiceImpl implements IAigPackageService {
      */
     private final AigPackageArchiveScanner archiveScanner;
 
+    /**
+     * 被拒证据登记（独立事务）：注册被拒时「对方交了什么」必须留下来，见 ADR-013。
+     */
+    private final AigPackageRejectionRecorder rejectionRecorder;
+
     private final JsonMapper jsonMapper;
 
     @Override
@@ -189,6 +195,11 @@ public class AigPackageServiceImpl implements IAigPackageService {
         AigManifestScanResult scan = manifestValidator.scan(rawManifest);
         AigPackageManifest manifest = scan.getManifest();
         if (manifest == null) {
+            // 证据先落（独立事务），再拒绝：否则"有人传了份畸形 Manifest"这件事
+            // 只活在调用方那条 oper_log 里，事后看不到对方到底交了什么
+            rejectionRecorder.record(null, null, bodyName, body, DigestUtil.sha256Hex(body),
+                AigPackageRejectionRecorder.REASON_MANIFEST_INVALID,
+                String.join(",", scan.hitRuleCodes()), scan.getDetail(), operatorId);
             throw new ServiceException("Manifest 无法解析为 JSON 对象，未登记任何东西："
                 + scan.getDetail());
         }
@@ -197,16 +208,21 @@ public class AigPackageServiceImpl implements IAigPackageService {
         String bodyHash = DigestUtil.sha256Hex(body);
         String declared = StringUtils.trim(manifest.checksum());
         if (!bodyHash.equalsIgnoreCase(declared)) {
+            rejectionRecorder.record(manifest.packageCode(), manifest.version(), bodyName, body,
+                bodyHash, AigPackageRejectionRecorder.REASON_CHECKSUM_MISMATCH, null,
+                "Manifest 声明 " + declared + "，平台对上传字节算出 " + bodyHash, operatorId);
             throw new ServiceException("包体校验和不一致，未登记任何东西：Manifest 声明 "
                 + declared + "，平台对上传字节算出 " + bodyHash
                 + "。上传说的是「这份包体就是 Manifest 描述的那一份」，不一致就不落库");
         }
 
         // 包体内容检查（F-02）：声明与哈希都对，不代表"包里没有不该有的东西"。
-        // 放在落库之前：不通过就整笔拒绝（与 Manifest 拒绝同一口径——见 F-02 里
-        // 仍待决策的「被拒包体要不要留证据行」，本轮沿用既有的"不落库 + 可读原因"）
+        // 不通过就整笔拒绝，但**证据先落**（独立事务，见 AigPackageRejectionRecorder）
         AigArchiveScanResult archive = archiveScanner.scan(body);
         if (!archive.isPass()) {
+            rejectionRecorder.record(manifest.packageCode(), manifest.version(), bodyName, body,
+                bodyHash, AigPackageRejectionRecorder.REASON_ARCHIVE_UNSAFE,
+                String.join(",", archive.hitRuleCodes()), archive.getDetail(), operatorId);
             throw new ServiceException("包体安全检查未通过，未登记任何东西：命中 "
                 + archive.hitRuleCodes() + "；" + archive.getDetail());
         }
@@ -216,7 +232,8 @@ public class AigPackageServiceImpl implements IAigPackageService {
         }
 
         AigPackage pkg = packageMapper.selectOne(new LambdaQueryWrapper<AigPackage>()
-            .eq(AigPackage::getPackageCode, manifest.packageCode()));        if (pkg == null) {
+            .eq(AigPackage::getPackageCode, manifest.packageCode()));
+        if (pkg == null) {
             pkg = new AigPackage();
             pkg.setPackageCode(manifest.packageCode());
             pkg.setPackageName(manifest.name());
