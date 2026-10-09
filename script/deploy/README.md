@@ -144,7 +144,9 @@ runs scanned, 0 `schedule` events; a minimal **schedule-only** diagnostic workfl
 also missed 7 consecutive windows before it was removed.) The raise and close paths
 are themselves verified (an issue was created from a real WARN and later closed
 automatically once healthy). A host-side timer with a notification credential is the
-workaround, and it is implemented below.
+workaround, and it is implemented below. **As of 2026-10-09 that host cron is installed
+and verified running every 5 minutes, so the missing GitHub schedule no longer leaves
+production unmonitored** — the workflow is now a manual/backup path only.
 
 ## Host-side alert (cron) — and why it exists
 
@@ -167,21 +169,40 @@ It copies both scripts to `/opt/hotter-alert` (0750 root), creates
 **only once a notification sink is configured**. An unconfigured install deliberately
 schedules nothing: "looks installed but cannot notify" is worse than not installed.
 
-Configure exactly one sink in the root-only config:
+Both sinks can be configured at once, and then **both are notified**: the chat webhook is
+what a human actually sees, and the issue is the durable record that closes itself. A
+single sink succeeding counts as delivered (so one flaky platform cannot cause re-sends
+every 5 minutes); a failing sink is logged.
+
+Configure sinks in the root-only config:
 
 ```bash
-# webhook (preferred; Feishu / WeCom / DingTalk / Slack payload shapes auto-detected)
+# webhook (Feishu / WeCom / DingTalk / Slack payload shapes auto-detected)
 WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/xxxxxxxx
-# ...or a GitHub issue (fine-grained token: Issues Read and write, this repo only)
+# Feishu and DingTalk custom bots often reject messages that lack a keyword:
+WEBHOOK_KEYWORD=hotter
+# ...and/or the GitHub issue sink (fine-grained token: Issues Read and write, this repo only)
 GH_TOKEN=github_pat_xxxxxxxx
 GH_REPO=Ningchirsty/hotter-ai-platform
 GH_LABEL=ops/health-alert
 REPEAT_MINUTES=30
 ```
 
-Then re-run the installer to enable the 5-minute cron (`flock` prevents overlapping
-runs). Verify the notification path with a deliberate failure — it points the storage
-probe at a closed port, so nothing in production is touched:
+Installed and verified on 2026-10-09:
+
+* `syslog` shows the timer actually invoking it —
+  `CRON[…]: (root) CMD (flock -n /var/lock/hotter-health-alert.lock /opt/hotter-alert/health-alert.sh …)`,
+  and it keeps firing every 5 minutes (quiet while healthy);
+* deliberate failure (storage probe pointed at a closed port) produced a webhook `http=200`
+  **and** an issue; recovery 3 seconds later closed that issue — the immediate flap is called
+  out because the first version failed it: GitHub's label filter had not indexed the
+  just-created issue yet, so the recovery reported "no open issue to close" and left an alert
+  open forever. The fix is that the issue number is stored in `/var/lib/hotter-alert/state`
+  and reused, with the label lookup only as a fallback.
+
+Then re-run the installer to enable the 5-minute cron (`flock` prevents overlapping runs).
+Verify the notification path with a deliberate failure — it points the storage probe at a
+closed port, so nothing in production is touched:
 
 ```bash
 sudo env HOTTER_MINIO_PROBE_URL=http://127.0.0.1:1/x /opt/hotter-alert/health-alert.sh  # expect: raised

@@ -92,11 +92,16 @@ esac
 # 且**恢复通知永远不会发出**。这个 bug 是被 deploy/ha 自检脚本抓出来的。
 prev_state="none"
 prev_notified=0
+ISSUE_NUM=""
 if [ -f "$STATE_FILE" ]; then
   # shellcheck disable=SC1090
   . "$STATE_FILE"
   prev_state="${state:-none}"
   prev_notified="${notified:-0}"
+  # 记下上次用的 issue 号：恢复时**直接用它**，而不是重新按 label 查。
+  # 理由（2026-10-09 实测）：刚创建的 issue 可能还没被 label 过滤索引到，
+  # 此时"按 label 查"会返回空 ⇒ 恢复路径报"no open issue to close"，留下一个永不关闭的告警。
+  ISSUE_NUM="${issue:-}"
 fi
 
 now_epoch=$(date +%s)
@@ -116,7 +121,7 @@ fi
 
 if [ "$action" = "none" ]; then
   log "state=$now_state (prev=$prev_state), nothing to send"
-  printf 'state=%s\nnotified=%s\n' "$now_state" "${prev_notified:-0}" >"$STATE_FILE"
+  printf 'state=%s\nnotified=%s\nissue=%s\n' "$now_state" "${prev_notified:-0}" "${ISSUE_NUM:-}" >"$STATE_FILE"
   exit 0
 fi
 
@@ -198,13 +203,25 @@ notify_github() {
     echo "DRY: would query issues(label=$label) and $action"
     return 0
   fi
-  num=$(gh_api GET "/repos/${GH_REPO}/issues?state=open&labels=${label}&per_page=5" | json_number)
+  num=""
+  # 优先用状态文件里记下的 issue 号（避免"刚创建、label 尚未索引"的竞态）；
+  # 状态丢失时再退回按 label 查。
+  if [ -n "${ISSUE_NUM:-}" ]; then num="$ISSUE_NUM"; fi
+  if [ -z "$num" ]; then
+    num=$(gh_api GET "/repos/${GH_REPO}/issues?state=open&labels=${label}&per_page=5" | json_number)
+  fi
   body_json=$(printf '{"body":%s}' "$(json_str "$body")")
   if [ "$action" = "recover" ]; then
     if [ -n "$num" ]; then
-      gh_api POST "/repos/${GH_REPO}/issues/${num}/comments" "$body_json" >/dev/null
-      gh_api PATCH "/repos/${GH_REPO}/issues/${num}" '{"state":"closed","state_reason":"completed"}' >/dev/null
-      log "issue #$num commented and closed"
+      # 确认它仍是 open 再关（已经关了就当无事，避免重复评论）
+      st=$(gh_api GET "/repos/${GH_REPO}/issues/${num}" | sed -n 's/.*"state": *"\([a-z]*\)".*/\1/p' | head -1)
+      if [ "$st" = "open" ]; then
+        gh_api POST "/repos/${GH_REPO}/issues/${num}/comments" "$body_json" >/dev/null
+        gh_api PATCH "/repos/${GH_REPO}/issues/${num}" '{"state":"closed","state_reason":"completed"}' >/dev/null
+        log "issue #$num commented and closed"
+      else
+        log "issue #$num is already ${st:-unknown}; nothing to close"
+      fi
     else
       log "no open issue to close"
     fi
@@ -216,20 +233,26 @@ notify_github() {
   else
     title_json=$(printf '{"title":%s,"body":%s,"labels":["%s"]}' "$(json_str "$title")" "$(json_str "$body")" "$label")
     out=$(gh_api POST "/repos/${GH_REPO}/issues" "$title_json")
-    newnum=$(printf '%s' "$out" | json_number)
-    log "issue created${newnum:+ #$newnum}"
+    num=$(printf '%s' "$out" | json_number)
+    log "issue created${num:+ #$num}"
   fi
+  ISSUE_NUM="$num"
   return 0
 }
 
 sent=0
-if [ -n "${WEBHOOK_URL:-}" ]; then
-  notify_webhook && sent=1
-elif [ -n "${GH_TOKEN:-}" ]; then
-  notify_github && sent=1
-else
+# 两个通道都配了就**都发**：聊天工具负责"有人会看到"，issue 负责"留痕 + 自动关闭"。
+# 语义：只要有一个成功就算通知已送达（避免因为其中一个平台抖动而每 5 分钟重发）；
+# 失败的通道写进日志，但不改变结论。
+if [ -z "${WEBHOOK_URL:-}" ] && [ -z "${GH_TOKEN:-}" ]; then
   log "ERROR: neither WEBHOOK_URL nor GH_TOKEN configured; cannot notify"
   exit 3
+fi
+if [ -n "${WEBHOOK_URL:-}" ]; then
+  if notify_webhook; then sent=1; else log "webhook notify failed (action=$action)"; fi
+fi
+if [ -n "${GH_TOKEN:-}" ]; then
+  if notify_github; then sent=1; else log "github issue notify failed (action=$action)"; fi
 fi
 
 if [ "$sent" != 1 ]; then
@@ -238,7 +261,7 @@ if [ "$sent" != 1 ]; then
   exit 4
 fi
 
-printf 'state=%s\nnotified=%s\n' "$now_state" "$now_epoch" >"$STATE_FILE"
+printf 'state=%s\nnotified=%s\nissue=%s\n' "$now_state" "$now_epoch" "${ISSUE_NUM:-}" >"$STATE_FILE"
 log "action=$action sent ok; state=$now_state"
 if [ "$action" = "recover" ]; then exit 0; fi
 exit 2
