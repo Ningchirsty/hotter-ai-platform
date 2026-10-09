@@ -55,10 +55,12 @@ public enum AigTaskEventTypeEnum {
     AI_TASK_REVIEWED("AI_TASK_REVIEWED", "人工复核"),
 
     // ---- 以下五项是 V2 追加（Execution Contract v1 §三，见 contract/execution-event.schema.json）----
-    // 契约把词表定在**同一个枚举**上（红线 1：不发明第二套词表），所以这里补齐；
-    // 其中 STEP_* 与 ARTIFACT_ADDED 的**写入方**要等各自的能力落地（`aig_task_step` / `aig_task_artifact`
-    // 目前都不存在，见 00-基线修订补遗 §制品），`POLICY_DECIDED` 的写入方是决策账本
-    // （`aig_policy_decision_log` 已存在，但尚未回写任务事件）。
+    // 契约把词表定在**同一个枚举**上（红线 1：不发明第二套词表），所以这里补齐。
+    // 写入方现状（2026-10-09 核对，别把"有词"读成"有事实"）：
+    //   ARTIFACT_ADDED —— **写入方已落地**：AigTaskArtifactServiceImpl 登记制品时经
+    //                    IAigTaskService#recordEvent 写入；
+    //   STEP_*         —— **无写入方**：还缺 aig_task_step（逐节点账本）；
+    //   POLICY_DECIDED —— **无写入方**：决策账本 aig_policy_decision_log 已存在，但尚未回写任务事件。
     // 先把词表补齐的理由：枚举是"平台认得的词"，缺词会让将来的写入方各自造一个近义名，
     // 而契约明令禁止第二套词表；AigContractEnumDriftTest 会把这条一致性钉住。
 

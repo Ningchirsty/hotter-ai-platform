@@ -525,6 +525,16 @@ public class AigTaskServiceImpl implements IAigTaskService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public void recordEvent(Long taskId, AigTaskEventTypeEnum type, String detail, String payloadJson) {
+        if (type == null) {
+            throw new ServiceException("事件类型不能为空：事件流是任务的复盘依据，不允许无类型事件");
+        }
+        AigTask task = loadTask(taskId);
+        appendEvent(task, nextSequence(taskId), type, null, null, detail, payloadJson);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public Long recordResult(AigTaskResultBo bo) {
         if (bo == null || bo.getTaskId() == null) {
             throw new ServiceException("任务ID不能为空");

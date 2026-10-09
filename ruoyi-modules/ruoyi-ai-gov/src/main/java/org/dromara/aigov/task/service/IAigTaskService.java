@@ -11,6 +11,7 @@ import org.dromara.aigov.task.domain.bo.AigTaskReviewBo;
 import org.dromara.aigov.task.domain.vo.AigCallbackVo;
 import org.dromara.aigov.task.domain.vo.AigTaskDetailVo;
 import org.dromara.aigov.task.domain.vo.AigTaskVo;
+import org.dromara.aigov.task.enums.AigTaskEventTypeEnum;
 import org.dromara.aigov.task.enums.AigTaskStatusEnum;
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.mybatis.core.page.PageQuery;
@@ -233,6 +234,25 @@ public interface IAigTaskService {
      * @return 选定后的结果ID
      */
     Long selectCandidate(AigTaskResultSelectBo bo);
+
+    /**
+     * 向任务事件流追加一条<b>非状态迁移</b>的事实性事件。
+     *
+     * <p><b>为什么需要这个入口</b>：事件流有两类写入方——状态迁移（{@link #transition} 内部写）
+     * 与「发生了别的事」（结果回写、制品入库…）。后者此前只能由本类自己写，
+     * 于是别的账本（制品账本）要记事件时，只能自己拼一遍序号与操作者——
+     * 那就是「序号生成」有了第二份实现，而它一旦不一致（重号、跳号），
+     * 事件流的顺序就不是真相了。这里把序号与操作者收敛到同一处。</p>
+     *
+     * <p>入参刻意只有说明与载荷：{@code from_status}/{@code to_status} 一律为空
+     * （它不是迁移），尝试次数与 traceId 取自任务当前行。</p>
+     *
+     * @param taskId      任务ID
+     * @param type        事件类型（必须是 {@code AigTaskEventTypeEnum} 里的值）
+     * @param detail      可读说明
+     * @param payloadJson 载荷（可空；不得含密钥与受限原文）
+     */
+    void recordEvent(Long taskId, AigTaskEventTypeEnum type, String detail, String payloadJson);
 
     /**
      * 处理 Provider 回调：验签 → 幂等 → 定位任务 → 按状态机推进 → 记账。
