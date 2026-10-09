@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.dromara.aigov.domain.bo.AigInvokeBo;
 import org.dromara.aigov.domain.vo.AigInvokeVo;
 import org.dromara.aigov.enums.AigErrorClassEnum;
+import org.dromara.aigov.enums.AigRouteDecisionEnum;
 import org.dromara.aigov.service.IAigInvokeService;
 import org.dromara.aigov.task.domain.AigTask;
 import org.dromara.aigov.task.domain.bo.AigTaskExecuteBo;
@@ -13,6 +14,7 @@ import org.dromara.aigov.task.domain.vo.AigTaskDetailVo;
 import org.dromara.aigov.task.domain.vo.AigTaskExecuteVo;
 import org.dromara.aigov.task.domain.vo.AigTaskSnapshotVo;
 import org.dromara.aigov.task.domain.vo.AigTaskVo;
+import org.dromara.aigov.task.enums.AigTaskPolicyResultEnum;
 import org.dromara.aigov.task.enums.AigTaskStatusEnum;
 import org.dromara.aigov.task.service.IAigTaskExecutor;
 import org.dromara.aigov.task.service.IAigTaskService;
@@ -71,6 +73,9 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
         invokeBo.setCapabilityCode(task.getCapabilityCode());
         invokeBo.setDataLevel(task.getDataLevel());
         invokeBo.setScenarioCode(task.getScenarioCode());
+        // 任务身份要带进调用入参：策略决策账本按它把「为什么」接到具体任务上
+        // （那一列此前恒空，只能靠 traceId 去任务表里碰运气）
+        invokeBo.setTaskId(bo.getTaskId());
         // 任务知道自己挂在哪个 Agent 版本上，必须带进调用入参，否则审计里就没有这个维度，
         // 灰度的「按版本统计调用次数/失败率」永远拿不到任务发起的那些调用
         invokeBo.setAgentVersionId(task.getAgentVersionId());
@@ -92,6 +97,12 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
             invoked.getTraceId(), buildRouteSnapshot(invoked),
             Boolean.TRUE.equals(invoked.getExternalCall()), invoked.getLatencyMs());
 
+        // 4.5 记录策略结论（aig_task.policy_result/policy_reason + 事件 AI_TASK_POLICY_DECIDED）。
+        //     放在这里而不是创建任务时：结论来自路由引擎，而路由只在真正要调用时发生——
+        //     在创建阶段写一个「还没算出来的结论」，只能靠猜。
+        //     词表映射只有一处实现（拒绝写 REJECT、转人工写 MANUAL、其余 PASS）。
+        AigTask afterPolicy = recordPolicyDecision(bo.getTaskId(), afterFacts.getVersion(), invoked);
+
         // 5) 成功判定：**必须有输出且没有错误码**。
         //    只看 errorCode 会漏掉「决策为 MANUAL 但既无输出也无错误码」这类空转；
         //    只看 output 又可能把「恰好回了一段文本的错误响应」当成功。
@@ -108,7 +119,7 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
         vo.setErrorCode(invoked.getErrorCode());
 
         if (success) {
-            AigTask succeeded = taskService.transition(bo.getTaskId(), afterFacts.getVersion(),
+            AigTask succeeded = taskService.transition(bo.getTaskId(), afterPolicy.getVersion(),
                 AigTaskStatusEnum.SUCCEEDED, "调用成功，产出待复核（执行成功不等于审核通过）",
                 buildRouteSnapshot(invoked));
             vo.setSuccess(true);
@@ -123,7 +134,7 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
         AigErrorClassEnum errorClass = AigErrorClassEnum.find(invoked.getErrorCode());
         String reason = StringUtils.blankToDefault(invoked.getReason(),
             StringUtils.blankToDefault(invoked.getOutput(), "模型调用未产出结果"));
-        AigTaskStatusEnum resting = taskService.recordFailure(bo.getTaskId(), afterFacts.getVersion(),
+        AigTaskStatusEnum resting = taskService.recordFailure(bo.getTaskId(), afterPolicy.getVersion(),
             errorClass, StringUtils.substring(reason, 0, 500));
         vo.setSuccess(false);
         vo.setReason(reason);
@@ -135,6 +146,30 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
         log.warn("任务执行失败, taskId={}, traceId={}, errorCode={}, 落点={}",
             bo.getTaskId(), invoked.getTraceId(), vo.getErrorCode(), vo.getStatus());
         return vo;
+    }
+
+    /**
+     * 把本次调用的策略结论落到任务上（列 + 事件）。
+     *
+     * <p><b>不写的情况只有一种</b>：调用入口没给出路由结论（{@code decision} 为空）——
+     * 那时任务层没有可写的结论，写一个「PASS」会是编的。其余情况下即使调用失败也要写：
+     * 「被策略拒绝」正是最需要留在任务上的结论。</p>
+     *
+     * @param taskId  任务ID
+     * @param version 期望版本（乐观锁）
+     * @param invoked 调用结果
+     * @return 更新后的任务
+     */
+    private AigTask recordPolicyDecision(Long taskId, Integer version, AigInvokeVo invoked) {
+        AigRouteDecisionEnum decision = AigRouteDecisionEnum.find(invoked.getDecision());
+        AigTaskPolicyResultEnum policyResult = AigTaskPolicyResultEnum.fromDecision(decision);
+        if (policyResult == null) {
+            log.warn("调用结果未给出路由结论，策略结论跳过写入（不编造）, taskId={}, traceId={}",
+                taskId, invoked.getTraceId());
+            return taskService.getTask(taskId);
+        }
+        return taskService.recordPolicyDecision(taskId, version, policyResult.getCode(),
+            StringUtils.blankToDefault(invoked.getReason(), decision.getDesc()), invoked.getReasonCode());
     }
 
     /**

@@ -270,6 +270,81 @@ class AigTaskServiceImplTest {
         verify(eventMapper, never()).insert(any(AigTaskEvent.class));
     }
 
+    @Test
+    @DisplayName("★ 记录策略结论：两列落库 + 写 AI_TASK_POLICY_DECIDED 事件（治理台那一格此前永远是「-」）")
+    void recordPolicyDecisionWritesColumnsAndEvent() {
+        AigTask[] stored = fakeRow();
+        stored[0] = task(9001L, "RUNNING", 4, 0);
+
+        AigTask after = service.recordPolicyDecision(9001L, 4, "REJECT",
+            "未配置该数据等级的路由策略", "NO_ROUTE_POLICY");
+
+        ArgumentCaptor<AigTask> updateCaptor = ArgumentCaptor.forClass(AigTask.class);
+        verify(taskMapper).updateById(updateCaptor.capture());
+        AigTask update = updateCaptor.getValue();
+        assertEquals("REJECT", update.getPolicyResult());
+        assertEquals("未配置该数据等级的路由策略", update.getPolicyReason());
+        assertEquals(4, update.getVersion(), "要带乐观锁版本，否则并发下会覆盖别人的结论");
+
+        ArgumentCaptor<AigTaskEvent> eventCaptor = ArgumentCaptor.forClass(AigTaskEvent.class);
+        verify(eventMapper).insert(eventCaptor.capture());
+        AigTaskEvent event = eventCaptor.getValue();
+        assertEquals("AI_TASK_POLICY_DECIDED", event.getEventType());
+        assertNull(event.getFromStatus(), "它不是状态迁移，from/to 必须为空");
+        assertNull(event.getToStatus());
+        assertTrue(event.getDetail().contains("REJECT"), event.getDetail());
+        assertTrue(event.getDetail().contains("未配置该数据等级的路由策略"),
+            "细因要翻成可读描述，而不是把 NO_ROUTE_POLICY 原样塞给读的人：" + event.getDetail());
+        assertNotNull(event.getPayloadJson(), "载荷里放细因与错误码，供机器读");
+        assertTrue(event.getPayloadJson().contains("NO_ROUTE_POLICY"), event.getPayloadJson());
+        assertTrue(event.getPayloadJson().contains("POLICY_DENIED"),
+            "拒绝要带错误码（与调用入口的落库口径一致）：" + event.getPayloadJson());
+        assertEquals(9001L, after.getTaskId());
+    }
+
+    @Test
+    @DisplayName("通过（PASS）不写错误码，但细因存在时仍要写细因")
+    void passCarriesNoErrorCode() {
+        AigTask[] stored = fakeRow();
+        stored[0] = task(9001L, "RUNNING", 4, 0);
+
+        service.recordPolicyDecision(9001L, 4, "PASS", "命中模型 flux-2-pro", null);
+
+        ArgumentCaptor<AigTaskEvent> eventCaptor = ArgumentCaptor.forClass(AigTaskEvent.class);
+        verify(eventMapper).insert(eventCaptor.capture());
+        assertNull(eventCaptor.getValue().getPayloadJson(),
+            "成功的策略决策没有错误码，也没有细因 → 载荷为空而不是编一个出来");
+    }
+
+    @Test
+    @DisplayName("契约之外的细因不写进事件载荷（载荷是机器读的，塞私词会被当成词表成员）")
+    void unknownReasonCodeIsNotPutIntoPayload() {
+        AigTask[] stored = fakeRow();
+        stored[0] = task(9001L, "RUNNING", 4, 0);
+
+        service.recordPolicyDecision(9001L, 4, "REJECT", "自造的细因", "NO_POLICY_MADE_UP");
+
+        ArgumentCaptor<AigTaskEvent> eventCaptor = ArgumentCaptor.forClass(AigTaskEvent.class);
+        verify(eventMapper).insert(eventCaptor.capture());
+        String payload = eventCaptor.getValue().getPayloadJson();
+        assertNotNull(payload);
+        assertFalse(payload.contains("NO_POLICY_MADE_UP"),
+            "契约外的细因不得进入载荷：" + payload);
+        assertTrue(payload.contains("POLICY_DENIED"), payload);
+    }
+
+    @Test
+    @DisplayName("策略结论的乐观锁：版本不符必须响亮失败，不静默覆盖")
+    void recordPolicyDecisionUsesOptimisticLock() {
+        when(taskMapper.updateById(any(AigTask.class))).thenReturn(0);
+
+        ServiceException ex = assertThrows(ServiceException.class,
+            () -> service.recordPolicyDecision(9001L, 3, "PASS", "命中模型", null));
+
+        assertTrue(ex.getMessage().contains("并发修改"), ex.getMessage());
+        verify(eventMapper, never()).insert(any(AigTaskEvent.class));
+    }
+
     /**
      * 造一个「内存里的库」：insert 回填主键、updateById 把更新对象上的非空字段写回同一行。
      *

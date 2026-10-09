@@ -59,8 +59,10 @@ public enum AigTaskEventTypeEnum {
     // 写入方现状（2026-10-09 核对，别把"有词"读成"有事实"）：
     //   ARTIFACT_ADDED —— **写入方已落地**：AigTaskArtifactServiceImpl 登记制品时经
     //                    IAigTaskService#recordEvent 写入；
-    //   STEP_*         —— **无写入方**：还缺 aig_task_step（逐节点账本）；
-    //   POLICY_DECIDED —— **无写入方**：决策账本 aig_policy_decision_log 已存在，但尚未回写任务事件。
+    //   POLICY_DECIDED —— **写入方已落地**：AigTaskServiceImpl#recordPolicyDecision 在任务执行时
+    //                    按路由结论（MODEL/MANUAL/DENIED → PASS/MANUAL/REJECT）写入，
+    //                    与 aig_task.policy_result/policy_reason 同一次写入；
+    //   STEP_*         —— **无写入方**：还缺 aig_task_step（逐节点账本）。
     // 先把词表补齐的理由：枚举是"平台认得的词"，缺词会让将来的写入方各自造一个近义名，
     // 而契约明令禁止第二套词表；AigContractEnumDriftTest 会把这条一致性钉住。
 

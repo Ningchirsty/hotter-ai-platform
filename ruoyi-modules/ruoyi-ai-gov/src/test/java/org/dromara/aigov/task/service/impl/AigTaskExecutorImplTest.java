@@ -140,10 +140,10 @@ class AigTaskExecutorImplTest {
     }
 
     /**
-     * 打桩「已入队 + 快照完好」的成功路径骨架（版本 2 → 3 → 4 → 5）。
+     * 打桩「已入队 + 快照完好」的成功路径骨架（版本 2 → 3 → 4 → 5 → 6）。
      *
-     * <p>抽出来的原因：状态迁移是三次调用，逐个打桩重复四遍；而漏掉最后一次会让
-     * transition 返回 null，NPE 看起来像实现崩了。</p>
+     * <p>抽出来的原因：状态迁移与两次事实写入是多次调用，逐个打桩重复四遍；
+     * 而漏掉最后一次会让 transition 返回 null，NPE 看起来像实现崩了。</p>
      *
      * @param invoked 调用层返回值
      */
@@ -153,8 +153,10 @@ class AigTaskExecutorImplTest {
             .thenReturn(task("RUNNING", 3));
         when(taskService.recordExecutionFacts(any(), any(), any(), any(), anyBoolean(), any()))
             .thenReturn(task("RUNNING", 4));
-        when(taskService.transition(eq(TASK_ID), eq(4), eq(AigTaskStatusEnum.SUCCEEDED), any(), any()))
-            .thenReturn(task("SUCCEEDED", 5));
+        when(taskService.recordPolicyDecision(any(), any(), any(), any(), any()))
+            .thenReturn(task("RUNNING", 5));
+        when(taskService.transition(eq(TASK_ID), eq(5), eq(AigTaskStatusEnum.SUCCEEDED), any(), any()))
+            .thenReturn(task("SUCCEEDED", 6));
         when(invokeService.invoke(any())).thenReturn(invoked);
     }
 
@@ -172,7 +174,52 @@ class AigTaskExecutorImplTest {
         assertEquals("flux-2-pro", vo.getModelKey());
         assertTrue(vo.isExternalCall());
         verify(taskService).transition(eq(TASK_ID), eq(2), eq(AigTaskStatusEnum.RUNNING), any(), isNull());
-        verify(taskService).transition(eq(TASK_ID), eq(4), eq(AigTaskStatusEnum.SUCCEEDED), any(), any());
+        verify(taskService).transition(eq(TASK_ID), eq(5), eq(AigTaskStatusEnum.SUCCEEDED), any(), any());
+    }
+
+    @Test
+    @DisplayName("★ 策略结论必须落到任务上（含细因）：治理台那一格此前永远是「-」")
+    void policyDecisionIsRecordedOnTheTask() {
+        AigInvokeVo denied = invoked(null, "POLICY_DENIED", "未配置该数据等级的路由策略");
+        denied.setDecision("DENIED");
+        denied.setReasonCode("NO_ROUTE_POLICY");
+        stubHappyPath(denied);
+        when(taskService.recordFailure(eq(TASK_ID), eq(5), eq(AigErrorClassEnum.POLICY_DENIED), any()))
+            .thenReturn(AigTaskStatusEnum.NEED_HUMAN);
+
+        executor.execute(executedBo());
+
+        ArgumentCaptor<String> resultCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> reasonCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> codeCaptor = ArgumentCaptor.forClass(String.class);
+        verify(taskService).recordPolicyDecision(eq(TASK_ID), eq(4), resultCaptor.capture(),
+            reasonCaptor.capture(), codeCaptor.capture());
+        assertEquals("REJECT", resultCaptor.getValue(), "路由 DENIED 对应任务级 REJECT");
+        assertEquals("未配置该数据等级的路由策略", reasonCaptor.getValue());
+        assertEquals("NO_ROUTE_POLICY", codeCaptor.getValue(), "细因要原样带下去，不能被任务层改写");
+    }
+
+    @Test
+    @DisplayName("路由 MODEL 对应任务级 PASS；结论与失败原因分列，不互相顶替")
+    void modelDecisionMapsToPass() {
+        stubHappyPath(invoked("{}", null, null));
+
+        executor.execute(executedBo());
+
+        verify(taskService).recordPolicyDecision(eq(TASK_ID), eq(4), eq("PASS"), any(), isNull());
+    }
+
+    @Test
+    @DisplayName("★ 调用入参必须带任务ID：策略决策账本靠它把「为什么」接到任务上")
+    void taskIdIsCarriedIntoInvoke() {
+        stubHappyPath(invoked("{}", null, null));
+
+        executor.execute(executedBo());
+
+        ArgumentCaptor<AigInvokeBo> captor = ArgumentCaptor.forClass(AigInvokeBo.class);
+        verify(invokeService).invoke(captor.capture());
+        assertEquals(TASK_ID, captor.getValue().getTaskId(),
+            "不带任务ID，aig_policy_decision_log.task_id 就永远为空");
     }
 
     @Test
@@ -229,8 +276,10 @@ class AigTaskExecutorImplTest {
             .thenReturn(task("RUNNING", 3));
         when(taskService.recordExecutionFacts(any(), any(), any(), any(), anyBoolean(), any()))
             .thenReturn(task("RUNNING", 4));
+        when(taskService.recordPolicyDecision(any(), any(), any(), any(), any()))
+            .thenReturn(task("RUNNING", 5));
         when(invokeService.invoke(any())).thenReturn(invoked(null, "TIMEOUT", "上游超时"));
-        when(taskService.recordFailure(eq(TASK_ID), eq(4), eq(AigErrorClassEnum.TIMEOUT), any()))
+        when(taskService.recordFailure(eq(TASK_ID), eq(5), eq(AigErrorClassEnum.TIMEOUT), any()))
             .thenReturn(AigTaskStatusEnum.RETRY_WAIT);
 
         AigTaskExecuteVo vo = executor.execute(executedBo());
@@ -238,7 +287,7 @@ class AigTaskExecutorImplTest {
         assertFalse(vo.isSuccess());
         assertEquals("TIMEOUT", vo.getErrorCode());
         assertEquals("RETRY_WAIT", vo.getStatus());
-        verify(taskService).recordFailure(eq(TASK_ID), eq(4), eq(AigErrorClassEnum.TIMEOUT), any());
+        verify(taskService).recordFailure(eq(TASK_ID), eq(5), eq(AigErrorClassEnum.TIMEOUT), any());
     }
 
     @Test
@@ -249,8 +298,10 @@ class AigTaskExecutorImplTest {
             .thenReturn(task("RUNNING", 3));
         when(taskService.recordExecutionFacts(any(), any(), any(), any(), anyBoolean(), any()))
             .thenReturn(task("RUNNING", 4));
+        when(taskService.recordPolicyDecision(any(), any(), any(), any(), any()))
+            .thenReturn(task("RUNNING", 5));
         when(invokeService.invoke(any())).thenReturn(invoked(null, null, "什么也没说"));
-        when(taskService.recordFailure(eq(TASK_ID), eq(4), isNull(), any()))
+        when(taskService.recordFailure(eq(TASK_ID), eq(5), isNull(), any()))
             .thenReturn(AigTaskStatusEnum.NEED_HUMAN);
 
         AigTaskExecuteVo vo = executor.execute(executedBo());
@@ -268,9 +319,11 @@ class AigTaskExecutorImplTest {
             .thenReturn(task("RUNNING", 3));
         when(taskService.recordExecutionFacts(any(), any(), any(), any(), anyBoolean(), any()))
             .thenReturn(task("RUNNING", 4));
+        when(taskService.recordPolicyDecision(any(), any(), any(), any(), any()))
+            .thenReturn(task("RUNNING", 5));
         // 典型形态：网关 200 回了一段错误说明，或输出不符合 Schema
         when(invokeService.invoke(any())).thenReturn(invoked("错误：余额不足", "POLICY_DENIED", "输出不符合 Schema"));
-        when(taskService.recordFailure(any(), any(), eq(AigErrorClassEnum.POLICY_DENIED), any()))
+        when(taskService.recordFailure(any(), eq(5), eq(AigErrorClassEnum.POLICY_DENIED), any()))
             .thenReturn(AigTaskStatusEnum.NEED_HUMAN);
 
         AigTaskExecuteVo vo = executor.execute(executedBo());

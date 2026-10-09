@@ -84,6 +84,15 @@ public class AigInvokeVo implements Serializable {
     private String errorCode;
 
     /**
+     * 结论<b>细因</b>编码（取值同 {@code AigPolicyReasonCodeEnum}，契约 reasonCodes 的镜像）；认不出时为空。
+     *
+     * <p>与 {@link #errorCode} 的分工：错误码决定「怎么处置」（重试/换候选/转人工），
+     * 细因说明「具体卡在哪」（未配置策略、未绑定模型…）。任务层把两者一起落到
+     * {@code aig_task.policy_reason} 与事件载荷里，运维不必再去翻路由日志。</p>
+     */
+    private String reasonCode;
+
+    /**
      * 策略命中明细（路由 7 步的逐条判定，含「哪些候选模型因何被排除」）。
      * <p>与写入 {@code aig_invocation_audit.policy_hit} 的内容同源。
      * {@code dryRun} 正是「上线前预演」入口，只回一句 reason 无法解释

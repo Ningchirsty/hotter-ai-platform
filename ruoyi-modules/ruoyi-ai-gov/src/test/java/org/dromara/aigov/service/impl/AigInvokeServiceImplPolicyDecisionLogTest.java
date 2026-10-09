@@ -8,6 +8,7 @@ import org.dromara.aigov.domain.vo.AigRouteCandidate;
 import org.dromara.aigov.domain.vo.AigRouteDecision;
 import org.dromara.aigov.domain.vo.AigRouteHint;
 import org.dromara.aigov.enums.AigDataLevelEnum;
+import org.dromara.aigov.enums.AigPolicyReasonCodeEnum;
 import org.dromara.aigov.enums.AigRouteDecisionEnum;
 import org.dromara.aigov.helper.AigAuditContext;
 import org.dromara.aigov.helper.AigAuditRecorder;
@@ -159,6 +160,41 @@ class AigInvokeServiceImplPolicyDecisionLogTest {
         assertEquals("EXTERNAL_API", row.getDeploymentType());
         assertEquals("Y", row.getExternalCall(),
             "主候选本地、备选外部：这次真的外发了，账本若停在主候选就会把「外发过」记成「没外发」");
+    }
+
+    @Test
+    @DisplayName("★ 决策账本要落到任务上：task_id 与细因此前两列恒空")
+    void ledgerCarriesTaskIdAndReasonCode() {
+        AigRouteDecision decision = baseDecision(AigRouteDecisionEnum.DENIED.getCode(),
+            "未配置该数据等级的路由策略");
+        decision.setReasonCode(AigPolicyReasonCodeEnum.NO_ROUTE_POLICY.getCode());
+        when(routeService.decide(any(), any(), nullable(AigRouteHint.class))).thenReturn(decision);
+
+        AigInvokeBo request = bo(AigDataLevelEnum.INTERNAL.getCode());
+        request.setTaskId(777L);
+        service(List.of()).invoke(request);
+
+        assertEquals(1, inserted.size());
+        AigPolicyDecisionLog row = inserted.get(0);
+        assertEquals(777L, row.getTaskId(),
+            "没有这一列，「这次决策属于哪条任务」只能靠 traceId 去任务表里碰运气");
+        assertEquals("NO_ROUTE_POLICY", row.getReasonCode(),
+            "细因是可聚合的「为什么没成」，不能只躺在 policyHits 的长文本里");
+    }
+
+    @Test
+    @DisplayName("不经任务的调用（taskId 为空）照样留证：空表示「没有任务上下文」")
+    void ledgerWithoutTaskContextIsStillWritten() {
+        AigRouteDecision decision = baseDecision(AigRouteDecisionEnum.MODEL.getCode(), "命中模型");
+        decision.setModelId(101L);
+        decision.setModelKey("modelA");
+        when(routeService.decide(any(), any(), nullable(AigRouteHint.class))).thenReturn(decision);
+
+        service(List.of(new NamedStubInvoker("InvokerA", ModelInvokeResult.success("{}", 5L))))
+            .invoke(bo(AigDataLevelEnum.PUBLIC.getCode()));
+
+        assertEquals(1, inserted.size());
+        assertNull(inserted.get(0).getTaskId(), "直接调能力本来就不属于任何任务");
     }
 
     @Test

@@ -126,6 +126,32 @@ public interface IAigTaskService {
                        String detail, String payloadJson, AigErrorClassEnum errorClass, String errorMessage);
 
     /**
+     * 记录任务级<b>策略结论</b>（{@code aig_task.policy_result/policy_reason}）并写事件
+     * {@code AI_TASK_POLICY_DECIDED}。
+     *
+     * <p><b>为什么需要它</b>：这两列此前<b>全表无人写入</b>，而治理台的任务详情正在渲染
+     * 「策略结论」——那一格永远是 {@code -}。执行路径上确实有结论（路由引擎的
+     * MODEL/MANUAL/DENIED），只是没人把它落到任务上。</p>
+     *
+     * <p><b>词表刻意不同</b>：任务级用 {@code PASS/REJECT/MANUAL}（DDL 口径，业务读者看得懂），
+     * 路由级用 {@code MODEL/MANUAL/DENIED}（引擎口径）。映射只有一处实现
+     * （{@code AigTaskPolicyResultEnum#fromDecision}），散在调用点会让「转人工」这类结论
+     * 在某条路径上被写成 PASS 而无人察觉。</p>
+     *
+     * <p><b>事件与列同一次写入</b>：只写列不写事件，事件流就不再是完整记录；
+     * 只写事件不写列，页面那一格仍然是空的。</p>
+     *
+     * @param taskId          任务ID
+     * @param expectedVersion 期望版本（乐观锁）
+     * @param policyResult    任务级策略结论（{@code AigTaskPolicyResultEnum} 的 code）
+     * @param policyReason    结论说明（截断到 500）
+     * @param reasonCode      细因（{@code AigPolicyReasonCodeEnum} 的 code，可空；认不出不写入事件载荷）
+     * @return 更新后的任务（调用方接着用它的版本做后续迁移）
+     */
+    AigTask recordPolicyDecision(Long taskId, Integer expectedVersion, String policyResult,
+                                 String policyReason, String reasonCode);
+
+    /**
      * 标记任务已派发：迁移到 DISPATCHED 并写入 Provider 与外部作业ID。
      *
      * <p><b>为什么必须与状态迁移在同一次更新里完成</b>：回调是按

@@ -111,6 +111,23 @@ class AigContractEnumDriftTest {
         assertEquals(contract, impl, "契约与 AigTaskStatusEnum 的状态集合不一致");
     }
 
+    @Test
+    @DisplayName("★ 策略细因：契约 reasonCodes.recommended 与 AigPolicyReasonCodeEnum 双向一致")
+    void policyReasonCodesMatchContract() throws Exception {
+        JsonNode recommended = MAPPER.readTree(contractDir().resolve("error-codes.json").toFile())
+            .get("reasonCodes").get("recommended");
+        Set<String> contract = new LinkedHashSet<>();
+        recommended.forEach(node -> contract.add(node.asText()));
+        Set<String> impl = new LinkedHashSet<>();
+        for (AigPolicyReasonCodeEnum item : AigPolicyReasonCodeEnum.values()) {
+            impl.add(item.getCode());
+        }
+        assertEquals(contract, impl,
+            "契约与 AigPolicyReasonCodeEnum 的细因集合不一致：细因是「为什么没成」的可聚合答案，"
+                + "各处自造近义名（NO_POLICY / POLICY_MISSING…）会让按细因做的统计永远合不起来");
+        assertTrue(contract.size() >= 10, "契约里的细因太少（" + contract.size() + "），可能读错了节点，别让这条守卫空转");
+    }
+
     /**
      * 从运行目录往上找含 {@code docs/platform-v2/contract} 的仓库根。
      *

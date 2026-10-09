@@ -68,6 +68,19 @@ public class AigInvokeBo implements Serializable {
     private Long agentVersionId;
 
     /**
+     * 本次调用所属的任务ID（可选，见 {@code aig_task.task_id}）
+     *
+     * <p><b>为什么调用入参要知道任务</b>：一次任务执行会产生一条策略决策账本
+     * （{@code aig_policy_decision_log}），而那一列 {@code task_id} 此前**无人写入**——
+     * 于是「这次决策属于哪条任务」只能靠 traceId 去任务表里碰运气。带上它之后，
+     * 决策账本与任务事件流（{@code AI_TASK_POLICY_DECIDED}）都能落到具体任务上。</p>
+     *
+     * <p><b>直接调能力时必须为空</b>：不经任务的调用本来就不属于任何任务，
+     * 这一列为空表示「没有任务上下文」，不是「不知道」。</p>
+     */
+    private Long taskId;
+
+    /**
      * 提示词（业务输入）
      */
     private String prompt;

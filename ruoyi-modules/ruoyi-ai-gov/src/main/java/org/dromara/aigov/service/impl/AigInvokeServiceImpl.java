@@ -358,9 +358,15 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
             // 默认不外发：DENIED/MANUAL 恒为 N；MODEL 在 finally 里按部署类型回填
             row.setExternalCall("N");
             row.setReason(truncate(decision.getReason(), 500));
+            // 细因（reasonCode）此前这一列恒空：引擎算出了"为什么没成"却没人落库。
+            // 与错误码不同，细因不做处置决策，只是给运维与统计用的具体原因
+            row.setReasonCode(truncate(decision.getReasonCode(), 64));
             row.setExcludedJson(truncate(String.join(" | ", decision.getPolicyHits()), 2000));
             row.setCallerId(safeCallerId(audit));
             row.setAgentVersionId(audit.getAgentVersionId());
+            // 任务归属：这一列此前同样恒空，于是"这次决策是哪条任务的"只能靠 traceId 去任务表里碰运气。
+            // 直接调能力（不经任务）时为空，那是正常且有含义的（本次不属于任何任务）
+            row.setTaskId(bo.getTaskId());
             row.setOperateTime(LocalDateTime.now());
             policyDecisionLogMapper.insert(row);
             return row;
@@ -726,6 +732,9 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
         vo.setPolicyHits(decision.getPolicyHits());
         vo.setPendingConfirm(decision.getHumanConfirmPoints());
         vo.setErrorCode(errorCode);
+        // 细因下发：任务层要把「为什么没成」落到 aig_task.policy_reason 与事件载荷里，
+        // 让上层从 reason 文本里反推具体原因等于让它猜一个我们已经知道的值
+        vo.setReasonCode(decision.getReasonCode());
         return vo;
     }
 

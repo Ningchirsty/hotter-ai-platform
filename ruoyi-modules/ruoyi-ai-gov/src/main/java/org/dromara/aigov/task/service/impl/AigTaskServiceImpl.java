@@ -11,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.dromara.aigov.constant.AigConstants;
 import org.dromara.aigov.enums.AigDataLevelEnum;
 import org.dromara.aigov.enums.AigErrorClassEnum;
+import org.dromara.aigov.enums.AigPolicyReasonCodeEnum;
 import org.dromara.aigov.task.config.AigCallbackProperties;
 import org.dromara.aigov.task.domain.AigCallback;
 import org.dromara.aigov.task.domain.AigTask;
@@ -32,6 +33,7 @@ import org.dromara.aigov.task.domain.vo.AigTaskVo;
 import org.dromara.aigov.task.enums.AigCandidateStatusEnum;
 import org.dromara.aigov.task.enums.AigTaskEventTypeEnum;
 import org.dromara.aigov.task.enums.AigTaskExecutionModeEnum;
+import org.dromara.aigov.task.enums.AigTaskPolicyResultEnum;
 import org.dromara.aigov.task.enums.AigTaskStatusEnum;
 import org.dromara.aigov.task.enums.AigTaskTypeEnum;
 import org.dromara.aigov.task.helper.AigTaskActorProvider;
@@ -53,6 +55,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -452,6 +455,88 @@ public class AigTaskServiceImpl implements IAigTaskService {
                 + "，期望版本=" + expectedVersion);
         }
         return loadTask(taskId);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public AigTask recordPolicyDecision(Long taskId, Integer expectedVersion, String policyResult,
+                                       String policyReason, String reasonCode) {
+        if (taskId == null) {
+            throw new ServiceException("任务ID不能为空");
+        }
+        if (expectedVersion == null) {
+            throw new ServiceException("期望版本不能为空：记录策略结论同样需要乐观锁版本");
+        }
+        AigTask update = new AigTask();
+        update.setTaskId(taskId);
+        update.setVersion(expectedVersion);
+        update.setPolicyResult(policyResult);
+        update.setPolicyReason(StringUtils.substring(policyReason, 0, 500));
+        if (taskMapper.updateById(update) == 0) {
+            throw new ServiceException("任务已被并发修改，策略结论未记录：taskId=" + taskId
+                + "，期望版本=" + expectedVersion);
+        }
+        AigTask after = loadTask(taskId);
+        // 事件与列同一次写入：治理台的「策略结论」与事件流里的策略决策必须是同一件事。
+        // 只写列不写事件，事件流就不再是「发生了什么」的完整记录；只写事件不写列，
+        // 页面上那一格仍然永远是「-」
+        appendEvent(after, nextSequence(taskId), AigTaskEventTypeEnum.AI_TASK_POLICY_DECIDED, null, null,
+            describePolicyDecision(policyResult, policyReason, reasonCode), buildPolicyPayload(policyResult, reasonCode));
+        log.info("记录策略结论, taskId={}, policyResult={}, reasonCode={}", taskId, policyResult, reasonCode);
+        return after;
+    }
+
+    /**
+     * 组装策略决策事件的可读说明。
+     *
+     * @param policyResult 任务级结论
+     * @param policyReason 结论说明
+     * @param reasonCode   细因（可空）
+     * @return 说明文本
+     */
+    private String describePolicyDecision(String policyResult, String policyReason, String reasonCode) {
+        StringBuilder text = new StringBuilder("策略决策=").append(
+            StringUtils.blankToDefault(policyResult, "未知"));
+        AigTaskPolicyResultEnum result = AigTaskPolicyResultEnum.find(policyResult);
+        if (result != null && result != AigTaskPolicyResultEnum.PASS) {
+            text.append("（").append(result.getDesc()).append("）");
+        }
+        if (StringUtils.isNotBlank(reasonCode)) {
+            AigPolicyReasonCodeEnum reason = AigPolicyReasonCodeEnum.find(reasonCode);
+            text.append("，细因=").append(reason == null ? reasonCode : reason.getDesc());
+        }
+        if (StringUtils.isNotBlank(policyReason)) {
+            text.append("，说明=").append(policyReason);
+        }
+        return text.toString();
+    }
+
+    /**
+     * 组装策略决策事件载荷（契约允许 {@code reasonCode} 与 {@code errorCode}）。
+     *
+     * <p><b>只放契约里的词</b>：细因先经 {@link AigPolicyReasonCodeEnum#find} 认一遍，
+     * 认不出就不写进载荷（留空而不是原样塞进去）——事件载荷是机器读的，
+     * 塞入契约之外的词会让消费方以为它是词表成员。</p>
+     *
+     * <p>值全部来自枚举编码（字符集 A-Z_），因此这里直接拼 JSON 而不引入序列化依赖；
+     * 这也是刻意的：本方法不该被用来放自由文本。</p>
+     *
+     * @param policyResult 任务级结论
+     * @param reasonCode   细因（可空）
+     * @return JSON 文本；没有可写字段时返回 null
+     */
+    private String buildPolicyPayload(String policyResult, String reasonCode) {
+        List<String> items = new ArrayList<>();
+        AigPolicyReasonCodeEnum reason = AigPolicyReasonCodeEnum.find(reasonCode);
+        if (reason != null) {
+            items.add("\"reasonCode\":\"" + reason.getCode() + "\"");
+        }
+        AigTaskPolicyResultEnum result = AigTaskPolicyResultEnum.find(policyResult);
+        if (result == AigTaskPolicyResultEnum.REJECT || result == AigTaskPolicyResultEnum.MANUAL) {
+            // 与调用入口的落库口径一致：策略拒绝与转人工都归 POLICY_DENIED（不可重试、需人处理）
+            items.add("\"errorCode\":\"" + AigErrorClassEnum.POLICY_DENIED.getCode() + "\"");
+        }
+        return items.isEmpty() ? null : "{" + String.join(",", items) + "}";
     }
 
     @Override

@@ -17,6 +17,7 @@ import org.dromara.aigov.domain.vo.AigRouteHint;
 import org.dromara.aigov.enums.AigDataLevelEnum;
 import org.dromara.aigov.enums.AigDeploymentTypeEnum;
 import org.dromara.aigov.enums.AigLifecycleStatusEnum;
+import org.dromara.aigov.enums.AigPolicyReasonCodeEnum;
 import org.dromara.aigov.enums.AigProviderTypeEnum;
 import org.dromara.aigov.enums.AigRouteDecisionEnum;
 import org.dromara.aigov.enums.AigUsageTypeEnum;
@@ -204,6 +205,9 @@ public class AigRouteServiceImpl implements IAigRouteService {
             .eq(AigRoutePolicy::getStatus, STATUS_NORMAL));
         if (policy == null) {
             decision.addHit("未配置 能力=" + capabilityCode + " × 数据等级=" + dataLevel.getCode() + " 的路由策略");
+            // 细因无歧义：确实没有这一格策略（而不是"有策略但候选被排除了"）。
+            // 这是运维最常撞到的一类拒绝——补一行策略即可，所以值得能被按细因统计出来
+            decision.setReasonCode(AigPolicyReasonCodeEnum.NO_ROUTE_POLICY.getCode());
             return denied(decision, "未配置该数据等级的路由策略");
         }
         boolean allowExternal = YES.equalsIgnoreCase(policy.getAllowExternal());
@@ -249,6 +253,9 @@ public class AigRouteServiceImpl implements IAigRouteService {
         List<AigCapabilityModel> ordered = orderBindings(bindings);
         if (ordered.isEmpty()) {
             decision.addHit("能力=" + capabilityCode + " 未绑定任何启用状态的模型");
+            // 细因无歧义：绑定表里一个启用模型都没有（与"绑了但全被排除"不同，
+            // 后者的原因可能是多个，见 AigRouteDecision#reasonCode 的说明）
+            decision.setReasonCode(AigPolicyReasonCodeEnum.NO_MODEL_BOUND.getCode());
             return noModel(decision, fallbackToManual);
         }
         Map<Long, AigModelVo> modelMap = loadModels(ordered);

@@ -1,6 +1,6 @@
 # 0-2 ADR-001~008 决定记录
 
-> 状态：**完成**（2026-10-08；ADR-008/009 于同日追加；**ADR-010 于 2026-10-09 追加**）
+> 状态：**完成**（2026-10-08；ADR-008/009 于同日追加；**ADR-010/011 于 2026-10-09 追加**）
 > 每条 ADR 给：**决定** / **依据** / **落地为可执行契约的方式** / **被否决的替代方案**。
 > "已核实"项均指读了源码或查了生产。
 
@@ -261,6 +261,20 @@ private static final Map<String, Map<String, String>> LATEST = Map.of( ... );
 
 ---
 
+## ADR-011 策略决策要落到任务上：两套结论词表 + 细因「认不出就留空」—— **接受**（2026-10-09 追加）
+
+| 项 | 内容 |
+|---|---|
+| **决定** | ① 任务级策略结论 `aig_task.policy_result` 用 **PASS/REJECT/MANUAL**（DDL 口径），路由结论保持 **MODEL/MANUAL/DENIED**（引擎口径），映射唯一实现为 `AigTaskPolicyResultEnum#fromDecision`；② 路由细因 `reasonCode` 用契约 `reasonCodes.recommended` 的镜像枚举，**只在无歧义时写入，认不出留空**；③ 执行任务时把策略结论与细因写进两列 + 事件 `AI_TASK_POLICY_DECIDED`（同一次写入），并把 `taskId` 带进调用入参以填 `aig_policy_decision_log.task_id` |
+| **依据** | 已核实：`policy_result`/`policy_reason` 与 `aig_policy_decision_log.task_id`/`reason_code` **四列全表无人写入**，而治理台任务详情的「策略结论」正在渲染前两列 ⇒ 页面那一格永远是 `-`，与「错误码/失败原因两列曾长期为空」是同一类缺陷；同时事件 `AI_TASK_POLICY_DECIDED` 有词表、无写入方 |
+| **落地方式** | `AigRouteDecision.reasonCode` + 路由引擎两处无歧义写入；`AigTaskPolicyResultEnum`；`AigPolicyReasonCodeEnum`（契约镜像，`AigContractEnumDriftTest` 双向钉住）；`IAigTaskService#recordPolicyDecision`（列 + 事件，乐观锁）；执行器在调用后写入 |
+| **否决的替代（a）：把错误码与细因合成一个字段** | 否决。错误码决定「怎么处置」（重试/换候选/转人工/熔断），细因说明「具体卡在哪」；契约明写「不要把细因做成错误码」。合并的后果是 `NO_ROUTE_POLICY` 这类一次性配置问题也要有重试/熔断语义 |
+| **否决的替代（b）：把路由词表直接写进 `policy_result`** | 否决。任务列是给业务读者看的（页面直接显示），`MODEL` 这种词对业务无意义；且 DDL 已定 PASS/REJECT/MANUAL 三值 |
+| **否决的替代（c）：候选全被排除时也写一个细因** | 否决。那种拒绝的原因往往是**多个排除条件的合成**（有的被外发禁令排除、有的被健康状态排除），挑一个写进去会让读的人以为那就是全部原因——而「猜错的细因」比「没有细因」更坏：它把排障引向错误方向，且看不出是猜的。首批只覆盖「未配置策略」「未绑定模型」两个无歧义结论，具体原因仍在 `policyHits`/`excluded_json` 里逐条可查 |
+| **必须同时接受的限制** | ①细因覆盖率目前很低（生产里已在用的能力都配了策略、都绑了模型），它的价值主要在**将来撞到配置缺失时**能立刻被统计出来；②策略结论写在**执行时**而不是建任务时——建任务阶段没有路由结论，那时写只能靠猜；③`aig_policy_decision_log.reason_code` 只在原因无歧义时有值 |
+
+---
+
 ## 决定汇总
 
 | ADR | 决定 | 关键修改/前置 |
@@ -275,3 +289,4 @@ private static final Map<String, Map<String, String>> LATEST = Map.of( ... );
 | 008 | 接受（2026-10-08 追加） | **治理层是路由唯一权威**；`CloudImageValidation` 验收状态**迁出硬编码**；flare → `GRAY`（只改生命周期、不加绑定） |
 | 009 | 接受（2026-10-08 追加） | 定时任务的触发用**进程内 `@EnableScheduling`**（`aigov.scheduling.enabled`）；**外部 cron 方案否决**（缺机读凭据，见 ADR-002 前置）；探测入口改为"提交即返回 + 去重" |
 | 010 | 接受（2026-10-09 追加） | 制品账本落成 **`aig_task_artifact` 单表**（平台铸造 `artifact_id` + `storage_ref` 指字节）；被拒登记**留 FAIL 证据行并独立事务提交**；`hash_verified` 记录「哈希是否被平台核对过」（v1 一律 `N`）；**不建对象键唯一键**、**不新开制品权限点** |
+| 011 | 接受（2026-10-09 追加） | 策略决策落到任务上：`policy_result` 用 **PASS/REJECT/MANUAL**（映射唯一实现），写事件 `AI_TASK_POLICY_DECIDED`；细因 `reasonCode` 用**契约镜像枚举**且**只在无歧义时写**（认不出留空，不猜）；`taskId` 带进调用入参以填决策账本的 `task_id` |
