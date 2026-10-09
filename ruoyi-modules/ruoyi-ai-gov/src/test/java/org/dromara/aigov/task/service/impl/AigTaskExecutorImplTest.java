@@ -210,6 +210,43 @@ class AigTaskExecutorImplTest {
     }
 
     @Test
+    @DisplayName("★ 调用层抛未预期异常：必须记一条 UNKNOWN 失败，不能让任务停在 RUNNING 等超时清扫")
+    void unexpectedInvokeFailureIsRecordedAndReported() {
+        when(taskService.getDetail(TASK_ID)).thenReturn(detail("QUEUED", null));
+        when(taskService.transition(eq(TASK_ID), eq(2), eq(AigTaskStatusEnum.RUNNING), any(), isNull()))
+            .thenReturn(task("RUNNING", 3));
+        when(invokeService.invoke(any())).thenThrow(new IllegalStateException("Table 'x' doesn't exist"));
+        // 补记失败时会重读一次任务拿最新版本
+        when(taskService.getTask(TASK_ID)).thenReturn(task("RUNNING", 3));
+        when(taskService.recordFailure(eq(TASK_ID), eq(3), eq(AigErrorClassEnum.UNKNOWN), any()))
+            .thenReturn(AigTaskStatusEnum.FAILED);
+
+        ServiceException ex = assertThrows(ServiceException.class, () -> executor.execute(executedBo()));
+
+        assertTrue(ex.getMessage().contains("未预期异常"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("FAILED"), "要告诉调用方任务落到哪：" + ex.getMessage());
+        ArgumentCaptor<String> reasonCaptor = ArgumentCaptor.forClass(String.class);
+        verify(taskService).recordFailure(eq(TASK_ID), eq(3), eq(AigErrorClassEnum.UNKNOWN),
+            reasonCaptor.capture());
+        assertTrue(reasonCaptor.getValue().contains("IllegalStateException"), reasonCaptor.getValue());
+        verify(taskService, never()).recordExecutionFacts(any(), any(), any(), any(), anyBoolean(), any());
+    }
+
+    @Test
+    @DisplayName("业务型 ServiceException 原样上抛：不重复记账（它不是「执行崩了」）")
+    void serviceExceptionFromInvokeIsNotRecordedTwice() {
+        when(taskService.getDetail(TASK_ID)).thenReturn(detail("QUEUED", null));
+        when(taskService.transition(eq(TASK_ID), eq(2), eq(AigTaskStatusEnum.RUNNING), any(), isNull()))
+            .thenReturn(task("RUNNING", 3));
+        when(invokeService.invoke(any())).thenThrow(new ServiceException("能力未登记"));
+
+        ServiceException ex = assertThrows(ServiceException.class, () -> executor.execute(executedBo()));
+
+        assertEquals("能力未登记", ex.getMessage());
+        verify(taskService, never()).recordFailure(any(), any(), any(), any());
+    }
+
+    @Test
     @DisplayName("★ 调用入参必须带任务ID：策略决策账本靠它把「为什么」接到任务上")
     void taskIdIsCarriedIntoInvoke() {
         stubHappyPath(invoked("{}", null, null));

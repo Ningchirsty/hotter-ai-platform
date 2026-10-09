@@ -88,8 +88,24 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
             throw new ServiceException("任务未登记能力编码，无法路由：taskId=" + bo.getTaskId());
         }
 
-        // 3) 统一调用入口：路由 / 有序 fallback / 退避重试 / 逐次审计都在里面
-        AigInvokeVo invoked = invokeService.invoke(invokeBo);
+        // 3) 统一调用入口：路由 / 有序 fallback / 退避重试 / 逐次审计都在里面。
+        //    **未预期异常必须在这里收口**：任务已经被置为 RUNNING，若异常直接冒出去，
+        //    状态就停在 RUNNING——调用方只看到一个不透明的 500，而任务要等超时清扫
+        //    （默认 1800 秒）才被判失败，且会被记成 TIMEOUT（**假账**：明明是数据库/空指针问题）。
+        //    因此这里如实记一条 UNKNOWN 失败，再抛可读异常。
+        AigInvokeVo invoked;
+        try {
+            invoked = invokeService.invoke(invokeBo);
+        } catch (ServiceException e) {
+            throw e;
+        } catch (Exception e) {
+            String reason = "执行过程中发生未预期异常：" + e.getClass().getSimpleName()
+                + StringUtils.blankToDefault(StringUtils.substring(e.getMessage(), 0, 300), "");
+            log.error("任务执行发生未预期异常, taskId={}", bo.getTaskId(), e);
+            AigTaskStatusEnum resting = recordUnexpectedFailure(bo.getTaskId(), reason);
+            throw new ServiceException(reason + "；已按未知错误记录，任务落点="
+                + (resting == null ? "未变化" : resting.getCode()), e);
+        }
 
         // 4) 记录执行事实（路由快照 / traceId / 是否外发 / 耗时）。
         //    路由快照是执行与排障的唯一依据：治理配置会变，只有当时那一刻的结论能解释「为什么跑的是它」
@@ -146,6 +162,27 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
         log.warn("任务执行失败, taskId={}, traceId={}, errorCode={}, 落点={}",
             bo.getTaskId(), invoked.getTraceId(), vo.getErrorCode(), vo.getStatus());
         return vo;
+    }
+
+    /**
+     * 记录一次「未预期异常」导致的失败。
+     *
+     * <p>用<b>当场重读的版本</b>而不是执行前的版本：异常可能发生在几次写入之后
+     * （调用事实、策略结论），拿旧版本去做乐观锁只会再抛一次冲突，把真正的原因盖掉。</p>
+     *
+     * @param taskId 任务ID
+     * @param reason 可读原因
+     * @return 失败后的落点；连记账都失败时返回 null（此时只保留原始异常，不再叠一层错）
+     */
+    private AigTaskStatusEnum recordUnexpectedFailure(Long taskId, String reason) {
+        try {
+            AigTask fresh = taskService.getTask(taskId);
+            return taskService.recordFailure(taskId, fresh.getVersion(), AigErrorClassEnum.UNKNOWN,
+                StringUtils.substring(reason, 0, 500));
+        } catch (Exception e) {
+            log.error("未预期异常后补记失败状态也失败了, taskId={}", taskId, e);
+            return null;
+        }
     }
 
     /**

@@ -43,6 +43,16 @@ public class AigTaskSweepVo implements Serializable {
     private int timedOut;
 
     /**
+     * 命中的「待策略预检」任务数（{@code DRAFT} + 平台执行）
+     */
+    private int policyCandidate;
+
+    /**
+     * 完成策略预检的任务数（含被判为「拒绝」「转人工」的——它们也算检查过）
+     */
+    private int policyChecked;
+
+    /**
      * 因乐观锁冲突被跳过的数量（说明有别的实例/请求同时改了同一个任务）
      */
     private int skipped;
