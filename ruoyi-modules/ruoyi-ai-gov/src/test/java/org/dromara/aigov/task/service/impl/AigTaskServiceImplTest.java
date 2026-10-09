@@ -410,15 +410,34 @@ class AigTaskServiceImplTest {
     }
 
     @Test
-    @DisplayName("★ 终态任务不再接受进度：否则会出现「已完成但进度 10%」的自相矛盾行")
-    void recordProgressRejectsTerminalTask() {
-        when(taskMapper.selectById(1L)).thenReturn(task(1L, "SUCCEEDED", 1, 6));
-
-        ServiceException ex = assertThrows(ServiceException.class,
-            () -> service.recordProgress(1L, 6, 10, "迟到的回执"));
-
-        assertTrue(ex.getMessage().contains("终态"), ex.getMessage());
+    @DisplayName("★ 只有「正在执行」的任务接受进度：其它状态一律拒绝（迟到的回执不回写）")
+    void recordProgressRejectsNonExecutingTask() {
+        // 这份清单刻意包含 SUCCEEDED/FAILED：它们**不是**终态（还能走到复核/重试），
+        // 但「跑到哪」对它们已无意义——第一版实现自己列终态清单，既漏了 APPROVED、
+        // 又把 SUCCEEDED 当终态，两处都是凭印象。判断改走状态机的 isExecuting（唯一口径）
+        for (String status : List.of("SUCCEEDED", "FAILED", "APPROVED", "REJECTED",
+            "CANCELLED", "QUEUED", "NEED_HUMAN", "RETRY_WAIT")) {
+            when(taskMapper.selectById(1L)).thenReturn(task(1L, status, 1, 6));
+            ServiceException ex = assertThrows(ServiceException.class,
+                () -> service.recordProgress(1L, 6, 10, "迟到的回执"), status + " 不该接受进度");
+            assertTrue(ex.getMessage().contains("只有正在执行"), status + "：" + ex.getMessage());
+        }
         verify(taskMapper, never()).updateById(any(AigTask.class));
+    }
+
+    @Test
+    @DisplayName("DISPATCHED（已派发等结果）也接受进度：异步 Provider 正是在这个阶段回报进度")
+    void recordProgressAcceptsDispatched() {
+        AigTask dispatched = task(1L, "DISPATCHED", 0, 5);
+        dispatched.setProgress(null);
+        AigTask done = task(1L, "DISPATCHED", 0, 6);
+        done.setProgress(30);
+        when(taskMapper.selectById(1L)).thenReturn(dispatched, done);
+        when(taskMapper.updateById(any(AigTask.class))).thenReturn(1);
+
+        AigTask after = service.recordProgress(1L, 5, 30, "已提交上游");
+
+        assertEquals(30, after.getProgress());
     }
 
     @Test

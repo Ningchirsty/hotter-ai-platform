@@ -552,9 +552,15 @@ public class AigTaskServiceImpl implements IAigTaskService {
             throw new ServiceException("进度必须在 0-100 之间，收到：" + progress);
         }
         AigTask current = loadTask(taskId);
-        // 终态拒绝：那时「跑到哪」已被终态回答，继续接受只会造出「已完成但进度 10%」的自相矛盾行
-        if (isTerminal(current.getStatus())) {
-            throw new ServiceException("任务已是终态（" + current.getStatus() + "），不再接受进度更新：taskId=" + taskId);
+        // 只有「正在执行」的任务接受进度：进度描述的是"现在跑到哪"，而它只在任务真的在跑时才有意义。
+        // 刻意不自己列一份"哪些状态算跑着/算完了"——第一版我自己列了终态清单，结果漏了 APPROVED，
+        // 又把 SUCCEEDED 当成终态（它其实还能走到复核）；两处都是凭印象。这里改用状态机里
+        // 已有的定义（isExecuting = RUNNING/DISPATCHED），它是与出边一起维护的唯一口径
+        AigTaskStatusEnum status = AigTaskStatusEnum.find(current.getStatus());
+        if (!AigTaskStateMachine.isExecuting(status)) {
+            throw new ServiceException("任务当前状态是 " + current.getStatus()
+                + "，只有正在执行（RUNNING/DISPATCHED）的任务接受进度更新：taskId=" + taskId
+                + "。已成功/已复核的任务其进度已被终态回答，迟到的回执不再回写");
         }
         Integer before = current.getProgress();
         if (before != null && before.equals(progress)) {
@@ -577,18 +583,6 @@ public class AigTaskServiceImpl implements IAigTaskService {
         log.info("记录任务进度, taskId={}, progress {} -> {}, detail={}", taskId, before, progress,
             StringUtils.blankToDefault(detail, "-"));
         return after;
-    }
-
-    /**
-     * 任务是否已到终态（终态不再接受进度更新）。
-     *
-     * @param status 状态编码
-     * @return 终态返回 true
-     */
-    private boolean isTerminal(String status) {
-        AigTaskStatusEnum value = AigTaskStatusEnum.find(status);
-        return value == AigTaskStatusEnum.SUCCEEDED || value == AigTaskStatusEnum.FAILED
-            || value == AigTaskStatusEnum.CANCELLED || value == AigTaskStatusEnum.REJECTED;
     }
 
     /**
