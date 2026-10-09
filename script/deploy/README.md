@@ -223,6 +223,45 @@ Rules for this credential:
 4. After replacing it, re-run a release to prove the pull still works
    (a silently-broken token is exactly what caused the 401/403 in the handoff note).
 
+### Rotating it: the runbook, including how **not** to delete the wrong token
+
+GitHub Packages only accepts **classic** personal access tokens (fine-grained PATs have
+no Packages permission at all — the picker shows "No items available"), so the new token
+must be a classic one with **`read:packages` and nothing else**. Note that ticking
+`write:packages` in the UI **auto-selects `repo`**, which is how the over-privileged
+token arose in the first place.
+
+```bash
+# 0) before touching anything: prove the NEW token can read the private package
+T=<new token>
+curl -s -I -H "Authorization: Bearer $T" https://api.github.com/ | grep -i '^x-oauth-scopes'   # want: read:packages
+D=$(mktemp -d); printf '%s' "$T" | DOCKER_CONFIG=$D docker login ghcr.io -u Ningchirsty --password-stdin
+DOCKER_CONFIG=$D docker manifest inspect ghcr.io/ningchirsty/hotter-ai-platform-backend:sha-<known-tag> >/dev/null && echo "can read private package"
+
+# 1) back up and swap (root-only file)
+sudo cp -a /opt/ai-video-poc/.env /opt/ai-video-poc/.env.bak-token-$(date -u +%Y%m%d%H%M%S)
+sudo sh -c 'sed -i "s|^GHCR_TOKEN=.*|GHCR_TOKEN='"$T"'|" /opt/ai-video-poc/.env'
+sudo chmod 600 /opt/ai-video-poc/.env && sudo grep -c '^GHCR_TOKEN=' /opt/ai-video-poc/.env
+
+# 2) prove it end-to-end: dispatch a deploy and confirm the pull succeeds
+#    (choose a digest the host does NOT already have, or the pull is served from cache)
+
+# 3) only AFTER that: revoke the old token in the GitHub UI
+```
+
+**⚠️ Which token to revoke.** More than one classic token can carry `repo`, and deleting
+the wrong one breaks `git push` from a developer machine. Discriminate by **scope list**,
+not by name:
+
+| Token | Scopes shown | Meaning | Action |
+|---|---|---|---|
+| host registry credential (old) | `read:packages, repo` | what this runbook replaces | **revoke** once the new one is verified |
+| developer git credential | `gist, repo, workflow` | needed to `git push` (and to push `.github/workflows/*`) | **keep** |
+
+If a candidate's scopes are unclear, leave it alone and ask — a wrong deletion costs more
+than a late one.
+
+
 ## To roll code back, dispatch the same workflow with the previously recorded image
 digest (and, for the frontend, its Git SHA). Database and object data remain in
 place. Schema-incompatible releases require an approved forward-fix or data
