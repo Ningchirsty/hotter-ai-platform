@@ -248,7 +248,7 @@
         "4:3",
         "3:4"
       ],
-      "protocol": "alibaba",
+      "protocol": "openai",
       "maxImages": 10,
       "hasVideoReference": true,
       "hasAudioReference": true,
@@ -644,7 +644,7 @@
         "4:3",
         "3:4"
       ],
-      "protocol": "alibaba",
+      "protocol": "openai",
       "maxImages": 10,
       "hasVideoReference": true,
       "hasAudioReference": true,
