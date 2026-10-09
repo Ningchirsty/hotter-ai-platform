@@ -102,15 +102,26 @@ if [ -f "$STATE_FILE" ]; then
   # 理由（2026-10-09 实测）：刚创建的 issue 可能还没被 label 过滤索引到，
   # 此时"按 label 查"会返回空 ⇒ 恢复路径报"no open issue to close"，留下一个永不关闭的告警。
   ISSUE_NUM="${issue:-}"
+  LAST_HEARTBEAT="${heartbeat:-}"
 fi
 
 now_epoch=$(date +%s)
 since_min=$(( (now_epoch - ${prev_notified:-0}) / 60 ))
+today_utc=$(date -u '+%Y-%m-%d')
+hour_utc=$(date -u '+%H')
 
 # ---- 决定动作 ----
 action="none"
 if [ "$now_state" = "ok" ]; then
-  [ "$prev_state" = "ok" ] || [ "$prev_state" = "none" ] || action="recover"
+  if [ "$prev_state" != "ok" ] && [ "$prev_state" != "none" ]; then
+    action="recover"
+  # 每日心跳（dead-man's switch，默认关闭）：告警系统**自身**失效时，唯一能被察觉的方式是
+  # "该来的消息没来"。所以配了 HEARTBEAT_HOUR（0-23，UTC）就每天在该小时的头一次运行发一条
+  # 心跳；只发聊天通道（不往 issue 里灌日常噪音）。若连续多天收不到心跳，就说明 cron 或脚本坏了。
+  elif [ -n "${HEARTBEAT_HOUR:-}" ] && [ "$hour_utc" = "$HEARTBEAT_HOUR" ] \
+       && [ "${LAST_HEARTBEAT:-}" != "$today_utc" ]; then
+    action="heartbeat"
+  fi
 else
   if [ "$prev_state" = "ok" ] || [ "$prev_state" = "none" ]; then
     action="raise"
@@ -121,13 +132,16 @@ fi
 
 if [ "$action" = "none" ]; then
   log "state=$now_state (prev=$prev_state), nothing to send"
-  printf 'state=%s\nnotified=%s\nissue=%s\n' "$now_state" "${prev_notified:-0}" "${ISSUE_NUM:-}" >"$STATE_FILE"
+  printf 'state=%s\nnotified=%s\nissue=%s\nheartbeat=%s\n' \
+    "$now_state" "${prev_notified:-0}" "${ISSUE_NUM:-}" "${LAST_HEARTBEAT:-}" >"$STATE_FILE"
   exit 0
 fi
 
 title="[production] health check $now_state"
 if [ "$action" = "recover" ]; then
   title="[production] health check recovered"
+elif [ "$action" = "heartbeat" ]; then
+  title="[production] health check alive (daily heartbeat)"
 fi
 host=$(hostname 2>/dev/null || echo host)
 body="$title
@@ -251,7 +265,8 @@ fi
 if [ -n "${WEBHOOK_URL:-}" ]; then
   if notify_webhook; then sent=1; else log "webhook notify failed (action=$action)"; fi
 fi
-if [ -n "${GH_TOKEN:-}" ]; then
+# 心跳只走聊天通道：往 issue 里灌每日"我还活着"会变成噪音。心跳也不需要 GitHub 令牌。
+if [ -n "${GH_TOKEN:-}" ] && [ "$action" != "heartbeat" ]; then
   if notify_github; then sent=1; else log "github issue notify failed (action=$action)"; fi
 fi
 
@@ -261,7 +276,9 @@ if [ "$sent" != 1 ]; then
   exit 4
 fi
 
-printf 'state=%s\nnotified=%s\nissue=%s\n' "$now_state" "$now_epoch" "${ISSUE_NUM:-}" >"$STATE_FILE"
+printf 'state=%s\nnotified=%s\nissue=%s\nheartbeat=%s\n' \
+  "$now_state" "$(if [ "$action" = "heartbeat" ]; then echo "${prev_notified:-0}"; else echo "$now_epoch"; fi)" \
+  "${ISSUE_NUM:-}" "$(if [ "$action" = "heartbeat" ]; then echo "$today_utc"; else echo "${LAST_HEARTBEAT:-}"; fi)" >"$STATE_FILE"
 log "action=$action sent ok; state=$now_state"
-if [ "$action" = "recover" ]; then exit 0; fi
+if [ "$action" = "recover" ] || [ "$action" = "heartbeat" ]; then exit 0; fi
 exit 2

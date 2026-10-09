@@ -186,7 +186,14 @@ GH_TOKEN=github_pat_xxxxxxxx
 GH_REPO=Ningchirsty/hotter-ai-platform
 GH_LABEL=ops/health-alert
 REPEAT_MINUTES=30
+# Daily heartbeat (dead-man's switch for the alarm itself), 0-23 UTC. Empty/absent = off.
+HEARTBEAT_HOUR=01
 ```
+
+**Why the heartbeat exists**: if `health-alert.sh` or its cron entry breaks, the failure mode
+is *silence* — and silence looks exactly like "everything is fine". A daily message at
+`HEARTBEAT_HOUR` (chat sink only; never the issue) means "no message for days" becomes
+detectable. Verified: it sends once per day, and a second run on the same day stays quiet.
 
 Installed and verified on 2026-10-09:
 
@@ -198,7 +205,10 @@ Installed and verified on 2026-10-09:
   out because the first version failed it: GitHub's label filter had not indexed the
   just-created issue yet, so the recovery reported "no open issue to close" and left an alert
   open forever. The fix is that the issue number is stored in `/var/lib/hotter-alert/state`
-  and reused, with the label lookup only as a fallback.
+  and reused, with the label lookup only as a fallback;
+* the human side confirmed delivery in the chat group (the machine side only proves
+  `http=200`, not that anyone saw it);
+* the daily heartbeat was exercised for real, and a same-day second run stayed quiet.
 
 Then re-run the installer to enable the 5-minute cron (`flock` prevents overlapping runs).
 Verify the notification path with a deliberate failure — it points the storage probe at a
