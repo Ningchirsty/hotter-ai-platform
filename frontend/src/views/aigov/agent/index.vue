@@ -205,6 +205,15 @@
               登记沙箱运行
             </el-button>
             <el-button link icon="Refresh" @click="loadSandboxEvidence">刷新证据</el-button>
+            <!--
+              这条口径必须出现在门槛旁边，而不是只写在文档里：训练台的"测试调用"是一次受治理的
+              模型调用（记录在 aig_studio_execution_link），**不参与**这道门槛判定。把它悄悄接进来
+              会把"不可信代码真的在隔离环境跑过"这唯一一道证据换成"模型说这次没问题"。
+            -->
+            <div class="gate-hint">
+              训练台的「测试调用」只作参考，不参与这条门槛判定：它是一次模型调用，
+              不等于不可信代码在隔离容器里跑通（门槛只认宿主机沙箱作业登记进账本的结果）。
+            </div>
           </div>
         </el-form-item>
         <el-form-item label="说明">
