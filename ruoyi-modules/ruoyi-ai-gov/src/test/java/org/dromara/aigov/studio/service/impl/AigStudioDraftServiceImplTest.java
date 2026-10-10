@@ -3,13 +3,21 @@ package org.dromara.aigov.studio.service.impl;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.dromara.aigov.agent.domain.AigAgent;
+import org.dromara.aigov.agent.domain.AigAgentVersion;
+import org.dromara.aigov.agent.enums.AigReleaseChannelEnum;
+import org.dromara.aigov.agent.enums.AigReleaseStatusEnum;
+import org.dromara.aigov.agent.mapper.AigAgentMapper;
+import org.dromara.aigov.agent.mapper.AigAgentVersionMapper;
 import org.dromara.aigov.studio.domain.AigStudioDraft;
 import org.dromara.aigov.studio.domain.AigStudioDraftContent;
 import org.dromara.aigov.studio.domain.AigStudioRevision;
 import org.dromara.aigov.studio.domain.bo.AigStudioDraftCreateBo;
 import org.dromara.aigov.studio.domain.bo.AigStudioDraftQueryBo;
 import org.dromara.aigov.studio.domain.bo.AigStudioDraftSaveBo;
+import org.dromara.aigov.studio.domain.bo.AigStudioDraftSubmitBo;
 import org.dromara.aigov.studio.domain.vo.AigStudioDraftDetailVo;
+import org.dromara.aigov.studio.domain.vo.AigStudioDraftSubmitVo;
 import org.dromara.aigov.studio.domain.vo.AigStudioDraftVo;
 import org.dromara.aigov.studio.domain.vo.AigStudioValidateVo;
 import org.dromara.aigov.studio.enums.AigStudioDraftStatusEnum;
@@ -60,9 +68,12 @@ class AigStudioDraftServiceImplTest {
     private static final long DRAFT_ID = 9001L;
     private static final long OWNER = 200L;
     private static final long OTHER = 201L;
+    private static final long AGENT_ID = 300L;
 
     private AigStudioDraftMapper draftMapper;
     private AigStudioRevisionMapper revisionMapper;
+    private AigAgentMapper agentMapper;
+    private AigAgentVersionMapper agentVersionMapper;
     private AigStudioDraftServiceImpl service;
 
     /**
@@ -75,6 +86,11 @@ class AigStudioDraftServiceImplTest {
      */
     private List<AigStudioRevision> revisions;
 
+    /**
+     * 内存里的 Agent 版本表（submit 用）
+     */
+    private List<AigAgentVersion> createdVersions;
+
     @BeforeAll
     static void initTableInfo() {
         // 服务用 LambdaQueryWrapper/LambdaUpdateWrapper，需要实体→列的 lambda 缓存；纯单测没有 Spring
@@ -82,21 +98,37 @@ class AigStudioDraftServiceImplTest {
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(configuration, "");
         TableInfoHelper.initTableInfo(assistant, AigStudioDraft.class);
         TableInfoHelper.initTableInfo(assistant, AigStudioRevision.class);
+        TableInfoHelper.initTableInfo(assistant, AigAgent.class);
+        TableInfoHelper.initTableInfo(assistant, AigAgentVersion.class);
     }
 
     @BeforeEach
     void setUp() {
         draftMapper = mock(AigStudioDraftMapper.class);
         revisionMapper = mock(AigStudioRevisionMapper.class);
-        service = new AigStudioDraftServiceImpl(draftMapper, revisionMapper, JsonMapper.builder().build());
+        agentMapper = mock(AigAgentMapper.class);
+        agentVersionMapper = mock(AigAgentVersionMapper.class);
+        service = new AigStudioDraftServiceImpl(draftMapper, revisionMapper, agentMapper,
+            agentVersionMapper, JsonMapper.builder().build());
         row = new AigStudioDraft[1];
         revisions = new ArrayList<>();
+        createdVersions = new ArrayList<>();
 
         when(draftMapper.insert(any(AigStudioDraft.class))).thenAnswer(invocation -> {
             AigStudioDraft saved = invocation.getArgument(0);
             // 真实 MP 在 insert 时分配主键（雪花），mock 不会
             saved.setDraftId(DRAFT_ID);
             row[0] = saved;
+            return 1;
+        });
+        when(agentMapper.insert(any(AigAgent.class))).thenAnswer(invocation -> {
+            invocation.<AigAgent>getArgument(0).setAgentId(AGENT_ID);
+            return 1;
+        });
+        when(agentVersionMapper.insert(any(AigAgentVersion.class))).thenAnswer(invocation -> {
+            AigAgentVersion saved = invocation.getArgument(0);
+            saved.setAgentVersionId(5100L + createdVersions.size());
+            createdVersions.add(saved);
             return 1;
         });
         when(revisionMapper.insert(any(AigStudioRevision.class))).thenAnswer(invocation -> {
@@ -123,6 +155,15 @@ class AigStudioDraftServiceImplTest {
             }
             if (update.getStatus() != null) {
                 row[0].setStatus(update.getStatus());
+            }
+            if (update.getAgentId() != null) {
+                row[0].setAgentId(update.getAgentId());
+            }
+            if (update.getAgentVersionId() != null) {
+                row[0].setAgentVersionId(update.getAgentVersionId());
+            }
+            if (update.getLastPublishedHash() != null) {
+                row[0].setLastPublishedHash(update.getLastPublishedHash());
             }
             return 1;
         });
@@ -534,6 +575,159 @@ class AigStudioDraftServiceImplTest {
         assertEquals(1, rows.size());
         assertEquals(AigStudioDraftStatusEnum.EDITING.getDesc(), rows.get(0).getStatusLabel());
         assertTrue(rows.get(0).getUnpublishedChanges(), "从未提交过 = 有未发布改动");
+    }
+
+    // ------------------------------------------------------------------ 提交（S3b）
+
+    /**
+     * 一份"可以提交"的内容：八分节 + 能力 + 类别 + 合法 Schema。
+     *
+     * @return JSON
+     */
+    private static String submittableContent() {
+        StringBuilder sections = new StringBuilder();
+        for (String key : AigStudioDraftContent.PROMPT_SECTION_KEYS) {
+            if (sections.length() > 0) {
+                sections.append(',');
+            }
+            sections.append('"').append(key).append("\":\"内容-").append(key).append('"');
+        }
+        return "{\"agentName\":\"详情页文案助手\",\"agentCategory\":\"PLANNING\","
+            + "\"roleDescription\":\"电商详情页文案策划\","
+            + "\"promptSections\":{" + sections + "},"
+            + "\"providerCapability\":\"text_generation\",\"allowExternal\":\"N\","
+            + "\"allowedTools\":[\"brand_brief\"],\"forbiddenTools\":[],"
+            + "\"inputSchema\":\"{\\\"type\\\":\\\"object\\\"}\","
+            + "\"outputSchema\":\"{\\\"type\\\":\\\"object\\\"}\"}";
+    }
+
+    @Test
+    @DisplayName("★ 提交（从零创建）：先建 Agent 定义，再产出 DRAFT 版本，并回写草稿")
+    void submitFromScratchCreatesAgentAndDraftVersion() {
+        AigStudioDraft draft = existingDraft(2, submittableContent(),
+            AigStudioDraftStatusEnum.EDITING.getCode());
+        when(agentMapper.selectOne(any())).thenReturn(null);
+        when(agentVersionMapper.selectOne(any())).thenReturn(null);
+        AigStudioDraftSubmitBo bo = new AigStudioDraftSubmitBo();
+
+        AigStudioDraftSubmitVo vo = service.submitDraft(DRAFT_ID, bo, OWNER);
+
+        assertTrue(vo.getAgentCreated(), "草稿未绑定 Agent，本次应新建");
+        assertEquals(AGENT_ID, vo.getAgentId());
+        assertEquals("0.1.2", vo.getVersion(), "未指定版本号时按 0.1.<修订号> 生成");
+        assertEquals(AigReleaseStatusEnum.DRAFT.getCode(), vo.getReleaseStatus(),
+            "训练台只产 DRAFT，发布推进归既有状态机");
+        assertEquals(1, createdVersions.size());
+        AigAgentVersion av = createdVersions.get(0);
+        assertEquals(AGENT_ID, av.getAgentId());
+        assertEquals(AigReleaseStatusEnum.DRAFT.getCode(), av.getReleaseStatus());
+        assertEquals(AigReleaseChannelEnum.TESTING.getCode(), av.getReleaseChannel(),
+            "显式给通道，不依赖 DDL 默认值");
+        assertEquals("text_generation", av.getProviderCapability());
+        assertEquals("N", av.getAllowExternal());
+        assertEquals("brand_brief", av.getAllowedTools());
+        assertTrue(av.getPromptTemplate().contains("## role"), "主 Prompt 由八分节拼成");
+        assertEquals(draft.getContentJson(), av.getConfigJson(), "结构化留档=提交时那一版原文");
+
+        assertEquals(AGENT_ID, row[0].getAgentId(), "新建的 Agent 要绑回草稿");
+        assertEquals(5100L, row[0].getAgentVersionId());
+        assertEquals(draft.getContentHash(), row[0].getLastPublishedHash(),
+            "已提交哈希要对上，否则页面会一直显示「有未发布改动」");
+        assertEquals(AigStudioDraftStatusEnum.SUBMITTED.getCode(), row[0].getStatus());
+    }
+
+    @Test
+    @DisplayName("提交（已绑定 Agent）：复用该 Agent，不再新建定义")
+    void submitReusesBoundAgent() {
+        AigStudioDraft draft = existingDraft(1, submittableContent(),
+            AigStudioDraftStatusEnum.EDITING.getCode());
+        draft.setAgentId(AGENT_ID);
+        when(agentVersionMapper.selectOne(any())).thenReturn(null);
+
+        AigStudioDraftSubmitVo vo = service.submitDraft(DRAFT_ID, new AigStudioDraftSubmitBo(), OWNER);
+
+        assertFalse(vo.getAgentCreated());
+        assertEquals(AGENT_ID, vo.getAgentId());
+        assertEquals("0.1.1", vo.getVersion());
+        verify(agentMapper, never()).insert(any(AigAgent.class));
+    }
+
+    @Test
+    @DisplayName("★ 提交：预检不过就直接拒绝（不允许「先提交、后面再补」）")
+    void submitRejectsContentFailingPreflight() {
+        existingDraft(1, content("只有两节"), AigStudioDraftStatusEnum.EDITING.getCode());
+
+        ServiceException ex = assertThrows(ServiceException.class,
+            () -> service.submitDraft(DRAFT_ID, new AigStudioDraftSubmitBo(), OWNER));
+
+        assertTrue(ex.getMessage().contains("未通过预检"), ex.getMessage());
+        verify(agentVersionMapper, never()).insert(any(AigAgentVersion.class));
+        verify(agentMapper, never()).insert(any(AigAgent.class));
+    }
+
+    @Test
+    @DisplayName("★ 提交：未声明 Agent 类别 → 拒绝并说明原因（不替它猜一个绑定实现）")
+    void submitRejectsMissingCategory() {
+        // 内容合法（能过预检），但没有 agentCategory
+        String noCategory = submittableContent().replace("\"agentCategory\":\"PLANNING\",", "");
+        existingDraft(1, noCategory, AigStudioDraftStatusEnum.EDITING.getCode());
+
+        ServiceException ex = assertThrows(ServiceException.class,
+            () -> service.submitDraft(DRAFT_ID, new AigStudioDraftSubmitBo(), OWNER));
+
+        assertTrue(ex.getMessage().contains("agentCategory"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("PLANNING"), "报错里要列出可用的类别：" + ex.getMessage());
+        verify(agentVersionMapper, never()).insert(any(AigAgentVersion.class));
+    }
+
+    @Test
+    @DisplayName("提交：版本号被占用 → 报错要求显式指定（不悄悄换一个号）")
+    void submitRejectsTakenVersion() {
+        AigStudioDraft draft = existingDraft(3, submittableContent(),
+            AigStudioDraftStatusEnum.EDITING.getCode());
+        draft.setAgentId(AGENT_ID);
+        AigAgentVersion taken = new AigAgentVersion();
+        taken.setVersion("0.1.3");
+        when(agentVersionMapper.selectOne(any())).thenReturn(taken);
+
+        ServiceException ex = assertThrows(ServiceException.class,
+            () -> service.submitDraft(DRAFT_ID, new AigStudioDraftSubmitBo(), OWNER));
+
+        assertTrue(ex.getMessage().contains("已被占用"), ex.getMessage());
+        verify(agentVersionMapper, never()).insert(any(AigAgentVersion.class));
+    }
+
+    @Test
+    @DisplayName("★ 提交（从零创建）：编码已被别人占用 → 拒绝，不「顺手绑上去」")
+    void submitRejectsExistingAgentCode() {
+        existingDraft(1, submittableContent(), AigStudioDraftStatusEnum.EDITING.getCode());
+        AigAgent existing = new AigAgent();
+        existing.setAgentId(999L);
+        existing.setAgentCode("DETAIL_COPYWRITER");
+        when(agentMapper.selectOne(any())).thenReturn(existing);
+
+        ServiceException ex = assertThrows(ServiceException.class,
+            () -> service.submitDraft(DRAFT_ID, new AigStudioDraftSubmitBo(), OWNER));
+
+        assertTrue(ex.getMessage().contains("已存在同编码"), ex.getMessage());
+        verify(agentMapper, never()).insert(any(AigAgent.class));
+    }
+
+    @Test
+    @DisplayName("提交：非责任人不能提交")
+    void submitRejectsNonOwner() {
+        existingDraft(1, submittableContent(), AigStudioDraftStatusEnum.EDITING.getCode());
+        assertThrows(ServiceException.class,
+            () -> service.submitDraft(DRAFT_ID, new AigStudioDraftSubmitBo(), OTHER));
+        verify(agentVersionMapper, never()).insert(any(AigAgentVersion.class));
+    }
+
+    @Test
+    @DisplayName("提交：已归档的草稿不能再提交")
+    void submitRejectsArchived() {
+        existingDraft(1, submittableContent(), AigStudioDraftStatusEnum.ARCHIVED.getCode());
+        assertThrows(ServiceException.class,
+            () -> service.submitDraft(DRAFT_ID, new AigStudioDraftSubmitBo(), OWNER));
     }
 
 }

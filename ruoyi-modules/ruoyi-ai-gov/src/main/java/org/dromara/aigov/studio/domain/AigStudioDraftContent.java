@@ -48,6 +48,17 @@ public class AigStudioDraftContent implements Serializable {
     private String agentName;
 
     /**
+     * Agent 类别（{@code AigAgentCategoryEnum} 的 code）。
+     *
+     * <p><b>为什么必须由草稿显式声明、不自动猜</b>：本仓当前只有四个类别，且各自绑定了具体的
+     * 创作工厂实现（PLANNING=详情页策划、VISUAL_DNA=视觉 DNA、GENERATION=生成任务构建、QA=视觉 QA）。
+     * "从零创建"时若由服务层替它挑一个，会挑出一个与内容毫不相干的实现绑定；
+     * 而新增类别是一次独立变更（动枚举与契约），不在本增量内。
+     * 因此：草稿必须写明是四者中的哪一个，否则提交时明确拒绝并说清原因。</p>
+     */
+    private String agentCategory;
+
+    /**
      * 角色定位（§C3 左栏"角色定位"）
      */
     private String roleDescription;

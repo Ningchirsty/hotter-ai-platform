@@ -3,7 +3,9 @@ package org.dromara.aigov.studio.service;
 import org.dromara.aigov.studio.domain.bo.AigStudioDraftCreateBo;
 import org.dromara.aigov.studio.domain.bo.AigStudioDraftQueryBo;
 import org.dromara.aigov.studio.domain.bo.AigStudioDraftSaveBo;
+import org.dromara.aigov.studio.domain.bo.AigStudioDraftSubmitBo;
 import org.dromara.aigov.studio.domain.vo.AigStudioDraftDetailVo;
+import org.dromara.aigov.studio.domain.vo.AigStudioDraftSubmitVo;
 import org.dromara.aigov.studio.domain.vo.AigStudioDraftVo;
 import org.dromara.aigov.studio.domain.vo.AigStudioRevisionVo;
 import org.dromara.aigov.studio.domain.vo.AigStudioValidateVo;
@@ -112,5 +114,22 @@ public interface IAigStudioDraftService {
      * @return 预检结论
      */
     AigStudioValidateVo validateDraft(Long draftId);
+
+    /**
+     * 提交草稿：把当前内容固化成一条 <b>DRAFT</b> 的 Agent 版本（专题 C §C7 的"提交"）。
+     *
+     * <p><b>它只做到 DRAFT 为止</b>：不推进发布状态、不跑沙箱、不做审批。后续的
+     * 沙箱/黄金用例/人工批准/灰度仍由既有 {@code /aigov/agent/release/advance} 状态机走——
+     * 训练台提供第二条写状态通道的话，五道门槛就形同虚设。</p>
+     *
+     * <p><b>提交前必须先过预检</b>：内容不合格就直接拒绝并列出问题，
+     * 不允许"先提交、后面再补"（那会让一份不合格内容进入发布流程）。</p>
+     *
+     * @param draftId 草稿ID
+     * @param bo      入参（版本号可空，为空时由服务端生成）
+     * @param actorId 操作用户ID（必须是草稿责任人）
+     * @return 提交结果（含新建/复用的 Agent 与版本号）
+     */
+    AigStudioDraftSubmitVo submitDraft(Long draftId, AigStudioDraftSubmitBo bo, Long actorId);
 
 }

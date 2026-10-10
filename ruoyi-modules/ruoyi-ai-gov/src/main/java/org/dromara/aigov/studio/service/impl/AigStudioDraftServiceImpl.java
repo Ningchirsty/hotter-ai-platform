@@ -5,13 +5,22 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.dromara.aigov.agent.domain.AigAgent;
+import org.dromara.aigov.agent.domain.AigAgentVersion;
+import org.dromara.aigov.agent.enums.AigAgentCategoryEnum;
+import org.dromara.aigov.agent.enums.AigReleaseChannelEnum;
+import org.dromara.aigov.agent.enums.AigReleaseStatusEnum;
+import org.dromara.aigov.agent.mapper.AigAgentMapper;
+import org.dromara.aigov.agent.mapper.AigAgentVersionMapper;
 import org.dromara.aigov.studio.domain.AigStudioDraft;
 import org.dromara.aigov.studio.domain.AigStudioDraftContent;
 import org.dromara.aigov.studio.domain.AigStudioRevision;
 import org.dromara.aigov.studio.domain.bo.AigStudioDraftCreateBo;
 import org.dromara.aigov.studio.domain.bo.AigStudioDraftQueryBo;
 import org.dromara.aigov.studio.domain.bo.AigStudioDraftSaveBo;
+import org.dromara.aigov.studio.domain.bo.AigStudioDraftSubmitBo;
 import org.dromara.aigov.studio.domain.vo.AigStudioDraftDetailVo;
+import org.dromara.aigov.studio.domain.vo.AigStudioDraftSubmitVo;
 import org.dromara.aigov.studio.domain.vo.AigStudioDraftVo;
 import org.dromara.aigov.studio.domain.vo.AigStudioRevisionVo;
 import org.dromara.aigov.studio.domain.vo.AigStudioValidateVo;
@@ -29,6 +38,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -49,6 +59,8 @@ public class AigStudioDraftServiceImpl implements IAigStudioDraftService {
 
     private final AigStudioDraftMapper draftMapper;
     private final AigStudioRevisionMapper revisionMapper;
+    private final AigAgentMapper agentMapper;
+    private final AigAgentVersionMapper agentVersionMapper;
     private final JsonMapper jsonMapper;
 
     @Override
@@ -242,6 +254,213 @@ public class AigStudioDraftServiceImpl implements IAigStudioDraftService {
         vo.getProblems().addAll(collectProblems(draft.getContentJson()));
         vo.setPassed(vo.getProblems().isEmpty());
         return vo;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public AigStudioDraftSubmitVo submitDraft(Long draftId, AigStudioDraftSubmitBo bo, Long actorId) {
+        AigStudioDraft draft = requireDraft(draftId);
+        requireOwner(draft, actorId);
+        requireEditable(draft);
+
+        // 预检必须先过：不允许"先提交、后面再补"——那会让一份不合格内容进入发布流程
+        List<String> problems = collectProblems(draft.getContentJson());
+        if (!problems.isEmpty()) {
+            throw new ServiceException("草稿未通过预检，不能提交：" + String.join("；", problems));
+        }
+        AigStudioDraftContent content = parseContent(draft.getContentJson());
+
+        // 类别必须由草稿显式声明：本仓只有四个与创作工厂绑定的类别，服务层替它挑会挑错实现
+        AigAgentCategoryEnum category = AigAgentCategoryEnum.find(content.getAgentCategory());
+        if (category == null) {
+            throw new ServiceException("草稿未声明合法的 Agent 类别（agentCategory=" + content.getAgentCategory()
+                + "）：当前只接受 " + categoryCodes() + "。非创作类 Agent 需要的新类别属于独立变更，"
+                + "不在本增量内——请先扩展类别枚举与契约。");
+        }
+
+        boolean agentCreated = false;
+        Long agentId = draft.getAgentId();
+        if (agentId == null) {
+            // 从零创建：编码必须未被占用。若已存在，明确拒绝而不是"顺手绑上去"——
+            // 那会把别人的 Agent 变成这份草稿的产物
+            AigAgent existing = agentMapper.selectOne(Wrappers.<AigAgent>lambdaQuery()
+                .eq(AigAgent::getAgentCode, draft.getAgentCode()).last("limit 1"));
+            if (existing != null) {
+                throw new ServiceException("已存在同编码的 Agent（" + draft.getAgentCode()
+                    + "）：请改为「基于它创建草稿」再提交，而不是新建一个同编码对象");
+            }
+            AigAgent agent = new AigAgent();
+            agent.setAgentCode(draft.getAgentCode());
+            agent.setAgentName(StringUtils.blankToDefault(content.getAgentName(), draft.getAgentCode()));
+            agent.setCategory(category.getCode());
+            agent.setOwnerId(draft.getOwnerId());
+            agent.setBuiltin("N");
+            agent.setDescription(StringUtils.substring(content.getRoleDescription(), 0, 500));
+            agent.setStatus("0");
+            agentMapper.insert(agent);
+            if (agent.getAgentId() == null) {
+                throw new ServiceException("创建 Agent 定义失败：未取回主键");
+            }
+            agentId = agent.getAgentId();
+            agentCreated = true;
+        }
+
+        String version = resolveVersion(bo, draft, agentId);
+
+        AigAgentVersion agentVersion = new AigAgentVersion();
+        agentVersion.setAgentId(agentId);
+        agentVersion.setVersion(version);
+        // 只到 DRAFT 为止：发布推进仍归既有状态机（五道门槛）
+        agentVersion.setReleaseStatus(AigReleaseStatusEnum.DRAFT.getCode());
+        // 显式给通道，不依赖 DDL 默认值（默认值一变，行为就跟着变，而这里是有语义的）
+        agentVersion.setReleaseChannel(AigReleaseChannelEnum.TESTING.getCode());
+        agentVersion.setInputSchema(content.getInputSchema());
+        agentVersion.setOutputSchema(content.getOutputSchema());
+        agentVersion.setPromptTemplate(buildPromptTemplate(content));
+        // 结构化留档：把提交时那一版内容原文存进既有 config_json，
+        // 事后要回答「这条版本当时是什么内容」不必靠拼凑
+        agentVersion.setConfigJson(draft.getContentJson());
+        agentVersion.setAllowedTools(joinList(content.getAllowedTools()));
+        agentVersion.setForbiddenTools(joinList(content.getForbiddenTools()));
+        agentVersion.setProviderCapability(content.getProviderCapability());
+        agentVersion.setAllowExternal(StringUtils.blankToDefault(content.getAllowExternal(), "N"));
+        agentVersion.setKnowledgeScopeJson(joinList(content.getKnowledgeScope()));
+        agentVersion.setStatus("0");
+        agentVersion.setRemark(StringUtils.substring(
+            StringUtils.blankToDefault(bo == null ? null : bo.getRemark(),
+                "由训练台草稿 #" + draft.getDraftId() + " 修订 #" + draft.getLatestRevision() + " 提交"), 0, 500));
+        agentVersionMapper.insert(agentVersion);
+        if (agentVersion.getAgentVersionId() == null) {
+            throw new ServiceException("提交失败：Agent 版本未取回主键");
+        }
+
+        // 回写草稿：绑定 Agent（若本次新建）+ 版本 + 已提交哈希 + 状态。
+        // 仍带 CAS（where latest_revision = 读到的值）：提交期间别人改了内容，就不能算"这版提交成功"
+        AigStudioDraft update = new AigStudioDraft();
+        update.setAgentId(agentId);
+        update.setAgentVersionId(agentVersion.getAgentVersionId());
+        update.setLastPublishedHash(draft.getContentHash());
+        update.setStatus(AigStudioDraftStatusEnum.SUBMITTED.getCode());
+        int rows = draftMapper.update(update, Wrappers.<AigStudioDraft>lambdaUpdate()
+            .eq(AigStudioDraft::getDraftId, draft.getDraftId())
+            .eq(AigStudioDraft::getLatestRevision, draft.getLatestRevision()));
+        if (rows == 0) {
+            throw conflict(draft, draft.getLatestRevision());
+        }
+
+        AigStudioDraftSubmitVo vo = new AigStudioDraftSubmitVo();
+        vo.setDraftId(draft.getDraftId());
+        vo.setRevision(draft.getLatestRevision());
+        vo.setContentHash(draft.getContentHash());
+        vo.setAgentId(agentId);
+        vo.setAgentCode(draft.getAgentCode());
+        vo.setAgentCreated(agentCreated);
+        vo.setAgentVersionId(agentVersion.getAgentVersionId());
+        vo.setVersion(version);
+        vo.setReleaseStatus(agentVersion.getReleaseStatus());
+        log.info("训练草稿已提交, draftId={}, revision={}, agentId={}, agentVersionId={}, version={}, agentCreated={}",
+            draft.getDraftId(), draft.getLatestRevision(), agentId, agentVersion.getAgentVersionId(),
+            version, agentCreated);
+        return vo;
+    }
+
+    /**
+     * 解析版本号：给了就用给的；没给按 {@code 0.1.<修订号>} 生成。
+     *
+     * <p>生成号被占用时**报错要求显式指定**，不自动跳到下一个——"悄悄换一个版本号"
+     * 会让调用方以为发布的还是它要的那个版本。</p>
+     *
+     * @param bo      入参（可空）
+     * @param draft   草稿
+     * @param agentId Agent 定义ID
+     * @return 版本号
+     */
+    private String resolveVersion(AigStudioDraftSubmitBo bo, AigStudioDraft draft, Long agentId) {
+        String version = bo == null ? null : (bo.getVersion() == null ? null : bo.getVersion().trim());
+        if (StringUtils.isBlank(version)) {
+            version = "0.1." + draft.getLatestRevision();
+        }
+        AigAgentVersion existing = agentVersionMapper.selectOne(Wrappers.<AigAgentVersion>lambdaQuery()
+            .eq(AigAgentVersion::getAgentId, agentId)
+            .eq(AigAgentVersion::getVersion, version)
+            .last("limit 1"));
+        if (existing != null) {
+            throw new ServiceException("版本号已被占用（agentId=" + agentId + "，version=" + version
+                + "）：请显式指定一个新版本号");
+        }
+        return version;
+    }
+
+    /**
+     * 把八个 Prompt 分节拼成可读的模板文本（提交时落 {@code prompt_template}）。
+     *
+     * @param content 草稿内容
+     * @return 模板文本
+     */
+    private String buildPromptTemplate(AigStudioDraftContent content) {
+        StringBuilder text = new StringBuilder();
+        Map<String, String> sections = content.getPromptSections() == null
+            ? Map.of() : content.getPromptSections();
+        for (String key : AigStudioDraftContent.PROMPT_SECTION_KEYS) {
+            text.append("## ").append(key).append('\n')
+                .append(StringUtils.blankToDefault(sections.get(key), "")).append("\n\n");
+        }
+        return text.toString().trim();
+    }
+
+    /**
+     * 解析草稿内容（已过预检，因此这里解析失败只可能是并发写入损坏，按内部错误抛）。
+     *
+     * @param contentJson 内容
+     * @return 内容模型
+     */
+    private AigStudioDraftContent parseContent(String contentJson) {
+        try {
+            AigStudioDraftContent content = jsonMapper.readValue(contentJson, AigStudioDraftContent.class);
+            if (content == null) {
+                throw new ServiceException("草稿内容为空，不能提交");
+            }
+            return content;
+        } catch (ServiceException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ServiceException("草稿内容无法解析，不能提交：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 逗号连接（空/全空返回 null，避免落一个空串进"清单"列）。
+     *
+     * @param items 列表
+     * @return 连接结果
+     */
+    private String joinList(List<String> items) {
+        if (items == null || items.isEmpty()) {
+            return null;
+        }
+        List<String> cleaned = new ArrayList<>();
+        for (String item : items) {
+            if (StringUtils.isNotBlank(item)) {
+                cleaned.add(item.trim());
+            }
+        }
+        return cleaned.isEmpty() ? null : String.join(",", cleaned);
+    }
+
+    /**
+     * 当前可用的 Agent 类别编码（用于报错文案）。
+     *
+     * @return 形如 {@code PLANNING/VISUAL_DNA/GENERATION/QA}
+     */
+    private String categoryCodes() {
+        StringBuilder codes = new StringBuilder();
+        for (AigAgentCategoryEnum item : AigAgentCategoryEnum.values()) {
+            if (codes.length() > 0) {
+                codes.append('/');
+            }
+            codes.append(item.getCode());
+        }
+        return codes.toString();
     }
 
     /**
