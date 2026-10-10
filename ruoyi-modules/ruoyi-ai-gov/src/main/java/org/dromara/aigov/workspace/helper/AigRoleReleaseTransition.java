@@ -98,7 +98,14 @@ public final class AigRoleReleaseTransition {
             return "没有可执行的流转";
         }
         StringBuilder text = new StringBuilder();
-        for (AigRoleReleaseStatusEnum item : targets) {
+        // ⚠️ 必须按**枚举声明序**遍历，不能直接遍历 Set：Set.of 的迭代顺序未定义，
+        // 同一份代码在不同 JDK/机器上会给出不同文案——本仓 CI 上就翻过车
+        // （本地 TESTING/DISABLED，CI 上 DISABLED/TESTING）。报错文案是给人看的，
+        // 不确定的文案既让测试变 flaky，也会让人以为行为变了。
+        for (AigRoleReleaseStatusEnum item : AigRoleReleaseStatusEnum.values()) {
+            if (!targets.contains(item)) {
+                continue;
+            }
             if (text.length() > 0) {
                 text.append('/');
             }
