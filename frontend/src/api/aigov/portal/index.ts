@@ -4,6 +4,7 @@ import request from '@/utils/request';
 import type {
   AigLaunchCommitVO,
   AigLaunchPrepareVO,
+  AigLaunchRecordVO,
   AigLaunchRequestForm,
   AigPortalRoleHomeVO,
   AigPortalRoleVO,
@@ -70,5 +71,17 @@ export function commitLaunch(data: AigLaunchRequestForm): AxiosPromise<AigLaunch
     url: '/aigov/portal/launch/commit',
     method: 'post',
     data
+  });
+}
+
+/**
+ * 按任务查"这次启动是什么"（专业台回跳入口用）。
+ *
+ * 只返回**当前用户自己发起**的那一次；不是自己发起的会报错（服务端不区分"不存在"与"不是你的"）。
+ */
+export function getLaunchRecordByTask(taskId: string | number): AxiosPromise<AigLaunchRecordVO> {
+  return request({
+    url: '/aigov/portal/launch/records/by-task/' + taskId,
+    method: 'get'
   });
 }

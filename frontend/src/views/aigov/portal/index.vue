@@ -68,7 +68,7 @@
               <p class="action-desc">{{ action.description || '暂无卡片说明' }}</p>
               <div class="action-foot">
                 <span class="action-target">{{ action.targetRef || '—' }}</span>
-                <el-button v-if="navigationPath(action)" type="primary" plain size="small" @click="openPage(action)">
+                <el-button v-if="isNavigable(action)" type="primary" plain size="small" @click="openPage(action)">
                   打开
                 </el-button>
                 <el-button v-else type="primary" size="small" @click="openLaunch(action)">启动</el-button>
@@ -167,9 +167,9 @@ import {
   groupPortalActions,
   isNavigable,
   launchModeLabel,
-  navigationPath,
   taskStatusMeta
 } from './presentation';
+import { buildProfessionalUrl, resolveProfessionalPath } from './professionalLink';
 
 defineOptions({ name: 'AiWorkspace' });
 
@@ -227,12 +227,13 @@ const selectRole = async (roleCode: string) => {
 };
 
 const openPage = (action: AigPortalActionVO) => {
-  const path = navigationPath(action);
+  const path = resolveProfessionalPath(action);
   if (!path) {
     modal.msgWarning('这张卡片的目标不在白名单里，无法打开（请联系岗位负责人核对配置）');
     return;
   }
-  router.push(path);
+  // 带 query 跳转：专业页读的是 location.search，把 taskId 放别处等于没带（见 professionalLink 的说明）
+  router.push(buildProfessionalUrl(path, { roleCode: selectedRoleCode.value, actionCode: action.actionCode }));
 };
 
 const getTasks = async () => {
@@ -254,19 +255,24 @@ const openLaunch = (action: AigPortalActionVO) => {
 };
 
 /**
- * 启动成功后的收尾。
+ * 启动成功后的收尾（增量 4 的桥接点）。
  *
- * 页面类目标的 commit 只是留了一条审计（不建任务），所以成功后直接跳转；
- * 其余目标建出了任务，刷新"我的任务"让员工立刻看到它。
+ * 卡片指向专业页时（页面类、以及 STUDIO 类专业台）**必须把 taskId 带进 URL query**：
+ * 专业页读的是 `location.search`，它据此知道自己是在处理哪一次启动，也据此显示"返回 AI 工作台"。
+ * 不指向专业页的（轻量能力/表单类）就刷新"我的任务"，让员工立刻看到刚建出来的任务。
  */
 const handleLaunched = async (result: AigLaunchCommitVO) => {
   const action = launchAction.value;
-  if (action && result.targetType === 'NAVIGATION') {
-    const path = navigationPath(action);
-    if (path) {
-      router.push(path);
-      return;
-    }
+  const path = resolveProfessionalPath(action);
+  if (action && path) {
+    router.push(
+      buildProfessionalUrl(path, {
+        taskId: result.taskId,
+        roleCode: selectedRoleCode.value,
+        actionCode: action.actionCode
+      })
+    );
+    return;
   }
   await getTasks();
 };

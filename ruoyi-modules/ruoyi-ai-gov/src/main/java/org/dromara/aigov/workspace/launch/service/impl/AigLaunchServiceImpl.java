@@ -9,6 +9,7 @@ import org.dromara.aigov.task.domain.bo.AigTaskCreateBo;
 import org.dromara.aigov.task.service.IAigTaskService;
 import org.dromara.aigov.workspace.domain.AigScenario;
 import org.dromara.aigov.workspace.domain.AigScenarioVersion;
+import org.dromara.aigov.workspace.domain.AigRoleProfile;
 import org.dromara.aigov.workspace.enums.AigActionLaunchModeEnum;
 import org.dromara.aigov.workspace.enums.AigLaunchTargetTypeEnum;
 import org.dromara.aigov.workspace.helper.AigScenarioRef;
@@ -20,13 +21,16 @@ import org.dromara.aigov.workspace.launch.domain.vo.AigLaunchCommitVo;
 import org.dromara.aigov.workspace.launch.domain.vo.AigLaunchPrepareVo;
 import org.dromara.aigov.workspace.launch.domain.vo.AigLaunchProblemVo;
 import org.dromara.aigov.workspace.launch.enums.AigLaunchErrorEnum;
+import org.dromara.aigov.workspace.launch.domain.vo.AigLaunchRecordVo;
 import org.dromara.aigov.workspace.launch.helper.AigLaunchChecklist;
+import org.dromara.aigov.workspace.launch.helper.AigLaunchProjectPolicy;
 import org.dromara.aigov.workspace.launch.helper.AigLaunchRequestDigest;
 import org.dromara.aigov.workspace.launch.helper.IAigLaunchTicketStore;
 import org.dromara.aigov.workspace.launch.mapper.AigLaunchRecordMapper;
 import org.dromara.aigov.workspace.launch.service.IAigLaunchService;
 import org.dromara.aigov.workspace.mapper.AigScenarioMapper;
 import org.dromara.aigov.workspace.mapper.AigScenarioVersionMapper;
+import org.dromara.aigov.workspace.mapper.AigRoleProfileMapper;
 import org.dromara.aigov.workspace.portal.domain.AigPortalActionContext;
 import org.dromara.aigov.workspace.portal.helper.AigPortalActor;
 import org.dromara.aigov.workspace.portal.service.IAigPortalService;
@@ -82,6 +86,8 @@ public class AigLaunchServiceImpl implements IAigLaunchService {
     private final IAigUserQuotaService quotaService;
     private final AigScenarioMapper scenarioMapper;
     private final AigScenarioVersionMapper scenarioVersionMapper;
+    private final AigRoleProfileMapper roleProfileMapper;
+    private final AigLaunchProjectPolicy projectPolicy;
     private final AigLaunchProperties properties;
 
     @Override
@@ -253,12 +259,12 @@ public class AigLaunchServiceImpl implements IAigLaunchService {
             context.targetType(), context.targetRef(), context.studioRouteKey(), context.requiredContextKeys(),
             bo.getContext(), bo.getTaskType(), bo.getProjectType(), bo.getDataLevel(), bo.getSnapshotJson(),
             scenarioUsable,
-            // 项目权：本增量**不引入**项目权判定（跨域项目权在增量 4 随专业台桥接一起接）。
-            // 这里显式传 false 并写清楚，而不是留一个"以后再说"的沉默——沉默会让下一个人以为已经判过了。
-            false,
+            // 项目权：由判定口回答。当前实现是 **fail-closed**（判不了就拒绝）——
+            // "没校验的放行"会让越权请求看起来一切正常，比拒绝糟得多
+            bo.getProjectId() != null && !projectPolicy.allowed(bo.getProjectId(), actor),
             // 运行时健康：健康数据在建模路由解析（aig_route → aig_model_governance.health_status）之后才确定
-            // "这张卡片该用哪个模型"。本增量的权威门槛仍在下游（任务执行时的策略与路由点），
-            // 所以这里不主动判，留出这个位置让增量 3b/4 接上。
+            // "这张卡片该用哪个模型"。本增量的权威门槛仍在下游（任务执行时的策略与路由点）。
+            // 这里刻意**不**把"健康未知"当成不可用：那会让所有启动都失败，而未知并不等于不可用。
             false);
         List<String> problems = new ArrayList<>();
         for (AigLaunchErrorEnum problem : AigLaunchChecklist.check(input)) {
@@ -487,14 +493,46 @@ public class AigLaunchServiceImpl implements IAigLaunchService {
         return problems;
     }
 
+    @Override
+    public AigLaunchRecordVo findByTaskId(Long taskId, AigPortalActor actor) {
+        requireActor(actor);
+        if (taskId == null) {
+            throw new ServiceException("任务ID不能为空");
+        }
+        // ★按登录用户过滤，而不是"先查再判"：不这么做，任何登录用户猜到 taskId
+        // 就能看到"别人从哪张卡片启动的"。它不是敏感数据，但没有理由做成可枚举的接口。
+        AigLaunchRecord record = recordMapper.selectOne(Wrappers.<AigLaunchRecord>lambdaQuery()
+            .eq(AigLaunchRecord::getTaskId, taskId)
+            .eq(AigLaunchRecord::getUserId, actor.userId())
+            .last("limit 1"));
+        if (record == null) {
+            throw new ServiceException("找不到这次启动的岗位来源（可能不是由岗位卡片发起的）");
+        }
+        AigLaunchRecordVo vo = new AigLaunchRecordVo();
+        vo.setLaunchId(record.getLaunchId());
+        vo.setTaskId(record.getTaskId());
+        vo.setTaskNo(record.getTaskNo());
+        vo.setRoleCode(record.getRoleCode());
+        vo.setActionCode(record.getActionCode());
+        vo.setLaunchMode(record.getLaunchMode());
+        vo.setTargetType(record.getTargetType());
+        vo.setTargetRef(record.getTargetRef());
+        vo.setCommittedAt(record.getCommittedAt());
+        // 岗位名称：回跳入口上直接显示"返回 <岗位>"，省掉专业页再查一次
+        AigRoleProfile profile = roleProfileMapper.selectOne(Wrappers.<AigRoleProfile>lambdaQuery()
+            .eq(AigRoleProfile::getRoleCode, record.getRoleCode())
+            .last("limit 1"));
+        vo.setRoleName(profile == null ? null : profile.getRoleName());
+        return vo;
+    }
+
     /**
      * 记录 → commit 结果。
      *
      * @param record 记录
      * @return 结果
      */
-    private AigLaunchCommitVo toCommitVo(AigLaunchRecord record) {
-        AigLaunchCommitVo vo = new AigLaunchCommitVo();
+    private AigLaunchCommitVo toCommitVo(AigLaunchRecord record) {        AigLaunchCommitVo vo = new AigLaunchCommitVo();
         vo.setLaunchId(record.getLaunchId());
         vo.setTaskId(record.getTaskId());
         vo.setTaskNo(record.getTaskNo());

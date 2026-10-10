@@ -1,5 +1,8 @@
 <template>
   <div class="studio">
+    <!-- 任务来自岗位卡片时显示"返回 AI 工作台"（增量 4）。本页不使用 CreativeWorkspace 容器，所以单独挂一次；
+         不传 taskId：本页本来就读 location.search 里的 queryTaskId，组件按同一处读取，避免两份来源 -->
+    <BackToWorkspace />
     <!-- 已删项目素材清单 + 批量清理（R26）：只有还留着东西的项目才会出现在这里 -->
     <el-dialog v-model="deletedMaterialsVisible" title="清理已删项目的素材" width="760px" append-to-body>
       <p class="hint">
@@ -436,6 +439,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import BackToWorkspace from '@/views/aigov/portal/BackToWorkspace.vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import type { UploadRequestOptions } from 'element-plus';
 import { productOptions } from '@/api/content/product';
