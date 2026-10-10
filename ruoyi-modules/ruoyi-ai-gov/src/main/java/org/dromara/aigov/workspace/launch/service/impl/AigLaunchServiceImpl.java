@@ -79,6 +79,12 @@ public class AigLaunchServiceImpl implements IAigLaunchService {
      */
     private static final Long NO_ORG_SENTINEL = 0L;
 
+    /**
+     * 项目权"判定不可用"时给员工看的话（不是"你没权限"，而是"平台还判断不了"）
+     */
+    private static final String PROJECT_NOT_ENFORCEABLE_MESSAGE =
+        "项目绑定暂不可用：平台还没有接入项目权限校验，因此带项目的启动会被拒绝";
+
     private final IAigPortalService portalService;
     private final IAigLaunchTicketStore ticketStore;
     private final AigLaunchRecordMapper recordMapper;
@@ -412,7 +418,7 @@ public class AigLaunchServiceImpl implements IAigLaunchService {
     private AigLaunchPrepareVo prepareVo(AigPortalActionContext context, List<String> problems,
                                          List<String> missingKeys, String ticketId, LocalDateTime expiresAt) {
         AigLaunchPrepareVo vo = new AigLaunchPrepareVo();
-        vo.setProblems(toProblemVos(problems));
+        vo.setProblems(problemsOf(problems));
         vo.setPassed(problems.isEmpty());
         vo.setTicketId(ticketId);
         vo.setExpiresAt(expiresAt);
@@ -464,7 +470,7 @@ public class AigLaunchServiceImpl implements IAigLaunchService {
      */
     private AigLaunchCommitVo commitVo(List<String> problems) {
         AigLaunchCommitVo vo = new AigLaunchCommitVo();
-        vo.setProblems(toProblemVos(problems));
+        vo.setProblems(problemsOf(problems));
         vo.setPassed(problems.isEmpty());
         return vo;
     }
@@ -475,15 +481,26 @@ public class AigLaunchServiceImpl implements IAigLaunchService {
      * <p>文案来自 {@code AigLaunchErrorEnum}——它是**唯一**的来源：前端不再写第二份"码 → 中文"表，
      * 否则后端改了措辞，界面还显示老话，而这类不一致没人会报 bug。</p>
      *
-     * @param codes 问题码
+     * <p><b>例外只有一处</b>：{@code PROJECT_ACCESS_DENIED} 在这条链路上今天**只可能**
+     * 因为"项目权判定还没接入"而被触发，此时枚举里那句"你没有这个项目的访问权限"是**假话**——
+     * 员工会以为自己被拒了权限，其实是平台还判断不了。所以判定口自报不可判定时，
+     * 换成如实说明（判定口换实现后 {@code enforceable()} 变 true，文案自动恢复）。</p>
+     *
+     * @param codes    问题码
+     * @param overrides 指定码的自定义文案（可空）
      * @return 对外问题（保持码的顺序）
      */
-    private static List<AigLaunchProblemVo> toProblemVos(List<String> codes) {
+    private static List<AigLaunchProblemVo> toProblemVos(List<String> codes, Map<String, String> overrides) {
         List<AigLaunchProblemVo> problems = new ArrayList<>();
         if (codes == null) {
             return problems;
         }
+        Map<String, String> custom = overrides == null ? Map.of() : overrides;
         for (String code : codes) {
+            if (custom.containsKey(code)) {
+                problems.add(new AigLaunchProblemVo(code, custom.get(code)));
+                continue;
+            }
             AigLaunchErrorEnum known = AigLaunchErrorEnum.find(code);
             problems.add(known == null
                 // 未知码也要能显示（而不是空白），同时保留码本身便于排查
@@ -491,6 +508,20 @@ public class AigLaunchServiceImpl implements IAigLaunchService {
                 : new AigLaunchProblemVo(known.getCode(), known.getMessage()));
         }
         return problems;
+    }
+
+    /**
+     * 组装对外问题（在标准文案之上叠加"判定不可用"这处例外）。
+     *
+     * @param codes 问题码
+     * @return 对外问题
+     */
+    private List<AigLaunchProblemVo> problemsOf(List<String> codes) {
+        if (projectPolicy.enforceable()) {
+            return toProblemVos(codes, null);
+        }
+        return toProblemVos(codes, Map.of(AigLaunchErrorEnum.PROJECT_ACCESS_DENIED.getCode(),
+            PROJECT_NOT_ENFORCEABLE_MESSAGE));
     }
 
     @Override

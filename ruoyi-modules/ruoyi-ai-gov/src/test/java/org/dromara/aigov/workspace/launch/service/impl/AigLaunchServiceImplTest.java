@@ -135,6 +135,10 @@ class AigLaunchServiceImplTest {
         assertFalse(vo.getPassed());
         assertNull(vo.getTicketId(), "判不了项目权就不能发票");
         assertEquals(List.of(AigLaunchErrorEnum.PROJECT_ACCESS_DENIED.getCode()), codes(vo.getProblems()));
+        // 文案必须如实：今天是"平台还判断不了"，不是"你没有权限"——后者会让员工以为自己被拒了权限
+        String message = vo.getProblems().get(0).getMessage();
+        assertTrue(message.contains("暂不可用"), "应说明判定尚未接入：" + message);
+        assertFalse(message.contains("没有这个项目的访问权限"), "不能把「判不了」说成「你没权限」：" + message);
     }
 
     @Test
