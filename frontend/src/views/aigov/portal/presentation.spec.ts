@@ -5,10 +5,12 @@ import {
   buildIdempotencyKey,
   groupPortalActions,
   hasProblem,
+  isFavorite,
   isNavigable,
   launchModeLabel,
   navigationPath,
   problemTexts,
+  sortRolesByFavorite,
   taskStatusMeta
 } from './presentation';
 
@@ -103,5 +105,22 @@ describe('员工 AI 工作台展示层', () => {
     expect(launchModeLabel('STUDIO')).toBe('专业台');
     expect(launchModeLabel('WEIRD')).toBe('WEIRD');
     expect(launchModeLabel(undefined)).toBe('未指定');
+  });
+
+  it('收藏判定与排序：收藏在前，其余保持服务端顺序', () => {
+    expect(isFavorite(['A'], 'A')).toBe(true);
+    expect(isFavorite(['A'], 'B')).toBe(false);
+    expect(isFavorite(undefined, 'A')).toBe(false);
+    expect(isFavorite(['A'], undefined)).toBe(false);
+
+    const roles = [{ roleCode: 'A' }, { roleCode: 'B' }, { roleCode: 'C' }];
+    expect(sortRolesByFavorite(roles, ['C']).map(r => r.roleCode)).toEqual(['C', 'A', 'B']);
+    // 收藏里含"已不可见"的岗位时，只把可见的排前面，不凭空补位
+    expect(sortRolesByFavorite(roles, ['GONE', 'B']).map(r => r.roleCode)).toEqual(['B', 'A', 'C']);
+    expect(sortRolesByFavorite(undefined, ['A'])).toEqual([]);
+    // 不修改入参（调用方可能还在用原顺序）
+    const original = [...roles];
+    sortRolesByFavorite(roles, ['C']);
+    expect(roles).toEqual(original);
   });
 });
