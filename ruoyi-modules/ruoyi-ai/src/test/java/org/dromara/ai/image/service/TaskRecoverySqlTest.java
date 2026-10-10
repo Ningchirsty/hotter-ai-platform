@@ -26,7 +26,7 @@ class TaskRecoverySqlTest {
             + "task_name VARCHAR(128), status VARCHAR(32), del_flag VARCHAR(1) DEFAULT '0', "
             + "capability_code VARCHAR(32), workflow_code VARCHAR(64), workflow_version VARCHAR(32), model_code VARCHAR(64), "
             + "size_label VARCHAR(64), strength_label VARCHAR(64), prompt VARCHAR(1024), negative_prompt VARCHAR(1024), "
-            + "input_json VARCHAR(1024), comfy_prompt_id VARCHAR(64), comfy_worker VARCHAR(64), "
+            + "input_json VARCHAR(1024), idempotency_key VARCHAR(128), comfy_prompt_id VARCHAR(64), comfy_worker VARCHAR(64), "
             + "output_asset_id BIGINT, cover_asset_id BIGINT, progress INT, error_code VARCHAR(64), error_message VARCHAR(1024), "
             + "attempt_count INT, output_width INT, output_height INT, output_has_alpha INT NOT NULL DEFAULT 0, output_size_bytes BIGINT, "
             + "submitted_time TIMESTAMP, started_time TIMESTAMP, create_time TIMESTAMP, finished_time TIMESTAMP, "
