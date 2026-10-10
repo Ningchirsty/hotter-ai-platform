@@ -149,8 +149,45 @@
             <el-checkbox v-for="gate in gateOptions" :key="gate.value" :value="gate.value">{{ gate.label }}</el-checkbox>
           </el-checkbox-group>
           <div class="gate-hint">
-            服务层不会只看这里勾了什么：Manifest 校验与黄金用例会去库里核对证据，
+            服务层不会只看这里勾了什么：Manifest 校验、沙箱运行、黄金用例、灰度达标都会去库里核对证据，
             没有证据的声明一律拒绝。缺哪些门槛可点下面的「查还差什么」。
+          </div>
+        </el-form-item>
+        <el-form-item label="沙箱证据">
+          <div style="width: 100%">
+            <el-alert
+              v-if="sandboxEvidence"
+              :type="sandboxEvidence.satisfied ? 'success' : 'warning'"
+              :closable="false"
+              class="mb-2"
+              show-icon
+            >
+              <template #title>
+                {{ sandboxEvidence.satisfied ? '沙箱证据成立（可勾选「沙箱运行」推进）' : '沙箱证据不成立' }}
+              </template>
+              <div v-if="sandboxEvidence.satisfied" class="gate-hint">
+                作业 {{ sandboxEvidence.jobId }}、镜像 {{ sandboxEvidence.imageRef }}、退出码
+                {{ sandboxEvidence.exitCode }}、产物 {{ sandboxEvidence.artifactCount }} 个、网络
+                {{ sandboxEvidence.network }}、登记于 {{ sandboxEvidence.recordedAt }}
+              </div>
+              <div v-else class="gate-hint">
+                {{ sandboxEvidence.reason }}
+                <template v-if="sandboxEvidence.runId">
+                  <br />最近一次运行：作业 {{ sandboxEvidence.jobId }}、退出码 {{ sandboxEvidence.exitCode }}、超时
+                  {{ sandboxEvidence.timedOut }}、网络 {{ sandboxEvidence.network }}
+                </template>
+              </div>
+            </el-alert>
+            <el-button
+              v-hasPermi="['aig:sandbox:record']"
+              link
+              type="primary"
+              icon="Upload"
+              @click="openRecord"
+            >
+              登记沙箱运行
+            </el-button>
+            <el-button link icon="Refresh" @click="loadSandboxEvidence">刷新证据</el-button>
           </div>
         </el-form-item>
         <el-form-item label="说明">
@@ -164,12 +201,47 @@
         <el-button type="primary" @click="submitAdvance">确定推进</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="recordVisible" title="登记沙箱运行" width="640px" append-to-body>
+      <el-alert type="info" :closable="false" class="mb-2">
+        这一步只做「把执行器吐出来的结果记进账本」。作业本身在宿主机上跑：
+        <code>/opt/hotter-sandbox/sandbox-worker.sh --once</code>，随后把作业目录里的
+        <code>result.json</code> **原样**粘到下面（不要手改、不要只挑几个字段填——手改过的结果
+        与库里的哈希对不上，事后也说不清是谁改的）。
+      </el-alert>
+      <el-form ref="recordFormRef" :model="recordForm" label-width="110px">
+        <el-form-item label="对象">
+          <el-input :model-value="recordForm.targetType + ' #' + recordForm.targetVersionId" disabled />
+        </el-form-item>
+        <el-form-item label="作业ID" prop="jobId">
+          <el-input v-model="recordForm.jobId" placeholder="作业目录名，例如 vibeposter-20261010-01" />
+          <div class="gate-hint">必须与 result.json 里的 jobId 一致；一个作业只能登记一次。</div>
+        </el-form-item>
+        <el-form-item label="Agent 编码">
+          <el-input v-model="recordForm.agentCode" placeholder="可空；便于事后按 Agent 查" />
+        </el-form-item>
+        <el-form-item label="result.json" prop="resultJson">
+          <el-input
+            v-model="recordForm.resultJson"
+            type="textarea"
+            :rows="10"
+            placeholder='{"jobId":"...","image":"...","exitCode":0,"timedOut":false,"network":"none",...}'
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="recordVisible = false">取消</el-button>
+        <el-button type="primary" :loading="recordSubmitting" @click="submitRecord">提交登记</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { getAgentVersion, listAgent, listAgentVersion, advanceRelease, missingGates } from '@/api/aigov/agent';
 import type { AigAgentQuery, AigAgentVO, AigAgentVersionVO, AigReleaseAdvanceForm } from '@/api/aigov/agent/types';
+import { sandboxRunEvidence, recordSandboxRun } from '@/api/aigov/sandbox';
+import type { AigSandboxRunEvidence, AigSandboxRunRecordForm } from '@/api/aigov/sandbox/types';
 import { useLoading } from '@/hooks/async/useLoading';
 import { useSearchReset } from '@/hooks/form/useSearchReset';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
@@ -206,6 +278,18 @@ const versionVisible = ref(false);
 const advanceVisible = ref(false);
 const missingGateText = ref('');
 const advanceFormRef = ref<ElFormInstance>();
+const sandboxEvidence = ref<AigSandboxRunEvidence>();
+const recordVisible = ref(false);
+const recordSubmitting = ref(false);
+const recordFormRef = ref<ElFormInstance>();
+
+const recordForm = ref<AigSandboxRunRecordForm>({
+  targetType: 'AGENT_VERSION',
+  targetVersionId: '',
+  jobId: '',
+  agentCode: '',
+  resultJson: ''
+});
 
 const queryParams = ref<AigAgentQuery>({
   pageNum: 1,
@@ -299,6 +383,61 @@ const openAdvance = async (row: AigAgentVersionVO) => {
   };
   missingGateText.value = '';
   advanceVisible.value = true;
+  // 打开就查一次沙箱证据：管理员在这里最需要知道的就是"为什么还推不动"
+  await loadSandboxEvidence();
+};
+
+/**
+ * 查当前版本的沙箱运行证据（门槛 SANDBOX_RUN）。
+ *
+ * 后端对"没有证据"也是 200 + satisfied:false + reason，所以这里不做错误分支，
+ * 只把结论与原因如实显示——把失败当"没跑过"来猜会掩盖真正的故障。
+ */
+const loadSandboxEvidence = async () => {
+  if (!advanceForm.value.targetVersionId) {
+    sandboxEvidence.value = undefined;
+    return;
+  }
+  try {
+    const res = await sandboxRunEvidence(advanceForm.value.targetType, advanceForm.value.targetVersionId);
+    sandboxEvidence.value = res.data;
+  } catch {
+    sandboxEvidence.value = undefined;
+  }
+};
+
+/** 打开登记对话框（对象沿用当前版本，避免登记到别的版本上） */
+const openRecord = () => {
+  recordForm.value = {
+    targetType: advanceForm.value.targetType,
+    targetVersionId: advanceForm.value.targetVersionId,
+    jobId: '',
+    agentCode: '',
+    resultJson: ''
+  };
+  recordVisible.value = true;
+};
+
+/** 提交登记：把执行器输出的 result.json 原文交上去 */
+const submitRecord = async () => {
+  if (!recordForm.value.jobId) {
+    modal.msgError('请填作业ID（与 result.json 里的 jobId 一致）');
+    return;
+  }
+  if (!recordForm.value.resultJson) {
+    modal.msgError('请粘贴 result.json 原文');
+    return;
+  }
+  await modal.confirm('确认登记这条沙箱运行？一个作业只能登记一次，登记后不能修改。');
+  recordSubmitting.value = true;
+  try {
+    await recordSandboxRun(recordForm.value);
+    modal.msgSuccess('已登记');
+    recordVisible.value = false;
+    await loadSandboxEvidence();
+  } finally {
+    recordSubmitting.value = false;
+  }
 };
 
 /** 查「还差哪些门槛」 */
