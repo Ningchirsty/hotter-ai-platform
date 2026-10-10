@@ -7,6 +7,12 @@
     :data-step-hosted="hostedCodes.join(',')"
     :data-step-components="visibleComponents.join(',')"
   >
+    <!--
+      任务来自岗位卡片时显示"返回 AI 工作台"（R44 / 增量 4）。
+      放在工作台容器里而不是各页各写一遍：五个创作页都用它，一处接线就全都有。
+      不是岗位发起的任务（或不是自己发起的）时组件自己隐藏，不影响本页。
+    -->
+    <BackToWorkspace :task-id="taskId" />
     <!-- 按配置顺序装配：GUIDE / MAIN / COMPONENT / SKIP -->
     <template v-for="slot in plan" :key="slot.code">
       <!-- 步骤导航：指引线（R16 起配置驱动；这里由工作台托管面板入口） -->
@@ -196,6 +202,7 @@ import CreativeFlowGuide from './CreativeFlowGuide.vue';
 import CreativeInspectorPanel from './CreativeInspectorPanel.vue';
 import CreativeAssetDrawer from './CreativeAssetDrawer.vue';
 import CreativeQaPanel from './CreativeQaPanel.vue';
+import BackToWorkspace from '@/views/aigov/portal/BackToWorkspace.vue';
 import { useCreativeFlow } from '../composables/useCreativeFlow';
 import { provideStepNumbering } from '../composables/stepNumbering';
 import {

@@ -132,3 +132,17 @@ export interface AigLaunchCommitVO {
   problems?: AigLaunchProblemVO[];
   passed?: boolean;
 }
+
+/** 启动记录（按任务查；专业台回跳入口用） */
+export interface AigLaunchRecordVO {
+  launchId?: string | number;
+  taskId?: string | number;
+  taskNo?: string;
+  roleCode?: string;
+  roleName?: string;
+  actionCode?: string;
+  launchMode?: string;
+  targetType?: string;
+  targetRef?: string;
+  committedAt?: string;
+}

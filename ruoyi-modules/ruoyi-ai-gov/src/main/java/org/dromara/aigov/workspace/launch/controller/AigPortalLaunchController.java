@@ -1,10 +1,12 @@
 package org.dromara.aigov.workspace.launch.controller;
 
 import cn.dev33.satoken.annotation.SaCheckLogin;
+import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
 import org.dromara.aigov.workspace.launch.domain.bo.AigLaunchRequestBo;
 import org.dromara.aigov.workspace.launch.domain.vo.AigLaunchCommitVo;
 import org.dromara.aigov.workspace.launch.domain.vo.AigLaunchPrepareVo;
+import org.dromara.aigov.workspace.launch.domain.vo.AigLaunchRecordVo;
 import org.dromara.aigov.workspace.launch.service.IAigLaunchService;
 import org.dromara.aigov.workspace.portal.helper.AigPortalActor;
 import org.dromara.aigov.workspace.portal.helper.AigPortalActorProvider;
@@ -13,6 +15,8 @@ import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.redis.annotation.RepeatSubmit;
 import org.dromara.common.web.core.BaseController;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -69,6 +73,18 @@ public class AigPortalLaunchController extends BaseController {
     @PostMapping("/commit")
     public R<AigLaunchCommitVo> commit(@RequestBody @Validated AigLaunchRequestBo bo) {
         return R.ok(launchService.commit(bo, requireActor()));
+    }
+
+    /**
+     * 按任务查"这次启动是什么"（专业台回跳用；只返回当前用户自己发起的）。
+     *
+     * @param taskId 平台任务ID
+     * @return 启动记录
+     */
+    @SaCheckLogin
+    @GetMapping("/records/by-task/{taskId:\\d+}")
+    public R<AigLaunchRecordVo> byTask(@NotNull(message = "任务ID不能为空") @PathVariable Long taskId) {
+        return R.ok(launchService.findByTaskId(taskId, requireActor()));
     }
 
     /**

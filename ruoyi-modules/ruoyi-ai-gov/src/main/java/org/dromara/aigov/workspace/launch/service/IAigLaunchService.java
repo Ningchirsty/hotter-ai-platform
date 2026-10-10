@@ -3,6 +3,7 @@ package org.dromara.aigov.workspace.launch.service;
 import org.dromara.aigov.workspace.launch.domain.bo.AigLaunchRequestBo;
 import org.dromara.aigov.workspace.launch.domain.vo.AigLaunchCommitVo;
 import org.dromara.aigov.workspace.launch.domain.vo.AigLaunchPrepareVo;
+import org.dromara.aigov.workspace.launch.domain.vo.AigLaunchRecordVo;
 import org.dromara.aigov.workspace.portal.helper.AigPortalActor;
 
 /**
@@ -42,5 +43,15 @@ public interface IAigLaunchService {
      * @return 启动结果（业务拒绝以 problems 返回）
      */
     AigLaunchCommitVo commit(AigLaunchRequestBo bo, AigPortalActor actor);
+
+    /**
+     * 按任务查"这次启动是什么"（专业台回跳用；范围恒为当前用户）。
+     *
+     * @param taskId 平台任务ID
+     * @param actor  当前用户
+     * @return 启动记录
+     * @throws org.dromara.common.core.exception.ServiceException 找不到、或不是当前用户发起的
+     */
+    AigLaunchRecordVo findByTaskId(Long taskId, AigPortalActor actor);
 
 }

@@ -14,10 +14,14 @@ import org.dromara.aigov.workspace.launch.domain.bo.AigLaunchRequestBo;
 import org.dromara.aigov.workspace.launch.domain.vo.AigLaunchCommitVo;
 import org.dromara.aigov.workspace.launch.domain.vo.AigLaunchPrepareVo;
 import org.dromara.aigov.workspace.launch.domain.vo.AigLaunchProblemVo;
+import org.dromara.aigov.workspace.launch.domain.vo.AigLaunchRecordVo;
 import org.dromara.aigov.workspace.launch.enums.AigLaunchErrorEnum;
+import org.dromara.aigov.workspace.launch.helper.AigLaunchProjectPolicyNotYetEnforceable;
 import org.dromara.aigov.workspace.launch.helper.AigLaunchRequestDigest;
 import org.dromara.aigov.workspace.launch.helper.IAigLaunchTicketStore;
 import org.dromara.aigov.workspace.launch.mapper.AigLaunchRecordMapper;
+import org.dromara.aigov.workspace.domain.AigRoleProfile;
+import org.dromara.aigov.workspace.mapper.AigRoleProfileMapper;
 import org.dromara.aigov.workspace.mapper.AigScenarioMapper;
 import org.dromara.aigov.workspace.mapper.AigScenarioVersionMapper;
 import org.dromara.aigov.workspace.portal.domain.AigPortalActionContext;
@@ -43,6 +47,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -73,6 +78,7 @@ class AigLaunchServiceImplTest {
     private IAigPortalService portalService;
     private IAigTaskService taskService;
     private AigLaunchRecordMapper recordMapper;
+    private AigRoleProfileMapper roleProfileMapper;
     private AigLaunchServiceImpl service;
     private InMemoryTicketStore ticketStore;
 
@@ -108,10 +114,52 @@ class AigLaunchServiceImplTest {
         portalService = mock(IAigPortalService.class);
         taskService = mock(IAigTaskService.class);
         recordMapper = mock(AigLaunchRecordMapper.class);
+        roleProfileMapper = mock(AigRoleProfileMapper.class);
         ticketStore = new InMemoryTicketStore();
+        // 项目权判定用**真实实现**：它当前是 fail-closed，而"判不了就拒绝"正是要被钉住的行为
         service = new AigLaunchServiceImpl(portalService, ticketStore, recordMapper, taskService,
             mock(IAigUserQuotaService.class), mock(AigScenarioMapper.class),
-            mock(AigScenarioVersionMapper.class), new AigLaunchProperties());
+            mock(AigScenarioVersionMapper.class), roleProfileMapper,
+            new AigLaunchProjectPolicyNotYetEnforceable(), new AigLaunchProperties());
+    }
+
+    @Test
+    @DisplayName("带项目ID的启动被拒绝：项目权判定尚未接入时 fail-closed，而不是放行")
+    void projectBindingIsRejectedUntilItCanBeChecked() {
+        stubCard("NAVIGATION", "NAVIGATION", "AIGOV_TASK");
+        AigLaunchRequestBo bo = request("key-1");
+        bo.setProjectId(4242L);
+
+        AigLaunchPrepareVo vo = service.prepare(bo, ACTOR);
+
+        assertFalse(vo.getPassed());
+        assertNull(vo.getTicketId(), "判不了项目权就不能发票");
+        assertEquals(List.of(AigLaunchErrorEnum.PROJECT_ACCESS_DENIED.getCode()), codes(vo.getProblems()));
+    }
+
+    @Test
+    @DisplayName("按任务查启动来源：只查自己发起的，并带上岗位名称供回跳入口显示")
+    void findByTaskIdIsScopedToCurrentUser() {
+        AigLaunchRecord record = existingRecord("key-1", "digest");
+        record.setRoleCode("GRAPHIC_DESIGNER_AI");
+        record.setActionCode("A1");
+        when(recordMapper.selectOne(any())).thenReturn(record);
+        AigRoleProfile profile = new AigRoleProfile();
+        profile.setRoleCode("GRAPHIC_DESIGNER_AI");
+        profile.setRoleName("平面设计 AI 工作台");
+        when(roleProfileMapper.selectOne(any())).thenReturn(profile);
+
+        AigLaunchRecordVo vo = service.findByTaskId(88L, ACTOR);
+
+        assertEquals(88L, vo.getTaskId());
+        assertEquals("T-88", vo.getTaskNo());
+        assertEquals("平面设计 AI 工作台", vo.getRoleName());
+        assertEquals("A1", vo.getActionCode());
+
+        // 找不到（含"是别人发起的"）：一律同一句话，不确认任务是否存在
+        when(recordMapper.selectOne(any())).thenReturn(null);
+        ServiceException e = assertThrows(ServiceException.class, () -> service.findByTaskId(99L, ACTOR));
+        assertTrue(e.getMessage().contains("找不到"));
     }
 
     @Test
