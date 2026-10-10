@@ -8,7 +8,9 @@ import org.dromara.aigov.studio.domain.bo.AigStudioDraftCreateBo;
 import org.dromara.aigov.studio.domain.bo.AigStudioDraftQueryBo;
 import org.dromara.aigov.studio.domain.bo.AigStudioDraftRollbackBo;
 import org.dromara.aigov.studio.domain.bo.AigStudioDraftSaveBo;
+import org.dromara.aigov.studio.domain.bo.AigStudioDraftSubmitBo;
 import org.dromara.aigov.studio.domain.vo.AigStudioDraftDetailVo;
+import org.dromara.aigov.studio.domain.vo.AigStudioDraftSubmitVo;
 import org.dromara.aigov.studio.domain.vo.AigStudioDraftVo;
 import org.dromara.aigov.studio.domain.vo.AigStudioRevisionVo;
 import org.dromara.aigov.studio.domain.vo.AigStudioValidateVo;
@@ -164,6 +166,22 @@ public class AigStudioDraftController extends BaseController {
                                               @RequestBody @Validated AigStudioDraftRollbackBo bo) {
         return R.ok(draftService.rollback(draftId, bo.getTargetRevisionNo(),
             bo.getExpectedRevision(), requireActor()));
+    }
+
+    /**
+     * 提交草稿：固化成一条 <b>DRAFT</b> Agent 版本（不推进发布状态）。
+     *
+     * @param draftId 草稿ID
+     * @param bo      入参（版本号可空）
+     * @return 提交结果
+     */
+    @SaCheckPermission(AigConstants.PERM_STUDIO_DRAFT_SUBMIT)
+    @RepeatSubmit
+    @PostMapping("/{draftId:\\d+}/submit")
+    public R<AigStudioDraftSubmitVo> submit(@NotNull(message = "草稿ID不能为空")
+                                            @PathVariable Long draftId,
+                                            @RequestBody(required = false) AigStudioDraftSubmitBo bo) {
+        return R.ok(draftService.submitDraft(draftId, bo, requireActor()));
     }
 
     /**

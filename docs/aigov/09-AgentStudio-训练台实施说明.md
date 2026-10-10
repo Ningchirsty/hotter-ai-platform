@@ -154,7 +154,7 @@ script/sql/aig_studio.sql
 
 ---
 
-## 四、增量 S3：HTTP 面 + 权限/菜单 + 静态预检（✅ 已完成，`submit` 待定）
+## 四、增量 S3：HTTP 面 + 权限/菜单 + 静态预检 + 提交（✅ 已完成）
 
 ### 4.1 落地物
 
@@ -217,7 +217,41 @@ script/sql/aig_studio.sql
   这正是附件「从零创建 Agent 草稿」的完整形态，但也意味着**平台首次出现在线创建 Agent 定义的写通道**。
 
 另外 `version` 字符串的来处也要定：由调用方显式给（我倾向这个，唯一性校验即可），
-还是按修订号自动生成。**这两点定了我就接着做 submit。**
+还是按修订号自动生成。
+
+> **2026-10-10 用户选择：B（同时支持从零创建 Agent 定义）**，因此下面 §4.7 按 B 实现；
+> 版本号采取"调用方给就用给的、不给按 `0.1.<修订号>` 生成，被占用则报错要求显式指定"。
+
+### 4.7 提交（`submitDraft`）：按 B 实现
+
+**它只做到 DRAFT 为止**：不推进发布状态、不跑沙箱、不做审批。后续门槛仍走既有
+`/aigov/agent/release/advance`——训练台提供第二条写状态通道的话，五道门槛就形同虚设。
+
+流程与四条刻意的约束：
+
+1. **预检必须先过**：内容不合格直接拒绝并列出问题，不允许"先提交、后面再补"
+   （那会让一份不合格内容进入发布流程）。
+2. **类别必须由草稿显式声明**（`agentCategory`）：本仓只有四个与创作工厂**具体实现**绑定的类别
+   （`PLANNING`=详情页策划 / `VISUAL_DNA` / `GENERATION` / `QA`）。服务层替它挑会挑出一个与内容
+   毫不相干的实现绑定；而新增类别会动枚举与契约，属独立变更。所以没写或写错 → **明确拒绝并列出可用值**，
+   报错里同时说明"非创作类 Agent 需要的新类别不在本增量内"。
+3. **从零创建时，编码已被占用就拒绝**，不"顺手绑上去"——那会把别人的 Agent 变成这份草稿的产物；
+   正确做法是改为"基于它创建草稿"。
+4. **版本号被占用报错要求显式指定**，不自动跳到下一个——"悄悄换一个版本号"会让调用方
+   以为发布的还是它要的那个版本。
+
+映射到 `aig_agent_version`：`release_status=DRAFT`、`release_channel=TESTING`（**显式给**，不依赖 DDL 默认值）、
+`prompt_template` 由八个分节拼成（`## 分节名` + 正文）、`config_json` 存**提交时那一版内容原文**
+（事后回答"这条版本当时是什么内容"不必靠拼凑）、`allowed/forbidden_tools`、`knowledge_scope_json`、
+`provider_capability`、`allow_external` 均来自草稿内容。回写草稿：绑定 Agent（若本次新建）+
+`agentVersionId` + `lastPublishedHash`（否则页面会一直显示"有未发布改动"）+ 状态 `SUBMITTED`，
+且**仍带 CAS**（`where latest_revision = 读到的值`）——提交期间别人改了内容，就不能算"这版提交成功"。
+
+新增权限点 `aig:studio:draft:submit`（**与编辑分开授权**：能改草稿 ≠ 能把草稿变成版本候选）。
+
+**S3b 验证**：aigov **701 → 709** 全绿（+8：从零创建建 Agent+DRAFT 版本并回写草稿、已绑定则复用不新建、
+预检不过拒绝、缺类别拒绝并列出可用值、版本号被占用拒绝、编码被占用拒绝不"顺手绑"、非责任人拒绝、已归档拒绝）；
+权限种子守卫通过（第 6 个权限点已种子）。
 
 ---
 
@@ -225,10 +259,13 @@ script/sql/aig_studio.sql
 
 | # | 增量 | 关键点 |
 |---|---|---|
-| **S3b** | `submit` | 产生 `aig_agent_version` DRAFT（接既有 `release/advance`）；**待你定 4.6 的两点** |
-| **S4** | 训练台前端 + 页面菜单 | 双栏（左配置/右 Prompt 编辑）+ 版本记录 + Diff；`aig_studio_pages.sql` 补页面行；`STABLE` 不可原地改 |
+| **S4** | 训练台前端 + 页面菜单 | 双栏（左配置/右 Prompt 编辑）+ 版本记录 + Diff + 提交；`aig_studio_pages.sql` 补页面行与父菜单授权；`STABLE` 不可原地改 |
 | **S5** | 沙箱测试 | 基于不可变 revision 执行一次真实调用（**默认关闭**），走既有模型路由 + 配额，证据落 `aig_studio_execution_link`；**复用 ADR-015/016 的受限容器链路，不自建沙箱**；如需非会话身份，复用 `aig_service_token` |
 
-**S3b 动手前的核对项**：`SANDBOX_RUN` 已是"要证据"（`aig_sandbox_run`），`HUMAN_APPROVAL` 也有
+**S5 动手前的核对项**：`SANDBOX_RUN` 已是"要证据"（`aig_sandbox_run`），`HUMAN_APPROVAL` 也有
 ADR-014 的"管理员人工评测"通道——落地时按 `docs/platform-v2/02-Execution-Contract-v1.md`
-与 `AigReleaseGateEnum` 把证据来源逐条对上（避免把 `submit` 接到一个不校验的门槛上）。
+与 `AigReleaseGateEnum` 把证据来源逐条对上（避免把测试接到一个不校验的门槛上）。
+
+**留给后续的一次独立变更**：`AigAgentCategoryEnum` 只有四个与创作工厂实现绑定的类别。
+若要支持"行业分析"这类非创作 Agent，需要一次**独立的类别/契约扩展**（会动枚举与
+`docs/platform-v2` 的契约面），不应夹在 Studio 增量里顺手加。

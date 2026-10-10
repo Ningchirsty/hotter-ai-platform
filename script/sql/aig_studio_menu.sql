@@ -74,19 +74,29 @@ select 1768400000000000005, '训练草稿预检', 1763000000000000001, 134, '', 
     and not exists (select 1 from (select perms from sys_menu) p
                      where p.perms = 'aig:studio:draft:validate');
 
+insert into sys_menu (menu_id, menu_name, parent_id, order_num, path, component, is_frame, is_cache,
+                      menu_type, visible, status, perms, icon, create_dept, create_by, create_time, remark)
+select 1768400000000000006, '提交训练草稿', 1763000000000000001, 135, '', '', 'N', 'Y', 'F', '0', '0',
+       'aig:studio:draft:submit', '#', 1761000000000000103, 1761100000000000001, sysdate(),
+       '训练台：把草稿固化成 DRAFT Agent 版本（此后进入既有发布门槛，训练台不推进发布状态）'
+  where not exists (select 1 from (select menu_id from sys_menu) t
+                     where t.menu_id = 1768400000000000006)
+    and not exists (select 1 from (select perms from sys_menu) p
+                     where p.perms = 'aig:studio:draft:submit');
+
 -- ----------------------------
 -- 二、角色授权（只给 AI 管理员）
 -- ----------------------------
 insert ignore into sys_role_menu (role_id, menu_id)
 select 1763100000000000001, menu_id from sys_menu
  where perms in ('aig:studio:draft:list', 'aig:studio:draft:query', 'aig:studio:draft:create',
-                 'aig:studio:draft:edit', 'aig:studio:draft:validate');
+                 'aig:studio:draft:edit', 'aig:studio:draft:validate', 'aig:studio:draft:submit');
 
 -- ⚠️ 父菜单也必须授权，否则菜单树里看不到这一组（RuoYi 按「用户已授权的菜单」建树）
 insert ignore into sys_role_menu (role_id, menu_id)
 select 1763100000000000001, 1763000000000000001;
 
--- 核对：五个权限行都在，且 aig_admin 都有
+-- 核对：六个权限行都在，且 aig_admin 都有
 select m.perms, count(rm.role_id) as granted_roles
   from sys_menu m
   left join sys_role_menu rm on rm.menu_id = m.menu_id

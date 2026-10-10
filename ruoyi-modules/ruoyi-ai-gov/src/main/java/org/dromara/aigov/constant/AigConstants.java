@@ -319,6 +319,14 @@ public interface AigConstants {
     String PERM_STUDIO_DRAFT_VALIDATE = "aig:studio:draft:validate";
 
     /**
+     * 提交草稿（把草稿固化成一条 <b>DRAFT</b> Agent 版本）
+     *
+     * <p><b>与编辑分开授权</b>：能改草稿 ≠ 能把草稿变成版本候选。后者会产生一条从此进入
+     * 发布流程的对象（后面就是沙箱/黄金用例/人工批准/灰度），是本训练台里影响面最大的动作。</p>
+     */
+    String PERM_STUDIO_DRAFT_SUBMIT = "aig:studio:draft:submit";
+
+    /**
      * 服务令牌管理权限码的公共前缀。
      *
      * <p><b>它同时是一条安全边界</b>：签发令牌时，凡以此前缀开头的 scope 一律拒绝

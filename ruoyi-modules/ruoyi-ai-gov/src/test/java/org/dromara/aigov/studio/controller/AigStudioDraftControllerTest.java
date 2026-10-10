@@ -112,6 +112,9 @@ class AigStudioDraftControllerTest {
             org.dromara.aigov.studio.domain.bo.AigStudioDraftRollbackBo.class},
             AigConstants.PERM_STUDIO_DRAFT_EDIT);
         assertPermission("archive", new Class<?>[]{Long.class}, AigConstants.PERM_STUDIO_DRAFT_EDIT);
+        assertPermission("submit", new Class<?>[]{Long.class,
+            org.dromara.aigov.studio.domain.bo.AigStudioDraftSubmitBo.class},
+            AigConstants.PERM_STUDIO_DRAFT_SUBMIT);
     }
 
     /**
