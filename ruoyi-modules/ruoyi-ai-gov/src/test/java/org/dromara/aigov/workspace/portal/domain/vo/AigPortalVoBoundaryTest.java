@@ -1,5 +1,7 @@
 package org.dromara.aigov.workspace.portal.domain.vo;
 
+import org.dromara.aigov.workspace.recommend.domain.vo.AigRecommendResultVo;
+import org.dromara.aigov.workspace.recommend.domain.vo.AigRecommendSuggestionVo;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -61,6 +63,18 @@ class AigPortalVoBoundaryTest {
         assertNoneOf(AigPortalRoleHomeVo.class, FORBIDDEN);
         assertNoneOf(AigPortalCategoryVo.class, FORBIDDEN);
         assertNoneOf(AigPortalArtifactVo.class, FORBIDDEN);
+        // 增量 7：推荐结果同样是对员工下发的，审计/traceId/模型这些运维视角一并禁掉
+        assertNoneOf(AigRecommendResultVo.class, FORBIDDEN);
+        assertNoneOf(AigRecommendSuggestionVo.class, FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("推荐结果带岗位归属与卡片本体，但不带模型/traceId（审计由网关写，不是这个接口）")
+    void recommendViewKeepsCardContextOut() {
+        Set<String> names = fieldNames(AigRecommendSuggestionVo.class);
+        Set<String> missing = new LinkedHashSet<>(Set.of("roleCode", "roleName", "action"));
+        missing.removeAll(names);
+        assertTrue(missing.isEmpty(), "推荐结果缺少卡片归属/本体：" + missing);
     }
 
     @Test

@@ -25,6 +25,23 @@ public class AigRecommendProperties {
     private boolean enabled = false;
 
     /**
+     * 推荐走哪条能力（网关按它做路由决策）
+     *
+     * <p><b>为什么要有这个配置而不是写死</b>：能力编码决定"这次调用走哪条策略、用哪个模型、
+     * 算谁的配额"——这是部署方要负责登记的事（{@code aig_capability} + {@code aig_route_policy}），
+     * 不是代码能替它拍的。留空时接口明确报错（"未配置能力编码"），而不是随便挑一条能力去调。</p>
+     */
+    private String capabilityCode = "intent_suggest";
+
+    /**
+     * 推荐调用的数据等级（默认 INTERNAL）
+     *
+     * <p>提示词里既有员工的自然语言描述、也有"这个人看得见的卡片清单"，都不是公开数据。
+     * 部署方若把推荐能力登记成只走本地模型，也应把这里调成相符的等级。</p>
+     */
+    private String dataLevel = "INTERNAL";
+
+    /**
      * 用户输入的最大字符数（拦住"把整篇文档贴进来"这种调用）
      */
     private int maxInputChars = 500;

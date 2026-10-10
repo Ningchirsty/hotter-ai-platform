@@ -12,7 +12,8 @@ import type {
   AigPortalRoleHomeVO,
   AigPortalRoleVO,
   AigPortalTaskQuery,
-  AigPortalTaskVO
+  AigPortalTaskVO,
+  AigRecommendResultVO
 } from './types';
 
 /**
@@ -131,5 +132,19 @@ export function listMyArtifacts(
     url: '/aigov/portal/my-artifacts',
     method: 'get',
     params: query
+  });
+}
+
+/**
+ * 自然语言推荐（只推荐、不启动；一次调用会花真钱，默认关闭）。
+ *
+ * 候选清单由服务端按当前用户可见卡片算出，调用方只能给"一句话需求"。
+ * 关着或调用失败时后端会**报错**（返回空列表会被读成"没有相关卡片"），所以调用方要 catch。
+ */
+export function suggestIntents(input: string): AxiosPromise<AigRecommendResultVO> {
+  return request({
+    url: '/aigov/portal/intent/suggest',
+    method: 'post',
+    data: { input }
   });
 }

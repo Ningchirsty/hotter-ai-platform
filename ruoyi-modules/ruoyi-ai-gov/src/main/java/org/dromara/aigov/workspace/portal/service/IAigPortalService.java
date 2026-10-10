@@ -38,6 +38,17 @@ public interface IAigPortalService {
     List<AigPortalRoleVo> listMyRoles(AigPortalActor actor);
 
     /**
+     * 当前用户可见的岗位首页（含服务端过滤后的卡片）。
+     *
+     * <p>给"要把卡片清单作为目录外发"的调用方用（推荐链路，增量 7）：它必须拿到**同一个**
+     * 可见性判定的产物，不能自己再拼一份——否则会出现"推荐得出来、门户里点不开"这种不一致。</p>
+     *
+     * @param actor 当前门户用户
+     * @return 岗位首页清单（按岗位编码排序）
+     */
+    List<AigPortalRoleHomeVo> listMyRoleHomes(AigPortalActor actor);
+
+    /**
      * 某个岗位的首页（服务端过滤后的卡片）。
      *
      * @param roleCode 岗位编码

@@ -72,8 +72,14 @@ public class AigPortalServiceImpl implements IAigPortalService {
 
     @Override
     public List<AigPortalRoleVo> listMyRoles(AigPortalActor actor) {
+        // 复用同一条路径（含卡片读取）：列表与详情、推荐目录三处只有一份可见性实现
+        return new ArrayList<>(listMyRoleHomes(actor));
+    }
+
+    @Override
+    public List<AigPortalRoleHomeVo> listMyRoleHomes(AigPortalActor actor) {
         return visibleRoleHomes(actor).values().stream()
-            .map(entry -> (AigPortalRoleVo) entry.home())
+            .map(HomeEntry::home)
             .sorted(Comparator.comparing(AigPortalRoleVo::getRoleCode,
                 Comparator.nullsLast(Comparator.naturalOrder())))
             .toList();

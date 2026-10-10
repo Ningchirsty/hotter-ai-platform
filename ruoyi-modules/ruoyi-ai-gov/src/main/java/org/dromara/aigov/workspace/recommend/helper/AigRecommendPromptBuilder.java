@@ -30,13 +30,28 @@ public final class AigRecommendPromptBuilder {
     }
 
     /**
-     * 构造提示词。
+     * 构造提示词（不含员工输入；供纯逻辑测试与"只要清单"的场景使用）。
      *
-     * @param roles          当前用户可见的岗位首页（含过滤后的卡片）
+     * @param roles           当前用户可见的岗位首页（含过滤后的卡片）
      * @param maxCatalogCards 最多列出多少张卡片（超出截断）
      * @return 提示词
      */
     public static String build(List<AigPortalRoleHomeVo> roles, int maxCatalogCards) {
+        return build(roles, maxCatalogCards, null);
+    }
+
+    /**
+     * 构造提示词。
+     *
+     * <p>员工的自然语言需求放在**清单之后、输出要求之前**：既让模型先看到"有哪些可选"，
+     * 也让需求离生成位置更近；【边界】仍然压在最后，避免被中间段落冲淡。</p>
+     *
+     * @param roles           当前用户可见的岗位首页（含过滤后的卡片）
+     * @param maxCatalogCards 最多列出多少张卡片（超出截断）
+     * @param input           员工的自然语言需求（可空：为空时不插入需求段）
+     * @return 提示词
+     */
+    public static String build(List<AigPortalRoleHomeVo> roles, int maxCatalogCards, String input) {
         StringBuilder catalog = new StringBuilder();
         int listed = 0;
         if (roles != null) {
@@ -64,6 +79,7 @@ public final class AigRecommendPromptBuilder {
             + "【可选卡片清单】（只能从这里挑，不得编造；每张卡片的编码在方括号里）\n"
             + catalog
             + "\n"
+            + (StringUtils.isBlank(input) ? "" : "【员工的需求】\n" + input.trim() + "\n\n")
             + "【输出要求】\n"
             + "1. 只输出 JSON，不要解释、不要 markdown 代码块：{\"actionCodes\":[\"卡片编码\", ...]}\n"
             + "2. 最多 " + Math.max(1, Math.min(maxCatalogCards, 10)) + " 个卡片编码，按相关性从高到低；\n"

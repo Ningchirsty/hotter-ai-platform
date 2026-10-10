@@ -171,3 +171,22 @@ export interface AigPortalArtifactQuery {
   pageNum?: number;
   pageSize?: number;
 }
+
+/**
+ * 一条推荐结果（增量 7）。
+ *
+ * `action` 是服务端可见清单里的卡片本体（不是模型编造的），`roleCode`/`roleName` 说明它属于哪个岗位。
+ * 刻意没有 traceId / 模型 / 策略原因：那些是运维视角，审计由网关写在 `aig_invocation_audit`。
+ */
+export interface AigRecommendSuggestionVO {
+  roleCode: string;
+  roleName?: string;
+  action: AigPortalActionVO;
+}
+
+/** 自然语言推荐结果（已按可见卡片求交过滤） */
+export interface AigRecommendResultVO {
+  suggestions?: AigRecommendSuggestionVO[];
+  /** 调用成功但确实没有可推荐内容时的说明（调用失败会直接报错，不会伪装成空结果） */
+  reason?: string;
+}
