@@ -122,7 +122,7 @@ public class TemplateGenerationService {
         var row=jdbc.queryForList("SELECT template_id,revision FROM ai_template_request WHERE request_id=? AND tenant_id=? AND user_id=?",id,tenant,user).getFirst();
         cache.refresh(); JsonNode template=cache.require(String.valueOf(row.get("template_id")));
         boolean approved=properties.isGenerationEnabled() && properties.getVerifiedProfiles().contains(template.path("binding").path("params_profile").asText());
-        if((!approved && !properties.getValidationUserIds().contains(user)) || !cache.published(template) || template.path("revision").asInt()!=((Number)row.get("revision")).intValue()) throw new TemplateFeedException(409,"模板已更新或维护中，不能恢复此请求");
+        if((!approved && !properties.getValidationUserIds().contains(user)) || !cache.published(template) || (template.path("revision").asInt()!=((Number)row.get("revision")).intValue() && !frozenBindingMatches(current,template,tenant,user,id))) throw new TemplateFeedException(409,"模板已更新或维护中，不能恢复此请求");
         int claimed=jdbc.update("UPDATE ai_template_request SET status='pending',confirmed_not_submitted=FALSE,updated_at=CURRENT_TIMESTAMP WHERE request_id=? AND tenant_id=? AND user_id=? AND status='unknown' AND confirmed_not_submitted=TRUE",id,tenant,user);
         if(claimed==0) throw new TemplateFeedException(409,"未确认请求从未到达供应商，不能重试；请先对账");
         try {
@@ -131,6 +131,24 @@ public class TemplateGenerationService {
             else jdbc.update("UPDATE ai_template_request SET status='submitted',error_code=NULL,error_message=NULL WHERE request_id=? AND status='pending'",id);
         } catch(Exception e) { jdbc.update("UPDATE ai_template_request SET status='unknown',error_code='unknown',error_message='结果待核对' WHERE request_id=? AND status='pending'",id); }
         return status(tenant,user,id);
+    }
+
+    /** 恢复确认未提交的原任务时保持快照；新版模板只能保持相同的已钉住档位。 */
+    private boolean frozenBindingMatches(Map<String,Object> current,JsonNode template,String tenant,long user,String request) {
+        try {
+            if(!TemplateRequestBuilder.bindingAllowed(template,cache.current().profiles())) return false;
+            long taskId=Long.parseLong(String.valueOf(current.get("task_id")));
+            var task=tasks.requireOwnedTask(taskId,tenant,user);
+            if(!("tpl-"+request).equals(task.get("idempotency_key")) || !"QUEUED".equals(task.get("status"))) return false;
+            var snapshot=TemplateFeedCache.JSON.readTree(String.valueOf(task.get("input_json")));
+            var input=TemplateFeedCache.JSON.treeToValue(snapshot.path("request"),org.dromara.ai.image.cloud.CloudImageRequest.class);
+            TemplateRequestBuilder.requireTemplateInput(input);
+            var fixed=cache.current().profiles().get(template.path("binding").path("params_profile").asText()).path("definition").path("fixed");
+            return "cloud".equals(snapshot.path("source").asText()) && "bluocto".equals(snapshot.path("provider").asText())
+                && input.model().equals(template.path("binding").path("model").asText())
+                && input.output().size().equals(fixed.path("size").asText())
+                && input.output().quality().equals(fixed.path("quality").asText());
+        } catch(Exception e) { return false; }
     }
     @Scheduled(initialDelay=30000,fixedDelay=60000)
     public void recover() {

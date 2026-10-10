@@ -70,4 +70,38 @@ class TemplateGenerationServiceTest {
         assertEquals(2,jdbc.queryForObject("SELECT issued FROM ai_template_validation_budget",Integer.class));
         var restarted=new TemplateGenerationService(jdbc,cache,properties,cloud,tasks); assertFalse(restarted.canValidate("a",7L));
     }
+
+    private String queuedAfterTemplateUpdate() throws Exception {
+        properties.setGenerationEnabled(false);properties.setValidationUserIds(List.of(7L));
+        when(cloud.executeTemplate(anyLong(),anyString(),anyLong())).thenReturn("QUEUE_FULL","ACCEPTED");
+        when(tasks.requireOwnedTask(123L,"a",7L)).thenReturn(Map.of("status","QUEUED"));
+        var result=service.submit("a",7L,null,body);String request=String.valueOf(result.get("request_id"));
+        var captured=org.mockito.ArgumentCaptor.forClass(org.dromara.ai.image.cloud.CloudImageRequest.class);
+        verify(cloud).createTemplate(anyString(),anyLong(),any(),captured.capture(),anyString(),anyString());
+        String snapshot=TemplateFeedCache.JSON.writeValueAsString(Map.of("source","cloud","provider","bluocto","request",captured.getValue()));
+        when(tasks.requireOwnedTask(123L,"a",7L)).thenReturn(Map.of("status","QUEUED","idempotency_key","tpl-"+request,"input_json",snapshot));
+        var latest=cache.require(body.path("template_id").asText()).deepCopy();
+        ((com.fasterxml.jackson.databind.node.ObjectNode)latest).put("revision",2);
+        ((com.fasterxml.jackson.databind.node.ObjectNode)latest.path("prompt")).put("en","New prompt must not replace the original task");
+        when(cache.require(body.path("template_id").asText())).thenReturn(latest);when(cache.published(latest)).thenReturn(true);
+        return request;
+    }
+    @Test void updatedTemplateRestoresFrozenTaskWithoutNewBudgetOrRevision() throws Exception {
+        String request=queuedAfterTemplateUpdate();service.retry("a",7L,request);
+        verify(cloud,times(1)).createTemplate(anyString(),anyLong(),any(),any(),anyString(),anyString());
+        verify(cloud,times(2)).executeTemplate(123L,"a",7L);
+        assertEquals(1,jdbc.queryForObject("SELECT issued FROM ai_template_validation_budget",Integer.class));
+        assertEquals(1,jdbc.queryForObject("SELECT revision FROM ai_template_request",Integer.class));
+        assertEquals(409,assertThrows(TemplateFeedException.class,()->service.retry("a",7L,request)).status);
+    }
+    @Test void changedBindingOrMismatchedTaskIdentityCannotRestore() throws Exception {
+        String request=queuedAfterTemplateUpdate();
+        var latest=cache.require(body.path("template_id").asText());
+        ((com.fasterxml.jackson.databind.node.ObjectNode)latest.path("binding")).put("params_profile","img-portrait-916");
+        assertEquals(409,assertThrows(TemplateFeedException.class,()->service.retry("a",7L,request)).status);
+        ((com.fasterxml.jackson.databind.node.ObjectNode)latest.path("binding")).put("params_profile","img-square-hd");
+        var task=new HashMap<>(tasks.requireOwnedTask(123L,"a",7L));task.put("idempotency_key","tpl-other");when(tasks.requireOwnedTask(123L,"a",7L)).thenReturn(task);
+        assertEquals(409,assertThrows(TemplateFeedException.class,()->service.retry("a",7L,request)).status);
+        verify(cloud,times(1)).executeTemplate(anyLong(),anyString(),anyLong());
+    }
 }
