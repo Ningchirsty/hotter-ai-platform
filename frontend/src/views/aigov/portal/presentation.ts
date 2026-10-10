@@ -1,13 +1,13 @@
 import type { AigPortalActionVO, AigPortalCategoryVO } from '@/api/aigov/portal/types';
-import { resolveAiWorkspaceRoute } from '@/config/aiWorkspaceRouteRegistry';
 
 /**
  * 员工 AI 工作台的展示层纯函数（主文档线增量 2）。
  *
  * 这里只做"怎么显示"与"哪个入口现在真的能走"：
  * - 可见性（哪些岗位、哪些卡片）由**服务端**决定，前端不再判断；
- * - "哪些卡片现在能打开"是前端的事，但它必须<b>只认白名单</b>（{@link resolveAiWorkspaceRoute}
- *   解析不到就返回 null），不许猜路径——猜路径的表现是"点了跳到一个不存在的页面"。
+ * - "哪些卡片现在能打开"是前端的事，但它必须<b>只认白名单</b>——路径解析只有一处实现
+ *   （`professionalLink.ts` 的 {@code resolveProfessionalPath}，解析不到返回 null），
+ *   这里不再重复一份，否则"本页能点开、那边说打不开"这类不一致迟早出现。
  */
 
 /** 启动方式 → 显示文案 */
@@ -47,20 +47,6 @@ export const START_PENDING_HINT = '启动会先预检：不通过不会发放票
  */
 export function isNavigable(action?: AigPortalActionVO): boolean {
   return action?.targetType === 'NAVIGATION' || action?.launchMode === 'NAVIGATION';
-}
-
-/**
- * 导航类卡片的前端路径（只认白名单）。
- *
- * @param action 卡片
- * @returns 路径；非导航、或 routeKey 不在白名单时返回 null（调用方据此禁用入口）
- */
-export function navigationPath(action?: AigPortalActionVO): string | null {
-  if (!isNavigable(action)) {
-    return null;
-  }
-  const target = resolveAiWorkspaceRoute(action?.targetRef);
-  return target?.path ?? null;
 }
 
 /**

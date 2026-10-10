@@ -8,32 +8,24 @@ import {
   isFavorite,
   isNavigable,
   launchModeLabel,
-  navigationPath,
   problemTexts,
   sortRolesByFavorite,
   taskStatusMeta
 } from './presentation';
 
 /**
- * 员工 AI 工作台展示层测试（增量 2）。
+ * 员工 AI 工作台展示层测试（增量 2/3b/5）。
  *
- * 断言的都是"员工看到什么、点了会怎样"：导航入口只认白名单（不许猜路径）、
- * 空分类要显示出来、未知状态不冒充成功。
+ * 断言的都是"员工看到什么、点了会怎样"：空分类要显示出来、未知状态不冒充成功、
+ * 收藏只影响排序、（路径解析本身在 `professionalLink.spec.ts` 里钉——只留一处实现）。
  */
 describe('员工 AI 工作台展示层', () => {
-  it('导航类卡片才可直接打开，且只认白名单 routeKey', () => {
-    const nav = { actionCode: 'A', targetType: 'NAVIGATION', targetRef: 'VIDEO_STUDIO', launchMode: 'NAVIGATION' };
-    expect(isNavigable(nav)).toBe(true);
-    // 白名单里有这个键：给出真实路径
-    const path = navigationPath(nav);
-    expect(path).not.toBeNull();
-    expect(path?.startsWith('/')).toBe(true);
-
-    // 白名单里没有的键：解析不到就返回 null（不许猜路径）
-    expect(navigationPath({ actionCode: 'B', targetType: 'NAVIGATION', targetRef: 'NOT_A_REAL_KEY' })).toBeNull();
-    // 非导航卡片：即使 targetRef 恰好是个 routeKey 也不给路径（那是 NAVIGATION 的语义）
-    expect(navigationPath({ actionCode: 'C', targetType: 'QUICK_CAPABILITY', targetRef: 'VIDEO_STUDIO' })).toBeNull();
-    expect(navigationPath(undefined)).toBeNull();
+  it('导航类卡片才走"直接打开"，其余走启动表单', () => {
+    expect(isNavigable({ actionCode: 'A', targetType: 'NAVIGATION', targetRef: 'VIDEO_STUDIO' })).toBe(true);
+    expect(isNavigable({ actionCode: 'B', launchMode: 'NAVIGATION', targetType: 'QUICK_CAPABILITY' })).toBe(true);
+    expect(isNavigable({ actionCode: 'C', launchMode: 'STUDIO', targetType: 'QUICK_CAPABILITY' })).toBe(false);
+    expect(isNavigable({ actionCode: 'D', launchMode: 'QUICK', targetType: 'QUICK_CAPABILITY' })).toBe(false);
+    expect(isNavigable(undefined)).toBe(false);
   });
 
   it('启动文案如实说明"先预检、不通不发票"', () => {
