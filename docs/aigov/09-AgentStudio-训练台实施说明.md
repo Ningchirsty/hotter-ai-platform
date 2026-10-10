@@ -1,0 +1,102 @@
+# 岗位 Agent Studio（训练台）实施说明
+
+> **依据**：《岗位 AI 工作台与 Agent 训练台集成详细设计 V1.1》**专题 C**（岗位 Agent Studio 训练台与对话式能力生成规范）。
+> **用户 2026-10-10 拍板**：**先做专题 C**；Scenario 建轻量表、Execution/Artifact 复用既有、沙箱测试允许但默认关闭、门户新增 `/ai-workspace`。
+> **对比与总设计**：见工作区 `docs/07-V2.0-岗位工作台与AgentStudio-对比与可执行设计.md`（含逐条事实盘点与待拍板清单）。
+> **本文件**：记录 **Studio 这条线的每个增量做了什么、为什么、怎么验证**；随代码同批更新。
+
+---
+
+## 一、为什么先做这个（而不是主文档的岗位门户）
+
+主文档（岗位包 + 门户 + Launch）依赖 `Role Package`，而 Studio 的最终验收"把 Agent 绑定到岗位卡片"也依赖它。
+用户选择 **Studio 先行**，因此本线把**能力侧**闭环先做通：
+
+```
+创建草稿 → 人工调教 Prompt → 真实测试 → 提交 DRAFT 版本 → 走既有五道门槛 → STABLE
+```
+
+"绑定到岗位卡片 / 员工可见"属于 Role 线，做完 Role Package 后再补（对应附件 `STUDIO-006`）。
+
+**一个必须先说清的前提**：现有 Registry **没有在线创建/编辑 Agent 的接口**
+（`AigAgentRegistryController` 只有 list/get/version/release/advance/binding/package/skill 查询），
+所以 Studio 必须自己带一条**草稿写通道**；这条通道**只写草稿**，正式版本仍只能经
+`/aigov/agent/release/advance` 那台状态机产生。
+
+---
+
+## 二、增量 S1：契约与存储（✅ 已完成）
+
+### 2.1 落地物
+
+| 类别 | 文件 |
+|---|---|
+| 建表脚本（可重放） | `script/sql/aig_studio.sql` |
+| 枚举 | `aigov/studio/enums/AigStudioDraftStatusEnum`、`AigStudioRevisionSourceEnum`、`AigStudioTestStatusEnum` |
+| 内容模型 | `aigov/studio/domain/AigStudioDraftContent`（Prompt 八分节 + 角色定位/能力/IO 引用/工具与知识声明） |
+| 规范化哈希 | `aigov/studio/helper/AigStudioContentHasher` |
+| 实体 / VO / Mapper | `AigStudioDraft`、`AigStudioRevision`、`AigStudioExecutionLink` 各一套 |
+| 测试 | `aigov/studio/helper/AigStudioContentHasherTest`（13 条） |
+
+三张表：
+
+| 表 | 用途 | 关键约束 |
+|---|---|---|
+| `aig_studio_draft` | 可编辑工作区，独立于 `aig_agent_version` | `latest_revision` 做显式 CAS；`content_hash` / `last_published_hash` 判"未发布改动" |
+| `aig_studio_revision` | 每次有意义修改的**不可变快照** | `unique(draft_id, revision_no)` |
+| `aig_studio_execution_link` | 测试证据链：把"测过"钉到精确内容 | 记 `revision_id` + `content_hash`（修订被删也能核对） |
+
+### 2.2 四条关键取舍（都是"不做会出错"的那种）
+
+1. **草稿与已发布版本分离**：正式版本不可变，而训练要反复改/回退。写成对已发布版本的 UPDATE，
+   等于让线上能力随一次试改漂移且回不去。草稿 → 正式版本只经"提交"单向转换。
+2. **哈希必须先规范化再算**（`AigStudioContentHasher`）：页面按
+   `contentHash != lastPublishedHash` 显示「未发布改动」。若直接对原文算哈希，
+   **序列化换了键顺序、多一个换行**都会让界面无端喊"你有未发布改动"；
+   反过来（真改动被判成没改）就会漏发布。所以：键排序、去空白、数值归一
+   （`1` 与 `1.0` 视为同一内容）。规范化**幂等**已被测试钉住。
+3. **测试证据钉 `revision_id` 而不是 `draft_id`**：只记草稿的话，测完又改了草稿，
+   这条证据就指向一段**从未被测过的内容**——而发布门槛要的正是"这份内容被真实跑通过"。
+4. **`latest_revision` 不用 `@Version`**：注解式乐观锁在**任何**更新时自增，
+   而"修订号"只应在**内容变化**时前进（改状态、记 `agentVersionId` 都不算新修订）。
+   所以用普通列 + 服务层显式 CAS（`where latest_revision = expected`）。
+
+### 2.3 刻意不做（S1 阶段）
+
+- 不做 AI 培训助手（Copilot 提案）——P1，见附件 `STUDIO-007`；
+- 不做 Skill / 子 Agent / 快捷指令的草案生成——P1，`STUDIO-008/009`；
+- 不做 Tool / Knowledge 绑定面板——本仓没有对应绑定表，P0 只存声明并如实标注；
+- 不给 VO 预置"标签字段"（如状态中文名）——**没人填的字段就是又造一个"永远为空"的列**，
+  等 S3 服务层真正填充时再加。
+
+### 2.4 验证
+
+| 项 | 结果 |
+|---|---|
+| aigov 单测 | **477 → 490**（+13：键顺序/空白/嵌套排序/数组顺序/数值归一/转义/非 ASCII/幂等/非法输入/null/真实内容模型/分节键固定） |
+| Mapper↔VO 守卫 | 通过（`AigMapperVoConverterCoverageTest`：三个新 VO 的 `@AutoMapper` 都生成了转换器） |
+| 真库探针（临时 MariaDB 3426） | 脚本 exit=0；三表列数 **18 / 14 / 17**；唯一键 = 三个 PRIMARY + `uk_aig_studio_revision(draft_id, revision_no)`；默认值 `MANUAL`/`PENDING` 生效；**重复修订号被 1062 拒绝**；**重放 exit=0 且既有行一字不动**；`content_hash` 为 `char(64)` |
+
+### 2.5 部署（存量库可直接重放）
+
+```bash
+# 三张表都是 create table if not exists；不含 ALTER，因此存量库/全新库都可直接跑，可重复执行
+script/sql/aig_studio.sql
+```
+
+⚠️ 主键由 MyBatis-Plus 雪花生成（**无 AUTO_INCREMENT**），手工插数据必须显式给 ID。
+
+---
+
+## 三、后续增量（待做）
+
+| # | 增量 | 关键点 |
+|---|---|---|
+| **S2** | 草稿服务 | `expectedRevision` CAS + 冲突检测（不静默覆盖）+ 不可变 Revision + 从现有 Agent 复制建草稿 + 回滚（产生新修订而非改历史） |
+| **S3** | API + 权限/菜单 | `/aigov/studio/drafts*`、`validate`、`submit`（**只产 `aig_agent_version` DRAFT**）+ `aig:studio:*` 权限 + 菜单段 `1768400…` |
+| **S4** | 训练台前端 | 双栏（左配置/右 Prompt 编辑）+ 版本记录 + Diff + 提交；`STABLE` 不可原地改 |
+| **S5** | 沙箱测试 | 基于不可变 revision 执行一次真实调用（**默认关闭**），走既有模型路由 + 配额，证据落 `aig_studio_execution_link` |
+
+**S3 动手前必须再核一件事**（已记在对比文档 §13）：`SANDBOX_RUN` / `HUMAN_APPROVAL` 两道门槛
+当前是"真校验"还是"声明式"。若 `submit` 接到一个**不校验**的门槛上，就等于又造了一个
+"看着生效"的字段——这正是本项目反复在堵的一类问题。
