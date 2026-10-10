@@ -94,7 +94,8 @@ public class ImageCloudService {
         input.inputs(repository, assets, tenant, user);
         String model = input.model(), prompt = input.prompt();
         if (!BluOctoImageClient.MODELS.contains(model)) throw invalid("请选择已接入的云端图像模型");
-        if (prompt == null || prompt.isBlank() || prompt.length() > (template ? 8000 : 1000)) throw invalid(template ? "模板提示词须为 1–8000 个字符" : "创作描述须为 1–1000 个字符");
+        int promptLimit=template || ("gpt-image-2.5-sunburst".equals(model) && "T2I".equals(input.capability())) ? 8000 : 1000;
+        if (prompt == null || prompt.isBlank() || prompt.length() > promptLimit) throw invalid("创作描述须为 1–"+promptLimit+" 个字符");
         if (taskName != null && taskName.length() > 255) throw invalid("任务名称过长");
         if (idempotencyKey == null || !idempotencyKey.matches("[A-Za-z0-9_-]{8,128}")) throw invalid("缺少有效的提交幂等键");
         Long existing = repository.findByIdempotencyKey(tenant, user, idempotencyKey);
