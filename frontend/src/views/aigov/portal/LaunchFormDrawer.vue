@@ -29,8 +29,15 @@
         <el-input v-model="form.projectType" placeholder="如 creative / content / video" />
       </el-form-item>
 
+      <!--
+        项目绑定暂不可用（增量 4 起后端 fail-closed 拒绝带 projectId 的启动）。
+        这里把它做成**禁用 + 说明**而不是留一个填了就必然被拒的输入框：
+        "能填但提交必失败"是最容易让人以为系统坏了的形态。
+        接入"用户 ↔ 项目归属"来源后，把 disabled 去掉即可（后端判定口同时换成可用实现）。
+      -->
       <el-form-item label="项目ID">
-        <el-input v-model="form.projectId" placeholder="可空；填了表示这次挂到该项目下" />
+        <el-input v-model="form.projectId" disabled placeholder="项目绑定暂不可用" />
+        <span class="hint">项目权判定要接业务域的项目归属，尚未接入；为避免越权，带项目的启动一律被拒绝（fail-closed）</span>
       </el-form-item>
 
       <el-form-item v-if="needsTask" label="数据等级" required>
