@@ -17,6 +17,8 @@ export interface InspirationRoute {
   prompt: string;
   reason: string;
   referenceHint: string;
+  output?: import('@/api/image/types').CloudImageOutputParams;
+  templateTitle?: string;
 }
 
 export interface CoverRegion {

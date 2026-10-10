@@ -1,7 +1,7 @@
 <template>
   <aside class="discovery" aria-label="AI 灵感推荐">
     <header><span class="eyebrow">✧ AI 灵感推荐</span><h2>灵感发现</h2><p>选择喜欢的模板，填入内容，开始创作</p></header>
-    <div class="actions"><button :disabled="loading" @click="refresh">刷新模板</button><button :disabled="loading || pages < 2" @click="nextBatch">换一批</button><span>{{ feed?.online ? '在线模板 · 第 ' + feed.version + ' 版' : '缓存预览 · 暂不可生成' }}</span></div>
+    <div class="actions"><button :disabled="loading" @click="refresh">刷新模板</button><button :disabled="loading || pages < 2" @click="nextBatch">换一批</button><span>{{ feed?.online ? '在线模板 · 第 ' + feed.version + ' 版' : '缓存预览' }}</span></div>
     <el-input v-model="keyword" placeholder="搜索主题、风格或构图" clearable aria-label="搜索模板" />
     <nav class="categories" aria-label="模板分类"><button :class="{ active: !category }" @click="category = ''">全部</button><button v-for="c in categories" :key="c.id" :class="{ active: category === c.id }" @click="category = c.id">{{ c.zh }}</button></nav>
     <div v-if="items.length" class="masonry">
@@ -14,11 +14,11 @@
     <div v-else class="empty" role="status">{{ error || (loading ? '正在同步模板…' : '暂无匹配模板') }}</div>
     <footer><el-pagination v-if="total" v-model:current-page="page" :page-size="pageSize" :total="total" layout="prev, pager, next" @current-change="load" /><p>共 {{ total }} 个图像模板 · 每 10 分钟检查更新</p></footer>
     <section v-for="record in deferred" :key="record.requestId" class="request-status" role="status">
-      <b>先前请求待核对</b><p>{{ record.result.error?.message }}</p><span>任务 {{ record.result.task_id }}</span>
+      <b>先前请求待核对</b><p>{{ creationMessage(record.result.error?.message) }}</p><span>任务 {{ record.result.task_id }}</span>
       <button :disabled="sending" @click="queryDeferred(record)">查询已保留请求</button>
     </section>
     <section v-if="pending" class="request-status" role="status">
-      <b>{{ stateLabel(pending.status) }}</b><p>{{ pending.error?.message }}</p>
+      <b>{{ stateLabel(pending.status) }}</b><p>{{ creationMessage(pending.error?.message) }}</p>
       <button :disabled="sending" @click="recover">查询原请求</button>
       <button v-if="['queue_full', 'dispatch_not_submitted'].includes(pending.error?.code || '')" :disabled="sending" @click="retryQueue">恢复排队</button>
       <button v-if="pending.status === 'unknown' && pending.request_id && savedAction?.requestId === pending.request_id" :disabled="sending" @click="deferPending">保留原请求，使用其它模板</button>
@@ -28,14 +28,15 @@
     <el-dialog v-model="dialog" :title="selected?.title.zh || selected?.title.en" width="760px" style="max-width: calc(100vw - 32px)" align-center destroy-on-close>
       <div v-if="selected" class="detail">
         <TemplateCover :id="selected.id" :revision="selected.revision" :title="selected.title.zh" />
-        <div><span class="tag">{{ selected.category }}</span><h3>使用此模板</h3><p>图像创作 · {{ selected.outputSize.replace('x', ' × ') }} · 高画质 · 1 张</p>
+        <div><span class="tag">{{ selected.category }}</span><h3>复用此模板</h3><p>图像创作 · {{ selected.outputSize.replace('x', ' × ') }} · 1 张</p>
           <el-form label-position="top"><el-form-item v-for="v in selected.variables" :key="v.key" :label="v.key === 'subject' ? '画面主体' : v.label.zh || v.label.en" :required="v.required">
             <el-select v-if="v.type === 'select'" v-model="variables[v.key]"><el-option v-for="option in v.options" :key="option" :label="option" :value="option" /></el-select>
             <el-input v-else v-model="variables[v.key]" :maxlength="v.max_len || 200" show-word-limit />
           </el-form-item></el-form>
-          <p v-if="!selected.variables.length">模板已包含完整创作描述，可直接使用。</p>
+          <p v-if="!selected.variables.length">模板已包含完整创作描述，带入表单后可继续编辑。</p>
           <p v-if="formError" class="error" role="alert">{{ formError }}</p>
-          <el-button v-hasPermi="['image:creation:submit']" type="primary" :loading="sending" :disabled="!selected.canGenerate || !!savedAction || blockedTemplate" @click="submit">{{ selected.status === 'maintenance' ? '模板维护中' : !selected.canGenerate ? '生成验收中' : savedAction || blockedTemplate ? '已有请求待确认' : '使用模板生成' }}</el-button>
+          <p>文生图模板，无需参考素材。带入后可调整描述与输出设置，确认后再生成。</p>
+          <el-button v-hasPermi="['image:creation:submit']" type="primary" :loading="preparing" :disabled="busy || preparing || selected.status === 'maintenance'" @click="applyTemplate">{{ selected.status === 'maintenance' ? '模板维护中' : '带入创作表单' }}</el-button>
         </div>
       </div>
     </el-dialog>
@@ -44,9 +45,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useUserStore } from '@/store/modules/user';
-import { listTemplates, getTemplate, generateTemplate, getTemplateGeneration, retryTemplateGeneration, type FeedTemplate, type FeedPage, type TemplateSubmission, type TemplateGeneration } from '@/api/image/templates';
+import { listTemplates, getTemplate, prepareTemplate, generateTemplate, getTemplateGeneration, retryTemplateGeneration, type FeedTemplate, type FeedPage, type TemplateSubmission, type TemplateGeneration } from '@/api/image/templates';
 import TemplateCover from './TemplateCover.vue';
-const emit = defineEmits<{ 'task-created': [] }>();
+import type { InspirationRoute } from './types';
+import { creationMessage } from './template-reuse';
+const props = defineProps<{ busy?: boolean }>();
+const busy = computed(() => props.busy === true);
+const emit = defineEmits<{ 'task-created': []; apply: [route: InspirationRoute, title: string] }>();
+const preparing = ref(false);
 const userStore = useUserStore();
 const storageKey = computed(() => 'hotter-template-action-v2-' + String(userStore.userId));
 const items = ref<FeedTemplate[]>([]), categories = ref<FeedPage['categories']>([]), feed = ref<FeedPage['feed']>();
@@ -55,7 +61,6 @@ const pageSize = 6, pages = computed(() => Math.max(1, Math.ceil(total.value / p
 const selected = ref<FeedTemplate>(), dialog = ref(false), variables = ref<Record<string, string>>({}), sending = ref(false), formError = ref('');
 const pending = ref<TemplateGeneration>(), savedAction = ref<{ body: TemplateSubmission; requestId?: string }>();
 const deferred = ref<{ body: TemplateSubmission; requestId: string; result: TemplateGeneration }[]>([]);
-const blockedTemplate = computed(() => deferred.value.some(record => record.body.template_id === selected.value?.id));
 let sequence = 0, debounce: ReturnType<typeof setTimeout> | undefined, interval: ReturnType<typeof setInterval> | undefined;
 async function load() {
   const current = ++sequence; loading.value = true; error.value = '';
@@ -68,6 +73,7 @@ async function load() {
 function refresh() { page.value = 1; void load(); }
 function nextBatch() { page.value = page.value < pages.value ? page.value + 1 : 1; void load(); }
 async function open(item: FeedTemplate) {
+  if (preparing.value) return;
   formError.value = ''; variables.value = {};
   try { const r = await getTemplate(item.id); selected.value = r.data; dialog.value = true; }
   catch { void load(); }
@@ -91,10 +97,21 @@ async function queryDeferred(record: (typeof deferred.value)[number]) {
     persist();
   } finally { sending.value = false; }
 }
-async function submit() {
-  if (!selected.value?.canGenerate || sending.value || savedAction.value || blockedTemplate.value) return;
-  const body: TemplateSubmission = { template_id: selected.value.id, revision: selected.value.revision, client_request_id: crypto.randomUUID(), variables: { ...variables.value } };
-  savedAction.value = { body }; persist(); await recover();
+async function applyTemplate() {
+  if (!selected.value || busy.value || preparing.value || selected.value.status === 'maintenance') return;
+  const template = selected.value;
+  const title = template.title.zh || template.title.en;
+  preparing.value = true; formError.value = '';
+  try {
+    const r = await prepareTemplate({ template_id: template.id, revision: template.revision, variables: { ...variables.value } });
+    if (busy.value || !dialog.value || selected.value !== template) return;
+    emit('apply', { media: 'image', source: 'cloud', capability: r.data.capability, workflowCode: 'cloud-bluocto-t2i', model: r.data.model, prompt: r.data.prompt, output: r.data.output, templateTitle: title, reason: '', referenceHint: '' }, title);
+    dialog.value = false;
+  } catch (e: unknown) {
+    const response = (e as { response?: { data?: { msg?: string; data?: { errors?: { field: string; rule: string }[] } } } }).response?.data;
+    const invalid = response?.data?.errors;
+    formError.value = invalid?.length ? '请检查模板内容：' + invalid.map(item => item.rule === 'required' ? '请填写必填内容' : item.rule === 'max_length' ? '内容超过长度限制' : item.rule === 'select_option' ? '请选择有效选项' : '模板内容暂不可用，请修改后重试').filter((v,i,a) => a.indexOf(v) === i).join('；') : creationMessage(response?.msg) || '模板带入失败，请刷新后重试';
+  } finally { preparing.value = false; }
 }
 async function recover() {
   if (!savedAction.value || sending.value) return;
@@ -108,7 +125,7 @@ async function recover() {
   } catch (e: unknown) {
     const http = e as { response?: { status?: number; data?: { msg?: string; data?: { errors?: { field: string; rule: string }[] } } } };
     const status = http.response?.status;
-    formError.value = http.response?.data?.msg || '响应未确认，请查询原请求，避免重复生成';
+    formError.value = creationMessage(http.response?.data?.msg) || '响应未确认，请查询原请求，避免重复生成';
     if ([404, 409, 410, 422].includes(status || 0) && !savedAction.value.requestId) {
       const rules = http.response?.data?.data?.errors;
       if (rules?.length) formError.value += '：' + rules.map(rule => rule.field + ' (' + rule.rule + ')').join('；');
