@@ -160,6 +160,44 @@
       />
     </el-card>
 
+    <el-card shadow="never" class="mt-3">
+      <template #header>
+        <div class="toolbar-shell">
+          <div class="table-heading">
+            <h3>我的产物</h3>
+            <p>
+              来自<b>平台产物台账</b>：只列出<b>我提交的任务</b>下<b>已通过校验</b>的产物，且只给元数据。
+              下载请到对应专业台/任务页——那里的权限仍然生效。
+            </p>
+          </div>
+          <div class="toolbar-actions">
+            <el-button icon="Refresh" @click="getArtifacts">刷新</el-button>
+          </div>
+        </div>
+      </template>
+
+      <el-table v-loading="loadingArtifacts" border class="data-table" :data="artifacts">
+        <el-table-column label="产物ID" prop="artifactId" align="center" width="180" show-overflow-tooltip />
+        <el-table-column label="来源任务" align="center" min-width="170" show-overflow-tooltip>
+          <template #default="scope">{{ scope.row.taskNo || scope.row.taskId }}</template>
+        </el-table-column>
+        <el-table-column label="类型" prop="artifactType" align="center" width="150" />
+        <el-table-column label="MIME" prop="mimeType" align="center" min-width="140" show-overflow-tooltip />
+        <el-table-column label="大小" align="center" width="110">
+          <template #default="scope">{{ formatBytes(scope.row.sizeBytes) }}</template>
+        </el-table-column>
+        <el-table-column label="入库时间" prop="createTime" align="center" width="170" show-overflow-tooltip />
+      </el-table>
+
+      <pagination
+        v-show="artifactTotal > 0"
+        v-model:page="artifactQuery.pageNum"
+        v-model:limit="artifactQuery.pageSize"
+        :total="artifactTotal"
+        @pagination="getArtifacts"
+      />
+    </el-card>
+
     <LaunchFormDrawer
       v-model="launchVisible"
       :role-code="selectedRoleCode"
@@ -170,10 +208,20 @@
 </template>
 
 <script setup lang="ts">
-import { getRoleHome, getWorkspacePref, listMyRoles, listMyTasks, setDefaultRole, toggleFavorite } from '@/api/aigov/portal';
+import {
+  getRoleHome,
+  getWorkspacePref,
+  listMyArtifacts,
+  listMyRoles,
+  listMyTasks,
+  setDefaultRole,
+  toggleFavorite
+} from '@/api/aigov/portal';
 import type {
   AigLaunchCommitVO,
   AigPortalActionVO,
+  AigPortalArtifactQuery,
+  AigPortalArtifactVO,
   AigPortalRoleHomeVO,
   AigPortalRoleVO,
   AigPortalTaskQuery,
@@ -217,6 +265,12 @@ const launchAction = ref<AigPortalActionVO>();
 /** 偏好（收藏 + 默认岗位）；只是"先看哪个"，不参与可见性判定 */
 const favorites = ref<string[]>([]);
 const defaultRoleCode = ref('');
+
+/** 我的产物（平台产物台账；只给我的任务下已通过校验的） */
+const artifacts = ref<AigPortalArtifactVO[]>([]);
+const artifactTotal = ref(0);
+const { loading: loadingArtifacts, withLoading: withArtifactsLoading } = useLoading(true);
+const artifactQuery = ref<AigPortalArtifactQuery>({ pageNum: 1, pageSize: 10 });
 
 /** 任务状态选项（与后端 AigTaskStatusEnum 一致） */
 const taskStatusOptions = [
@@ -333,6 +387,33 @@ const getTasks = async () => {
   });
 };
 
+const getArtifacts = async () => {
+  await withArtifactsLoading(async () => {
+    const res = await listMyArtifacts(artifactQuery.value);
+    artifacts.value = res.data.rows || [];
+    artifactTotal.value = res.data.total || 0;
+  });
+};
+
+/**
+ * 字节数的可读显示（只影响展示；缺值不冒充 0）。
+ *
+ * @param size 字节数
+ * @returns 文案
+ */
+const formatBytes = (size?: number) => {
+  if (size === undefined || size === null) {
+    return '—';
+  }
+  if (size < 1024) {
+    return size + ' B';
+  }
+  if (size < 1024 * 1024) {
+    return (size / 1024).toFixed(1) + ' KB';
+  }
+  return (size / 1024 / 1024).toFixed(1) + ' MB';
+};
+
 /**
  * 打开启动表单（非导航类卡片）。
  *
@@ -381,6 +462,7 @@ const reload = async () => {
   await getPref();
   await getRoles();
   await getTasks();
+  await getArtifacts();
 };
 
 onMounted(() => {

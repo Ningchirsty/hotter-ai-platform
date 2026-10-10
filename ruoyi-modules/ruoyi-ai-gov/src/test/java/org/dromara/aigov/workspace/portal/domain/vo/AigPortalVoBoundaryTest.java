@@ -34,7 +34,10 @@ class AigPortalVoBoundaryTest {
         "costAmount", "traceId", "providerCode", "providerJobId", "policyResult", "policyReason",
         "errorCode", "errorMessage", "idempotencyKey", "inputSnapshotId", "agentVersionId",
         "allowExternal", "reviewComment", "reviewedBy", "reviewedAt", "remark",
-        "manifestJson", "manifestSha256", "actionId", "enabled");
+        "manifestJson", "manifestSha256", "actionId", "enabled",
+        // 产物台账里的内部事实：对象存储键与完整性证据不该进入对外契约（增量 6）
+        "storageRef", "sha256", "hashVerified", "validationDetail", "resultId", "attemptNo",
+        "validationStatus");
 
     /**
      * 门户确实要带的字段
@@ -43,14 +46,21 @@ class AigPortalVoBoundaryTest {
         "taskId", "taskNo", "taskType", "status", "statusLabel", "progress", "dataLevel",
         "scenarioCode", "projectType", "projectId", "startedAt", "finishedAt");
 
+    /**
+     * 产物的边界：要带"这是什么、多大、属于哪个任务"，**不要**带下载直链与存储键
+     */
+    private static final Set<String> REQUIRED_ON_ARTIFACT = Set.of(
+        "artifactId", "taskId", "taskNo", "artifactType", "mimeType", "sizeBytes", "createTime");
+
     @Test
-    @DisplayName("门户 VO 不允许出现计费/供应商/trace/策略与错误详情等内部字段")
+    @DisplayName("门户 VO 不允许出现计费/供应商/trace/策略/存储键/完整性证据等内部字段")
     void portalViewKeepsInternalFieldsOut() {
         assertNoneOf(AigPortalTaskVo.class, FORBIDDEN);
         assertNoneOf(AigPortalActionVo.class, FORBIDDEN);
         assertNoneOf(AigPortalRoleVo.class, FORBIDDEN);
         assertNoneOf(AigPortalRoleHomeVo.class, FORBIDDEN);
         assertNoneOf(AigPortalCategoryVo.class, FORBIDDEN);
+        assertNoneOf(AigPortalArtifactVo.class, FORBIDDEN);
     }
 
     @Test
@@ -60,6 +70,18 @@ class AigPortalVoBoundaryTest {
         Set<String> missing = new LinkedHashSet<>(REQUIRED_ON_TASK);
         missing.removeAll(names);
         assertTrue(missing.isEmpty(), "门户任务视图缺少员工需要的字段：" + missing);
+    }
+
+    @Test
+    @DisplayName("门户产物视图带来源任务与基本元数据，但不给下载直链（下载仍走专业台/任务域）")
+    void portalArtifactViewKeepsMetadataOnly() {
+        Set<String> names = fieldNames(AigPortalArtifactVo.class);
+        Set<String> missing = new LinkedHashSet<>(REQUIRED_ON_ARTIFACT);
+        missing.removeAll(names);
+        assertTrue(missing.isEmpty(), "门户产物视图缺少员工需要的字段：" + missing);
+        // storageRef 被禁是刻意的：给了它等于把存储布局写进对外契约；
+        // 也不提供 downloadUrl —— 那会绕过专业台/任务域自己的权限
+        assertTrue(!names.contains("downloadUrl"), "门户产物视图不应提供下载直链：" + names);
     }
 
     /**

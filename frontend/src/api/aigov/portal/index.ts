@@ -6,6 +6,8 @@ import type {
   AigLaunchPrepareVO,
   AigLaunchRecordVO,
   AigLaunchRequestForm,
+  AigPortalArtifactQuery,
+  AigPortalArtifactVO,
   AigPortalPrefVO,
   AigPortalRoleHomeVO,
   AigPortalRoleVO,
@@ -114,5 +116,20 @@ export function setDefaultRole(roleCode?: string): AxiosPromise<AigPortalPrefVO>
     url: '/aigov/portal/default-role',
     method: 'post',
     data: { roleCode: roleCode || '' }
+  });
+}
+
+/**
+ * 我的产物（平台产物台账；范围恒为当前用户）。
+ *
+ * 只返回元数据：**没有**下载直链——下载要走专业台/任务域，那里的权限仍然生效。
+ */
+export function listMyArtifacts(
+  query: AigPortalArtifactQuery
+): AxiosPromise<PageResult<AigPortalArtifactVO>> {
+  return request({
+    url: '/aigov/portal/my-artifacts',
+    method: 'get',
+    params: query
   });
 }

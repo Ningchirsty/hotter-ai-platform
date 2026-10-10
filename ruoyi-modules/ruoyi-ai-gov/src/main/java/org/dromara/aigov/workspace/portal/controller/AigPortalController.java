@@ -3,6 +3,7 @@ package org.dromara.aigov.workspace.portal.controller;
 import cn.dev33.satoken.annotation.SaCheckLogin;
 import lombok.RequiredArgsConstructor;
 import org.dromara.aigov.task.domain.bo.AigTaskQueryBo;
+import org.dromara.aigov.workspace.portal.domain.vo.AigPortalArtifactVo;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalRoleHomeVo;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalRoleVo;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalTaskVo;
@@ -18,6 +19,7 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -79,6 +81,20 @@ public class AigPortalController extends BaseController {
     @GetMapping("/my-tasks")
     public R<PageResult<AigPortalTaskVo>> myTasks(AigTaskQueryBo bo, PageQuery pageQuery) {
         return R.ok(portalService.myTasks(bo, pageQuery, requireActor()));
+    }
+
+    /**
+     * 我的产物（平台产物台账；范围恒为当前用户）。
+     *
+     * @param taskId    任务ID（可空：只看某个任务的产物）
+     * @param pageQuery 分页参数
+     * @return 分页结果
+     */
+    @SaCheckLogin
+    @GetMapping("/my-artifacts")
+    public R<PageResult<AigPortalArtifactVo>> myArtifacts(
+        @RequestParam(required = false) Long taskId, PageQuery pageQuery) {
+        return R.ok(portalService.myArtifacts(taskId, pageQuery, requireActor()));
     }
 
     /**
