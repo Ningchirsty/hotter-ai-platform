@@ -44,8 +44,9 @@ public class TemplateFeedController {
         String type=name.endsWith(".webp")?"image/webp":name.endsWith(".jpg")?"image/jpeg":"image/png";
         return ResponseEntity.ok().header("Cache-Control","private, max-age=600").header("X-Content-Type-Options","nosniff").header("Content-Type",type).body(cache.cover(id));
     }
+    // HTTP 使用平台 Jackson 3 可读取的 Map，服务层继续使用独立 Jackson 2 的树校验。
     @PostMapping("/generate") @SaCheckPermission("image:creation:submit")
-    public ResponseEntity<R<Map<String,Object>>> generate(@RequestBody JsonNode body) { long user=user(); return ResponseEntity.status(202).body(R.ok(generation.submit(tenant(user),user,LoginHelper.getDeptId(),body))); }
+    public ResponseEntity<R<Map<String,Object>>> generate(@RequestBody Map<String,Object> body) { long user=user(); return ResponseEntity.status(202).body(R.ok(generation.submit(tenant(user),user,LoginHelper.getDeptId(),TemplateFeedCache.JSON.valueToTree(body)))); }
     @GetMapping("/generate/{id}") @SaCheckPermission("image:creation:view")
     public R<Map<String,Object>> status(@PathVariable String id) { long user=user(); return R.ok(generation.status(tenant(user),user,id)); }
     @PostMapping("/generate/{id}/retry") @SaCheckPermission("image:creation:submit")
