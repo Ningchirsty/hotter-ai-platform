@@ -1,6 +1,7 @@
 package org.dromara.aigov.workspace.portal.service;
 
 import org.dromara.aigov.task.domain.bo.AigTaskQueryBo;
+import org.dromara.aigov.workspace.portal.domain.AigPortalActionContext;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalRoleHomeVo;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalRoleVo;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalTaskVo;
@@ -43,6 +44,20 @@ public interface IAigPortalService {
      * @return 岗位首页
      */
     AigPortalRoleHomeVo getRoleHome(String roleCode, AigPortalActor actor);
+
+    /**
+     * 解析"确切的哪张卡片"（启动链路用）。
+     *
+     * <p>与 {@link #getRoleHome} 走**同一条可见性路径**，因此不会出现
+     * "门户里看得到、启动说不可用"这种只有用户能发现的不一致。</p>
+     *
+     * @param roleCode   岗位编码
+     * @param actionCode 卡片编码
+     * @param actor      当前用户
+     * @return 卡片上下文（含岗位版本）
+     * @throws org.dromara.common.core.exception.ServiceException 岗位不可见或卡片不可用
+     */
+    AigPortalActionContext resolveAction(String roleCode, String actionCode, AigPortalActor actor);
 
     /**
      * 我的任务（只读聚合；范围恒为当前用户）。
