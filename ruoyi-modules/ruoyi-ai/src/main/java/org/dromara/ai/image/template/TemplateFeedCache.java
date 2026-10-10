@@ -137,7 +137,10 @@ public class TemplateFeedCache {
                 Resource c=fetcher.get(cover,""); if(c.status()!=200) throw new TemplateFeedException(503,"FEED_COVER_HTTP_"+c.status());
                 checkFile(manifest,cover,c.bytes(),true); bytes=c.bytes();
                 var image=org.dromara.ai.image.service.ImageAssetProbe.probeBytes(bytes);
-                if(!image.measured() || image.width()!=t.path("cover").path("width").asInt() || image.height()!=t.path("cover").path("height").asInt()) throw new TemplateFeedException(503,"FEED_COVER_IMAGE_INVALID");
+                if(!image.measured() || image.width() < 1 || image.height() < 1 || image.exceedsPixels(32 * 1024 * 1024)) throw new TemplateFeedException(503,"FEED_COVER_IMAGE_INVALID");
+                // Feed 封面尺寸是展示元数据；生成尺寸只能来自已校验的 profile。
+                // 内容哈希与实际可读图片均有效时，采用图片本身的尺寸，不因供应商元数据失准阻断全库。
+                if(image.width()!=t.path("cover").path("width").asInt() || image.height()!=t.path("cover").path("height").asInt()) LOG.warn("Template cover dimensions differ from metadata: {}", t.path("id").asText());
                 atomicWrite(path,bytes);
             }
         }
