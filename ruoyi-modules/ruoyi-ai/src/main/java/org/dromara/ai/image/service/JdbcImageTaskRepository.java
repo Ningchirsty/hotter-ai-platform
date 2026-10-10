@@ -341,7 +341,7 @@ public class JdbcImageTaskRepository implements ImageTaskRepository {
     static String taskSelect() {
         return """
             SELECT id, tenant_id, user_id, task_no, task_name, capability_code, workflow_code, workflow_version,
-                   model_code, status, size_label, strength_label, prompt, negative_prompt, input_json,
+                   model_code, status, size_label, strength_label, prompt, negative_prompt, input_json, idempotency_key,
                    comfy_prompt_id, comfy_worker, output_asset_id, cover_asset_id, progress,
                    error_code, error_message, attempt_count, output_width, output_height, output_has_alpha,
                    output_size_bytes, submitted_time, started_time, create_time, finished_time
