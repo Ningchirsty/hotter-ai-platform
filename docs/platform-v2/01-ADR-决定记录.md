@@ -365,7 +365,20 @@ private static final Map<String, Map<String, String>> LATEST = Map.of( ... );
 | **权限** | `aig:sandbox:record`（登记，直接决定能否从 VALIDATED 走到 SANDBOX_TESTED）与 `aig:sandbox:list`（查看），**只授 aig_admin**；口径同 `aig:evaluation:manual` |
 | **测试** | `AigSandboxRunEvidenceTest` 6 例（四条判据逐条钉 + 缺字段不算通过）、`AigSandboxRunServiceImplTest` 11 例（正例含原文哈希独立复算、缺 network/timedOut 拒绝、类型不对拒绝、jobId 不一致拒绝、目标版本不存在拒绝、重复登记报错、证据查询不抛异常）、注册中心新增 3 例（未声明不查证据、无证据拒绝推进、最近一次没跑通拒绝推进并回显实测数字） |
 | **生产实测（R101c，0 失败）** | 先在目标库建表与授权（`sys_menu` 415→417、`sys_role_menu` 880→882、新表 16 列 0 行、0 个未授权权限；先备份 `sys_menu`/`sys_role_menu` 到宿主 `/tmp`），再发布后端镜像，然后**以管理员身份在生产上跑完整条链**：①路由已注册（401 非 404）；②对一个已有版本查证据 → `satisfied=false` 且原因"该版本没有任何沙箱运行记录"；③临时版本的 `DRAFT→VALIDATED` 不受新断言影响；④声明 `SANDBOX_RUN` 推进 → **被拒**且错误消息点名该门槛与原因；⑤宿主机真跑一次沙箱作业（2 个产物、无网、`exitCode=0`）；⑥登记时三种字段级拒绝都生效（jobId 不一致、**缺 network 被拒而非默认成 none**、版本不存在），且拒绝路径**一行都没写库**；⑦登记成功，库里的 `result_sha256` 与宿主独立 `sha256sum` 一致，`recorded_by` 是管理员ID；⑧重复登记被两层各拦一次（`@RepeatSubmit` 拦同体重放，**`job_id` 唯一键拦同 jobId 异体**并给出"已经登记过"）；⑨证据转为 `satisfied=true`，同一推进请求这次**放行**且 `sandbox_tested_at` 落库；⑩清理后回到原状：临时版本 0 行、发布事件 0 行、账本 0 行、`aig_agent_version` 回到 4、**白名单删除（恢复 fail-closed）**、无残留容器、作业目录为空 |
-| **仍未做** | ①**产物还没取走登记到 `aig_task_artifact`**（账本只记了产物的名字/大小/哈希，产物本体还在宿主 scratch 上，scratch 是 tmpfs、重启即清空）；②`HUMAN_APPROVAL` 同样没有证据校验（它靠 `approved_by` 留痕，但"三方"是不是真的三方没有校验）；③**镜像白名单内容仍是未决项**（当前不存在 ⇒ 所有作业被拒，这是刻意的 fail-closed；要让闸门可过，运维必须先决定并写入允许的镜像摘要）；④前端还没有登记入口（当前只有接口 + 运维手册里的步骤）；⑤worker 仍无常驻单元 |
+| **仍未做** | ①**产物还没取走登记到 `aig_task_artifact`**（账本只记了产物的名字/大小/哈希；产物本体已由第四切片归档到宿主磁盘，但还没进平台）；②`HUMAN_APPROVAL` 同样没有证据校验（它靠 `approved_by` 留痕，但"三方"是不是真的三方没有校验）；③**镜像白名单内容仍是未决项**（当前不存在 ⇒ 所有作业被拒，这是刻意的 fail-closed；要让闸门可过，运维必须先决定并写入允许的镜像摘要）；④前端登记入口已在第四切片前完成；⑤worker 仍无常驻单元 |
+
+### 补遗（2026-10-10 第四切片）：产物归档 —— 让"跑出来的东西"活过宿主重启
+
+| 项 | 内容 |
+|---|---|
+| **为什么必须做** | 第三切片之后，账本里存着"产物 sha256=…"，而**产物本体只存在于 tmpfs scratch**：宿主一重启，就只剩一句"曾经有过"。这不是设计取舍，是数据丢失——而沙箱作业的价值恰恰是"这段外部代码产出了什么" |
+| **做法** | worker 跑完把 `result.json`、执行器 stdout/stderr 与 `work/` 下的产物**复制**到持久归档目录（`sandbox-install.sh` 建的 `/var/lib/hotter-sandbox/archive`，在真磁盘上），并写一份 `archive.json`：何时、产物几个/多少字节、原件 `result.json` 的 SHA-256、`ok`、`durable` |
+| **刻意的三条设计** | ①**不碰 `result.json`**：账本是按它的 SHA-256 存证的，事后改它等于让证据对不上——归档信息写在旁边单独的 `archive.json` 里；②产物**先复制到 `.tmp.<id>.<pid>` 再改名**：半截复制不能被当成"归档完成"（隐藏名也不参与清理）；③**失败不致命但必须留痕**：`archive.json` 记 `ok=false` + 原因（磁盘满是最可能的那个），而不是静默当作成功 |
+| **两个启动期断言** | ①归档目录不存在或不可写 ⇒ **拒绝启动**：静默不归档会让产物无声消失，而账本看起来一切正常；②归档目录与 scratch **同一个文件系统** ⇒ 不阻断作业（门槛证据在账本里，与归档无关），但每个作业记 `durable=false` 并告警——让"看起来归档了"不可能蒙混过去 |
+| **保留策略** | 默认最多 20 个作业 / 2GB，超了删**最旧**的（`SANDBOX_ARCHIVE_MAX_MB`、`SANDBOX_ARCHIVE_KEEP_JOBS` 可覆盖）。单个作业本身就超过容量上限（scratch 上限 1G）时，删到只剩它一个就**停下并告警**，而不是把刚归档的那个也删掉——那等于归档从来没发生 |
+| **生产实测（R103，0 失败）** | 归档目录与 scratch **不同文件系统**（实测设备号不同）·完成后 2 个产物 + `result.json` + 执行器日志都进了归档，且**归档的 `result.json` 与 scratch 里那份逐字节相同**（未被改写）·`archive.json` 的 `ok/durable/artifactFiles/artifactBytes/resultSha256` 与独立复算一致·**删掉 scratch 里整个作业目录后，产物仍在、归档的 `result.json` 仍可解析**（这就是这一步的全部意义）·被拒作业同样归档（0 产物 + 原因可读）·保留数 2 时三个作业只留最新两个、最旧的被删·容量上限 1MB 时 1.5MB 的作业**被保留**且告警、其余被清·`--no-archive` 确实不落归档·归档目录缺失时**拒绝启动**（非零退出 + 明确提示）·归档指到 scratch 内时记 `durable=false` 但仍归档·清理后生产回到原状（白名单缺席=fail-closed、作业目录与归档目录皆空、无残留容器） |
+| **仍未做** | ①**归档还没有进平台**：它是宿主侧目录，平台侧只有账本里的哈希；把产物登记到 `aig_task_artifact`（或对象存储）仍未做；②没有"按 jobId 查归档"的运维小工具（现在是 `ls /var/lib/hotter-sandbox/archive/<jobId>/`）；③`HUMAN_APPROVAL` 仍无证据校验；④镜像白名单内容仍未决；⑤worker 无常驻单元 |
+| **与门槛的关系（别混淆）** | 归档**不参与** `SANDBOX_RUN` 门槛判定：门槛只看账本里那条运行记录。归档是"产物别丢"，证据是"跑通过没有"——两件事，各自有各自的失败方式，所以 `archive.json` 里也没有任何字段会影响门槛结论 |
 
 ---
 
@@ -387,4 +400,4 @@ private static final Map<String, Map<String, String>> LATEST = Map.of( ... );
 | 013 | 接受（2026-10-09 追加） | 新增**包体内容安全检查**（F-02 第一切片）：只扫 ZIP、内存流、逐条带上限读；发现只映射既有的五条规则码（不新造码）；不通过整笔拒绝；**没扫必须显式标记**（scanned=false）。未决：被拒包体要不要留证据行 |
 | 012 | 接受（2026-10-09 追加） | 暴露 **`POST /aigov/task/callback`**：签名/Provider 走请求头（签原始字节）、按结论返回**真实 HTTP 状态码**、**IP 限流**、裸请求/坏 JSON 不写账本；该路径**必须同时**进 `security.excludes` 与 `xss.excludeUrls`（后者会重写请求体导致签名全废）；回调声明的错误码由平台归类；进度 best-effort |
 | 014 | 接受（2026-10-09 追加） | 平台没有该对象执行器时，**由管理员人工评测产出 `GOLDEN_CASE` 证据**（`POST /aigov/evaluation/manual-run`，行上标 `executed_by=ADMIN`）。不放松四条：只对 `SANDBOX_TESTED` 取证、集合等于声明集合且逐条 PASS/FAIL、**有执行器的对象拒绝走这条**、声明了成本范围必须上报成本。含 Rubric 的用例仍须再走一次复核 |
-| 015 | 接受（2026-10-10 追加，同日补遗第二、三切片） | **不可信执行 = 宿主侧独立进程 + 一次性受限容器**（`script/deploy/sandbox-run.sh`）：默认无网、根只读、cap 全丢、非 root、内存/CPU/进程数硬限、**定长 scratch** 当工作目录（内核强制 ENOSPC 且产物留得下）。**平台后端不持有 docker socket**（它自己的禁用工具表里就有 docker-socket）。12/12 隔离项在生产实测通过。**第二切片**补上 worker（认领/执行/上报，队列=文件系统，21 项生产断言 0 失败），并修掉"产物 ≥2 个时结果 JSON 非法"的真缺陷。**第三切片**把 `SANDBOX_RUN` 从纯声明变成要证据：新表 `aig_sandbox_run` + 登记接口 + 门槛断言（判据：有记录、退出码 0、未超时、无网，只看最近一次），取证通道选**管理员人工登记**（不改后端容器、不开服务开关）。**仍未做**：产物登记进制品账本、`HUMAN_APPROVAL` 的证据校验、镜像白名单内容（当前缺席=fail-closed）、worker 常驻单元、前端登记入口 |
+| 015 | 接受（2026-10-10 追加，同日补遗第二、三、四切片） | **不可信执行 = 宿主侧独立进程 + 一次性受限容器**（`script/deploy/sandbox-run.sh`）：默认无网、根只读、cap 全丢、非 root、内存/CPU/进程数硬限、**定长 scratch** 当工作目录（内核强制 ENOSPC 且产物留得下）。**平台后端不持有 docker socket**（它自己的禁用工具表里就有 docker-socket）。12/12 隔离项在生产实测通过。**第二切片**补上 worker（认领/执行/上报，队列=文件系统，21 项生产断言 0 失败），并修掉"产物 ≥2 个时结果 JSON 非法"的真缺陷。**第三切片**把 `SANDBOX_RUN` 从纯声明变成要证据：新表 `aig_sandbox_run` + 登记接口 + 门槛断言（判据：有记录、退出码 0、未超时、无网，只看最近一次），取证通道选**管理员人工登记**；前端登记入口已接到发布推进对话框。**第四切片**补上产物归档（复制到真磁盘 + `archive.json` + 保留策略，30+ 项生产断言 0 失败）。**仍未做**：产物登记进平台制品账本、`HUMAN_APPROVAL` 的证据校验、镜像白名单内容（当前缺席=fail-closed）、worker 常驻单元 |

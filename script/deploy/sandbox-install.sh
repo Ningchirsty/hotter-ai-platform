@@ -17,14 +17,19 @@
 #   · 宿主机重启后 scratch 清空——沙箱作业本来就是一次性的，产物应由 worker 尽快取走。
 #   · 它与容器的 --memory **互不相干**：宿主挂载点不记在容器的内存 cgroup 上。
 #
-# 用法：sudo sandbox-install.sh [--size-mb 1024] [--allow <image> ...]
-# 幂等：已挂载则跳过挂载；白名单按传入内容重写。
+# 因此本脚本还要建一个**持久归档目录**（默认 /var/lib/hotter-sandbox/archive，在真磁盘上）：
+#   worker 跑完作业会把 result.json、执行器日志与产物复制过去。第一版没有它时，
+#   账本里只有产物的哈希，而产物本体只存在于 tmpfs —— 宿主一重启就只剩"曾经有过"的哈希。
+#
+# 用法：sudo sandbox-install.sh [--size-mb 1024] [--archive-root DIR] [--allow <image> ...]
+# 幂等：已挂载则跳过挂载；白名单按传入内容重写；归档目录已存在则只纠正权限。
 # ---------------------------------------------------------------------------
 set -Eeuo pipefail
 
 SIZE_MB="1024"
 ROOT_DIR="/var/lib/hotter-sandbox"
 SCRATCH="${ROOT_DIR}/work"
+ARCHIVE="${ROOT_DIR}/archive"
 ALLOW_DIR="/etc/hotter-sandbox"
 ALLOW_FILE="${ALLOW_DIR}/images.allow"
 IMAGES=()
@@ -32,9 +37,10 @@ IMAGES=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --size-mb) SIZE_MB="${2:-}"; shift 2 ;;
-    --root) ROOT_DIR="${2:-}"; shift 2; SCRATCH="${ROOT_DIR}/work" ;;
+    --root) ROOT_DIR="${2:-}"; shift 2; SCRATCH="${ROOT_DIR}/work"; ARCHIVE="${ROOT_DIR}/archive" ;;
+    --archive-root) ARCHIVE="${2:-}"; shift 2 ;;
     --allow) shift; while [ $# -gt 0 ] && [ "${1#--}" = "$1" ]; do IMAGES+=("$1"); shift; done ;;
-    -h|--help) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,/^set -Eeuo pipefail$/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "未知参数：$1" >&2; exit 2 ;;
   esac
 done
@@ -57,6 +63,24 @@ fi
 mkdir -p "${SCRATCH}/jobs"
 chmod 1777 "${SCRATCH}/jobs"
 
+# 持久归档目录：**必须在真磁盘上**（不是那个 tmpfs）。
+# 归属给调用者（sudo 时是 SUDO_USER）：worker 通常以该用户运行，产物直接归它，不需要事后特权 chown。
+mkdir -p "$ARCHIVE"
+ARCHIVE_OWNER="${SUDO_USER:-root}"
+if id "$ARCHIVE_OWNER" >/dev/null 2>&1; then
+  chown "$ARCHIVE_OWNER" "$ARCHIVE"
+fi
+chmod 0755 "$ARCHIVE"
+
+# 归档与 scratch 必须在**不同**文件系统上：同一个文件系统意味着"归档"其实也在 tmpfs 里，
+# 宿主一重启连归档一起没——那正是这一步存在的理由。
+if [ "$(stat -c %d "$SCRATCH")" = "$(stat -c %d "$ARCHIVE")" ]; then
+  echo "警告：归档目录与 scratch 在同一个文件系统上（$ARCHIVE）——归档会在宿主重启时一起丢失。"
+  echo "      请把 --archive-root 指到真磁盘上（worker 会在每个作业的 archive.json 里记 durable=false）。"
+else
+  echo "持久归档：$ARCHIVE（owner=$ARCHIVE_OWNER，与 scratch 不同文件系统）"
+fi
+
 if [ "${#IMAGES[@]}" -gt 0 ]; then
   : >"$ALLOW_FILE"
   for img in "${IMAGES[@]}"; do printf '%s\n' "$img" >>"$ALLOW_FILE"; done
@@ -71,5 +95,6 @@ fi
 
 echo "-- 自检 --"
 df -h "$SCRATCH" | tail -1
-ls -ld "$SCRATCH/jobs"
+df -h "$ARCHIVE" | tail -1
+ls -ld "$SCRATCH/jobs" "$ARCHIVE"
 echo "SANDBOX_INSTALL_DONE"
