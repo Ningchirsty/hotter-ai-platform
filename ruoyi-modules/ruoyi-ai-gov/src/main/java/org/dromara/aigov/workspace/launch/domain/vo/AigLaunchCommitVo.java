@@ -68,13 +68,13 @@ public class AigLaunchCommitVo implements Serializable {
     private LocalDateTime committedAt;
 
     /**
-     * 阻止启动的问题码（通过时为空）
+     * 阻止启动的问题（码 + 可直接展示的文案；通过时为空）
      *
      * <p><b>为什么用 200 + problems 而不是抛异常</b>：这些是**业务拒绝**（票据过期、配额耗尽、
-     * 权限/输入不对），前端需要拿到稳定错误码来决定怎么提示；而真正的系统故障仍会抛异常走全局处理。
-     * 代价是调用方必须看 {@link #passed} —— 所以它与问题码一起返回，不能只看 HTTP 状态。</p>
+     * 权限/输入不对），前端需要拿到稳定错误码与文案来决定怎么提示；而真正的系统故障仍会抛异常
+     * 走全局处理。代价是调用方必须看 {@link #passed} —— 所以它与问题一起返回，不能只看 HTTP 状态。</p>
      */
-    private List<String> problems;
+    private List<AigLaunchProblemVo> problems;
 
     /**
      * 是否通过（problems 为空）

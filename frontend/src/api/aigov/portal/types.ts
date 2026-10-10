@@ -69,3 +69,66 @@ export interface AigPortalTaskQuery {
   pageNum?: number;
   pageSize?: number;
 }
+
+/** 启动问题（码 + 可直接展示的文案；文案由后端给，前端不再另写映射表） */
+export interface AigLaunchProblemVO {
+  code: string;
+  message?: string;
+}
+
+/** 启动请求（prepare 与 commit 共用） */
+export interface AigLaunchRequestForm {
+  roleCode: string;
+  actionCode: string;
+  /** 幂等键：客户端生成，重试必须复用（服务端按它判"这是同一次启动"） */
+  idempotencyKey: string;
+  /** commit 必填（prepare 返回的票据） */
+  ticket?: string;
+  taskType?: string;
+  projectType?: string;
+  projectId?: string | number;
+  dataLevel?: string;
+  snapshotJson?: string;
+  context?: Record<string, string>;
+  remark?: string;
+}
+
+/** prepare 结果 */
+export interface AigLaunchPrepareVO {
+  ticketId?: string;
+  expiresAt?: string;
+  roleCode?: string;
+  roleVersionId?: string | number;
+  actionCode?: string;
+  title?: string;
+  launchMode?: string;
+  targetType?: string;
+  targetRef?: string;
+  studioRouteKey?: string;
+  willCreateTask?: boolean;
+  taskType?: string;
+  projectType?: string;
+  projectId?: string | number;
+  missingContextKeys?: string[];
+  problems?: AigLaunchProblemVO[];
+  passed?: boolean;
+  /** 同一次启动已经存在时给出（幂等重放：不需要再提交） */
+  existingLaunchId?: string | number;
+  existingTaskId?: string | number;
+  existingTaskNo?: string;
+}
+
+/** commit 结果 */
+export interface AigLaunchCommitVO {
+  launchId?: string | number;
+  taskId?: string | number;
+  taskNo?: string;
+  launchMode?: string;
+  targetType?: string;
+  targetRef?: string;
+  launchStatus?: string;
+  replayed?: boolean;
+  committedAt?: string;
+  problems?: AigLaunchProblemVO[];
+  passed?: boolean;
+}
