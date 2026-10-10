@@ -1,9 +1,14 @@
 package org.dromara.aigov.studio.service;
 
 import org.dromara.aigov.studio.domain.bo.AigStudioDraftCreateBo;
+import org.dromara.aigov.studio.domain.bo.AigStudioDraftQueryBo;
 import org.dromara.aigov.studio.domain.bo.AigStudioDraftSaveBo;
 import org.dromara.aigov.studio.domain.vo.AigStudioDraftDetailVo;
+import org.dromara.aigov.studio.domain.vo.AigStudioDraftVo;
 import org.dromara.aigov.studio.domain.vo.AigStudioRevisionVo;
+import org.dromara.aigov.studio.domain.vo.AigStudioValidateVo;
+import org.dromara.common.core.domain.PageResult;
+import org.dromara.common.mybatis.core.page.PageQuery;
 
 import java.util.List;
 
@@ -87,5 +92,25 @@ public interface IAigStudioDraftService {
      * @param actorId 操作用户ID（必须是草稿责任人）
      */
     void archive(Long draftId, Long actorId);
+
+    /**
+     * 分页查询草稿清单（服务层填充状态描述与"是否有未提交改动"）。
+     *
+     * @param bo        查询条件
+     * @param pageQuery 分页参数
+     * @return 分页结果
+     */
+    PageResult<AigStudioDraftVo> queryPage(AigStudioDraftQueryBo bo, PageQuery pageQuery);
+
+    /**
+     * 预检草稿当前内容（专题 C §C7 "本地静态校验"）：<b>只读校验，不产生版本、不发布</b>。
+     *
+     * <p>一次把所有问题列全，而不是抛第一个错——预检是给正在编辑的人看的，
+     * 他需要知道哪里不合格才能改。</p>
+     *
+     * @param draftId 草稿ID
+     * @return 预检结论
+     */
+    AigStudioValidateVo validateDraft(Long draftId);
 
 }

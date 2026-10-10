@@ -83,6 +83,16 @@ public class AigStudioDraftVo implements Serializable {
     private String status;
 
     /**
+     * 草稿状态的中文描述（<b>由服务层分页映射时填充</b>；不填就是又造一个"永远为空"的字段）
+     */
+    private String statusLabel;
+
+    /**
+     * 是否有未提交的改动（<b>由服务层分页映射时填充</b>，判据是 contentHash != lastPublishedHash）
+     */
+    private Boolean unpublishedChanges;
+
+    /**
      * 备注
      */
     private String remark;

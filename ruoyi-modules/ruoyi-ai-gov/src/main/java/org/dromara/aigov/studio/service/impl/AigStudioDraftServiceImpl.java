@@ -1,29 +1,38 @@
 package org.dromara.aigov.studio.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.aigov.studio.domain.AigStudioDraft;
 import org.dromara.aigov.studio.domain.AigStudioDraftContent;
 import org.dromara.aigov.studio.domain.AigStudioRevision;
 import org.dromara.aigov.studio.domain.bo.AigStudioDraftCreateBo;
+import org.dromara.aigov.studio.domain.bo.AigStudioDraftQueryBo;
 import org.dromara.aigov.studio.domain.bo.AigStudioDraftSaveBo;
 import org.dromara.aigov.studio.domain.vo.AigStudioDraftDetailVo;
+import org.dromara.aigov.studio.domain.vo.AigStudioDraftVo;
 import org.dromara.aigov.studio.domain.vo.AigStudioRevisionVo;
+import org.dromara.aigov.studio.domain.vo.AigStudioValidateVo;
 import org.dromara.aigov.studio.enums.AigStudioDraftStatusEnum;
 import org.dromara.aigov.studio.enums.AigStudioRevisionSourceEnum;
 import org.dromara.aigov.studio.helper.AigStudioContentHasher;
 import org.dromara.aigov.studio.mapper.AigStudioDraftMapper;
 import org.dromara.aigov.studio.mapper.AigStudioRevisionMapper;
 import org.dromara.aigov.studio.service.IAigStudioDraftService;
+import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
+import org.dromara.common.mybatis.core.page.PageQuery;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
 /**
  * 训练草稿读写实现（增量 S2）。
@@ -196,6 +205,117 @@ public class AigStudioDraftServiceImpl implements IAigStudioDraftService {
             throw new ServiceException("草稿状态已被并发修改，归档未生效：draftId=" + draftId);
         }
         log.info("训练草稿已归档, draftId={}", draftId);
+    }
+
+    @Override
+    public PageResult<AigStudioDraftVo> queryPage(AigStudioDraftQueryBo bo, PageQuery pageQuery) {
+        AigStudioDraftQueryBo query = bo == null ? new AigStudioDraftQueryBo() : bo;
+        LambdaQueryWrapper<AigStudioDraft> wrapper = Wrappers.<AigStudioDraft>lambdaQuery()
+            .like(StringUtils.isNotBlank(query.getAgentCode()),
+                AigStudioDraft::getAgentCode, query.getAgentCode())
+            .eq(StringUtils.isNotBlank(query.getStatus()), AigStudioDraft::getStatus, query.getStatus())
+            .eq(query.getOrgId() != null, AigStudioDraft::getOrgId, query.getOrgId())
+            .eq(query.getOwnerId() != null, AigStudioDraft::getOwnerId, query.getOwnerId())
+            // 最近改动的在前：训练台第一眼要看的是"我昨天改到哪了"
+            .orderByDesc(AigStudioDraft::getUpdateTime)
+            .orderByDesc(AigStudioDraft::getDraftId);
+        // 注意类型：不能把 selectVoPage 内联进 PageResult.build(...)——返回类型是自由类型变量
+        Page<AigStudioDraftVo> voPage = draftMapper.selectVoPage(pageQuery.build(), wrapper);
+        // 标签与"未提交改动"由服务端在**分页映射这一处**填（VO 里预置了字段就必须有人填，
+        // 否则列表页两列永远为空——本项目出现过多次同类问题）
+        for (AigStudioDraftVo vo : voPage.getRecords()) {
+            AigStudioDraftStatusEnum status = AigStudioDraftStatusEnum.find(vo.getStatus());
+            vo.setStatusLabel(status == null ? vo.getStatus() : status.getDesc());
+            vo.setUnpublishedChanges(vo.getLastPublishedHash() == null
+                || !vo.getLastPublishedHash().equals(vo.getContentHash()));
+        }
+        return PageResult.build(voPage.getRecords(), voPage.getTotal());
+    }
+
+    @Override
+    public AigStudioValidateVo validateDraft(Long draftId) {
+        AigStudioDraft draft = requireDraft(draftId);
+        AigStudioValidateVo vo = new AigStudioValidateVo();
+        vo.setDraftId(draft.getDraftId());
+        vo.setRevision(draft.getLatestRevision());
+        vo.setContentHash(draft.getContentHash());
+        vo.getProblems().addAll(collectProblems(draft.getContentJson()));
+        vo.setPassed(vo.getProblems().isEmpty());
+        return vo;
+    }
+
+    /**
+     * 静态校验规则（一次列全，不抛第一个错）。
+     *
+     * <p>这些规则刻意都是<b>能判定真假</b>的：不做"看起来更专业"的软性建议，
+     * 否则预检会变成一堆没人看的提示。</p>
+     *
+     * @param contentJson 草稿内容（规范 JSON）
+     * @return 问题清单
+     */
+    private List<String> collectProblems(String contentJson) {
+        List<String> problems = new java.util.ArrayList<>();
+        AigStudioDraftContent content;
+        try {
+            content = jsonMapper.readValue(contentJson, AigStudioDraftContent.class);
+        } catch (Exception e) {
+            problems.add("内容不是合法 JSON：" + e.getMessage());
+            return problems;
+        }
+        if (content == null) {
+            problems.add("内容为空");
+            return problems;
+        }
+        Map<String, String> sections = content.getPromptSections() == null
+            ? Map.of() : content.getPromptSections();
+        List<String> missing = AigStudioDraftContent.PROMPT_SECTION_KEYS.stream()
+            .filter(key -> !sections.containsKey(key))
+            .toList();
+        if (!missing.isEmpty()) {
+            problems.add("缺少 Prompt 分节：" + String.join("、", missing)
+                + "（八个分节是 Diff 与缺节校验的唯一口径，不能少）");
+        }
+        boolean allBlank = sections.values().stream().allMatch(StringUtils::isBlank);
+        if (allBlank) {
+            problems.add("至少填写一个 Prompt 分节（当前全部为空）");
+        }
+        if (StringUtils.isBlank(content.getProviderCapability())) {
+            problems.add("未声明所需能力（providerCapability）：没有它无法路由，提交后也调不通");
+        }
+        String allowExternal = content.getAllowExternal();
+        if (StringUtils.isNotBlank(allowExternal)
+            && !"Y".equalsIgnoreCase(allowExternal) && !"N".equalsIgnoreCase(allowExternal)) {
+            problems.add("allowExternal 只能是 Y 或 N，当前=" + allowExternal);
+        }
+        checkJsonField(problems, "输入 Schema", content.getInputSchema());
+        checkJsonField(problems, "输出 Schema", content.getOutputSchema());
+        // 页面定制不允许夹带可执行脚本（专题 C §C6：不接受任意 JavaScript 在门户执行）
+        String page = content.getPageCustomizationJson();
+        if (StringUtils.isNotBlank(page)) {
+            String lower = page.toLowerCase(Locale.ROOT);
+            if (lower.contains("<script") || lower.contains("javascript:")) {
+                problems.add("页面定制里出现了可执行脚本（<script / javascript:）：门户只接受安全组件白名单，不接受任意脚本");
+            }
+        }
+        return problems;
+    }
+
+    /**
+     * 校验一个"内容里带的 JSON 字段"是否合法（为空视为未填，不算问题）。
+     *
+     * @param problems 问题清单（就地追加）
+     * @param label    字段中文名（用于提示）
+     * @param json     字段值
+     */
+    private void checkJsonField(List<String> problems, String label, String json) {
+        if (StringUtils.isBlank(json)) {
+            return;
+        }
+        try {
+            jsonMapper.readValue(json, Object.class);
+        } catch (Exception e) {
+            problems.add(label + "不是合法 JSON");
+        }
     }
 
     // ------------------------------------------------------------------ 内部
