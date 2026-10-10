@@ -12,6 +12,7 @@
             </p>
           </div>
           <div class="toolbar-actions">
+            <el-button v-if="defaultRoleCode" plain icon="Close" @click="handleClearDefault">清空默认岗位</el-button>
             <el-button icon="Refresh" @click="reload">刷新</el-button>
           </div>
         </div>
@@ -35,7 +36,26 @@
         >
           <div class="role-card-top">
             <h4>{{ role.roleName || role.roleCode }}</h4>
-            <el-tag v-if="role.version" effect="plain" size="small">{{ role.version }}</el-tag>
+            <div class="role-card-actions">
+              <el-tag v-if="role.version" effect="plain" size="small">{{ role.version }}</el-tag>
+              <el-button
+                link
+                :type="isFavorite(favorites, role.roleCode) ? 'warning' : 'info'"
+                :icon="isFavorite(favorites, role.roleCode) ? 'StarFilled' : 'Star'"
+                :title="isFavorite(favorites, role.roleCode) ? '取消收藏' : '收藏（收藏的岗位会排在前面）'"
+                @click.stop="handleToggleFavorite(role.roleCode)"
+              />
+              <el-tag v-if="defaultRoleCode === role.roleCode" size="small" type="success" effect="plain">默认</el-tag>
+              <el-button
+                v-else
+                link
+                type="info"
+                title="设为默认打开的岗位"
+                @click.stop="handleSetDefault(role.roleCode)"
+              >
+                设为默认
+              </el-button>
+            </div>
           </div>
           <p class="role-desc">{{ role.description || '暂无岗位说明' }}</p>
           <div class="role-meta">
@@ -150,7 +170,7 @@
 </template>
 
 <script setup lang="ts">
-import { getRoleHome, listMyRoles, listMyTasks } from '@/api/aigov/portal';
+import { getRoleHome, getWorkspacePref, listMyRoles, listMyTasks, setDefaultRole, toggleFavorite } from '@/api/aigov/portal';
 import type {
   AigLaunchCommitVO,
   AigPortalActionVO,
@@ -165,8 +185,10 @@ import modal from '@/plugins/modal';
 import LaunchFormDrawer from './LaunchFormDrawer.vue';
 import {
   groupPortalActions,
+  isFavorite,
   isNavigable,
   launchModeLabel,
+  sortRolesByFavorite,
   taskStatusMeta
 } from './presentation';
 import { buildProfessionalUrl, resolveProfessionalPath } from './professionalLink';
@@ -192,6 +214,10 @@ const taskQuery = ref<AigPortalTaskQuery>({ pageNum: 1, pageSize: 10 });
 const launchVisible = ref(false);
 const launchAction = ref<AigPortalActionVO>();
 
+/** 偏好（收藏 + 默认岗位）；只是"先看哪个"，不参与可见性判定 */
+const favorites = ref<string[]>([]);
+const defaultRoleCode = ref('');
+
 /** 任务状态选项（与后端 AigTaskStatusEnum 一致） */
 const taskStatusOptions = [
   { code: 'PENDING', label: '待处理' },
@@ -203,18 +229,39 @@ const taskStatusOptions = [
 
 const actionGroups = computed(() => groupPortalActions(roleHome.value?.categories, roleHome.value?.actions));
 
+/**
+ * 读偏好（收藏 + 默认岗位）。
+ *
+ * 失败不影响门户主流程：偏好看不到时按"没有收藏、没有默认"处理——它是附加信息，
+ * 不该让员工打不开工作台。
+ */
+const getPref = async () => {
+  try {
+    const res = await getWorkspacePref();
+    favorites.value = res.data.favorites || [];
+    defaultRoleCode.value = res.data.defaultRoleCode || '';
+  } catch {
+    favorites.value = [];
+    defaultRoleCode.value = '';
+  }
+};
+
 const getRoles = async () => {
   await withRolesLoading(async () => {
     const res = await listMyRoles();
-    roles.value = res.data || [];
+    // 展示哪些岗位只认服务端返回的列表；收藏只用来排序（收藏里可能有已不可见的岗位）
+    roles.value = sortRolesByFavorite(res.data || [], favorites.value);
     if (roles.value.length === 0) {
       selectedRoleCode.value = '';
       roleHome.value = undefined;
       return;
     }
-    // 默认选第一个岗位：员工打开工作台应当立刻看到卡片，而不是一个空的选择器
+    // 优先打开默认岗位，其次保留当前选择，最后取第一个：
+    // 员工打开工作台应当立刻看到卡片，而不是一个空的选择器
+    const preferred = roles.value.find(role => role.roleCode === defaultRoleCode.value);
     const stillVisible = roles.value.some(role => role.roleCode === selectedRoleCode.value);
-    await selectRole(stillVisible ? selectedRoleCode.value : roles.value[0].roleCode);
+    const target = stillVisible ? selectedRoleCode.value : preferred?.roleCode || roles.value[0].roleCode;
+    await selectRole(target);
   });
 };
 
@@ -224,6 +271,48 @@ const selectRole = async (roleCode: string) => {
     const res = await getRoleHome(roleCode);
     roleHome.value = res.data;
   });
+};
+
+/**
+ * 收藏/取消收藏。
+ *
+ * 服务端会校验"这个岗位对本人可见"；失败时把提示原样显示，**不改本地状态**
+ * （本地先改再回滚会让人以为改成功了）。
+ */
+const handleToggleFavorite = async (roleCode: string) => {
+  try {
+    const res = await toggleFavorite(roleCode, !isFavorite(favorites.value, roleCode));
+    favorites.value = res.data.favorites || [];
+    roles.value = sortRolesByFavorite(roles.value, favorites.value);
+  } catch (e: any) {
+    modal.alertError(e?.message || '操作失败');
+  }
+};
+
+/** 设为默认打开的岗位（传空即清空，所以这里只做"设为默认"） */
+const handleSetDefault = async (roleCode: string) => {
+  try {
+    const res = await setDefaultRole(roleCode);
+    defaultRoleCode.value = res.data.defaultRoleCode || '';
+    modal.msgSuccess('已设为默认岗位');
+  } catch (e: any) {
+    modal.alertError(e?.message || '操作失败');
+  }
+};
+
+/**
+ * 清空默认岗位。
+ *
+ * 单独给一个入口：只能"换一个默认"而没有"取消默认"时，用户没法表达"我不想有默认"。
+ */
+const handleClearDefault = async () => {
+  try {
+    const res = await setDefaultRole('');
+    defaultRoleCode.value = res.data.defaultRoleCode || '';
+    modal.msgSuccess('已清空默认岗位');
+  } catch (e: any) {
+    modal.alertError(e?.message || '操作失败');
+  }
 };
 
 const openPage = (action: AigPortalActionVO) => {
@@ -288,6 +377,8 @@ const resetTaskQuery = () => {
 };
 
 const reload = async () => {
+  // 先读偏好再读岗位：收藏决定排序、默认岗位决定先打开哪一个
+  await getPref();
   await getRoles();
   await getTasks();
 };
@@ -328,6 +419,12 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+
+.role-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .role-card-top h4 {

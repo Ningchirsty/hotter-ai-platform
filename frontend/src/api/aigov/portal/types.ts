@@ -146,3 +146,9 @@ export interface AigLaunchRecordVO {
   targetRef?: string;
   committedAt?: string;
 }
+
+/** 工作台偏好（收藏 + 默认岗位） */
+export interface AigPortalPrefVO {
+  favorites?: string[];
+  defaultRoleCode?: string;
+}

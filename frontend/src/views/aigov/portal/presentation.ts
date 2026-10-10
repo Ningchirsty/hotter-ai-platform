@@ -227,3 +227,42 @@ export function hasProblem(problems: { code: string }[] | undefined, code: strin
 export function problemTexts(problems: { code: string; message?: string }[] | undefined): string[] {
   return (problems ?? []).map(item => item.message || item.code);
 }
+
+/* ------------------------------------------------------------------ *
+ * 收藏与默认岗位（增量 5）
+ * ------------------------------------------------------------------ */
+
+/**
+ * 该岗位是否已收藏。
+ *
+ * @param favorites 收藏清单
+ * @param roleCode 岗位编码
+ * @returns 已收藏返回 true
+ */
+export function isFavorite(favorites: string[] | undefined, roleCode?: string): boolean {
+  if (!roleCode) {
+    return false;
+  }
+  return (favorites ?? []).includes(roleCode);
+}
+
+/**
+ * 排序岗位：**收藏在前**，其余保持服务端给的顺序。
+ *
+ * <p>只做"把收藏排到前面"，不按收藏清单的顺序重排岗位——收藏清单里可能含有**已不可见**的岗位，
+ * 以它为排序依据会让界面出现无法解释的空位。同理，界面展示哪些岗位**只认服务端返回的列表**。</p>
+ *
+ * @param roles 岗位（服务端返回）
+ * @param favorites 收藏清单
+ * @returns 新数组
+ */
+export function sortRolesByFavorite<T extends { roleCode: string }>(
+  roles: T[] | undefined,
+  favorites: string[] | undefined
+): T[] {
+  const list = roles ?? [];
+  const favoriteSet = new Set(favorites ?? []);
+  const preferred = list.filter(role => favoriteSet.has(role.roleCode));
+  const others = list.filter(role => !favoriteSet.has(role.roleCode));
+  return [...preferred, ...others];
+}

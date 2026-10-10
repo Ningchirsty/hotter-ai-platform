@@ -6,6 +6,7 @@ import type {
   AigLaunchPrepareVO,
   AigLaunchRecordVO,
   AigLaunchRequestForm,
+  AigPortalPrefVO,
   AigPortalRoleHomeVO,
   AigPortalRoleVO,
   AigPortalTaskQuery,
@@ -83,5 +84,35 @@ export function getLaunchRecordByTask(taskId: string | number): AxiosPromise<Aig
   return request({
     url: '/aigov/portal/launch/records/by-task/' + taskId,
     method: 'get'
+  });
+}
+
+/**
+ * 读取我的工作台偏好（收藏 + 默认岗位）。
+ *
+ * 偏好**不参与可见性判定**：收藏里的岗位若已不可见，`/roles` 不会返回它，界面以 `/roles` 为准。
+ */
+export function getWorkspacePref(): AxiosPromise<AigPortalPrefVO> {
+  return request({
+    url: '/aigov/portal/pref',
+    method: 'get'
+  });
+}
+
+/** 收藏/取消收藏岗位（服务端会校验该岗位对本人可见） */
+export function toggleFavorite(roleCode: string, favorite: boolean): AxiosPromise<AigPortalPrefVO> {
+  return request({
+    url: '/aigov/portal/favorites',
+    method: 'post',
+    data: { roleCode, favorite }
+  });
+}
+
+/** 设置/清空默认岗位（roleCode 传空表示清空） */
+export function setDefaultRole(roleCode?: string): AxiosPromise<AigPortalPrefVO> {
+  return request({
+    url: '/aigov/portal/default-role',
+    method: 'post',
+    data: { roleCode: roleCode || '' }
   });
 }
