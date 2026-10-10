@@ -112,3 +112,30 @@ export interface AigStudioDraftContentForm {
   /** 未在页面上编辑的其余字段，保存时原样保留 */
   [key: string]: unknown;
 }
+
+/** 测试调用入参（数据等级必填：它决定能不能外发，测错等级等于没测） */
+export interface AigStudioTestRunForm {
+  dataLevel: string;
+  input: string;
+  maxCost?: number;
+}
+
+/** 测试调用结果 */
+export interface AigStudioTestRunVO {
+  linkId: string | number;
+  draftId: string | number;
+  revision?: number;
+  contentHash?: string;
+  testStatus?: string;
+  output?: string;
+  outputTruncated?: boolean;
+  resultDigest?: string;
+  traceId?: string;
+  modelKey?: string;
+  deploymentType?: string;
+  externalCall?: boolean;
+  latencyMs?: number;
+  errorCode?: string;
+  reason?: string;
+  policyHits?: string;
+}

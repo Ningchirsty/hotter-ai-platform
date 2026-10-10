@@ -303,15 +303,77 @@ script/sql/aig_studio.sql
 
 ---
 
-## 六、后续增量（待做）
+## 六、增量 S5：训练台测试调用（✅ 后端已完成；UI 入口待补）
 
-| # | 增量 | 关键点 |
-|---|---|---|
-| **S5** | 沙箱测试 | 基于不可变 revision 执行一次真实调用（**默认关闭**），走既有模型路由 + 配额，证据落 `aig_studio_execution_link`；**复用 ADR-015/016 的受限容器链路，不自建沙箱**；如需非会话身份，复用 `aig_service_token` |
+### 6.1 它是什么、不是什么
 
-**S5 动手前的核对项**：`SANDBOX_RUN` 已是"要证据"（`aig_sandbox_run`），`HUMAN_APPROVAL` 也有
-ADR-014 的"管理员人工评测"通道——落地时按 `docs/platform-v2/02-Execution-Contract-v1.md`
-与 `AigReleaseGateEnum` 把证据来源逐条对上（避免把测试接到一个不校验的门槛上）。
+**是**：把某一版草稿内容真的发一次出去、看它产出什么，并把这次调用钉进
+`aig_studio_execution_link` 证据链。
+**不是**：ADR-015/016 那个"宿主侧进程 + 一次性受限容器"的沙箱——那条链是给
+**执行不可信代码/脚本**用的。本增量只发一次受治理的模型调用，**不自建任何执行沙箱**。
+将来若草稿生成出脚本型 Skill，**它的执行必须走 ADR-015 那条链**，不能借这个接口。
+
+### 6.2 落地物
+
+| 类别 | 文件 |
+|---|---|
+| 开关 | `studio/config/AigStudioTestProperties`（`aigov.studio.test.*`；`enabled` **默认 false**、`max-input-chars=4000`、`output-preview-chars=2000`） |
+| 服务 | `studio/service/IAigStudioTestService` + `impl/AigStudioTestServiceImpl` |
+| 接口 | `studio/controller/AigStudioTestController`（`POST /aigov/studio/drafts/{id}/test-runs`、`GET /aigov/studio/test-runs/{id}`） |
+| 入参/出参 | `AigStudioTestRunBo`（`dataLevel`/`input` 必填）、`AigStudioTestRunVo` |
+| 共用拼装 | `studio/helper/AigStudioPromptBuilder`（**提交与测试用同一份**，否则"测的"和"提交的"会漂移） |
+| 权限 | `aig:studio:test:run`、`aig:studio:test:view`（+ 菜单行，只给 aig_admin） |
+| 测试 | `AigStudioTestServiceImplTest`（12 条） |
+
+### 6.3 三条不可让步的约束
+
+1. **默认关闭**：开着它就能花真钱。关着时直接拒绝并说清原因（`aigov.studio.test.enabled`）。
+2. **必须走网关**（`IAigInvokeService`）：策略校验与配额在**网关执行点**上（ADR-006 要求落成代码），
+   绕过它就等于给训练台开了一条"不经治理的模型通道"。本开关**不是**"绕过策略"的开关。
+3. **不把测试调用算成灰度数据**：调用**不带 `agentVersionId`**。带了的话，训练台点几次测试
+   就会把该版本的 CANARY 调用计数/失败率抬上去——那是**用测试伪造灰度证据**。
+   版本号只记在我们自己的证据表里（`aig_studio_execution_link.agent_version_id`）。
+   这条有专门用例钉住（`successWritesEvidenceAndReturnsPreview` 断言 `agentVersionId` 为 null）。
+
+### 6.4 其他刻意的取舍
+
+- **证据先落、调用后补**：进网关前先插一条 `RUNNING` 行，回来再更新为 `SUCCEEDED`/`FAILED`。
+  崩在调用中间也留下"这次可能真的调用了"的痕迹——比"崩了就当没调过"诚实（费用可能已产生）。
+- **网关抛异常也把证据收尾成 FAILED**：不留一条永远 `RUNNING` 的行。
+- **`dataLevel` 必填**：若默认成 INTERNAL，就会出现"按 INTERNAL 测通、按 RESTRICTED 上线"——
+  那样的测试恰好证明了**错误的那件事**。
+- **成功判据与任务执行同一口径**：必须有输出且无错误码（只看一者都会误判）。
+- **输出预览标明是否截断**：不标的话人会以为模型只输出了这么点。
+- **操作者必须是草稿责任人**：测试会花钱，必须能追到人。
+- **`@RepeatSubmit`**：防连点（每次点击都是一次真实调用）。
+
+### 6.5 验证
+
+- aigov **709 → 721** 全绿（+12：默认关闭拒绝、等级必填/非法拒绝、输入空/过长拒绝、
+  非责任人拒绝、已归档拒绝、缺能力/缺修订拒绝、成功路径（证据先落 RUNNING→调网关→SUCCEEDED、
+  **断言不带 agentVersionId**、摘要/traceId 正确、prompt 含分节与测试输入）、输出截断标记、
+  有错误码→FAILED、网关抛异常也收尾 FAILED、读证据不再调用、读证据不存在报错）；
+- 权限种子守卫通过（第 7/8 个权限点已种子）。
+
+### 6.6 待补（本增量唯一剩下的）
+
+**页面上的"测试"入口尚未加**：后端接口、权限、菜单行都已就绪，但训练台编辑器里还没有
+那个按钮与结果面板。补它属于纯前端改动（数据等级选择 + 测试输入 + 结果/证据展示），
+不涉及任何新语义。
+
+---
+
+## 七、后续与独立的变更
+
+**留给后续的一次独立变更**：`AigAgentCategoryEnum` 只有四个与创作工厂实现绑定的类别。
+若要支持"行业分析"这类非创作 Agent，需要一次**独立的类别/契约扩展**（会动枚举与
+`docs/platform-v2` 的契约面），不应夹在 Studio 增量里顺手加。
+
+**若要把测试结果用作发布门槛证据**：`SANDBOX_RUN` 已是"要证据"（`aig_sandbox_run`），
+`HUMAN_APPROVAL` 也有 ADR-014 的"管理员人工评测"通道。本增量的测试证据落在
+`aig_studio_execution_link`，**目前不参与任何门槛判定**——要把它接进门槛是一次独立决定，
+需按 `docs/platform-v2/02-Execution-Contract-v1.md` 与 `AigReleaseGateEnum` 把证据来源逐条对上，
+并明确"训练台的测试调用算不算 SANDBOX_RUN 证据"（**测试调用不等于沙箱执行**）。
 
 **留给后续的一次独立变更**：`AigAgentCategoryEnum` 只有四个与创作工厂实现绑定的类别。
 若要支持"行业分析"这类非创作 Agent，需要一次**独立的类别/契约扩展**（会动枚举与

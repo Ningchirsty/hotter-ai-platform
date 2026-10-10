@@ -256,6 +256,9 @@
         <el-button @click="editorVisible = false">关 闭</el-button>
         <el-button v-hasPermi="['aig:studio:draft:validate']" @click="handleValidate">预 检</el-button>
         <el-button v-hasPermi="['aig:studio:draft:edit']" type="primary" :loading="saving" @click="handleSave">保 存</el-button>
+        <el-button v-hasPermi="['aig:studio:test:run']" type="warning" @click="openTest">
+          测 试（会花一次调用）
+        </el-button>
         <el-button
           v-hasPermi="['aig:studio:draft:submit']"
           type="success"
@@ -286,11 +289,74 @@
         <el-button type="primary" :loading="submitting" @click="doSubmit">确 定提交</el-button>
       </template>
     </el-dialog>
+    <!-- 测试调用（会真的花一次模型调用；后端默认关闭） -->
+    <el-dialog v-model="testVisible" title="测试这一次内容" width="640px" append-to-body>
+      <el-alert type="warning" :closable="false" class="mb-2">
+        这会发起<b>一次真实的模型调用</b>（走后端网关的策略校验与配额，可能计费）。
+        测试针对的是<b>已被保存的那一版修订</b>；后端开关 <code>aigov.studio.test.enabled</code> 默认为关，
+        关着时会被明确拒绝。测试调用<b>不会</b>计入灰度数据。
+      </el-alert>
+      <el-form label-width="110px">
+        <el-form-item label="数据等级" required>
+          <el-select v-model="testForm.dataLevel" style="width: 100%">
+            <el-option label="PUBLIC" value="PUBLIC" />
+            <el-option label="INTERNAL" value="INTERNAL" />
+            <el-option label="RESTRICTED（严格级，通常禁止外发）" value="RESTRICTED" />
+            <el-option label="STRICT" value="STRICT" />
+          </el-select>
+          <div class="text-gray-500" style="font-size: 12px; line-height: 1.5">
+            必须按<b>上线时要用的等级</b>测：按 INTERNAL 测通、按 RESTRICTED 上线 = 测了错的那件事。
+          </div>
+        </el-form-item>
+        <el-form-item label="测试输入" required>
+          <el-input v-model="testForm.input" type="textarea" :rows="4" placeholder="例如：给这款保温杯写一句卖点" />
+        </el-form-item>
+        <el-form-item label="成本上限">
+          <el-input-number v-model="testForm.maxCost" :min="0" :controls="false" placeholder="可空；单位=美元 USD" />
+        </el-form-item>
+      </el-form>
+
+      <el-descriptions v-if="testResult" :column="1" border size="small">
+        <el-descriptions-item label="状态">
+          <el-tag :type="testResult.testStatus === 'SUCCEEDED' ? 'success' : 'danger'">
+            {{ testResult.testStatus }}
+          </el-tag>
+          <span class="text-gray-500">
+            （修订 #{{ testResult.revision }}，证据链 #{{ testResult.linkId }}）
+          </span>
+        </el-descriptions-item>
+        <el-descriptions-item label="实际模型">
+          {{ testResult.modelKey || '-' }} / {{ testResult.deploymentType || '-' }} /
+          {{ testResult.externalCall ? '发生了外发' : '未外发' }}
+          <span class="text-gray-500">（耗时 {{ testResult.latencyMs ?? '-' }} ms）</span>
+        </el-descriptions-item>
+        <el-descriptions-item v-if="testResult.policyHits" label="策略命中">
+          {{ testResult.policyHits }}
+        </el-descriptions-item>
+        <el-descriptions-item v-if="testResult.reason" label="原因">
+          {{ testResult.reason }} <span v-if="testResult.errorCode">（{{ testResult.errorCode }}）</span>
+        </el-descriptions-item>
+        <el-descriptions-item v-if="testResult.output" label="输出">
+          <pre class="test-output">{{ testResult.output }}</pre>
+          <span v-if="testResult.outputTruncated" class="text-orange-500">（输出已截断，完整内容见调用审计）</span>
+        </el-descriptions-item>
+        <el-descriptions-item v-if="testResult.traceId" label="traceId">
+          {{ testResult.traceId }}
+        </el-descriptions-item>
+      </el-descriptions>
+
+      <template #footer>
+        <el-button @click="testVisible = false">关 闭</el-button>
+        <el-button v-hasPermi="['aig:studio:test:run']" type="primary" :loading="testing" @click="doTest">
+          发 起 测 试
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { listDraft, getDraft, getRevision, createDraft, saveDraft, listRevisions, validateDraft, rollbackDraft, archiveDraft, submitDraft } from '@/api/aigov/studio';
+import { listDraft, getDraft, getRevision, createDraft, saveDraft, listRevisions, validateDraft, rollbackDraft, archiveDraft, submitDraft, runStudioTest } from '@/api/aigov/studio';
 import type {
   AigStudioDraftCreateForm,
   AigStudioDraftContentForm,
@@ -298,7 +364,9 @@ import type {
   AigStudioDraftQuery,
   AigStudioDraftSubmitForm,
   AigStudioDraftVO,
-  AigStudioRevisionVO
+  AigStudioRevisionVO,
+  AigStudioTestRunForm,
+  AigStudioTestRunVO
 } from '@/api/aigov/studio/types';
 import { useLoading } from '@/hooks/async/useLoading';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
@@ -352,6 +420,11 @@ const contentLoaded = ref(false);
 const submitVisible = ref(false);
 const submitting = ref(false);
 const submitForm = ref<AigStudioDraftSubmitForm>({});
+
+const testVisible = ref(false);
+const testing = ref(false);
+const testForm = ref<AigStudioTestRunForm>({ dataLevel: 'INTERNAL', input: '' });
+const testResult = ref<AigStudioTestRunVO>();
 
 /** 当前内容序列化（用于与所选修订比较） */
 const currentJson = computed(() => JSON.stringify(content.value));
@@ -584,6 +657,33 @@ const handleArchive = async (row: any) => {
   getList();
 };
 
+const openTest = () => {
+  if (localDirty.value) {
+    modal.msgWarning('有未保存的改动：测试针对「已保存的那一版修订」，请先保存');
+    return;
+  }
+  testForm.value = { dataLevel: 'INTERNAL', input: '' };
+  testResult.value = undefined;
+  testVisible.value = true;
+};
+
+const doTest = async () => {
+  if (!testForm.value.input || !testForm.value.input.trim()) {
+    modal.msgWarning('测试输入不能为空');
+    return;
+  }
+  testing.value = true;
+  try {
+    const res = await runStudioTest(detail.value.draftId, testForm.value);
+    testResult.value = res.data;
+  } catch (e: any) {
+    // 后端默认关闭时会给出明确原因（aigov.studio.test.enabled），原样展示
+    modal.alertError(e?.message || '测试调用失败');
+  } finally {
+    testing.value = false;
+  }
+};
+
 onMounted(() => {
   getList();
 });
@@ -612,5 +712,13 @@ onMounted(() => {
   white-space: pre-wrap;
   word-break: break-word;
   margin-top: 2px;
+}
+
+.test-output {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 12px;
 }
 </style>
