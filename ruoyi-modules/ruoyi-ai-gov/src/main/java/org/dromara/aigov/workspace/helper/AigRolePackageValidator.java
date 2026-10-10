@@ -10,7 +10,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -42,12 +41,6 @@ public final class AigRolePackageValidator {
      * 版本形态：SemVer 风格（附件 §5.3「不允许覆盖已发布制品」）
      */
     private static final Pattern VERSION = Pattern.compile("^\\d+\\.\\d+\\.\\d+$");
-
-    /**
-     * 场景引用形态：{@code scenario://<code>@<version>}
-     */
-    private static final Pattern SCENARIO_REF =
-        Pattern.compile("^scenario://([A-Za-z0-9_]+)@(\\d+\\.\\d+\\.\\d+)$");
 
     /**
      * 允许出现在 {@code requiredContext} 里的上下文键（附件 §8.3）。
@@ -226,10 +219,11 @@ public final class AigRolePackageValidator {
             return;
         }
         if (targetType == AigLaunchTargetTypeEnum.SCENARIO) {
-            Matcher matcher = SCENARIO_REF.matcher(targetRef);
-            if (!matcher.matches()) {
+            // 形态解析只有一处实现（AigScenarioRef）：校验器与启动链路必须对"什么算合法引用"给出同一答案
+            AigScenarioRef ref = AigScenarioRef.parse(targetRef);
+            if (ref == null) {
                 problems.add("卡片 " + code + " 的 SCENARIO 引用必须是 scenario://<code>@<版本>，实际=" + targetRef);
-            } else if (lookup == null || !lookup.scenarioExists(matcher.group(1), matcher.group(2))) {
+            } else if (lookup == null || !lookup.scenarioExists(ref.code(), ref.version())) {
                 problems.add("卡片 " + code + " 引用的场景版本不存在：" + targetRef);
             }
         } else if (AigRouteKeyRegistry.contains(targetRef)) {
