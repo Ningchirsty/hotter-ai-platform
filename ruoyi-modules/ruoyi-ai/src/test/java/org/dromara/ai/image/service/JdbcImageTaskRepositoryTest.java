@@ -89,4 +89,24 @@ class JdbcImageTaskRepositoryTest {
             "缺 submitted_time → 页面上拿不到内核记录的真实提交时刻");
         assertTrue(sql.contains("finished_time"), "缺 finished_time 则耗时算不出来");
     }
+    @Test
+    @DisplayName("真实 JDBC 任务查询必须保留模板幂等编号")
+    void ownedTaskQueryPreservesTemplateIdempotencyKey() {
+        var jdbc = new org.springframework.jdbc.core.JdbcTemplate(new org.springframework.jdbc.datasource.DriverManagerDataSource(
+            "jdbc:h2:mem:template-repository" + System.nanoTime() + ";MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1", "sa", ""));
+        String columns = JdbcImageTaskRepository.taskSelect().split("SELECT", 2)[1].split("FROM", 2)[0];
+        var definitions = new java.util.ArrayList<String>();
+        for (String column : columns.split(",")) {
+            String name = column.strip();
+            definitions.add(name + (java.util.List.of("id", "user_id").contains(name) ? " BIGINT" : " VARCHAR(8000)"));
+        }
+        if (!columns.contains("idempotency_key")) definitions.add("idempotency_key VARCHAR(128)");
+        definitions.add("del_flag CHAR(1)");
+        jdbc.execute("CREATE TABLE image_task (" + String.join(",", definitions) + ")");
+        String key = "tpl-37f0fa97-c5cd-4818-bbcf-dbe4e51e3c69";
+        jdbc.update("INSERT INTO image_task (id,tenant_id,user_id,status,idempotency_key,del_flag) VALUES (7,'a',9,'QUEUED',?,'0')", key);
+        var repository = new JdbcImageTaskRepository(jdbc);
+        assertEquals(key, repository.requireOwnedTask(7L, "a", 9L).get("idempotency_key"));
+    }
+
 }

@@ -35,3 +35,6 @@ CREATE TABLE IF NOT EXISTS ai_template_validation_budget (
   issued INT NOT NULL DEFAULT 0,
   PRIMARY KEY (tenant_id, user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 模板提示词可达 8000 字符；原有创作入口仍保留 1000 字符校验。仅扩大存储，不截断已有数据。
+ALTER TABLE image_task MODIFY COLUMN prompt TEXT NULL;

@@ -16,7 +16,7 @@
     <section v-if="pending" class="request-status" role="status">
       <b>{{ stateLabel(pending.status) }}</b><p>{{ pending.error?.message }}</p>
       <button :disabled="sending" @click="recover">查询原请求</button>
-      <button v-if="pending.error?.code === 'queue_full'" :disabled="sending" @click="retryQueue">恢复排队</button>
+      <button v-if="['queue_full', 'dispatch_not_submitted'].includes(pending.error?.code || '')" :disabled="sending" @click="retryQueue">恢复排队</button>
       <button v-if="['succeeded', 'failed', 'archived'].includes(pending.status)" @click="clearPending">关闭</button>
       <span v-if="pending.task_id">任务已同步到下方任务列表</span>
     </section>
