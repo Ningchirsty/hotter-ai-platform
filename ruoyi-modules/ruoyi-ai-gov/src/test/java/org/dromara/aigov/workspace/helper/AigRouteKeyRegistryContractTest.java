@@ -3,6 +3,7 @@ package org.dromara.aigov.workspace.helper;
 import org.dromara.aigov.workspace.enums.AigActionLaunchModeEnum;
 import org.dromara.aigov.workspace.enums.AigLaunchTargetTypeEnum;
 import org.dromara.aigov.workspace.enums.AigRoleReleaseStatusEnum;
+import org.dromara.aigov.workspace.enums.AigScenarioAdapterEnum;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -108,6 +109,23 @@ class AigRouteKeyRegistryContractTest {
             codesOf(AigLaunchTargetTypeEnum.values()));
         assertEquals(Set.of("DRAFT", "TESTING", "PUBLISHED", "DISABLED"),
             codesOf(AigRoleReleaseStatusEnum.values()));
+        assertEquals(Set.of("CREATIVE_EXISTING_FLOW", "VIDEO_EXISTING_FLOW",
+                "CONTENT_EXISTING_FLOW", "NONE"),
+            codesOf(AigScenarioAdapterEnum.values()));
+    }
+
+    /**
+     * 取枚举的 code 集合。
+     *
+     * @param values 枚举值
+     * @return code 集合
+     */
+    private static Set<String> codesOf(AigScenarioAdapterEnum[] values) {
+        Set<String> codes = new LinkedHashSet<>();
+        for (AigScenarioAdapterEnum item : values) {
+            codes.add(item.getCode());
+        }
+        return codes;
     }
 
     /**
