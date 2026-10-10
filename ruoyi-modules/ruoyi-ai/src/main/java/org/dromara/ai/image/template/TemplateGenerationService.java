@@ -23,6 +23,26 @@ public class TemplateGenerationService {
     public TemplateGenerationService(JdbcTemplate jdbc,TemplateFeedCache cache,TemplateFeedProperties properties,ImageCloudService cloud,ImageTaskRepository tasks) {
         this.jdbc=jdbc; this.cache=cache; this.properties=properties; this.cloud=cloud; this.tasks=tasks;
     }
+    /** 只准备可编辑草稿，不写任务账本、不占验收额度、不提交生成。 */
+    public Map<String,Object> prepare(JsonNode body) {
+        if(!body.isObject()) throw new TemplateFeedException(422,"模板参数须为对象");
+        var fields=Set.of("template_id","revision","variables");
+        var names=body.fieldNames();
+        while(names.hasNext()) if(!fields.contains(names.next())) throw new TemplateFeedException(422,"模板参数包含未支持的字段");
+        String id=body.path("template_id").asText();
+        if(!id.matches("[A-Za-z0-9_-]{1,128}")) throw new TemplateFeedException(422,"模板编号无效");
+        cache.refresh(); JsonNode template=cache.require(id);
+        if(!cache.published(template)) throw new TemplateFeedException(422,"模板维护中，请选择其它模板");
+        if(body.path("revision").asInt()!=template.path("revision").asInt()) throw new TemplateFeedException(409,"模板已更新，请重新选择");
+        var request=(com.fasterxml.jackson.databind.node.ObjectNode)body.deepCopy();
+        request.put("client_request_id",UUID.randomUUID().toString());
+        var input=TemplateRequestBuilder.build(request,template,cache.current().profiles(),properties.getBlockedTerms()).input();
+        var out=new LinkedHashMap<String,Object>();
+        out.put("templateId",id);out.put("revision",template.path("revision").asInt());
+        out.put("model",input.model());out.put("capability",input.capability());out.put("prompt",input.prompt());
+        out.put("referenceAssetIds",input.referenceAssetIds());out.put("output",TemplateFeedCache.JSON.convertValue(input.output(),Map.class));
+        return out;
+    }
     public Map<String,Object> submit(String tenant,long user,Long dept,JsonNode body) {
         // 先校验请求形状；不能将客户端传入的绑定字段用于请求或账本哈希。
         String id=body.path("template_id").asText();

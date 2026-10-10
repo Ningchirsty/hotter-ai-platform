@@ -28,7 +28,7 @@
             云端生成
             <em>{{ cloudLabel || '待接入' }}</em>
           </b>
-          <small>外部 API 服务</small>
+          <small>云端模型服务</small>
         </span>
       </button>
     </div>

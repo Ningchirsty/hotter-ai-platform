@@ -27,6 +27,6 @@ export function imageCapabilityStatusLabel(status?: string): string {
   if (status === 'HTTP_504') return '供应商超时 · 暂不可用';
   if (status === 'OUTPUT_UNVERIFIED') return '图片验收待完成';
   if (status === 'CAPABILITY_OUTPUT_MISMATCH') return '输出不符合要求';
-  if (status?.startsWith('HTTP_')) return `接口 ${status.slice(5)} · 暂不可用`;
+  if (status?.startsWith('HTTP_')) return `暂不可用（${status.slice(5)}）`;
   return '待验证 · 可预览';
 }

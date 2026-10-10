@@ -44,7 +44,7 @@ export function outputParameterStatusLabel(status:CloudImageModelsVO|undefined,m
   const result=checks?.at(-1)?.parameterResults?.[key];
   if(result === 'OUTPUT_MISMATCH') return ' · 实测未生效';
   if(result === 'ACCEPTED_UNCONFIRMED') return ' · 已测试，生效未确认';
-  if(result === 'HTTP_ERROR') return ' · 接口拒绝';
+  if(result === 'HTTP_ERROR') return ' · 暂不支持';
   if(result === 'RESULT_UNKNOWN') return ' · 结果未确认';
   return ' · 待验证';
 }

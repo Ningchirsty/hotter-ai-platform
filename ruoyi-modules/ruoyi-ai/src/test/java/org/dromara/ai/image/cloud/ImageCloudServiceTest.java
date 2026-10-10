@@ -27,6 +27,18 @@ class ImageCloudServiceTest {
             "model_code", "gpt-image-2.5-flare", "prompt", "flower", "task_no", "IMAGE-1");
     }
 
+    @Test void editableSunburstTemplatesPreserveLongPromptsWhileOtherModelsRetainTheirLimit() {
+        try {
+            when(repo.findByIdempotencyKey(anyString(),anyLong(),anyString())).thenReturn(null);
+            String prompt="Scene with rich details ".repeat(90);
+            service.create("tenant",2,null,new CloudImageRequest("gpt-image-2.5-sunburst",prompt,"T2I",List.of(),null),"", "template-edit-123");
+            var capture=org.mockito.ArgumentCaptor.forClass(ImageTaskRepository.TaskRow.class);verify(repo).insertTask(capture.capture());
+            assertEquals(prompt,capture.getValue().prompt());
+            assertThrows(ImageTaskException.class,()->service.create("tenant",2,null,"gpt-image-2.5-flare",prompt,"","other-model-123"));
+            assertThrows(ImageTaskException.class,()->service.create("tenant",2,null,"gpt-image-2.5-sunburst","x".repeat(8001),"","too-long-123"));
+            verify(client,never()).generate(anyString(),anyString());verify(client,never()).generate(any(CloudImageRequest.class),anyList());
+        } finally { service.shutdown(); }
+    }
     @Test void duplicateExecutionIsClaimedOnce() throws Exception {
         try {
             when(repo.requireOwnedTask(1, "tenant", 2)).thenReturn(task("QUEUED"));

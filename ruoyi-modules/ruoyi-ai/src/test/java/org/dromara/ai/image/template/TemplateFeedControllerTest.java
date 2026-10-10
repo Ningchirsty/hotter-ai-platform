@@ -35,6 +35,18 @@ class TemplateFeedControllerTest {
             assertEquals("adabf122-3df2-43a0-a763-8f2442cf9dee",body.getValue().path("client_request_id").asText());
         }
     }
+    @Test void prepareUsesAuthenticatedTenantAndJacksonThreeBodyWithoutSubmittingGeneration() throws Exception {
+        var generation=mock(TemplateGenerationService.class);var tenants=mock(ImageInspirationTenantResolver.class);
+        when(tenants.resolve(7L)).thenReturn("tenant-a");
+        when(generation.prepare(any())).thenReturn(Map.of("model","gpt-image-2.5-sunburst","prompt","test","output",Map.of("n",1)));
+        var mvc=MockMvcBuilders.standaloneSetup(new TemplateFeedController(mock(TemplateFeedCache.class),generation,tenants)).setMessageConverters(new JacksonJsonHttpMessageConverter()).build();
+        try(var login=mockStatic(LoginHelper.class)) {
+            login.when(LoginHelper::getUserId).thenReturn(7L);
+            mvc.perform(post("/image/templates/prepare").contentType(MediaType.APPLICATION_JSON).content("{\"template_id\":\"tpl_ff359\",\"revision\":2,\"variables\":{\"subject\":\"白色花瓶\"}}")) .andExpect(status().isOk());
+            var capture=ArgumentCaptor.forClass(JsonNode.class);verify(generation).prepare(capture.capture());verify(tenants).resolve(7L);
+            assertEquals("白色花瓶",capture.getValue().path("variables").path("subject").asText());verifyNoMoreInteractions(generation);
+        }
+    }
     @Test void nonObjectHttpBodyCannotDispatchAnyGeneration() throws Exception {
         var generation=mock(TemplateGenerationService.class);
         var mvc=MockMvcBuilders.standaloneSetup(new TemplateFeedController(mock(TemplateFeedCache.class),generation,mock(ImageInspirationTenantResolver.class)))
