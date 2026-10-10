@@ -327,6 +327,19 @@ public interface AigConstants {
     String PERM_STUDIO_DRAFT_SUBMIT = "aig:studio:draft:submit";
 
     /**
+     * 发起训练台测试调用（<b>会花真钱</b>：走一次真实的模型调用）
+     *
+     * <p>默认关闭（{@code aigov.studio.test.enabled=false}），且与"看测试记录"分开授权：
+     * 能看别人测过什么，和能自己发起一次计费调用，是两件事。</p>
+     */
+    String PERM_STUDIO_TEST_RUN = "aig:studio:test:run";
+
+    /**
+     * 查看训练台测试记录
+     */
+    String PERM_STUDIO_TEST_VIEW = "aig:studio:test:view";
+
+    /**
      * 服务令牌管理权限码的公共前缀。
      *
      * <p><b>它同时是一条安全边界</b>：签发令牌时，凡以此前缀开头的 scope 一律拒绝
