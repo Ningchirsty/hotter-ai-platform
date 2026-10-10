@@ -11,6 +11,8 @@ import type {
   AigStudioDraftSubmitVO,
   AigStudioDraftVO,
   AigStudioRevisionVO,
+  AigStudioTestRunForm,
+  AigStudioTestRunVO,
   AigStudioValidateVO
 } from './types';
 
@@ -112,5 +114,29 @@ export function submitDraft(
     url: '/aigov/studio/drafts/' + draftId + '/submit',
     method: 'post',
     data
+  });
+}
+
+/**
+ * 发起一次测试调用（**会真的花一次模型调用**）。
+ *
+ * 后端默认关闭（aigov.studio.test.enabled），关着时会明确报错；调用仍走网关的策略校验与配额。
+ */
+export function runStudioTest(
+  draftId: string | number,
+  data: AigStudioTestRunForm
+): AxiosPromise<AigStudioTestRunVO> {
+  return request({
+    url: '/aigov/studio/drafts/' + draftId + '/test-runs',
+    method: 'post',
+    data
+  });
+}
+
+/** 读取一条测试证据（不再调用） */
+export function getStudioTest(linkId: string | number): AxiosPromise<AigStudioTestRunVO> {
+  return request({
+    url: '/aigov/studio/test-runs/' + linkId,
+    method: 'get'
   });
 }
