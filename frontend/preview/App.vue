@@ -2,7 +2,7 @@
   <div class="preview-notice" role="status">
     <b>{{ live ? "本机云端真实联调" : "源码界面预览" }}</b>
     <span v-if="live">云端图像提交会调用蓝章鱼 API 并可能计费 · 任务与素材保存在本机 · 本地 ComfyUI 与视频仍为样例展示</span>
-    <span v-else>复用真实 Vue 页面 · 参数／状态来自源码契约 · 任务／素材／GPU 为标注样例 · 不连接服务器</span>
+    <span v-else>31 个新增工作流 · 图像 11 / 视频 20 · 只读预览，任务／素材／GPU 为界面样例</span>
   </div>
   <header class="platform-header">
     <a class="brand" href="#/ai-tools/video-creation">
@@ -16,7 +16,7 @@
       <router-link to="/ai-tools/video-creation">视频创作</router-link>
       <router-link to="/ai-tools/image-creation">图像创作</router-link>
     </nav>
-    <span class="baseline">主分支功能保留</span>
+    <span class="baseline">本地分支 · 待确认</span>
   </header>
   <main><router-view /></main>
 </template>

@@ -1,4 +1,6 @@
 import vue from '@vitejs/plugin-vue';
+import AutoImport from 'unplugin-auto-import/vite';
+import { ElementPlusResolver } from 'unplugin-vue-components/resolvers';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath, URL } from 'node:url';
 import { defineConfig } from 'vite';
@@ -6,9 +8,10 @@ const here = (relative: string) => fileURLToPath(new URL(relative, import.meta.u
 const live = process.env.HOTTER_LOCAL_CLOUD_LIVE === 'true';
 const localSession = live ? readFileSync(process.env.HOTTER_LOCAL_CLOUD_SESSION_FILE!, 'utf8').trim() : '';
 export default defineConfig({
-  define: { 'import.meta.env.VITE_CLOUD_LOCAL_LIVE': JSON.stringify(live ? 'true' : 'false') },
+  define: { 'import.meta.env.VITE_LOCAL_WORKFLOW_PREVIEW': JSON.stringify('true'), 'import.meta.env.VITE_CLOUD_LOCAL_LIVE': JSON.stringify(live ? 'true' : 'false') },
   root: here('./'),
-  plugins: [vue()],
+  plugins: [vue(), AutoImport({ imports: ['vue', 'vue-router', '@vueuse/core', 'pinia'],
+    resolvers: [ElementPlusResolver({ importStyle: false })], vueTemplate: true, dts: false })],
   resolve: {
     alias: [
       { find: /^@\/api\/video$/, replacement: here('./fixture-api.ts') },

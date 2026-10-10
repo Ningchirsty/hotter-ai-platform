@@ -1,5 +1,6 @@
 import ElementPlus from 'element-plus';
 import { createApp } from 'vue';
+import { createPinia } from 'pinia';
 import { createRouter, createWebHashHistory } from 'vue-router';
 import 'element-plus/dist/index.css';
 import ImageCreation from '@/views/image/index.vue';
@@ -14,4 +15,4 @@ const router = createRouter({
   ]
 });
 // Preview only: show permission-controlled controls, while all writes reject in fixture-api.
-createApp(App).use(router).use(ElementPlus).directive('hasPermi', {}).mount('#app');
+createApp(App).use(createPinia()).use(router).use(ElementPlus).directive('hasPermi', {}).mount('#app');

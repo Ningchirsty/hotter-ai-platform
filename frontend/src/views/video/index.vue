@@ -54,6 +54,7 @@
               type="button"
               :class="['capability', { active: item.code === currentModule.code }]"
               :aria-pressed="item.code === currentModule.code"
+              :disabled="uploading || submitting"
               @click="selectModule(item)"
             >
               <el-icon><component :is="moduleIcons[item.code]" /></el-icon>
@@ -64,73 +65,9 @@
 
           <div class="form-divider" />
 
-          <div v-if="currentModule.models.length" class="field-block">
-            <label>
-              生成模型
-              <em>*</em>
-            </label>
-            <p v-if="closedModels.length" class="model-group-label">
-              <el-icon><Lock /></el-icon>
-              本地 · 闭源模型
-            </p>
-            <div v-if="closedModels.length" class="model-grid">
-              <button
-                v-for="item in closedModels"
-                :key="item.code"
-                type="button"
-                :class="['model-option', { active: item.code === currentModel.code }]"
-                :disabled="item.code !== 'H3'"
-                @click="currentModel = item"
-              >
-                <span>
-                  <b>{{ item.name }}</b>
-                  <i v-if="item.recommended">推荐</i>
-                </span>
-                <small>
-                  {{
-                    item.code === 'H3'
-                      ? '本地 ComfyUI · ' +
-                        (currentWorkflow?.status === 'PUBLISHED' && currentWorkflow.submittable ? '可用' : '暂未开放')
-                      : '本地工作流待接入'
-                  }}
-                </small>
-              </button>
-            </div>
-            <p v-if="openModels.length" class="model-group-label">
-              <el-icon><Cpu /></el-icon>
-              本地 · 开源模型
-            </p>
-            <div v-if="openModels.length" class="model-grid">
-              <button
-                v-for="item in openModels"
-                :key="item.code"
-                type="button"
-                :class="['model-option', { active: item.code === currentModel.code }]"
-                disabled
-                @click="currentModel = item"
-              >
-                <span>
-                  <b>{{ item.name }}</b>
-                </span>
-                <small>工作流待接入</small>
-              </button>
-            </div>
-          </div>
-          <div v-else class="field-block">
-            <label>
-              处理工作流
-              <em>*</em>
-            </label>
-            <div class="fixed-workflow">
-              <span>
-                <b>{{ currentModule.fixedWorkflow!.name }}</b>
-                <i>固定工作流</i>
-              </span>
-              <small>
-                {{ currentModule.fixedWorkflow!.version }} · 本地 GPU · {{ currentModule.fixedWorkflow!.eta }}
-              </small>
-            </div>
-          </div>
+          <LocalWorkflowPicker media="video" :items="workflowOptions" :catalog="localCatalog" :model-value="selectedWorkflowCode"
+            :total="localCatalog.length" :busy="uploading || submitting" :registered="registeredWorkflow"
+            @update:model-value="selectWorkflow" @choose="browseWorkflow" />
 
           <template v-for="field in currentModule.fields" :key="field">
             <div v-if="isUploadField(field)" class="field-block">
@@ -280,13 +217,8 @@
           </template>
 
           <p class="workflow-note">
-            MiniMax H3 支持三种生成方式；比例、清晰度与可选时长以服务端契约为准，时长随清晰度档位联动。
-            <template v-if="currentWorkflow">
-              服务端状态：
-              <b>{{ currentWorkflow.status }}</b>
-              。
-            </template>
-            提交按钮仅在对应工作流发布（PUBLISHED）后开放，未通过实机验收前保持禁用。
+            每个模型仅展示当前创作方式适用的工作流。输出尺寸、时长与音频能力随所选版本变化。
+            本地验证版本展示实际生成过的参数；平台开放后可提交生成。
           </p>
         </div>
         <div class="submit-row">
@@ -629,6 +561,10 @@ import {
   type StudioModule
 } from './modules';
 
+import LocalWorkflowPicker from '@/components/LocalWorkflowPicker/index.vue';
+import { matchRegisteredWorkflow, workflowFields, type LocalWorkflowOption } from '@/components/LocalWorkflowPicker/types';
+import videoCatalog from './local-workflows.json';
+
 type StudioView = 'create' | 'tasks' | 'assets';
 type AssetKind = 'image' | 'video' | 'audio';
 type TaskFilterKey = 'all' | VideoTaskStatus;
@@ -673,7 +609,7 @@ const studioViews: Array<{ key: StudioView; label: string; icon: Component }> = 
   { key: 'assets', label: '素材库', icon: FolderOpened }
 ];
 
-const currentModule = ref(VIDEO_MODULES[0]!);
+const selectedModule = ref<StudioModule>(VIDEO_MODULES[0]!);
 const currentModel = ref(VIDEO_MODELS.find(item => item.code === VIDEO_MODULES[0]!.defaultModel) ?? VIDEO_MODELS[0]!);
 const values = reactive<Partial<Record<FieldKey, string>>>({ tier: '高清 · 1080P', dur: '5 秒' });
 /** 已上传素材的 ID，提交任务时传 ID，不传浏览器本地文件名。 */
@@ -792,6 +728,22 @@ const showGuide = ref(true);
 
 /** 服务端返回的工作流视图：提交按钮的可用性完全由它的 status 决定。 */
 const workflows = ref<VideoWorkflowVO[]>([]);
+const localCatalog = videoCatalog as unknown as Array<LocalWorkflowOption & VideoWorkflowVO>;
+const localWorkflowPreview = import.meta.env.VITE_LOCAL_WORKFLOW_PREVIEW === 'true';
+const selectedWorkflowCode = ref(localWorkflowPreview ? 'wf-local-ready-minimaxh3-turbo-i2v-av' : 'wf-i2v-h3');
+const workflowOptions = computed<LocalWorkflowOption[]>(() => {
+  const base = selectedModule.value;
+  const native = localCatalog.filter(item => item.media === 'video' && item.capabilityCode === base.code);
+  const legacy: LocalWorkflowOption[] = base.code === 'R2V' ? [] : [{
+    media: 'video', workflowCode: resolveWorkflowCode(base, 'H3'), capabilityCode: base.code,
+    modelCode: 'H3', modelName: 'MiniMax H3', name: '平台现有导演工作流', version: '', fields: base.fields
+  }];
+  return [...native, ...legacy];
+});
+const selectedOption = computed(() => workflowOptions.value.find(item => item.workflowCode === selectedWorkflowCode.value));
+const currentModule = computed<StudioModule>(() => ({ ...selectedModule.value,
+  fields: (selectedOption.value?.fields ?? selectedModule.value.fields) as FieldKey[] }));
+
 const tasks = ref<VideoTaskVO[]>([]);
 const assets = ref<VideoAssetVO[]>([]);
 const assetTotal = ref(0);
@@ -819,9 +771,12 @@ const taskFilters = [
 const moduleIcons: Record<string, Component> = {
   I2V: VideoCamera,
   T2V: MagicStick,
+  R2V: Picture,
   FL2V: Picture
 };
 const fieldLabels: Record<FieldKey, string> = {
+  reference1: '参考图 1',
+  reference2: '参考图 2',
   first: '首帧图片',
   last: '尾帧图片',
   frames: '关键帧',
@@ -844,8 +799,9 @@ const fieldOptions: Partial<Record<FieldKey, string[]>> = {
   target: ['1080P', '4K'],
   fps: ['24 FPS', '30 FPS', '60 FPS']
 };
-const uploadFields: FieldKey[] = ['first', 'last', 'frames', 'img', 'audio'];
+const uploadFields: FieldKey[] = ['first', 'last', 'frames', 'img', 'audio', 'reference1', 'reference2'];
 const requiredFields: FieldKey[] = [
+  'reference1', 'reference2',
   'first',
   'img',
   'frames',
@@ -859,26 +815,18 @@ const requiredFields: FieldKey[] = [
   'fps'
 ];
 
-const closedModels = computed(() =>
-  VIDEO_MODELS.filter(item => currentModule.value.models.includes(item.code) && item.license === 'closed')
-);
-const openModels = computed(() =>
-  VIDEO_MODELS.filter(item => currentModule.value.models.includes(item.code) && item.license === 'open')
-);
-
-/** 当前模块 + 模型解析出的 workflowCode。 */
-const currentWorkflowCode = computed(() => resolveWorkflowCode(currentModule.value, currentModel.value.code));
-
-/** 当前 workflowCode 对应的服务端工作流视图。 */
-const currentWorkflow = computed(
-  () => workflows.value.find(item => item.workflowCode === currentWorkflowCode.value) ?? null
-);
+const currentWorkflowCode = computed(() => selectedWorkflowCode.value);
+const registeredWorkflow = computed(() => matchRegisteredWorkflow('video', selectedOption.value, workflows.value));
+const currentWorkflow = computed(() => registeredWorkflow.value ?? (() => {
+  const native = localCatalog.find(item => item.workflowCode === selectedWorkflowCode.value);
+  return native ? { ...native, status: 'DRAFT' as const, submittable: false, testable: false } : null;
+})());
 
 /**
  * 只有 PUBLISHED 才允许在正式环境提交。
  * 未读取到已发布且可提交的工作流时，保持禁用并提示真实原因。
  */
-const canSubmit = computed(() => generationSource.value==='cloud' ? !cloudBlockReason.value : canSubmitLocal(generationSource.value, currentWorkflow.value));
+const canSubmit = computed(() => generationSource.value==='cloud' ? !cloudBlockReason.value : !localWorkflowPreview && canSubmitLocal(generationSource.value, registeredWorkflow.value));
 
 /**
  * 当前工作流允许的输出档位（清晰度）。
@@ -975,7 +923,8 @@ watch(
 
 const submitBlockReason = computed(() => {
   if (generationSource.value === 'cloud') return cloudBlockReason.value;
-  if (!workflows.value.length) return '正在读取工作流状态…';
+  if (localWorkflowPreview) return '本地只读预览：可选择模型和参数，确认后再接入平台任务服务';
+  if (!registeredWorkflow.value) return '本地 ComfyUI 已验证，平台工作流尚未注册，暂不可提交';
   const workflow = currentWorkflow.value;
   if (!workflow) return `${currentWorkflowCode.value} 尚未在服务端注册`;
   if (workflow.status === 'DRAFT') return '工作流为 DRAFT，完成实机验收并发布后方可提交';
@@ -985,6 +934,7 @@ const submitBlockReason = computed(() => {
 });
 
 const versionPill = computed(() => {
+  if (selectedOption.value?.verifiedAt) return selectedOption.value.modelName + ' · 本地已验证';
   const workflow = currentWorkflow.value;
   if (workflow) return `${workflow.modelCode ?? currentModel.value.name} · ${workflow.version} · ${workflow.status}`;
   return currentModule.value.models.length
@@ -1063,7 +1013,10 @@ async function loadAssets() {
 
 function selectModule(item: StudioModule) {
   appliedInspirationTitle.value = '';
-  currentModule.value = item;
+  selectedModule.value = item;
+  selectedWorkflowCode.value = localWorkflowPreview || item.code === 'R2V'
+    ? localCatalog.find(row => row.capabilityCode === item.code)?.workflowCode ?? resolveWorkflowCode(item, 'H3')
+    : resolveWorkflowCode(item, 'H3');
   currentModel.value =
     VIDEO_MODELS.find(candidate => candidate.code === item.defaultModel) ??
     VIDEO_MODELS.find(candidate => item.models.includes(candidate.code)) ??
@@ -1073,7 +1026,28 @@ function selectModule(item: StudioModule) {
   uploadFields.forEach(field => releaseUploadPreviews(field));
   // 默认取服务端允许的第一个档位，而不是写死 1080P。
   values.tier = supportedTiers.value[0] ?? '高清 · 1080P';
-  values.dur = '5 秒';
+  values.dur = optionsFor('dur')[0];
+}
+
+function selectWorkflow(code: string) {
+  if (uploading.value || submitting.value || !workflowOptions.value.some(item => item.workflowCode === code)) return;
+  selectedWorkflowCode.value = code;
+  const option = selectedOption.value;
+  const model = VIDEO_MODELS.find(item => item.code === option?.modelCode);
+  if (model) currentModel.value = model;
+  Object.keys(uploadAssetIds).forEach(key => delete uploadAssetIds[key as FieldKey]);
+  uploadFields.forEach(field => releaseUploadPreviews(field));
+  values.tier = supportedTiers.value[0]; values.dur = optionsFor('dur')[0];
+  appliedInspirationTitle.value = '';
+}
+
+function browseWorkflow(code: string) {
+  if (uploading.value || submitting.value) return;
+  const option = localCatalog.find(item => item.media === 'video' && item.workflowCode === code);
+  const module = VIDEO_MODULES.find(item => item.code === option?.capabilityCode);
+  if (!module) return;
+  if (selectedModule.value.code !== module.code) selectModule(module);
+  selectWorkflow(code);
 }
 
 function isUploadField(field: FieldKey) {
@@ -1081,7 +1055,7 @@ function isUploadField(field: FieldKey) {
 }
 
 function isRequired(field: FieldKey) {
-  if (field === 'desc') return ['I2V', 'T2V', 'FL2V'].includes(currentModule.value.code);
+  if (field === 'desc') return ['I2V', 'T2V', 'FL2V', 'R2V'].includes(currentModule.value.code);
   if (field === 'last') return currentModule.value.code === 'FL2V';
   return requiredFields.includes(field);
 }
@@ -1230,6 +1204,9 @@ async function submitTask() {
   const capabilityCode = currentModule.value.code as VideoCapabilityCode;
   if (!capabilityCode) return;
 
+  if (capabilityCode === 'R2V' && (!uploadAssetIds.reference1?.length || !uploadAssetIds.reference2?.length)) {
+    ElMessage.warning('请上传两张参考图片'); return;
+  }
   if (capabilityCode === 'I2V' && !uploadAssetIds.img?.length) {
     ElMessage.warning('请先上传图片素材');
     return;
@@ -1247,14 +1224,15 @@ async function submitTask() {
     capabilityCode,
     workflowCode: currentWorkflowCode.value,
     taskName: `${currentModule.value.name} · ${currentModel.value.name}`,
-    fields: {
+    fields: workflowFields(selectedOption.value!, {
+      reference1: uploadAssetIds.reference1?.[0], reference2: uploadAssetIds.reference2?.[0],
       desc: values.desc,
       tier: values.tier,
       dur: values.dur,
       img: uploadAssetIds.img?.[0],
       first: uploadAssetIds.first?.[0],
       last: uploadAssetIds.last?.[0]
-    },
+    }),
     // 幂等键避免重复点击产生多份成片
     idempotencyKey: `${currentWorkflowCode.value}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   };
@@ -1605,9 +1583,13 @@ async function recreateTask(task: VideoTaskVO) {
   }
   generationSource.value='local';
   const module = VIDEO_MODULES.find(item => item.code === task.capabilityCode);
-  if (module) selectModule(module);
-  const model = VIDEO_MODELS.find(item => item.code === task.modelCode);
-  if (model) currentModel.value = model;
+  if (!module || uploading.value || submitting.value) return;
+  selectModule(module);
+  if (!workflowOptions.value.some(item => item.workflowCode === task.workflowCode)) {
+    ElMessage.warning('此任务的工作流不在当前目录中，请重新选择模型与版本');
+    return;
+  }
+  selectWorkflow(task.workflowCode);
   values.desc = task.taskName ?? values.desc;
   activeView.value = 'create';
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1624,6 +1606,7 @@ function applyCreativeInspiration(route: InspirationRoute, title: string) {
   generationSource.value = 'local';
   if (currentModule.value.code !== module.code) selectModule(module);
   currentModel.value = model;
+  selectWorkflow(route.workflowCode);
   values.desc = route.prompt;
   appliedInspirationTitle.value = title;
   activeView.value = 'create';

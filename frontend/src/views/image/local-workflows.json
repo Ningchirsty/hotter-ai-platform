@@ -1,0 +1,299 @@
+[
+  {
+    "workflowCode": "wf-local-ready-qwen-image-2-1-t2i",
+    "media": "image",
+    "capabilityCode": "T2I",
+    "modelCode": "QWEN21",
+    "modelName": "Qwen-Image 2.1",
+    "name": "精简版",
+    "version": "v1.0.0-local",
+    "fields": [
+      "prompt",
+      "size"
+    ],
+    "verifiedAt": "2026-10-10",
+    "description": "本地 ComfyUI 已生成验证；平台提交状态由后端确认。",
+    "hasAudio": false,
+    "sizes": [
+      {
+        "label": "验证尺寸 · 1024×1024",
+        "width": 1024,
+        "height": 1024
+      }
+    ],
+    "defaultSize": "验证尺寸 · 1024×1024",
+    "strengths": [],
+    "maxPixels": 1048576,
+    "requireAlpha": false
+  },
+  {
+    "workflowCode": "wf-local-official-qwen-image-2-1-t2i",
+    "media": "image",
+    "capabilityCode": "T2I",
+    "modelCode": "QWEN21",
+    "modelName": "Qwen-Image 2.1",
+    "name": "官方完整画布",
+    "version": "v1.0.0-local",
+    "fields": [
+      "prompt",
+      "size"
+    ],
+    "verifiedAt": "2026-10-10",
+    "description": "本地 ComfyUI 已生成验证；平台提交状态由后端确认。",
+    "hasAudio": false,
+    "sizes": [
+      {
+        "label": "验证尺寸 · 1024×1024",
+        "width": 1024,
+        "height": 1024
+      }
+    ],
+    "defaultSize": "验证尺寸 · 1024×1024",
+    "strengths": [],
+    "maxPixels": 1048576,
+    "requireAlpha": false
+  },
+  {
+    "workflowCode": "wf-local-image-qwen-image-2-1-t2i",
+    "media": "image",
+    "capabilityCode": "T2I",
+    "modelCode": "QWEN21",
+    "modelName": "Qwen-Image 2.1",
+    "name": "官方模板",
+    "version": "v1.0.0-local",
+    "fields": [
+      "prompt",
+      "size"
+    ],
+    "verifiedAt": "2026-10-10",
+    "description": "本地 ComfyUI 已生成验证；平台提交状态由后端确认。",
+    "hasAudio": false,
+    "sizes": [
+      {
+        "label": "验证尺寸 · 1024×1024",
+        "width": 1024,
+        "height": 1024
+      }
+    ],
+    "defaultSize": "验证尺寸 · 1024×1024",
+    "strengths": [],
+    "maxPixels": 1048576,
+    "requireAlpha": false
+  },
+  {
+    "workflowCode": "wf-local-image-flux2-klein-image-edit-4b-distilled",
+    "media": "image",
+    "capabilityCode": "EDIT",
+    "modelCode": "FLUX4B",
+    "modelName": "FLUX.2 Klein 4B",
+    "name": "Distilled · 图片编辑",
+    "version": "v1.0.0-local",
+    "fields": [
+      "image1",
+      "prompt"
+    ],
+    "verifiedAt": "2026-10-10",
+    "description": "本地 ComfyUI 已生成验证；平台提交状态由后端确认。",
+    "hasAudio": false,
+    "sizes": [
+      {
+        "label": "验证尺寸 · 1024×1024",
+        "width": 1024,
+        "height": 1024
+      }
+    ],
+    "defaultSize": "验证尺寸 · 1024×1024",
+    "strengths": [],
+    "maxPixels": 1048576,
+    "requireAlpha": false
+  },
+  {
+    "workflowCode": "wf-local-image-flux2-klein-4b-fast-t2i",
+    "media": "image",
+    "capabilityCode": "T2I",
+    "modelCode": "FLUX4B",
+    "modelName": "FLUX.2 Klein 4B",
+    "name": "Fast · 快速出图",
+    "version": "v1.0.0-local",
+    "fields": [
+      "prompt",
+      "size"
+    ],
+    "verifiedAt": "2026-10-10",
+    "description": "本地 ComfyUI 已生成验证；平台提交状态由后端确认。",
+    "hasAudio": false,
+    "sizes": [
+      {
+        "label": "验证尺寸 · 1024×1024",
+        "width": 1024,
+        "height": 1024
+      }
+    ],
+    "defaultSize": "验证尺寸 · 1024×1024",
+    "strengths": [],
+    "maxPixels": 1048576,
+    "requireAlpha": false
+  },
+  {
+    "workflowCode": "wf-local-image-flux2-klein-text-to-image",
+    "media": "image",
+    "capabilityCode": "T2I",
+    "modelCode": "FLUX4B",
+    "modelName": "FLUX.2 Klein 4B",
+    "name": "Base · 文生图",
+    "version": "v1.0.0-local",
+    "fields": [
+      "prompt",
+      "size"
+    ],
+    "verifiedAt": "2026-10-10",
+    "description": "本地 ComfyUI 已生成验证；平台提交状态由后端确认。",
+    "hasAudio": false,
+    "sizes": [
+      {
+        "label": "验证尺寸 · 1024×1024",
+        "width": 1024,
+        "height": 1024
+      }
+    ],
+    "defaultSize": "验证尺寸 · 1024×1024",
+    "strengths": [],
+    "maxPixels": 1048576,
+    "requireAlpha": false
+  },
+  {
+    "workflowCode": "wf-local-image-z-image-turbo",
+    "media": "image",
+    "capabilityCode": "T2I",
+    "modelCode": "ZIMAGE",
+    "modelName": "Z-Image-Turbo",
+    "name": "官方模板",
+    "version": "v1.0.0-local",
+    "fields": [
+      "prompt",
+      "size"
+    ],
+    "verifiedAt": "2026-10-10",
+    "description": "本地 ComfyUI 已生成验证；平台提交状态由后端确认。",
+    "hasAudio": false,
+    "sizes": [
+      {
+        "label": "验证尺寸 · 1024×1024",
+        "width": 1024,
+        "height": 1024
+      }
+    ],
+    "defaultSize": "验证尺寸 · 1024×1024",
+    "strengths": [],
+    "maxPixels": 1048576,
+    "requireAlpha": false
+  },
+  {
+    "workflowCode": "wf-local-image-z-image-turbo-fun-union-controlnet",
+    "media": "image",
+    "capabilityCode": "CONTROL",
+    "modelCode": "ZIMAGE",
+    "modelName": "Z-Image-Turbo",
+    "name": "Union ControlNet · 结构控制",
+    "version": "v1.0.0-local",
+    "fields": [
+      "img",
+      "prompt"
+    ],
+    "verifiedAt": "2026-10-10",
+    "description": "本地 ComfyUI 已生成验证；平台提交状态由后端确认。",
+    "hasAudio": false,
+    "sizes": [
+      {
+        "label": "验证尺寸 · 512×512",
+        "width": 512,
+        "height": 512
+      }
+    ],
+    "defaultSize": "验证尺寸 · 512×512",
+    "strengths": [],
+    "maxPixels": 262144,
+    "requireAlpha": false
+  },
+  {
+    "workflowCode": "wf-local-image-qwen-image-2512",
+    "media": "image",
+    "capabilityCode": "T2I",
+    "modelCode": "QWEN2512",
+    "modelName": "Qwen-Image-2512",
+    "name": "官方模板",
+    "version": "v1.0.0-local",
+    "fields": [
+      "prompt",
+      "size"
+    ],
+    "verifiedAt": "2026-10-10",
+    "description": "本地 ComfyUI 已生成验证；平台提交状态由后端确认。",
+    "hasAudio": false,
+    "sizes": [
+      {
+        "label": "验证尺寸 · 1328×1328",
+        "width": 1328,
+        "height": 1328
+      }
+    ],
+    "defaultSize": "验证尺寸 · 1328×1328",
+    "strengths": [],
+    "maxPixels": 1763584,
+    "requireAlpha": false
+  },
+  {
+    "workflowCode": "wf-local-image-ideogram4-t2i",
+    "media": "image",
+    "capabilityCode": "T2I",
+    "modelCode": "IDEOGRAM",
+    "modelName": "Ideogram 4",
+    "name": "官方模板",
+    "version": "v1.0.0-local",
+    "fields": [
+      "prompt",
+      "size"
+    ],
+    "verifiedAt": "2026-10-10",
+    "description": "本地 ComfyUI 已生成验证；平台提交状态由后端确认。",
+    "hasAudio": false,
+    "sizes": [
+      {
+        "label": "验证尺寸 · 768×1376",
+        "width": 768,
+        "height": 1376
+      }
+    ],
+    "defaultSize": "验证尺寸 · 768×1376",
+    "strengths": [],
+    "maxPixels": 1056768,
+    "requireAlpha": false
+  },
+  {
+    "workflowCode": "wf-local-image-krea2-turbo-t2i",
+    "media": "image",
+    "capabilityCode": "T2I",
+    "modelCode": "KREA",
+    "modelName": "Krea 2 Turbo",
+    "name": "官方模板",
+    "version": "v1.0.0-local",
+    "fields": [
+      "prompt",
+      "size"
+    ],
+    "verifiedAt": "2026-10-10",
+    "description": "本地 ComfyUI 已生成验证；平台提交状态由后端确认。",
+    "hasAudio": false,
+    "sizes": [
+      {
+        "label": "验证尺寸 · 1024×1024",
+        "width": 1024,
+        "height": 1024
+      }
+    ],
+    "defaultSize": "验证尺寸 · 1024×1024",
+    "strengths": [],
+    "maxPixels": 1048576,
+    "requireAlpha": false
+  }
+]

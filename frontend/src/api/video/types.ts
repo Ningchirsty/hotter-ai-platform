@@ -7,7 +7,7 @@
  */
 
 /** 能力编码（与后端契约 capabilityCode 一致） */
-export type VideoCapabilityCode = 'I2V' | 'T2V' | 'FL2V';
+export type VideoCapabilityCode = 'I2V' | 'T2V' | 'FL2V' | 'R2V';
 
 /** 任务状态（与后端 video_task.status 一致） */
 export type VideoTaskStatus = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELED' | 'TIMEOUT';
@@ -161,6 +161,8 @@ export interface VideoTaskCreateForm {
     img?: number | string;
     first?: number | string;
     last?: number | string;
+    reference1?: number | string;
+    reference2?: number | string;
   };
   taskName?: string;
   /** 幂等键，避免重复提交产生多份成片 */
