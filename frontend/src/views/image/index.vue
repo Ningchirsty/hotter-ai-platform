@@ -211,7 +211,7 @@
                     : '暂不可提交'
             }}
           </button>
-          <span v-if="submitBlockReason !== '此能力暂不可提交'">{{ submitBlockReason || '提交后将经服务端填充模板并交由 ComfyUI 执行' }}</span>
+          <span v-if="submitBlockReason !== '此能力暂不可提交'">{{ submitBlockReason || (generationSource === 'cloud' ? '确认创作内容与输出设置后提交生成' : '提交后将交由 ComfyUI 执行') }}</span>
         </div>
       </section>
 
@@ -425,7 +425,7 @@
           </el-descriptions-item>
           <el-descriptions-item label="生成来源">{{ detail.workflowCode === 'cloud-bluocto-t2i' ? '云端生成' : '本地 · ComfyUI' }}</el-descriptions-item>
           <el-descriptions-item label="模型">{{ detail.modelCode || '—' }}</el-descriptions-item>
-          <el-descriptions-item label="工作流">{{ detail.workflowCode }}</el-descriptions-item>
+          <el-descriptions-item label="工作流">{{ detail.workflowCode === 'cloud-bluocto-t2i' ? '云端图像创作' : detail.workflowCode }}</el-descriptions-item>
           <el-descriptions-item label="输出尺寸">
             <span v-if="detail.outputWidth">{{ detail.outputWidth }}×{{ detail.outputHeight }}</span>
             <span v-else>—</span>
@@ -450,7 +450,7 @@
             :type="event.eventType === 'FAILED' ? 'danger' : event.eventType === 'SUCCEEDED' ? 'success' : 'primary'"
           >
             {{ event.eventType }}
-            <span v-if="event.detail">· {{ event.detail }}</span>
+            <span v-if="event.detail">· {{ creationMessage(event.detail) }}</span>
           </el-timeline-item>
         </el-timeline>
       </div>
