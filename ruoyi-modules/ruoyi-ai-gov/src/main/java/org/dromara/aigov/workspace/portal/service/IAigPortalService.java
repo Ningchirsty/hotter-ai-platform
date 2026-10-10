@@ -2,6 +2,7 @@ package org.dromara.aigov.workspace.portal.service;
 
 import org.dromara.aigov.task.domain.bo.AigTaskQueryBo;
 import org.dromara.aigov.workspace.portal.domain.AigPortalActionContext;
+import org.dromara.aigov.workspace.portal.domain.vo.AigPortalArtifactVo;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalRoleHomeVo;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalRoleVo;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalTaskVo;
@@ -68,5 +69,20 @@ public interface IAigPortalService {
      * @return 分页结果
      */
     PageResult<AigPortalTaskVo> myTasks(AigTaskQueryBo bo, PageQuery pageQuery, AigPortalActor actor);
+
+    /**
+     * 我的产物（只读；范围恒为当前用户）。
+     *
+     * <p>数据源是**平台自己的产物台账** {@code aig_task_artifact}（ADR-010），与任务域同模块；
+     * 归属取"任务的提交人"——产物行自己的 {@code create_by} 是生产方（执行器），不是员工。
+     * 各域的资产表（image/video/content）**不在**这里聚合：它们的可见性规则在各自模块里，
+     * 详见文档 §6.1。</p>
+     *
+     * @param taskId    任务ID（可空：只查某个任务的产物）
+     * @param pageQuery 分页参数
+     * @param actor     当前门户用户
+     * @return 分页结果
+     */
+    PageResult<AigPortalArtifactVo> myArtifacts(Long taskId, PageQuery pageQuery, AigPortalActor actor);
 
 }

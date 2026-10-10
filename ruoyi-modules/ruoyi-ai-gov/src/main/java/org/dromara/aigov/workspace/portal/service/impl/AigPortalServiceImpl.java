@@ -1,5 +1,6 @@
 package org.dromara.aigov.workspace.portal.service.impl;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +19,7 @@ import org.dromara.aigov.workspace.mapper.AigRoleProfileMapper;
 import org.dromara.aigov.workspace.mapper.AigRoleVersionMapper;
 import org.dromara.aigov.workspace.portal.domain.AigPortalActionContext;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalActionVo;
+import org.dromara.aigov.workspace.portal.domain.vo.AigPortalArtifactVo;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalCategoryVo;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalRoleHomeVo;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalRoleVo;
@@ -25,6 +27,7 @@ import org.dromara.aigov.workspace.portal.domain.vo.AigPortalTaskVo;
 import org.dromara.aigov.workspace.portal.helper.AigPortalActor;
 import org.dromara.aigov.workspace.portal.helper.AigRoleVisibilityResolver;
 import org.dromara.aigov.workspace.portal.helper.AigVersionPick;
+import org.dromara.aigov.workspace.portal.mapper.AigPortalArtifactMapper;
 import org.dromara.aigov.workspace.portal.service.IAigPortalService;
 import org.dromara.aigov.workspace.helper.AigRolePackageManifest;
 import org.dromara.common.core.domain.PageResult;
@@ -64,6 +67,7 @@ public class AigPortalServiceImpl implements IAigPortalService {
     private final AigRoleVersionMapper roleVersionMapper;
     private final AigRoleActionMapper roleActionMapper;
     private final AigRoleBindingMapper roleBindingMapper;
+    private final AigPortalArtifactMapper artifactMapper;
     private final IAigTaskService taskService;
 
     @Override
@@ -135,6 +139,16 @@ public class AigPortalServiceImpl implements IAigPortalService {
             rows.add(toTaskVo(task));
         }
         return PageResult.build(rows, page.getTotal());
+    }
+
+    @Override
+    public PageResult<AigPortalArtifactVo> myArtifacts(Long taskId, PageQuery pageQuery, AigPortalActor actor) {
+        requireActor(actor);
+        // ★userId 由登录态取，SQL 里也**没有**"查谁的"这个参数：调用方无法指定别人的产物。
+        // 口径（只查自己提交的任务、只取 PASS）写在 XML 里，见 AigPortalArtifactMapper
+        IPage<AigPortalArtifactVo> page = artifactMapper.selectMyArtifactPage(
+            pageQuery == null ? new PageQuery().build() : pageQuery.build(), actor.userId(), taskId);
+        return PageResult.build(page.getRecords(), page.getTotal());
     }
 
     /**

@@ -2,6 +2,7 @@ package org.dromara.aigov.workspace.portal.service.impl;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.dromara.aigov.task.domain.bo.AigTaskQueryBo;
 import org.dromara.aigov.task.domain.vo.AigTaskVo;
@@ -20,7 +21,9 @@ import org.dromara.aigov.workspace.portal.domain.vo.AigPortalActionVo;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalRoleHomeVo;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalRoleVo;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalTaskVo;
+import org.dromara.aigov.workspace.portal.domain.vo.AigPortalArtifactVo;
 import org.dromara.aigov.workspace.portal.helper.AigPortalActor;
+import org.dromara.aigov.workspace.portal.mapper.AigPortalArtifactMapper;
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.mybatis.core.page.PageQuery;
@@ -29,6 +32,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 import java.util.Set;
@@ -38,7 +42,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -68,6 +74,7 @@ class AigPortalServiceImplTest {
     private AigRoleVersionMapper versionMapper;
     private AigRoleActionMapper actionMapper;
     private AigRoleBindingMapper bindingMapper;
+    private AigPortalArtifactMapper artifactMapper;
     private IAigTaskService taskService;
     private AigPortalServiceImpl service;
 
@@ -86,12 +93,37 @@ class AigPortalServiceImplTest {
     }
 
     @BeforeEach
-    void setUp() {        profileMapper = mock(AigRoleProfileMapper.class);
+    void setUp() {
+        profileMapper = mock(AigRoleProfileMapper.class);
         versionMapper = mock(AigRoleVersionMapper.class);
         actionMapper = mock(AigRoleActionMapper.class);
         bindingMapper = mock(AigRoleBindingMapper.class);
+        artifactMapper = mock(AigPortalArtifactMapper.class);
         taskService = mock(IAigTaskService.class);
-        service = new AigPortalServiceImpl(profileMapper, versionMapper, actionMapper, bindingMapper, taskService);
+        service = new AigPortalServiceImpl(profileMapper, versionMapper, actionMapper, bindingMapper,
+            artifactMapper, taskService);
+    }
+
+    @Test
+    @DisplayName("我的产物恒为当前用户：userId 由登录态传入，调用方无法指定别人的")
+    void myArtifactsIsScopedToCurrentUser() {
+        AigPortalArtifactVo row = new AigPortalArtifactVo();
+        row.setArtifactId(7L);
+        row.setTaskId(11L);
+        Page<AigPortalArtifactVo> page = new Page<>();
+        page.setRecords(List.of(row));
+        page.setTotal(1L);
+        when(artifactMapper.selectMyArtifactPage(any(), any(), any())).thenReturn(page);
+
+        PageResult<AigPortalArtifactVo> result = service.myArtifacts(11L, new PageQuery(), ACTOR);
+
+        assertEquals(1, result.getRows().size());
+        assertEquals(7L, result.getRows().iterator().next().getArtifactId());
+        ArgumentCaptor<Long> userCaptor = ArgumentCaptor.forClass(Long.class);
+        verify(artifactMapper).selectMyArtifactPage(any(), userCaptor.capture(), eq(11L));
+        assertEquals(9L, userCaptor.getValue(), "查询的提交人必须是登录用户");
+        // 没有登录用户直接拒绝（与门户其它接口同一口径）
+        assertThrows(ServiceException.class, () -> service.myArtifacts(null, new PageQuery(), null));
     }
 
     @Test

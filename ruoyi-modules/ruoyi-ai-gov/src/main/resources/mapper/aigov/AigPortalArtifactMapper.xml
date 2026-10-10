@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.dromara.aigov.workspace.portal.mapper.AigPortalArtifactMapper">
+
+    <!--
+      门户「我的产物」：产物台账 JOIN 任务表取"归属"。
+
+      口径（写死在这里，不交给调用方）：
+        1. 只查自己提交的任务（t.create_by = #{userId}）——产物的 create_by 是生产方，
+           不是员工，所以归属必须从任务上取；
+        2. 只取 validation_status = 'PASS'（与任务域默认查询同口径：被拒记录是证据，
+           但不是给员工下载的东西）；
+        3. 双方都排除逻辑删除。
+
+      安全约束：
+        · 本文件只读；
+        · **不 select storage_ref / sha256 / hash_verified / validation_detail / result_id / attempt_no**：
+          对象存储键与完整性证据是内部事实，不该进入对外契约（有专门的 VO 边界用例守着）。
+    -->
+    <select id="selectMyArtifactPage" resultType="org.dromara.aigov.workspace.portal.domain.vo.AigPortalArtifactVo">
+        select
+            a.artifact_id       as artifact_id,
+            a.task_id           as task_id,
+            t.task_no           as task_no,
+            a.artifact_type     as artifact_type,
+            a.mime_type         as mime_type,
+            a.size_bytes        as size_bytes,
+            a.create_time       as create_time
+        from aig_task_artifact a
+        join aig_task t on t.task_id = a.task_id
+        where t.create_by = #{userId}
+          and t.del_flag = '0'
+          and a.del_flag = '0'
+          and a.validation_status = 'PASS'
+        <if test="taskId != null">
+          and a.task_id = #{taskId}
+        </if>
+        order by a.artifact_id desc
+    </select>
+
+</mapper>

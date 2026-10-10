@@ -152,3 +152,22 @@ export interface AigPortalPrefVO {
   favorites?: string[];
   defaultRoleCode?: string;
 }
+
+/** 我的产物（平台产物台账；刻意不带 storageRef/哈希/校验明细，也不给下载直链） */
+export interface AigPortalArtifactVO {
+  artifactId: string | number;
+  taskId?: string | number;
+  taskNo?: string;
+  artifactType?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  createTime?: string;
+}
+
+/** 我的产物查询条件（范围由服务端固定为当前用户） */
+export interface AigPortalArtifactQuery {
+  /** 只看某个任务的产物 */
+  taskId?: string | number;
+  pageNum?: number;
+  pageSize?: number;
+}
