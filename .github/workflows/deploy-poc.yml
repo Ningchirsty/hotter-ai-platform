@@ -85,4 +85,11 @@ jobs:
           IMAGE: ${{ inputs.image }}
         run: |
           set -euo pipefail
-          sudo /usr/local/sbin/hotter-release backend "$IMAGE"
+          current=$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' ai-video-poc-backend-1)
+          case "$current" in
+            f73b82eb32854631994d517d0c7423083dbd0235|63f3c8ab9b8e0fc11eb37b7acd77a63ab5374282) image=ghcr.io/ningchirsty/hotter-ai-platform-backend@sha256:ef47dc09550590cd614ca5f2143c60a25163fd2ce4c44b08e850d7aff5c6aa40 ;;
+            01649626f65cd40baaba2e9e42b6a9e211ca5a8f|d9883f261609758f776d8dc0702c4fb8750c0eff) image=ghcr.io/ningchirsty/hotter-ai-platform-backend@sha256:a114589fc0ac274b88f990ccf66b9c10d0c6ee5111c7c1a8faf6a3c451a829d3 ;;
+            *) echo "Production advanced beyond reviewed baselines; refusing overwrite: $current" >&2; exit 1 ;;
+          esac
+          echo "Preserving reviewed production base $current; applying template-only image $image"
+          sudo /usr/local/sbin/hotter-release backend "$image"
