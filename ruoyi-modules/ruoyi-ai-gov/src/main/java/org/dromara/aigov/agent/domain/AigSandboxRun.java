@@ -106,6 +106,14 @@ public class AigSandboxRun implements Serializable {
     private String resultJson;
 
     /**
+     * 证据可信度来源（{@code UNATTESTED} = 人工登记、无密码学保证；{@code SIGNED} = 验签通过，未实现）
+     *
+     * <p>这一列的存在是为了**不让这条证据被读成比它实际更强的东西**：它能证明"有人提交了这份
+     * 结果、提交后没被改过"，不能证明"真的跑过"。</p>
+     */
+    private String attestation;
+
+    /**
      * 登记人ID
      */
     private Long recordedBy;

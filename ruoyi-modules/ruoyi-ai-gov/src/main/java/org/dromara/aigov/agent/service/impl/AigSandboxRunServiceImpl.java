@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.dromara.aigov.agent.domain.AigSandboxRun;
 import org.dromara.aigov.agent.domain.bo.AigSandboxRunRecordBo;
 import org.dromara.aigov.agent.enums.AigReleaseTargetTypeEnum;
+import org.dromara.aigov.agent.enums.AigSandboxAttestationEnum;
 import org.dromara.aigov.agent.evaluation.AigSandboxRunEvidence;
 import org.dromara.aigov.agent.mapper.AigAgentVersionMapper;
 import org.dromara.aigov.agent.mapper.AigPackageVersionMapper;
@@ -123,6 +124,10 @@ public class AigSandboxRunServiceImpl implements IAigSandboxRunService {
         row.setArtifactCount(artifactCount(root));
         row.setResultSha256(sha256Hex(raw));
         row.setResultJson(raw);
+        // 可信度来源**由服务端决定，不由提交方声明**：接口入参里根本没有这个字段。
+        // 只有将来实现"执行器私钥签名 + 平台公钥验签"之后，验签通过才可能写 SIGNED；
+        // 在那之前所有证据都是"人工登记、无密码学保证"，这一点必须如实入库。
+        row.setAttestation(AigSandboxAttestationEnum.UNATTESTED.getCode());
         row.setRecordedBy(operatorId);
         row.setCreateTime(LocalDateTime.now());
         try {

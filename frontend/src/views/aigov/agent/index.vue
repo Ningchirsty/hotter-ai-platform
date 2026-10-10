@@ -178,6 +178,23 @@
                 </template>
               </div>
             </el-alert>
+            <!--
+              「未验签」必须显式说出来：这条证据能证明"有人提交了这份 result.json、提交后没被改过"，
+              不能证明"真的跑过"（提交方自述 image/exitCode/network）。把它写成小字提示，
+              而不是让它藏在文档里——否则界面上的绿灯会被读成比它实际更强的结论。
+            -->
+            <el-alert
+              v-if="sandboxEvidence && sandboxEvidence.attestation !== 'SIGNED'"
+              type="warning"
+              :closable="false"
+              class="mb-2"
+            >
+              <template #title>未验签证据（可信度：{{ sandboxEvidence.attestation || 'UNATTESTED' }}）</template>
+              <div class="gate-hint">
+                只证明「有人提交了这份 result.json、提交后未被改过」，**不证明它来自一次真实运行**——
+                镜像/退出码/网络模式都是提交方自述。闭环需要执行器私钥签名 + 平台公钥验签，尚未实现。
+              </div>
+            </el-alert>
             <el-button
               v-hasPermi="['aig:sandbox:record']"
               link

@@ -1,6 +1,7 @@
 package org.dromara.aigov.agent.evaluation;
 
 import org.dromara.aigov.agent.domain.AigSandboxRun;
+import org.dromara.aigov.agent.enums.AigSandboxAttestationEnum;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -60,6 +61,7 @@ public record AigSandboxRunEvidence(
     Integer artifactCount,
     LocalDateTime recordedAt,
     Long recordedBy,
+    String attestation,
     String reason
 ) {
 
@@ -67,6 +69,25 @@ public record AigSandboxRunEvidence(
      * 网络模式：无网（唯一可采信的口径）
      */
     public static final String NETWORK_NONE = "none";
+
+    /**
+     * 可信度来源：人工登记、无密码学保证（当前唯一可能入库的值）
+     */
+    public static final String ATTESTATION_UNATTESTED = AigSandboxAttestationEnum.UNATTESTED.getCode();
+
+    /**
+     * 这条证据是否带**密码学保证**（执行器私钥签名 + 平台公钥验签通过）。
+     *
+     * <p>它**不影响** {@link #satisfied()}：本切片只是把"人工登记、无签名"这个事实显式化
+     * （决定见 ADR-015「已知边界」）。若把它做成门槛条件，在验签实现之前没有任何版本能过闸——
+     * 那是把"没有签名"变成"发布停摆"，不是更安全。</p>
+     *
+     * @return 有密码学保证时为 true
+     */
+    public boolean attested() {
+        return AigSandboxAttestationEnum.SIGNED.getCode()
+            .equalsIgnoreCase(attestation == null ? "" : attestation.trim());
+    }
 
     /**
      * 按判据给出一条运行记录下结论。
@@ -102,7 +123,8 @@ public record AigSandboxRunEvidence(
         boolean ok = blockers.isEmpty();
         return new AigSandboxRunEvidence(ok, row.getSandboxRunId(), row.getJobId(), row.getImageRef(),
             exitCode, timedOut, network, row.getDurationMs(), row.getArtifactCount(),
-            row.getCreateTime(), row.getRecordedBy(), ok ? null : String.join("；", blockers));
+            row.getCreateTime(), row.getRecordedBy(), row.getAttestation(),
+            ok ? null : String.join("；", blockers));
     }
 
     /**
@@ -113,7 +135,7 @@ public record AigSandboxRunEvidence(
      */
     public static AigSandboxRunEvidence unavailable(String reason) {
         return new AigSandboxRunEvidence(false, null, null, null, null, null, null, null, null,
-            null, null, reason);
+            null, null, ATTESTATION_UNATTESTED, reason);
     }
 
     /**

@@ -106,6 +106,8 @@ class AigSandboxRunServiceImplTest {
         assertEquals("AGENT_VERSION", row.getTargetType());
         assertEquals(VERSION_ID, row.getTargetVersionId());
         assertEquals("job-20261010010101-1", row.getJobId());
+        // 可信度来源由服务端写死为"人工登记、无密码学保证"：入参里没有这个字段，提交方无法自称已签名
+        assertEquals("UNATTESTED", row.getAttestation());
         assertEquals("vibeposter-design", row.getAgentCode());
         assertEquals("nginx@sha256:" + "a".repeat(64), row.getImageRef());
         assertEquals(0, row.getExitCode());

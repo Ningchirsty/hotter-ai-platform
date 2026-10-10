@@ -353,8 +353,18 @@ public class AigAgentRegistryServiceImpl implements IAigAgentRegistryService {
         }
         AigSandboxRunEvidence evidence = sandboxRunService.sandboxRunEvidence(type.getCode(), id);
         if (evidence != null && evidence.satisfied()) {
-            log.info("发布门槛「沙箱跑通」由账本证据满足, targetType={}, targetVersionId={}, {}",
-                type.getCode(), id, evidence.verdictSummary());
+            // 放行，但必须留下"这次放行靠的是什么可信度"的痕迹：
+            // UNATTESTED = 人工登记的原文，能证明"有人提交了、提交后没被改过"，不证明"真的跑过"。
+            // 与 ADR-014 的人工评测同理：合法，但发布记录要能回答"凭什么放行"。
+            if (evidence.attested()) {
+                log.info("发布门槛「沙箱跑通」由证据满足（已验签）, targetType={}, targetVersionId={}, {}",
+                    type.getCode(), id, evidence.verdictSummary());
+            } else {
+                log.warn("发布门槛「沙箱跑通」由**未验签**的人工登记证据满足, targetType={}, targetVersionId={}, "
+                        + "attestation={}（只证明有人提交了这份 result.json、提交后未被改过，"
+                        + "不证明它来自一次真实运行——见 ADR-015「已知边界」）",
+                    type.getCode(), id, evidence.attestation());
+            }
             return;
         }
         String reason = evidence == null ? "证据不可用" : evidence.reason();

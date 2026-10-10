@@ -36,7 +36,34 @@ class AigSandboxRunEvidenceTest {
         row.setDurationMs(256L);
         row.setArtifactCount(2);
         row.setCreateTime(LocalDateTime.now());
+        row.setAttestation("UNATTESTED");
         return row;
+    }
+
+    @Test
+    @DisplayName("可信度来源如实带出，且**不影响**判据：未验签的证据照样满足（本切片不阻断发布）")
+    void attestationIsCarriedButDoesNotChangeSatisfaction() {
+        AigSandboxRunEvidence evidence = AigSandboxRunEvidence.evaluate(row(0, false, "none"));
+
+        assertEquals("UNATTESTED", evidence.attestation());
+        assertFalse(evidence.attested());
+        // 关键：不因为"没签名"就判不满足——否则在验签实现之前没有任何版本能过闸，
+        // 那是把"没有签名"变成"发布停摆"，不是更安全。
+        assertTrue(evidence.satisfied());
+        // 没有记录的结论也不能被读成"已签名"
+        assertFalse(AigSandboxRunEvidence.unavailable("x").attested());
+    }
+
+    @Test
+    @DisplayName("只有 SIGNED 才算有密码学保证（未来验签实现后的口径）")
+    void onlySignedCountsAsAttested() {
+        AigSandboxRun signed = row(0, false, "none");
+        signed.setAttestation("SIGNED");
+        assertTrue(AigSandboxRunEvidence.evaluate(signed).attested());
+
+        AigSandboxRun blank = row(0, false, "none");
+        blank.setAttestation(null);
+        assertFalse(AigSandboxRunEvidence.evaluate(blank).attested());
     }
 
     @Test

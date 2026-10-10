@@ -44,6 +44,7 @@ create table if not exists aig_sandbox_run (
     artifact_count    int(11)       not null default 0       comment '产物个数',
     result_sha256     char(64)      not null                 comment 'result.json 原文 SHA-256（服务端实算，防事后改口）',
     result_json       mediumtext    not null                 comment 'result.json 原文（证据本体，原样留存）',
+    attestation       varchar(32)   not null default 'UNATTESTED' comment '证据可信度来源（UNATTESTED=人工登记、无密码学保证；SIGNED=执行器私钥签名+平台公钥验签，未实现）',
     recorded_by       bigint(20)    default null             comment '登记人ID（谁把这个结果记进来的）',
     create_time       datetime      not null                 comment '登记时间',
     primary key (sandbox_run_id),
