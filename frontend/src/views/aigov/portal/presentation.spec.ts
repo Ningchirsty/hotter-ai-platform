@@ -3,6 +3,7 @@ import {
   START_PENDING_HINT,
   TASK_TYPE_OPTIONS,
   buildIdempotencyKey,
+  formatBytes,
   groupPortalActions,
   hasProblem,
   isFavorite,
@@ -114,5 +115,18 @@ describe('员工 AI 工作台展示层', () => {
     const original = [...roles];
     sortRolesByFavorite(roles, ['C']);
     expect(roles).toEqual(original);
+  });
+
+  it('产物大小：缺值与 0 分得开，异常值显示原样', () => {
+    expect(formatBytes(undefined)).toBe('—');
+    expect(formatBytes(null)).toBe('—');
+    expect(formatBytes(0)).toBe('0 B');
+    expect(formatBytes(1023)).toBe('1023 B');
+    expect(formatBytes(1024)).toBe('1.0 KB');
+    expect(formatBytes(1024 * 1024)).toBe('1.0 MB');
+    expect(formatBytes(15 * 1024 * 1024)).toBe('15.0 MB');
+    // 异常值不硬编成某个大小，显示原值便于发现上游给了什么
+    expect(formatBytes(-1)).toBe('-1');
+    expect(formatBytes(Number.NaN)).toBe('NaN');
   });
 });

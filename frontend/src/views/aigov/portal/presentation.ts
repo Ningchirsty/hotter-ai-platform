@@ -252,3 +252,34 @@ export function sortRolesByFavorite<T extends { roleCode: string }>(
   const others = list.filter(role => !favoriteSet.has(role.roleCode));
   return [...preferred, ...others];
 }
+
+/* ------------------------------------------------------------------ *
+ * 我的产物（增量 6）
+ * ------------------------------------------------------------------ */
+
+/**
+ * 字节数的可读显示。
+ *
+ * <p><b>缺值与 0 要分得开</b>：产物的 {@code sizeBytes} 缺失说明"没拿到这个字段"，
+ * 而 {@code 0} 是一个真实值（契约里 0 允许）。把两者都显示成 "0 B" 会让人以为产物是空的；
+ * 都显示成 "—" 又会把真实信息抹掉。所以缺值给 "—"，0 给 "0 B"。</p>
+ *
+ * @param size 字节数（可空）
+ * @returns 文案
+ */
+export function formatBytes(size?: number | null): string {
+  if (size === undefined || size === null) {
+    return '—';
+  }
+  if (!Number.isFinite(size) || size < 0) {
+    // 异常值不硬编成某个大小——显示原值，便于发现上游给了什么
+    return String(size);
+  }
+  if (size < 1024) {
+    return size + ' B';
+  }
+  if (size < 1024 * 1024) {
+    return (size / 1024).toFixed(1) + ' KB';
+  }
+  return (size / 1024 / 1024).toFixed(1) + ' MB';
+}

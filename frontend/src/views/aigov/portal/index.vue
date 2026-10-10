@@ -232,6 +232,7 @@ import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import modal from '@/plugins/modal';
 import LaunchFormDrawer from './LaunchFormDrawer.vue';
 import {
+  formatBytes,
   groupPortalActions,
   isFavorite,
   isNavigable,
@@ -393,25 +394,6 @@ const getArtifacts = async () => {
     artifacts.value = res.data.rows || [];
     artifactTotal.value = res.data.total || 0;
   });
-};
-
-/**
- * 字节数的可读显示（只影响展示；缺值不冒充 0）。
- *
- * @param size 字节数
- * @returns 文案
- */
-const formatBytes = (size?: number) => {
-  if (size === undefined || size === null) {
-    return '—';
-  }
-  if (size < 1024) {
-    return size + ' B';
-  }
-  if (size < 1024 * 1024) {
-    return (size / 1024).toFixed(1) + ' KB';
-  }
-  return (size / 1024 / 1024).toFixed(1) + ' MB';
 };
 
 /**
