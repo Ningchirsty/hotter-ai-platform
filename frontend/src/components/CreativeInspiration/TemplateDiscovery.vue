@@ -78,9 +78,10 @@ async function submit() {
 async function recover() {
   if (!savedAction.value || sending.value) return;
   sending.value = true; formError.value = '';
+  const newSubmission = !savedAction.value.requestId;
   try {
     const r = savedAction.value.requestId ? await getTemplateGeneration(savedAction.value.requestId) : await generateTemplate(savedAction.value.body);
-    savedAction.value.requestId = r.data.request_id; persist(); pending.value = r.data; dialog.value = false;
+    savedAction.value.requestId = r.data.request_id; persist(); pending.value = r.data; if (newSubmission) dialog.value = false;
     if (r.data.task_id) emit('task-created');
     if (['succeeded', 'failed', 'archived'].includes(r.data.status)) { savedAction.value = undefined; persist(); }
   } catch (e: unknown) {
