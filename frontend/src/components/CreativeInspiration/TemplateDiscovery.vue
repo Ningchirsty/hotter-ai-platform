@@ -13,10 +13,15 @@
     </div>
     <div v-else class="empty" role="status">{{ error || (loading ? '正在同步模板…' : '暂无匹配模板') }}</div>
     <footer><el-pagination v-if="total" v-model:current-page="page" :page-size="pageSize" :total="total" layout="prev, pager, next" @current-change="load" /><p>共 {{ total }} 个图像模板 · 每 10 分钟检查更新</p></footer>
+    <section v-for="record in deferred" :key="record.requestId" class="request-status" role="status">
+      <b>先前请求待核对</b><p>{{ record.result.error?.message }}</p><span>任务 {{ record.result.task_id }}</span>
+      <button :disabled="sending" @click="queryDeferred(record)">查询已保留请求</button>
+    </section>
     <section v-if="pending" class="request-status" role="status">
       <b>{{ stateLabel(pending.status) }}</b><p>{{ pending.error?.message }}</p>
       <button :disabled="sending" @click="recover">查询原请求</button>
       <button v-if="['queue_full', 'dispatch_not_submitted'].includes(pending.error?.code || '')" :disabled="sending" @click="retryQueue">恢复排队</button>
+      <button v-if="pending.status === 'unknown' && pending.request_id && savedAction?.requestId === pending.request_id" :disabled="sending" @click="deferPending">保留原请求，使用其它模板</button>
       <button v-if="['succeeded', 'failed', 'archived'].includes(pending.status)" @click="clearPending">关闭</button>
       <span v-if="pending.task_id">任务已同步到下方任务列表</span>
     </section>
@@ -30,7 +35,7 @@
           </el-form-item></el-form>
           <p v-if="!selected.variables.length">模板已包含完整创作描述，可直接使用。</p>
           <p v-if="formError" class="error" role="alert">{{ formError }}</p>
-          <el-button v-hasPermi="['image:creation:submit']" type="primary" :loading="sending" :disabled="!selected.canGenerate || !!savedAction" @click="submit">{{ selected.status === 'maintenance' ? '模板维护中' : !selected.canGenerate ? '生成验收中' : savedAction ? '已有请求待确认' : '使用模板生成' }}</el-button>
+          <el-button v-hasPermi="['image:creation:submit']" type="primary" :loading="sending" :disabled="!selected.canGenerate || !!savedAction || blockedTemplate" @click="submit">{{ selected.status === 'maintenance' ? '模板维护中' : !selected.canGenerate ? '生成验收中' : savedAction || blockedTemplate ? '已有请求待确认' : '使用模板生成' }}</el-button>
         </div>
       </div>
     </el-dialog>
@@ -49,6 +54,8 @@ const page = ref(1), total = ref(0), category = ref(''), keyword = ref(''), load
 const pageSize = 6, pages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)));
 const selected = ref<FeedTemplate>(), dialog = ref(false), variables = ref<Record<string, string>>({}), sending = ref(false), formError = ref('');
 const pending = ref<TemplateGeneration>(), savedAction = ref<{ body: TemplateSubmission; requestId?: string }>();
+const deferred = ref<{ body: TemplateSubmission; requestId: string; result: TemplateGeneration }[]>([]);
+const blockedTemplate = computed(() => deferred.value.some(record => record.body.template_id === selected.value?.id));
 let sequence = 0, debounce: ReturnType<typeof setTimeout> | undefined, interval: ReturnType<typeof setInterval> | undefined;
 async function load() {
   const current = ++sequence; loading.value = true; error.value = '';
@@ -66,12 +73,26 @@ async function open(item: FeedTemplate) {
   catch { void load(); }
 }
 function persist() {
+  localStorage.setItem(storageKey.value + '-pending', JSON.stringify(deferred.value));
   if (savedAction.value) localStorage.setItem(storageKey.value, JSON.stringify(savedAction.value));
   else localStorage.removeItem(storageKey.value);
 }
 function clearPending() { savedAction.value = undefined; pending.value = undefined; persist(); }
+function deferPending() {
+  if (sending.value || !savedAction.value || pending.value?.status !== 'unknown' || !pending.value.request_id || savedAction.value?.requestId !== pending.value.request_id) return;
+  if (!deferred.value.some(record => record.requestId === pending.value!.request_id)) deferred.value.push({ body: savedAction.value.body, requestId: pending.value.request_id, result: pending.value });
+  clearPending();
+}
+async function queryDeferred(record: (typeof deferred.value)[number]) {
+  if (sending.value) return; sending.value = true;
+  try {
+    const r = await getTemplateGeneration(record.requestId); record.result = r.data;
+    if (['succeeded', 'failed', 'archived'].includes(r.data.status)) deferred.value = deferred.value.filter(item => item.requestId !== record.requestId);
+    persist();
+  } finally { sending.value = false; }
+}
 async function submit() {
-  if (!selected.value?.canGenerate || sending.value || savedAction.value) return;
+  if (!selected.value?.canGenerate || sending.value || savedAction.value || blockedTemplate.value) return;
   const body: TemplateSubmission = { template_id: selected.value.id, revision: selected.value.revision, client_request_id: crypto.randomUUID(), variables: { ...variables.value } };
   savedAction.value = { body }; persist(); await recover();
 }
@@ -104,6 +125,7 @@ async function retryQueue() {
 function stateLabel(state: string) { return ({ pending: '请求已保存', submitted: '正在生成', succeeded: '生成完成', failed: '生成失败', unknown: '结果待确认', archived: '请求已归档' } as Record<string, string>)[state] || state; }
 watch([category, keyword], () => { if (debounce) clearTimeout(debounce); page.value = 1; debounce = setTimeout(load, 300); });
 onMounted(() => {
+  try { const records = JSON.parse(localStorage.getItem(storageKey.value + '-pending') || '[]'); if (Array.isArray(records)) deferred.value = records.filter(record => typeof record?.requestId === 'string' && record?.body?.template_id && record?.result?.status === 'unknown'); } catch { deferred.value = []; }
   try { const saved = localStorage.getItem(storageKey.value); if (saved) { savedAction.value = JSON.parse(saved); void recover(); } } catch { localStorage.removeItem(storageKey.value); }
   void load(); interval = setInterval(() => { if (!document.hidden) { if (!loading.value) void load(); if (savedAction.value?.requestId && !sending.value) void recover(); } }, 15000);
 });
