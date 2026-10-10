@@ -98,9 +98,9 @@ public class AigLaunchPrepareVo implements Serializable {
     private List<String> missingContextKeys;
 
     /**
-     * 阻止启动的问题码（通过时为空；有值时不应发放票据）
+     * 阻止启动的问题（码 + 可直接展示的文案；通过时为空）
      */
-    private List<String> problems;
+    private List<AigLaunchProblemVo> problems;
 
     /**
      * 是否通过（problems 为空）

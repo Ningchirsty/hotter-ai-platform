@@ -34,11 +34,10 @@ export function launchModeLabel(code?: string): string {
 /**
  * 非导航类卡片现在的说明文案。
  *
- * <p>增量 2 是**只读门户**：真正启动能力（QUICK/FORM/STUDIO/SCENARIO）要走启动凭证，
- * 那是增量 3 的 Launch Resolver。界面必须<b>如实说明</b>，而不是给一个点了没反应的按钮——
- * "按钮在但没反应"对员工来说就是"系统坏了"。</p>
+ * <p>增量 3 之后启动链路已接入：点「启动」会打开启动表单（预检 → 确认）。
+ * 这段文案现在只出现在启动表单的说明里，不再表示"不能启动"。</p>
  */
-export const START_PENDING_HINT = '启动将在接入启动凭证后开放（当前为只读门户）';
+export const START_PENDING_HINT = '启动会先预检：不通过不会发放票据，也就不会真的建任务';
 
 /**
  * 这张卡片现在能否直接打开页面。
@@ -162,4 +161,69 @@ function tagOf(status?: string): 'info' | 'warning' | 'success' | 'danger' {
     default:
       return 'info';
   }
+}
+
+/* ------------------------------------------------------------------ *
+ * 启动表单（增量 3b）
+ * ------------------------------------------------------------------ */
+
+/**
+ * 平台任务类型（与后端 `AigTaskTypeEnum` 一致）。
+ *
+ * <p><b>权威判定仍在服务端</b>：后端对任务类型做封闭集合校验。这里列出来只是为了让用户能选，
+ * 而不是把一个不认识的类型提交上去等报错——但如果两边哪天不一致，**服务端会拒绝**，
+ * 界面拿到的是一条明确的"必填输入缺失"。</p>
+ */
+export const TASK_TYPE_OPTIONS = [
+  { code: 'PLAN_GENERATION', label: '生成规划（Page Spec/Brief/Prompt Plan）' },
+  { code: 'VISUAL_DNA_ANALYSIS', label: '视觉基因分析' },
+  { code: 'TEXT_GENERATION', label: '文本生成' },
+  { code: 'IMAGE_GENERATION', label: '图像生成' },
+  { code: 'IMAGE_EDIT', label: '图像编辑' },
+  { code: 'VIDEO_GENERATION', label: '视频生成' },
+  { code: 'DESIGN_SESSION_CREATE', label: '创建设计会话' },
+  { code: 'VISUAL_QA', label: '视觉质量检查' },
+  { code: 'AGENT_EVALUATION', label: 'Agent 评测' }
+];
+
+/**
+ * 生成一次启动的幂等键。
+ *
+ * <p>**打开表单时生成一次，整轮（预检 + 重试）都用它**：服务端按它判"这是同一次启动"，
+ * 每次都换新键等于关掉了幂等。用户改了输入再点预检仍然复用同一个键——
+ * 服务端只在**已经存在启动记录**时才把"同键不同内容"判为冲突（那时确实需要换键或刷新）。</p>
+ *
+ * @returns 幂等键
+ */
+export function buildIdempotencyKey(): string {
+  const cryptoObj = typeof globalThis !== 'undefined' ? (globalThis.crypto as Crypto | undefined) : undefined;
+  if (cryptoObj?.randomUUID) {
+    return cryptoObj.randomUUID().replace(/-/g, '');
+  }
+  // 老浏览器兜底：不追求密码学强度，只求"这一轮唯一"
+  return 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+}
+
+/**
+ * 问题里是否包含某个错误码。
+ *
+ * <p>界面按**码**分支（例如缺必填时高亮表单、票据过期时提示重新发起），
+ * 不能匹配文案——文案由后端给，改措辞不该让界面逻辑失效。</p>
+ *
+ * @param problems 问题
+ * @param code 错误码
+ * @returns 包含返回 true
+ */
+export function hasProblem(problems: { code: string }[] | undefined, code: string): boolean {
+  return (problems ?? []).some(item => item.code === code);
+}
+
+/**
+ * 把问题拼成可直接显示的文案（后端给了文案就用它；没有则退回码）。
+ *
+ * @param problems 问题
+ * @returns 文案数组
+ */
+export function problemTexts(problems: { code: string; message?: string }[] | undefined): string[] {
+  return (problems ?? []).map(item => item.message || item.code);
 }

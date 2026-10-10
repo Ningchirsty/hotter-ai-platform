@@ -71,11 +71,7 @@
                 <el-button v-if="navigationPath(action)" type="primary" plain size="small" @click="openPage(action)">
                   打开
                 </el-button>
-                <el-tooltip v-else :content="START_PENDING_HINT" placement="top">
-                  <span>
-                    <el-button type="primary" size="small" disabled>启动</el-button>
-                  </span>
-                </el-tooltip>
+                <el-button v-else type="primary" size="small" @click="openLaunch(action)">启动</el-button>
               </div>
             </article>
           </div>
@@ -143,12 +139,20 @@
         @pagination="getTasks"
       />
     </el-card>
+
+    <LaunchFormDrawer
+      v-model="launchVisible"
+      :role-code="selectedRoleCode"
+      :action="launchAction"
+      @launched="handleLaunched"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { getRoleHome, listMyRoles, listMyTasks } from '@/api/aigov/portal';
 import type {
+  AigLaunchCommitVO,
   AigPortalActionVO,
   AigPortalRoleHomeVO,
   AigPortalRoleVO,
@@ -158,8 +162,8 @@ import type {
 import { useLoading } from '@/hooks/async/useLoading';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import modal from '@/plugins/modal';
+import LaunchFormDrawer from './LaunchFormDrawer.vue';
 import {
-  START_PENDING_HINT,
   groupPortalActions,
   isNavigable,
   launchModeLabel,
@@ -183,6 +187,10 @@ const tasks = ref<AigPortalTaskVO[]>([]);
 const taskTotal = ref(0);
 const { loading: loadingTasks, withLoading: withTasksLoading } = useLoading(true);
 const taskQuery = ref<AigPortalTaskQuery>({ pageNum: 1, pageSize: 10 });
+
+/** 启动表单（非导航类卡片走这里：预检 → 确认） */
+const launchVisible = ref(false);
+const launchAction = ref<AigPortalActionVO>();
 
 /** 任务状态选项（与后端 AigTaskStatusEnum 一致） */
 const taskStatusOptions = [
@@ -233,6 +241,34 @@ const getTasks = async () => {
     tasks.value = res.data.rows || [];
     taskTotal.value = res.data.total || 0;
   });
+};
+
+/**
+ * 打开启动表单（非导航类卡片）。
+ *
+ * 页面类卡片不在这里：它们直接打开页面（`openPage`），不需要启动凭证。
+ */
+const openLaunch = (action: AigPortalActionVO) => {
+  launchAction.value = action;
+  launchVisible.value = true;
+};
+
+/**
+ * 启动成功后的收尾。
+ *
+ * 页面类目标的 commit 只是留了一条审计（不建任务），所以成功后直接跳转；
+ * 其余目标建出了任务，刷新"我的任务"让员工立刻看到它。
+ */
+const handleLaunched = async (result: AigLaunchCommitVO) => {
+  const action = launchAction.value;
+  if (action && result.targetType === 'NAVIGATION') {
+    const path = navigationPath(action);
+    if (path) {
+      router.push(path);
+      return;
+    }
+  }
+  await getTasks();
 };
 
 const handleTaskQuery = () => {

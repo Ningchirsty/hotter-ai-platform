@@ -1,7 +1,15 @@
 import type { PageResult } from '@/api/types';
 import type { AxiosPromise } from '@/utils/api-types';
 import request from '@/utils/request';
-import type { AigPortalRoleHomeVO, AigPortalRoleVO, AigPortalTaskQuery, AigPortalTaskVO } from './types';
+import type {
+  AigLaunchCommitVO,
+  AigLaunchPrepareVO,
+  AigLaunchRequestForm,
+  AigPortalRoleHomeVO,
+  AigPortalRoleVO,
+  AigPortalTaskQuery,
+  AigPortalTaskVO
+} from './types';
 
 /**
  * 员工 AI 工作台（门户）接口（主文档线增量 2）。
@@ -35,5 +43,32 @@ export function listMyTasks(query: AigPortalTaskQuery): AxiosPromise<PageResult<
     url: '/aigov/portal/my-tasks',
     method: 'get',
     params: query
+  });
+}
+
+/**
+ * 预检并领取启动票据（**无副作用**：不建任务、不改业务数据）。
+ *
+ * 校验没过时返回 `problems`（码 + 文案）且**没有票据**——拿到票才能 commit，所以"不通不发票"。
+ */
+export function prepareLaunch(data: AigLaunchRequestForm): AxiosPromise<AigLaunchPrepareVO> {
+  return request({
+    url: '/aigov/portal/launch/prepare',
+    method: 'post',
+    data
+  });
+}
+
+/**
+ * 确认启动（**幂等**：同一个幂等键重复提交只得到同一次启动）。
+ *
+ * 业务拒绝（票据过期/配额耗尽/权限或输入不对）以 `passed=false` + `problems` 返回，
+ * 调用方必须看 `passed`，不能只看 HTTP 状态。
+ */
+export function commitLaunch(data: AigLaunchRequestForm): AxiosPromise<AigLaunchCommitVO> {
+  return request({
+    url: '/aigov/portal/launch/commit',
+    method: 'post',
+    data
   });
 }

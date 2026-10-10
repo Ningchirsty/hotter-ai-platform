@@ -13,6 +13,7 @@ import org.dromara.aigov.workspace.launch.domain.AigLaunchTicket;
 import org.dromara.aigov.workspace.launch.domain.bo.AigLaunchRequestBo;
 import org.dromara.aigov.workspace.launch.domain.vo.AigLaunchCommitVo;
 import org.dromara.aigov.workspace.launch.domain.vo.AigLaunchPrepareVo;
+import org.dromara.aigov.workspace.launch.domain.vo.AigLaunchProblemVo;
 import org.dromara.aigov.workspace.launch.enums.AigLaunchErrorEnum;
 import org.dromara.aigov.workspace.launch.helper.AigLaunchRequestDigest;
 import org.dromara.aigov.workspace.launch.helper.IAigLaunchTicketStore;
@@ -123,7 +124,7 @@ class AigLaunchServiceImplTest {
 
         assertFalse(vo.getPassed());
         assertNull(vo.getTicketId(), "校验没过绝不能发票（拿到票就能 commit）");
-        List<String> problems = vo.getProblems();
+        List<String> problems = codes(vo.getProblems());
         assertEquals(List.of(AigLaunchErrorEnum.REQUIRED_INPUT_MISSING.getCode()), problems);
     }
 
@@ -158,7 +159,7 @@ class AigLaunchServiceImplTest {
 
         AigLaunchPrepareVo vo = service.prepare(request("key-1"), ACTOR);
 
-        assertEquals(List.of(AigLaunchErrorEnum.ROLE_NOT_GRANTED.getCode()), vo.getProblems());
+        assertEquals(List.of(AigLaunchErrorEnum.ROLE_NOT_GRANTED.getCode()), codes(vo.getProblems()));
         assertNull(vo.getTicketId());
     }
 
@@ -186,7 +187,7 @@ class AigLaunchServiceImplTest {
 
         AigLaunchPrepareVo vo = service.prepare(request("key-1"), ACTOR);
 
-        assertEquals(List.of(AigLaunchErrorEnum.IDEMPOTENCY_CONFLICT.getCode()), vo.getProblems());
+        assertEquals(List.of(AigLaunchErrorEnum.IDEMPOTENCY_CONFLICT.getCode()), codes(vo.getProblems()));
         assertNull(vo.getTicketId());
     }
 
@@ -195,26 +196,26 @@ class AigLaunchServiceImplTest {
     void commitValidatesTicket() {
         AigLaunchRequestBo noTicket = request("key-1");
         assertEquals(List.of(AigLaunchErrorEnum.LAUNCH_TICKET_EXPIRED.getCode()),
-            service.commit(noTicket, ACTOR).getProblems());
+            codes(service.commit(noTicket, ACTOR).getProblems()));
 
         AigLaunchRequestBo unknown = request("key-1");
         unknown.setTicket("nope");
         assertEquals(List.of(AigLaunchErrorEnum.LAUNCH_TICKET_EXPIRED.getCode()),
-            service.commit(unknown, ACTOR).getProblems());
+            codes(service.commit(unknown, ACTOR).getProblems()));
 
         // 票绑人：别人的票在你这儿用不了
         ticketStore.save(ticket("t-1", 999L, LocalDateTime.now().plusMinutes(5), "d"), Duration.ofMinutes(5));
         AigLaunchRequestBo stolen = request("key-1");
         stolen.setTicket("t-1");
         assertEquals(List.of(AigLaunchErrorEnum.LAUNCH_TICKET_EXPIRED.getCode()),
-            service.commit(stolen, ACTOR).getProblems());
+            codes(service.commit(stolen, ACTOR).getProblems()));
 
         // 过期票：拒绝并作废
         ticketStore.save(ticket("t-2", 9L, LocalDateTime.now().minusSeconds(1), "d"), Duration.ofMinutes(5));
         AigLaunchRequestBo expired = request("key-1");
         expired.setTicket("t-2");
         assertEquals(List.of(AigLaunchErrorEnum.LAUNCH_TICKET_EXPIRED.getCode()),
-            service.commit(expired, ACTOR).getProblems());
+            codes(service.commit(expired, ACTOR).getProblems()));
         assertNull(ticketStore.load("t-2"), "过期票应被作废");
     }
 
@@ -229,7 +230,7 @@ class AigLaunchServiceImplTest {
 
         AigLaunchCommitVo vo = service.commit(changed, ACTOR);
 
-        assertEquals(List.of(AigLaunchErrorEnum.IDEMPOTENCY_CONFLICT.getCode()), vo.getProblems());
+        assertEquals(List.of(AigLaunchErrorEnum.IDEMPOTENCY_CONFLICT.getCode()), codes(vo.getProblems()));
         verify(taskService, never()).create(any());
     }
 
@@ -307,6 +308,29 @@ class AigLaunchServiceImplTest {
         ArgumentCaptor<AigLaunchRecord> captor = ArgumentCaptor.forClass(AigLaunchRecord.class);
         verify(recordMapper).insert(captor.capture());
         assertEquals(0L, captor.getValue().getOrgId(), "无部门时必须写 0，不能写 NULL");
+    }
+
+    @Test
+    @DisplayName("问题带码也带文案：文案只有后端一份来源，前端不再另写映射表")
+    void problemsCarryCodeAndMessage() {
+        stubCard("QUICK", "QUICK_CAPABILITY", "cap/x");
+        AigLaunchPrepareVo vo = service.prepare(request("key-1"), ACTOR);
+
+        assertFalse(vo.getPassed());
+        assertEquals(1, vo.getProblems().size());
+        AigLaunchProblemVo problem = vo.getProblems().get(0);
+        assertEquals(AigLaunchErrorEnum.REQUIRED_INPUT_MISSING.getCode(), problem.getCode());
+        assertEquals(AigLaunchErrorEnum.REQUIRED_INPUT_MISSING.getMessage(), problem.getMessage());
+    }
+
+    /**
+     * 取问题里的码（断言用）。
+     *
+     * @param problems 问题
+     * @return 码列表
+     */
+    private static List<String> codes(List<AigLaunchProblemVo> problems) {
+        return problems.stream().map(AigLaunchProblemVo::getCode).toList();
     }
 
     /**

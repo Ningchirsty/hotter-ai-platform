@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   START_PENDING_HINT,
+  TASK_TYPE_OPTIONS,
+  buildIdempotencyKey,
   groupPortalActions,
+  hasProblem,
   isNavigable,
   launchModeLabel,
   navigationPath,
+  problemTexts,
   taskStatusMeta
 } from './presentation';
 
@@ -30,8 +34,37 @@ describe('员工 AI 工作台展示层', () => {
     expect(navigationPath(undefined)).toBeNull();
   });
 
-  it('非导航卡片的文案说明"现在还不能启动"，而不是给一个没反应的按钮', () => {
-    expect(START_PENDING_HINT).toContain('只读');
+  it('启动文案如实说明"先预检、不通不发票"', () => {
+    expect(START_PENDING_HINT).toContain('预检');
+  });
+
+  it('幂等键：同一轮表单里只生成一次，且不重复', () => {
+    const a = buildIdempotencyKey();
+    const b = buildIdempotencyKey();
+    expect(a.length).toBeGreaterThan(8);
+    expect(a).not.toEqual(b);
+  });
+
+  it('按错误码分支，不靠匹配文案（后端改措辞不该让界面逻辑失效）', () => {
+    const problems = [{ code: 'REQUIRED_INPUT_MISSING', message: '还有必填内容没有填写' }];
+    expect(hasProblem(problems, 'REQUIRED_INPUT_MISSING')).toBe(true);
+    expect(hasProblem(problems, 'LAUNCH_TICKET_EXPIRED')).toBe(false);
+    expect(hasProblem(undefined, 'ANY')).toBe(false);
+  });
+
+  it('问题文案优先用后端给的，缺文案时退回码', () => {
+    expect(
+      problemTexts([
+        { code: 'A', message: '后端文案' },
+        { code: 'B' }
+      ])
+    ).toEqual(['后端文案', 'B']);
+    expect(problemTexts(undefined)).toEqual([]);
+  });
+
+  it('任务类型选项是封闭集合（权威校验仍在服务端）', () => {
+    expect(TASK_TYPE_OPTIONS.map(item => item.code)).toContain('TEXT_GENERATION');
+    expect(TASK_TYPE_OPTIONS.length).toBeGreaterThanOrEqual(9);
   });
 
   it('按清单声明的分类顺序归组，空分类也要出现', () => {

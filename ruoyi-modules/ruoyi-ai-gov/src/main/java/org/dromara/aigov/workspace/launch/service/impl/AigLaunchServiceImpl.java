@@ -18,6 +18,7 @@ import org.dromara.aigov.workspace.launch.domain.AigLaunchTicket;
 import org.dromara.aigov.workspace.launch.domain.bo.AigLaunchRequestBo;
 import org.dromara.aigov.workspace.launch.domain.vo.AigLaunchCommitVo;
 import org.dromara.aigov.workspace.launch.domain.vo.AigLaunchPrepareVo;
+import org.dromara.aigov.workspace.launch.domain.vo.AigLaunchProblemVo;
 import org.dromara.aigov.workspace.launch.enums.AigLaunchErrorEnum;
 import org.dromara.aigov.workspace.launch.helper.AigLaunchChecklist;
 import org.dromara.aigov.workspace.launch.helper.AigLaunchRequestDigest;
@@ -405,7 +406,7 @@ public class AigLaunchServiceImpl implements IAigLaunchService {
     private AigLaunchPrepareVo prepareVo(AigPortalActionContext context, List<String> problems,
                                          List<String> missingKeys, String ticketId, LocalDateTime expiresAt) {
         AigLaunchPrepareVo vo = new AigLaunchPrepareVo();
-        vo.setProblems(problems);
+        vo.setProblems(toProblemVos(problems));
         vo.setPassed(problems.isEmpty());
         vo.setTicketId(ticketId);
         vo.setExpiresAt(expiresAt);
@@ -457,9 +458,33 @@ public class AigLaunchServiceImpl implements IAigLaunchService {
      */
     private AigLaunchCommitVo commitVo(List<String> problems) {
         AigLaunchCommitVo vo = new AigLaunchCommitVo();
-        vo.setProblems(problems);
+        vo.setProblems(toProblemVos(problems));
         vo.setPassed(problems.isEmpty());
         return vo;
+    }
+
+    /**
+     * 问题码 → 对外问题（码 + 文案）。
+     *
+     * <p>文案来自 {@code AigLaunchErrorEnum}——它是**唯一**的来源：前端不再写第二份"码 → 中文"表，
+     * 否则后端改了措辞，界面还显示老话，而这类不一致没人会报 bug。</p>
+     *
+     * @param codes 问题码
+     * @return 对外问题（保持码的顺序）
+     */
+    private static List<AigLaunchProblemVo> toProblemVos(List<String> codes) {
+        List<AigLaunchProblemVo> problems = new ArrayList<>();
+        if (codes == null) {
+            return problems;
+        }
+        for (String code : codes) {
+            AigLaunchErrorEnum known = AigLaunchErrorEnum.find(code);
+            problems.add(known == null
+                // 未知码也要能显示（而不是空白），同时保留码本身便于排查
+                ? new AigLaunchProblemVo(code, "启动未能完成（" + code + "）")
+                : new AigLaunchProblemVo(known.getCode(), known.getMessage()));
+        }
+        return problems;
     }
 
     /**
