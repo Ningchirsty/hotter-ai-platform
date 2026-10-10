@@ -154,14 +154,81 @@ script/sql/aig_studio.sql
 
 ---
 
-## 四、后续增量（待做）
+## 四、增量 S3：HTTP 面 + 权限/菜单 + 静态预检（✅ 已完成，`submit` 待定）
+
+### 4.1 落地物
+
+| 类别 | 文件 |
+|---|---|
+| 接口 | `studio/controller/AigStudioDraftController`（`/aigov/studio/drafts`） |
+| 入参/出参 | `AigStudioDraftQueryBo`、`AigStudioDraftRollbackBo`、`AigStudioValidateVo`；`AigStudioDraftVo` 增 `statusLabel`/`unpublishedChanges` |
+| 操作者解析 | `studio/helper/AigStudioActorProvider` + `LoginStudioActorProvider` |
+| 权限常量 | `AigConstants` 新增 `PERM_STUDIO_DRAFT_{LIST,QUERY,CREATE,EDIT,VALIDATE}` |
+| 权限种子 | `script/sql/aig_studio_menu.sql` |
+| 服务新增 | `queryPage`（分页 + 服务端填标签/未提交改动）、`validateDraft`（静态预检） |
+| 测试 | `AigStudioDraftControllerTest`（4 条）+ 服务测试扩到 **24** 条（预检 4 + 清单 1） |
+
+七个入口：`GET /list`、`GET /{id}`、`POST`（建）、`PUT /{id}`（存）、`GET /{id}/revisions`、
+`GET /revision/{revisionId}`、`POST /{id}/validate`、`POST /{id}/rollback`、`POST /{id}/archive`。
+
+### 4.2 三条刻意的取舍
+
+1. **本控制器里没有任何推进发布状态的入口**：训练台的「部署」不是直改状态，
+   正式发布只能经 `/aigov/agent/release/advance` 那台状态机（五道门槛）。
+   第二条写通道一旦存在，门槛就形同虚设。
+2. **保存以路径上的 `draftId` 为准**，请求体里的 ID 被覆盖：否则会出现"路径写着 A、实际改了 B"的越权面。
+3. **操作者从登录态取、取不到就拒绝**：训练台是人工工作台，"系统自动改了别人的草稿"不是它的语义
+   （与任务域刻意不同——那里无登录上下文是常态）。草稿责任人之外的写操作由服务层拒绝。
+
+### 4.3 静态预检（`validateDraft`）的规则
+
+一次列全，不抛第一个错（预检是给正在编辑的人看的）。规则都是**可判真假**的：
+缺分节（八个标准分节是 Diff 与缺节校验的唯一口径）、全部分节为空、未声明 `providerCapability`、
+`allowExternal` 非 Y/N、`inputSchema`/`outputSchema` 不是合法 JSON、
+**页面定制里出现 `<script` / `javascript:`**（专题 C §C6：门户只接受安全组件白名单，不接受任意脚本）。
+结论带 `revision` + `contentHash`，证明"检的是这一版"，且**只读**（不产生版本、不发布）。
+
+### 4.4 为什么 S3 只种权限行、**不**种页面菜单行
+
+页面组件（`aigov/studio/index`）要到 S4 才存在。先种菜单行会得到一个"点进去空白"的入口——
+比"暂时没有入口"更糟（用户会以为坏了）。因此 S4 与前端页面一起再出 `aig_studio_pages.sql` 补页面行及其父菜单授权；
+而权限行必须现在种：权限串只有进了 `sys_menu.perms` 才有意义，少一个就是**该接口对所有人 403**
+（守卫 `AigPermissionSeedCoverageTest` 会在构建期抓住它）。
+授权范围**只给 aig_admin**：治理审阅者（security/viewer）不默认获得草稿写权，
+业务专家角色应由运维按需新建后单独授权。
+
+### 4.5 验证
+
+| 项 | 结果 |
+|---|---|
+| aigov 单测 | **692 → 701**（+9：接口层 4、预检 4、清单标签 1），且权限种子守卫通过 |
+| 真库探针（临时 MariaDB 3427） | `ry_vue.sql` + `aig_ai_gov_menu.sql` + 本脚本 exit=0；**5 个权限行**、均授予 aig_admin、security/viewer **0**、父菜单已授权；**重放 exit=0 且无重复行**；当前**没有**指向 `aigov/studio` 的页面行（S4 补） |
+
+### 4.6 `submit` 为什么留到下一步（需要你定一件事）
+
+`submit` 要把草稿固化成一条 `aig_agent_version`（`release_status=DRAFT`），而该表要求
+**`agent_id` 非空**。于是出现两条路，它们的语义差别很大、不该由我替你选：
+
+- **A. 只支持"绑定到已存在的 Agent"**：`submit` 要求草稿已有 `agentId`（从现有 Agent 复制而来）；
+  从零创建的草稿暂时不能提交。改动小、不新增对 `aig_agent` 的在线写通道。
+- **B. 同时支持"从零创建 Agent 定义"**：`submit` 在 `agentId` 为空时先建一条 `aig_agent`
+  （需要给 `category` 取值——当前只有 `PLANNING/VISUAL_DNA/GENERATION/QA` 四个枚举，
+  且文档 C3.1 明确警示不要把岗位名塞进去），再建 DRAFT 版本。
+  这正是附件「从零创建 Agent 草稿」的完整形态，但也意味着**平台首次出现在线创建 Agent 定义的写通道**。
+
+另外 `version` 字符串的来处也要定：由调用方显式给（我倾向这个，唯一性校验即可），
+还是按修订号自动生成。**这两点定了我就接着做 submit。**
+
+---
+
+## 五、后续增量（待做）
 
 | # | 增量 | 关键点 |
 |---|---|---|
-| **S3** | API + 权限/菜单 + `validate`/`submit` | `/aigov/studio/drafts*`；`submit` **只产 `aig_agent_version` DRAFT**；`aig:studio:*` 权限 + 菜单段 `1768400…` |
-| **S4** | 训练台前端 | 双栏（左配置/右 Prompt 编辑）+ 版本记录 + Diff + 提交；`STABLE` 不可原地改 |
+| **S3b** | `submit` | 产生 `aig_agent_version` DRAFT（接既有 `release/advance`）；**待你定 4.6 的两点** |
+| **S4** | 训练台前端 + 页面菜单 | 双栏（左配置/右 Prompt 编辑）+ 版本记录 + Diff；`aig_studio_pages.sql` 补页面行；`STABLE` 不可原地改 |
 | **S5** | 沙箱测试 | 基于不可变 revision 执行一次真实调用（**默认关闭**），走既有模型路由 + 配额，证据落 `aig_studio_execution_link`；**复用 ADR-015/016 的受限容器链路，不自建沙箱**；如需非会话身份，复用 `aig_service_token` |
 
-**S3 动手前的核对项**：`SANDBOX_RUN` 已是"要证据"（`aig_sandbox_run`），`HUMAN_APPROVAL` 也有
+**S3b 动手前的核对项**：`SANDBOX_RUN` 已是"要证据"（`aig_sandbox_run`），`HUMAN_APPROVAL` 也有
 ADR-014 的"管理员人工评测"通道——落地时按 `docs/platform-v2/02-Execution-Contract-v1.md`
 与 `AigReleaseGateEnum` 把证据来源逐条对上（避免把 `submit` 接到一个不校验的门槛上）。

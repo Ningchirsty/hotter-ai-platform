@@ -7,13 +7,17 @@ import org.dromara.aigov.studio.domain.AigStudioDraft;
 import org.dromara.aigov.studio.domain.AigStudioDraftContent;
 import org.dromara.aigov.studio.domain.AigStudioRevision;
 import org.dromara.aigov.studio.domain.bo.AigStudioDraftCreateBo;
+import org.dromara.aigov.studio.domain.bo.AigStudioDraftQueryBo;
 import org.dromara.aigov.studio.domain.bo.AigStudioDraftSaveBo;
 import org.dromara.aigov.studio.domain.vo.AigStudioDraftDetailVo;
+import org.dromara.aigov.studio.domain.vo.AigStudioDraftVo;
+import org.dromara.aigov.studio.domain.vo.AigStudioValidateVo;
 import org.dromara.aigov.studio.enums.AigStudioDraftStatusEnum;
 import org.dromara.aigov.studio.enums.AigStudioRevisionSourceEnum;
 import org.dromara.aigov.studio.helper.AigStudioContentHasher;
 import org.dromara.aigov.studio.mapper.AigStudioDraftMapper;
 import org.dromara.aigov.studio.mapper.AigStudioRevisionMapper;
+import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.core.exception.ServiceException;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -428,6 +432,108 @@ class AigStudioDraftServiceImplTest {
         existingDraft(1, content("X"), AigStudioDraftStatusEnum.EDITING.getCode());
         assertThrows(ServiceException.class, () -> service.archive(DRAFT_ID, OTHER));
         verify(draftMapper, times(0)).update(any(AigStudioDraft.class), any());
+    }
+
+    // ------------------------------------------------------------------ 预检（S3）
+
+    /**
+     * 一份"各方面都填全"的内容（八分节 + 能力 + 合法 Schema）。
+     *
+     * @return JSON
+     */
+    private static String fullContent() {
+        StringBuilder sections = new StringBuilder();
+        for (String key : AigStudioDraftContent.PROMPT_SECTION_KEYS) {
+            if (sections.length() > 0) {
+                sections.append(',');
+            }
+            sections.append('"').append(key).append("\":\"内容-").append(key).append('"');
+        }
+        return "{\"agentName\":\"详情页文案助手\",\"promptSections\":{" + sections + "},"
+            + "\"providerCapability\":\"text_generation\",\"allowExternal\":\"N\","
+            + "\"inputSchema\":\"{\\\"type\\\":\\\"object\\\"}\","
+            + "\"outputSchema\":\"{\\\"type\\\":\\\"object\\\"}\"}";
+    }
+
+    @Test
+    @DisplayName("★ 预检：填全的内容通过，且结论钉住「检的是哪一版」（revision + contentHash）")
+    void validatePassesOnCompleteContent() {
+        AigStudioDraft draft = existingDraft(3, fullContent(), AigStudioDraftStatusEnum.EDITING.getCode());
+
+        AigStudioValidateVo vo = service.validateDraft(DRAFT_ID);
+
+        assertTrue(vo.getPassed(), "问题=" + vo.getProblems());
+        assertTrue(vo.getProblems().isEmpty());
+        assertEquals(3, vo.getRevision());
+        assertEquals(draft.getContentHash(), vo.getContentHash(), "结论必须能对应到具体那一版内容");
+    }
+
+    @Test
+    @DisplayName("★ 预检：问题一次列全（不是抛第一个错让人来回试）")
+    void validateListsAllProblemsAtOnce() {
+        // 只给两个分节且都为空、没有能力、allowExternal 非法、Schema 不合法、页面定制夹带脚本
+        String bad = "{\"promptSections\":{\"role\":\"  \",\"objective\":\"  \"},"
+            + "\"allowExternal\":\"MAYBE\",\"inputSchema\":\"{bad\","
+            + "\"pageCustomizationJson\":\"<script>alert(1)</script>\"}";
+        existingDraft(1, bad, AigStudioDraftStatusEnum.EDITING.getCode());
+
+        AigStudioValidateVo vo = service.validateDraft(DRAFT_ID);
+
+        assertFalse(vo.getPassed());
+        String joined = String.join("\n", vo.getProblems());
+        assertTrue(joined.contains("缺少 Prompt 分节"), joined);
+        assertTrue(joined.contains("全部为空"), joined);
+        assertTrue(joined.contains("providerCapability"), joined);
+        assertTrue(joined.contains("allowExternal"), joined);
+        assertTrue(joined.contains("输入 Schema"), joined);
+        assertTrue(joined.contains("可执行脚本"), joined);
+        assertTrue(vo.getProblems().size() >= 6, "应一次列全，实际=" + vo.getProblems());
+    }
+
+    @Test
+    @DisplayName("预检：不产生任何写入（它只是只读校验）")
+    void validateWritesNothing() {
+        existingDraft(2, fullContent(), AigStudioDraftStatusEnum.EDITING.getCode());
+
+        service.validateDraft(DRAFT_ID);
+
+        verify(draftMapper, never()).update(any(AigStudioDraft.class), any());
+        verify(revisionMapper, never()).insert(any(AigStudioRevision.class));
+    }
+
+    @Test
+    @DisplayName("预检：内容不是合法 JSON 时如实报错，不抛异常")
+    void validateReportsBrokenJson() {
+        AigStudioDraft draft = existingDraft(1, fullContent(), AigStudioDraftStatusEnum.EDITING.getCode());
+        draft.setContentJson("{not json");
+
+        AigStudioValidateVo vo = service.validateDraft(DRAFT_ID);
+
+        assertFalse(vo.getPassed());
+        assertTrue(vo.getProblems().get(0).contains("不是合法 JSON"), vo.getProblems().toString());
+    }
+
+    // ------------------------------------------------------------------ 清单（S3）
+
+    @Test
+    @DisplayName("★ 清单：状态描述与「未提交改动」由服务层在分页映射时填（不填就是永远为空的两列）")
+    void queryPageFillsLabelsAndDirtyFlag() {
+        AigStudioDraftVo vo = new AigStudioDraftVo();
+        vo.setDraftId(DRAFT_ID);
+        vo.setStatus(AigStudioDraftStatusEnum.EDITING.getCode());
+        vo.setContentHash("hash-new");
+        vo.setLastPublishedHash(null);
+        when(draftMapper.selectVoPage(any(), any())).thenReturn(
+            new com.baomidou.mybatisplus.extension.plugins.pagination.Page<AigStudioDraftVo>(1, 10)
+                .setRecords(java.util.List.of(vo)).setTotal(1));
+
+        PageResult<AigStudioDraftVo> result = service.queryPage(new AigStudioDraftQueryBo(),
+            new org.dromara.common.mybatis.core.page.PageQuery());
+
+        List<AigStudioDraftVo> rows = new ArrayList<>(result.getRows());
+        assertEquals(1, rows.size());
+        assertEquals(AigStudioDraftStatusEnum.EDITING.getDesc(), rows.get(0).getStatusLabel());
+        assertTrue(rows.get(0).getUnpublishedChanges(), "从未提交过 = 有未发布改动");
     }
 
 }

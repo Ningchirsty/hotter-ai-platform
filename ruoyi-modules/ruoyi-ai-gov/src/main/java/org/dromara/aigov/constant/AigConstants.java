@@ -290,6 +290,35 @@ public interface AigConstants {
     String PERM_APPROVAL_APPROVE = "aig:approval:approve";
 
     /**
+     * 训练草稿清单（读）：有哪些草稿、归谁、改到第几版
+     */
+    String PERM_STUDIO_DRAFT_LIST = "aig:studio:draft:list";
+
+    /**
+     * 训练草稿详情与修订历史（读）
+     */
+    String PERM_STUDIO_DRAFT_QUERY = "aig:studio:draft:query";
+
+    /**
+     * 新建训练草稿（写）
+     */
+    String PERM_STUDIO_DRAFT_CREATE = "aig:studio:draft:create";
+
+    /**
+     * 编辑/回滚/归档训练草稿（写）
+     *
+     * <p><b>为什么不按动作拆成三个权限点</b>：这三者改变的都是"草稿内容/状态"，
+     * 责任边界相同；真正需要单独授权的是<b>下一步的 submit</b>（它会产生正式版本候选）——
+     * 把"能改草稿"与"能把草稿变成版本"分成两件事，才是有意义的分权。</p>
+     */
+    String PERM_STUDIO_DRAFT_EDIT = "aig:studio:draft:edit";
+
+    /**
+     * 草稿预检（写：会落一条预检结论）
+     */
+    String PERM_STUDIO_DRAFT_VALIDATE = "aig:studio:draft:validate";
+
+    /**
      * 服务令牌管理权限码的公共前缀。
      *
      * <p><b>它同时是一条安全边界</b>：签发令牌时，凡以此前缀开头的 scope 一律拒绝
