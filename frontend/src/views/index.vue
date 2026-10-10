@@ -8,7 +8,10 @@
           等组件
         </p>
         <div class="hero-actions">
-          <el-button type="primary" @click="goTarget('https://gitee.com/dromara/RuoYi-Vue-Plus')">查看源码</el-button>
+          <el-button type="primary" @click="openWorkspace">进入 AI 工作台</el-button>
+          <el-button type="primary" plain @click="goTarget('https://gitee.com/dromara/RuoYi-Vue-Plus')">
+            查看源码
+          </el-button>
           <el-button plain @click="goTarget('https://plus-doc.dromara.org/#/ruoyi-vue-plus/changlog')">
             更新日志
           </el-button>
@@ -105,6 +108,17 @@ const capabilityGroups = [
 
 const goTarget = (url: string) => {
   window.open(url, '__blank');
+};
+
+/**
+ * 进入员工 AI 工作台。
+ *
+ * 门户是**独立顶层路由**（Q5：新增 `/ai-workspace`，不改造本页），这里只放入口：
+ * 员工不该为了用 AI 岗位而先进治理台。
+ */
+const router = useRouter();
+const openWorkspace = () => {
+  router.push('/ai-workspace');
 };
 </script>
 
