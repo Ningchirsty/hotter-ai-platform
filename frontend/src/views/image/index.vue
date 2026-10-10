@@ -191,7 +191,7 @@
             </div>
           </div>
         </div>
-        <div class="submit-row">
+        <div class="submit-row image-submit-dock" role="region" aria-label="图像生成操作">
           <button
             v-hasPermi="['image:creation:submit']"
             type="button"
@@ -2278,4 +2278,38 @@ button {
 
 <style scoped lang="scss">
 @use '@/assets/styles/creative-workbench.scss';
+@use '@/assets/styles/tokens/sass-vars' as layout;
+
+.creation-workbench { padding-bottom: 140px; }
+.studio.creation-workbench .submit-row.image-submit-dock {
+  position: fixed;
+  z-index: 20;
+  left: 24px;
+  right: 24px;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: minmax(140px, 280px) minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  padding: 12px 16px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--line, #e0e5f2);
+  border-radius: 12px;
+  box-shadow: 0 6px 28px rgba(41, 55, 81, .12);
+}
+:global(.app-wrapper.openSidebar:not(.mobile)) .image-submit-dock {
+  left: calc(#{layout.$base-sidebar-width} + 24px) !important;
+}
+:global(.app-wrapper.hideSidebar:not(.mobile)) .image-submit-dock { left: 82px !important; }
+:global(.main-container.sidebarHide) .image-submit-dock { left: 24px !important; }
+@media (max-width: 520px) {
+  .studio.creation-workbench .submit-row.image-submit-dock {
+    left: 12px;
+    right: 12px;
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+}
+
 </style>
