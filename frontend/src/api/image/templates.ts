@@ -17,3 +17,6 @@ export const templateCover = async (id: string, revision: number) => {
   if (!blob?.size || !blob.type.startsWith('image/')) throw new Error('模板封面暂不可用');
   return URL.createObjectURL(blob);
 };
+
+export interface TemplateDraft { templateId: string; revision: number; model: string; capability: 'T2I'; prompt: string; referenceAssetIds: (number | string)[]; output: import('./types').CloudImageOutputParams }
+export const prepareTemplate = (data: Omit<TemplateSubmission, 'client_request_id'>): AxiosPromise<TemplateDraft> => request({ url: '/image/templates/prepare', method: 'post', data, headers: { repeatSubmit: false } });

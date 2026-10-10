@@ -1,5 +1,5 @@
 <template>
-  <TemplateDiscovery v-if="media === 'image'" @task-created="emit('task-created')" />
+  <TemplateDiscovery v-if="media === 'image'" :busy="busy" @apply="(route, title) => emit('apply', route, title)" @task-created="emit('task-created')" />
   <VideoDiscovery v-else v-bind="$props" @apply="(route, title) => emit('apply', route, title)" />
 </template>
 <script setup lang="ts">

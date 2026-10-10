@@ -38,7 +38,7 @@
     <!-- ================= 创建 ================= -->
     <div v-if="activeView === 'create'" class="workbench-grid">
       <section class="studio-card create-card">
-        <GenerationSource v-model="generationSource" :busy="uploading || submitting" :cloud-label="cloudStatus?.configured ? '可联调' : '未配置'" />
+        <GenerationSource v-model="generationSource" :busy="uploading || submitting" :cloud-label="cloudStatus?.configured ? '可用' : '暂不可用'" />
         <CloudGenerationForm v-show="generationSource === 'cloud'" media="image" :busy="uploading || submitting" :cloud-status="cloudStatus" :inspiration="cloudInspiration" @change="cloudDraft = $event" />
         <div v-show="generationSource === 'local'" class="editor-body">
           <div class="section-heading">
@@ -211,7 +211,7 @@
                     : '暂不可提交'
             }}
           </button>
-          <span v-if="submitBlockReason !== '此能力尚未通过供应商接口验证，暂不可提交'">{{ submitBlockReason || '提交后将经服务端填充模板并交由 ComfyUI 执行' }}</span>
+          <span v-if="submitBlockReason !== '此能力暂不可提交'">{{ submitBlockReason || '提交后将经服务端填充模板并交由 ComfyUI 执行' }}</span>
         </div>
       </section>
 
@@ -295,7 +295,7 @@
               <template v-if="task.outputWidth">· {{ task.outputWidth }}×{{ task.outputHeight }}</template>
             </p>
             <small>{{ task.taskNo }} · {{ task.createTime || '—' }}</small>
-            <small v-if="task.errorMessage" class="task-error">{{ task.errorMessage }}</small>
+            <small v-if="task.errorMessage" class="task-error">{{ creationMessage(task.errorMessage) }}</small>
           </div>
           <div class="task-actions">
             <button
@@ -423,7 +423,7 @@
           <el-descriptions-item label="能力">
             {{ moduleOf(detail.capabilityCode)?.name || detail.capabilityCode }}
           </el-descriptions-item>
-          <el-descriptions-item label="生成来源">{{ detail.workflowCode === 'cloud-bluocto-t2i' ? '云端 · 蓝章鱼' : '本地 · ComfyUI' }}</el-descriptions-item>
+          <el-descriptions-item label="生成来源">{{ detail.workflowCode === 'cloud-bluocto-t2i' ? '云端生成' : '本地 · ComfyUI' }}</el-descriptions-item>
           <el-descriptions-item label="模型">{{ detail.modelCode || '—' }}</el-descriptions-item>
           <el-descriptions-item label="工作流">{{ detail.workflowCode }}</el-descriptions-item>
           <el-descriptions-item label="输出尺寸">
@@ -433,7 +433,7 @@
           <el-descriptions-item label="透明通道">{{ detail.outputHasAlpha ? '有' : '无' }}</el-descriptions-item>
           <el-descriptions-item label="提示词" :span="2">{{ detail.prompt || '—' }}</el-descriptions-item>
           <el-descriptions-item v-if="detail.errorMessage" label="失败原因" :span="2">
-            <span class="error-text">{{ detail.errorMessage }}</span>
+            <span class="error-text">{{ creationMessage(detail.errorMessage) }}</span>
           </el-descriptions-item>
         </el-descriptions>
 
@@ -569,7 +569,9 @@ import {
   type GenerationSource as GenerationSourceType,
   type InspirationRoute
 } from '@/components/CreativeInspiration/types';
-import { extractErrorMessage } from '@/utils/request';
+import { extractErrorMessage as readErrorMessage } from '@/utils/request';
+import { creationMessage } from '@/components/CreativeInspiration/template-reuse';
+async function extractErrorMessage(error: unknown) { return creationMessage(await readErrorMessage(error)) || undefined; }
 import { createTaskPoller } from '@/utils/task-polling';
 import { IMAGE_MODULES, moduleOf, type ImageCapabilityModule, type ImageFieldKey } from './modules';
 
@@ -754,13 +756,13 @@ function applyDefaults() {
 }
 
 function applyCreativeInspiration(route: InspirationRoute, title: string) {
-  if (route.media !== 'image' || uploading.value || submitting.value || !isRouteAvailable(route, workflows.value, cloudStatus.value))
-    return;
+  if (route.media !== 'image' || uploading.value || submitting.value) return;
+  if (!isRouteAvailable(route, workflows.value, cloudStatus.value)) { ElMessage.warning('此模板的模型暂不可用，请选择其它模板'); return; }
   if (route.source === 'cloud') {
     generationSource.value = 'cloud';
     cloudInspiration.value = { route, stamp: Date.now() };
     appliedInspirationTitle.value = title; activeView.value = 'create';
-    ElMessage.success('已带入云端模型和描述，请完善素材与参数后提交'); return;
+    ElMessage.success('模板已带入创作表单，请确认内容与输出设置后生成'); return;
   }
   const module = IMAGE_MODULES.find(item => item.code === route.capability && item.workflowCode === route.workflowCode);
   if (!module) return;
@@ -994,7 +996,7 @@ const taskPoller = createTaskPoller<ImageTaskDetailVO>({
   onTerminal: (_id, task) => {
     if (task.status === 'SUCCEEDED') inspirationRevision.value++;
     if (task.status === 'SUCCEEDED') ElMessage.success('任务 ' + task.taskNo + ' 已完成');
-    else ElMessage.warning(task.errorMessage || '任务已' + statusText(task.status));
+    else ElMessage.warning(creationMessage(task.errorMessage) || '任务已' + statusText(task.status));
   },
   onCycle: async finished => {
     await loadTasks(true);

@@ -45,6 +45,10 @@ public class TemplateFeedController {
         return ResponseEntity.ok().header("Cache-Control","private, max-age=600").header("X-Content-Type-Options","nosniff").header("Content-Type",type).body(cache.cover(id));
     }
     // HTTP 使用平台 Jackson 3 可读取的 Map，服务层继续使用独立 Jackson 2 的树校验。
+    @PostMapping("/prepare") @SaCheckPermission("image:creation:view")
+    public R<Map<String,Object>> prepare(@RequestBody Map<String,Object> body) {
+        tenant(user()); return R.ok(generation.prepare(TemplateFeedCache.JSON.valueToTree(body)));
+    }
     @PostMapping("/generate") @SaCheckPermission("image:creation:submit")
     public ResponseEntity<R<Map<String,Object>>> generate(@RequestBody Map<String,Object> body) { long user=user(); return ResponseEntity.status(202).body(R.ok(generation.submit(tenant(user),user,LoginHelper.getDeptId(),TemplateFeedCache.JSON.valueToTree(body)))); }
     @GetMapping("/generate/{id}") @SaCheckPermission("image:creation:view")
