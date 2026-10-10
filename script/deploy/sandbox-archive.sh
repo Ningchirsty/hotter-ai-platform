@@ -12,6 +12,8 @@
 #   sandbox-archive.sh show <jobId>            # 看某个作业的记录与产物清单
 #   sandbox-archive.sh verify <jobId>          # 逐个重算产物 sha256，与 result.json 里声明的对比
 #   sandbox-archive.sh verify <jobId> --scratch # 同时对比 scratch 里那份（若还在）
+#   sandbox-archive.sh export <jobId> [--out FILE] [--force]
+#                                              # 把某个作业的产物打包成可交付的 tar.gz（含清单）
 # 选项：
 #   --archive-root DIR   默认 /var/lib/hotter-sandbox/archive
 #   --jobs-root DIR      默认 /var/lib/hotter-sandbox/work/jobs（verify --scratch 用）
@@ -25,6 +27,8 @@ JOBS_ROOT="${SANDBOX_JOBS_ROOT:-/var/lib/hotter-sandbox/work/jobs}"
 CMD=""
 JOB=""
 WITH_SCRATCH=0
+OUT=""
+FORCE=0
 
 usage() { sed -n '2,/^set -Eeuo pipefail$/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 2; }
 die() { echo "sandbox-archive: $*" >&2; exit 2; }
@@ -34,11 +38,13 @@ while [ $# -gt 0 ]; do
     --archive-root) ARCHIVE_ROOT="${2:-}"; shift 2 ;;
     --jobs-root) JOBS_ROOT="${2:-}"; shift 2 ;;
     --scratch) WITH_SCRATCH=1; shift ;;
+    --out) OUT="${2:-}"; shift 2 ;;
+    --force) FORCE=1; shift ;;
     -h|--help) usage ;;
-    list|show|verify)
+    list|show|verify|export)
       [ -z "$CMD" ] || die "只能给一个子命令（已给 $CMD）"
       CMD="$1"; shift
-      # show/verify 需要 jobId；list 不需要
+      # show/verify/export 需要 jobId；list 不需要
       if [ "$CMD" != "list" ] && [ $# -gt 0 ] && [ "${1#--}" = "$1" ]; then JOB="$1"; shift; fi
       ;;
     *) die "未知参数：$1" ;;
@@ -152,5 +158,34 @@ case "$CMD" in
     fi
     echo "核对失败：$total 项里有 $bad 项对不上"
     exit 1
+    ;;
+  export)
+    # 把一个作业的产物打包成可交付的 tar.gz。
+    # 为什么需要：产物是宿主上的普通文件，交给别人（评审/业务/事故复盘）需要确定的包 + 一份能独立
+    # 核对的清单；手工 tar 容易漏清单，事后说不清包里是什么。
+    # 刻意不做：**不往任何地方上传**——归档目录不是分发渠道，出网策略（F-09）尚未冻结；
+    # 平台侧的产物登记（制品账本/对象存储）还没做，那是下一步。
+    [ -n "$JOB" ] || die "export 需要 jobId"
+    d="$ARCHIVE_ROOT/$JOB"
+    [ -d "$d" ] || die "没有这个作业的归档：$d"
+    [ -f "$d/result.json" ] || die "归档里缺 result.json"
+    [ -n "$OUT" ] || OUT="./$JOB.tar.gz"
+    if [ -e "$OUT" ] && [ "$FORCE" != "1" ]; then die "输出已存在：$OUT（要覆盖请加 --force）"; fi
+    # 先核对再打包：把"对不上"的东西交出去比不交出去更糟
+    if ! "$0" --archive-root "$ARCHIVE_ROOT" verify "$JOB" >/dev/null 2>&1; then
+      echo "sandbox-archive: 归档自检未通过，拒绝导出（先跑 verify $JOB 看是哪一项）" >&2
+      exit 1
+    fi
+    tmp="${OUT}.tmp.$$"
+    tar -czf "$tmp" -C "$ARCHIVE_ROOT" "$JOB"
+    mv -f "$tmp" "$OUT"
+    files=$(jq -r '.artifactFiles // 0' "$d/archive.json" 2>/dev/null || echo "?")
+    bytes=$(jq -r '.artifactBytes // 0' "$d/archive.json" 2>/dev/null || echo "?")
+    echo "已导出：$OUT"
+    echo "  作业 $JOB：产物 $files 个 / $bytes 字节（已通过 verify 自检）"
+    echo "  包 sha256：$(sha256sum "$OUT" | cut -d' ' -f1)"
+    echo "  包大小：$(stat -c %s "$OUT") 字节"
+    echo "  包内条目数：$(tar -tzf "$OUT" | wc -l)"
+    echo "  用途：交给评审或业务；**平台侧登记（制品账本/对象存储）尚未实现**"
     ;;
 esac
