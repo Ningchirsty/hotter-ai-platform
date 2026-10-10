@@ -4,6 +4,16 @@
 > **用户 2026-10-10 拍板**：**先做专题 C**；Scenario 建轻量表、Execution/Artifact 复用既有、沙箱测试允许但默认关闭、门户新增 `/ai-workspace`。
 > **对比与总设计**：见工作区 `docs/07-V2.0-岗位工作台与AgentStudio-对比与可执行设计.md`（含逐条事实盘点与待拍板清单）。
 > **本文件**：记录 **Studio 这条线的每个增量做了什么、为什么、怎么验证**；随代码同批更新。
+>
+> **⚠️ 基线说明（2026-10-10）**：S1 的代码写在 `6503058` 上，推送前已 **rebase 到 `26663d4`**——
+> 该基线上并行工作流已推入 ~100 个提交，新增 `aig_task_artifact`（制品账本，ADR-010）、
+> `aig_sandbox_run` / `aig_sandbox_artifact`（沙箱运行与产物，ADR-015/016）、
+> `aig_policy_decision_log`、`aig_service_token`（机器身份），并建立了 `docs/platform-v2/` 的
+> **ADR-001~016 + Execution Contract v1 + 12 项冻结清单**。
+> **Studio 后续增量必须对齐**：沙箱测试复用 ADR-015/016 的受限容器链路（**不自建沙箱**）、
+> 门槛接既有 `release/advance`、场景/岗位**不新造审批表**（F-10）、
+> 制品的"历史成果"读 `aig_task_artifact` 而不是新建 `aig_artifact*`（ADR-010）。
+> 详见工作区 `docs/07-V2.0-…-对比与可执行设计.md` §1.2。
 
 ---
 
@@ -73,7 +83,7 @@
 
 | 项 | 结果 |
 |---|---|
-| aigov 单测 | **477 → 490**（+13：键顺序/空白/嵌套排序/数组顺序/数值归一/转义/非 ASCII/幂等/非法输入/null/真实内容模型/分节键固定） |
+| aigov 单测 | 本增量 **+13**（键顺序/空白/嵌套排序/数组顺序/数值归一/转义/非 ASCII/幂等/非法输入/null/真实内容模型/分节键固定）。**计数口径**：写出时为 `477 → 490`；rebase 到 `26663d4` 后本模块共 **673/673 全绿**（含本增量这 13 条） |
 | Mapper↔VO 守卫 | 通过（`AigMapperVoConverterCoverageTest`：三个新 VO 的 `@AutoMapper` 都生成了转换器） |
 | 真库探针（临时 MariaDB 3426） | 脚本 exit=0；三表列数 **18 / 14 / 17**；唯一键 = 三个 PRIMARY + `uk_aig_studio_revision(draft_id, revision_no)`；默认值 `MANUAL`/`PENDING` 生效；**重复修订号被 1062 拒绝**；**重放 exit=0 且既有行一字不动**；`content_hash` 为 `char(64)` |
 
