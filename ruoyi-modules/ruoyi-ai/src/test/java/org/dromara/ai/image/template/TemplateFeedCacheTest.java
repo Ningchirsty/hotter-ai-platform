@@ -64,6 +64,20 @@ class TemplateFeedCacheTest {
         cache.refresh(); cache.sync(NOW.plusSeconds(601)); assertTrue(seen.contains("tag")); assertEquals(NOW.plusSeconds(601),cache.current().checkedAt());
         var expired=new TemplateFeedCache(properties(),(n,e)->null,Clock.fixed(NOW.plus(Duration.ofDays(8)),ZoneOffset.UTC)); assertFalse(expired.browsable());
     }
+    @Test void validCoverUsesMeasuredDimensionsWithoutChangingGenerationProfile() throws Exception {
+        var png=new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(new java.awt.image.BufferedImage(3,5,java.awt.image.BufferedImage.TYPE_INT_RGB),"png",png);
+        byte[] bytes=png.toByteArray(); String hash=TemplateFeedCache.sha(bytes),name="covers/"+hash.substring(0,12)+".png";
+        String template="{\"id\":\"actual\",\"revision\":1,\"schema_version\":2,\"type\":\"image\",\"cover\":{\"url\":\""+name+"\",\"sha256\":\""+hash+"\",\"width\":1024,\"height\":1024}}";
+        var data=resources(4,"{}","["+template+"]");
+        var manifest=(com.fasterxml.jackson.databind.node.ObjectNode)node(new String(data.get("manifest.json"),java.nio.charset.StandardCharsets.UTF_8));
+        ((com.fasterxml.jackson.databind.node.ObjectNode)manifest.path("files")).put(name,hash);
+        data.put("manifest.json",TemplateFeedCache.JSON.writeValueAsBytes(manifest));data.put(name,bytes);
+        var cache=new TemplateFeedCache(properties(),(n,e)->new TemplateFeedCache.Resource(200,data.get(n),""),Clock.fixed(NOW,ZoneOffset.UTC));
+        cache.refresh();assertTrue(cache.online());assertEquals(4,cache.current().version());assertArrayEquals(bytes,cache.cover("actual"));
+        data.put(name,"not an image".getBytes());Files.delete(directory.resolve(name));
+        assertThrows(TemplateFeedException.class,()->cache.sync(NOW.plusSeconds(601)));assertEquals(4,cache.current().version());
+    }
     @Test void credentialCannotEscapeToExternalOriginOrResourcePath() {
         for(var path:List.of("https://evil.test/cover","../manifest.json","covers/abc.png?key=value","covers/%2e%2e/file.png")) assertThrows(TemplateFeedException.class,()->TemplateFeedCache.resourceName(path));
         assertDoesNotThrow(()->TemplateFeedCache.resourceName("covers/06101545ccb7.png"));
