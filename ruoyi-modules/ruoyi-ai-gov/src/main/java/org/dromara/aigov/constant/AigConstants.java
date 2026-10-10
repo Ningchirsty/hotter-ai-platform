@@ -340,6 +340,49 @@ public interface AigConstants {
     String PERM_STUDIO_TEST_VIEW = "aig:studio:test:view";
 
     /**
+     * 岗位包清单（读）：有哪些岗位、各自有哪些版本、当前是什么发布状态
+     */
+    String PERM_ROLE_PACKAGE_LIST = "aig:role:list";
+
+    /**
+     * 岗位包详情（读）：某个版本的卡片清单、清单哈希与流转历史
+     */
+    String PERM_ROLE_PACKAGE_QUERY = "aig:role:query";
+
+    /**
+     * 编辑岗位包草稿（写：新建岗位/版本、保存 DRAFT 版本的清单与卡片）
+     *
+     * <p><b>只对 DRAFT 生效</b>：已发布的版本不可改（要改就出新版本），
+     * 所以这个权限本身并不会改动"员工正在用的那份"。</p>
+     */
+    String PERM_ROLE_PACKAGE_EDIT = "aig:role:edit";
+
+    /**
+     * 岗位包预检（读语义、但单独授权）
+     *
+     * <p>与编辑分开是为了让"能改"与"能确认这份配置是合法的"可以是不同的人——
+     * 但预检本身不改任何东西，所以它与发布权<b>不是</b>同一件事。</p>
+     */
+    String PERM_ROLE_PACKAGE_VALIDATE = "aig:role:validate";
+
+    /**
+     * 发布岗位包版本（写：DRAFT→TESTING→PUBLISHED）
+     *
+     * <p><b>与编辑分开授权</b>：这一步决定"员工能不能在门户里看到这些卡片"，
+     * 是全链路上影响面最大的动作。流转本身由 {@code AigRoleReleaseTransition}
+     * 写死的边表约束，权限只决定"谁能按"。</p>
+     */
+    String PERM_ROLE_PACKAGE_PUBLISH = "aig:role:publish";
+
+    /**
+     * 停用/重新启用岗位包版本（写：→DISABLED 与 DISABLED→TESTING/PUBLISHED）
+     *
+     * <p>与发布分开授权：发布是"上架"，停用是"叫停"。把叫停的权力绑在发布权上，
+     * 会在"发布的人休假了"时没人能撤下问题版本。</p>
+     */
+    String PERM_ROLE_PACKAGE_DISABLE = "aig:role:disable";
+
+    /**
      * 服务令牌管理权限码的公共前缀。
      *
      * <p><b>它同时是一条安全边界</b>：签发令牌时，凡以此前缀开头的 scope 一律拒绝
