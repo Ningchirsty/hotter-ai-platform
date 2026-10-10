@@ -10,6 +10,9 @@ import org.dromara.aigov.workspace.portal.domain.vo.AigPortalTaskVo;
 import org.dromara.aigov.workspace.portal.helper.AigPortalActor;
 import org.dromara.aigov.workspace.portal.helper.AigPortalActorProvider;
 import org.dromara.aigov.workspace.portal.service.IAigPortalService;
+import org.dromara.aigov.workspace.recommend.domain.bo.AigRecommendSuggestBo;
+import org.dromara.aigov.workspace.recommend.domain.vo.AigRecommendResultVo;
+import org.dromara.aigov.workspace.recommend.service.IAigRecommendService;
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.core.domain.R;
 import org.dromara.common.core.exception.ServiceException;
@@ -18,6 +21,8 @@ import org.dromara.common.web.core.BaseController;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -25,7 +30,10 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * 员工 AI 工作台（门户）只读接口（主文档线增量 2；附件 §7、§9）。
+ * 员工 AI 工作台（门户）接口（主文档线增量 2；附件 §7、§9）。
+ *
+ * <p>除 {@code /intent/suggest} 外都是**只读**接口。那个推荐接口也不改平台业务数据，
+ * 但它会发起一次**受治理的模型调用**（默认关闭、真花钱），所以方法和语义上都与只读接口区分开。</p>
  *
  * <h3>为什么用 {@code @SaCheckLogin} 而不是权限点</h3>
  * <p>这个入口对<b>每一个员工</b>开放，它只返回"当前用户自己"能看到的东西
@@ -45,6 +53,7 @@ import java.util.List;
 public class AigPortalController extends BaseController {
 
     private final IAigPortalService portalService;
+    private final IAigRecommendService recommendService;
     private final AigPortalActorProvider actorProvider;
 
     /**
@@ -95,6 +104,21 @@ public class AigPortalController extends BaseController {
     public R<PageResult<AigPortalArtifactVo>> myArtifacts(
         @RequestParam(required = false) Long taskId, PageQuery pageQuery) {
         return R.ok(portalService.myArtifacts(taskId, pageQuery, requireActor()));
+    }
+
+    /**
+     * 自然语言推荐（只推荐、不启动；一次调用会花真钱，默认关闭）。
+     *
+     * <p>候选清单由服务端按当前用户可见卡片算出，调用方只能给"一句话需求"。
+     * 关着时**明确报错**（返回空列表会被读成"没有相关卡片"）。</p>
+     *
+     * @param bo 入参（一句话需求）
+     * @return 推荐结果（已按可见清单过滤）
+     */
+    @SaCheckLogin
+    @PostMapping("/intent/suggest")
+    public R<AigRecommendResultVo> suggest(@RequestBody(required = false) AigRecommendSuggestBo bo) {
+        return R.ok(recommendService.suggest(bo, requireActor()));
     }
 
     /**

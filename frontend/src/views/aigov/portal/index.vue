@@ -18,6 +18,49 @@
         </div>
       </template>
 
+      <!--
+        自然语言找卡片（增量 7）：只推荐、不启动。
+        关着或调用失败时后端直接报错——这里把错误原样弹出来，而不是显示一个空列表让人以为"没有相关卡片"。
+      -->
+      <div class="intent-bar">
+        <el-input
+          v-model="intentInput"
+          clearable
+          placeholder="用一句话说你要做什么，例如：给新品做一套详情页"
+          @keyup.enter="handleSuggest"
+        />
+        <el-button type="primary" :loading="loadingSuggest" icon="MagicStick" @click="handleSuggest">
+          帮我找卡片
+        </el-button>
+      </div>
+      <el-alert
+        v-if="suggestReason"
+        type="info"
+        :closable="false"
+        :title="suggestReason"
+        class="intent-reason"
+      />
+      <div v-if="suggestions.length" class="suggestion-list">
+        <p class="suggestion-hint">按你的描述，最相关的是这几张（仍需你自己确认后启动）：</p>
+        <article
+          v-for="item in suggestions"
+          :key="suggestionKey(item)"
+          class="suggestion-item"
+        >
+          <div class="suggestion-top">
+            <h5>{{ item.action.title || item.action.actionCode }}</h5>
+            <el-tag size="small" type="info" effect="plain">{{ item.roleName || item.roleCode }}</el-tag>
+          </div>
+          <p class="suggestion-desc">{{ item.action.description || '暂无卡片说明' }}</p>
+          <div class="suggestion-actions">
+            <el-button v-if="isNavigable(item.action)" type="primary" plain size="small" @click="openSuggestedPage(item)">
+              打开
+            </el-button>
+            <el-button v-else type="primary" size="small" @click="openSuggestedLaunch(item)">启动</el-button>
+          </div>
+        </article>
+      </div>
+
       <el-alert
         v-if="!loadingRoles && roles.length === 0"
         type="info"
@@ -215,6 +258,7 @@ import {
   listMyRoles,
   listMyTasks,
   setDefaultRole,
+  suggestIntents,
   toggleFavorite
 } from '@/api/aigov/portal';
 import type {
@@ -225,7 +269,8 @@ import type {
   AigPortalRoleHomeVO,
   AigPortalRoleVO,
   AigPortalTaskQuery,
-  AigPortalTaskVO
+  AigPortalTaskVO,
+  AigRecommendSuggestionVO
 } from '@/api/aigov/portal/types';
 import { useLoading } from '@/hooks/async/useLoading';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
@@ -238,6 +283,7 @@ import {
   isNavigable,
   launchModeLabel,
   sortRolesByFavorite,
+  suggestionKey,
   taskStatusMeta
 } from './presentation';
 import { buildProfessionalUrl, resolveProfessionalPath } from './professionalLink';
@@ -272,6 +318,12 @@ const artifacts = ref<AigPortalArtifactVO[]>([]);
 const artifactTotal = ref(0);
 const { loading: loadingArtifacts, withLoading: withArtifactsLoading } = useLoading(true);
 const artifactQuery = ref<AigPortalArtifactQuery>({ pageNum: 1, pageSize: 10 });
+
+/** 自然语言找卡片（增量 7）：推荐只做展示与跳转，**不自动启动** */
+const intentInput = ref('');
+const suggestions = ref<AigRecommendSuggestionVO[]>([]);
+const suggestReason = ref('');
+const loadingSuggest = ref(false);
 
 /** 任务状态选项（与后端 AigTaskStatusEnum 一致） */
 const taskStatusOptions = [
@@ -380,6 +432,52 @@ const openPage = (action: AigPortalActionVO) => {
   router.push(buildProfessionalUrl(path, { roleCode: selectedRoleCode.value, actionCode: action.actionCode }));
 };
 
+/**
+ * 自然语言找卡片（增量 7）。
+ *
+ * 后端关着、配额耗尽、策略拒绝都会**报错**而不是返回空列表——这里把错误原样弹出，
+ * 否则员工会以为"系统认为没有相关卡片"，而实际上这次根本没调成。
+ */
+const handleSuggest = async () => {
+  const input = intentInput.value.trim();
+  if (!input) {
+    modal.msgWarning('请先用一句话描述你要做的事');
+    return;
+  }
+  loadingSuggest.value = true;
+  try {
+    const res = await suggestIntents(input);
+    suggestions.value = res.data.suggestions || [];
+    suggestReason.value = res.data.reason || '';
+    if (suggestions.value.length === 0 && !suggestReason.value) {
+      suggestReason.value = '没有找到更相关的卡片，你可以直接浏览下面的岗位卡片。';
+    }
+  } catch (e: any) {
+    suggestions.value = [];
+    suggestReason.value = '';
+    modal.alertError(e?.message || '推荐失败');
+  } finally {
+    loadingSuggest.value = false;
+  }
+};
+
+/** 推荐的页面类卡片：直接打开（推荐不改变"页面类卡片不需要启动凭证"这条规则） */
+const openSuggestedPage = (item: AigRecommendSuggestionVO) => {
+  const path = resolveProfessionalPath(item.action);
+  if (!path) {
+    modal.msgWarning('这张卡片的目标不在白名单里，无法打开（请联系岗位负责人核对配置）');
+    return;
+  }
+  router.push(buildProfessionalUrl(path, { roleCode: item.roleCode, actionCode: item.action.actionCode }));
+};
+
+/** 推荐的能力类卡片：先切到它所属岗位，再打开启动表单（启动仍要用户确认） */
+const openSuggestedLaunch = (item: AigRecommendSuggestionVO) => {
+  void selectRole(item.roleCode);
+  launchAction.value = item.action;
+  launchVisible.value = true;
+};
+
 const getTasks = async () => {
   await withTasksLoading(async () => {
     const res = await listMyTasks(taskQuery.value);
@@ -453,6 +551,61 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.intent-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.intent-reason {
+  margin-bottom: 12px;
+}
+
+.suggestion-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.suggestion-hint {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+
+.suggestion-item {
+  flex: 1 1 300px;
+  max-width: 380px;
+  border: 1px dashed var(--el-color-primary-light-5);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.suggestion-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.suggestion-top h5 {
+  margin: 0;
+}
+
+.suggestion-desc {
+  margin: 8px 0;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+  min-height: 36px;
+}
+
+.suggestion-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .role-strip {
   display: flex;
   flex-wrap: wrap;

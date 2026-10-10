@@ -11,6 +11,7 @@ import {
   launchModeLabel,
   problemTexts,
   sortRolesByFavorite,
+  suggestionKey,
   taskStatusMeta
 } from './presentation';
 
@@ -128,5 +129,16 @@ describe('员工 AI 工作台展示层', () => {
     // 异常值不硬编成某个大小，显示原值便于发现上游给了什么
     expect(formatBytes(-1)).toBe('-1');
     expect(formatBytes(Number.NaN)).toBe('NaN');
+  });
+
+  it('推荐结果的列表键带上岗位：两个岗位的同名卡片不能互相复用', () => {
+    expect(suggestionKey({ roleCode: 'R1', action: { actionCode: 'A' } })).toBe('R1#A');
+    expect(suggestionKey({ roleCode: 'R2', action: { actionCode: 'A' } })).toBe('R2#A');
+    // 同码不同岗位必须产生不同的键（否则列表里会少一条、或点哪条都开同一个岗位）
+    expect(suggestionKey({ roleCode: 'R1', action: { actionCode: 'A' } })).not.toEqual(
+      suggestionKey({ roleCode: 'R2', action: { actionCode: 'A' } })
+    );
+    // 缺字段不抛错（界面容错，但不会因此把两条不同推荐合成一条）
+    expect(suggestionKey({})).toBe('#');
   });
 });

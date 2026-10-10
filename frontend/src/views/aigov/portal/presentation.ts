@@ -283,3 +283,21 @@ export function formatBytes(size?: number | null): string {
   }
   return (size / 1024 / 1024).toFixed(1) + ' MB';
 }
+
+/* ------------------------------------------------------------------ *
+ * 自然语言推荐（增量 7）
+ * ------------------------------------------------------------------ */
+
+/**
+ * 推荐结果的列表键。
+ *
+ * <p><b>必须带上岗位编码</b>：卡片编码只在"一个岗位内"唯一，两个岗位完全可以有同名卡片
+ * （门户的启动接口本身就是用 {@code roleCode + actionCode} 定位的）。只拿 actionCode 当 key，
+ * 两条同码推荐会在列表里互相复用，表现为"少了一条，或者点哪条都开到同一个岗位"。</p>
+ *
+ * @param item 推荐项
+ * @returns 列表键
+ */
+export function suggestionKey(item: { roleCode?: string; action?: { actionCode?: string } }): string {
+  return (item.roleCode ?? '') + '#' + (item.action?.actionCode ?? '');
+}
