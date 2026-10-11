@@ -1,0 +1,59 @@
+name: Creative Ability Release Preflight
+
+on:
+  push:
+    branches: [codex/creative-abilities-production]
+    paths: [.github/workflows/creative-ability-preflight.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: creative-ability-release-preflight
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: [shenzhen, deploy]
+    timeout-minutes: 5
+    steps:
+      - name: Verify candidate execution prerequisites without changing production
+        run: |
+          python3 - <<'PY'
+          import json, shutil, subprocess, urllib.request
+          report = {}
+          opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+          def command(args):
+              try:
+                  result = subprocess.run(args, capture_output=True, text=True, timeout=15)
+                  return result.returncode == 0, result.stdout.strip()
+              except (OSError, subprocess.TimeoutExpired):
+                  return False, ''
+          report['host'] = command(['hostname'])[1]
+          report['rootFreeMB'] = shutil.disk_usage('/').free // 1048576
+          docker_ok, version = command(['docker', 'version', '--format', '{{.Server.Version}}'])
+          report['dockerAvailable'] = docker_ok
+          report['dockerServerVersion'] = version if docker_ok else None
+          report['auditedReleaseEntrypointPresent'] = command(['test', '-x', '/usr/local/sbin/hotter-release'])[0]
+          for key, url in [('comfy', 'http://192.168.2.223:8188/queue'),
+                           ('productionBackend', 'https://pm.hottter.cn/prod-api/auth/code'),
+                           ('productionFrontend', 'https://pm.hottter.cn/version.json')]:
+              try:
+                  with opener.open(url, timeout=15) as response:
+                      data = json.load(response)
+                  if key == 'comfy':
+                      report[key] = dict(ok=True, running=len(data['queue_running']), pending=len(data['queue_pending']))
+                  elif key == 'productionBackend':
+                      report[key] = dict(ok=data.get('code') == 200)
+                  else:
+                      report[key] = dict(ok=bool(data.get('gitSha')), gitSha=data.get('gitSha'))
+              except Exception as error:
+                  report[key] = dict(ok=False, errorType=type(error).__name__)
+          report['readyForIsolatedCandidate'] = all([
+              docker_ok, report['rootFreeMB'] >= 3072, report['comfy']['ok'],
+              report['productionBackend']['ok'], report['productionFrontend']['ok']])
+          print(json.dumps(report, indent=2))
+          # This is a prerequisite check, not task acceptance or deployment.
+          raise SystemExit(0 if report['readyForIsolatedCandidate'] else 1)
+          PY
