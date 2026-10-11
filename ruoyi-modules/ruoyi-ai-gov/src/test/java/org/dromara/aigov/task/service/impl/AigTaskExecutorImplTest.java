@@ -466,20 +466,23 @@ class AigTaskExecutorImplTest {
     }
 
     @Test
-    @DisplayName("★有实现且被受理：写 SUCCEEDED + 派发快照（externalRef），不调模型")
-    void acceptedDispatchSucceeds() {
+    @DisplayName("★有实现且被受理：任务保持 RUNNING + 派发快照（等域回执），不调模型、不置终态")
+    void acceptedDispatchWaitsForReport() {
         scenarioDispatchProperties.setEnabled(true);
         stubDispatchSkeleton();
         when(scenarioVersionResolver.stableVersion("POSTER"))
             .thenReturn(scenarioVersion("1.0.0", "CREATIVE_EXISTING_FLOW"));
         when(scenarioFlowDispatcher.dispatch(any()))
             .thenReturn(org.dromara.scenario.api.domain.AigScenarioFlowResult.accepted("creative-9"));
-        when(taskService.transition(eq(TASK_ID), eq(3), eq(AigTaskStatusEnum.SUCCEEDED), any(), any()))
-            .thenReturn(task("SUCCEEDED", 4));
+        // 受理后只写执行事实（派发快照），**不**做 SUCCEEDED 迁移
+        when(taskService.recordExecutionFacts(eq(TASK_ID), eq(3), isNull(), any(), eq(false), isNull()))
+            .thenReturn(task("RUNNING", 4));
 
         AigTaskExecuteVo vo = executor.execute(executedBo());
 
         assertTrue(vo.isSuccess());
+        assertEquals("RUNNING", vo.getStatus(), "交接完成不等于域内作业完成：等回执收尾");
+        assertTrue(vo.getReason().contains("等待域回执"), vo.getReason());
         ArgumentCaptor<org.dromara.scenario.api.domain.AigScenarioFlowRequest> requestCaptor =
             ArgumentCaptor.forClass(org.dromara.scenario.api.domain.AigScenarioFlowRequest.class);
         verify(scenarioFlowDispatcher).dispatch(requestCaptor.capture());
@@ -489,10 +492,11 @@ class AigTaskExecutorImplTest {
         assertEquals("CREATIVE_EXISTING_FLOW", request.getAdapter());
         assertEquals(SNAPSHOT_JSON, request.getSnapshotJson());
         ArgumentCaptor<String> snapshotCaptor = ArgumentCaptor.forClass(String.class);
-        verify(taskService).transition(eq(TASK_ID), eq(3), eq(AigTaskStatusEnum.SUCCEEDED), any(),
-            snapshotCaptor.capture());
+        verify(taskService).recordExecutionFacts(eq(TASK_ID), eq(3), isNull(), snapshotCaptor.capture(),
+            eq(false), isNull());
         assertTrue(snapshotCaptor.getValue().contains("creative-9"),
             "派发快照要留 externalRef；实际=" + snapshotCaptor.getValue());
+        verify(taskService, never()).transition(eq(TASK_ID), eq(3), eq(AigTaskStatusEnum.SUCCEEDED), any(), any());
         verify(invokeService, never()).invoke(any());
     }
 
