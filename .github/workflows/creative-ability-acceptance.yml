@@ -43,7 +43,7 @@ jobs:
           python3 - <<'PY'
           import json,os,re,subprocess,urllib.request
           explicit=os.environ['REQUESTED_RUN']
-          prior=explicit or '38135127581'
+          prior=explicit or '38142875342'
           reuse=False
           try:
               if not re.fullmatch(r'[1-9][0-9]*',prior): raise ValueError('Invalid prior run ID')
@@ -370,6 +370,128 @@ jobs:
                       process.kill();process.wait()
                       raise RuntimeError('docker '+args[0]+' killed after '+str(round(time.monotonic()-started))+'s; live progress is logged above') from None
                   if code: raise RuntimeError('Candidate image operation failed: '+args[0]+' exit='+str(code))
+              def verified_registry_load(reference, local, docker):
+                  import concurrent.futures
+                  import gzip
+                  import hashlib
+                  import io
+                  import json
+                  import re
+                  import shutil
+                  import tarfile
+                  import tempfile
+                  import time
+                  import urllib.error
+                  import urllib.parse
+                  import urllib.request
+                  from pathlib import Path
+
+                  repository = 'ningchirsty/hotter-ability-candidate'
+                  prefix = 'ghcr.io/' + repository + '@'
+                  if not re.fullmatch(re.escape(prefix) + r'sha256:[0-9a-f]{64}', reference):
+                      raise ValueError('Fallback requires the immutable candidate repository digest')
+                  digest = reference[len(prefix):]
+                  deadline = time.monotonic() + 1200
+                  class NoRedirect(urllib.request.HTTPRedirectHandler):
+                      def redirect_request(self, req, fp, code, msg, headers, newurl):
+                          return None
+                  registry = urllib.request.build_opener(NoRedirect)
+                  delivery = urllib.request.build_opener()
+                  def read(url, headers=None, limit=4 * 1024**2):
+                      with registry.open(urllib.request.Request(url, headers=headers or {}), timeout=45) as response:
+                          data = response.read(limit + 1)
+                          if len(data) > limit: raise ValueError('Registry metadata exceeds its size bound')
+                          return data
+                  token_url = 'https://ghcr.io/token?' + urllib.parse.urlencode({'service':'ghcr.io','scope':'repository:' + repository + ':pull'})
+                  auth = {'Authorization':'Bearer ' + json.loads(read(token_url))['token']}
+                  base = 'https://ghcr.io/v2/' + repository
+                  raw = read(base + '/manifests/' + digest, auth | {'Accept':'application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json'})
+                  if 'sha256:' + hashlib.sha256(raw).hexdigest() != digest:
+                      raise ValueError('Pinned registry manifest checksum mismatch')
+                  manifest = json.loads(raw)
+                  if manifest.get('schemaVersion') != 2 or not 1 <= len(manifest.get('layers',[])) <= 32:
+                      raise ValueError('Expected a bounded single-platform image manifest')
+                  def location(descriptor):
+                      if not re.fullmatch(r'sha256:[0-9a-f]{64}', descriptor['digest']) or not 0 <= descriptor['size'] <= 1024**3:
+                          raise ValueError('Invalid blob descriptor')
+                      url = base + '/blobs/' + descriptor['digest']
+                      try:
+                          with registry.open(urllib.request.Request(url,headers=auth),timeout=45):
+                              return url, auth
+                      except urllib.error.HTTPError as error:
+                          if error.code not in (302,307): raise RuntimeError('Registry blob lookup HTTP '+str(error.code)) from None
+                          target = error.headers.get('Location','')
+                          parsed = urllib.parse.urlparse(target)
+                          if parsed.scheme != 'https' or parsed.hostname != 'pkg-containers.githubusercontent.com' or parsed.username or parsed.password:
+                              raise ValueError('Unexpected blob delivery destination')
+                          # CDN receives neither the repository credential nor the registry bearer token.
+                          return target, {}
+                  def checksum(path):
+                      value=hashlib.sha256()
+                      with path.open('rb') as stream:
+                          for part in iter(lambda:stream.read(1024**2),b''): value.update(part)
+                      return 'sha256:'+value.hexdigest()
+                  with tempfile.TemporaryDirectory(prefix='verified-candidate-',dir=Path.cwd()) as temporary:
+                      root=Path(temporary)
+                      descriptors=[manifest['config']]+manifest['layers']
+                      if sum(item['size'] for item in descriptors)>1024**3 or shutil.disk_usage(root).free<6*1024**3:
+                          raise RuntimeError('Insufficient capacity for verified image transport')
+                      def blob(descriptor):
+                          path=root/descriptor['digest'].split(':')[1]
+                          url,headers=location(descriptor)
+                          size=descriptor['size']
+                          with path.open('wb') as stream: stream.truncate(size)
+                          def part(start):
+                              end=min(start+4*1024**2,size)-1
+                              for attempt in range(3):
+                                  if time.monotonic()>deadline: raise RuntimeError('Verified transfer deadline exceeded')
+                                  try:
+                                      request=urllib.request.Request(url,headers=headers|{'Range':f'bytes={start}-{end}'})
+                                      with delivery.open(request,timeout=45) as response:
+                                          expected=f'bytes {start}-{end}/{size}'
+                                          if response.status!=206 or response.headers.get('Content-Range')!=expected:
+                                              raise ValueError('Server did not honor the exact bounded byte range')
+                                          data=response.read(end-start+2)
+                                          if len(data)!=end-start+1: raise ValueError('Truncated or oversized blob range')
+                                      with path.open('r+b') as stream: stream.seek(start);stream.write(data)
+                                      return
+                                  except (OSError,ValueError):
+                                      if attempt==2: raise RuntimeError('Bounded image range transfer failed') from None
+                                      time.sleep(attempt+1)
+                          with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+                              list(pool.map(part,range(0,size,4*1024**2)))
+                          if path.stat().st_size!=size or checksum(path)!=descriptor['digest']:
+                              raise ValueError('Registry blob checksum mismatch')
+                          print('VERIFIED_CANDIDATE_BLOB',descriptor['digest'][:19],size,flush=True)
+                          return path
+                      config_path=blob(manifest['config'])
+                      config=json.loads(config_path.read_bytes())
+                      diff_ids=config.get('rootfs',{}).get('diff_ids',[])
+                      if len(diff_ids)!=len(manifest['layers']): raise ValueError('Image root filesystem descriptor mismatch')
+                      archive=root/'image.tar'
+                      with tarfile.open(archive,'w') as output:
+                          output.add(config_path,arcname=config_path.name+'.json')
+                          layer_names=[]
+                          for descriptor,diff_id in zip(manifest['layers'],diff_ids):
+                              compressed=blob(descriptor)
+                              layer=root/'layer.tar'
+                              with gzip.open(compressed,'rb') as source, layer.open('wb') as target:
+                                  total=0
+                                  for data in iter(lambda:source.read(1024**2),b''):
+                                      total+=len(data)
+                                      if total>2*1024**3 or shutil.disk_usage(root).free<2*1024**3:
+                                          raise RuntimeError('Image extraction capacity bound exceeded')
+                                      target.write(data)
+                              if checksum(layer)!=diff_id: raise ValueError('Uncompressed image layer checksum mismatch')
+                              name=descriptor['digest'].split(':')[1]+'/layer.tar'
+                              output.add(layer,arcname=name);layer_names.append(name)
+                              layer.unlink();compressed.unlink()
+                          body=json.dumps([{'Config':config_path.name+'.json','RepoTags':[local],'Layers':layer_names}]).encode()
+                          info=tarfile.TarInfo('manifest.json');info.size=len(body);output.addfile(info,io.BytesIO(body))
+                      docker('load','--input',str(archive),timeout=600)
+                      if docker('image','inspect',local,'--format','{{.Id}}')!=manifest['config']['digest']:
+                          raise ValueError('Loaded candidate config differs from the verified manifest')
+                      print('VERIFIED_CANDIDATE_TRANSPORT_READY',digest,flush=True)
               try:
                   print('GHCR_PROBE_PROXY_ENV_KEYS',[k for k in os.environ if k.lower() in ('http_proxy','https_proxy','no_proxy','all_proxy')],flush=True)
                   probe_started=time.monotonic()
@@ -384,18 +506,15 @@ jobs:
                   print('DISK_FREE_BEFORE_PULL',shutil.disk_usage('/').free,flush=True)
                   if subprocess.run(['docker','image','inspect',reference],env=env,capture_output=True).returncode==0:
                       print('CANDIDATE_IMAGE_CACHE_HIT',flush=True)
+                      docker('tag',reference,local)
                   else:
-                      pull_attempts=2
-                      for attempt in range(1,pull_attempts+1):
-                          try:
-                              stream_docker('pull',reference,timeout=2400)
-                              break
-                          except RuntimeError:
-                              print('CANDIDATE_IMAGE_PULL_ATTEMPT',attempt,'FAILED',flush=True)
-                              if attempt==pull_attempts: raise
-                              time.sleep(15*attempt)
+                      try:
+                          stream_docker('pull',reference,timeout=300)
+                          docker('tag',reference,local)
+                      except RuntimeError:
+                          print('CANDIDATE_PULL_STALLED; using bounded verified range transport',flush=True)
+                          verified_registry_load(reference,local,docker)
                   print('DISK_FREE_AFTER_PULL',shutil.disk_usage('/').free,flush=True)
-                  docker('tag',reference,local)
                   if docker('image','inspect',local,'--format','{{index .Config.Labels "org.opencontainers.image.revision"}}')!=SHA: raise ValueError('Candidate image revision does not match the tested commit')
                   print('CANDIDATE_IMAGE_READY',SHA,flush=True)
               finally:
