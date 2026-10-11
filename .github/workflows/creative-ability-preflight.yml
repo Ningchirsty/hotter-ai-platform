@@ -24,9 +24,9 @@ jobs:
           import json, os, shutil, stat, subprocess, urllib.error, urllib.request
           report = {}
           opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-          def command(args):
+          def command(args, input=None):
               try:
-                  result = subprocess.run(args, capture_output=True, text=True, timeout=15)
+                  result = subprocess.run(args, input=input, capture_output=True, text=True, timeout=15)
                   return result.returncode == 0, result.stdout.strip()
               except (OSError, subprocess.TimeoutExpired):
                   return False, ''
@@ -50,6 +50,18 @@ jobs:
           except (OSError, subprocess.TimeoutExpired):
               report['releaseEntrypoint']['sudoValidationAvailable'] = False
           report['productionContainers'] = command(['docker', 'ps', '--format', '{{.Names}} {{.Image}} {{.Status}}'])[1].splitlines()
+          # Presence/length only. Never print production keys, environment lists, or private.env.
+          key_check = '''key="${MYBATIS_ENCRYPTOR_PASSWORD:-${HR_ENCRYPT_KEY:-}}"
+          if [[ "$JAVA_OPTS" =~ -Dmybatis-encryptor.password=([^[:space:]]+) ]]; then key="${BASH_REMATCH[1]}"; fi
+          count=$(printf '%s' "$key" | wc -c)
+          case "$count" in 16|24|32) exit 0;; *) exit 1;; esac'''
+          report['productionAesKeyReady'] = command(['docker','exec','ai-video-poc-backend-1','/bin/bash','-c',key_check])[0]
+          schema_query = '''SELECT
+          (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='video_task' AND column_name='platform_task_id'),
+          (SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema=DATABASE() AND table_name='video_task' AND index_name='uk_task_platform' AND column_name='platform_task_id' AND non_unique=0);'''
+          schema_ok, schema = command(['docker','exec','-i','ai-video-poc-mysql-1','sh','-c',
+              'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql -uroot -D ai_video_poc -N -B'], input=schema_query)
+          report['productionVideoSchemaReady'] = schema_ok and schema.split()==['1','1']
           for key, url in [('comfy', 'http://192.168.2.223:8188/queue'),
                            ('localProductionBackend', 'http://127.0.0.1:18082/auth/code'),
                            ('productionBackend', 'https://pm.hottter.cn/prod-api/auth/code'),
@@ -72,7 +84,8 @@ jobs:
               docker_ok, report['rootFreeMB'] >= 3072, report['comfy']['ok']])
           report['readyForProductionRelease'] = all([
               report['releaseEntrypoint']['exists'], report['releaseEntrypoint']['sudoValidationAvailable'],
-              report['localProductionBackend']['ok'], report['rootFreeMB'] >= 3072])
+              report['localProductionBackend']['ok'], report['rootFreeMB'] >= 3072,
+              report['productionAesKeyReady'], report['productionVideoSchemaReady']])
           print(json.dumps(report, indent=2))
           # This is a prerequisite check, not task acceptance or deployment.
           raise SystemExit(0 if report['readyForIsolatedCandidate'] else 1)
