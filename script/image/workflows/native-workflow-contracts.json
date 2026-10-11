@@ -658,7 +658,7 @@
           "workflowCode": "wf-ability-image-poster-qwen2512",
           "modelCode": "QWEN2512",
           "version": "v1.0.0-ability",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "image/workflows/abilities-api/wf-ability-image-poster-qwen2512.json",
           "checksum": "eda12335c220428e45c0bc77ae06f1e68053744bc15552545d82e19089cda523",
           "mapping": [
@@ -716,7 +716,7 @@
           "workflowCode": "wf-ability-image-poster-qwen21",
           "modelCode": "QWEN21",
           "version": "v1.0.0-ability",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "image/workflows/abilities-api/wf-ability-image-poster-qwen21.json",
           "checksum": "21e677fe6c393398b433713352f0868180b4c28f5f6a8fb262e5619d38217e87",
           "mapping": [
@@ -774,7 +774,7 @@
           "workflowCode": "wf-ability-image-poster-ideogram",
           "modelCode": "IDEOGRAM",
           "version": "v1.0.0-ability",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "image/workflows/abilities-api/wf-ability-image-poster-ideogram.json",
           "checksum": "88849d1eeea1203eb72dd446cda41483225ecc9900f4e1f6383e74574adc1d2a",
           "mapping": [
@@ -832,7 +832,7 @@
           "workflowCode": "wf-ability-image-quick-image-zimage",
           "modelCode": "ZIMAGE",
           "version": "v1.0.0-ability",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "image/workflows/abilities-api/wf-ability-image-quick-image-zimage.json",
           "checksum": "834af4ca6235cb601b3aed4e1814a3f9a07681917033c42cf40e3c3642a77e70",
           "mapping": [
@@ -890,7 +890,7 @@
           "workflowCode": "wf-ability-image-quick-image-flux4b",
           "modelCode": "FLUX4B",
           "version": "v1.0.0-ability",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "image/workflows/abilities-api/wf-ability-image-quick-image-flux4b.json",
           "checksum": "ed059207cce4282c973c459f5a9af98f19fb8ba7c0fb2c06ccffceb4e6eaf787",
           "mapping": [
@@ -948,7 +948,7 @@
           "workflowCode": "wf-ability-image-product-shot-krea",
           "modelCode": "KREA",
           "version": "v1.0.0-ability",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "image/workflows/abilities-api/wf-ability-image-product-shot-krea.json",
           "checksum": "d893f351cf615faa2451cabcced7cea98fc24f76345ebe61c14672da0bf8aad2",
           "mapping": [
@@ -1011,7 +1011,7 @@
           "workflowCode": "wf-ability-image-product-shot-qwen2512",
           "modelCode": "QWEN2512",
           "version": "v1.0.0-ability",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "image/workflows/abilities-api/wf-ability-image-product-shot-qwen2512.json",
           "checksum": "4d626e2c16229be2d2429862156dc680ee42618bc3b40d5d906015815563bc8d",
           "mapping": [
@@ -1069,7 +1069,7 @@
           "workflowCode": "wf-ability-image-background-replace-flux4b",
           "modelCode": "FLUX4B",
           "version": "v1.0.0-ability",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "image/workflows/abilities-api/wf-ability-image-background-replace-flux4b.json",
           "checksum": "06d9843b7337a95c51ab51fb9f6aae299ebbc442cbe9d894bc70e4bfa644a0ce",
           "mapping": [
@@ -1166,7 +1166,7 @@
           "workflowCode": "wf-ability-image-background-replace-qwen21",
           "modelCode": "QWEN21",
           "version": "v1.0.0-ability",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "image/workflows/abilities-api/wf-ability-image-background-replace-qwen21.json",
           "checksum": "bbee4eaf039c2474126ffccb635f62f59550d1bc2ff9e60bea07c11c0ddcac27",
           "billing": {
@@ -1291,7 +1291,7 @@
           "workflowCode": "wf-ability-image-style-redraw-qwen21",
           "modelCode": "QWEN21",
           "version": "v1.0.0-ability",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "image/workflows/abilities-api/wf-ability-image-style-redraw-qwen21.json",
           "checksum": "ed6df7b17ea5a023d9f91b55cb286b52355eb63c3d6cd10e445a486cf2ccfbaa",
           "billing": {
@@ -1389,7 +1389,7 @@
           "workflowCode": "wf-ability-image-cutout-qwen21",
           "modelCode": "QWEN21",
           "version": "v1.0.0-ability",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "image/workflows/abilities-api/wf-ability-image-cutout-qwen21.json",
           "checksum": "1aac8181da3300a2677937bb490a1bf9155beb456542be4bb60b3cbbafd0d5c9",
           "billing": {
@@ -1470,7 +1470,7 @@
           "workflowCode": "wf-ability-image-white-background-qwen21",
           "modelCode": "QWEN21",
           "version": "v1.0.0-ability",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "image/workflows/abilities-api/wf-ability-image-white-background-qwen21.json",
           "checksum": "dc4628fe6546552396de13e1436f9a74211a2ed7efb03462f1d25ebd1372b949",
           "billing": {
@@ -1549,7 +1549,7 @@
           "workflowCode": "wf-ability-image-structure-guided-zimage",
           "modelCode": "ZIMAGE",
           "version": "v1.0.0-ability",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "image/workflows/abilities-api/wf-ability-image-structure-guided-zimage.json",
           "checksum": "78acde19a52f404e3ed2c32c1b9ef34e321bc1cccb2cc167b76f301d9f4b7825",
           "mapping": [
