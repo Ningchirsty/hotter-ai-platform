@@ -65,7 +65,7 @@ class AigPortalAssetServiceImplTest {
             }
 
             @Override
-            public List<MyAssetDTO> listMyAssets(long userId, int limit) {
+            public List<MyAssetDTO> listMyAssets(long userId, int offset, int limit) {
                 seen.set(limit);
                 return List.of();
             }
@@ -175,7 +175,7 @@ class AigPortalAssetServiceImplTest {
             }
 
             @Override
-            public List<MyAssetDTO> listMyAssets(long userId, int limit) {
+            public List<MyAssetDTO> listMyAssets(long userId, int offset, int limit) {
                 seen.set(limit);
                 return List.of();
             }
@@ -210,7 +210,7 @@ class AigPortalAssetServiceImplTest {
             }
 
             @Override
-            public List<MyAssetDTO> listMyAssets(long userId, int limit) {
+            public List<MyAssetDTO> listMyAssets(long userId, int offset, int limit) {
                 return assets;
             }
         };

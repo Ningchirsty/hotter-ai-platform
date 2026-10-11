@@ -48,13 +48,14 @@ public class VideoMyAssetPort implements MyAssetPort {
     }
 
     @Override
-    public List<MyAssetDTO> listMyAssets(long userId, int limit) {
+    public List<MyAssetDTO> listMyAssets(long userId, int offset, int limit) {
         if (userId <= 0) {
             return List.of();
         }
         int capped = Math.max(1, Math.min(limit, MAX_LIMIT));
+        int from = Math.max(0, offset);
         String tenantId = VideoCloudTenantResolver.resolve(jdbc, userId);
-        return repository.listOwnedAssets(tenantId, userId, 0, capped).stream()
+        return repository.listOwnedAssets(tenantId, userId, from, capped).stream()
             .map(row -> MyAssetRowMapper.toDto(domain(), row))
             .filter(Objects::nonNull)
             .toList();

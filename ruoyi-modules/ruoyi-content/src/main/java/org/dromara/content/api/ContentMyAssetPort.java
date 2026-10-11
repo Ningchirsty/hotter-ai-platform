@@ -42,12 +42,13 @@ public class ContentMyAssetPort implements MyAssetPort {
     }
 
     @Override
-    public List<MyAssetDTO> listMyAssets(long userId, int limit) {
+    public List<MyAssetDTO> listMyAssets(long userId, int offset, int limit) {
         if (userId <= 0) {
             return List.of();
         }
         int capped = Math.max(1, Math.min(limit, MAX_LIMIT));
-        List<Map<String, Object>> rows = taskFileMapper.listOwnedAssetRows(userId, capped);
+        int from = Math.max(0, offset);
+        List<Map<String, Object>> rows = taskFileMapper.listOwnedAssetRows(userId, from, capped);
         List<MyAssetDTO> result = new ArrayList<>();
         if (rows == null) {
             return result;

@@ -29,10 +29,14 @@ public interface MyAssetPort {
     /**
      * 取某个用户"自己的"资产（归属过滤由实现方完成）。
      *
+     * <p>{@code offset/limit} 让调用方能<b>分页拉全量</b>（索引同步用）；聚合展示只取第一页。
+     * 按资产 ID 倒序——"最近"与"全量分页"用同一个顺序，避免两处口径不同。</p>
+     *
      * @param userId 用户ID（由登录态取得，调用方不得传入任意值）
+     * @param offset 从第几条开始（0 基）
      * @param limit  最多返回几条（实现方需自行设上限）
-     * @return 资产列表（按时间倒序）；无数据返回空列表
+     * @return 资产列表（按 id 倒序）；无数据返回空列表
      */
-    List<MyAssetDTO> listMyAssets(long userId, int limit);
+    List<MyAssetDTO> listMyAssets(long userId, int offset, int limit);
 
 }

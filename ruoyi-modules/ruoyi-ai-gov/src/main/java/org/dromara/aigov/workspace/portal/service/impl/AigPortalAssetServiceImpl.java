@@ -126,7 +126,7 @@ public class AigPortalAssetServiceImpl implements IAigPortalAssetService {
             }
             AigPortalAssetGroupVo group = new AigPortalAssetGroupVo();
             group.setDomain(domain);
-            for (MyAssetDTO dto : port.listMyAssets(actor.userId(), perDomainLimit)) {
+            for (MyAssetDTO dto : port.listMyAssets(actor.userId(), 0, perDomainLimit)) {
                 if (dto == null) {
                     continue;
                 }
