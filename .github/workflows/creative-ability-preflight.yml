@@ -21,7 +21,7 @@ jobs:
       - name: Verify candidate execution prerequisites without changing production
         run: |
           python3 - <<'PY'
-          import json, shutil, subprocess, urllib.request
+          import json, os, shutil, stat, subprocess, urllib.error, urllib.request
           report = {}
           opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
           def command(args):
@@ -31,28 +31,42 @@ jobs:
               except (OSError, subprocess.TimeoutExpired):
                   return False, ''
           report['host'] = command(['hostname'])[1]
+          report['runnerUser'] = command(['id', '-un'])[1]
           report['rootFreeMB'] = shutil.disk_usage('/').free // 1048576
           docker_ok, version = command(['docker', 'version', '--format', '{{.Server.Version}}'])
           report['dockerAvailable'] = docker_ok
           report['dockerServerVersion'] = version if docker_ok else None
-          report['auditedReleaseEntrypointPresent'] = command(['test', '-x', '/usr/local/sbin/hotter-release'])[0]
+          entrypoint = '/usr/local/sbin/hotter-release'
+          report['releaseEntrypoint'] = dict(exists=os.path.exists(entrypoint), executable=os.access(entrypoint, os.X_OK))
+          try:
+              metadata = os.stat(entrypoint)
+              report['releaseEntrypoint'].update(ownerUid=metadata.st_uid, mode=oct(stat.S_IMODE(metadata.st_mode)))
+          except OSError as error:
+              report['releaseEntrypoint']['errorType'] = type(error).__name__
+          report['productionContainers'] = command(['docker', 'ps', '--format', '{{.Names}} {{.Image}} {{.Status}}'])[1].splitlines()
           for key, url in [('comfy', 'http://192.168.2.223:8188/queue'),
+                           ('localProductionBackend', 'http://127.0.0.1:18082/auth/code'),
                            ('productionBackend', 'https://pm.hottter.cn/prod-api/auth/code'),
                            ('productionFrontend', 'https://pm.hottter.cn/version.json')]:
               try:
-                  with opener.open(url, timeout=15) as response:
+                  request = urllib.request.Request(url, headers={'User-Agent': 'Hotter-Release-Preflight/1.0', 'Accept': 'application/json'})
+                  with opener.open(request, timeout=15) as response:
                       data = json.load(response)
                   if key == 'comfy':
                       report[key] = dict(ok=True, running=len(data['queue_running']), pending=len(data['queue_pending']))
-                  elif key == 'productionBackend':
+                  elif key in ('productionBackend', 'localProductionBackend'):
                       report[key] = dict(ok=data.get('code') == 200)
                   else:
                       report[key] = dict(ok=bool(data.get('gitSha')), gitSha=data.get('gitSha'))
+              except urllib.error.HTTPError as error:
+                  report[key] = dict(ok=False, errorType=type(error).__name__, httpStatus=error.code)
               except Exception as error:
                   report[key] = dict(ok=False, errorType=type(error).__name__)
           report['readyForIsolatedCandidate'] = all([
-              docker_ok, report['rootFreeMB'] >= 3072, report['comfy']['ok'],
-              report['productionBackend']['ok'], report['productionFrontend']['ok']])
+              docker_ok, report['rootFreeMB'] >= 3072, report['comfy']['ok']])
+          report['readyForProductionRelease'] = all([
+              report['releaseEntrypoint']['exists'], report['releaseEntrypoint']['executable'],
+              report['localProductionBackend']['ok'], report['rootFreeMB'] >= 3072])
           print(json.dumps(report, indent=2))
           # This is a prerequisite check, not task acceptance or deployment.
           raise SystemExit(0 if report['readyForIsolatedCandidate'] else 1)
