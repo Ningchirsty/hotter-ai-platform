@@ -49,8 +49,12 @@ jobs:
               if len(names)!=1: raise ValueError('Expected exactly one compiled ruoyi-ai module')
               data=app.read(names[0])
           (out/'ruoyi-ai.jar').write_bytes(data)
-          (out/'manifest.json').write_text(json.dumps(dict(commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),baseCommit=base,member=names[0],moduleSha256=hashlib.sha256(data).hexdigest())))
-          (out/'SHA256SUMS').write_text(''.join(hashlib.sha256((out/name).read_bytes()).hexdigest()+'  '+name+'\n' for name in ['ruoyi-ai.jar','manifest.json']))
+          sql=['ry_vue.sql','ry_image_task.sql','ry_image_workflow.sql','ry_video_task.sql','ry_video_workflow.sql','ry_video_task_migration.sql','ry_video_task_platform_ref.sql']
+          with zipfile.ZipFile(out/'runtime-source.zip','w',compression=zipfile.ZIP_DEFLATED) as archive:
+              files=[f for media in ['image','video'] for f in Path('script/'+media+'/workflows').rglob('*') if f.is_file()]+[Path('script/sql')/name for name in sql]
+              for file in files: archive.write(file,file.as_posix())
+          (out/'manifest.json').write_text(json.dumps(dict(commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),baseCommit=base,member=names[0],moduleSha256=hashlib.sha256(data).hexdigest(),runtimeSha256=hashlib.sha256((out/'runtime-source.zip').read_bytes()).hexdigest())))
+          (out/'SHA256SUMS').write_text(''.join(hashlib.sha256((out/name).read_bytes()).hexdigest()+'  '+name+'\n' for name in ['ruoyi-ai.jar','runtime-source.zip','manifest.json']))
           print('TESTED_MODULE_BYTES',len(data))
           PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -69,9 +73,6 @@ jobs:
       contents: read
       packages: read
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          persist-credentials: false
       - name: Check capacity before isolated acceptance
         run: |
           python3 - <<'PY'
@@ -86,9 +87,10 @@ jobs:
         timeout-minutes: 10
         with:
           name: ability-candidate-module-${{ github.sha }}
-          path: candidate-module
+          path: ${{ runner.temp }}/hotter-ability-${{ github.run_id }}-${{ github.run_attempt }}/candidate-module
           digest-mismatch: error
       - name: Build candidate from verified runtime and exact tested module
+        working-directory: ${{ runner.temp }}/hotter-ability-${{ github.run_id }}-${{ github.run_attempt }}
         env:
           GHCR_READ_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -106,6 +108,17 @@ jobs:
           if manifest['commit']!=SHA or manifest['baseCommit']!=BASE_SHA: raise ValueError('Candidate module provenance mismatch')
           data=(payload/'ruoyi-ai.jar').read_bytes()
           if hashlib.sha256(data).hexdigest()!=manifest['moduleSha256']: raise ValueError('Compiled module checksum mismatch')
+          archive=payload/'runtime-source.zip'
+          if hashlib.sha256(archive.read_bytes()).hexdigest()!=manifest['runtimeSha256']: raise ValueError('Tested runtime source checksum mismatch')
+          sql={'ry_vue.sql','ry_image_task.sql','ry_image_workflow.sql','ry_video_task.sql','ry_video_workflow.sql','ry_video_task_migration.sql','ry_video_task_platform_ref.sql'}
+          with zipfile.ZipFile(archive) as source:
+              for info in source.infolist():
+                  name=info.filename
+                  target=(ROOT/name).resolve()
+                  allowed=name.startswith(('script/image/workflows/','script/video/workflows/')) or name in {'script/sql/'+item for item in sql}
+                  if not allowed or not target.is_relative_to(ROOT.resolve()) or (info.external_attr>>16)&0o170000==0o120000: raise ValueError('Unexpected runtime archive member')
+                  target.parent.mkdir(parents=True,exist_ok=True)
+                  target.write_bytes(source.read(info))
           context=ROOT/'candidate-runtime';context.mkdir(exist_ok=True)
           name='hotter-ability-module-extract-'+os.environ['GITHUB_RUN_ID']+'-'+os.environ['GITHUB_RUN_ATTEMPT']
           created=False
@@ -144,6 +157,7 @@ jobs:
           python3 -m venv candidate-venv
           candidate-venv/bin/pip install --disable-pip-version-check 'requests==2.32.5' 'Pillow==11.3.0' 'bcrypt==4.3.0'
       - name: Run every image and video purpose through the platform
+        working-directory: ${{ runner.temp }}/hotter-ability-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           candidate-venv/bin/python - <<'PY'
           """Isolated platform acceptance; never mounts or reads production data/configuration."""
@@ -400,6 +414,6 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: creative-platform-evidence-${{ github.sha }}-${{ github.run_attempt }}
-          path: candidate-results/
+          path: ${{ runner.temp }}/hotter-ability-${{ github.run_id }}-${{ github.run_attempt }}/candidate-results/
           if-no-files-found: warn
           retention-days: 7
