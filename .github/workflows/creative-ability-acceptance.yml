@@ -274,7 +274,7 @@ jobs:
 
   platform-acceptance:
     needs: [candidate-image, reuse-candidate]
-    if: always() && (needs.candidate-image.result == 'success' || needs.reuse-candidate.result == 'success')
+    if: ${{ !cancelled() && (needs.candidate-image.result == 'success' || needs.reuse-candidate.result == 'success') }}
     runs-on: [shenzhen, deploy]
     timeout-minutes: 150
     permissions:
