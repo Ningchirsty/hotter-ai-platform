@@ -2,7 +2,7 @@
   <div class="preview-notice" role="status">
     <b>{{ live ? "本机云端真实联调" : "源码界面预览" }}</b>
     <span v-if="live">云端图像提交会调用蓝章鱼 API 并可能计费 · 任务与素材保存在本机 · 本地 ComfyUI 与视频仍为样例展示</span>
-    <span v-else>复用真实 Vue 页面 · 参数／状态来自源码契约 · 任务／素材／GPU 为标注样例 · 不连接服务器</span>
+    <span v-else>{{ imagePage ? '图像模型 → 图像创作能力 · 新增图像用途 8' : '视频模型 → 视频创作能力 · 新增视频用途 6' }} · 前后端契约同步 · 只读预览，任务／素材／GPU 为界面样例</span>
   </div>
   <header class="platform-header">
     <a class="brand" href="#/ai-tools/video-creation">
@@ -16,12 +16,16 @@
       <router-link to="/ai-tools/video-creation">视频创作</router-link>
       <router-link to="/ai-tools/image-creation">图像创作</router-link>
     </nav>
-    <span class="baseline">主分支功能保留</span>
+    <span class="baseline">本地分支 · 待确认</span>
   </header>
   <main><router-view /></main>
 </template>
 <script setup lang="ts">
+import { computed } from 'vue';
+import { useRoute } from 'vue-router';
 const live = import.meta.env.VITE_CLOUD_LOCAL_LIVE === "true";
+const route = useRoute();
+const imagePage = computed(() => route.path === '/ai-tools/image-creation');
 </script>
 <style>
 * {

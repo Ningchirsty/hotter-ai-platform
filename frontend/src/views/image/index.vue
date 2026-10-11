@@ -3,7 +3,7 @@
     <div v-if="showGuide && generationSource === 'local'" class="guide-bar">
       <el-icon><MagicStick /></el-icon>
       <span>
-        创建任务：选择图像能力，上传素材并描述画面，确认输出档位。五个能力均走 Qwen-Image-2.1 本地 GPU 工作流。
+        创建图像：先选择模型和创作能力，再填写内容与素材，确认输出设置。
       </span>
       <button type="button" title="关闭引导" aria-label="关闭引导" @click="showGuide = false">
         <el-icon><Close /></el-icon>
@@ -12,8 +12,8 @@
 
     <header v-if="activeView === 'create'" class="creation-title">
       <div>
-        <h1>创作工作台</h1>
-        <p>发现喜欢的作品，选择适合的模型，开启你的创作。</p>
+        <h1>图像创作工作台</h1>
+        <p>选择模型与创作能力，填写内容，完成你的作品。</p>
       </div>
       <nav class="media-switch" aria-label="创作类型">
         <router-link to="/ai-tools/video-creation">视频创作</router-link>
@@ -41,42 +41,18 @@
         <GenerationSource v-model="generationSource" :busy="uploading || submitting" :cloud-label="cloudStatus?.configured ? '可用' : '暂不可用'" />
         <CloudGenerationForm v-show="generationSource === 'cloud'" media="image" :busy="uploading || submitting" :cloud-status="cloudStatus" :inspiration="cloudInspiration" @change="cloudDraft = $event" />
         <div v-show="generationSource === 'local'" class="editor-body">
-          <div class="section-heading">
-            <div>
-              <span>图像创作 · Qwen-Image-2.1</span>
-              <h2>{{ activeModule.name }}</h2>
-            </div>
-            <span class="version-pill">{{ versionPill }}</span>
-          </div>
-
-          <div class="capability-grid" aria-label="图像能力">
-            <button
-              v-for="item in IMAGE_MODULES"
-              :key="item.code"
-              type="button"
-              :class="['capability', { active: item.code === activeModule.code }]"
-              :aria-pressed="item.code === activeModule.code"
-              @click="selectModule(item)"
-            >
-              <el-icon><component :is="moduleIcon(item.code)" /></el-icon>
-              <strong>{{ item.name }}</strong>
-              <small>{{ item.desc }}</small>
-            </button>
-          </div>
-
+          <LocalModelSelector media="image" :abilities="abilities" :catalog="localCreationCatalog" :general="IMAGE_MODULES"
+            :registry="workflows" :model-value="selectedWorkflowCode" :busy="uploading || submitting" @choose="selectLocalCreation" />
+          <LocalWorkflowPicker media="image" :items="workflowOptions" :catalog="localCatalog" :model-value="selectedWorkflowCode"
+            :total="localCatalog.length" browser-only :busy="uploading || submitting" :registered="registeredWorkflow" @choose="selectLocalCreation" />
           <div class="form-divider" />
-          <p class="local-model-note">
-            <b>Qwen-Image-2.1</b>
-            本地 ComfyUI · 支持文生图、图生图、指令改图、抠图与白底图
-          </p>
-
           <!--
           先上传、后写文字：参考图决定输出画布（image1 定尺寸）与主体，
           用户的心智顺序是「给图 → 说要求」，所以上传区放在提示词上方。
         -->
-          <div v-if="activeModule.imageFields || activeModule.imageField" class="field-block">
+          <div v-if="activeModule.imageFields?.length || activeModule.imageField" class="field-block">
             <label>
-              {{ activeModule.code === 'EDIT' ? '参考图（第一张是编辑目标，必填）' : '输入图片' }}
+              {{ selectedAbility?.assets[0]?.label || (activeModule.code === 'EDIT' ? '参考图（第一张是编辑目标，必填）' : '输入图片') }}
               <em>*</em>
             </label>
             <label class="upload-zone" :class="{ complete: previewUrls.length > 0 }">
@@ -84,7 +60,7 @@
                 ref="fileInput"
                 type="file"
                 accept="image/png,image/jpeg,image/webp"
-                :multiple="activeModule.code === 'EDIT'"
+                :multiple="(activeModule.imageFields?.length || 0) > 1"
                 @change="handleFiles"
               />
               <!--
@@ -119,7 +95,8 @@
             </label>
           </div>
 
-          <div v-if="activeModule.fields.includes('prompt')" class="field-block">
+          <AbilityForm v-if="selectedAbility" :ability="selectedAbility" v-model:values="abilityValues" :workflow="selectedOption" :busy="uploading || submitting" />
+          <div v-else-if="activeModule.fields.includes('prompt')" class="field-block">
             <label>
               {{ activeModule.promptLabel || '提示词' }}
               <em>*</em>
@@ -141,9 +118,9 @@
             <p v-for="tip in activeModule.tips" :key="tip" class="field-hint">· {{ tip }}</p>
           </div>
 
-          <div v-if="activeModule.fields.includes('negative_prompt')" class="field-block">
+          <div v-if="!selectedAbility && activeModule.fields.includes('negative_prompt')" class="field-block">
             <label>负向提示词（可选）</label>
-            <el-input v-model="values.negative_prompt" :maxlength="500" placeholder="cfg 固定为 1，通常留空" />
+            <el-input v-model="values.negative_prompt" :maxlength="500" placeholder="可选，填写不希望出现的内容" />
           </div>
 
           <div v-if="activeModule.fields.includes('size')" class="field-block">
@@ -546,6 +523,8 @@ import type {
 import {
   cancelImageTask,
   createImageTask,
+  createImageAbilityTask,
+  listImageAbilities,
   createCloudImageTask,
   listCloudImageModels,
   deleteImageAsset,
@@ -574,6 +553,17 @@ import { creationMessage } from '@/components/CreativeInspiration/template-reuse
 async function extractErrorMessage(error: unknown) { return creationMessage(await readErrorMessage(error)) || undefined; }
 import { createTaskPoller } from '@/utils/task-polling';
 import { IMAGE_MODULES, moduleOf, type ImageCapabilityModule, type ImageFieldKey } from './modules';
+
+import LocalWorkflowPicker from '@/components/LocalWorkflowPicker/index.vue';
+import { matchRegisteredWorkflow, workflowFields, type LocalWorkflowOption } from '@/components/LocalWorkflowPicker/types';
+import imageCatalog from './local-workflows.json';
+import abilityDefinitions from './abilities.json';
+import LocalModelSelector from '@/components/CreativeAbility/LocalModelSelector.vue';
+import AbilityForm from '@/components/CreativeAbility/Form.vue';
+import { abilityDefaults, abilityRequest, compileAbility, type CreativeAbility } from '@/components/CreativeAbility/types';
+const abilities = ref<CreativeAbility[]>(import.meta.env.VITE_LOCAL_WORKFLOW_PREVIEW === 'true' ? abilityDefinitions as unknown as CreativeAbility[] : []);
+const selectedAbility = ref<CreativeAbility>();
+const abilityValues = ref<Record<string, string>>({});
 
 type StudioView = 'create' | 'tasks' | 'assets';
 
@@ -606,6 +596,7 @@ const moduleIcons: Record<ImageCapabilityCode, Component> = {
   I2I: PictureFilled,
   EDIT: MagicStick,
   BGREMOVE: Scissor,
+  CONTROL: Picture,
   WHITEBG: Brush
 };
 
@@ -613,7 +604,38 @@ function moduleIcon(code: string): Component {
   return moduleIcons[code as ImageCapabilityCode] ?? Picture;
 }
 
-const activeModule = ref<ImageCapabilityModule>(IMAGE_MODULES[0]);
+const selectedModule = ref<ImageCapabilityModule>(IMAGE_MODULES.find(item => item.code === 'T2I')!);
+const localWorkflowPreview = import.meta.env.VITE_LOCAL_WORKFLOW_PREVIEW === 'true';
+const selectedWorkflowCode = ref(localWorkflowPreview ? 'wf-local-image-z-image-turbo' : 'wf-t2i-qwen21');
+const localCatalog = imageCatalog as unknown as Array<LocalWorkflowOption & ImageWorkflowVO>;
+const localCreationCatalog = computed<LocalWorkflowOption[]>(() => [
+  ...IMAGE_MODULES.filter(item => item.code !== 'CONTROL').map(item => ({ media: 'image' as const,
+    workflowCode: item.workflowCode, capabilityCode: item.code, modelCode: 'QWEN21', modelName: 'Qwen-Image 2.1',
+    name: '平台现有工作流', version: '', fields: item.fields })), ...localCatalog
+]);
+const businessCatalog = computed(() => abilities.value.flatMap(item => item.workflows) as unknown as Array<LocalWorkflowOption & ImageWorkflowVO>);
+const executableCatalog = computed(() => [...localCatalog, ...businessCatalog.value]);
+const workflowOptions = computed<LocalWorkflowOption[]>(() => {
+  const base = selectedModule.value;
+  if (selectedAbility.value) return selectedAbility.value.workflows.filter(item => item.media === 'image');
+  const native = localCatalog.filter(item => item.media === 'image' && item.capabilityCode === base.code);
+  const legacy: LocalWorkflowOption[] = base.code === 'CONTROL' ? [] : [{
+    media: 'image', workflowCode: base.workflowCode, capabilityCode: base.code,
+    modelCode: 'QWEN21', modelName: 'Qwen-Image 2.1', name: '平台现有工作流', version: '', fields: base.fields
+  }];
+  return [...native, ...legacy];
+});
+const selectedOption = computed(() => workflowOptions.value.find(item => item.workflowCode === selectedWorkflowCode.value));
+const activeModule = computed<ImageCapabilityModule>(() => {
+  const base = selectedModule.value;
+  const native = executableCatalog.value.find(item => item.workflowCode === selectedWorkflowCode.value && item.capabilityCode === base.code);
+  if (!native) return base;
+  const fields = native.fields.filter(field => !selectedAbility.value || !['img', 'image1', 'image2', 'image3'].includes(field) || selectedAbility.value.assets.some(asset => asset.key === field)) as ImageFieldKey[];
+  return { ...base, workflowCode: native.workflowCode, fields,
+    imageField: fields.includes('img') ? 'img' : undefined,
+    imageFields: fields.includes('image1') ? fields.filter(f => ['image1', 'image2', 'image3'].includes(f)) : undefined,
+    tips: base.code === 'CONTROL' ? base.tips : [native.modelName + ' · ' + native.name, '当前展示已实测的尺寸；平台正式开放后以服务端允许的档位为准'] };
+});
 const values = reactive<Partial<Record<ImageFieldKey, string>>>({});
 const workflows = ref<ImageWorkflowVO[]>([]);
 const tasks = ref<ImageTaskVO[]>([]);
@@ -673,7 +695,11 @@ const TERMINAL_STATUSES: ImageTaskStatus[] = ['SUCCEEDED', 'FAILED', 'CANCELED',
 const POLL_INTERVAL_MS = 3000;
 
 
-const currentWorkflow = computed(() => workflows.value.find(w => w.workflowCode === activeModule.value.workflowCode));
+const registeredWorkflow = computed(() => matchRegisteredWorkflow('image', selectedOption.value, workflows.value));
+const currentWorkflow = computed(() => registeredWorkflow.value ?? (() => {
+  const native = executableCatalog.value.find(item => item.workflowCode === selectedWorkflowCode.value);
+  return native ? { ...native, status: 'DRAFT' as const, submittable: false, testable: false } : undefined;
+})());
 const sizeOptions = computed(() => currentWorkflow.value?.sizes || []);
 const strengthOptions = computed(() => currentWorkflow.value?.strengths || []);
 const slotLabels = computed(() =>
@@ -681,10 +707,6 @@ const slotLabels = computed(() =>
     ? activeModule.value.imageFields.map((f, i) => (i === 0 ? '目标图' : '参考图 ' + i))
     : ['输入图']
 );
-const versionPill = computed(() => {
-  const workflow = currentWorkflow.value;
-  return workflow ? workflow.version + ' · ' + workflow.status : '工作流读取中';
-});
 const uploadHint = computed(() => {
   const count = activeModule.value.imageFields?.length || 1;
   return count > 1 ? `点击上传参考图（最多 ${count} 张）` : '点击上传输入图片';
@@ -704,7 +726,7 @@ watch(taskKeyword, () => {
 /** 提交可用性完全由服务端状态决定，不靠前端猜测。 */
 const canSubmit = computed(() => generationSource.value === 'cloud'
   ? cloudDraft.value.ready && Boolean(cloudDraft.value.prompt.trim())
-  : !localCloudLive && canSubmitLocal(generationSource.value, currentWorkflow.value));
+  : !localCloudLive && !localWorkflowPreview && canSubmitLocal(generationSource.value, registeredWorkflow.value));
 
 const submitBlockReason = computed(() => {
   if (generationSource.value === 'cloud') {
@@ -713,10 +735,12 @@ const submitBlockReason = computed(() => {
     if (!cloudDraft.value.prompt.trim()) return '请填写创作描述';
     return '云端生成会产生费用，结果自动保存到任务和素材库';
   }
+  if (localWorkflowPreview) return '本地界面预览：用途已绑定后端工作流，生成需完成部署与发布验收';
   if (localCloudLive) return '本机联调仅开放云端真实生成，本地 ComfyUI 为样例展示';
   if (!workflows.value.length) return '正在读取工作流状态…';
   const workflow = currentWorkflow.value;
   if (!workflow) return activeModule.value.workflowCode + ' 尚未在服务端注册';
+  if (!registeredWorkflow.value) return '本地 ComfyUI 已验证，平台工作流尚未注册，暂不可提交';
   if (workflow.status === 'DRAFT') return '工作流为 DRAFT，完成实机验收并发布后方可提交';
   if (workflow.status === 'TESTING') return '工作流处于 TESTING，仅隔离联调环境可提交';
   if (workflow.status === 'RETIRED') return '工作流已停用';
@@ -732,15 +756,57 @@ function toneOf(status: string) {
   return 'muted';
 }
 
+function selectAbility(ability: CreativeAbility, workflowCode = ability.recommendedWorkflowCode) {
+  if (ability.media !== 'image' || uploading.value || submitting.value || !ability.workflows.some(item => item.media === 'image' && item.workflowCode === workflowCode)) return;
+  const module = IMAGE_MODULES.find(item => item.code === ability.capabilityCode);
+  if (!module) return;
+  selectModule(module);
+  selectedAbility.value = ability;
+  abilityValues.value = abilityDefaults(ability);
+  selectWorkflow(workflowCode);
+}
+
+watch(() => selectedAbility.value ? compileAbility(selectedAbility.value, abilityValues.value).prompt : undefined,
+  prompt => { if (prompt !== undefined) values.prompt = prompt; });
+
 function selectModule(item: ImageCapabilityModule) {
+  if (uploading.value || submitting.value) return;
+  selectedAbility.value = undefined; abilityValues.value = {};
   appliedInspirationTitle.value = '';
-  activeModule.value = item;
+  selectedModule.value = item;
+  selectedWorkflowCode.value = localWorkflowPreview || item.code === 'CONTROL'
+    ? localCatalog.find(row => row.capabilityCode === item.code)?.workflowCode ?? item.workflowCode
+    : item.workflowCode;
   values.prompt = '';
   values.negative_prompt = '';
   values.size = '';
   values.strength = '';
   clearImages();
   applyDefaults();
+}
+
+function selectWorkflow(code: string) {
+  if (uploading.value || submitting.value || !workflowOptions.value.some(item => item.workflowCode === code)) return;
+  clearImages();
+  selectedWorkflowCode.value = code;
+  values.size = ''; values.strength = ''; values.negative_prompt = '';
+  appliedInspirationTitle.value = '';
+  applyDefaults();
+}
+
+function selectLocalCreation(code: string) {
+  if (uploading.value || submitting.value || code === selectedWorkflowCode.value) return;
+  const ability = abilities.value.find(item => item.media === 'image' && item.workflows.some(workflow => workflow.media === 'image' && workflow.workflowCode === code));
+  if (ability) {
+    if (selectedAbility.value?.code === ability.code) selectWorkflow(code);
+    else selectAbility(ability, code);
+    return;
+  }
+  const option = localCreationCatalog.value.find(item => item.media === 'image' && item.workflowCode === code);
+  const module = IMAGE_MODULES.find(item => item.code === option?.capabilityCode);
+  if (!module) return;
+  if (selectedAbility.value || selectedModule.value.code !== module.code) selectModule(module);
+  selectWorkflow(code);
 }
 
 /** 档位默认值来自契约（后端下发 defaultSize / defaultStrength）。 */
@@ -767,7 +833,8 @@ function applyCreativeInspiration(route: InspirationRoute, title: string) {
   const module = IMAGE_MODULES.find(item => item.code === route.capability && item.workflowCode === route.workflowCode);
   if (!module) return;
   generationSource.value = 'local';
-  if (activeModule.value.code !== module.code) selectModule(module);
+  if (selectedAbility.value || activeModule.value.code !== module.code) selectModule(module);
+  selectWorkflow(route.workflowCode);
   values.prompt = route.prompt;
   appliedInspirationTitle.value = title;
   activeView.value = 'create';
@@ -919,11 +986,15 @@ async function submitTask() {
 
   submitting.value = true;
   try {
-    const created = await createImageTask({
+    const created = selectedAbility.value
+      ? await createImageAbilityTask(abilityRequest(selectedAbility.value, 'image', workflowCode, abilityValues.value,
+          Object.fromEntries(Object.entries(uploadAssetIds).map(([key, ids]) => [key, ids?.[0]])), fields,
+          `${workflowCode}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`))
+      : await createImageTask({
       capabilityCode: module.code as ImageCapabilityCode,
       workflowCode,
       taskName: module.name + ' · ' + workflowCode,
-      fields,
+      fields: workflowFields(selectedOption.value!, fields),
       idempotencyKey: workflowCode + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8)
     });
     const taskId = created.data?.taskId;
@@ -954,6 +1025,12 @@ async function submitTask() {
 }
 
 async function loadWorkflows() {
+  try {
+    const result = await listImageAbilities();
+    abilities.value = (result.data || []).filter(item => item.media === 'image');
+    if (!selectedAbility.value && abilities.value[0]) selectAbility(abilities.value[0]);
+  } catch { abilities.value = []; }
+
   try {
     const res = await listImageWorkflows();
     workflows.value = res.data || [];
@@ -2293,4 +2370,7 @@ button {
   border-top: 1px solid var(--line, #e0e5f2);
 }
 
+</style>
+
+<style scoped>
 </style>

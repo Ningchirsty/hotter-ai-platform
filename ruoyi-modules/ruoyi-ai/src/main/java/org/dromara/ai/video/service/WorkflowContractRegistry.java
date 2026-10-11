@@ -9,6 +9,7 @@ import org.dromara.ai.video.domain.WorkflowVersion;
 import org.dromara.ai.video.exception.VideoTaskException;
 
 import java.nio.charset.StandardCharsets;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -34,6 +35,9 @@ public class WorkflowContractRegistry {
     private final Path contractRoot;
     private final ObjectMapper mapper;
     private final H3TemplatePreparer preparer;
+    private final org.dromara.ai.creative.AbilityContract abilities;
+    private final Map<String, int[]> nativeOutputSizes = new HashMap<>();
+    private final Map<String, JsonNode> nativeOutputs = new HashMap<>();
 
     /**
      * workflowCode -> 版本定义。
@@ -52,6 +56,7 @@ public class WorkflowContractRegistry {
         this.contractRoot = contractRoot;
         this.mapper = mapper;
         this.preparer = new H3TemplatePreparer(mapper);
+        this.abilities = new org.dromara.ai.creative.AbilityContract(contractRoot, "video", mapper);
     }
 
     /**
@@ -80,7 +85,42 @@ public class WorkflowContractRegistry {
                 register(version);
             }
         }
+        Path nativeFile = contractRoot.resolve("video/workflows/native-workflow-contracts.json");
+        if (Files.isRegularFile(nativeFile)) {
+            try {
+                JsonNode nativeContract = mapper.readTree(Files.readString(nativeFile, StandardCharsets.UTF_8));
+                for (JsonNode capability : nativeContract.path("capabilities")) {
+                    List<String> fields = new ArrayList<>();
+                    for (JsonNode field : capability.path("fields")) fields.add(field.path("field").asText());
+                    for (JsonNode workflow : capability.path("workflows")) {
+                        WorkflowVersion version = toVersion(capability.path("capabilityCode").asText(), workflow, fields);
+                        register(version);
+                        JsonNode output = workflow.path("supportedOutputs").path(0);
+                        nativeOutputs.put(version.workflowCode(), output.deepCopy());
+                        ((com.fasterxml.jackson.databind.node.ObjectNode) nativeOutputs.get(version.workflowCode())).put("requiresAudio", workflow.path("requiresAudio").asBoolean());
+                        nativeOutputSizes.put(version.workflowCode(), new int[]{output.path("width").asInt(), output.path("height").asInt()});
+                    }
+                }
+            } catch (IOException e) { throw new IllegalStateException("原生视频契约加载失败", e); }
+        }
         log.info("工作流契约加载完成：可提交版本 {} 个", templates.size());
+    }
+
+    public JsonNode abilities() { return abilities.definitions(); }
+
+    public Map<String, Object> normalizeAbility(Map<String, Object> request) {
+        try { return abilities.normalize(request); }
+        catch (IllegalArgumentException e) { throw VideoTaskException.invalidContract(e.getMessage()); }
+    }
+
+    public int[] nativeOutputSize(String workflowCode) {
+        int[] size = nativeOutputSizes.get(workflowCode);
+        return size == null ? null : size.clone();
+    }
+
+    public JsonNode nativeOutput(String workflowCode) {
+        JsonNode output = nativeOutputs.get(workflowCode);
+        return output == null ? null : output.deepCopy();
     }
 
     private WorkflowVersion toVersion(String capabilityCode, JsonNode binding, List<String> allowedFields) {

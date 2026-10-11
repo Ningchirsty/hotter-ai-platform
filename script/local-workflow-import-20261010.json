@@ -1,0 +1,591 @@
+[
+  {
+    "media": "video",
+    "workflowCode": "wf-local-ready-minimaxh3-turbo-i2v-av",
+    "capabilityCode": "I2V",
+    "modelCode": "H3",
+    "sourceFile": "READY_MiniMaxH3_Turbo_I2V_AV.json",
+    "comfyPromptId": "836ccda9-cad7-4024-90bb-ccb35a4b5faf",
+    "comfyStatus": "success",
+    "uiChecksum": "6dc0d43c6c4d4f65c3592717a59c76f5e3d38c6adcfe28d8c0cf0090e134f123",
+    "apiChecksum": "1210c9e89c8d9920c9564784bd978f38818dcf35a4ca7be5d9afba3bc1f1f54d",
+    "apiJsonFile": "video/workflows/local-verified/wf-local-ready-minimaxh3-turbo-i2v-av.json",
+    "platformStatus": "UNREGISTERED",
+    "output": {
+      "width": 768,
+      "height": 448,
+      "durationSeconds": 2.3333333333333335,
+      "fps": 24.0
+    }
+  },
+  {
+    "media": "video",
+    "workflowCode": "wf-local-ready-minimaxh3-turbo-t2v-av",
+    "capabilityCode": "T2V",
+    "modelCode": "H3",
+    "sourceFile": "READY_MiniMaxH3_Turbo_T2V_AV.json",
+    "comfyPromptId": "82076e04-1b7e-46d7-a3d7-8f10aa1a46eb",
+    "comfyStatus": "success",
+    "uiChecksum": "e908237f6281e383eaf4ad68f235b1dc6c7ff892939e8afaf6c1e2d515e262db",
+    "apiChecksum": "e8fd0e12158cbf6be1205b7e58969373ddc69285f47188c9e9a72755d9a46a64",
+    "apiJsonFile": "video/workflows/local-verified/wf-local-ready-minimaxh3-turbo-t2v-av.json",
+    "platformStatus": "UNREGISTERED",
+    "output": {
+      "width": 768,
+      "height": 448,
+      "durationSeconds": 2.3333333333333335,
+      "fps": 24.0
+    }
+  },
+  {
+    "media": "image",
+    "workflowCode": "wf-local-ready-qwen-image-2-1-t2i",
+    "capabilityCode": "T2I",
+    "modelCode": "QWEN21",
+    "sourceFile": "READY_Qwen_Image_2_1_T2I.json",
+    "comfyPromptId": "a422a9a3-344e-447a-8f9e-96ac0d051ade",
+    "comfyStatus": "success",
+    "uiChecksum": "3035a9b5e7d43dbd9dddb3278316b0817f098c3893f6a970d3da2a6c8494e180",
+    "apiChecksum": "24fd9f3e9c4233efd6365be24fc2b0f47bbdde3bfc705ccd9220772e69f65480",
+    "apiJsonFile": "image/workflows/local-verified/wf-local-ready-qwen-image-2-1-t2i.json",
+    "platformStatus": "UNREGISTERED",
+    "output": {
+      "width": 1024,
+      "height": 1024,
+      "durationSeconds": null,
+      "fps": null
+    }
+  },
+  {
+    "media": "video",
+    "workflowCode": "wf-local-ready-wan22-5b-i2v",
+    "capabilityCode": "I2V",
+    "modelCode": "WAN",
+    "sourceFile": "READY_Wan22_5B_I2V.json",
+    "comfyPromptId": "85693ce8-e26f-4910-b7e3-b5ab0ce051a2",
+    "comfyStatus": "success",
+    "uiChecksum": "26231830cb6c096757743996503d6a1d956137335561e9940b2f8983b33eceb4",
+    "apiChecksum": "fe795e3382076415ede9f31780da8b92729ea3dcafd3c8732d745b81c381c9c2",
+    "apiJsonFile": "video/workflows/local-verified/wf-local-ready-wan22-5b-i2v.json",
+    "platformStatus": "UNREGISTERED",
+    "output": {
+      "width": 832,
+      "height": 480,
+      "durationSeconds": 2.0416666666666665,
+      "fps": 24.0
+    }
+  },
+  {
+    "media": "video",
+    "workflowCode": "wf-local-ready-wan22-5b-t2v",
+    "capabilityCode": "T2V",
+    "modelCode": "WAN",
+    "sourceFile": "READY_Wan22_5B_T2V.json",
+    "comfyPromptId": "7121dfd6-abc3-4584-aa0c-d5e2d9c83942",
+    "comfyStatus": "success",
+    "uiChecksum": "836a7034eac77ec88154d298ba1d7cb13a2d3e8781ed6be1743ab0c499e9b23c",
+    "apiChecksum": "a435a261a061f160950531723b933699d614473a66d75a1b7e22dd2ae7da8b5d",
+    "apiJsonFile": "video/workflows/local-verified/wf-local-ready-wan22-5b-t2v.json",
+    "platformStatus": "UNREGISTERED",
+    "output": {
+      "width": 832,
+      "height": 480,
+      "durationSeconds": 2.0416666666666665,
+      "fps": 24.0
+    }
+  },
+  {
+    "media": "video",
+    "workflowCode": "wf-local-ready-wan22-a14b-4steps-i2v",
+    "capabilityCode": "I2V",
+    "modelCode": "WAN",
+    "sourceFile": "READY_Wan22_A14B_4steps_I2V.json",
+    "comfyPromptId": "f2b46197-a704-4ca4-b902-d8522831e72d",
+    "comfyStatus": "success",
+    "uiChecksum": "3924cc5a626cd383f4122811856d367459c77ecccbd1520235143f2c3905be61",
+    "apiChecksum": "c46e6116676de6a7d3ffe3544d1a8f43cc7b96b0f6a861053e8c1ecbd31593ed",
+    "apiJsonFile": "video/workflows/local-verified/wf-local-ready-wan22-a14b-4steps-i2v.json",
+    "platformStatus": "UNREGISTERED",
+    "output": {
+      "width": 832,
+      "height": 480,
+      "durationSeconds": 2.0416666666666665,
+      "fps": 24.0
+    }
+  },
+  {
+    "media": "video",
+    "workflowCode": "wf-local-ready-wan22-a14b-4steps-flf2v",
+    "capabilityCode": "FL2V",
+    "modelCode": "WAN",
+    "sourceFile": "READY_Wan22_A14B_4steps_FLF2V.json",
+    "comfyPromptId": "ef1576db-74eb-45a0-b672-7e93ddba4d08",
+    "comfyStatus": "success",
+    "uiChecksum": "4e6fce808b767253f13608522f4f69277d2cafb8327eabc6f6982826cd60dcbc",
+    "apiChecksum": "ce9f55a75a28c7cebfd9dee32bc2f8d6665db97f83ab6051354490234dfd0740",
+    "apiJsonFile": "video/workflows/local-verified/wf-local-ready-wan22-a14b-4steps-flf2v.json",
+    "platformStatus": "UNREGISTERED",
+    "output": {
+      "width": 832,
+      "height": 480,
+      "durationSeconds": 2.0416666666666665,
+      "fps": 24.0
+    }
+  },
+  {
+    "media": "video",
+    "workflowCode": "wf-local-ready-minimaxh3-turbo-flf2v-av",
+    "capabilityCode": "FL2V",
+    "modelCode": "H3",
+    "sourceFile": "READY_MiniMaxH3_Turbo_FLF2V_AV.json",
+    "comfyPromptId": "3c4a1e1e-74bb-4130-b2d9-abe05d9608b5",
+    "comfyStatus": "success",
+    "uiChecksum": "55d692b5cdee54746890fa63c30a24698ad121d68e8952ac30592aa2a787c3c0",
+    "apiChecksum": "bc8582e6edcc42200eadb4d9dcad2e0bdeb8884bb4519cfdb9a0061fcbc26da5",
+    "apiJsonFile": "video/workflows/local-verified/wf-local-ready-minimaxh3-turbo-flf2v-av.json",
+    "platformStatus": "UNREGISTERED",
+    "output": {
+      "width": 768,
+      "height": 448,
+      "durationSeconds": 2.3333333333333335,
+      "fps": 24.0
+    }
+  },
+  {
+    "media": "image",
+    "workflowCode": "wf-local-official-qwen-image-2-1-t2i",
+    "capabilityCode": "T2I",
+    "modelCode": "QWEN21",
+    "sourceFile": "VERIFIED_Official_Qwen_Image_2_1_T2I.json",
+    "comfyPromptId": "49bc053c-f1dd-42be-927e-2a7b1a973216",
+    "comfyStatus": "success",
+    "uiChecksum": "4db776224b9d3a80d3e99d3713393338c6d5fcbf9faa0aed045ce98e0f2641ad",
+    "apiChecksum": "d02412ad1a2e98a67fc1f25ce9cdef3190b6d21fec6e19c65a35d9b6333bf170",
+    "apiJsonFile": "image/workflows/local-verified/wf-local-official-qwen-image-2-1-t2i.json",
+    "platformStatus": "UNREGISTERED",
+    "output": {
+      "width": 1024,
+      "height": 1024,
+      "durationSeconds": null,
+      "fps": null
+    }
+  },
+  {
+    "media": "image",
+    "workflowCode": "wf-local-image-qwen-image-2-1-t2i",
+    "capabilityCode": "T2I",
+    "modelCode": "QWEN21",
+    "sourceFile": "VERIFIED_image_qwen_image_2_1_t2i.json",
+    "comfyPromptId": "1fb1839d-b88f-4900-9191-b83942786fde",
+    "comfyStatus": "success",
+    "uiChecksum": "4e82478d4b278e1a4d1f42dc2f7b16fd37c361edc84347e4c1ec4b6ea2ef0f32",
+    "apiChecksum": "01b6e29f65c36e2a16c250c2ba7b65e93ac1fdec9071887e96e69c924b77ac24",
+    "apiJsonFile": "image/workflows/local-verified/wf-local-image-qwen-image-2-1-t2i.json",
+    "platformStatus": "UNREGISTERED",
+    "output": {
+      "width": 1024,
+      "height": 1024,
+      "durationSeconds": null,
+      "fps": null
+    }
+  },
+  {
+    "media": "image",
+    "workflowCode": "wf-local-image-flux2-klein-image-edit-4b-distilled",
+    "capabilityCode": "EDIT",
+    "modelCode": "FLUX4B",
+    "sourceFile": "VERIFIED_image_flux2_klein_image_edit_4b_distilled.json",
+    "comfyPromptId": "60a22627-fc2f-4e78-b2bb-7cc9da4309c8",
+    "comfyStatus": "success",
+    "uiChecksum": "45e75f994db220cd36b65a6531c1df0dae573688ae97793bf607f6355a3ccf5b",
+    "apiChecksum": "f18f7bfc3d6c3f9f415d062f58b71f44bbb393444a5c6c4e15ec0f8aa961097b",
+    "apiJsonFile": "image/workflows/local-verified/wf-local-image-flux2-klein-image-edit-4b-distilled.json",
+    "platformStatus": "UNREGISTERED",
+    "output": {
+      "width": 1024,
+      "height": 1024,
+      "durationSeconds": null,
+      "fps": null
+    }
+  },
+  {
+    "media": "video",
+    "workflowCode": "wf-local-video-wan2-2-14b-i2v",
+    "capabilityCode": "I2V",
+    "modelCode": "WAN",
+    "sourceFile": "VERIFIED_video_wan2_2_14B_i2v.json",
+    "comfyPromptId": "feee086c-9618-4a55-ad9c-8c94da3e4367",
+    "comfyStatus": "success",
+    "uiChecksum": "d6bf5db54d97dc45d984ae4faaf17ea984ff142638889d10968d7366e1be7e9d",
+    "apiChecksum": "1a2479b3e05700e98dcf7a46dea05944d2144266cf2fc6d4aec070b50c814922",
+    "apiJsonFile": "video/workflows/local-verified/wf-local-video-wan2-2-14b-i2v.json",
+    "platformStatus": "UNREGISTERED",
+    "output": {
+      "width": 832,
+      "height": 480,
+      "durationSeconds": 5.0625,
+      "fps": 16.0
+    }
+  },
+  {
+    "media": "video",
+    "workflowCode": "wf-local-video-wan2-2-14b-flf2v",
+    "capabilityCode": "FL2V",
+    "modelCode": "WAN",
+    "sourceFile": "VERIFIED_video_wan2_2_14B_flf2v.json",
+    "comfyPromptId": "f5bd35ee-eb87-46c2-b642-0643669ca915",
+    "comfyStatus": "success",
+    "uiChecksum": "b1393c4d19f88396d93b159654a5f070f158f214b56baf1b05e2903bf2ffcc6f",
+    "apiChecksum": "7b83225a29dc91674e1e5193db6fee0e2ebf0b79415f414673a24f83a802c366",
+    "apiJsonFile": "video/workflows/local-verified/wf-local-video-wan2-2-14b-flf2v.json",
+    "platformStatus": "UNREGISTERED",
+    "output": {
+      "width": 832,
+      "height": 480,
+      "durationSeconds": 3.0625,
+      "fps": 16.0
+    }
+  },
+  {
+    "media": "video",
+    "workflowCode": "wf-local-video-wan2-2-5b-ti2v",
+    "capabilityCode": "T2V",
+    "modelCode": "WAN",
+    "sourceFile": "VERIFIED_video_wan2_2_5B_ti2v.json",
+    "comfyPromptId": "f2c3d74b-b8c4-4786-b952-8fad1c35392b",
+    "comfyStatus": "success",
+    "uiChecksum": "8b404a830e7f6486945e4aef9faf209e647a4730690ad3c524caa76ef4905d71",
+    "apiChecksum": "ecb2eb9c6b13f9592746a2c6fe928c506712d1cb62311048d516d1ba5cf2bd72",
+    "apiJsonFile": "video/workflows/local-verified/wf-local-video-wan2-2-5b-ti2v.json",
+    "platformStatus": "UNREGISTERED",
+    "output": {
+      "width": 832,
+      "height": 480,
+      "durationSeconds": 2.0416666666666665,
+      "fps": 24.0
+    }
+  },
+  {
+    "media": "video",
+    "workflowCode": "wf-local-video-minimax-h3-t2v",
+    "capabilityCode": "T2V",
+    "modelCode": "H3",
+    "sourceFile": "VERIFIED_video_minimax_h3_t2v.json",
+    "comfyPromptId": "e57ead11-0da5-4e54-8f18-3f4edacfd43a",
+    "comfyStatus": "success",
+    "uiChecksum": "5d66d816c3ddd11adea52ec34d188b1e3fff534062cddb33b5400ba33cbd3826",
+    "apiChecksum": "3a943075bd8dfa3a325a9f934422db0ba81f925887a91d6b5e74bd8c3a4a8525",
+    "apiJsonFile": "video/workflows/local-verified/wf-local-video-minimax-h3-t2v.json",
+    "platformStatus": "UNREGISTERED",
+    "output": {
+      "width": 864,
+      "height": 480,
+      "durationSeconds": 2.3333333333333335,
+      "fps": 24.0
+    }
+  },
+  {
+    "media": "video",
+    "workflowCode": "wf-local-video-minimax-h3-i2v",
+    "capabilityCode": "I2V",
+    "modelCode": "H3",
+    "sourceFile": "VERIFIED_video_minimax_h3_i2v.json",
+    "comfyPromptId": "0fac6956-34fe-442d-973d-74265ae7587e",
+    "comfyStatus": "success",
+    "uiChecksum": "7bfd2a1bb9da3621cdab630a081ae02d6df633901a7cf8fbb3c1f59031fd46b5",
+    "apiChecksum": "d800575a3708833caf4b2256690258f26f73f2ac9f41525a872ffe091c1f8e4b",
+    "apiJsonFile": "video/workflows/local-verified/wf-local-video-minimax-h3-i2v.json",
+    "platformStatus": "UNREGISTERED",
+    "output": {
+      "width": 640,
+      "height": 640,
+      "durationSeconds": 2.3333333333333335,
+      "fps": 24.0
+    }
+  },
+  {
+    "media": "video",
+    "workflowCode": "wf-local-video-minimax-h3-r2v",
+    "capabilityCode": "R2V",
+    "modelCode": "H3",
+    "sourceFile": "VERIFIED_video_minimax_h3_r2v.json",
+    "comfyPromptId": "3e62fcd7-8c90-44d9-9085-ee276af473cf",
+    "comfyStatus": "success",
+    "uiChecksum": "e9eede992bb08222e7f1de49ddb852207a9fac3821265139c7c7bea220b078a2",
+    "apiChecksum": "ce7e365d80f66738dafa627fdf1e7a42ddd1a6d4ac679ff311da338246d20a46",
+    "apiJsonFile": "video/workflows/local-verified/wf-local-video-minimax-h3-r2v.json",
+    "platformStatus": "UNREGISTERED",
+    "output": {
+      "width": 864,
+      "height": 480,
+      "durationSeconds": 2.3333333333333335,
+      "fps": 24.0
+    }
+  },
+  {
+    "media": "image",
+    "workflowCode": "wf-local-image-flux2-klein-4b-fast-t2i",
+    "capabilityCode": "T2I",
+    "modelCode": "FLUX4B",
+    "sourceFile": "VERIFIED_image_flux2_klein_4b_fast_t2i.json",
+    "comfyPromptId": "52fb8857-1ac2-4abb-9088-a22c40481a80",
+    "comfyStatus": "success",
+    "uiChecksum": "eb02d5009148e1f2755a727cd8051f13499945d7893b2d85d29eeabf9c6835a8",
+    "apiChecksum": "d838be9e00f2f71b71529a150226cc8093c2a3619f95690f560b3f2d1b76e49e",
+    "apiJsonFile": "image/workflows/local-verified/wf-local-image-flux2-klein-4b-fast-t2i.json",
+    "platformStatus": "UNREGISTERED",
+    "output": {
+      "width": 1024,
+      "height": 1024,
+      "durationSeconds": null,
+      "fps": null
+    }
+  },
+  {
+    "media": "image",
+    "workflowCode": "wf-local-image-flux2-klein-text-to-image",
+    "capabilityCode": "T2I",
+    "modelCode": "FLUX4B",
+    "sourceFile": "VERIFIED_image_flux2_klein_text_to_image.json",
+    "comfyPromptId": "c9a933f8-3bb2-4b29-a603-e092dfdf9592",
+    "comfyStatus": "success",
+    "uiChecksum": "d117c3ce7b048706655143bf23e2b3980a1336271566d689e67e9941dd64ee67",
+    "apiChecksum": "15feb71ceb78fe75beab3a72b5c99f49aa0efa710662cc040330a472c8ec2d52",
+    "apiJsonFile": "image/workflows/local-verified/wf-local-image-flux2-klein-text-to-image.json",
+    "platformStatus": "UNREGISTERED",
+    "output": {
+      "width": 1024,
+      "height": 1024,
+      "durationSeconds": null,
+      "fps": null
+    }
+  },
+  {
+    "media": "image",
+    "workflowCode": "wf-local-image-z-image-turbo",
+    "capabilityCode": "T2I",
+    "modelCode": "ZIMAGE",
+    "sourceFile": "VERIFIED_image_z_image_turbo.json",
+    "comfyPromptId": "568baa8b-4fb8-4e29-9798-109d2df3e954",
+    "comfyStatus": "success",
+    "uiChecksum": "cc025ad2bbc76c9a92c4ae31d729a8da7456c1e5310ca11478c4902c6adafe71",
+    "apiChecksum": "055a66435df3c08d301e9709133884c74dfd0e7f20379b2af06f2daba76b7ef7",
+    "apiJsonFile": "image/workflows/local-verified/wf-local-image-z-image-turbo.json",
+    "platformStatus": "UNREGISTERED",
+    "output": {
+      "width": 1024,
+      "height": 1024,
+      "durationSeconds": null,
+      "fps": null
+    }
+  },
+  {
+    "media": "image",
+    "workflowCode": "wf-local-image-z-image-turbo-fun-union-controlnet",
+    "capabilityCode": "CONTROL",
+    "modelCode": "ZIMAGE",
+    "sourceFile": "VERIFIED_image_z_image_turbo_fun_union_controlnet.json",
+    "comfyPromptId": "d7d393cf-0f3a-4edc-8e7f-3c1d45917832",
+    "comfyStatus": "success",
+    "uiChecksum": "29235dc29013837c07251a1494ca31dca791a083ca5345ea678796eafaaf2630",
+    "apiChecksum": "2e12f1cb4bdd7c4d98d48e482074afe6031cbfab75fd98534f933c34d3953570",
+    "apiJsonFile": "image/workflows/local-verified/wf-local-image-z-image-turbo-fun-union-controlnet.json",
+    "platformStatus": "UNREGISTERED",
+    "output": {
+      "width": 512,
+      "height": 512,
+      "durationSeconds": null,
+      "fps": null
+    }
+  },
+  {
+    "media": "video",
+    "workflowCode": "wf-local-video-kandinsky5-t2v",
+    "capabilityCode": "T2V",
+    "modelCode": "KAND",
+    "sourceFile": "VERIFIED_video_kandinsky5_t2v.json",
+    "comfyPromptId": "508aa547-6418-4525-8c99-71ec5b8adba3",
+    "comfyStatus": "success",
+    "uiChecksum": "fcd8f033b8bf2078d2c7a4b3b4e2c68904a29c922b482ca544e3dddcf140422e",
+    "apiChecksum": "135c352f4fe4464fcbcf48fdd4da3efcc2d66ee3ad95edccecacefb5ac095bfb",
+    "apiJsonFile": "video/workflows/local-verified/wf-local-video-kandinsky5-t2v.json",
+    "platformStatus": "UNREGISTERED",
+    "output": {
+      "width": 832,
+      "height": 480,
+      "durationSeconds": 2.0416666666666665,
+      "fps": 24.0
+    }
+  },
+  {
+    "media": "video",
+    "workflowCode": "wf-local-video-kandinsky5-i2v",
+    "capabilityCode": "I2V",
+    "modelCode": "KAND",
+    "sourceFile": "VERIFIED_video_kandinsky5_i2v.json",
+    "comfyPromptId": "b5b570ec-71da-490e-8210-b353ff096b3b",
+    "comfyStatus": "success",
+    "uiChecksum": "326e4b98870e113eb087b731c0703263fda164e173c0281748226f054d26679c",
+    "apiChecksum": "0c9f5a5c1d947fe987a1c09118d7e0015d5401dee10094ec1f225f8364fdd4fb",
+    "apiJsonFile": "video/workflows/local-verified/wf-local-video-kandinsky5-i2v.json",
+    "platformStatus": "UNREGISTERED",
+    "output": {
+      "width": 768,
+      "height": 512,
+      "durationSeconds": 2.0416666666666665,
+      "fps": 24.0
+    }
+  },
+  {
+    "media": "image",
+    "workflowCode": "wf-local-image-qwen-image-2512",
+    "capabilityCode": "T2I",
+    "modelCode": "QWEN2512",
+    "sourceFile": "VERIFIED_image_qwen_Image_2512.json",
+    "comfyPromptId": "25482965-44c5-4d0d-9173-a03c2dd86c56",
+    "comfyStatus": "success",
+    "uiChecksum": "cda96be50c7b25f8596981f1e9e98414211e258a1730b533de64536fa73c3456",
+    "apiChecksum": "18119e4a42c70bdc69142b508299a6f8db91b2bf2dd6373aff4103154e9bcdcc",
+    "apiJsonFile": "image/workflows/local-verified/wf-local-image-qwen-image-2512.json",
+    "platformStatus": "UNREGISTERED",
+    "output": {
+      "width": 1328,
+      "height": 1328,
+      "durationSeconds": null,
+      "fps": null
+    }
+  },
+  {
+    "media": "image",
+    "workflowCode": "wf-local-image-ideogram4-t2i",
+    "capabilityCode": "T2I",
+    "modelCode": "IDEOGRAM",
+    "sourceFile": "VERIFIED_image_ideogram4_t2i.json",
+    "comfyPromptId": "c39dd332-c43b-4c33-a38c-ad3b29756023",
+    "comfyStatus": "success",
+    "uiChecksum": "4f41b328b45d43612adec13dbc1ab7b96ec015d0a7b47cef059f1782af13f4e6",
+    "apiChecksum": "d76fc0cb3077ea5198e9a9f117c946c99812d1afa8e486c231deb17d056b98e1",
+    "apiJsonFile": "image/workflows/local-verified/wf-local-image-ideogram4-t2i.json",
+    "platformStatus": "UNREGISTERED",
+    "output": {
+      "width": 768,
+      "height": 1376,
+      "durationSeconds": null,
+      "fps": null
+    }
+  },
+  {
+    "media": "video",
+    "workflowCode": "wf-local-video-hunyuan-video-1.5-720p-t2v",
+    "capabilityCode": "T2V",
+    "modelCode": "HUN",
+    "sourceFile": "VERIFIED_video_hunyuan_video_1.5_720p_t2v.json",
+    "comfyPromptId": "b80bed05-a1c2-4f8c-839c-fd72fa3c668c",
+    "comfyStatus": "success",
+    "uiChecksum": "87709d2f594f8baaa80f8a3d43d7c30770cedce63375b1210d13a71a9559213a",
+    "apiChecksum": "63811ec74e733075b89c8bccf6f4b3090af56d650fcad24ee77104b7f4bfe579",
+    "apiJsonFile": "video/workflows/local-verified/wf-local-video-hunyuan-video-1.5-720p-t2v.json",
+    "platformStatus": "UNREGISTERED",
+    "output": {
+      "width": 832,
+      "height": 480,
+      "durationSeconds": 2.0416666666666665,
+      "fps": 24.0
+    }
+  },
+  {
+    "media": "video",
+    "workflowCode": "wf-local-video-hunyuan-video-1.5-720p-i2v",
+    "capabilityCode": "I2V",
+    "modelCode": "HUN",
+    "sourceFile": "VERIFIED_video_hunyuan_video_1.5_720p_i2v.json",
+    "comfyPromptId": "19ac5228-48b4-4b9f-b640-328192add3d3",
+    "comfyStatus": "success",
+    "uiChecksum": "66f4a9afae791c91776157c573febf1521ca345969defc5877b1650d63f84886",
+    "apiChecksum": "9c0c2659e1a841f012b6043a8578163d99736f46b968aa1a95b6bc1e75905d9f",
+    "apiJsonFile": "video/workflows/local-verified/wf-local-video-hunyuan-video-1.5-720p-i2v.json",
+    "platformStatus": "UNREGISTERED",
+    "output": {
+      "width": 832,
+      "height": 480,
+      "durationSeconds": 2.0416666666666665,
+      "fps": 24.0
+    }
+  },
+  {
+    "media": "image",
+    "workflowCode": "wf-local-image-krea2-turbo-t2i",
+    "capabilityCode": "T2I",
+    "modelCode": "KREA",
+    "sourceFile": "VERIFIED_image_krea2_turbo_t2i.json",
+    "comfyPromptId": "17ebfe8b-fae7-49d0-a6ad-4433377509f0",
+    "comfyStatus": "success",
+    "uiChecksum": "be77ad2c29f153d26ad62907f5016e39a17b39bdc732190972536e6447f62770",
+    "apiChecksum": "6bb0cc8204bf52550bbeb02de46833c0fbc1488c9f8bb85cb923bc55cff2c45c",
+    "apiJsonFile": "image/workflows/local-verified/wf-local-image-krea2-turbo-t2i.json",
+    "platformStatus": "UNREGISTERED",
+    "output": {
+      "width": 1024,
+      "height": 1024,
+      "durationSeconds": null,
+      "fps": null
+    }
+  },
+  {
+    "media": "video",
+    "workflowCode": "wf-local-video-ltx2-5-t2v",
+    "capabilityCode": "T2V",
+    "modelCode": "LTX",
+    "sourceFile": "VERIFIED_video_ltx2_5_t2v.json",
+    "comfyPromptId": "82fcb7b1-36cf-48b4-8b65-8683a18a4070",
+    "comfyStatus": "success",
+    "uiChecksum": "cb38482f15e856190fbbb7ddfe63a5bf8808da7fd48a9aef2791ab6d610198a3",
+    "apiChecksum": "224f2022b6112177d26cb2b568076e41de5addd27ae25afc0e62847516033ca0",
+    "apiJsonFile": "video/workflows/local-verified/wf-local-video-ltx2-5-t2v.json",
+    "platformStatus": "UNREGISTERED",
+    "output": {
+      "width": 832,
+      "height": 448,
+      "durationSeconds": 2.0416666666666665,
+      "fps": 24.0
+    }
+  },
+  {
+    "media": "video",
+    "workflowCode": "wf-local-video-ltx2-5-i2v",
+    "capabilityCode": "I2V",
+    "modelCode": "LTX",
+    "sourceFile": "VERIFIED_video_ltx2_5_i2v.json",
+    "comfyPromptId": "99c86bed-99d0-43b5-bcd5-6af71e3480f6",
+    "comfyStatus": "success",
+    "uiChecksum": "672ab6ffbd6c3372a462267dfd0d6252fd5a62fd321a309e0fed53a703bba77b",
+    "apiChecksum": "9492d8156e42acb9ec9fd35d8f0b425c32c3dc2da8d91e4f98e746314d44f959",
+    "apiJsonFile": "video/workflows/local-verified/wf-local-video-ltx2-5-i2v.json",
+    "platformStatus": "UNREGISTERED",
+    "output": {
+      "width": 832,
+      "height": 448,
+      "durationSeconds": 2.0416666666666665,
+      "fps": 24.0
+    }
+  },
+  {
+    "media": "video",
+    "workflowCode": "wf-local-video-ltx2-5-flf2v",
+    "capabilityCode": "FL2V",
+    "modelCode": "LTX",
+    "sourceFile": "VERIFIED_video_ltx2_5_flf2v.json",
+    "comfyPromptId": "aad2aed6-4f34-4f8b-b271-e5de927c034c",
+    "comfyStatus": "success",
+    "uiChecksum": "9977422964143e560914b8dda26b80e86a9616c82731866c2b1c62f28dd3ed71",
+    "apiChecksum": "27f8c9c899f18fe91b28ca8f6cbc26305f028485d513b30f91745f994291e613",
+    "apiJsonFile": "video/workflows/local-verified/wf-local-video-ltx2-5-flf2v.json",
+    "platformStatus": "UNREGISTERED",
+    "output": {
+      "width": 832,
+      "height": 480,
+      "durationSeconds": 2.0416666666666665,
+      "fps": 24.0
+    }
+  }
+]

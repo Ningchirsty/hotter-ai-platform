@@ -1,0 +1,580 @@
+[
+  {
+    "workflowCode": "wf-local-ready-minimaxh3-turbo-i2v-av",
+    "media": "video",
+    "capabilityCode": "I2V",
+    "modelCode": "H3",
+    "modelName": "MiniMax H3",
+    "name": "Turbo · 原生音画",
+    "version": "v1.0.0-local",
+    "fields": [
+      "img",
+      "desc",
+      "tier",
+      "dur"
+    ],
+    "verifiedAt": "2026-10-10",
+    "description": "本地 ComfyUI 已生成验证；平台提交状态由后端确认。",
+    "hasAudio": true,
+    "supportedTiers": [
+      "验证档位 · 768×448"
+    ],
+    "supportedDurationsByTier": {
+      "验证档位 · 768×448": [
+        "2.33 秒"
+      ]
+    },
+    "supportedDuration": "2.33 秒",
+    "maxDurationSeconds": 2.3333333333333335,
+    "fps": 24.0
+  },
+  {
+    "workflowCode": "wf-local-ready-minimaxh3-turbo-t2v-av",
+    "media": "video",
+    "capabilityCode": "T2V",
+    "modelCode": "H3",
+    "modelName": "MiniMax H3",
+    "name": "Turbo · 原生音画",
+    "version": "v1.0.0-local",
+    "fields": [
+      "desc",
+      "tier",
+      "dur"
+    ],
+    "verifiedAt": "2026-10-10",
+    "description": "本地 ComfyUI 已生成验证；平台提交状态由后端确认。",
+    "hasAudio": true,
+    "supportedTiers": [
+      "验证档位 · 768×448"
+    ],
+    "supportedDurationsByTier": {
+      "验证档位 · 768×448": [
+        "2.33 秒"
+      ]
+    },
+    "supportedDuration": "2.33 秒",
+    "maxDurationSeconds": 2.3333333333333335,
+    "fps": 24.0
+  },
+  {
+    "workflowCode": "wf-local-ready-wan22-5b-i2v",
+    "media": "video",
+    "capabilityCode": "I2V",
+    "modelCode": "WAN",
+    "modelName": "Wan 2.2",
+    "name": "TI2V 5B · 精简版",
+    "version": "v1.0.0-local",
+    "fields": [
+      "img",
+      "desc",
+      "tier",
+      "dur"
+    ],
+    "verifiedAt": "2026-10-10",
+    "description": "本地 ComfyUI 已生成验证；平台提交状态由后端确认。",
+    "hasAudio": false,
+    "supportedTiers": [
+      "验证档位 · 832×480"
+    ],
+    "supportedDurationsByTier": {
+      "验证档位 · 832×480": [
+        "2.04 秒"
+      ]
+    },
+    "supportedDuration": "2.04 秒",
+    "maxDurationSeconds": 2.0416666666666665,
+    "fps": 24.0
+  },
+  {
+    "workflowCode": "wf-local-ready-wan22-5b-t2v",
+    "media": "video",
+    "capabilityCode": "T2V",
+    "modelCode": "WAN",
+    "modelName": "Wan 2.2",
+    "name": "TI2V 5B · 精简版",
+    "version": "v1.0.0-local",
+    "fields": [
+      "desc",
+      "tier",
+      "dur"
+    ],
+    "verifiedAt": "2026-10-10",
+    "description": "本地 ComfyUI 已生成验证；平台提交状态由后端确认。",
+    "hasAudio": false,
+    "supportedTiers": [
+      "验证档位 · 832×480"
+    ],
+    "supportedDurationsByTier": {
+      "验证档位 · 832×480": [
+        "2.04 秒"
+      ]
+    },
+    "supportedDuration": "2.04 秒",
+    "maxDurationSeconds": 2.0416666666666665,
+    "fps": 24.0
+  },
+  {
+    "workflowCode": "wf-local-ready-wan22-a14b-4steps-i2v",
+    "media": "video",
+    "capabilityCode": "I2V",
+    "modelCode": "WAN",
+    "modelName": "Wan 2.2",
+    "name": "A14B · 4 步加速",
+    "version": "v1.0.0-local",
+    "fields": [
+      "img",
+      "desc",
+      "tier",
+      "dur"
+    ],
+    "verifiedAt": "2026-10-10",
+    "description": "本地 ComfyUI 已生成验证；平台提交状态由后端确认。",
+    "hasAudio": false,
+    "supportedTiers": [
+      "验证档位 · 832×480"
+    ],
+    "supportedDurationsByTier": {
+      "验证档位 · 832×480": [
+        "2.04 秒"
+      ]
+    },
+    "supportedDuration": "2.04 秒",
+    "maxDurationSeconds": 2.0416666666666665,
+    "fps": 24.0
+  },
+  {
+    "workflowCode": "wf-local-ready-wan22-a14b-4steps-flf2v",
+    "media": "video",
+    "capabilityCode": "FL2V",
+    "modelCode": "WAN",
+    "modelName": "Wan 2.2",
+    "name": "A14B · 4 步加速",
+    "version": "v1.0.0-local",
+    "fields": [
+      "first",
+      "last",
+      "desc",
+      "tier",
+      "dur"
+    ],
+    "verifiedAt": "2026-10-10",
+    "description": "本地 ComfyUI 已生成验证；平台提交状态由后端确认。",
+    "hasAudio": false,
+    "supportedTiers": [
+      "验证档位 · 832×480"
+    ],
+    "supportedDurationsByTier": {
+      "验证档位 · 832×480": [
+        "2.04 秒"
+      ]
+    },
+    "supportedDuration": "2.04 秒",
+    "maxDurationSeconds": 2.0416666666666665,
+    "fps": 24.0
+  },
+  {
+    "workflowCode": "wf-local-ready-minimaxh3-turbo-flf2v-av",
+    "media": "video",
+    "capabilityCode": "FL2V",
+    "modelCode": "H3",
+    "modelName": "MiniMax H3",
+    "name": "Turbo · 原生音画",
+    "version": "v1.0.0-local",
+    "fields": [
+      "first",
+      "last",
+      "desc",
+      "tier",
+      "dur"
+    ],
+    "verifiedAt": "2026-10-10",
+    "description": "本地 ComfyUI 已生成验证；平台提交状态由后端确认。",
+    "hasAudio": true,
+    "supportedTiers": [
+      "验证档位 · 768×448"
+    ],
+    "supportedDurationsByTier": {
+      "验证档位 · 768×448": [
+        "2.33 秒"
+      ]
+    },
+    "supportedDuration": "2.33 秒",
+    "maxDurationSeconds": 2.3333333333333335,
+    "fps": 24.0
+  },
+  {
+    "workflowCode": "wf-local-video-wan2-2-14b-i2v",
+    "media": "video",
+    "capabilityCode": "I2V",
+    "modelCode": "WAN",
+    "modelName": "Wan 2.2",
+    "name": "A14B · 官方模板",
+    "version": "v1.0.0-local",
+    "fields": [
+      "img",
+      "desc",
+      "tier",
+      "dur"
+    ],
+    "verifiedAt": "2026-10-10",
+    "description": "本地 ComfyUI 已生成验证；平台提交状态由后端确认。",
+    "hasAudio": false,
+    "supportedTiers": [
+      "验证档位 · 832×480"
+    ],
+    "supportedDurationsByTier": {
+      "验证档位 · 832×480": [
+        "5.06 秒"
+      ]
+    },
+    "supportedDuration": "5.06 秒",
+    "maxDurationSeconds": 5.0625,
+    "fps": 16.0
+  },
+  {
+    "workflowCode": "wf-local-video-wan2-2-14b-flf2v",
+    "media": "video",
+    "capabilityCode": "FL2V",
+    "modelCode": "WAN",
+    "modelName": "Wan 2.2",
+    "name": "A14B · 官方模板",
+    "version": "v1.0.0-local",
+    "fields": [
+      "first",
+      "last",
+      "desc",
+      "tier",
+      "dur"
+    ],
+    "verifiedAt": "2026-10-10",
+    "description": "本地 ComfyUI 已生成验证；平台提交状态由后端确认。",
+    "hasAudio": false,
+    "supportedTiers": [
+      "验证档位 · 832×480"
+    ],
+    "supportedDurationsByTier": {
+      "验证档位 · 832×480": [
+        "3.06 秒"
+      ]
+    },
+    "supportedDuration": "3.06 秒",
+    "maxDurationSeconds": 3.0625,
+    "fps": 16.0
+  },
+  {
+    "workflowCode": "wf-local-video-wan2-2-5b-ti2v",
+    "media": "video",
+    "capabilityCode": "T2V",
+    "modelCode": "WAN",
+    "modelName": "Wan 2.2",
+    "name": "TI2V 5B · 官方模板",
+    "version": "v1.0.0-local",
+    "fields": [
+      "desc",
+      "tier",
+      "dur"
+    ],
+    "verifiedAt": "2026-10-10",
+    "description": "本地 ComfyUI 已生成验证；平台提交状态由后端确认。",
+    "hasAudio": false,
+    "supportedTiers": [
+      "验证档位 · 832×480"
+    ],
+    "supportedDurationsByTier": {
+      "验证档位 · 832×480": [
+        "2.04 秒"
+      ]
+    },
+    "supportedDuration": "2.04 秒",
+    "maxDurationSeconds": 2.0416666666666665,
+    "fps": 24.0
+  },
+  {
+    "workflowCode": "wf-local-video-minimax-h3-t2v",
+    "media": "video",
+    "capabilityCode": "T2V",
+    "modelCode": "H3",
+    "modelName": "MiniMax H3",
+    "name": "官方模板 · 原生音画",
+    "version": "v1.0.0-local",
+    "fields": [
+      "desc",
+      "tier",
+      "dur"
+    ],
+    "verifiedAt": "2026-10-10",
+    "description": "本地 ComfyUI 已生成验证；平台提交状态由后端确认。",
+    "hasAudio": true,
+    "supportedTiers": [
+      "验证档位 · 864×480"
+    ],
+    "supportedDurationsByTier": {
+      "验证档位 · 864×480": [
+        "2.33 秒"
+      ]
+    },
+    "supportedDuration": "2.33 秒",
+    "maxDurationSeconds": 2.3333333333333335,
+    "fps": 24.0
+  },
+  {
+    "workflowCode": "wf-local-video-minimax-h3-i2v",
+    "media": "video",
+    "capabilityCode": "I2V",
+    "modelCode": "H3",
+    "modelName": "MiniMax H3",
+    "name": "官方模板 · 原生音画",
+    "version": "v1.0.0-local",
+    "fields": [
+      "img",
+      "desc",
+      "tier",
+      "dur"
+    ],
+    "verifiedAt": "2026-10-10",
+    "description": "本地 ComfyUI 已生成验证；平台提交状态由后端确认。",
+    "hasAudio": true,
+    "supportedTiers": [
+      "验证档位 · 640×640"
+    ],
+    "supportedDurationsByTier": {
+      "验证档位 · 640×640": [
+        "2.33 秒"
+      ]
+    },
+    "supportedDuration": "2.33 秒",
+    "maxDurationSeconds": 2.3333333333333335,
+    "fps": 24.0
+  },
+  {
+    "workflowCode": "wf-local-video-minimax-h3-r2v",
+    "media": "video",
+    "capabilityCode": "R2V",
+    "modelCode": "H3",
+    "modelName": "MiniMax H3",
+    "name": "双参考图 · 原生音画",
+    "version": "v1.0.0-local",
+    "fields": [
+      "reference1",
+      "reference2",
+      "desc",
+      "tier",
+      "dur"
+    ],
+    "verifiedAt": "2026-10-10",
+    "description": "本地 ComfyUI 已生成验证；平台提交状态由后端确认。",
+    "hasAudio": true,
+    "supportedTiers": [
+      "验证档位 · 864×480"
+    ],
+    "supportedDurationsByTier": {
+      "验证档位 · 864×480": [
+        "2.33 秒"
+      ]
+    },
+    "supportedDuration": "2.33 秒",
+    "maxDurationSeconds": 2.3333333333333335,
+    "fps": 24.0
+  },
+  {
+    "workflowCode": "wf-local-video-kandinsky5-t2v",
+    "media": "video",
+    "capabilityCode": "T2V",
+    "modelCode": "KAND",
+    "modelName": "Kandinsky 5 Video Lite",
+    "name": "官方模板",
+    "version": "v1.0.0-local",
+    "fields": [
+      "desc",
+      "tier",
+      "dur"
+    ],
+    "verifiedAt": "2026-10-10",
+    "description": "本地 ComfyUI 已生成验证；平台提交状态由后端确认。",
+    "hasAudio": false,
+    "supportedTiers": [
+      "验证档位 · 832×480"
+    ],
+    "supportedDurationsByTier": {
+      "验证档位 · 832×480": [
+        "2.04 秒"
+      ]
+    },
+    "supportedDuration": "2.04 秒",
+    "maxDurationSeconds": 2.0416666666666665,
+    "fps": 24.0
+  },
+  {
+    "workflowCode": "wf-local-video-kandinsky5-i2v",
+    "media": "video",
+    "capabilityCode": "I2V",
+    "modelCode": "KAND",
+    "modelName": "Kandinsky 5 Video Lite",
+    "name": "官方模板",
+    "version": "v1.0.0-local",
+    "fields": [
+      "img",
+      "desc",
+      "tier",
+      "dur"
+    ],
+    "verifiedAt": "2026-10-10",
+    "description": "本地 ComfyUI 已生成验证；平台提交状态由后端确认。",
+    "hasAudio": false,
+    "supportedTiers": [
+      "验证档位 · 768×512"
+    ],
+    "supportedDurationsByTier": {
+      "验证档位 · 768×512": [
+        "2.04 秒"
+      ]
+    },
+    "supportedDuration": "2.04 秒",
+    "maxDurationSeconds": 2.0416666666666665,
+    "fps": 24.0
+  },
+  {
+    "workflowCode": "wf-local-video-hunyuan-video-1.5-720p-t2v",
+    "media": "video",
+    "capabilityCode": "T2V",
+    "modelCode": "HUN",
+    "modelName": "HunyuanVideo 1.5",
+    "name": "官方模板 · 短片验证",
+    "version": "v1.0.0-local",
+    "fields": [
+      "desc",
+      "tier",
+      "dur"
+    ],
+    "verifiedAt": "2026-10-10",
+    "description": "本地 ComfyUI 已生成验证；平台提交状态由后端确认。",
+    "hasAudio": false,
+    "supportedTiers": [
+      "验证档位 · 832×480"
+    ],
+    "supportedDurationsByTier": {
+      "验证档位 · 832×480": [
+        "2.04 秒"
+      ]
+    },
+    "supportedDuration": "2.04 秒",
+    "maxDurationSeconds": 2.0416666666666665,
+    "fps": 24.0
+  },
+  {
+    "workflowCode": "wf-local-video-hunyuan-video-1.5-720p-i2v",
+    "media": "video",
+    "capabilityCode": "I2V",
+    "modelCode": "HUN",
+    "modelName": "HunyuanVideo 1.5",
+    "name": "官方模板 · 短片验证",
+    "version": "v1.0.0-local",
+    "fields": [
+      "img",
+      "desc",
+      "tier",
+      "dur"
+    ],
+    "verifiedAt": "2026-10-10",
+    "description": "本地 ComfyUI 已生成验证；平台提交状态由后端确认。",
+    "hasAudio": false,
+    "supportedTiers": [
+      "验证档位 · 832×480"
+    ],
+    "supportedDurationsByTier": {
+      "验证档位 · 832×480": [
+        "2.04 秒"
+      ]
+    },
+    "supportedDuration": "2.04 秒",
+    "maxDurationSeconds": 2.0416666666666665,
+    "fps": 24.0
+  },
+  {
+    "workflowCode": "wf-local-video-ltx2-5-t2v",
+    "media": "video",
+    "capabilityCode": "T2V",
+    "modelCode": "LTX",
+    "modelName": "LTX-2.5",
+    "name": "官方模板 · 原生音画",
+    "version": "v1.0.0-local",
+    "fields": [
+      "desc",
+      "tier",
+      "dur"
+    ],
+    "verifiedAt": "2026-10-10",
+    "description": "本地 ComfyUI 已生成验证；平台提交状态由后端确认。",
+    "hasAudio": true,
+    "supportedTiers": [
+      "验证档位 · 832×448"
+    ],
+    "supportedDurationsByTier": {
+      "验证档位 · 832×448": [
+        "2.04 秒"
+      ]
+    },
+    "supportedDuration": "2.04 秒",
+    "maxDurationSeconds": 2.0416666666666665,
+    "fps": 24.0
+  },
+  {
+    "workflowCode": "wf-local-video-ltx2-5-i2v",
+    "media": "video",
+    "capabilityCode": "I2V",
+    "modelCode": "LTX",
+    "modelName": "LTX-2.5",
+    "name": "官方模板 · 原生音画",
+    "version": "v1.0.0-local",
+    "fields": [
+      "img",
+      "desc",
+      "tier",
+      "dur"
+    ],
+    "verifiedAt": "2026-10-10",
+    "description": "本地 ComfyUI 已生成验证；平台提交状态由后端确认。",
+    "hasAudio": true,
+    "supportedTiers": [
+      "验证档位 · 832×448"
+    ],
+    "supportedDurationsByTier": {
+      "验证档位 · 832×448": [
+        "2.04 秒"
+      ]
+    },
+    "supportedDuration": "2.04 秒",
+    "maxDurationSeconds": 2.0416666666666665,
+    "fps": 24.0
+  },
+  {
+    "workflowCode": "wf-local-video-ltx2-5-flf2v",
+    "media": "video",
+    "capabilityCode": "FL2V",
+    "modelCode": "LTX",
+    "modelName": "LTX-2.5",
+    "name": "官方模板 · 原生音画",
+    "version": "v1.0.0-local",
+    "fields": [
+      "first",
+      "last",
+      "desc",
+      "tier",
+      "dur"
+    ],
+    "verifiedAt": "2026-10-10",
+    "description": "本地 ComfyUI 已生成验证；平台提交状态由后端确认。",
+    "hasAudio": true,
+    "supportedTiers": [
+      "验证档位 · 832×480"
+    ],
+    "supportedDurationsByTier": {
+      "验证档位 · 832×480": [
+        "2.04 秒"
+      ]
+    },
+    "supportedDuration": "2.04 秒",
+    "maxDurationSeconds": 2.0416666666666665,
+    "fps": 24.0
+  }
+]

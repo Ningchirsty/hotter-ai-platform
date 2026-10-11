@@ -1,0 +1,737 @@
+[
+  {
+    "code": "PRODUCT_MOTION",
+    "media": "video",
+    "name": "商品动效",
+    "desc": "让商品图片呈现镜头运动",
+    "capabilityCode": "I2V",
+    "inputs": [
+      {
+        "key": "action",
+        "label": "动态要求",
+        "required": true,
+        "maxLength": 250,
+        "placeholder": "茶壶冒出轻柔蒸汽，商品稳定"
+      },
+      {
+        "key": "camera",
+        "label": "镜头运动",
+        "required": true,
+        "maxLength": 250,
+        "placeholder": "",
+        "options": [
+          "缓慢推进",
+          "缓慢拉远",
+          "轻微环绕",
+          "固定镜头"
+        ]
+      }
+    ],
+    "assets": [
+      {
+        "key": "img",
+        "label": "商品图片",
+        "required": true
+      }
+    ],
+    "promptTemplate": "Commercial product motion shot based on the provided image. Action: ${action}. Camera: ${camera}. Keep the product shape and scene coherent. No subtitles, logos or watermark.",
+    "note": "先使用已验证的短片档位；此用途不要求音轨。",
+    "acceptance": [
+      "主体稳定，没有明显变形",
+      "动作和镜头符合要求"
+    ],
+    "status": "DRAFT",
+    "workflows": [
+      {
+        "workflowCode": "wf-ability-video-product-motion-wan",
+        "media": "video",
+        "capabilityCode": "I2V",
+        "modelCode": "WAN",
+        "modelName": "Wan 2.2",
+        "name": "商品动效 · 专用流程",
+        "version": "v1.0.0-ability",
+        "fields": [
+          "img",
+          "desc",
+          "tier",
+          "dur"
+        ],
+        "verifiedAt": null,
+        "hasAudio": false,
+        "supportedTiers": [
+          "验证档位 · 832×480"
+        ],
+        "supportedDurationsByTier": {
+          "验证档位 · 832×480": [
+            "2.04 秒"
+          ]
+        },
+        "supportedDuration": "2.04 秒",
+        "maxDurationSeconds": 2.0416666666666665,
+        "fps": 24.0,
+        "apiChecksum": "39768892ff6b3de51574a8fb5f51ff902e98f8b718bb8d0845309db49b8d4a40",
+        "sourceWorkflowCode": "wf-local-ready-wan22-a14b-4steps-i2v",
+        "abilityCode": "PRODUCT_MOTION"
+      },
+      {
+        "workflowCode": "wf-ability-video-product-motion-hun",
+        "media": "video",
+        "capabilityCode": "I2V",
+        "modelCode": "HUN",
+        "modelName": "HunyuanVideo 1.5",
+        "name": "商品动效 · 专用流程",
+        "version": "v1.0.0-ability",
+        "fields": [
+          "img",
+          "desc",
+          "tier",
+          "dur"
+        ],
+        "verifiedAt": null,
+        "hasAudio": false,
+        "supportedTiers": [
+          "验证档位 · 832×480"
+        ],
+        "supportedDurationsByTier": {
+          "验证档位 · 832×480": [
+            "2.04 秒"
+          ]
+        },
+        "supportedDuration": "2.04 秒",
+        "maxDurationSeconds": 2.0416666666666665,
+        "fps": 24.0,
+        "apiChecksum": "3f4c70c287bcb0cdfb55dbcef4536635c97605cfdfecb1ac10b3f1922857aadb",
+        "sourceWorkflowCode": "wf-local-video-hunyuan-video-1.5-720p-i2v",
+        "abilityCode": "PRODUCT_MOTION"
+      },
+      {
+        "workflowCode": "wf-ability-video-product-motion-kand",
+        "media": "video",
+        "capabilityCode": "I2V",
+        "modelCode": "KAND",
+        "modelName": "Kandinsky 5 Video Lite",
+        "name": "商品动效 · 专用流程",
+        "version": "v1.0.0-ability",
+        "fields": [
+          "img",
+          "desc",
+          "tier",
+          "dur"
+        ],
+        "verifiedAt": null,
+        "hasAudio": false,
+        "supportedTiers": [
+          "验证档位 · 768×512"
+        ],
+        "supportedDurationsByTier": {
+          "验证档位 · 768×512": [
+            "2.04 秒"
+          ]
+        },
+        "supportedDuration": "2.04 秒",
+        "maxDurationSeconds": 2.0416666666666665,
+        "fps": 24.0,
+        "apiChecksum": "7c570d3c71352277dc865a55fd0e0eb1b5a91c100c31e5df0bb32eeb17107e41",
+        "sourceWorkflowCode": "wf-local-video-kandinsky5-i2v",
+        "abilityCode": "PRODUCT_MOTION"
+      }
+    ],
+    "recommendedWorkflowCode": "wf-ability-video-product-motion-wan"
+  },
+  {
+    "code": "SOUND_STORY",
+    "media": "video",
+    "name": "有声短片",
+    "desc": "文字描述生成画面与声音",
+    "capabilityCode": "T2V",
+    "inputs": [
+      {
+        "key": "scene",
+        "label": "场景与动作",
+        "required": true,
+        "maxLength": 250,
+        "placeholder": "陶瓷茶壶放在木桌上，蒸汽缓缓升起"
+      },
+      {
+        "key": "sound",
+        "label": "声音方向",
+        "required": true,
+        "maxLength": 250,
+        "placeholder": "安静室内氛围，轻柔沸水声"
+      },
+      {
+        "key": "camera",
+        "label": "镜头运动",
+        "required": true,
+        "maxLength": 250,
+        "placeholder": "",
+        "options": [
+          "缓慢推进",
+          "缓慢拉远",
+          "轻微环绕",
+          "固定镜头"
+        ]
+      }
+    ],
+    "assets": [],
+    "promptTemplate": "Scene and action: ${scene}. Camera: ${camera}. Audio: ${sound}. Continuous coherent short shot. No subtitles, logos or watermark.",
+    "note": "要求成片含音轨；声音内容与画面是否匹配仍需试听。",
+    "acceptance": [
+      "成片存在音轨",
+      "声音与画面匹配",
+      "动作连续"
+    ],
+    "status": "DRAFT",
+    "workflows": [
+      {
+        "workflowCode": "wf-ability-video-sound-story-ltx",
+        "media": "video",
+        "capabilityCode": "T2V",
+        "modelCode": "LTX",
+        "modelName": "LTX-2.5",
+        "name": "有声短片 · 专用流程",
+        "version": "v1.0.0-ability",
+        "fields": [
+          "desc",
+          "tier",
+          "dur"
+        ],
+        "verifiedAt": null,
+        "hasAudio": true,
+        "supportedTiers": [
+          "验证档位 · 832×448"
+        ],
+        "supportedDurationsByTier": {
+          "验证档位 · 832×448": [
+            "2.04 秒"
+          ]
+        },
+        "supportedDuration": "2.04 秒",
+        "maxDurationSeconds": 2.0416666666666665,
+        "fps": 24.0,
+        "apiChecksum": "571c87a4403e89531e1fab5b7d319ade508f46e4bc2107556e384dd64dac1a3d",
+        "sourceWorkflowCode": "wf-local-video-ltx2-5-t2v",
+        "abilityCode": "SOUND_STORY"
+      },
+      {
+        "workflowCode": "wf-ability-video-sound-story-h3",
+        "media": "video",
+        "capabilityCode": "T2V",
+        "modelCode": "H3",
+        "modelName": "MiniMax H3",
+        "name": "有声短片 · 专用流程",
+        "version": "v1.0.0-ability",
+        "fields": [
+          "desc",
+          "tier",
+          "dur"
+        ],
+        "verifiedAt": null,
+        "hasAudio": true,
+        "supportedTiers": [
+          "验证档位 · 768×448"
+        ],
+        "supportedDurationsByTier": {
+          "验证档位 · 768×448": [
+            "2.33 秒"
+          ]
+        },
+        "supportedDuration": "2.33 秒",
+        "maxDurationSeconds": 2.3333333333333335,
+        "fps": 24.0,
+        "apiChecksum": "624d3ea9aacd684ade9ddad6401199c9609de36a69c1eb7813cba37268631b5d",
+        "sourceWorkflowCode": "wf-local-ready-minimaxh3-turbo-t2v-av",
+        "abilityCode": "SOUND_STORY"
+      }
+    ],
+    "recommendedWorkflowCode": "wf-ability-video-sound-story-ltx"
+  },
+  {
+    "code": "PHOTO_ANIMATION",
+    "media": "video",
+    "name": "照片动起来",
+    "desc": "为照片添加自然动作",
+    "capabilityCode": "I2V",
+    "inputs": [
+      {
+        "key": "action",
+        "label": "照片中的动作",
+        "required": true,
+        "maxLength": 250,
+        "placeholder": "花枝随微风轻轻摇动"
+      },
+      {
+        "key": "camera",
+        "label": "镜头运动",
+        "required": true,
+        "maxLength": 250,
+        "placeholder": "",
+        "options": [
+          "缓慢推进",
+          "缓慢拉远",
+          "轻微环绕",
+          "固定镜头"
+        ]
+      }
+    ],
+    "assets": [
+      {
+        "key": "img",
+        "label": "原始照片",
+        "required": true
+      }
+    ],
+    "promptTemplate": "Animate the provided photograph. Action: ${action}. Camera: ${camera}. Keep the scene and subject consistent with the starting image, natural motion, no subtitles or watermark.",
+    "note": "输入照片作为起始参考，避免过大的动作导致主体变形。",
+    "acceptance": [
+      "首帧与参考照片相符",
+      "主体与场景连续"
+    ],
+    "status": "DRAFT",
+    "workflows": [
+      {
+        "workflowCode": "wf-ability-video-photo-animation-wan",
+        "media": "video",
+        "capabilityCode": "I2V",
+        "modelCode": "WAN",
+        "modelName": "Wan 2.2",
+        "name": "照片动起来 · 专用流程",
+        "version": "v1.0.0-ability",
+        "fields": [
+          "img",
+          "desc",
+          "tier",
+          "dur"
+        ],
+        "verifiedAt": null,
+        "hasAudio": false,
+        "supportedTiers": [
+          "验证档位 · 832×480"
+        ],
+        "supportedDurationsByTier": {
+          "验证档位 · 832×480": [
+            "2.04 秒"
+          ]
+        },
+        "supportedDuration": "2.04 秒",
+        "maxDurationSeconds": 2.0416666666666665,
+        "fps": 24.0,
+        "apiChecksum": "8cb946ce69d4e596c2e79dbc9e93c57a5bdd4c38c419f848c954d6536d25c73d",
+        "sourceWorkflowCode": "wf-local-ready-wan22-5b-i2v",
+        "abilityCode": "PHOTO_ANIMATION"
+      },
+      {
+        "workflowCode": "wf-ability-video-photo-animation-kand",
+        "media": "video",
+        "capabilityCode": "I2V",
+        "modelCode": "KAND",
+        "modelName": "Kandinsky 5 Video Lite",
+        "name": "照片动起来 · 专用流程",
+        "version": "v1.0.0-ability",
+        "fields": [
+          "img",
+          "desc",
+          "tier",
+          "dur"
+        ],
+        "verifiedAt": null,
+        "hasAudio": false,
+        "supportedTiers": [
+          "验证档位 · 768×512"
+        ],
+        "supportedDurationsByTier": {
+          "验证档位 · 768×512": [
+            "2.04 秒"
+          ]
+        },
+        "supportedDuration": "2.04 秒",
+        "maxDurationSeconds": 2.0416666666666665,
+        "fps": 24.0,
+        "apiChecksum": "b382f66063637385a519f40ec2e110419ca164deb2511bee99b1e151586cdd7e",
+        "sourceWorkflowCode": "wf-local-video-kandinsky5-i2v",
+        "abilityCode": "PHOTO_ANIMATION"
+      },
+      {
+        "workflowCode": "wf-ability-video-photo-animation-ltx",
+        "media": "video",
+        "capabilityCode": "I2V",
+        "modelCode": "LTX",
+        "modelName": "LTX-2.5",
+        "name": "照片动起来 · 专用流程",
+        "version": "v1.0.0-ability",
+        "fields": [
+          "img",
+          "desc",
+          "tier",
+          "dur"
+        ],
+        "verifiedAt": null,
+        "hasAudio": true,
+        "supportedTiers": [
+          "验证档位 · 832×448"
+        ],
+        "supportedDurationsByTier": {
+          "验证档位 · 832×448": [
+            "2.04 秒"
+          ]
+        },
+        "supportedDuration": "2.04 秒",
+        "maxDurationSeconds": 2.0416666666666665,
+        "fps": 24.0,
+        "apiChecksum": "5fb6a47032dd0ef493b589578ce8dd7efcf2c693f6a23bd4d246d1a8ed6cbc28",
+        "sourceWorkflowCode": "wf-local-video-ltx2-5-i2v",
+        "abilityCode": "PHOTO_ANIMATION"
+      }
+    ],
+    "recommendedWorkflowCode": "wf-ability-video-photo-animation-wan"
+  },
+  {
+    "code": "SCENE_CLIP",
+    "media": "video",
+    "name": "场景短片",
+    "desc": "根据描述生成一个连续镜头",
+    "capabilityCode": "T2V",
+    "inputs": [
+      {
+        "key": "scene",
+        "label": "场景与主体",
+        "required": true,
+        "maxLength": 250,
+        "placeholder": "清晨森林，阳光穿过树叶"
+      },
+      {
+        "key": "action",
+        "label": "场景变化",
+        "required": true,
+        "maxLength": 250,
+        "placeholder": "薄雾缓缓飘动"
+      },
+      {
+        "key": "camera",
+        "label": "镜头运动",
+        "required": true,
+        "maxLength": 250,
+        "placeholder": "",
+        "options": [
+          "缓慢推进",
+          "缓慢拉远",
+          "轻微环绕",
+          "固定镜头"
+        ]
+      }
+    ],
+    "assets": [],
+    "promptTemplate": "Scene: ${scene}. Motion: ${action}. Camera: ${camera}. A single continuous short shot, coherent lighting and natural movement. No text or watermark.",
+    "note": "单镜头短片，不承诺多镜头剪辑或长片生成。",
+    "acceptance": [
+      "场景与输入相符",
+      "运动连续，没有明显闪烁"
+    ],
+    "status": "DRAFT",
+    "workflows": [
+      {
+        "workflowCode": "wf-ability-video-scene-clip-wan",
+        "media": "video",
+        "capabilityCode": "T2V",
+        "modelCode": "WAN",
+        "modelName": "Wan 2.2",
+        "name": "场景短片 · 专用流程",
+        "version": "v1.0.0-ability",
+        "fields": [
+          "desc",
+          "tier",
+          "dur"
+        ],
+        "verifiedAt": null,
+        "hasAudio": false,
+        "supportedTiers": [
+          "验证档位 · 832×480"
+        ],
+        "supportedDurationsByTier": {
+          "验证档位 · 832×480": [
+            "2.04 秒"
+          ]
+        },
+        "supportedDuration": "2.04 秒",
+        "maxDurationSeconds": 2.0416666666666665,
+        "fps": 24.0,
+        "apiChecksum": "a6b50a1cd7a910a1291ca9f89ef6460d134a6ed45ebc8b8e2b3dcc6c3a863c49",
+        "sourceWorkflowCode": "wf-local-ready-wan22-5b-t2v",
+        "abilityCode": "SCENE_CLIP"
+      },
+      {
+        "workflowCode": "wf-ability-video-scene-clip-hun",
+        "media": "video",
+        "capabilityCode": "T2V",
+        "modelCode": "HUN",
+        "modelName": "HunyuanVideo 1.5",
+        "name": "场景短片 · 专用流程",
+        "version": "v1.0.0-ability",
+        "fields": [
+          "desc",
+          "tier",
+          "dur"
+        ],
+        "verifiedAt": null,
+        "hasAudio": false,
+        "supportedTiers": [
+          "验证档位 · 832×480"
+        ],
+        "supportedDurationsByTier": {
+          "验证档位 · 832×480": [
+            "2.04 秒"
+          ]
+        },
+        "supportedDuration": "2.04 秒",
+        "maxDurationSeconds": 2.0416666666666665,
+        "fps": 24.0,
+        "apiChecksum": "9bdef7d43a5cbec2db9208325985e5332fba83df0521f95598146fae618852f3",
+        "sourceWorkflowCode": "wf-local-video-hunyuan-video-1.5-720p-t2v",
+        "abilityCode": "SCENE_CLIP"
+      },
+      {
+        "workflowCode": "wf-ability-video-scene-clip-kand",
+        "media": "video",
+        "capabilityCode": "T2V",
+        "modelCode": "KAND",
+        "modelName": "Kandinsky 5 Video Lite",
+        "name": "场景短片 · 专用流程",
+        "version": "v1.0.0-ability",
+        "fields": [
+          "desc",
+          "tier",
+          "dur"
+        ],
+        "verifiedAt": null,
+        "hasAudio": false,
+        "supportedTiers": [
+          "验证档位 · 832×480"
+        ],
+        "supportedDurationsByTier": {
+          "验证档位 · 832×480": [
+            "2.04 秒"
+          ]
+        },
+        "supportedDuration": "2.04 秒",
+        "maxDurationSeconds": 2.0416666666666665,
+        "fps": 24.0,
+        "apiChecksum": "c51cba03a4215dd96b14aacc6cc525d28cbc822600df87e64ab4b50db0438e96",
+        "sourceWorkflowCode": "wf-local-video-kandinsky5-t2v",
+        "abilityCode": "SCENE_CLIP"
+      }
+    ],
+    "recommendedWorkflowCode": "wf-ability-video-scene-clip-wan"
+  },
+  {
+    "code": "KEYFRAME_TRANSITION",
+    "media": "video",
+    "name": "首尾画面过渡",
+    "desc": "连接指定的开始与结束画面",
+    "capabilityCode": "FL2V",
+    "inputs": [
+      {
+        "key": "transition",
+        "label": "过渡要求",
+        "required": true,
+        "maxLength": 250,
+        "placeholder": "从商品特写平滑拉远到完整场景"
+      }
+    ],
+    "assets": [
+      {
+        "key": "first",
+        "label": "开始画面",
+        "required": true
+      },
+      {
+        "key": "last",
+        "label": "结束画面",
+        "required": true
+      }
+    ],
+    "promptTemplate": "Use the provided start image as the first frame and end image as the final frame anchor. Transition: ${transition}. Smooth coherent motion, no black frames, text or watermark.",
+    "note": "首尾图是约束参考；需检查实际首尾帧和中间变化。",
+    "acceptance": [
+      "起始与结束画面符合参考",
+      "中间过渡自然"
+    ],
+    "status": "DRAFT",
+    "workflows": [
+      {
+        "workflowCode": "wf-ability-video-keyframe-transition-wan",
+        "media": "video",
+        "capabilityCode": "FL2V",
+        "modelCode": "WAN",
+        "modelName": "Wan 2.2",
+        "name": "首尾画面过渡 · 专用流程",
+        "version": "v1.0.0-ability",
+        "fields": [
+          "first",
+          "last",
+          "desc",
+          "tier",
+          "dur"
+        ],
+        "verifiedAt": null,
+        "hasAudio": false,
+        "supportedTiers": [
+          "验证档位 · 832×480"
+        ],
+        "supportedDurationsByTier": {
+          "验证档位 · 832×480": [
+            "2.04 秒"
+          ]
+        },
+        "supportedDuration": "2.04 秒",
+        "maxDurationSeconds": 2.0416666666666665,
+        "fps": 24.0,
+        "apiChecksum": "d3c2f4f0e57d212fa3e4c208f6b0c23c131a47c56f7d0c555fb25b82f66c5abb",
+        "sourceWorkflowCode": "wf-local-ready-wan22-a14b-4steps-flf2v",
+        "abilityCode": "KEYFRAME_TRANSITION"
+      },
+      {
+        "workflowCode": "wf-ability-video-keyframe-transition-ltx",
+        "media": "video",
+        "capabilityCode": "FL2V",
+        "modelCode": "LTX",
+        "modelName": "LTX-2.5",
+        "name": "首尾画面过渡 · 专用流程",
+        "version": "v1.0.0-ability",
+        "fields": [
+          "first",
+          "last",
+          "desc",
+          "tier",
+          "dur"
+        ],
+        "verifiedAt": null,
+        "hasAudio": true,
+        "supportedTiers": [
+          "验证档位 · 832×480"
+        ],
+        "supportedDurationsByTier": {
+          "验证档位 · 832×480": [
+            "2.04 秒"
+          ]
+        },
+        "supportedDuration": "2.04 秒",
+        "maxDurationSeconds": 2.0416666666666665,
+        "fps": 24.0,
+        "apiChecksum": "cb054f8babe8332abaf634725eb128548ac98a38189922f720e1cc4eef486d23",
+        "sourceWorkflowCode": "wf-local-video-ltx2-5-flf2v",
+        "abilityCode": "KEYFRAME_TRANSITION"
+      },
+      {
+        "workflowCode": "wf-ability-video-keyframe-transition-h3",
+        "media": "video",
+        "capabilityCode": "FL2V",
+        "modelCode": "H3",
+        "modelName": "MiniMax H3",
+        "name": "首尾画面过渡 · 专用流程",
+        "version": "v1.0.0-ability",
+        "fields": [
+          "first",
+          "last",
+          "desc",
+          "tier",
+          "dur"
+        ],
+        "verifiedAt": null,
+        "hasAudio": true,
+        "supportedTiers": [
+          "验证档位 · 768×448"
+        ],
+        "supportedDurationsByTier": {
+          "验证档位 · 768×448": [
+            "2.33 秒"
+          ]
+        },
+        "supportedDuration": "2.33 秒",
+        "maxDurationSeconds": 2.3333333333333335,
+        "fps": 24.0,
+        "apiChecksum": "97e3f089948a2517bac60555dd47b6dcea8e030a6f02b8e3a8e1554ba0486f98",
+        "sourceWorkflowCode": "wf-local-ready-minimaxh3-turbo-flf2v-av",
+        "abilityCode": "KEYFRAME_TRANSITION"
+      }
+    ],
+    "recommendedWorkflowCode": "wf-ability-video-keyframe-transition-wan"
+  },
+  {
+    "code": "REFERENCE_STORY",
+    "media": "video",
+    "name": "双图参考短片",
+    "desc": "结合两张参考图生成音画短片",
+    "capabilityCode": "R2V",
+    "inputs": [
+      {
+        "key": "story",
+        "label": "两张图片如何出现在短片中",
+        "required": true,
+        "maxLength": 250,
+        "placeholder": "<Picture 1> 中的茶壶放到 <Picture 2> 的桌面环境"
+      },
+      {
+        "key": "sound",
+        "label": "声音方向",
+        "required": true,
+        "maxLength": 250,
+        "placeholder": "轻柔室内氛围声"
+      }
+    ],
+    "assets": [
+      {
+        "key": "reference1",
+        "label": "主体参考图",
+        "required": true
+      },
+      {
+        "key": "reference2",
+        "label": "场景参考图",
+        "required": true
+      }
+    ],
+    "promptTemplate": "Use <Picture 1> and <Picture 2> as visual references. Story: ${story}. Audio: ${sound}. Coherent short shot, no subtitles or watermark.",
+    "note": "双参考不等同于首尾帧，也不提供人物动作迁移。",
+    "acceptance": [
+      "两张参考图的指定内容可辨认",
+      "存在音轨",
+      "场景连贯"
+    ],
+    "status": "DRAFT",
+    "workflows": [
+      {
+        "workflowCode": "wf-ability-video-reference-story-h3",
+        "media": "video",
+        "capabilityCode": "R2V",
+        "modelCode": "H3",
+        "modelName": "MiniMax H3",
+        "name": "双图参考短片 · 专用流程",
+        "version": "v1.0.0-ability",
+        "fields": [
+          "reference1",
+          "reference2",
+          "desc",
+          "tier",
+          "dur"
+        ],
+        "verifiedAt": null,
+        "hasAudio": true,
+        "supportedTiers": [
+          "验证档位 · 864×480"
+        ],
+        "supportedDurationsByTier": {
+          "验证档位 · 864×480": [
+            "2.33 秒"
+          ]
+        },
+        "supportedDuration": "2.33 秒",
+        "maxDurationSeconds": 2.3333333333333335,
+        "fps": 24.0,
+        "apiChecksum": "d11e2390bba213a3a7350b8b0e9c4dd233b4d7826da79dd462cb0fe111498052",
+        "sourceWorkflowCode": "wf-local-video-minimax-h3-r2v",
+        "abilityCode": "REFERENCE_STORY"
+      }
+    ],
+    "recommendedWorkflowCode": "wf-ability-video-reference-story-h3"
+  }
+]

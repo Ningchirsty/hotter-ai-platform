@@ -2,7 +2,7 @@
   <div class="cloud-image-editor editor-body" aria-label="云端图像创建任务">
     <section class="cloud-field" aria-labelledby="cloud-image-model-label">
       <div class="field-heading">
-        <h3 id="cloud-image-model-label">云端生成模型</h3>
+        <h3 id="cloud-image-model-label">选择云端图像模型</h3>
         <span>{{ visibleModels.length }} / {{ models.length }}</span>
       </div>
       <input
@@ -75,7 +75,7 @@
     </section>
 
     <section class="cloud-field" aria-labelledby="cloud-image-capability-label">
-      <h3 id="cloud-image-capability-label">创作能力</h3>
+      <h3 id="cloud-image-capability-label">图像创作能力</h3>
       <div class="capability-options ability-grid">
         <button v-for="item in capabilities" :key="item.code" type="button" :class="{active: mode === item.code}" :aria-pressed="mode === item.code" :disabled="busy || materialProcessing" @click="mode = item.code">
           <strong>{{ item.name }}</strong><small>{{ item.description }}</small><em>{{ imageCapabilityStatusLabel(capabilityStatus(item.code)) }}</em>

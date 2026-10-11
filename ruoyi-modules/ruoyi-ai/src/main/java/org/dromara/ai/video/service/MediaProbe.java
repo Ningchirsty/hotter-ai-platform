@@ -61,6 +61,12 @@ public class MediaProbe {
     /**
      * 探测媒体文件。文件不存在或 ffprobe 不可用时返回未实测结果，不抛异常。
      */
+    public boolean hasAudio(Path file) {
+        String output = run(List.of(ffprobePath, "-v", "error", "-select_streams", "a:0",
+            "-show_entries", "stream=codec_type", "-of", "csv=p=0", file.toAbsolutePath().toString()));
+        return output != null && output.trim().equals("audio");
+    }
+
     public Probe probe(Path file) {
         if (file == null || !Files.isRegularFile(file)) {
             log.warn("待探测的成片不存在：{}", file);

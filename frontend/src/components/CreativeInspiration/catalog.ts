@@ -23,6 +23,7 @@ export const INSPIRATION_CATEGORIES = [
 ];
 
 const IMAGE_WORKFLOWS: Record<ImageCapabilityCode, string> = {
+  CONTROL: 'wf-local-image-z-image-turbo-fun-union-controlnet',
   T2I: 'wf-t2i-qwen21',
   I2I: 'wf-i2i-qwen21',
   EDIT: 'wf-edit-qwen21',
@@ -30,11 +31,13 @@ const IMAGE_WORKFLOWS: Record<ImageCapabilityCode, string> = {
   WHITEBG: 'wf-whitebg-qwen21'
 };
 const VIDEO_REFERENCE: Record<VideoCapabilityCode, string> = {
+  R2V: '请上传两张参考图片，并在描述中使用 <Picture 1> 和 <Picture 2>。',
   T2V: '从文字构思开始，无需上传参考图。',
   I2V: '请在左侧上传你自己的单张参考图，案例封面不会自动作为输入。',
   FL2V: '请在左侧上传你自己的首帧和尾帧图片。'
 };
 const IMAGE_REFERENCE: Record<ImageCapabilityCode, string> = {
+  CONTROL: '请上传结构控制参考图。',
   T2I: '从画面描述开始，无需上传参考图。',
   I2I: '请上传原图；此能力用于整体风格重绘。',
   EDIT: '请上传编辑目标，最多再添加两张参考图。',

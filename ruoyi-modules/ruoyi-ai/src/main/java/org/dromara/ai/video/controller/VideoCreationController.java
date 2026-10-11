@@ -11,6 +11,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.dromara.ai.video.domain.WorkflowVersion;
 import org.dromara.ai.video.exception.VideoTaskException;
 import org.dromara.ai.video.service.AssetStorage;
+import org.dromara.ai.video.service.H3TemplatePreparer;
 import org.dromara.ai.video.service.VideoTaskOrchestrator;
 import org.dromara.ai.video.service.VideoTaskRepository;
 import org.dromara.ai.video.service.VideoTaskSubmissionService;
@@ -185,8 +186,7 @@ public class VideoCreationController extends BaseController {
     @SaCheckPermission("video:creation:view")
     public R<List<Map<String, Object>>> capabilities() {
         List<Map<String, Object>> result = new ArrayList<>();
-        for (String code : List.of("wf-t2v-h3", "wf-i2v-h3", "wf-fl2v-h3")) {
-            WorkflowVersion version = registry.peek(code);
+        for (WorkflowVersion version : registry.registeredVersions()) {
             if (version == null) {
                 continue;
             }
@@ -209,7 +209,8 @@ public class VideoCreationController extends BaseController {
             // 各档位允许的时长。时长与档位互相约束（长时长只在低分辨率档位开放，
             // 因为 H3 的帧数随时长线性增长、显存与耗时显著上升），所以按时长给出矩阵，
             // 而不是给一个「所有档位通用」的时长列表。
-            item.put("supportedDurationsByTier", tierResolutions == null
+            item.put("supportedDurationsByTier", H3TemplatePreparer.isNative(version)
+                ? Map.of(version.fixedFieldValidation().tier(), List.of(version.fixedFieldValidation().dur())) : tierResolutions == null
                 ? java.util.Map.of()
                 : new java.util.LinkedHashMap<>(tierResolutions.getDurations()));
             // 画面比例与「比例 → 档位」分组：前端据此渲染"先选比例、再选清晰度"。
@@ -565,7 +566,7 @@ public class VideoCreationController extends BaseController {
             String.valueOf(task.get("workflow_code")),
             task.get("prompt") == null ? null : String.valueOf(task.get("prompt")),
             String.valueOf(task.get("tier")),
-            durationLabelOf(task.get("duration_seconds")),
+            taskDurationLabel(inputJson, task.get("duration_seconds")),
             assetIdFrom(inputJson, "img"),
             assetIdFrom(inputJson, "first"),
             assetIdFrom(inputJson, "last"),
@@ -634,6 +635,10 @@ public class VideoCreationController extends BaseController {
         return R.ok();
     }
 
+    @GetMapping("/abilities")
+    @SaCheckPermission("video:creation:view")
+    public R<com.fasterxml.jackson.databind.JsonNode> abilities() { return R.ok(registry.abilities()); }
+
     private static int offset(PageQuery pageQuery) {
         int pageNum = pageQuery.getPageNum() == null ? 1 : Math.max(1, pageQuery.getPageNum());
         return (pageNum - 1) * size(pageQuery);
@@ -642,6 +647,14 @@ public class VideoCreationController extends BaseController {
     private static int size(PageQuery pageQuery) {
         int pageSize = pageQuery.getPageSize() == null ? 10 : pageQuery.getPageSize();
         return Math.min(Math.max(1, pageSize), 100);
+    }
+
+    private static String taskDurationLabel(String inputJson, Object seconds) {
+        try {
+            String label = new ObjectMapper().readTree(inputJson).path("durationLabel").asText();
+            if (!label.isBlank()) return label;
+        } catch (Exception ignored) { }
+        return durationLabelOf(seconds);
     }
 
     private static String durationLabelOf(Object seconds) {

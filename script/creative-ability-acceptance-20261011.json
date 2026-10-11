@@ -1,0 +1,1097 @@
+{
+  "date": "2026-10-11",
+  "publicationStatus": "DRAFT",
+  "backendServiceDeployed": false,
+  "counts": {
+    "imageAbilities": 8,
+    "videoAbilities": 6,
+    "imageBindings": 13,
+    "videoBindings": 15,
+    "backendTestsPassed": 315,
+    "frontendTestsPassed": 125
+  },
+  "whiteBackground": {
+    "compositor": "ImageWhiteBackgroundCompositor",
+    "pixelMismatches": 0,
+    "opaqueSourcePixels": 315311,
+    "transparentSourcePixels": 672065,
+    "height": 1536,
+    "width": 1536,
+    "hasAlpha": false
+  },
+  "canvasExecutionSmoke": [
+    {
+      "workflowCode": "wf-ability-image-cutout-qwen21",
+      "promptId": "51461fee-8f6b-441a-aa5e-6c24bc6ebb95",
+      "status": "success",
+      "graphSha256": "219aa64c7353788553d7edba4dd856bc65fccbf3daf6eaeeb03ccc183c011f9b"
+    },
+    {
+      "workflowCode": "wf-ability-video-sound-story-ltx",
+      "promptId": "f509b43c-4965-4859-8875-546459696d70",
+      "status": "success",
+      "graphSha256": "dc53570bfd78a813d059b7c5f9bf46492da8038c7bee17a77c12c24cfee3b299"
+    }
+  ],
+  "manualQualityAcceptance": "pending",
+  "workflows": [
+    {
+      "workflowCode": "wf-ability-image-poster-qwen2512",
+      "abilityCode": "POSTER",
+      "media": "image",
+      "name": "中文海报",
+      "file": "script/image/workflows/abilities-ui/wf-ability-image-poster-qwen2512.json",
+      "sha256": "161cb40f5325a5ffdc7ca85d55a1d20370a2fb9622cac26eec8263dd6cac87a7",
+      "preparedInputsMatch": true,
+      "remote": "Codex-Abilities/图像/中文海报_Qwen2512.json",
+      "httpStatus": 200,
+      "readbackMatches": true,
+      "apiFile": "script/image/workflows/abilities-api/wf-ability-image-poster-qwen2512.json",
+      "execution": {
+        "status": "success",
+        "promptId": "4f17f97d-683e-4404-94bc-1ea2ee93703a",
+        "graphSha256": "874b3053086fdaa7f6878f61449e49fc9f1050daf92c8af8d7d14941df55b733",
+        "outputs": [
+          {
+            "filename": "wf-ability-image-poster-qwen2512_00002_.png",
+            "subfolder": "Codex_Abilities",
+            "type": "output",
+            "sha256": "19da38de32116c37aa0cfcfd62fdbd7e037167922d1f7eb747233ae74ad22267",
+            "bytes": 1671833,
+            "width": 1328,
+            "height": 1328,
+            "mode": "RGB"
+          }
+        ]
+      }
+    },
+    {
+      "workflowCode": "wf-ability-image-poster-qwen21",
+      "abilityCode": "POSTER",
+      "media": "image",
+      "name": "中文海报",
+      "file": "script/image/workflows/abilities-ui/wf-ability-image-poster-qwen21.json",
+      "sha256": "28746511067cd945d889ad658e691f162cb1f883313bab673b0919329584a434",
+      "preparedInputsMatch": true,
+      "remote": "Codex-Abilities/图像/中文海报_Qwen21.json",
+      "httpStatus": 200,
+      "readbackMatches": true,
+      "apiFile": "script/image/workflows/abilities-api/wf-ability-image-poster-qwen21.json",
+      "execution": {
+        "status": "success",
+        "promptId": "a5a43f81-76d9-4d5b-bfd0-9fc85aa939f4",
+        "graphSha256": "74994bfef5edfa71d86c7b048447ab58afd8089522bfd6bb9dbd05c12a422a37",
+        "outputs": [
+          {
+            "filename": "wf-ability-image-poster-qwen21_00002_.png",
+            "subfolder": "Codex_Abilities",
+            "type": "output",
+            "sha256": "8c1b18c386ae822ab63571c42ee0cbcbb7fcd9c1aaf284a5dc44b4768c65bc72",
+            "bytes": 1108803,
+            "width": 1024,
+            "height": 1024,
+            "mode": "RGBA",
+            "transparentRatio": 0
+          }
+        ]
+      }
+    },
+    {
+      "workflowCode": "wf-ability-image-poster-ideogram",
+      "abilityCode": "POSTER",
+      "media": "image",
+      "name": "中文海报",
+      "file": "script/image/workflows/abilities-ui/wf-ability-image-poster-ideogram.json",
+      "sha256": "141febb11feba481a43ee220158778ce07d1e135de74740c49ae2cb5957d8e29",
+      "preparedInputsMatch": true,
+      "remote": "Codex-Abilities/图像/中文海报_Ideogram4.json",
+      "httpStatus": 200,
+      "readbackMatches": true,
+      "apiFile": "script/image/workflows/abilities-api/wf-ability-image-poster-ideogram.json",
+      "execution": {
+        "status": "success",
+        "promptId": "f0573e3e-1586-4afd-bd0b-ab1f4faf5031",
+        "graphSha256": "e270230e685f1f47d1e43ac8e271ad8cba03dfa6505576bbf7a1b3dc836281fe",
+        "outputs": [
+          {
+            "filename": "wf-ability-image-poster-ideogram_00002_.png",
+            "subfolder": "Codex_Abilities",
+            "type": "output",
+            "sha256": "1cef3c94631781aa0405c19cb3205c68ca546658dc7b820264d97991f42843f1",
+            "bytes": 227477,
+            "width": 768,
+            "height": 1376,
+            "mode": "RGB"
+          }
+        ]
+      }
+    },
+    {
+      "workflowCode": "wf-ability-image-quick-image-zimage",
+      "abilityCode": "QUICK_IMAGE",
+      "media": "image",
+      "name": "快速配图",
+      "file": "script/image/workflows/abilities-ui/wf-ability-image-quick-image-zimage.json",
+      "sha256": "fe5eb685ce07b671a24923cdd82a87f765c7ebdd27a5b86f79c8660fb62ebd74",
+      "preparedInputsMatch": true,
+      "remote": "Codex-Abilities/图像/快速配图_ZImage.json",
+      "httpStatus": 200,
+      "readbackMatches": true,
+      "apiFile": "script/image/workflows/abilities-api/wf-ability-image-quick-image-zimage.json",
+      "execution": {
+        "status": "success",
+        "promptId": "68aa1a4d-7f66-4f03-9939-a074ec9d693c",
+        "graphSha256": "540ae7bb0fb6559793ded992d1044c41395a9bded3d8b1edc09cba387c1f9f79",
+        "outputs": [
+          {
+            "filename": "wf-ability-image-quick-image-zimage_00001_.png",
+            "subfolder": "Codex_Abilities",
+            "type": "output",
+            "sha256": "b034d56230118c1f5aab2b1fc8b176ea624109a75d866f5255c76eddc4e96861",
+            "bytes": 1207704,
+            "width": 1024,
+            "height": 1024,
+            "mode": "RGB"
+          }
+        ]
+      }
+    },
+    {
+      "workflowCode": "wf-ability-image-quick-image-flux4b",
+      "abilityCode": "QUICK_IMAGE",
+      "media": "image",
+      "name": "快速配图",
+      "file": "script/image/workflows/abilities-ui/wf-ability-image-quick-image-flux4b.json",
+      "sha256": "e6667f46c0c3cb866821146de05e3768821f0f3dcbdfb0f1fd462ec60f98fce6",
+      "preparedInputsMatch": true,
+      "remote": "Codex-Abilities/图像/快速配图_FluxKlein4B.json",
+      "httpStatus": 200,
+      "readbackMatches": true,
+      "apiFile": "script/image/workflows/abilities-api/wf-ability-image-quick-image-flux4b.json",
+      "execution": {
+        "status": "success",
+        "promptId": "87897648-4f0d-4665-9fe6-99fe81eb60e1",
+        "graphSha256": "7b0d8317757be4d1afef9772dba722e01c3f5625689a4c453a076b7929767d5a",
+        "outputs": [
+          {
+            "filename": "wf-ability-image-quick-image-flux4b_00001_.png",
+            "subfolder": "Codex_Abilities",
+            "type": "output",
+            "sha256": "5373a96b7d6301e60a845a25caa234ced56c32898ee165d96e49afd20ed67abe",
+            "bytes": 1331398,
+            "width": 1024,
+            "height": 1024,
+            "mode": "RGB"
+          }
+        ]
+      }
+    },
+    {
+      "workflowCode": "wf-ability-image-product-shot-krea",
+      "abilityCode": "PRODUCT_SHOT",
+      "media": "image",
+      "name": "商品场景图",
+      "file": "script/image/workflows/abilities-ui/wf-ability-image-product-shot-krea.json",
+      "sha256": "04d165e4441ff166b0dfe41b2b5764eea63bb309183b8ac3bf77d7c1ea2133c1",
+      "preparedInputsMatch": true,
+      "remote": "Codex-Abilities/图像/商品场景图_Krea2.json",
+      "httpStatus": 200,
+      "readbackMatches": true,
+      "apiFile": "script/image/workflows/abilities-api/wf-ability-image-product-shot-krea.json",
+      "execution": {
+        "status": "success",
+        "promptId": "ad0f094f-b3b2-445f-bb10-e1b968c345d6",
+        "graphSha256": "1ba09630f17054e887c7691c668031c6a17513c22740572390a499744bd0dcf3",
+        "outputs": [
+          {
+            "filename": "wf-ability-image-product-shot-krea_00001_.png",
+            "subfolder": "Codex_Abilities",
+            "type": "output",
+            "sha256": "621dfd62f3da2959fc3e09a6719953e2dd224e9d28570c07f695dc2efe44ef56",
+            "bytes": 1109473,
+            "width": 1024,
+            "height": 1024,
+            "mode": "RGB"
+          }
+        ]
+      }
+    },
+    {
+      "workflowCode": "wf-ability-image-product-shot-qwen2512",
+      "abilityCode": "PRODUCT_SHOT",
+      "media": "image",
+      "name": "商品场景图",
+      "file": "script/image/workflows/abilities-ui/wf-ability-image-product-shot-qwen2512.json",
+      "sha256": "256a05d4f2789fc5e4de6e5fa444bad64f20be54e45b1d02f780254abb5792d4",
+      "preparedInputsMatch": true,
+      "remote": "Codex-Abilities/图像/商品场景图_Qwen2512.json",
+      "httpStatus": 200,
+      "readbackMatches": true,
+      "apiFile": "script/image/workflows/abilities-api/wf-ability-image-product-shot-qwen2512.json",
+      "execution": {
+        "status": "success",
+        "promptId": "0359bb5e-4246-42c6-b7c6-ad5ad9406055",
+        "graphSha256": "1511605fa5a2513d5578ef9e73f4300d462bbd49f13217037cec54caea9389e7",
+        "outputs": [
+          {
+            "filename": "wf-ability-image-product-shot-qwen2512_00001_.png",
+            "subfolder": "Codex_Abilities",
+            "type": "output",
+            "sha256": "6589715546d841df2ebaccab04e67e9e7b4d212bb8410be6746329e083f3eeae",
+            "bytes": 1887360,
+            "width": 1328,
+            "height": 1328,
+            "mode": "RGB"
+          }
+        ]
+      }
+    },
+    {
+      "workflowCode": "wf-ability-image-background-replace-flux4b",
+      "abilityCode": "BACKGROUND_REPLACE",
+      "media": "image",
+      "name": "商品换背景",
+      "file": "script/image/workflows/abilities-ui/wf-ability-image-background-replace-flux4b.json",
+      "sha256": "80e0d5c74b16f5038c5b057acd9ded25d8781c51f41002101dd8989b48015c12",
+      "preparedInputsMatch": true,
+      "remote": "Codex-Abilities/图像/商品换背景_FluxKlein4B.json",
+      "httpStatus": 200,
+      "readbackMatches": true,
+      "apiFile": "script/image/workflows/abilities-api/wf-ability-image-background-replace-flux4b.json",
+      "execution": {
+        "status": "success",
+        "promptId": "569835fa-69ee-4b1e-a695-d4dde9a91f04",
+        "graphSha256": "b759e0c7344147bfb12bc498e7d7dcfc9dad3d853a32a2360a3be370c7c6d959",
+        "outputs": [
+          {
+            "filename": "wf-ability-image-background-replace-flux4b_00001_.png",
+            "subfolder": "Codex_Abilities",
+            "type": "output",
+            "sha256": "8184ff36de14e46803ba1ea5021e9788fa37969aadff2881973f062f63b5ece9",
+            "bytes": 1152679,
+            "width": 1024,
+            "height": 1024,
+            "mode": "RGB"
+          }
+        ]
+      }
+    },
+    {
+      "workflowCode": "wf-ability-image-background-replace-qwen21",
+      "abilityCode": "BACKGROUND_REPLACE",
+      "media": "image",
+      "name": "商品换背景",
+      "file": "script/image/workflows/abilities-ui/wf-ability-image-background-replace-qwen21.json",
+      "sha256": "9b3f8bf3fa30d48e1f253d3cf05197bcea41da13adcc2176c2daba8cf7c87e6c",
+      "preparedInputsMatch": true,
+      "remote": "Codex-Abilities/图像/商品换背景_Qwen21.json",
+      "httpStatus": 200,
+      "readbackMatches": true,
+      "apiFile": "script/image/workflows/abilities-api/wf-ability-image-background-replace-qwen21.json",
+      "execution": {
+        "status": "success",
+        "promptId": "14c93597-c4b3-4a60-bc81-3b8d3aa1f4eb",
+        "graphSha256": "a0a254f61316ca79b2d5ca40f942921db3a8aa111000ed10bde93c66471ba19f",
+        "outputs": [
+          {
+            "filename": "wf-ability-image-background-replace-qwen21_00001_.png",
+            "subfolder": "Codex_Abilities",
+            "type": "output",
+            "sha256": "96e41c9f9f82686210602f26168897bacf79b7b8b0ee4cda85278efe4506fa41",
+            "bytes": 2662737,
+            "width": 1536,
+            "height": 1536,
+            "mode": "RGBA",
+            "transparentRatio": 0
+          }
+        ]
+      }
+    },
+    {
+      "workflowCode": "wf-ability-image-style-redraw-qwen21",
+      "abilityCode": "STYLE_REDRAW",
+      "media": "image",
+      "name": "图片风格转换",
+      "file": "script/image/workflows/abilities-ui/wf-ability-image-style-redraw-qwen21.json",
+      "sha256": "82c0c189b4585703b106c8cd1fc3d77180cf0d3201fc7e701adff298993ca5b4",
+      "preparedInputsMatch": true,
+      "remote": "Codex-Abilities/图像/图片风格转换_Qwen21.json",
+      "httpStatus": 200,
+      "readbackMatches": true,
+      "apiFile": "script/image/workflows/abilities-api/wf-ability-image-style-redraw-qwen21.json",
+      "execution": {
+        "status": "success",
+        "promptId": "ffb70c00-e773-474d-8302-a71c1f73e613",
+        "graphSha256": "2a5a6cbddb3b6810fdf9524d9936d99e4a14f055a3c6779168950823c4ba305c",
+        "outputs": [
+          {
+            "filename": "wf-ability-image-style-redraw-qwen21_00001_.png",
+            "subfolder": "Codex_Abilities",
+            "type": "output",
+            "sha256": "f32a77a6b4097915c9970ba9c0dac64a81c8b30d076e404558cd3e1d80f9cece",
+            "bytes": 458246,
+            "width": 512,
+            "height": 512,
+            "mode": "RGBA",
+            "transparentRatio": 0
+          }
+        ]
+      }
+    },
+    {
+      "workflowCode": "wf-ability-image-cutout-qwen21",
+      "abilityCode": "CUTOUT",
+      "media": "image",
+      "name": "透明抠图",
+      "file": "script/image/workflows/abilities-ui/wf-ability-image-cutout-qwen21.json",
+      "sha256": "e0290ee8ce784db06bf684785a14dc493646d62a26300a0b27b8fcb23bbc7972",
+      "preparedInputsMatch": true,
+      "remote": "Codex-Abilities/图像/透明抠图_Qwen21.json",
+      "httpStatus": 200,
+      "readbackMatches": true,
+      "apiFile": "script/image/workflows/abilities-api/wf-ability-image-cutout-qwen21.json",
+      "execution": {
+        "status": "success",
+        "promptId": "6e143314-c3b5-4abb-a716-029ec5449cee",
+        "graphSha256": "1dc1fd5577bc6ca886866d90e2a5e415ff0549c8fdfcb3af8711cd309b2ca240",
+        "outputs": [
+          {
+            "filename": "wf-ability-image-cutout-qwen21_00001_.png",
+            "subfolder": "Codex_Abilities",
+            "type": "output",
+            "sha256": "ce7ab2e97d97bb27665d9dabeab42fb2808e01b82d43d1a1a9ce2ba5f69d996a",
+            "bytes": 2037281,
+            "width": 1536,
+            "height": 1536,
+            "mode": "RGBA",
+            "transparentRatio": 0.2848582797580295
+          }
+        ]
+      }
+    },
+    {
+      "workflowCode": "wf-ability-image-white-background-qwen21",
+      "abilityCode": "WHITE_BACKGROUND",
+      "media": "image",
+      "name": "白底商品图",
+      "file": "script/image/workflows/abilities-ui/wf-ability-image-white-background-qwen21.json",
+      "sha256": "5b02ee9bfe062caa92426445586ad89d5cc0fb3a38e97742bd1bc843ab7bca08",
+      "preparedInputsMatch": true,
+      "remote": "Codex-Abilities/图像/白底商品图_Qwen21.json",
+      "httpStatus": 200,
+      "readbackMatches": true,
+      "apiFile": "script/image/workflows/abilities-api/wf-ability-image-white-background-qwen21.json",
+      "execution": {
+        "status": "success",
+        "promptId": "7ce346db-509d-429d-b6e0-ffcd82f062f0",
+        "graphSha256": "9ae03590b343d4c7741832b90437475714eccfc5adc3246e0644b970cb26e6dc",
+        "outputs": [
+          {
+            "filename": "wf-ability-image-white-background-qwen21_00001_.png",
+            "subfolder": "Codex_Abilities",
+            "type": "output",
+            "sha256": "0e3e081fa536970e0b4ba22014f2b773df5e95963b941eac686401a3833cf3dd",
+            "bytes": 2037291,
+            "width": 1536,
+            "height": 1536,
+            "mode": "RGBA",
+            "transparentRatio": 0.2848582797580295
+          }
+        ]
+      }
+    },
+    {
+      "workflowCode": "wf-ability-image-structure-guided-zimage",
+      "abilityCode": "STRUCTURE_GUIDED",
+      "media": "image",
+      "name": "参考构图出图",
+      "file": "script/image/workflows/abilities-ui/wf-ability-image-structure-guided-zimage.json",
+      "sha256": "a0a556c459a12587109383167607a9a0be0d3ef73528e55bb2614e0ac30b21c7",
+      "preparedInputsMatch": true,
+      "remote": "Codex-Abilities/图像/参考构图出图_ZImage.json",
+      "httpStatus": 200,
+      "readbackMatches": true,
+      "apiFile": "script/image/workflows/abilities-api/wf-ability-image-structure-guided-zimage.json",
+      "execution": {
+        "status": "success",
+        "promptId": "bba38c84-c114-4c64-ac7c-12446a572f65",
+        "graphSha256": "4d7684400cc09a25aecd26d568e422446a91a87b1dec52fcf1cb82340c502800",
+        "outputs": [
+          {
+            "filename": "wf-ability-image-structure-guided-zimage_00001_.png",
+            "subfolder": "Codex_Abilities",
+            "type": "output",
+            "sha256": "e139aa8cc8d8c332427244cfd4d2468d75ba4f247f90a6be5ce1410ab07c69fa",
+            "bytes": 261379,
+            "width": 512,
+            "height": 512,
+            "mode": "RGB"
+          }
+        ]
+      }
+    },
+    {
+      "workflowCode": "wf-ability-video-product-motion-wan",
+      "abilityCode": "PRODUCT_MOTION",
+      "media": "video",
+      "name": "商品动效",
+      "file": "script/video/workflows/abilities-ui/wf-ability-video-product-motion-wan.json",
+      "sha256": "33249027cb996c8d55ecd3a193605f96fbcc301b63581c2f8bf57231a7159d75",
+      "preparedInputsMatch": true,
+      "remote": "Codex-Abilities/视频/商品动效_Wan22.json",
+      "httpStatus": 200,
+      "readbackMatches": true,
+      "apiFile": "script/video/workflows/abilities-api/wf-ability-video-product-motion-wan.json",
+      "execution": {
+        "status": "success",
+        "promptId": "579a9d98-e1a6-423f-b2cb-c54562a03e33",
+        "graphSha256": "af89b2b162eeda66da58860c5a4a739063effc4cb9f8b4ca5386c1c4e2241b01",
+        "outputs": [
+          {
+            "filename": "wf-ability-video-product-motion-wan_00001_.mp4",
+            "subfolder": "Codex_Abilities",
+            "type": "output",
+            "sha256": "b47be55e21ee394e22473159a09fb00aa339de34b12eb9ad9ee496da7a3b13cb",
+            "bytes": 218569,
+            "width": 832,
+            "height": 480,
+            "frames": 49,
+            "fps": 24,
+            "durationSeconds": 2.0416666666666665
+          }
+        ]
+      },
+      "mediaProbe": {
+        "workflowCode": "wf-ability-video-product-motion-wan",
+        "promptId": "579a9d98-e1a6-423f-b2cb-c54562a03e33",
+        "width": 832,
+        "height": 480,
+        "durationSeconds": 2.041667,
+        "fps": 24,
+        "hasAudio": false,
+        "audioRequired": false,
+        "matchesContract": true
+      }
+    },
+    {
+      "workflowCode": "wf-ability-video-product-motion-hun",
+      "abilityCode": "PRODUCT_MOTION",
+      "media": "video",
+      "name": "商品动效",
+      "file": "script/video/workflows/abilities-ui/wf-ability-video-product-motion-hun.json",
+      "sha256": "1d264e832f1a26fc12b0e0459b034beba4acf0b33024c1cfe47ec583c8256a89",
+      "preparedInputsMatch": true,
+      "remote": "Codex-Abilities/视频/商品动效_Hunyuan15.json",
+      "httpStatus": 200,
+      "readbackMatches": true,
+      "apiFile": "script/video/workflows/abilities-api/wf-ability-video-product-motion-hun.json",
+      "execution": {
+        "status": "success",
+        "promptId": "e0c7fe09-0392-405a-b567-6452a2afa6db",
+        "graphSha256": "3c7e15b8c1fdcb544e5980878f9c328830e8576f60778246b7a5e00dbe550ca1",
+        "outputs": [
+          {
+            "filename": "wf-ability-video-product-motion-hun_00001_.mp4",
+            "subfolder": "Codex_Abilities",
+            "type": "output",
+            "sha256": "a924d32ba6d5fa26159f596ad13c166e5aa7622d84465e341d338ab51efe0a16",
+            "bytes": 129473,
+            "width": 832,
+            "height": 480,
+            "frames": 49,
+            "fps": 24,
+            "durationSeconds": 2.0416666666666665
+          }
+        ]
+      },
+      "mediaProbe": {
+        "workflowCode": "wf-ability-video-product-motion-hun",
+        "promptId": "e0c7fe09-0392-405a-b567-6452a2afa6db",
+        "width": 832,
+        "height": 480,
+        "durationSeconds": 2.041667,
+        "fps": 24,
+        "hasAudio": false,
+        "audioRequired": false,
+        "matchesContract": true
+      }
+    },
+    {
+      "workflowCode": "wf-ability-video-product-motion-kand",
+      "abilityCode": "PRODUCT_MOTION",
+      "media": "video",
+      "name": "商品动效",
+      "file": "script/video/workflows/abilities-ui/wf-ability-video-product-motion-kand.json",
+      "sha256": "31bc99dd79432feb8eecfb2aa597b946d807e0e0d0171eb81251dc5c6ae26cea",
+      "preparedInputsMatch": true,
+      "remote": "Codex-Abilities/视频/商品动效_Kandinsky5.json",
+      "httpStatus": 200,
+      "readbackMatches": true,
+      "apiFile": "script/video/workflows/abilities-api/wf-ability-video-product-motion-kand.json",
+      "execution": {
+        "status": "success",
+        "promptId": "4e92ebd8-a5d0-47e6-9615-a74469a59985",
+        "graphSha256": "5be17cf1d8da7c3a19805d4f3df674222b269a4839f789143fa2a252b39bc6ab",
+        "outputs": [
+          {
+            "filename": "wf-ability-video-product-motion-kand_00001_.mp4",
+            "subfolder": "Codex_Abilities",
+            "type": "output",
+            "sha256": "8c08c5621e4460617ba20d6de0cba837536a424d44b614351018f52551d376c8",
+            "bytes": 318527,
+            "width": 768,
+            "height": 512,
+            "frames": 49,
+            "fps": 24,
+            "durationSeconds": 2.0416666666666665
+          }
+        ]
+      },
+      "mediaProbe": {
+        "workflowCode": "wf-ability-video-product-motion-kand",
+        "promptId": "4e92ebd8-a5d0-47e6-9615-a74469a59985",
+        "width": 768,
+        "height": 512,
+        "durationSeconds": 2.041667,
+        "fps": 24,
+        "hasAudio": false,
+        "audioRequired": false,
+        "matchesContract": true
+      }
+    },
+    {
+      "workflowCode": "wf-ability-video-sound-story-ltx",
+      "abilityCode": "SOUND_STORY",
+      "media": "video",
+      "name": "有声短片",
+      "file": "script/video/workflows/abilities-ui/wf-ability-video-sound-story-ltx.json",
+      "sha256": "c91c7f372b9678c4d0388f0d69c0b7591d92884cb30253635e5fb355961b8596",
+      "preparedInputsMatch": true,
+      "remote": "Codex-Abilities/视频/有声短片_LTX25.json",
+      "httpStatus": 200,
+      "readbackMatches": true,
+      "apiFile": "script/video/workflows/abilities-api/wf-ability-video-sound-story-ltx.json",
+      "execution": {
+        "status": "success",
+        "promptId": "4ae7ca62-5071-49fd-9960-00d3a121ee97",
+        "graphSha256": "eda886b9bca61ec2411997314a6dcafbc3a08bbee6144a74967eeec4dea216df",
+        "outputs": [
+          {
+            "filename": "wf-ability-video-sound-story-ltx_00001_.mp4",
+            "subfolder": "Codex_Abilities",
+            "type": "output",
+            "sha256": "6d7dda7c17e8230f5240be1ce8c9b93e3ffdf15791f1f7a35116e38dd92ca8a0",
+            "bytes": 230980,
+            "width": 832,
+            "height": 448,
+            "frames": 49,
+            "fps": 24,
+            "durationSeconds": 2.0416666666666665
+          }
+        ]
+      },
+      "mediaProbe": {
+        "workflowCode": "wf-ability-video-sound-story-ltx",
+        "promptId": "4ae7ca62-5071-49fd-9960-00d3a121ee97",
+        "width": 832,
+        "height": 448,
+        "durationSeconds": 2.041667,
+        "fps": 24,
+        "hasAudio": true,
+        "audioRequired": true,
+        "matchesContract": true,
+        "audioCodec": "aac",
+        "audioPeak": 0.24295395612716675,
+        "audioRms": 0.02517470352807653
+      }
+    },
+    {
+      "workflowCode": "wf-ability-video-sound-story-h3",
+      "abilityCode": "SOUND_STORY",
+      "media": "video",
+      "name": "有声短片",
+      "file": "script/video/workflows/abilities-ui/wf-ability-video-sound-story-h3.json",
+      "sha256": "8937ff4dd89f24e2d1ff51da1bd57cf4f0580dc47eeda7bdc80dd235e96337cf",
+      "preparedInputsMatch": true,
+      "remote": "Codex-Abilities/视频/有声短片_MiniMaxH3.json",
+      "httpStatus": 200,
+      "readbackMatches": true,
+      "apiFile": "script/video/workflows/abilities-api/wf-ability-video-sound-story-h3.json",
+      "execution": {
+        "status": "success",
+        "promptId": "e1629f61-0171-4206-b145-7adee2bf4b8d",
+        "graphSha256": "e24a4824d475000930ffb4c46aedd8cf29bc3587c1fa81311d5f0481c8823ef6",
+        "outputs": [
+          {
+            "filename": "wf-ability-video-sound-story-h3_00001_.mp4",
+            "subfolder": "Codex_Abilities",
+            "type": "output",
+            "sha256": "dd339aebc5d0bd2e6f8831f609af7b53284959f403fcf31d0a1c358fdfbb159a",
+            "bytes": 197164,
+            "width": 768,
+            "height": 448,
+            "frames": 56,
+            "fps": 24,
+            "durationSeconds": 2.3333333333333335
+          }
+        ]
+      },
+      "mediaProbe": {
+        "workflowCode": "wf-ability-video-sound-story-h3",
+        "promptId": "e1629f61-0171-4206-b145-7adee2bf4b8d",
+        "width": 768,
+        "height": 448,
+        "durationSeconds": 2.333333,
+        "fps": 24,
+        "hasAudio": true,
+        "audioRequired": true,
+        "matchesContract": true,
+        "audioCodec": "aac",
+        "audioPeak": 0.4231055676937103,
+        "audioRms": 0.03400879591966187
+      }
+    },
+    {
+      "workflowCode": "wf-ability-video-photo-animation-wan",
+      "abilityCode": "PHOTO_ANIMATION",
+      "media": "video",
+      "name": "照片动起来",
+      "file": "script/video/workflows/abilities-ui/wf-ability-video-photo-animation-wan.json",
+      "sha256": "d049e92624862ec79fb32342cc8ce9294501fbf5e6da7bf85ab124a2ddf38168",
+      "preparedInputsMatch": true,
+      "remote": "Codex-Abilities/视频/照片动起来_Wan22.json",
+      "httpStatus": 200,
+      "readbackMatches": true,
+      "apiFile": "script/video/workflows/abilities-api/wf-ability-video-photo-animation-wan.json",
+      "execution": {
+        "status": "success",
+        "promptId": "e078f546-f7e2-4fe1-870d-6bb717e5656a",
+        "graphSha256": "ba51c0f272d865d2fc42015e3c318a2d3885401a2d96c3dfd1da2be9c044231e",
+        "outputs": [
+          {
+            "filename": "wf-ability-video-photo-animation-wan_00001_.mp4",
+            "subfolder": "Codex_Abilities",
+            "type": "output",
+            "sha256": "d38f00aa23fd4650727d867b2874154de44ef94db063391bcd543f66e6e192b3",
+            "bytes": 125461,
+            "width": 832,
+            "height": 480,
+            "frames": 49,
+            "fps": 24,
+            "durationSeconds": 2.0416666666666665
+          }
+        ]
+      },
+      "mediaProbe": {
+        "workflowCode": "wf-ability-video-photo-animation-wan",
+        "promptId": "e078f546-f7e2-4fe1-870d-6bb717e5656a",
+        "width": 832,
+        "height": 480,
+        "durationSeconds": 2.041667,
+        "fps": 24,
+        "hasAudio": false,
+        "audioRequired": false,
+        "matchesContract": true
+      }
+    },
+    {
+      "workflowCode": "wf-ability-video-photo-animation-kand",
+      "abilityCode": "PHOTO_ANIMATION",
+      "media": "video",
+      "name": "照片动起来",
+      "file": "script/video/workflows/abilities-ui/wf-ability-video-photo-animation-kand.json",
+      "sha256": "aa20b91b5fb8bc54c1a70fe46051d9fb7b367c2e9db1d5824b63270f53feec08",
+      "preparedInputsMatch": true,
+      "remote": "Codex-Abilities/视频/照片动起来_Kandinsky5.json",
+      "httpStatus": 200,
+      "readbackMatches": true,
+      "apiFile": "script/video/workflows/abilities-api/wf-ability-video-photo-animation-kand.json",
+      "execution": {
+        "status": "success",
+        "promptId": "c497345e-e27a-4e93-81fc-e604835b785b",
+        "graphSha256": "d30ccab47bee8cb82c99e30253d9c6b1ac4c6ed1f4b6aa86f17e835415aa48ca",
+        "outputs": [
+          {
+            "filename": "wf-ability-video-photo-animation-kand_00001_.mp4",
+            "subfolder": "Codex_Abilities",
+            "type": "output",
+            "sha256": "96a974b147111d9e05430a3728ce0015ef2ee28f353567eb95739f816a073d24",
+            "bytes": 364111,
+            "width": 768,
+            "height": 512,
+            "frames": 49,
+            "fps": 24,
+            "durationSeconds": 2.0416666666666665
+          }
+        ]
+      },
+      "mediaProbe": {
+        "workflowCode": "wf-ability-video-photo-animation-kand",
+        "promptId": "c497345e-e27a-4e93-81fc-e604835b785b",
+        "width": 768,
+        "height": 512,
+        "durationSeconds": 2.041667,
+        "fps": 24,
+        "hasAudio": false,
+        "audioRequired": false,
+        "matchesContract": true
+      }
+    },
+    {
+      "workflowCode": "wf-ability-video-photo-animation-ltx",
+      "abilityCode": "PHOTO_ANIMATION",
+      "media": "video",
+      "name": "照片动起来",
+      "file": "script/video/workflows/abilities-ui/wf-ability-video-photo-animation-ltx.json",
+      "sha256": "08b1b5b531323ad2690d3031c6314c445ace462504d57110363b21c29a5b6a77",
+      "preparedInputsMatch": true,
+      "remote": "Codex-Abilities/视频/照片动起来_LTX25.json",
+      "httpStatus": 200,
+      "readbackMatches": true,
+      "apiFile": "script/video/workflows/abilities-api/wf-ability-video-photo-animation-ltx.json",
+      "execution": {
+        "status": "success",
+        "promptId": "82e1c1ae-f110-4c42-82cd-54f6b93f94e2",
+        "graphSha256": "f68c60e2ab382f32b19de017d7ed5adb9ef11fadadc16b93f94e0cc04d8cfc98",
+        "outputs": [
+          {
+            "filename": "wf-ability-video-photo-animation-ltx_00001_.mp4",
+            "subfolder": "Codex_Abilities",
+            "type": "output",
+            "sha256": "7fe906de5c15816b6d69a11f89fa28b0e1358ef574751e784d3142bf42f82013",
+            "bytes": 180342,
+            "width": 832,
+            "height": 448,
+            "frames": 49,
+            "fps": 24,
+            "durationSeconds": 2.0416666666666665
+          }
+        ]
+      },
+      "mediaProbe": {
+        "workflowCode": "wf-ability-video-photo-animation-ltx",
+        "promptId": "82e1c1ae-f110-4c42-82cd-54f6b93f94e2",
+        "width": 832,
+        "height": 448,
+        "durationSeconds": 2.041667,
+        "fps": 24,
+        "hasAudio": true,
+        "audioRequired": true,
+        "matchesContract": true,
+        "audioCodec": "aac",
+        "audioPeak": 0.01807377114892006,
+        "audioRms": 0.0004510524591979875
+      }
+    },
+    {
+      "workflowCode": "wf-ability-video-scene-clip-wan",
+      "abilityCode": "SCENE_CLIP",
+      "media": "video",
+      "name": "场景短片",
+      "file": "script/video/workflows/abilities-ui/wf-ability-video-scene-clip-wan.json",
+      "sha256": "8b80159309225718c3585c01c91d676c99ea4371639e91d15be84a8889d4407f",
+      "preparedInputsMatch": true,
+      "remote": "Codex-Abilities/视频/场景短片_Wan22.json",
+      "httpStatus": 200,
+      "readbackMatches": true,
+      "apiFile": "script/video/workflows/abilities-api/wf-ability-video-scene-clip-wan.json",
+      "execution": {
+        "status": "success",
+        "promptId": "aac40137-b923-4335-8d92-f7ac935b8f9e",
+        "graphSha256": "fe525dee0f3427198575ab201a2e6ac5f739e15352a1c5fb4b68937dfbce5b36",
+        "outputs": [
+          {
+            "filename": "wf-ability-video-scene-clip-wan_00001_.mp4",
+            "subfolder": "Codex_Abilities",
+            "type": "output",
+            "sha256": "06ee0f9d7d559fc87dc687be7b2b1b02a5801ebd2c2e4d474349f4f2333453c6",
+            "bytes": 264741,
+            "width": 832,
+            "height": 480,
+            "frames": 49,
+            "fps": 24,
+            "durationSeconds": 2.0416666666666665
+          }
+        ]
+      },
+      "mediaProbe": {
+        "workflowCode": "wf-ability-video-scene-clip-wan",
+        "promptId": "aac40137-b923-4335-8d92-f7ac935b8f9e",
+        "width": 832,
+        "height": 480,
+        "durationSeconds": 2.041667,
+        "fps": 24,
+        "hasAudio": false,
+        "audioRequired": false,
+        "matchesContract": true
+      }
+    },
+    {
+      "workflowCode": "wf-ability-video-scene-clip-hun",
+      "abilityCode": "SCENE_CLIP",
+      "media": "video",
+      "name": "场景短片",
+      "file": "script/video/workflows/abilities-ui/wf-ability-video-scene-clip-hun.json",
+      "sha256": "e0eaf1248a18b4489659dbe1e85497e162bdaadfd48f72fbf816bc30ad8e4f12",
+      "preparedInputsMatch": true,
+      "remote": "Codex-Abilities/视频/场景短片_Hunyuan15.json",
+      "httpStatus": 200,
+      "readbackMatches": true,
+      "apiFile": "script/video/workflows/abilities-api/wf-ability-video-scene-clip-hun.json",
+      "execution": {
+        "status": "success",
+        "promptId": "1d68065e-2cee-437d-8949-750d6f434baf",
+        "graphSha256": "7422f02447490e9c6c4f3750b706819067991a0268524263b631faddb95bc324",
+        "outputs": [
+          {
+            "filename": "wf-ability-video-scene-clip-hun_00001_.mp4",
+            "subfolder": "Codex_Abilities",
+            "type": "output",
+            "sha256": "01b5389be6f2518043edd67789c9ef853628830b1712e9c8ffd6b5aba003129f",
+            "bytes": 1112098,
+            "width": 832,
+            "height": 480,
+            "frames": 49,
+            "fps": 24,
+            "durationSeconds": 2.0416666666666665
+          }
+        ]
+      },
+      "mediaProbe": {
+        "workflowCode": "wf-ability-video-scene-clip-hun",
+        "promptId": "1d68065e-2cee-437d-8949-750d6f434baf",
+        "width": 832,
+        "height": 480,
+        "durationSeconds": 2.041667,
+        "fps": 24,
+        "hasAudio": false,
+        "audioRequired": false,
+        "matchesContract": true
+      }
+    },
+    {
+      "workflowCode": "wf-ability-video-scene-clip-kand",
+      "abilityCode": "SCENE_CLIP",
+      "media": "video",
+      "name": "场景短片",
+      "file": "script/video/workflows/abilities-ui/wf-ability-video-scene-clip-kand.json",
+      "sha256": "77aae8eee9da3b4b555b37ad0e063e954511f98821fd819e6efe2f51a15f982a",
+      "preparedInputsMatch": true,
+      "remote": "Codex-Abilities/视频/场景短片_Kandinsky5.json",
+      "httpStatus": 200,
+      "readbackMatches": true,
+      "apiFile": "script/video/workflows/abilities-api/wf-ability-video-scene-clip-kand.json",
+      "execution": {
+        "status": "success",
+        "promptId": "94e3e33d-b78d-4ea6-9b68-e43b0421b85e",
+        "graphSha256": "7108ed328a8e42a67e27ca7c55700bd5fa3e29e23bcf271aa3d61bb4db135569",
+        "outputs": [
+          {
+            "filename": "wf-ability-video-scene-clip-kand_00001_.mp4",
+            "subfolder": "Codex_Abilities",
+            "type": "output",
+            "sha256": "d55ade8fc6e99d28ff93dc44a68e30fdbb60793cf85f2d941a053e1b0829385b",
+            "bytes": 381723,
+            "width": 832,
+            "height": 480,
+            "frames": 49,
+            "fps": 24,
+            "durationSeconds": 2.0416666666666665
+          }
+        ]
+      },
+      "mediaProbe": {
+        "workflowCode": "wf-ability-video-scene-clip-kand",
+        "promptId": "94e3e33d-b78d-4ea6-9b68-e43b0421b85e",
+        "width": 832,
+        "height": 480,
+        "durationSeconds": 2.041667,
+        "fps": 24,
+        "hasAudio": false,
+        "audioRequired": false,
+        "matchesContract": true
+      }
+    },
+    {
+      "workflowCode": "wf-ability-video-keyframe-transition-wan",
+      "abilityCode": "KEYFRAME_TRANSITION",
+      "media": "video",
+      "name": "首尾画面过渡",
+      "file": "script/video/workflows/abilities-ui/wf-ability-video-keyframe-transition-wan.json",
+      "sha256": "81f985b3a7e7ccc61cfc570a2a8bab0ab2cd266acea297b1afc8563029a048b5",
+      "preparedInputsMatch": true,
+      "remote": "Codex-Abilities/视频/首尾画面过渡_Wan22.json",
+      "httpStatus": 200,
+      "readbackMatches": true,
+      "apiFile": "script/video/workflows/abilities-api/wf-ability-video-keyframe-transition-wan.json",
+      "execution": {
+        "status": "success",
+        "promptId": "90918565-e5c1-44ac-a0a2-63be86454f11",
+        "graphSha256": "8c2de5fba3212233410940595085fd653e853adc293b1a64d4b91965a3a695ee",
+        "outputs": [
+          {
+            "filename": "wf-ability-video-keyframe-transition-wan_00001_.mp4",
+            "subfolder": "Codex_Abilities",
+            "type": "output",
+            "sha256": "c1174b8009030ededc49f5e5343ed2f09ca73da418575add04626dad430e8384",
+            "bytes": 171407,
+            "width": 832,
+            "height": 480,
+            "frames": 49,
+            "fps": 24,
+            "durationSeconds": 2.0416666666666665
+          }
+        ]
+      },
+      "mediaProbe": {
+        "workflowCode": "wf-ability-video-keyframe-transition-wan",
+        "promptId": "90918565-e5c1-44ac-a0a2-63be86454f11",
+        "width": 832,
+        "height": 480,
+        "durationSeconds": 2.041667,
+        "fps": 24,
+        "hasAudio": false,
+        "audioRequired": false,
+        "matchesContract": true
+      }
+    },
+    {
+      "workflowCode": "wf-ability-video-keyframe-transition-ltx",
+      "abilityCode": "KEYFRAME_TRANSITION",
+      "media": "video",
+      "name": "首尾画面过渡",
+      "file": "script/video/workflows/abilities-ui/wf-ability-video-keyframe-transition-ltx.json",
+      "sha256": "c93ff3418d8f096b0f8385e245b35f12986f5704a0918c5ab280be86ab4956f0",
+      "preparedInputsMatch": true,
+      "remote": "Codex-Abilities/视频/首尾画面过渡_LTX25.json",
+      "httpStatus": 200,
+      "readbackMatches": true,
+      "apiFile": "script/video/workflows/abilities-api/wf-ability-video-keyframe-transition-ltx.json",
+      "execution": {
+        "status": "success",
+        "promptId": "80ab4cb5-bae7-4b5f-b0dc-1de968aa95c5",
+        "graphSha256": "5360ddf2de9e2370c6530b780e2f36282f68aca5e16fc2187e6039a9fb3c9775",
+        "outputs": [
+          {
+            "filename": "wf-ability-video-keyframe-transition-ltx_00001_.mp4",
+            "subfolder": "Codex_Abilities",
+            "type": "output",
+            "sha256": "61a7ff62b86628f1797ebc809c4a6f28ec241bddae778cd206786d4895508844",
+            "bytes": 133420,
+            "width": 832,
+            "height": 480,
+            "frames": 49,
+            "fps": 24,
+            "durationSeconds": 2.0416666666666665
+          }
+        ]
+      },
+      "mediaProbe": {
+        "workflowCode": "wf-ability-video-keyframe-transition-ltx",
+        "promptId": "80ab4cb5-bae7-4b5f-b0dc-1de968aa95c5",
+        "width": 832,
+        "height": 480,
+        "durationSeconds": 2.041667,
+        "fps": 24,
+        "hasAudio": true,
+        "audioRequired": true,
+        "matchesContract": true,
+        "audioCodec": "aac",
+        "audioPeak": 0.021619904786348343,
+        "audioRms": 0.001703547331342487
+      }
+    },
+    {
+      "workflowCode": "wf-ability-video-keyframe-transition-h3",
+      "abilityCode": "KEYFRAME_TRANSITION",
+      "media": "video",
+      "name": "首尾画面过渡",
+      "file": "script/video/workflows/abilities-ui/wf-ability-video-keyframe-transition-h3.json",
+      "sha256": "5efafe7bf4089fe50149f6de67f1e6768d8ae541b7077b13d1d7c891527f9c43",
+      "preparedInputsMatch": true,
+      "remote": "Codex-Abilities/视频/首尾画面过渡_MiniMaxH3.json",
+      "httpStatus": 200,
+      "readbackMatches": true,
+      "apiFile": "script/video/workflows/abilities-api/wf-ability-video-keyframe-transition-h3.json",
+      "execution": {
+        "status": "success",
+        "promptId": "1a9e0dea-4ed4-41da-842d-68bcd5e06c4c",
+        "graphSha256": "6890f8c78523bb26bce683520c32312cd31d298ca2455c9d00153951a2aae869",
+        "outputs": [
+          {
+            "filename": "wf-ability-video-keyframe-transition-h3_00001_.mp4",
+            "subfolder": "Codex_Abilities",
+            "type": "output",
+            "sha256": "cb8527c64b7d0971ddbd4cd79428fb2a7ac0a3906d861bb3aca0037c664f9d64",
+            "bytes": 188205,
+            "width": 768,
+            "height": 448,
+            "frames": 56,
+            "fps": 24,
+            "durationSeconds": 2.3333333333333335
+          }
+        ]
+      },
+      "mediaProbe": {
+        "workflowCode": "wf-ability-video-keyframe-transition-h3",
+        "promptId": "1a9e0dea-4ed4-41da-842d-68bcd5e06c4c",
+        "width": 768,
+        "height": 448,
+        "durationSeconds": 2.333333,
+        "fps": 24,
+        "hasAudio": true,
+        "audioRequired": true,
+        "matchesContract": true,
+        "audioCodec": "aac",
+        "audioPeak": 0.7565975189208984,
+        "audioRms": 0.2816809798788004
+      }
+    },
+    {
+      "workflowCode": "wf-ability-video-reference-story-h3",
+      "abilityCode": "REFERENCE_STORY",
+      "media": "video",
+      "name": "双图参考短片",
+      "file": "script/video/workflows/abilities-ui/wf-ability-video-reference-story-h3.json",
+      "sha256": "c4e05f0729d35f65436d0afd0b508499d78f1cc6b1427dedb0ef9021b3e76015",
+      "preparedInputsMatch": true,
+      "remote": "Codex-Abilities/视频/双图参考短片_MiniMaxH3.json",
+      "httpStatus": 200,
+      "readbackMatches": true,
+      "apiFile": "script/video/workflows/abilities-api/wf-ability-video-reference-story-h3.json",
+      "execution": {
+        "status": "success",
+        "promptId": "efcbda12-2e41-4ba1-b452-e6884d0407ab",
+        "graphSha256": "d6dc4d557ee47b47cb454bf1f5beeb95d5343f872d0cdc2771097a4be4b1d926",
+        "outputs": [
+          {
+            "filename": "wf-ability-video-reference-story-h3_00001_.mp4",
+            "subfolder": "Codex_Abilities",
+            "type": "output",
+            "sha256": "cdc69ec46595dcfc1b6c4573010887a2125c06446c67cd2f3219fa787f0eaa79",
+            "bytes": 293673,
+            "width": 864,
+            "height": 480,
+            "frames": 56,
+            "fps": 24,
+            "durationSeconds": 2.3333333333333335
+          }
+        ]
+      },
+      "mediaProbe": {
+        "workflowCode": "wf-ability-video-reference-story-h3",
+        "promptId": "efcbda12-2e41-4ba1-b452-e6884d0407ab",
+        "width": 864,
+        "height": 480,
+        "durationSeconds": 2.333333,
+        "fps": 24,
+        "hasAudio": true,
+        "audioRequired": true,
+        "matchesContract": true,
+        "audioCodec": "aac",
+        "audioPeak": 0.6970804929733276,
+        "audioRms": 0.1419019549586119
+      }
+    }
+  ]
+}

@@ -1,6 +1,10 @@
 import type { PageResult } from '@/api/types';
 import type { AxiosPromise } from '@/utils/api-types';
 import request from '@/utils/request';
+import type { CreativeAbility } from '@/components/CreativeAbility/types';
+import type { abilityRequest } from '@/components/CreativeAbility/types';
+export const listImageAbilities = (): AxiosPromise<CreativeAbility[]> => request({ url: '/image/abilities', method: 'get' });
+export const createImageAbilityTask = (data: ReturnType<typeof abilityRequest>): AxiosPromise<{ taskId: number | string; taskNo: string; status: string }> => request({ url: '/image/tasks', method: 'post', data });
 import type {
   ImageAssetVO,
   ImageTaskCreateForm,

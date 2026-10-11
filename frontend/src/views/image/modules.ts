@@ -46,12 +46,12 @@ export interface ImageCapabilityModule {
   tips: string[];
 }
 
-/** 五个能力：与契约 capabilities 一一对应。 */
+/** 五个原有能力 + 独立结构控制入口。 */
 export const IMAGE_MODULES: ImageCapabilityModule[] = [
   {
     code: 'T2I',
     name: '文生图',
-    desc: '只用提示词生成图片，可选 1MP / 2K 比例档位',
+    desc: '根据文字描述生成图片，尺寸随工作流选择',
     workflowCode: 'wf-t2i-qwen21',
     fields: ['prompt', 'negative_prompt', 'size'],
     promptLabel: '画面描述',
@@ -77,7 +77,7 @@ export const IMAGE_MODULES: ImageCapabilityModule[] = [
   {
     code: 'EDIT',
     name: '指令改图',
-    desc: '用指令修改原图，可再带 2 张参考图（换装、换背景等）',
+    desc: '用指令修改原图，参考图数量随工作流选择',
     workflowCode: 'wf-edit-qwen21',
     fields: ['image1', 'image2', 'image3', 'prompt', 'negative_prompt'],
     imageFields: ['image1', 'image2', 'image3'],
@@ -86,7 +86,7 @@ export const IMAGE_MODULES: ImageCapabilityModule[] = [
     tips: [
       'prompt 里用 <image1>、<image2> 引用参考图，不写占位符参考图基本不生效',
       'image1 是编辑目标，决定输出画布尺寸',
-      '换背景/换装等「改某一部分」的诉求走这里；模型会重画细节，产品需要像素级不变时请用「白底图」'
+      '换背景/换装等「改某一部分」的诉求走这里；模型会重画细节，纯白底可用「白底图」，仍需检查抠图与原图的一致性'
     ]
   },
   {
@@ -101,15 +101,22 @@ export const IMAGE_MODULES: ImageCapabilityModule[] = [
   {
     code: 'WHITEBG',
     name: '白底图',
-    desc: '抠图后合成纯白底（255,255,255），产品像素级不变',
+    desc: '抠图结果合成纯白底（255,255,255）',
     workflowCode: 'wf-whitebg-qwen21',
     fields: ['img'],
     imageField: 'img',
     tips: [
       '提示词由服务端固定，无需填写',
-      '背景为程序合成的纯白（不是模型画的），因此产品不会被重绘：贴花、文字、质感全部原样保留',
+      '背景由程序合成纯白，合成步骤保留抠图结果的不透明前景；模型抠图可能改变细节，请对比原图检查',
       '适合电商主图/详情页白底图；需要保留透明通道请用「抠图去背景」'
     ]
+  },
+  {
+    code: 'CONTROL', name: '结构控制', desc: '按参考图的结构生成画面',
+    workflowCode: 'wf-local-image-z-image-turbo-fun-union-controlnet',
+    fields: ['img', 'prompt'], imageField: 'img', promptLabel: '画面描述',
+    placeholder: '描述你希望保留结构后生成的画面',
+    tips: ['上传用于控制画面结构的参考图', 'Z-Image-Turbo Union ControlNet 已在本地 ComfyUI 验证']
   }
 ];
 

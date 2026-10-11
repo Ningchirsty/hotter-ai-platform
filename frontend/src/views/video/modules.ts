@@ -8,11 +8,13 @@
  *  - 提交任务按此结构组装 payload：{ capabilityCode, workflowCode, modelCode, fields }，
  *    后端收到后深拷贝对应工作流模板，仅覆写 mapping_json 白名单内的节点输入键。
  *
- * 状态说明：三个 H3 API Format 模板已导入，但任务服务、模型依赖与运行测试未完成，
- * 均保持 DRAFT；其他模型仍是未交付的占位契约。
+ * 既有 H3 导演工作流由服务端发布状态控制。新增 20 个原生工作流的安全展示目录
+ * 见 local-workflows.json；其 ComfyUI 验证成功不代替平台注册和发布验收。
  */
 
 export type FieldKey =
+  | 'reference1'
+  | 'reference2'
   | 'first'
   | 'last'
   | 'frames'
@@ -75,7 +77,7 @@ export const VIDEO_MODULES: StudioModule[] = [
     name: '图生视频',
     desc: '单张图片 + 描述生成视频',
     fields: ['img', 'desc', 'tier', 'dur'],
-    models: ['H3', 'H3P', 'WAN', 'HUN', 'LTX', 'COG'],
+    models: ['H3', 'WAN', 'HUN', 'LTX', 'KAND'],
     defaultModel: 'H3',
     promptLabel: '视频描述',
     placeholder: '例如：从产品特写缓缓拉远，镜头聚焦包装纹理，光影自然流动。'
@@ -85,7 +87,7 @@ export const VIDEO_MODULES: StudioModule[] = [
     name: '文生视频',
     desc: '纯文字描述生成视频',
     fields: ['desc', 'tier', 'dur'],
-    models: ['H3', 'H3P', 'WAN', 'HUN', 'LTX', 'COG'],
+    models: ['H3', 'WAN', 'HUN', 'LTX', 'KAND'],
     defaultModel: 'H3',
     promptLabel: '视频描述',
     placeholder: '例如：城市夜景延时，霓虹灯光汇聚成品牌 LOGO，大气收尾。'
@@ -95,11 +97,14 @@ export const VIDEO_MODULES: StudioModule[] = [
     name: '首尾帧生视频',
     desc: '首帧、尾帧 + 描述生成视频',
     fields: ['first', 'last', 'desc', 'tier', 'dur'],
-    models: ['H3', 'H3P', 'WAN', 'HUN', 'LTX', 'COG'],
+    models: ['H3', 'WAN', 'HUN', 'LTX', 'KAND'],
     defaultModel: 'H3',
     promptLabel: '视频描述',
     placeholder: '例如：从产品特写切换至完整场景，镜头运动平滑自然。'
-  }
+  },
+  { code: 'R2V', name: '参考图生视频', desc: '两张参考图 + 描述生成音画视频',
+    fields: ['reference1', 'reference2', 'desc', 'tier', 'dur'], models: ['H3'], defaultModel: 'H3',
+    promptLabel: '视频描述', placeholder: '使用 <Picture 1> 和 <Picture 2> 描述参考图与镜头内容' }
 ];
 
 export const VIDEO_MODELS: StudioModel[] = [
@@ -112,9 +117,10 @@ export const VIDEO_MODELS: StudioModel[] = [
     recommended: true
   },
   { code: 'H3P', name: 'H3 Pro', desc: '闭源 · 高质感', version: 'v1.0.1', license: 'closed' },
-  { code: 'WAN', name: 'WAN 2.1', desc: '开源 · 阿里通义', version: 'v0.2.0', license: 'open' },
-  { code: 'HUN', name: 'HunyuanVideo', desc: '开源 · 腾讯混元', version: 'v0.1.0', license: 'open' },
-  { code: 'LTX', name: 'LTX-Video', desc: '开源 · 实时快出', version: 'v0.1.0', license: 'open' },
+  { code: 'WAN', name: 'Wan 2.2', desc: '开源 · 阿里通义', version: 'v0.2.0', license: 'open' },
+  { code: 'HUN', name: 'HunyuanVideo 1.5', desc: '开源 · 腾讯混元', version: 'v0.1.0', license: 'open' },
+  { code: 'LTX', name: 'LTX-2.5', desc: '开源 · 实时快出', version: 'v0.1.0', license: 'open' },
+  { code: 'KAND', name: 'Kandinsky 5 Video Lite', desc: '本地轻量视频生成', version: 'Lite', license: 'open' },
   { code: 'COG', name: 'CogVideoX', desc: '开源 · 智谱', version: 'v0.1.0', license: 'open' }
 ];
 

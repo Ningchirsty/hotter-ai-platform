@@ -1,5 +1,11 @@
 /** Local, read-only preview fixtures. No HTTP client or production endpoint is imported. */
 import workflows from './workflow-fixtures.json';
+import imageAbilities from '../src/views/image/abilities.json';
+import videoAbilities from '../src/views/video/abilities.json';
+export const listImageAbilities = () => ok(imageAbilities);
+export const listVideoAbilities = () => ok(videoAbilities);
+export const createImageAbilityTask = (...args: unknown[]) => blocked(...args);
+export const createVideoAbilityTask = (...args: unknown[]) => blocked(...args);
 const ok = async <T>(data: T) => ({ data });
 const blocked = async (..._args: unknown[]): Promise<never> => {
   throw new Error('只读界面预览：不上传、不生成、不修改服务器数据。');
@@ -79,14 +85,20 @@ export const fetchVideoAssetBlobUrl = noMedia;
 export const fetchVideoAssetThumbnailBlobUrl = noMedia;
 export const fetchImageAssetBlobUrl = noMedia;
 export const fetchImageAssetThumbnailBlobUrl = noMedia;
-export const uploadVideoAsset = blocked;
+// Preview uploads receive an ephemeral ID; files remain in the browser's blob URLs.
+let previewAssetSequence = 0;
+const previewUpload = async (_file: File, progress?: (percent: number) => void) => {
+  progress?.(100);
+  return ok({ assetId: 'preview-upload-' + (++previewAssetSequence) });
+};
+export const uploadVideoAsset = previewUpload;
 export const deleteVideoAsset = blocked;
 export const createVideoTask = blocked;
 export const executeVideoTask = blocked;
 export const retryVideoTask = blocked;
 export const retryImageTask = blocked;
 export const cancelVideoTask = blocked;
-export const uploadImageAsset = blocked;
+export const uploadImageAsset = previewUpload;
 export const deleteImageAsset = blocked;
 export const createImageTask = blocked;
 export const executeImageTask = blocked;
@@ -98,3 +110,12 @@ export const listCloudImageModels = () => ok({ configured: false, models: [], ca
 });
 export const checkCloudImageModels = blocked;
 export const createCloudImageTask = blocked;
+
+/** Read-only requests from the reused inspiration/cloud components. */
+export default async function request(config: { url: string; method?: string; [key: string]: unknown }) {
+  if ((config.method ?? 'get').toLowerCase() !== 'get') return blocked();
+  if (config.url === '/video/cloud/models') return ok({ configured: false, models: [], profiles: [], verified: false, referenceDeliveryConfigured: false });
+  if (config.url === '/image/inspirations') return ok({ rows: [], total: 0 });
+  if (config.url === '/image/templates') return ok({ items: [], total: 0, categories: [], feed: { version: 1, online: false, checkedAt: '', syncCode: 'LOCAL_PREVIEW' } });
+  throw new Error('本地预览未提供此数据接口');
+}

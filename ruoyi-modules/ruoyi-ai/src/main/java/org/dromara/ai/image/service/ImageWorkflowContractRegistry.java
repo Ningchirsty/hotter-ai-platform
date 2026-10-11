@@ -37,6 +37,7 @@ public class ImageWorkflowContractRegistry {
     private final Path root;
     private final ObjectMapper mapper;
     private final ImageTemplatePreparer preparer;
+    private final org.dromara.ai.creative.AbilityContract abilities;
 
     /** 已注册的绑定（含未加载模板的 DRAFT 占位）。 */
     private final Map<String, ImageWorkflowVersion> byCode = new LinkedHashMap<>();
@@ -51,6 +52,7 @@ public class ImageWorkflowContractRegistry {
         this.root = root;
         this.mapper = mapper;
         this.preparer = new ImageTemplatePreparer(mapper);
+        this.abilities = new org.dromara.ai.creative.AbilityContract(root, "image", mapper);
     }
 
     /**
@@ -82,6 +84,19 @@ public class ImageWorkflowContractRegistry {
                 ImageWorkflowVersion version = toVersion(workflow, capabilityCode, List.copyOf(capabilityFields));
                 register(version);
             }
+        }
+        Path nativeFile = root.resolve("image/workflows/native-workflow-contracts.json");
+        if (Files.isRegularFile(nativeFile)) {
+            try {
+                JsonNode nativeContract = mapper.readTree(Files.readString(nativeFile, StandardCharsets.UTF_8));
+                for (JsonNode capability : nativeContract.path("capabilities")) {
+                    List<String> fields = new ArrayList<>();
+                    for (JsonNode field : capability.path("fields")) fields.add(field.path("field").asText());
+                    for (JsonNode workflow : capability.path("workflows")) {
+                        register(toVersion(workflow, capability.path("capabilityCode").asText(), List.copyOf(fields)));
+                    }
+                }
+            } catch (IOException e) { throw new IllegalStateException("原生图像契约加载失败", e); }
         }
         log.info("图像工作流契约加载完成：已注册 {} 条，模板可用 {} 条", byCode.size(), templates.size());
         if (templates.isEmpty()) {
@@ -205,6 +220,13 @@ public class ImageWorkflowContractRegistry {
      */
     public ImageWorkflowVersion peek(String workflowCode) {
         return byCode.get(workflowCode);
+    }
+
+    public JsonNode abilities() { return abilities.definitions(); }
+
+    public Map<String, Object> normalizeAbility(Map<String, Object> request) {
+        try { return abilities.normalize(request); }
+        catch (IllegalArgumentException e) { throw ImageTaskException.invalidContract(e.getMessage()); }
     }
 
     public String templateOf(String workflowCode) {

@@ -1,0 +1,700 @@
+[
+  {
+    "code": "POSTER",
+    "media": "image",
+    "name": "中文海报",
+    "desc": "标题、文案与画面一起设计",
+    "capabilityCode": "T2I",
+    "inputs": [
+      {
+        "key": "title",
+        "label": "海报标题",
+        "required": true,
+        "maxLength": 250,
+        "placeholder": "春日新品"
+      },
+      {
+        "key": "copy",
+        "label": "海报文案",
+        "required": false,
+        "maxLength": 250,
+        "placeholder": "把自然带进生活"
+      },
+      {
+        "key": "visual",
+        "label": "画面主体",
+        "required": true,
+        "maxLength": 250,
+        "placeholder": "青色陶瓷茶壶与春日花枝"
+      },
+      {
+        "key": "style",
+        "label": "设计风格",
+        "required": true,
+        "maxLength": 250,
+        "placeholder": "",
+        "options": [
+          "清新简约",
+          "复古印刷",
+          "商业摄影",
+          "插画风格"
+        ]
+      },
+      {
+        "key": "layout",
+        "label": "版式",
+        "required": true,
+        "maxLength": 250,
+        "placeholder": "",
+        "options": [
+          "标题在上，主体居中",
+          "主体在左，文字在右",
+          "主体居中，文案在下"
+        ]
+      }
+    ],
+    "assets": [],
+    "promptTemplate": "设计一张平面中文海报，直接输出设计稿，不展示墙面、画框或纸张实物。只允许出现两段文字：主标题「${title}」；正文「${copy}」（正文为空时省略）。严格逐字排版，除此之外不要出现任何文字：不要英文、拼音、品牌、数字、说明、标语或乱码。画面主体：${visual}。设计风格：${style}。版式：${layout}。文字清晰、层次分明，画面主体不遮挡文字。",
+    "note": "模型直接生成文字与画面，文字和布局需要检查；当前不提供固定字体或文字准确率保证。",
+    "acceptance": [
+      "标题与文案逐字核对",
+      "构图与所选版式一致",
+      "没有多余文字或水印"
+    ],
+    "status": "DRAFT",
+    "workflows": [
+      {
+        "workflowCode": "wf-ability-image-poster-qwen2512",
+        "media": "image",
+        "capabilityCode": "T2I",
+        "modelCode": "QWEN2512",
+        "modelName": "Qwen-Image-2512",
+        "name": "中文海报 · 专用流程",
+        "version": "v1.0.0-ability",
+        "fields": [
+          "prompt",
+          "size"
+        ],
+        "verifiedAt": null,
+        "hasAudio": false,
+        "sizes": [
+          {
+            "label": "验证尺寸 · 1328×1328",
+            "width": 1328,
+            "height": 1328
+          }
+        ],
+        "defaultSize": "验证尺寸 · 1328×1328",
+        "strengths": [],
+        "maxPixels": 1763584,
+        "requireAlpha": false,
+        "apiChecksum": "eda12335c220428e45c0bc77ae06f1e68053744bc15552545d82e19089cda523",
+        "sourceWorkflowCode": "wf-local-image-qwen-image-2512",
+        "abilityCode": "POSTER"
+      },
+      {
+        "workflowCode": "wf-ability-image-poster-qwen21",
+        "media": "image",
+        "capabilityCode": "T2I",
+        "modelCode": "QWEN21",
+        "modelName": "Qwen-Image 2.1",
+        "name": "中文海报 · 专用流程",
+        "version": "v1.0.0-ability",
+        "fields": [
+          "prompt",
+          "size"
+        ],
+        "verifiedAt": null,
+        "hasAudio": false,
+        "sizes": [
+          {
+            "label": "验证尺寸 · 1024×1024",
+            "width": 1024,
+            "height": 1024
+          }
+        ],
+        "defaultSize": "验证尺寸 · 1024×1024",
+        "strengths": [],
+        "maxPixels": 1048576,
+        "requireAlpha": false,
+        "apiChecksum": "21e677fe6c393398b433713352f0868180b4c28f5f6a8fb262e5619d38217e87",
+        "sourceWorkflowCode": "wf-local-ready-qwen-image-2-1-t2i",
+        "abilityCode": "POSTER"
+      },
+      {
+        "workflowCode": "wf-ability-image-poster-ideogram",
+        "media": "image",
+        "capabilityCode": "T2I",
+        "modelCode": "IDEOGRAM",
+        "modelName": "Ideogram 4",
+        "name": "中文海报 · 专用流程",
+        "version": "v1.0.0-ability",
+        "fields": [
+          "prompt",
+          "size"
+        ],
+        "verifiedAt": null,
+        "hasAudio": false,
+        "sizes": [
+          {
+            "label": "验证尺寸 · 768×1376",
+            "width": 768,
+            "height": 1376
+          }
+        ],
+        "defaultSize": "验证尺寸 · 768×1376",
+        "strengths": [],
+        "maxPixels": 1056768,
+        "requireAlpha": false,
+        "apiChecksum": "88849d1eeea1203eb72dd446cda41483225ecc9900f4e1f6383e74574adc1d2a",
+        "sourceWorkflowCode": "wf-local-image-ideogram4-t2i",
+        "abilityCode": "POSTER"
+      }
+    ],
+    "recommendedWorkflowCode": "wf-ability-image-poster-qwen2512"
+  },
+  {
+    "code": "QUICK_IMAGE",
+    "media": "image",
+    "name": "快速配图",
+    "desc": "为文章和日常内容生成配图",
+    "capabilityCode": "T2I",
+    "inputs": [
+      {
+        "key": "subject",
+        "label": "画面内容",
+        "required": true,
+        "maxLength": 250,
+        "placeholder": "木桌上的咖啡杯与一本打开的书"
+      },
+      {
+        "key": "usage",
+        "label": "使用场景",
+        "required": true,
+        "maxLength": 250,
+        "placeholder": "",
+        "options": [
+          "文章配图",
+          "社交媒体",
+          "活动配图"
+        ]
+      },
+      {
+        "key": "style",
+        "label": "画面风格",
+        "required": true,
+        "maxLength": 250,
+        "placeholder": "",
+        "options": [
+          "商业摄影",
+          "清新简约",
+          "电影质感",
+          "插画风格"
+        ]
+      }
+    ],
+    "assets": [],
+    "promptTemplate": "为${usage}制作配图。画面内容：${subject}。风格：${style}。构图清晰，主体突出，不生成文字、水印或额外标志。",
+    "note": "适合快速探索画面；输出尺寸以所选工作流为准。",
+    "acceptance": [
+      "主题符合输入",
+      "画面清晰、没有水印"
+    ],
+    "status": "DRAFT",
+    "workflows": [
+      {
+        "workflowCode": "wf-ability-image-quick-image-zimage",
+        "media": "image",
+        "capabilityCode": "T2I",
+        "modelCode": "ZIMAGE",
+        "modelName": "Z-Image-Turbo",
+        "name": "快速配图 · 专用流程",
+        "version": "v1.0.0-ability",
+        "fields": [
+          "prompt",
+          "size"
+        ],
+        "verifiedAt": null,
+        "hasAudio": false,
+        "sizes": [
+          {
+            "label": "验证尺寸 · 1024×1024",
+            "width": 1024,
+            "height": 1024
+          }
+        ],
+        "defaultSize": "验证尺寸 · 1024×1024",
+        "strengths": [],
+        "maxPixels": 1048576,
+        "requireAlpha": false,
+        "apiChecksum": "834af4ca6235cb601b3aed4e1814a3f9a07681917033c42cf40e3c3642a77e70",
+        "sourceWorkflowCode": "wf-local-image-z-image-turbo",
+        "abilityCode": "QUICK_IMAGE"
+      },
+      {
+        "workflowCode": "wf-ability-image-quick-image-flux4b",
+        "media": "image",
+        "capabilityCode": "T2I",
+        "modelCode": "FLUX4B",
+        "modelName": "FLUX.2 Klein 4B",
+        "name": "快速配图 · 专用流程",
+        "version": "v1.0.0-ability",
+        "fields": [
+          "prompt",
+          "size"
+        ],
+        "verifiedAt": null,
+        "hasAudio": false,
+        "sizes": [
+          {
+            "label": "验证尺寸 · 1024×1024",
+            "width": 1024,
+            "height": 1024
+          }
+        ],
+        "defaultSize": "验证尺寸 · 1024×1024",
+        "strengths": [],
+        "maxPixels": 1048576,
+        "requireAlpha": false,
+        "apiChecksum": "ed059207cce4282c973c459f5a9af98f19fb8ba7c0fb2c06ccffceb4e6eaf787",
+        "sourceWorkflowCode": "wf-local-image-flux2-klein-4b-fast-t2i",
+        "abilityCode": "QUICK_IMAGE"
+      }
+    ],
+    "recommendedWorkflowCode": "wf-ability-image-quick-image-zimage"
+  },
+  {
+    "code": "PRODUCT_SHOT",
+    "media": "image",
+    "name": "商品场景图",
+    "desc": "根据商品描述设计摄影场景",
+    "capabilityCode": "T2I",
+    "inputs": [
+      {
+        "key": "product",
+        "label": "商品描述",
+        "required": true,
+        "maxLength": 250,
+        "placeholder": "青色陶瓷茶壶，竹编提手"
+      },
+      {
+        "key": "scene",
+        "label": "拍摄场景",
+        "required": true,
+        "maxLength": 250,
+        "placeholder": "温暖的木桌，窗边自然光"
+      },
+      {
+        "key": "lighting",
+        "label": "光线",
+        "required": true,
+        "maxLength": 250,
+        "placeholder": "",
+        "options": [
+          "自然窗光",
+          "柔和影棚光",
+          "侧面轮廓光"
+        ]
+      }
+    ],
+    "assets": [],
+    "promptTemplate": "Commercial product photography. Product: ${product}. Scene: ${scene}. Lighting: ${lighting}. Clear material detail, balanced composition, no text, logos or watermark.",
+    "note": "这是描述生成商品图；需要保留已有商品外观时请使用商品换背景。",
+    "acceptance": [
+      "商品描述与画面相符",
+      "光线与场景一致"
+    ],
+    "status": "DRAFT",
+    "workflows": [
+      {
+        "workflowCode": "wf-ability-image-product-shot-krea",
+        "media": "image",
+        "capabilityCode": "T2I",
+        "modelCode": "KREA",
+        "modelName": "Krea 2 Turbo",
+        "name": "商品场景图 · 专用流程",
+        "version": "v1.0.0-ability",
+        "fields": [
+          "prompt",
+          "size"
+        ],
+        "verifiedAt": null,
+        "hasAudio": false,
+        "sizes": [
+          {
+            "label": "验证尺寸 · 1024×1024",
+            "width": 1024,
+            "height": 1024
+          }
+        ],
+        "defaultSize": "验证尺寸 · 1024×1024",
+        "strengths": [],
+        "maxPixels": 1048576,
+        "requireAlpha": false,
+        "apiChecksum": "d893f351cf615faa2451cabcced7cea98fc24f76345ebe61c14672da0bf8aad2",
+        "sourceWorkflowCode": "wf-local-image-krea2-turbo-t2i",
+        "abilityCode": "PRODUCT_SHOT"
+      },
+      {
+        "workflowCode": "wf-ability-image-product-shot-qwen2512",
+        "media": "image",
+        "capabilityCode": "T2I",
+        "modelCode": "QWEN2512",
+        "modelName": "Qwen-Image-2512",
+        "name": "商品场景图 · 专用流程",
+        "version": "v1.0.0-ability",
+        "fields": [
+          "prompt",
+          "size"
+        ],
+        "verifiedAt": null,
+        "hasAudio": false,
+        "sizes": [
+          {
+            "label": "验证尺寸 · 1328×1328",
+            "width": 1328,
+            "height": 1328
+          }
+        ],
+        "defaultSize": "验证尺寸 · 1328×1328",
+        "strengths": [],
+        "maxPixels": 1763584,
+        "requireAlpha": false,
+        "apiChecksum": "4d626e2c16229be2d2429862156dc680ee42618bc3b40d5d906015815563bc8d",
+        "sourceWorkflowCode": "wf-local-image-qwen-image-2512",
+        "abilityCode": "PRODUCT_SHOT"
+      }
+    ],
+    "recommendedWorkflowCode": "wf-ability-image-product-shot-krea"
+  },
+  {
+    "code": "BACKGROUND_REPLACE",
+    "media": "image",
+    "name": "商品换背景",
+    "desc": "上传商品图片，更换拍摄环境",
+    "capabilityCode": "EDIT",
+    "inputs": [
+      {
+        "key": "background",
+        "label": "新背景",
+        "required": true,
+        "maxLength": 250,
+        "placeholder": "浅米色影棚背景，柔和自然阴影"
+      },
+      {
+        "key": "lighting",
+        "label": "光线",
+        "required": true,
+        "maxLength": 250,
+        "placeholder": "",
+        "options": [
+          "自然窗光",
+          "柔和影棚光",
+          "侧面轮廓光"
+        ]
+      }
+    ],
+    "assets": [
+      {
+        "key": "image1",
+        "label": "商品图片",
+        "required": true
+      }
+    ],
+    "promptTemplate": "只更换输入商品图片 <image1> 的背景。新背景：${background}。光线：${lighting}。尽量保持商品形状、颜色、材质及包装文字，合理匹配阴影，不添加新商品或水印。",
+    "note": "指令编辑可能重画商品细节；只需纯白背景时可选择白底商品图，抠图结果仍需对比原图。",
+    "acceptance": [
+      "商品形状与包装文字逐项对比",
+      "背景符合要求",
+      "边缘和阴影自然"
+    ],
+    "status": "DRAFT",
+    "workflows": [
+      {
+        "workflowCode": "wf-ability-image-background-replace-flux4b",
+        "media": "image",
+        "capabilityCode": "EDIT",
+        "modelCode": "FLUX4B",
+        "modelName": "FLUX.2 Klein 4B",
+        "name": "商品换背景 · 专用流程",
+        "version": "v1.0.0-ability",
+        "fields": [
+          "image1",
+          "prompt"
+        ],
+        "verifiedAt": null,
+        "hasAudio": false,
+        "sizes": [
+          {
+            "label": "验证尺寸 · 1024×1024",
+            "width": 1024,
+            "height": 1024
+          }
+        ],
+        "defaultSize": "验证尺寸 · 1024×1024",
+        "strengths": [],
+        "maxPixels": 1048576,
+        "requireAlpha": false,
+        "apiChecksum": "06d9843b7337a95c51ab51fb9f6aae299ebbc442cbe9d894bc70e4bfa644a0ce",
+        "sourceWorkflowCode": "wf-local-image-flux2-klein-image-edit-4b-distilled",
+        "abilityCode": "BACKGROUND_REPLACE"
+      },
+      {
+        "workflowCode": "wf-ability-image-background-replace-qwen21",
+        "media": "image",
+        "capabilityCode": "EDIT",
+        "modelCode": "QWEN21",
+        "modelName": "Qwen-Image 2.1",
+        "name": "商品换背景 · 专用流程",
+        "version": "v1.0.0-ability",
+        "apiChecksum": "bbee4eaf039c2474126ffccb635f62f59550d1bc2ff9e60bea07c11c0ddcac27",
+        "fields": [
+          "image1",
+          "image2",
+          "image3",
+          "prompt",
+          "negative_prompt"
+        ],
+        "sizes": [],
+        "defaultSize": null,
+        "strengths": [],
+        "sourceWorkflowCode": "wf-edit-qwen21",
+        "abilityCode": "BACKGROUND_REPLACE"
+      }
+    ],
+    "recommendedWorkflowCode": "wf-ability-image-background-replace-flux4b"
+  },
+  {
+    "code": "STYLE_REDRAW",
+    "media": "image",
+    "name": "图片风格转换",
+    "desc": "将原图转换为不同画面风格",
+    "capabilityCode": "I2I",
+    "inputs": [
+      {
+        "key": "style",
+        "label": "目标风格",
+        "required": true,
+        "maxLength": 250,
+        "placeholder": "",
+        "options": [
+          "水彩插画",
+          "油画风格",
+          "电影质感",
+          "铅笔素描"
+        ]
+      },
+      {
+        "key": "detail",
+        "label": "补充要求",
+        "required": false,
+        "maxLength": 250,
+        "placeholder": "保留原构图和主体位置"
+      }
+    ],
+    "assets": [
+      {
+        "key": "img",
+        "label": "原始图片",
+        "required": true
+      }
+    ],
+    "promptTemplate": "将输入图片转换成${style}。${detail}。保留主要构图与主体关系，不添加文字或水印。",
+    "note": "这是整体重绘，变化程度由重绘幅度控制。",
+    "acceptance": [
+      "目标风格明显",
+      "主体与构图仍可辨认"
+    ],
+    "status": "DRAFT",
+    "workflows": [
+      {
+        "workflowCode": "wf-ability-image-style-redraw-qwen21",
+        "media": "image",
+        "capabilityCode": "I2I",
+        "modelCode": "QWEN21",
+        "modelName": "Qwen-Image 2.1",
+        "name": "图片风格转换 · 专用流程",
+        "version": "v1.0.0-ability",
+        "apiChecksum": "ed6df7b17ea5a023d9f91b55cb286b52355eb63c3d6cd10e445a486cf2ccfbaa",
+        "fields": [
+          "img",
+          "prompt",
+          "negative_prompt",
+          "strength"
+        ],
+        "sizes": [],
+        "defaultSize": null,
+        "strengths": [
+          "轻微变化 · 0.4",
+          "标准重绘 · 0.75",
+          "强烈重绘 · 0.9"
+        ],
+        "sourceWorkflowCode": "wf-i2i-qwen21",
+        "abilityCode": "STYLE_REDRAW"
+      }
+    ],
+    "recommendedWorkflowCode": "wf-ability-image-style-redraw-qwen21"
+  },
+  {
+    "code": "CUTOUT",
+    "media": "image",
+    "name": "透明抠图",
+    "desc": "去除背景，输出透明 PNG",
+    "capabilityCode": "BGREMOVE",
+    "inputs": [],
+    "assets": [
+      {
+        "key": "img",
+        "label": "待抠图图片",
+        "required": true
+      }
+    ],
+    "promptTemplate": "",
+    "note": "使用固定抠图流程，重点检查主体边缘。",
+    "acceptance": [
+      "PNG 含透明通道",
+      "主体边缘完整"
+    ],
+    "status": "DRAFT",
+    "workflows": [
+      {
+        "workflowCode": "wf-ability-image-cutout-qwen21",
+        "media": "image",
+        "capabilityCode": "BGREMOVE",
+        "modelCode": "QWEN21",
+        "modelName": "Qwen-Image 2.1",
+        "name": "透明抠图 · 专用流程",
+        "version": "v1.0.0-ability",
+        "apiChecksum": "1aac8181da3300a2677937bb490a1bf9155beb456542be4bb60b3cbbafd0d5c9",
+        "fields": [
+          "img"
+        ],
+        "sizes": [],
+        "defaultSize": null,
+        "strengths": [],
+        "sourceWorkflowCode": "wf-bgremove-qwen21",
+        "abilityCode": "CUTOUT"
+      }
+    ],
+    "recommendedWorkflowCode": "wf-ability-image-cutout-qwen21"
+  },
+  {
+    "code": "WHITE_BACKGROUND",
+    "media": "image",
+    "name": "白底商品图",
+    "desc": "抠图后由后端合成纯白底",
+    "capabilityCode": "WHITEBG",
+    "inputs": [],
+    "assets": [
+      {
+        "key": "img",
+        "label": "商品图片",
+        "required": true
+      }
+    ],
+    "promptTemplate": "",
+    "note": "由后端把抠图结果合成纯白底，合成步骤保留不透明前景颜色；模型抠图仍可能改变原图细节。",
+    "acceptance": [
+      "背景为 RGB 255/255/255",
+      "商品边缘完整",
+      "白底合成不改写前景颜色"
+    ],
+    "status": "DRAFT",
+    "workflows": [
+      {
+        "workflowCode": "wf-ability-image-white-background-qwen21",
+        "media": "image",
+        "capabilityCode": "WHITEBG",
+        "modelCode": "QWEN21",
+        "modelName": "Qwen-Image 2.1",
+        "name": "白底商品图 · 专用流程",
+        "version": "v1.0.0-ability",
+        "apiChecksum": "dc4628fe6546552396de13e1436f9a74211a2ed7efb03462f1d25ebd1372b949",
+        "fields": [
+          "img"
+        ],
+        "sizes": [],
+        "defaultSize": null,
+        "strengths": [],
+        "sourceWorkflowCode": "wf-whitebg-qwen21",
+        "abilityCode": "WHITE_BACKGROUND"
+      }
+    ],
+    "recommendedWorkflowCode": "wf-ability-image-white-background-qwen21"
+  },
+  {
+    "code": "STRUCTURE_GUIDED",
+    "media": "image",
+    "name": "参考构图出图",
+    "desc": "沿用参考图轮廓设计新画面",
+    "capabilityCode": "CONTROL",
+    "inputs": [
+      {
+        "key": "subject",
+        "label": "新画面内容",
+        "required": true,
+        "maxLength": 250,
+        "placeholder": "保持轮廓，生成青色陶瓷茶壶"
+      },
+      {
+        "key": "style",
+        "label": "画面风格",
+        "required": true,
+        "maxLength": 250,
+        "placeholder": "",
+        "options": [
+          "商业摄影",
+          "清新简约",
+          "电影质感",
+          "插画风格"
+        ]
+      }
+    ],
+    "assets": [
+      {
+        "key": "img",
+        "label": "构图参考图",
+        "required": true
+      }
+    ],
+    "promptTemplate": "根据参考图的轮廓与构图生成：${subject}。风格：${style}。保持整体结构和主体位置，不添加文字或水印。",
+    "note": "使用 Canny 与 ControlNet 约束结构，不保证复制原图颜色或纹理。",
+    "acceptance": [
+      "轮廓与参考结构一致",
+      "内容与风格符合要求"
+    ],
+    "status": "DRAFT",
+    "workflows": [
+      {
+        "workflowCode": "wf-ability-image-structure-guided-zimage",
+        "media": "image",
+        "capabilityCode": "CONTROL",
+        "modelCode": "ZIMAGE",
+        "modelName": "Z-Image-Turbo",
+        "name": "参考构图出图 · 专用流程",
+        "version": "v1.0.0-ability",
+        "fields": [
+          "img",
+          "prompt"
+        ],
+        "verifiedAt": null,
+        "hasAudio": false,
+        "sizes": [
+          {
+            "label": "验证尺寸 · 512×512",
+            "width": 512,
+            "height": 512
+          }
+        ],
+        "defaultSize": "验证尺寸 · 512×512",
+        "strengths": [],
+        "maxPixels": 262144,
+        "requireAlpha": false,
+        "apiChecksum": "78acde19a52f404e3ed2c32c1b9ef34e321bc1cccb2cc167b76f301d9f4b7825",
+        "sourceWorkflowCode": "wf-local-image-z-image-turbo-fun-union-controlnet",
+        "abilityCode": "STRUCTURE_GUIDED"
+      }
+    ],
+    "recommendedWorkflowCode": "wf-ability-image-structure-guided-zimage"
+  }
+]

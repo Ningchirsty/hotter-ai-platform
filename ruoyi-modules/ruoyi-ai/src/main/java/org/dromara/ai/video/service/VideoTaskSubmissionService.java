@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -26,8 +27,8 @@ import java.util.Map;
  * {@code VideoTaskRepository.requireOwnedAsset} 拥有，这里只是那一段编排的<b>唯一实现</b>。</p>
  *
  * <p>编排顺序与原来的 controller 完全一致：能力/工作流校验 → 字段白名单 → 固定档位与必需素材校验
- * → 素材归属 → 幂等键预查 → 建任务 → 并发撞唯一键回查。改动只有一处实质差异：
- * 任务行多了 {@code platformTaskId}（场景派发时非空，其余为 null）。</p>
+ * → 素材归属 → 幂等键预查 → 建任务 → 并发撞唯一键回查。用途载荷也在此统一转换，
+ * 保留双图参考素材与精确时长，并记录 {@code platformTaskId}（场景派发时非空）。</p>
  *
  * <p><b>为什么挂 {@code @ConditionalOnProperty}</b>：本类的依赖（契约注册表、模板填充器、
  * {@code videoObjectMapper}）都来自 {@code video.enabled=true} 才装配的配置类。无条件注册会让
@@ -41,11 +42,6 @@ import java.util.Map;
 @ConditionalOnProperty(prefix = "video", name = "enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class VideoTaskSubmissionService {
-
-    /**
-     * 契约内的字段白名单（试图覆写 sampler/nodeId 一律拒绝）
-     */
-    private static final List<String> ALLOWED_FIELDS = List.of("desc", "tier", "dur", "img", "first", "last");
 
     /**
      * 任务号日期段
@@ -78,6 +74,7 @@ public class VideoTaskSubmissionService {
      */
     public SubmissionResult submit(Map<String, Object> payload, String tenantId, long userId,
                                    Long platformTaskId) {
+        payload = registry.normalizeAbility(payload);
         String capabilityCode = stringOf(payload.get("capabilityCode"));
         String workflowCode = stringOf(payload.get("workflowCode"));
         VideoCapability capability = VideoCapability.parse(capabilityCode);
@@ -93,14 +90,14 @@ public class VideoTaskSubmissionService {
         Map<String, Object> fields = payload.get("fields") instanceof Map
             ? (Map<String, Object>) payload.get("fields") : Map.of();
 
-        preparer.validateFieldWhitelist(ALLOWED_FIELDS, fields);
+        preparer.validateFieldWhitelist(allowedFieldsOf(capability), fields);
 
         String prompt = stringOf(fields.get("desc"));
         String tier = stringOf(fields.get("tier"));
         String durationLabel = stringOf(fields.get("dur"));
         Long imageAssetId = longOf(fields.get("img"));
-        Long firstAssetId = longOf(fields.get("first"));
-        Long lastAssetId = longOf(fields.get("last"));
+        Long firstAssetId = longOf(fields.get(capability == VideoCapability.R2V ? "reference1" : "first"));
+        Long lastAssetId = longOf(fields.get(capability == VideoCapability.R2V ? "reference2" : "last"));
 
         preparer.validateFields(capability, version, new H3TemplatePreparer.H3Fields(
             prompt,
@@ -130,6 +127,7 @@ public class VideoTaskSubmissionService {
         String taskNo = "VIDEO-" + LocalDate.now().format(TASK_NO_DATE)
             + "-" + String.format("%06d", Math.floorMod(taskId, 1_000_000L));
         Map<String, Object> inputJson = new HashMap<>();
+        inputJson.put("durationLabel", durationLabel);
         if (imageAssetId != null) {
             inputJson.put("img", imageAssetId);
         }
@@ -166,6 +164,17 @@ public class VideoTaskSubmissionService {
         return new SubmissionResult(taskId, taskNo, false);
     }
 
+    private static List<String> allowedFieldsOf(VideoCapability capability) {
+        List<String> fields = new ArrayList<>(List.of("desc", "tier", "dur"));
+        switch (capability) {
+            case I2V -> fields.add("img");
+            case FL2V -> fields.addAll(List.of("first", "last"));
+            case R2V -> fields.addAll(List.of("reference1", "reference2"));
+            case T2V -> { }
+        }
+        return fields;
+    }
+
     private static String stringOf(Object value) {
         return value == null ? null : String.valueOf(value);
     }
@@ -188,12 +197,13 @@ public class VideoTaskSubmissionService {
         if (label == null) {
             return 5;
         }
-        String digits = label.replaceAll("[^0-9]", "");
+        java.util.regex.Matcher duration = java.util.regex.Pattern.compile("([0-9]+(?:\\.[0-9]+)?)").matcher(label);
+        String digits = duration.find() ? duration.group(1) : "";
         if (digits.isEmpty()) {
             return 5;
         }
         try {
-            return Integer.parseInt(digits);
+            return (int) Math.ceil(Double.parseDouble(digits));
         } catch (NumberFormatException e) {
             return 5;
         }

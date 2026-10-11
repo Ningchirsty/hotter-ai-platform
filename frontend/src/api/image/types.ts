@@ -9,7 +9,7 @@
  */
 
 /** 图像创作能力编码。 */
-export type ImageCapabilityCode = 'T2I' | 'I2I' | 'EDIT' | 'BGREMOVE' | 'WHITEBG';
+export type ImageCapabilityCode = 'T2I' | 'I2I' | 'EDIT' | 'BGREMOVE' | 'WHITEBG' | 'CONTROL';
 
 /** 图像任务状态。 */
 export type ImageTaskStatus = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELED' | 'TIMEOUT';

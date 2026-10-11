@@ -73,7 +73,7 @@ class H3TemplatePreparerTest {
     @Test
     @DisplayName("契约加载：三个 H3 模板校验和全部通过，且均已发布为可提交")
     void loadsThreeH3Templates() {
-        assertEquals(3, registry.loadedCount(), "应恰好加载 3 个 H3 模板");
+        assertEquals(38, registry.loadedCount(), "既有 3 个 H3 + 35 个原生与用途模板");
         // 三个 H3 已获业务批准并提升为 PUBLISHED，因此在正式环境（requirePublished=true）可提交。
         assertDoesNotThrow(() -> registry.require("wf-t2v-h3", true),
             "已 PUBLISHED 的工作流在正式环境应可提交");

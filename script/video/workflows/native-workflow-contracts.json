@@ -1,0 +1,2550 @@
+{
+  "capabilities": [
+    {
+      "capabilityCode": "I2V",
+      "fields": [
+        {
+          "field": "img"
+        },
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-local-ready-minimaxh3-turbo-i2v-av",
+          "modelCode": "H3",
+          "version": "v1.0.0-local",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/local-verified/wf-local-ready-minimaxh3-turbo-i2v-av.json",
+          "checksum": "1210c9e89c8d9920c9564784bd978f38818dcf35a4ca7be5d9afba3bc1f1f54d",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "6",
+              "inputKey": "prompt"
+            },
+            {
+              "field": "img",
+              "nodeId": "16",
+              "inputKey": "image"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "8",
+              "inputKey": "noise_seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "15",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 4
+          },
+          "supportedOutputs": [
+            {
+              "width": 768,
+              "height": 448,
+              "durationSeconds": 2.3333333333333335,
+              "fps": 24.0
+            }
+          ],
+          "requiresAudio": true,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 768×448",
+            "dur": "2.33 秒",
+            "supportedTiers": [
+              "验证档位 · 768×448"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "T2V",
+      "fields": [
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-local-ready-minimaxh3-turbo-t2v-av",
+          "modelCode": "H3",
+          "version": "v1.0.0-local",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/local-verified/wf-local-ready-minimaxh3-turbo-t2v-av.json",
+          "checksum": "e8fd0e12158cbf6be1205b7e58969373ddc69285f47188c9e9a72755d9a46a64",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "6",
+              "inputKey": "prompt"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "8",
+              "inputKey": "noise_seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "15",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 4
+          },
+          "supportedOutputs": [
+            {
+              "width": 768,
+              "height": 448,
+              "durationSeconds": 2.3333333333333335,
+              "fps": 24.0
+            }
+          ],
+          "requiresAudio": true,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 768×448",
+            "dur": "2.33 秒",
+            "supportedTiers": [
+              "验证档位 · 768×448"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "I2V",
+      "fields": [
+        {
+          "field": "img"
+        },
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-local-ready-wan22-5b-i2v",
+          "modelCode": "WAN",
+          "version": "v1.0.0-local",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/local-verified/wf-local-ready-wan22-5b-i2v.json",
+          "checksum": "fe795e3382076415ede9f31780da8b92729ea3dcafd3c8732d745b81c381c9c2",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "4",
+              "inputKey": "text"
+            },
+            {
+              "field": "img",
+              "nodeId": "12",
+              "inputKey": "image"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "8",
+              "inputKey": "seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "11",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 4
+          },
+          "supportedOutputs": [
+            {
+              "width": 832,
+              "height": 480,
+              "durationSeconds": 2.0416666666666665,
+              "fps": 24.0
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 832×480",
+            "dur": "2.04 秒",
+            "supportedTiers": [
+              "验证档位 · 832×480"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "T2V",
+      "fields": [
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-local-ready-wan22-5b-t2v",
+          "modelCode": "WAN",
+          "version": "v1.0.0-local",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/local-verified/wf-local-ready-wan22-5b-t2v.json",
+          "checksum": "a435a261a061f160950531723b933699d614473a66d75a1b7e22dd2ae7da8b5d",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "4",
+              "inputKey": "text"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "8",
+              "inputKey": "seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "11",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 4
+          },
+          "supportedOutputs": [
+            {
+              "width": 832,
+              "height": 480,
+              "durationSeconds": 2.0416666666666665,
+              "fps": 24.0
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 832×480",
+            "dur": "2.04 秒",
+            "supportedTiers": [
+              "验证档位 · 832×480"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "I2V",
+      "fields": [
+        {
+          "field": "img"
+        },
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-local-ready-wan22-a14b-4steps-i2v",
+          "modelCode": "WAN",
+          "version": "v1.0.0-local",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/local-verified/wf-local-ready-wan22-a14b-4steps-i2v.json",
+          "checksum": "c46e6116676de6a7d3ffe3544d1a8f43cc7b96b0f6a861053e8c1ecbd31593ed",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "5",
+              "inputKey": "text"
+            },
+            {
+              "field": "img",
+              "nodeId": "7",
+              "inputKey": "image"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "13",
+              "inputKey": "noise_seed"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "14",
+              "inputKey": "noise_seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "17",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 4
+          },
+          "supportedOutputs": [
+            {
+              "width": 832,
+              "height": 480,
+              "durationSeconds": 2.0416666666666665,
+              "fps": 24.0
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 832×480",
+            "dur": "2.04 秒",
+            "supportedTiers": [
+              "验证档位 · 832×480"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "FL2V",
+      "fields": [
+        {
+          "field": "first"
+        },
+        {
+          "field": "last"
+        },
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-local-ready-wan22-a14b-4steps-flf2v",
+          "modelCode": "WAN",
+          "version": "v1.0.0-local",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/local-verified/wf-local-ready-wan22-a14b-4steps-flf2v.json",
+          "checksum": "ce9f55a75a28c7cebfd9dee32bc2f8d6665db97f83ab6051354490234dfd0740",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "5",
+              "inputKey": "text"
+            },
+            {
+              "field": "first",
+              "nodeId": "7",
+              "inputKey": "image"
+            },
+            {
+              "field": "last",
+              "nodeId": "18",
+              "inputKey": "image"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "13",
+              "inputKey": "noise_seed"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "14",
+              "inputKey": "noise_seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "17",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 4
+          },
+          "supportedOutputs": [
+            {
+              "width": 832,
+              "height": 480,
+              "durationSeconds": 2.0416666666666665,
+              "fps": 24.0
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 832×480",
+            "dur": "2.04 秒",
+            "supportedTiers": [
+              "验证档位 · 832×480"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "FL2V",
+      "fields": [
+        {
+          "field": "first"
+        },
+        {
+          "field": "last"
+        },
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-local-ready-minimaxh3-turbo-flf2v-av",
+          "modelCode": "H3",
+          "version": "v1.0.0-local",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/local-verified/wf-local-ready-minimaxh3-turbo-flf2v-av.json",
+          "checksum": "bc8582e6edcc42200eadb4d9dcad2e0bdeb8884bb4519cfdb9a0061fcbc26da5",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "6",
+              "inputKey": "prompt"
+            },
+            {
+              "field": "first",
+              "nodeId": "16",
+              "inputKey": "image"
+            },
+            {
+              "field": "last",
+              "nodeId": "17",
+              "inputKey": "image"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "8",
+              "inputKey": "noise_seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "15",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 4
+          },
+          "supportedOutputs": [
+            {
+              "width": 768,
+              "height": 448,
+              "durationSeconds": 2.3333333333333335,
+              "fps": 24.0
+            }
+          ],
+          "requiresAudio": true,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 768×448",
+            "dur": "2.33 秒",
+            "supportedTiers": [
+              "验证档位 · 768×448"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "I2V",
+      "fields": [
+        {
+          "field": "img"
+        },
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-local-video-wan2-2-14b-i2v",
+          "modelCode": "WAN",
+          "version": "v1.0.0-local",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/local-verified/wf-local-video-wan2-2-14b-i2v.json",
+          "checksum": "1a2479b3e05700e98dcf7a46dea05944d2144266cf2fc6d4aec070b50c814922",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "129:93",
+              "inputKey": "text"
+            },
+            {
+              "field": "img",
+              "nodeId": "97",
+              "inputKey": "image"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "129:86",
+              "inputKey": "noise_seed"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "129:85",
+              "inputKey": "noise_seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "108",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 7
+          },
+          "supportedOutputs": [
+            {
+              "width": 832,
+              "height": 480,
+              "durationSeconds": 5.0625,
+              "fps": 16.0
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 832×480",
+            "dur": "5.06 秒",
+            "supportedTiers": [
+              "验证档位 · 832×480"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "FL2V",
+      "fields": [
+        {
+          "field": "first"
+        },
+        {
+          "field": "last"
+        },
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-local-video-wan2-2-14b-flf2v",
+          "modelCode": "WAN",
+          "version": "v1.0.0-local",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/local-verified/wf-local-video-wan2-2-14b-flf2v.json",
+          "checksum": "7b83225a29dc91674e1e5193db6fee0e2ebf0b79415f414673a24f83a802c366",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "90",
+              "inputKey": "text"
+            },
+            {
+              "field": "first",
+              "nodeId": "80",
+              "inputKey": "image"
+            },
+            {
+              "field": "last",
+              "nodeId": "89",
+              "inputKey": "image"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "84",
+              "inputKey": "noise_seed"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "87",
+              "inputKey": "noise_seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "83",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 5
+          },
+          "supportedOutputs": [
+            {
+              "width": 832,
+              "height": 480,
+              "durationSeconds": 3.0625,
+              "fps": 16.0
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 832×480",
+            "dur": "3.06 秒",
+            "supportedTiers": [
+              "验证档位 · 832×480"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "T2V",
+      "fields": [
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-local-video-wan2-2-5b-ti2v",
+          "modelCode": "WAN",
+          "version": "v1.0.0-local",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/local-verified/wf-local-video-wan2-2-5b-ti2v.json",
+          "checksum": "ecb2eb9c6b13f9592746a2c6fe928c506712d1cb62311048d516d1ba5cf2bd72",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "6",
+              "inputKey": "text"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "3",
+              "inputKey": "seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "58",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 4
+          },
+          "supportedOutputs": [
+            {
+              "width": 832,
+              "height": 480,
+              "durationSeconds": 2.0416666666666665,
+              "fps": 24.0
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 832×480",
+            "dur": "2.04 秒",
+            "supportedTiers": [
+              "验证档位 · 832×480"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "T2V",
+      "fields": [
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-local-video-minimax-h3-t2v",
+          "modelCode": "H3",
+          "version": "v1.0.0-local",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/local-verified/wf-local-video-minimax-h3-t2v.json",
+          "checksum": "3a943075bd8dfa3a325a9f934422db0ba81f925887a91d6b5e74bd8c3a4a8525",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "140:131",
+              "inputKey": "prompt"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "140:129",
+              "inputKey": "noise_seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "92",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 4
+          },
+          "supportedOutputs": [
+            {
+              "width": 864,
+              "height": 480,
+              "durationSeconds": 2.3333333333333335,
+              "fps": 24.0
+            }
+          ],
+          "requiresAudio": true,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 864×480",
+            "dur": "2.33 秒",
+            "supportedTiers": [
+              "验证档位 · 864×480"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "I2V",
+      "fields": [
+        {
+          "field": "img"
+        },
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-local-video-minimax-h3-i2v",
+          "modelCode": "H3",
+          "version": "v1.0.0-local",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/local-verified/wf-local-video-minimax-h3-i2v.json",
+          "checksum": "d800575a3708833caf4b2256690258f26f73f2ac9f41525a872ffe091c1f8e4b",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "105:104",
+              "inputKey": "prompt"
+            },
+            {
+              "field": "img",
+              "nodeId": "114",
+              "inputKey": "image"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "105:15",
+              "inputKey": "noise_seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "92",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 4
+          },
+          "supportedOutputs": [
+            {
+              "width": 640,
+              "height": 640,
+              "durationSeconds": 2.3333333333333335,
+              "fps": 24.0
+            }
+          ],
+          "requiresAudio": true,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 640×640",
+            "dur": "2.33 秒",
+            "supportedTiers": [
+              "验证档位 · 640×640"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "R2V",
+      "fields": [
+        {
+          "field": "reference1"
+        },
+        {
+          "field": "reference2"
+        },
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-local-video-minimax-h3-r2v",
+          "modelCode": "H3",
+          "version": "v1.0.0-local",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/local-verified/wf-local-video-minimax-h3-r2v.json",
+          "checksum": "ce7e365d80f66738dafa627fdf1e7a42ddd1a6d4ac679ff311da338246d20a46",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "136",
+              "inputKey": "prompt"
+            },
+            {
+              "field": "reference1",
+              "nodeId": "137",
+              "inputKey": "image"
+            },
+            {
+              "field": "reference2",
+              "nodeId": "139",
+              "inputKey": "image"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "129",
+              "inputKey": "noise_seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "92",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 4
+          },
+          "supportedOutputs": [
+            {
+              "width": 864,
+              "height": 480,
+              "durationSeconds": 2.3333333333333335,
+              "fps": 24.0
+            }
+          ],
+          "requiresAudio": true,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 864×480",
+            "dur": "2.33 秒",
+            "supportedTiers": [
+              "验证档位 · 864×480"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "T2V",
+      "fields": [
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-local-video-kandinsky5-t2v",
+          "modelCode": "KAND",
+          "version": "v1.0.0-local",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/local-verified/wf-local-video-kandinsky5-t2v.json",
+          "checksum": "135c352f4fe4464fcbcf48fdd4da3efcc2d66ee3ad95edccecacefb5ac095bfb",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "12:7",
+              "inputKey": "text"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "12:8",
+              "inputKey": "seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "11",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 4
+          },
+          "supportedOutputs": [
+            {
+              "width": 832,
+              "height": 480,
+              "durationSeconds": 2.0416666666666665,
+              "fps": 24.0
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 832×480",
+            "dur": "2.04 秒",
+            "supportedTiers": [
+              "验证档位 · 832×480"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "I2V",
+      "fields": [
+        {
+          "field": "img"
+        },
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-local-video-kandinsky5-i2v",
+          "modelCode": "KAND",
+          "version": "v1.0.0-local",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/local-verified/wf-local-video-kandinsky5-i2v.json",
+          "checksum": "0c9f5a5c1d947fe987a1c09118d7e0015d5401dee10094ec1f225f8364fdd4fb",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "69:56",
+              "inputKey": "text"
+            },
+            {
+              "field": "img",
+              "nodeId": "11",
+              "inputKey": "image"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "69:63",
+              "inputKey": "seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "10",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 4
+          },
+          "supportedOutputs": [
+            {
+              "width": 768,
+              "height": 512,
+              "durationSeconds": 2.0416666666666665,
+              "fps": 24.0
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 768×512",
+            "dur": "2.04 秒",
+            "supportedTiers": [
+              "验证档位 · 768×512"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "T2V",
+      "fields": [
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-local-video-hunyuan-video-1.5-720p-t2v",
+          "modelCode": "HUN",
+          "version": "v1.0.0-local",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/local-verified/wf-local-video-hunyuan-video-1.5-720p-t2v.json",
+          "checksum": "63811ec74e733075b89c8bccf6f4b3090af56d650fcad24ee77104b7f4bfe579",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "44",
+              "inputKey": "text"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "129",
+              "inputKey": "noise_seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "102",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 4
+          },
+          "supportedOutputs": [
+            {
+              "width": 832,
+              "height": 480,
+              "durationSeconds": 2.0416666666666665,
+              "fps": 24.0
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 832×480",
+            "dur": "2.04 秒",
+            "supportedTiers": [
+              "验证档位 · 832×480"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "I2V",
+      "fields": [
+        {
+          "field": "img"
+        },
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-local-video-hunyuan-video-1.5-720p-i2v",
+          "modelCode": "HUN",
+          "version": "v1.0.0-local",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/local-verified/wf-local-video-hunyuan-video-1.5-720p-i2v.json",
+          "checksum": "9c0c2659e1a841f012b6043a8578163d99736f46b968aa1a95b6bc1e75905d9f",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "44",
+              "inputKey": "text"
+            },
+            {
+              "field": "img",
+              "nodeId": "80",
+              "inputKey": "image"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "127",
+              "inputKey": "noise_seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "102",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 4
+          },
+          "supportedOutputs": [
+            {
+              "width": 832,
+              "height": 480,
+              "durationSeconds": 2.0416666666666665,
+              "fps": 24.0
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 832×480",
+            "dur": "2.04 秒",
+            "supportedTiers": [
+              "验证档位 · 832×480"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "T2V",
+      "fields": [
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-local-video-ltx2-5-t2v",
+          "modelCode": "LTX",
+          "version": "v1.0.0-local",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/local-verified/wf-local-video-ltx2-5-t2v.json",
+          "checksum": "224f2022b6112177d26cb2b568076e41de5addd27ae25afc0e62847516033ca0",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "405:364",
+              "inputKey": "text"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "405:338",
+              "inputKey": "noise_seed"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "405:339",
+              "inputKey": "noise_seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "75",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 4
+          },
+          "supportedOutputs": [
+            {
+              "width": 832,
+              "height": 448,
+              "durationSeconds": 2.0416666666666665,
+              "fps": 24.0
+            }
+          ],
+          "requiresAudio": true,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 832×448",
+            "dur": "2.04 秒",
+            "supportedTiers": [
+              "验证档位 · 832×448"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "I2V",
+      "fields": [
+        {
+          "field": "img"
+        },
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-local-video-ltx2-5-i2v",
+          "modelCode": "LTX",
+          "version": "v1.0.0-local",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/local-verified/wf-local-video-ltx2-5-i2v.json",
+          "checksum": "9492d8156e42acb9ec9fd35d8f0b425c32c3dc2da8d91e4f98e746314d44f959",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "398:364",
+              "inputKey": "text"
+            },
+            {
+              "field": "img",
+              "nodeId": "395",
+              "inputKey": "image"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "398:338",
+              "inputKey": "noise_seed"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "398:339",
+              "inputKey": "noise_seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "75",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 4
+          },
+          "supportedOutputs": [
+            {
+              "width": 832,
+              "height": 448,
+              "durationSeconds": 2.0416666666666665,
+              "fps": 24.0
+            }
+          ],
+          "requiresAudio": true,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 832×448",
+            "dur": "2.04 秒",
+            "supportedTiers": [
+              "验证档位 · 832×448"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "FL2V",
+      "fields": [
+        {
+          "field": "first"
+        },
+        {
+          "field": "last"
+        },
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-local-video-ltx2-5-flf2v",
+          "modelCode": "LTX",
+          "version": "v1.0.0-local",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/local-verified/wf-local-video-ltx2-5-flf2v.json",
+          "checksum": "27f8c9c899f18fe91b28ca8f6cbc26305f028485d513b30f91745f994291e613",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "251:222",
+              "inputKey": "text"
+            },
+            {
+              "field": "first",
+              "nodeId": "31",
+              "inputKey": "image"
+            },
+            {
+              "field": "last",
+              "nodeId": "39",
+              "inputKey": "image"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "251:196",
+              "inputKey": "noise_seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "68",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 4
+          },
+          "supportedOutputs": [
+            {
+              "width": 832,
+              "height": 480,
+              "durationSeconds": 2.0416666666666665,
+              "fps": 24.0
+            }
+          ],
+          "requiresAudio": true,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 832×480",
+            "dur": "2.04 秒",
+            "supportedTiers": [
+              "验证档位 · 832×480"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "I2V",
+      "fields": [
+        {
+          "field": "img"
+        },
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-ability-video-product-motion-wan",
+          "modelCode": "WAN",
+          "version": "v1.0.0-ability",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/abilities-api/wf-ability-video-product-motion-wan.json",
+          "checksum": "39768892ff6b3de51574a8fb5f51ff902e98f8b718bb8d0845309db49b8d4a40",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "5",
+              "inputKey": "text"
+            },
+            {
+              "field": "img",
+              "nodeId": "7",
+              "inputKey": "image"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "13",
+              "inputKey": "noise_seed"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "14",
+              "inputKey": "noise_seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "17",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 4
+          },
+          "supportedOutputs": [
+            {
+              "width": 832,
+              "height": 480,
+              "durationSeconds": 2.0416666666666665,
+              "fps": 24.0
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 832×480",
+            "dur": "2.04 秒",
+            "supportedTiers": [
+              "验证档位 · 832×480"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "I2V",
+      "fields": [
+        {
+          "field": "img"
+        },
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-ability-video-product-motion-hun",
+          "modelCode": "HUN",
+          "version": "v1.0.0-ability",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/abilities-api/wf-ability-video-product-motion-hun.json",
+          "checksum": "3f4c70c287bcb0cdfb55dbcef4536635c97605cfdfecb1ac10b3f1922857aadb",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "44",
+              "inputKey": "text"
+            },
+            {
+              "field": "img",
+              "nodeId": "80",
+              "inputKey": "image"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "127",
+              "inputKey": "noise_seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "102",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 4
+          },
+          "supportedOutputs": [
+            {
+              "width": 832,
+              "height": 480,
+              "durationSeconds": 2.0416666666666665,
+              "fps": 24.0
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 832×480",
+            "dur": "2.04 秒",
+            "supportedTiers": [
+              "验证档位 · 832×480"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "I2V",
+      "fields": [
+        {
+          "field": "img"
+        },
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-ability-video-product-motion-kand",
+          "modelCode": "KAND",
+          "version": "v1.0.0-ability",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/abilities-api/wf-ability-video-product-motion-kand.json",
+          "checksum": "7c570d3c71352277dc865a55fd0e0eb1b5a91c100c31e5df0bb32eeb17107e41",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "69:56",
+              "inputKey": "text"
+            },
+            {
+              "field": "img",
+              "nodeId": "11",
+              "inputKey": "image"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "69:63",
+              "inputKey": "seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "10",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 4
+          },
+          "supportedOutputs": [
+            {
+              "width": 768,
+              "height": 512,
+              "durationSeconds": 2.0416666666666665,
+              "fps": 24.0
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 768×512",
+            "dur": "2.04 秒",
+            "supportedTiers": [
+              "验证档位 · 768×512"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "T2V",
+      "fields": [
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-ability-video-sound-story-ltx",
+          "modelCode": "LTX",
+          "version": "v1.0.0-ability",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/abilities-api/wf-ability-video-sound-story-ltx.json",
+          "checksum": "571c87a4403e89531e1fab5b7d319ade508f46e4bc2107556e384dd64dac1a3d",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "405:364",
+              "inputKey": "text"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "405:338",
+              "inputKey": "noise_seed"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "405:339",
+              "inputKey": "noise_seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "75",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 4
+          },
+          "supportedOutputs": [
+            {
+              "width": 832,
+              "height": 448,
+              "durationSeconds": 2.0416666666666665,
+              "fps": 24.0
+            }
+          ],
+          "requiresAudio": true,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 832×448",
+            "dur": "2.04 秒",
+            "supportedTiers": [
+              "验证档位 · 832×448"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "T2V",
+      "fields": [
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-ability-video-sound-story-h3",
+          "modelCode": "H3",
+          "version": "v1.0.0-ability",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/abilities-api/wf-ability-video-sound-story-h3.json",
+          "checksum": "624d3ea9aacd684ade9ddad6401199c9609de36a69c1eb7813cba37268631b5d",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "6",
+              "inputKey": "prompt"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "8",
+              "inputKey": "noise_seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "15",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 4
+          },
+          "supportedOutputs": [
+            {
+              "width": 768,
+              "height": 448,
+              "durationSeconds": 2.3333333333333335,
+              "fps": 24.0
+            }
+          ],
+          "requiresAudio": true,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 768×448",
+            "dur": "2.33 秒",
+            "supportedTiers": [
+              "验证档位 · 768×448"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "I2V",
+      "fields": [
+        {
+          "field": "img"
+        },
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-ability-video-photo-animation-wan",
+          "modelCode": "WAN",
+          "version": "v1.0.0-ability",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/abilities-api/wf-ability-video-photo-animation-wan.json",
+          "checksum": "8cb946ce69d4e596c2e79dbc9e93c57a5bdd4c38c419f848c954d6536d25c73d",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "4",
+              "inputKey": "text"
+            },
+            {
+              "field": "img",
+              "nodeId": "12",
+              "inputKey": "image"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "8",
+              "inputKey": "seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "11",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 4
+          },
+          "supportedOutputs": [
+            {
+              "width": 832,
+              "height": 480,
+              "durationSeconds": 2.0416666666666665,
+              "fps": 24.0
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 832×480",
+            "dur": "2.04 秒",
+            "supportedTiers": [
+              "验证档位 · 832×480"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "I2V",
+      "fields": [
+        {
+          "field": "img"
+        },
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-ability-video-photo-animation-kand",
+          "modelCode": "KAND",
+          "version": "v1.0.0-ability",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/abilities-api/wf-ability-video-photo-animation-kand.json",
+          "checksum": "b382f66063637385a519f40ec2e110419ca164deb2511bee99b1e151586cdd7e",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "69:56",
+              "inputKey": "text"
+            },
+            {
+              "field": "img",
+              "nodeId": "11",
+              "inputKey": "image"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "69:63",
+              "inputKey": "seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "10",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 4
+          },
+          "supportedOutputs": [
+            {
+              "width": 768,
+              "height": 512,
+              "durationSeconds": 2.0416666666666665,
+              "fps": 24.0
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 768×512",
+            "dur": "2.04 秒",
+            "supportedTiers": [
+              "验证档位 · 768×512"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "I2V",
+      "fields": [
+        {
+          "field": "img"
+        },
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-ability-video-photo-animation-ltx",
+          "modelCode": "LTX",
+          "version": "v1.0.0-ability",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/abilities-api/wf-ability-video-photo-animation-ltx.json",
+          "checksum": "5fb6a47032dd0ef493b589578ce8dd7efcf2c693f6a23bd4d246d1a8ed6cbc28",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "398:364",
+              "inputKey": "text"
+            },
+            {
+              "field": "img",
+              "nodeId": "395",
+              "inputKey": "image"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "398:338",
+              "inputKey": "noise_seed"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "398:339",
+              "inputKey": "noise_seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "75",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 4
+          },
+          "supportedOutputs": [
+            {
+              "width": 832,
+              "height": 448,
+              "durationSeconds": 2.0416666666666665,
+              "fps": 24.0
+            }
+          ],
+          "requiresAudio": true,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 832×448",
+            "dur": "2.04 秒",
+            "supportedTiers": [
+              "验证档位 · 832×448"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "T2V",
+      "fields": [
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-ability-video-scene-clip-wan",
+          "modelCode": "WAN",
+          "version": "v1.0.0-ability",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/abilities-api/wf-ability-video-scene-clip-wan.json",
+          "checksum": "a6b50a1cd7a910a1291ca9f89ef6460d134a6ed45ebc8b8e2b3dcc6c3a863c49",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "4",
+              "inputKey": "text"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "8",
+              "inputKey": "seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "11",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 4
+          },
+          "supportedOutputs": [
+            {
+              "width": 832,
+              "height": 480,
+              "durationSeconds": 2.0416666666666665,
+              "fps": 24.0
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 832×480",
+            "dur": "2.04 秒",
+            "supportedTiers": [
+              "验证档位 · 832×480"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "T2V",
+      "fields": [
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-ability-video-scene-clip-hun",
+          "modelCode": "HUN",
+          "version": "v1.0.0-ability",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/abilities-api/wf-ability-video-scene-clip-hun.json",
+          "checksum": "9bdef7d43a5cbec2db9208325985e5332fba83df0521f95598146fae618852f3",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "44",
+              "inputKey": "text"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "129",
+              "inputKey": "noise_seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "102",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 4
+          },
+          "supportedOutputs": [
+            {
+              "width": 832,
+              "height": 480,
+              "durationSeconds": 2.0416666666666665,
+              "fps": 24.0
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 832×480",
+            "dur": "2.04 秒",
+            "supportedTiers": [
+              "验证档位 · 832×480"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "T2V",
+      "fields": [
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-ability-video-scene-clip-kand",
+          "modelCode": "KAND",
+          "version": "v1.0.0-ability",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/abilities-api/wf-ability-video-scene-clip-kand.json",
+          "checksum": "c51cba03a4215dd96b14aacc6cc525d28cbc822600df87e64ab4b50db0438e96",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "12:7",
+              "inputKey": "text"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "12:8",
+              "inputKey": "seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "11",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 4
+          },
+          "supportedOutputs": [
+            {
+              "width": 832,
+              "height": 480,
+              "durationSeconds": 2.0416666666666665,
+              "fps": 24.0
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 832×480",
+            "dur": "2.04 秒",
+            "supportedTiers": [
+              "验证档位 · 832×480"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "FL2V",
+      "fields": [
+        {
+          "field": "first"
+        },
+        {
+          "field": "last"
+        },
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-ability-video-keyframe-transition-wan",
+          "modelCode": "WAN",
+          "version": "v1.0.0-ability",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/abilities-api/wf-ability-video-keyframe-transition-wan.json",
+          "checksum": "d3c2f4f0e57d212fa3e4c208f6b0c23c131a47c56f7d0c555fb25b82f66c5abb",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "5",
+              "inputKey": "text"
+            },
+            {
+              "field": "first",
+              "nodeId": "7",
+              "inputKey": "image"
+            },
+            {
+              "field": "last",
+              "nodeId": "18",
+              "inputKey": "image"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "13",
+              "inputKey": "noise_seed"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "14",
+              "inputKey": "noise_seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "17",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 4
+          },
+          "supportedOutputs": [
+            {
+              "width": 832,
+              "height": 480,
+              "durationSeconds": 2.0416666666666665,
+              "fps": 24.0
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 832×480",
+            "dur": "2.04 秒",
+            "supportedTiers": [
+              "验证档位 · 832×480"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "FL2V",
+      "fields": [
+        {
+          "field": "first"
+        },
+        {
+          "field": "last"
+        },
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-ability-video-keyframe-transition-ltx",
+          "modelCode": "LTX",
+          "version": "v1.0.0-ability",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/abilities-api/wf-ability-video-keyframe-transition-ltx.json",
+          "checksum": "cb054f8babe8332abaf634725eb128548ac98a38189922f720e1cc4eef486d23",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "251:222",
+              "inputKey": "text"
+            },
+            {
+              "field": "first",
+              "nodeId": "31",
+              "inputKey": "image"
+            },
+            {
+              "field": "last",
+              "nodeId": "39",
+              "inputKey": "image"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "251:196",
+              "inputKey": "noise_seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "68",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 4
+          },
+          "supportedOutputs": [
+            {
+              "width": 832,
+              "height": 480,
+              "durationSeconds": 2.0416666666666665,
+              "fps": 24.0
+            }
+          ],
+          "requiresAudio": true,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 832×480",
+            "dur": "2.04 秒",
+            "supportedTiers": [
+              "验证档位 · 832×480"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "FL2V",
+      "fields": [
+        {
+          "field": "first"
+        },
+        {
+          "field": "last"
+        },
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-ability-video-keyframe-transition-h3",
+          "modelCode": "H3",
+          "version": "v1.0.0-ability",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/abilities-api/wf-ability-video-keyframe-transition-h3.json",
+          "checksum": "97e3f089948a2517bac60555dd47b6dcea8e030a6f02b8e3a8e1554ba0486f98",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "6",
+              "inputKey": "prompt"
+            },
+            {
+              "field": "first",
+              "nodeId": "16",
+              "inputKey": "image"
+            },
+            {
+              "field": "last",
+              "nodeId": "17",
+              "inputKey": "image"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "8",
+              "inputKey": "noise_seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "15",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 4
+          },
+          "supportedOutputs": [
+            {
+              "width": 768,
+              "height": 448,
+              "durationSeconds": 2.3333333333333335,
+              "fps": 24.0
+            }
+          ],
+          "requiresAudio": true,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 768×448",
+            "dur": "2.33 秒",
+            "supportedTiers": [
+              "验证档位 · 768×448"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "R2V",
+      "fields": [
+        {
+          "field": "reference1"
+        },
+        {
+          "field": "reference2"
+        },
+        {
+          "field": "desc"
+        },
+        {
+          "field": "tier"
+        },
+        {
+          "field": "dur"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-ability-video-reference-story-h3",
+          "modelCode": "H3",
+          "version": "v1.0.0-ability",
+          "status": "DRAFT",
+          "apiJsonFile": "video/workflows/abilities-api/wf-ability-video-reference-story-h3.json",
+          "checksum": "d11e2390bba213a3a7350b8b0e9c4dd233b4d7826da79dd462cb0fe111498052",
+          "mapping": [
+            {
+              "field": "desc",
+              "nodeId": "136",
+              "inputKey": "prompt"
+            },
+            {
+              "field": "reference1",
+              "nodeId": "137",
+              "inputKey": "image"
+            },
+            {
+              "field": "reference2",
+              "nodeId": "139",
+              "inputKey": "image"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "129",
+              "inputKey": "noise_seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "92",
+            "outputField": "videos",
+            "format": "mp4",
+            "mime": "video/mp4",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128,
+            "maxDurationSeconds": 4
+          },
+          "supportedOutputs": [
+            {
+              "width": 864,
+              "height": 480,
+              "durationSeconds": 2.3333333333333335,
+              "fps": 24.0
+            }
+          ],
+          "requiresAudio": true,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "tier": "验证档位 · 864×480",
+            "dur": "2.33 秒",
+            "supportedTiers": [
+              "验证档位 · 864×480"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
