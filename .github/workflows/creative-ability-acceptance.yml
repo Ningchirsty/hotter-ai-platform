@@ -38,7 +38,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import hashlib,json,subprocess,zipfile
-          base='798e890b76aae6b3c87d24beba1a3e7f3b65a90c'
+          base='000974c5c4eeafb7e139d4a71427eb6f8fe6da71'
           changed=subprocess.check_output(['git','diff','--name-only',base,'HEAD'],text=True).splitlines()
           for file in changed:
               if file.endswith('pom.xml') or file.endswith('Dockerfile') or ('/src/main/' in file and not file.startswith('ruoyi-modules/ruoyi-ai/')):
@@ -100,8 +100,8 @@ jobs:
           import hashlib,json,os,shutil,subprocess,tempfile,time,urllib.error,urllib.request,zipfile
           from pathlib import Path
           ROOT=Path.cwd()
-          BASE='ghcr.io/ningchirsty/hotter-ai-platform-backend@sha256:b70659a956754a589f34c223c481cbb53c26980ba688d2f1f99387ed61434382'
-          BASE_SHA='798e890b76aae6b3c87d24beba1a3e7f3b65a90c'
+          BASE='ghcr.io/ningchirsty/hotter-ai-platform-backend@sha256:1c2b2a4fe9115269c59ac9d4d47902148d188f8bcea6d74f9e22a425e94cbf18'
+          BASE_SHA='000974c5c4eeafb7e139d4a71427eb6f8fe6da71'
           SHA=os.environ['GITHUB_SHA']
           payload=ROOT/'candidate-module'
           manifest=json.loads((payload/'manifest.json').read_text())
@@ -215,7 +215,7 @@ jobs:
           NAMES = {role: PREFIX + '-' + role for role in ['mysql', 'redis', 'backend']}
           network_created = False
           containers_created = []
-          report = dict(commit=os.environ['GITHUB_SHA'], scope='isolated-platform', productionModified=False, qualityReview='pending', buildStrategy='verified-main-runtime-with-tested-ai-module', baseCommit='798e890b76aae6b3c87d24beba1a3e7f3b65a90c', workflows=[])
+          report = dict(commit=os.environ['GITHUB_SHA'], scope='isolated-platform', productionModified=False, qualityReview='pending', buildStrategy='verified-main-runtime-with-tested-ai-module', baseCommit=json.loads(Path('candidate-module/manifest.json').read_text())['baseCommit'], workflows=[])
           session = requests.Session()
           session.trust_env = False
 
