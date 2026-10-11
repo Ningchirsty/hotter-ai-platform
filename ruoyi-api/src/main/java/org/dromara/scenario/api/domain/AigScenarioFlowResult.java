@@ -35,6 +35,18 @@ public class AigScenarioFlowResult implements Serializable {
     private String message;
 
     /**
+     * 域是否已在**受理时**就完成了交接（不需要后续回执）。
+     *
+     * <p>默认 {@code false}：域内是长跑作业，平台任务保持 RUNNING，由域通过回执服务收尾
+     * （内容域、视频域都是这样）。少数域的"把作业建出来"就等于交接完成
+     * （例：创作域建出一条创意项目，剩下的是设计部在项目里干活），由域把它置 {@code true}；
+     * 任务层会在记录派发事实后**立即**把平台任务收尾为 SUCCEEDED。</p>
+     *
+     * <p>这是<b>域自己声明</b>的事实，平台不替它假设——没有这个声明，平台绝不自行置 SUCCEEDED。</p>
+     */
+    private boolean handoffComplete;
+
+    /**
      * 受理。
      *
      * @param externalRef 本域任务/作业引用
@@ -44,6 +56,18 @@ public class AigScenarioFlowResult implements Serializable {
         AigScenarioFlowResult result = new AigScenarioFlowResult();
         result.setAccepted(true);
         result.setExternalRef(externalRef);
+        return result;
+    }
+
+    /**
+     * 受理，且声明"交接已在受理时完成"（平台任务可立即收尾）。
+     *
+     * @param externalRef 本域任务/作业引用
+     * @return 结果
+     */
+    public static AigScenarioFlowResult acceptedWithHandoffComplete(String externalRef) {
+        AigScenarioFlowResult result = accepted(externalRef);
+        result.setHandoffComplete(true);
         return result;
     }
 

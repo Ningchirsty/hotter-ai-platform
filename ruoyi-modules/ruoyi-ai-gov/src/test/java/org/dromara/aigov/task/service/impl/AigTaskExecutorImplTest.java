@@ -501,6 +501,35 @@ class AigTaskExecutorImplTest {
     }
 
     @Test
+    @DisplayName("★域声明「受理即完成交接」：记完派发事实后立即收尾 SUCCEEDED（不再等回执）")
+    void handoffCompleteDispatchClosesTask() {
+        scenarioDispatchProperties.setEnabled(true);
+        stubDispatchSkeleton();
+        when(scenarioVersionResolver.stableVersion("POSTER"))
+            .thenReturn(scenarioVersion("1.0.0", "CREATIVE_EXISTING_FLOW"));
+        when(scenarioFlowDispatcher.dispatch(any()))
+            .thenReturn(org.dromara.scenario.api.domain.AigScenarioFlowResult
+                .acceptedWithHandoffComplete("creative-project-9"));
+        // 先记执行事实（乐观锁用 running 的版本 3，返回新版本 4）
+        when(taskService.recordExecutionFacts(eq(TASK_ID), eq(3), isNull(), any(), eq(false), isNull()))
+            .thenReturn(task("RUNNING", 4));
+        // 再用记完事实后的版本 4 收尾，避免撞乐观锁
+        when(taskService.transition(eq(TASK_ID), eq(4), eq(AigTaskStatusEnum.SUCCEEDED), any(), any()))
+            .thenReturn(task("SUCCEEDED", 5));
+
+        AigTaskExecuteVo vo = executor.execute(executedBo());
+
+        assertTrue(vo.isSuccess());
+        assertEquals("SUCCEEDED", vo.getStatus(), "域声明交接完成，平台任务应立即收尾");
+        assertTrue(vo.getReason().contains("交接完成"), vo.getReason());
+        ArgumentCaptor<String> snapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(taskService).transition(eq(TASK_ID), eq(4), eq(AigTaskStatusEnum.SUCCEEDED), any(),
+            snapshotCaptor.capture());
+        assertTrue(snapshotCaptor.getValue().contains("HANDOFF_COMPLETE"), snapshotCaptor.getValue());
+        verify(invokeService, never()).invoke(any());
+    }
+
+    @Test
     @DisplayName("派发被业务域拒绝：任务落失败并带上域给的可读原因，不调模型")
     void dispatchRejectionIsRecordedOnTask() {
         scenarioDispatchProperties.setEnabled(true);

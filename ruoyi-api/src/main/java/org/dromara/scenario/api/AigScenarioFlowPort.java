@@ -35,6 +35,13 @@ public interface AigScenarioFlowPort {
      * <p>实现方要自己保证：能识别 {@link AigScenarioFlowRequest#getSnapshotJson()}、
      * 按本域口径做权限/归属校验，并返回可排查的 {@code externalRef}（本域自己的任务ID）。</p>
      *
+     * <p><b>受理后默认不置终态</b>：域内通常是长跑作业，平台任务保持 RUNNING，由域回执收尾。
+     * 只有"把作业建出来就等于交接完成"的域（例：创作域建出创意项目），才用
+     * {@link AigScenarioFlowResult#acceptedWithHandoffComplete(String)} 声明即时收尾。</p>
+     *
+     * <p><b>禁止在本方法内同步调回执服务</b>：任务层随后还要用当前版本记录派发事实，
+     * 这里先改状态会撞乐观锁，把一次成功派发记成假失败。要收尾就用 {@code handoffComplete} 声明。</p>
+     *
      * @param request 平台任务与它的输入快照
      * @return 受理结果（未受理时给出可读原因）
      */
