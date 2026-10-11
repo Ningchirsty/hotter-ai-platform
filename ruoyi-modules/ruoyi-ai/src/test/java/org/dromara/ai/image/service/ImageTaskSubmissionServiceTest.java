@@ -226,4 +226,27 @@ class ImageTaskSubmissionServiceTest {
                 "workflow_code", org.dromara.ai.image.cloud.ImageCloudService.WORKFLOW)));
         org.mockito.Mockito.verifyNoInteractions(dispatchService);
     }
+
+    @Test
+    @DisplayName("EDIT 提交不得注入契约未声明的 image2/image3 空槽（换背景 flux4b 曾因此 400）")
+    void editSubmissionDoesNotInjectUndeclaredImageSlots() throws Exception {
+        ImageWorkflowVersion flux4b = registry.require("wf-ability-image-background-replace-flux4b", false);
+        assertTrue(flux4b.capabilityFields().contains("image1") && !flux4b.capabilityFields().contains("image2"),
+            "前置：该契约只声明 image1 单图槽");
+        try (org.mockito.MockedStatic<org.dromara.common.satoken.utils.LoginHelper> login =
+                 org.mockito.Mockito.mockStatic(org.dromara.common.satoken.utils.LoginHelper.class)) {
+            login.when(org.dromara.common.satoken.utils.LoginHelper::getUserId).thenReturn(42L);
+            login.when(org.dromara.common.satoken.utils.LoginHelper::getDeptId).thenReturn(100L);
+            service.submit(new ImageTaskSubmissionService.Command(
+                "EDIT", "wf-ability-image-background-replace-flux4b", "换背景回归", "把背景换成浅米色影棚",
+                null, null, null, List.of(9001L), "regression-edit-single-slot", false, null));
+        }
+        org.mockito.ArgumentCaptor<ImageTaskRepository.TaskRow> row =
+            org.mockito.ArgumentCaptor.forClass(ImageTaskRepository.TaskRow.class);
+        verify(repository).insertTask(row.capture());
+        Map<String, Object> stored = MAPPER.readValue(row.getValue().inputJson(), Map.class);
+        assertEquals("9001", String.valueOf(stored.get("image1")), "实际提供的 image1 必须入库");
+        assertTrue(!stored.containsKey("image2") && !stored.containsKey("image3"),
+            "未声明的空槽不得注入 input_json（旧实现无条件注入 null 槽，被白名单拒绝为「不支持的字段：image2」）");
+    }
 }
