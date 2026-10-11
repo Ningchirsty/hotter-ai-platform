@@ -98,6 +98,20 @@ jobs:
           (out/'SHA256SUMS').write_text(''.join(hashlib.sha256((out/name).read_bytes()).hexdigest()+'  '+name+'\n' for name in ['runtime-source.zip','manifest.json']))
           print('RUNTIME_SOURCE_BYTES',(out/'runtime-source.zip').stat().st_size)
           PY
+      # 验收 runner 的 python3(3.12.3) 既无 pip、也无 ensurepip，且没有免密 sudo 可装 apt 包
+      # （实测 /usr/bin/python3: No module named pip）。
+      # 因此把这三个依赖在 GH 托管 runner 上装好、随 artifact 一起带过去，
+      # 让 runner 侧完全不需要网络与 pip。
+      - name: Stage acceptance python dependencies for the runner
+        run: |
+          set -euo pipefail
+          mkdir -p candidate-module/pylibs
+          docker run --rm -v "$PWD/candidate-module/pylibs:/libs" python:3.12-slim \
+            sh -c "pip install -q --disable-pip-version-check --target /libs 'requests==2.32.5' 'Pillow==11.3.0' 'bcrypt==4.3.0'"
+          test -d candidate-module/pylibs/requests
+          test -d candidate-module/pylibs/PIL
+          test -d candidate-module/pylibs/bcrypt
+          echo "PYLIBS_STAGED"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ability-candidate-module-${{ github.sha }}
@@ -204,27 +218,21 @@ jobs:
               finally:
                   docker('logout','ghcr.io')
           PY
-          # 该 runner 的 python3 缺 ensurepip（apt 提示装 python3.12-venv），
-          # `python3 -m venv` 在此必定失败 —— 这是原工作流里一处从未被触发的潜在缺陷，
-          # 因为此前每次都先卡在拉取上。这里按 1→2→3 逐级降级，并把可用的解释器
-          # 固化成包装脚本，供下一步统一调用。
-          python3 -V || true
-          python3 -m pip --version || true
-          bin=''; prefix=''
-          if python3 -m venv candidate-venv 2>/dev/null \
-             && candidate-venv/bin/pip install -q --disable-pip-version-check 'requests==2.32.5' 'Pillow==11.3.0' 'bcrypt==4.3.0'; then
-            bin='candidate-venv/bin/python'; echo "CANDIDATE_PY_STRATEGY=venv"
-          elif python3 -m pip install -q --disable-pip-version-check --break-system-packages --target candidate-libs 'requests==2.32.5' 'Pillow==11.3.0' 'bcrypt==4.3.0'; then
-            bin='python3'; prefix='PYTHONPATH=candidate-libs'; echo "CANDIDATE_PY_STRATEGY=pip-target"
-          elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null \
-             && sudo -n apt-get install -y -qq python3-venv python3-pip \
-             && python3 -m venv candidate-venv \
-             && candidate-venv/bin/pip install -q --disable-pip-version-check 'requests==2.32.5' 'Pillow==11.3.0' 'bcrypt==4.3.0'; then
-            bin='candidate-venv/bin/python'; echo "CANDIDATE_PY_STRATEGY=apt-venv"
-          else
-            echo "::error::no usable python environment (venv/pip/apt all failed)"; exit 1
+          # runner 的 python3(3.12.3) 既无 pip 也无 ensurepip，且没有免密 sudo 装 apt 包。
+          # 依赖已由 candidate-image 作业预装并随 artifact 带过来，这里完全不需要网络。
+          bin='python3'; prefix='candidate-module/pylibs'
+          if ! PYTHONPATH="$prefix" python3 -c 'import requests,PIL,bcrypt' 2>/dev/null; then
+            echo "::warning::prebuilt pylibs unusable; falling back to a local install"
+            if python3 -m venv candidate-venv 2>/dev/null \
+               && candidate-venv/bin/pip install -q --disable-pip-version-check 'requests==2.32.5' 'Pillow==11.3.0' 'bcrypt==4.3.0'; then
+              bin='candidate-venv/bin/python'; prefix=''
+            elif python3 -m pip install -q --disable-pip-version-check --break-system-packages --target candidate-libs 'requests==2.32.5' 'Pillow==11.3.0' 'bcrypt==4.3.0' 2>/dev/null; then
+              bin='python3'; prefix='candidate-libs'
+            else
+              echo "::error::no usable python environment"; exit 1
+            fi
           fi
-          printf '%s\n' '#!/usr/bin/env bash' "exec ${prefix} ${bin} \"\$@\"" > candidate-python.sh
+          printf '%s\n' '#!/usr/bin/env bash' "exec PYTHONPATH=${prefix:-} ${bin} \"\$@\"" > candidate-python.sh
           chmod +x candidate-python.sh
           ./candidate-python.sh -c 'import requests,PIL,bcrypt;print("CANDIDATE_PY_ENV_OK")'
       - name: Run every image and video purpose through the platform
