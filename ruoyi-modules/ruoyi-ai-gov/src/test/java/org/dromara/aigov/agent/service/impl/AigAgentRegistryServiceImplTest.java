@@ -281,6 +281,31 @@ class AigAgentRegistryServiceImplTest {
     }
 
     @Test
+    @DisplayName("★ 现状钉住（已知缺口）：HUMAN_APPROVAL 只写批准人，不核对任何批准证据")
+    void humanApprovalGateIsDeclarationOnly() {
+        stubVersion("SANDBOX_TESTED", "GENERAL");
+
+        // 库里没有任何"谁批的、依据是什么"的记录，只声明这把门槛就能推进
+        assertEquals(AigReleaseStatusEnum.CANDIDATE, service.advanceRelease(bo("SANDBOX_TESTED",
+            "CANDIDATE", List.of(AigReleaseGateEnum.GOLDEN_CASE.getCode(),
+                AigReleaseGateEnum.HUMAN_APPROVAL.getCode()))));
+
+        // "证据"的全部内容就是这两列——与 GOLDEN_CASE（查评测账本）、SANDBOX（查沙箱证据）不同。
+        // 注意断言的是 getSqlSet()（SET 子句）：getSqlSegment() 只给 WHERE 片段
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<LambdaUpdateWrapper<AigAgentVersion>> captor =
+            ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
+        verify(agentVersionMapper).update(isNull(), captor.capture());
+        String set = captor.getValue().getSqlSet();
+        assertTrue(set.contains("approved_by"), set);
+        assertTrue(set.contains("approved_at"), set);
+
+        // 这条用例是**刻意的摩擦**：一旦哪天给这把门槛接上证据核对（要求三方批准记录等），
+        // 本用例必须一起改——那一刻人必须回答"批准记录从哪来、谁写"。
+        // 缺口本身记在 docs/aigov/10-岗位工作台-实施说明.md 的待办表里。
+    }
+
+    @Test
     @DisplayName("不许跳步：DRAFT 直接到 STABLE 被拒，且提示「下一步只能是 VALIDATED」")
     void refusesSkippingSteps() {
         stubVersion("DRAFT", "TESTING");
