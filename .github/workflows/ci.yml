@@ -58,6 +58,9 @@ jobs:
       - name: Verify tests actually ran
         run: python3 script/ci/check-test-results.py
 
+      - name: Verify immutable image transfer controls
+        run: python3 -m unittest discover -s script/ci -p test_registry_image_archive.py -v
+
       # 工作流契约/模板一致性测试（Node 内置 runner，无第三方依赖）。
       # 校验：模板存在、字节是规范格式、SHA-256 与契约一致、mapping 与模板节点三方对齐、
       # 模板里不残留样例提示词。
@@ -285,3 +288,13 @@ jobs:
           docker push "$image"
           digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$image")
           printf '### Published image\n\n`%s`\n\nDigest: `%s`\n' "$image" "$digest" >> "$GITHUB_STEP_SUMMARY"
+          python3 script/ci/registry-image-archive.py export "$digest" "$GITHUB_SHA" --destination artifacts/published-image
+
+      - name: Upload the exact immutable published backend image for reviewed transfer
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: published-backend-image-${{ github.sha }}
+          path: artifacts/published-image/
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 3

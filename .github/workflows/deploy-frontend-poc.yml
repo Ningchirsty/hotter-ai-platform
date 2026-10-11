@@ -16,6 +16,14 @@ on:
         required: false
         type: boolean
         default: false
+      preload_archive_sha256:
+        description: Optional SHA256 of the reviewed OCI archive exported by the main CI run
+        required: false
+        type: string
+      preload_archive_bytes:
+        description: Optional byte size paired with the reviewed archive checksum
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -37,10 +45,16 @@ jobs:
         env:
           IMAGE: ${{ inputs.image }}
           GIT_SHA: ${{ inputs.git_sha }}
+          ARCHIVE_SHA: ${{ inputs.preload_archive_sha256 }}
+          ARCHIVE_BYTES: ${{ inputs.preload_archive_bytes }}
         run: |
+          set -euo pipefail
           if ! [[ "$IMAGE" =~ ^ghcr\.io/ningchirsty/hotter-ai-platform-frontend@sha256:[0-9a-f]{64}$ ]]; then
             echo "Image must be the expected immutable GHCR frontend digest." >&2
             exit 1
+          fi
+          if [ -n "$ARCHIVE_SHA$ARCHIVE_BYTES" ]; then
+            [[ "$ARCHIVE_SHA" =~ ^[0-9a-f]{64}$ && "$ARCHIVE_BYTES" =~ ^[1-9][0-9]{0,9}$ ]] || exit 1
           fi
           if ! [[ "$GIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
             echo "git_sha must be a full lowercase Git SHA." >&2
@@ -80,6 +94,21 @@ jobs:
               exit 1
             fi
           fi
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Preload the reviewed immutable CI image when requested
+        if: inputs.preload_archive_sha256 != ''
+        env:
+          IMAGE: ${{ inputs.image }}
+          GIT_SHA: ${{ inputs.git_sha }}
+          ARCHIVE_SHA: ${{ inputs.preload_archive_sha256 }}
+          ARCHIVE_BYTES: ${{ inputs.preload_archive_bytes }}
+        run: |
+          python3 script/ci/registry-image-archive.py load "$IMAGE" "$GIT_SHA" \
+            --archive-sha256 "$ARCHIVE_SHA" --archive-bytes "$ARCHIVE_BYTES"
 
       - name: Deploy and verify frontend through audited entrypoint
         env:

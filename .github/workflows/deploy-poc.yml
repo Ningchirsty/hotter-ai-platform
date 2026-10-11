@@ -13,6 +13,14 @@ on:
         required: false
         type: boolean
         default: false
+      preload_archive_sha256:
+        description: Optional SHA256 of the reviewed OCI archive exported by the main CI run
+        required: false
+        type: string
+      preload_archive_bytes:
+        description: Optional byte size paired with the reviewed archive checksum
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -33,10 +41,16 @@ jobs:
       - name: Validate image reference
         env:
           IMAGE: ${{ inputs.image }}
+          ARCHIVE_SHA: ${{ inputs.preload_archive_sha256 }}
+          ARCHIVE_BYTES: ${{ inputs.preload_archive_bytes }}
         run: |
+          set -euo pipefail
           if ! [[ "$IMAGE" =~ ^ghcr\.io/ningchirsty/hotter-ai-platform-backend@sha256:[0-9a-f]{64}$ ]]; then
             echo "Image must be the expected immutable GHCR digest." >&2
             exit 1
+          fi
+          if [ -n "$ARCHIVE_SHA$ARCHIVE_BYTES" ]; then
+            [[ "$ARCHIVE_SHA" =~ ^[0-9a-f]{64}$ && "$ARCHIVE_BYTES" =~ ^[1-9][0-9]{0,9}$ ]] || exit 1
           fi
 
       # 2026-10-08 P0 事故后新增：部署前预检。
@@ -79,6 +93,38 @@ jobs:
               exit 1
             fi
           fi
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Preload the reviewed immutable CI image when requested
+        if: inputs.preload_archive_sha256 != ''
+        env:
+          IMAGE: ${{ inputs.image }}
+          ARCHIVE_SHA: ${{ inputs.preload_archive_sha256 }}
+          ARCHIVE_BYTES: ${{ inputs.preload_archive_bytes }}
+        run: |
+          python3 script/ci/registry-image-archive.py load "$IMAGE" "$GITHUB_SHA" \
+            --archive-sha256 "$ARCHIVE_SHA" --archive-bytes "$ARCHIVE_BYTES"
+
+      # Latest main adds mapper fields and tables since the deployed version.
+      # Replay only additive incremental/schema scripts; never baseline DROP/seed/menu SQL.
+      - name: Prepare additive runtime schema before switching backend
+        run: |
+          set -euo pipefail
+          for migration in \
+            aig_agent_resource_binding.sql aig_asset_index.sql aig_launch_record.sql \
+            aig_role_workspace.sql aig_sandbox_artifact_download.sql \
+            aig_studio_artifact_draft.sql aig_studio_change_proposal.sql aig_studio_copilot_turn.sql \
+            aig_user_brand.sql aig_user_workspace_pref.sql \
+            cp_task_platform_ref.sql ry_video_task_platform_ref.sql; do
+            test -s "script/sql/$migration"
+            echo "Preparing additive runtime schema: $migration"
+            docker exec -i ai-video-poc-mysql-1 sh -c \
+              'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql --default-character-set=utf8mb4 -uroot -D ai_video_poc' \
+              < "script/sql/$migration"
+          done
 
       - name: Deploy and verify backend through audited entrypoint
         env:
