@@ -405,7 +405,7 @@ private static final Map<String, Map<String, String>> LATEST = Map.of( ... );
 | **安全硬要求（实施时逐条落实）** | ①**永不内联渲染**：产物由不可信代码在沙箱内产生，可以是 HTML/SVG/JS；下载响应固定 `Content-Type: application/octet-stream`（**不回显上传方声明的 content_type**）+ `Content-Disposition: attachment` + `X-Content-Type-Options: nosniff`。否则就是"在平台域下执行外部代码"的现成通道；②`path` 只接受相对路径，拒绝绝对路径/`..`/反斜杠；③限额：单文件、单 run 文件数、单 run 总量；④对象存储独立前缀、不生成公开 URL、下载一律走平台鉴权；⑤谁下载了哪个产物要留痕 |
 | **与门槛的关系（别混）** | 产物入库**不参与**发布门槛判定：门槛只看 `aig_sandbox_run` 里那条运行记录。"产物没存下来"不该改变"跑通过没有"的结论 |
 | **实施顺序** | SQL（已建表）→ 后端（实体/Mapper/服务含对象存储与四条校验/Controller + 单测：sha256 不符、路径越界、超限、重复登记、下载响应头）→ 前端（产物列表与下载，按钮按 `aig:sandbox:list`）→ 发布（SQL → 后端 → 前端；**宿主机拉不动镜像，需走运行手册 §4.6 的 LAN 搬运**）→ 生产端到端验证（真跑作业 → 导出 → 上传 → 列表 → 下载并核对 sha256 → 清理） |
-| **现状（诚实记录）** | 表 `aig_sandbox_artifact` **已建**（生产 9 列 0 行、重跑幂等）并纳入发布检查的期望表清单；**代码未开始**——目前没有任何代码读这张表。运维侧那一半（`sandbox-archive.sh verify/export`）已完成并生产实测通过（R105/R115，0 失败） |
+| **现状（诚实记录）** | 表 `aig_sandbox_artifact` **已建**（生产 9 列 0 行、重跑幂等）并纳入发布检查的期望表清单；运维侧那一半（`sandbox-archive.sh verify/export`）已完成并生产实测通过（R105/R115，0 失败）。**代码于 2026-10-11 交付**（§实施顺序的第 2、3 步）：`AigSandboxArtifact`+Mapper+Vo、`AigSandboxArtifactManifest`（解析声明 + 路径安全 + 摘要）、`IAigSandboxArtifactStore`/`AigOssSandboxArtifactStore`（键=`aig-private/sandbox/<runId>/<sha256>`）、`IAigSandboxArtifactService`+impl（三道校验 + 三个限额 + 下载再验摘要）、`AigSandboxArtifactController`（登记/清单/下载，下载固定三头）、前端在「沙箱证据」块内列出产物并按 `aig:sandbox:record`/`aig:sandbox:list` 上传/下载；**aigov 全量 1002→1030 全绿**。**仍未做**：§实施顺序第 4、5 步（发布与生产端到端验证）——属部署侧；以及细则③的**保留策略**（"超限删最旧"是对象存储生命周期策略，不在应用代码里）；第①条"谁下载了哪个产物要留痕"目前只落应用日志（`下发沙箱产物` INFO 行），未单独建下载账本 |
 
 ---
 

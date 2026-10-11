@@ -205,6 +205,67 @@
               登记沙箱运行
             </el-button>
             <el-button link icon="Refresh" @click="loadSandboxEvidence">刷新证据</el-button>
+
+            <!--
+              沙箱产物（ADR-016）：产物字节由运维导出后经这里交上来，平台不读宿主归档目录。
+              清单以 result.json **声明的产物**为准（未入库的也会出现）——只列已入库的话，
+              漏传的那个恰恰不会出现，而"都收齐了吗"正是这里唯一要回答的问题。
+              下载一律按附件处理（响应头由后端保证），界面刻意不提供预览：产物是不可信内容。
+            -->
+            <div v-if="sandboxEvidence && sandboxEvidence.runId" class="artifact-block">
+              <div class="artifact-head">
+                <span>{{ artifactSummary(sandboxArtifacts) }}</span>
+                <el-button link icon="Refresh" :loading="loadingArtifacts" @click="loadSandboxArtifacts">
+                  刷新产物
+                </el-button>
+              </div>
+              <el-table v-loading="loadingArtifacts" :data="sandboxArtifacts" size="small" border>
+                <el-table-column label="路径" prop="path" min-width="200" show-overflow-tooltip />
+                <el-table-column label="字节" prop="bytes" align="center" width="100" />
+                <el-table-column label="SHA-256" align="center" min-width="130" show-overflow-tooltip>
+                  <template #default="{ row }">{{ shortSha(row.sha256) }}</template>
+                </el-table-column>
+                <el-table-column label="入库" align="center" width="90">
+                  <template #default="{ row }">
+                    <el-tag :type="row.uploaded ? 'success' : 'info'" size="small">
+                      {{ row.uploaded ? '已入库' : '未入库' }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" align="center" width="160">
+                  <template #default="{ row }">
+                    <el-upload
+                      v-hasPermi="['aig:sandbox:record']"
+                      :show-file-list="false"
+                      :http-request="(option: any) => doUploadArtifact(row, option)"
+                    >
+                      <el-button
+                        link
+                        size="small"
+                        type="primary"
+                        :disabled="row.uploaded === true || uploadingPath === row.path"
+                        :loading="uploadingPath === row.path"
+                      >
+                        上传
+                      </el-button>
+                    </el-upload>
+                    <el-button
+                      link
+                      size="small"
+                      type="primary"
+                      :disabled="row.uploaded !== true"
+                      @click="doDownloadArtifact(row)"
+                    >
+                      下载
+                    </el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+              <div class="gate-hint">
+                上传时服务端按 result.json 声明的字节数与 SHA-256 逐个校验：不符即拒绝，不落对象存储。
+                产物字节与发布门槛无关——门槛只看沙箱运行证据（上面那块）。
+              </div>
+            </div>
             <!--
               这条口径必须出现在门槛旁边，而不是只写在文档里：训练台的"测试调用"是一次受治理的
               模型调用（记录在 aig_studio_execution_link），**不参与**这道门槛判定。把它悄悄接进来
@@ -266,12 +327,18 @@
 <script setup lang="ts">
 import { getAgentVersion, listAgent, listAgentVersion, advanceRelease, missingGates } from '@/api/aigov/agent';
 import type { AigAgentQuery, AigAgentVO, AigAgentVersionVO, AigReleaseAdvanceForm } from '@/api/aigov/agent/types';
-import { sandboxRunEvidence, recordSandboxRun } from '@/api/aigov/sandbox';
-import type { AigSandboxRunEvidence, AigSandboxRunRecordForm } from '@/api/aigov/sandbox/types';
+import { sandboxRunEvidence, recordSandboxRun, listSandboxArtifacts, uploadSandboxArtifact, downloadSandboxArtifact } from '@/api/aigov/sandbox';
+import type {
+  AigSandboxArtifactManifestVO,
+  AigSandboxRunEvidence,
+  AigSandboxRunRecordForm
+} from '@/api/aigov/sandbox/types';
 import { useLoading } from '@/hooks/async/useLoading';
 import { useSearchReset } from '@/hooks/form/useSearchReset';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import modal from '@/plugins/modal';
+import { saveBlob } from '@/utils/save';
+import { artifactSummary, fileNameOf, shortSha } from './sandboxArtifact';
 
 defineOptions({ name: 'AigAgentRegistry' });
 
@@ -306,6 +373,14 @@ const advanceVisible = ref(false);
 const missingGateText = ref('');
 const advanceFormRef = ref<ElFormInstance>();
 const sandboxEvidence = ref<AigSandboxRunEvidence>();
+/**
+ * 沙箱产物清单（ADR-016）：以 result.json 声明的产物为准，未入库的也会出现。
+ * 证据没有 runId（没跑过）时它为空——那时"没有产物"是结论，不是加载失败。
+ */
+const sandboxArtifacts = ref<AigSandboxArtifactManifestVO[]>([]);
+const loadingArtifacts = ref(false);
+/** 正在上传的产物路径（按行禁用按钮，避免同一行连点） */
+const uploadingPath = ref('');
 const recordVisible = ref(false);
 const recordSubmitting = ref(false);
 const recordFormRef = ref<ElFormInstance>();
@@ -412,6 +487,7 @@ const openAdvance = async (row: AigAgentVersionVO) => {
   advanceVisible.value = true;
   // 打开就查一次沙箱证据：管理员在这里最需要知道的就是"为什么还推不动"
   await loadSandboxEvidence();
+  await loadSandboxArtifacts();
 };
 
 /**
@@ -443,6 +519,69 @@ const openRecord = () => {
     resultJson: ''
   };
   recordVisible.value = true;
+};
+
+/**
+ * 读产物清单（以 result.json 声明的产物为准）。
+ *
+ * 证据没有 runId 时清空并直接返回：没跑过就没有产物清单，这不是加载失败。
+ */
+const loadSandboxArtifacts = async () => {
+  const runId = sandboxEvidence.value?.runId;
+  if (!runId) {
+    sandboxArtifacts.value = [];
+    return;
+  }
+  loadingArtifacts.value = true;
+  try {
+    const res = await listSandboxArtifacts(runId);
+    // 取数期间换了版本/关了对话框：丢弃这次结果，避免把上一条运行的产物显示成本条的
+    if (sandboxEvidence.value?.runId !== runId) return;
+    sandboxArtifacts.value = res.data || [];
+  } catch (e: any) {
+    sandboxArtifacts.value = [];
+    modal.alertError(e?.message || '读取沙箱产物清单失败');
+  } finally {
+    loadingArtifacts.value = false;
+  }
+};
+
+/**
+ * 上传一只产物的字节。
+ *
+ * 本地不做字节数/摘要校验：校验基准是账本里声明的清单，只有服务端拿得到，
+ * 本地"顺手校验一下"会得到两套口径——而两套口径不一致时，人只会看到互相矛盾的提示。
+ */
+const doUploadArtifact = async (row: AigSandboxArtifactManifestVO, option: any) => {
+  const runId = sandboxEvidence.value?.runId;
+  if (!runId) {
+    option?.onError?.(new Error('没有沙箱运行记录，无法上传产物'));
+    return;
+  }
+  uploadingPath.value = row.path;
+  try {
+    await uploadSandboxArtifact(runId, row.path, option.file as File,
+      (option.file as File)?.type || undefined);
+    modal.msgSuccess('已登记：' + row.path);
+    await loadSandboxArtifacts();
+  } catch (e: any) {
+    modal.alertError(e?.message || '产物登记失败');
+    option?.onError?.(e);
+  } finally {
+    uploadingPath.value = '';
+  }
+};
+
+/** 下载一只已入库的产物（按附件保存；产物是不可信内容，不做预览） */
+const doDownloadArtifact = async (row: AigSandboxArtifactManifestVO) => {
+  const runId = sandboxEvidence.value?.runId;
+  if (!runId) return;
+  try {
+    const blob = await downloadSandboxArtifact(runId, row.path);
+    saveBlob(blob, fileNameOf(row.path));
+  } catch (e: any) {
+    modal.alertError(e?.message || '产物下载失败');
+  }
 };
 
 /** 提交登记：把执行器输出的 result.json 原文交上去 */
@@ -503,5 +642,18 @@ onMounted(() => {
   font-size: 12px;
   line-height: 1.5;
   color: var(--el-text-color-secondary);
+}
+
+.artifact-block {
+  margin: 8px 0;
+}
+
+.artifact-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+  font-size: 12.5px;
 }
 </style>

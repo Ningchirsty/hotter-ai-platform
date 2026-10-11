@@ -55,3 +55,26 @@ export interface AigSandboxRunRecordForm {
   /** result.json 原文（一字不改） */
   resultJson: string;
 }
+
+/**
+ * 沙箱产物清单项（ADR-016：产物进平台）。
+ *
+ * **以「声明的产物」为准**：列表来自 result.json 的 `artifacts`，每一项带 `uploaded`——
+ * 只列已入库的行答不出"这次作业产出的东西都收齐了吗"，漏传的那个恰恰不会出现。
+ */
+export interface AigSandboxArtifactManifestVO {
+  /** 产物相对路径（上传/下载都用它作参数） */
+  path: string;
+  /** 账本声明的字节数 */
+  bytes?: number;
+  /** 账本声明的 SHA-256 */
+  sha256?: string;
+  /** 是否已入库（字节已在对象存储且账本有行） */
+  uploaded?: boolean;
+  /** 入库的产物记录ID（未入库时为空） */
+  artifactId?: string | number;
+  /** 入库时上传方声明的类型（仅记录；下载一律按附件处理） */
+  contentType?: string;
+  /** 入库时间 */
+  uploadedAt?: string;
+}
