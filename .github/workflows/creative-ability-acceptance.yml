@@ -133,8 +133,9 @@ jobs:
           set -euo pipefail
           # 只清理本管线自己的遗留（候选镜像仓库名与容器名前缀精确匹配），
           # 不触碰 hotter-ai-platform-backend 生产镜像、ruoyi-web-* 生产容器，也不是全局 prune。
-          docker images 'hotter-ability-candidate' --format '{{.Repository}}:{{.Tag}}' | xargs -r docker rmi -f || true
           docker ps -a --filter 'name=hotter-ability-' --format '{{.Names}}' | xargs -r docker rm -f || true
+          docker images 'hotter-ability-candidate' --format '{{.Repository}}:{{.Tag}}' | xargs -r docker rmi -f || true
+          docker image prune -f --filter 'label=hotter.creative.base-commit' || true
           rm -rf "${RUNNER_TEMP:?}"/hotter-ability-* || true
           df -h / | sed -n '1,2p'
           python3 - <<'PY'
