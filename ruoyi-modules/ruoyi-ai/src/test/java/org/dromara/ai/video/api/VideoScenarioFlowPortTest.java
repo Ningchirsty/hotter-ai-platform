@@ -155,6 +155,52 @@ class VideoScenarioFlowPortTest {
         verify(submissionService, never()).submit(any(), anyString(), anyLong(), any());
     }
 
+    @Test
+    @DisplayName("★用途形态快照（abilityCode/inputs/assets/output）原样转发，只覆写幂等键、不塞 taskName")
+    void abilitySnapshotIsForwardedUnchangedExceptIdempotencyKey() {
+        when(repository.findByPlatformTaskId(88L)).thenReturn(null);
+        when(jdbc.queryForList(anyString(), eq(String.class), eq(9L))).thenReturn(List.of("000000"));
+        when(submissionService.submit(any(), eq("000000"), eq(9L), eq(88L)))
+            .thenReturn(new VideoTaskSubmissionService.SubmissionResult(502L, "VIDEO-20260101-000502", false));
+
+        AigScenarioFlowResult result = port.dispatch(request(
+            "{\"abilityCode\":\"PRODUCT_MOTION\",\"workflowCode\":\"wf-ability-video-product-motion-wan\","
+                + "\"inputs\":{\"action\":\"茶汤冒出热气\"},\"assets\":{\"img\":10},"
+                + "\"output\":{\"tier\":\"流畅 · 720P\",\"dur\":\"5 秒\"}}"));
+
+        assertTrue(result.isAccepted());
+        assertEquals("502", result.getExternalRef());
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(submissionService).submit(captor.capture(), eq("000000"), eq(9L), eq(88L));
+        Map<String, Object> payload = captor.getValue();
+        assertEquals("PRODUCT_MOTION", payload.get("abilityCode"));
+        assertEquals("wf-ability-video-product-motion-wan", payload.get("workflowCode"));
+        assertEquals("PLATFORM-88", payload.get("idempotencyKey"));
+        assertFalse(payload.containsKey("taskName"),
+            "用途形态不能塞 taskName——归一化会拒绝未知键，任务名由用途名派生");
+        assertNotNull(payload.get("inputs"));
+        assertNotNull(payload.get("assets"));
+        assertNotNull(payload.get("output"));
+    }
+
+    @Test
+    @DisplayName("经典形态缺 taskName 时补一个可读兜底名（用途形态不补）")
+    void legacySnapshotGetsReadableDefaultName() {
+        when(repository.findByPlatformTaskId(88L)).thenReturn(null);
+        when(jdbc.queryForList(anyString(), eq(String.class), eq(9L))).thenReturn(List.of("000000"));
+        when(submissionService.submit(any(), eq("000000"), eq(9L), eq(88L)))
+            .thenReturn(new VideoTaskSubmissionService.SubmissionResult(503L, "VIDEO-20260101-000503", false));
+
+        port.dispatch(request("{\"capabilityCode\":\"T2V\",\"workflowCode\":\"wf-t2v-h3\"}"));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(submissionService).submit(captor.capture(), eq("000000"), eq(9L), eq(88L));
+        assertEquals("T2V 场景任务", captor.getValue().get("taskName"));
+    }
+
     private static AigScenarioFlowRequest request(String snapshotJson) {
         AigScenarioFlowRequest request = new AigScenarioFlowRequest();
         request.setTaskId(88L);

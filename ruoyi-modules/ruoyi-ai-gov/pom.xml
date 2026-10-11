@@ -127,6 +127,16 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- 隔离环境端到端干跑（AigScenarioDispatchE2ELiveTest）连临时 MariaDB：
+             生产运行时的 JDBC 驱动由部署环境提供，本模块自身不声明；这里只给测试补一份，
+             让「真实库 + 真实链路」的干跑能跑起来。默认无 -Daig.live.jdbc 时该类整体跳过。 -->
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <version>9.7.0</version>
+            <scope>test</scope>
+        </dependency>
+
     </dependencies>
 
 </project>
