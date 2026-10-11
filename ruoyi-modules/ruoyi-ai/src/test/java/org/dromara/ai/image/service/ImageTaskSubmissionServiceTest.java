@@ -230,6 +230,8 @@ class ImageTaskSubmissionServiceTest {
     @Test
     @DisplayName("EDIT 提交不得注入契约未声明的 image2/image3 空槽（换背景 flux4b 曾因此 400）")
     void editSubmissionDoesNotInjectUndeclaredImageSlots() throws Exception {
+        assertTrue(registry.markTesting("wf-ability-image-background-replace-flux4b"),
+            "隔离联调放行后该绑定应可提交");
         ImageWorkflowVersion flux4b = registry.require("wf-ability-image-background-replace-flux4b", false);
         assertTrue(flux4b.capabilityFields().contains("image1") && !flux4b.capabilityFields().contains("image2"),
             "前置：该契约只声明 image1 单图槽");
