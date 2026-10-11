@@ -11,6 +11,7 @@ import org.dromara.aigov.workspace.portal.domain.vo.AigPortalRoleVo;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalTaskVo;
 import org.dromara.aigov.workspace.portal.helper.AigPortalActor;
 import org.dromara.aigov.workspace.portal.helper.AigPortalActorProvider;
+import org.dromara.aigov.workspace.portal.service.IAigAssetIndexService;
 import org.dromara.aigov.workspace.portal.service.IAigPortalAssetService;
 import org.dromara.aigov.workspace.portal.service.IAigPortalService;
 import org.dromara.aigov.workspace.recommend.domain.bo.AigRecommendSuggestBo;
@@ -57,6 +58,7 @@ public class AigPortalController extends BaseController {
 
     private final IAigPortalService portalService;
     private final IAigPortalAssetService assetService;
+    private final IAigAssetIndexService assetIndexService;
     private final IAigRecommendService recommendService;
     private final AigPortalActorProvider actorProvider;
 
@@ -138,6 +140,37 @@ public class AigPortalController extends BaseController {
     @GetMapping("/my-assets/recent")
     public R<List<AigPortalMyAssetVo>> recentAssets() {
         return R.ok(assetService.recentAssets(requireActor()));
+    }
+
+    /**
+     * 我的资产·全局分页（读聚合索引；时间倒序）。
+     *
+     * <p><b>这是真正的分页路由</b>：数据来自 {@code aig_asset_index}，由"刷新"触发按用户重建。
+     * 索引还没同步过时为空页——它是派生缓存，不是实时视图。</p>
+     *
+     * @param domain    域编码（可空：全部域）
+     * @param pageQuery 分页参数
+     * @return 分页结果
+     */
+    @SaCheckLogin
+    @GetMapping("/my-assets/page")
+    public R<PageResult<AigPortalMyAssetVo>> myAssetPage(
+        @RequestParam(required = false) String domain, PageQuery pageQuery) {
+        return R.ok(assetIndexService.pageAssets(requireActor().userId(), domain, pageQuery));
+    }
+
+    /**
+     * 刷新我的资产索引（按当前用户重建；先删后插，同一事务）。
+     *
+     * <p>没有 MQ/调度依赖，所以同步入口就是这里——由用户在门户点"刷新"。
+     * 将来做定时清扫时调用同一个服务方法即可。</p>
+     *
+     * @return 本次写入的索引行数
+     */
+    @SaCheckLogin
+    @PostMapping("/my-assets/refresh")
+    public R<Integer> refreshMyAssets() {
+        return R.ok(assetIndexService.rebuildForUser(requireActor().userId()));
     }
 
     /**

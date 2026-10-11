@@ -27,6 +27,7 @@ public interface CpTaskFileMapper extends BaseMapperPlus<CpTaskFile, CpTaskFileV
      * 两处 {@code del_flag} 都要判：内容域的删除值是 {@code '1'}，与图片/视频域的 {@code '2'} 不同。</p>
      *
      * @param ownerId 任务负责人ID（由登录态取得）
+     * @param offset  从第几条开始（0 基；索引同步分页用）
      * @param limit   最多返回几条
      * @return 行（file_id/task_id/file_name/file_kind/file_size/create_time）
      */
@@ -39,9 +40,11 @@ public interface CpTaskFileMapper extends BaseMapperPlus<CpTaskFile, CpTaskFileV
            AND f.del_flag = '0'
            AND t.del_flag = '0'
          ORDER BY f.file_id DESC
-         LIMIT #{limit}
+         LIMIT #{limit} OFFSET #{offset}
         """)
-    List<Map<String, Object>> listOwnedAssetRows(@Param("ownerId") Long ownerId, @Param("limit") int limit);
+    List<Map<String, Object>> listOwnedAssetRows(@Param("ownerId") Long ownerId,
+                                                 @Param("offset") int offset,
+                                                 @Param("limit") int limit);
 
 }
 
