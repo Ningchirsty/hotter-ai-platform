@@ -1,8 +1,8 @@
 name: Creative Ability Platform Acceptance
 
 on:
-  push:
-    branches: [codex/creative-abilities-production]
+  pull_request:
+    branches: [main]
     paths: [.github/workflows/creative-ability-acceptance.yml]
   workflow_dispatch:
 
@@ -15,6 +15,7 @@ concurrency:
 
 jobs:
   candidate-image:
+    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'codex/creative-abilities-production')
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
@@ -41,13 +42,82 @@ jobs:
           bash script/ci/fetch-ffmpeg.sh build-cache
           docker build --pull --label "org.opencontainers.image.revision=${GITHUB_SHA}" --tag "hotter-ability-candidate:${GITHUB_SHA}" -f Dockerfile .
           mkdir -p candidate-image
-          docker save "hotter-ability-candidate:${GITHUB_SHA}" | gzip -1 > candidate-image/backend-image.tar.gz
+          docker save "hotter-ability-candidate:${GITHUB_SHA}" | gzip -6 > candidate-image/backend-image.tar.gz
           cd candidate-image
           sha256sum backend-image.tar.gz > SHA256SUMS
+          split -n 8 -d backend-image.tar.gz backend-image.tar.gz.part
+          sha256sum backend-image.tar.gz.part* > PARTSUMS
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: ability-candidate-${{ github.sha }}
-          path: candidate-image/
+          name: ability-candidate-${{ github.sha }}-metadata
+          path: |
+            candidate-image/SHA256SUMS
+            candidate-image/PARTSUMS
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Upload candidate image part 00
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ability-candidate-${{ github.sha }}-part00
+          path: candidate-image/backend-image.tar.gz.part00
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 3
+      - name: Upload candidate image part 01
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ability-candidate-${{ github.sha }}-part01
+          path: candidate-image/backend-image.tar.gz.part01
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 3
+      - name: Upload candidate image part 02
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ability-candidate-${{ github.sha }}-part02
+          path: candidate-image/backend-image.tar.gz.part02
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 3
+      - name: Upload candidate image part 03
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ability-candidate-${{ github.sha }}-part03
+          path: candidate-image/backend-image.tar.gz.part03
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 3
+      - name: Upload candidate image part 04
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ability-candidate-${{ github.sha }}-part04
+          path: candidate-image/backend-image.tar.gz.part04
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 3
+      - name: Upload candidate image part 05
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ability-candidate-${{ github.sha }}-part05
+          path: candidate-image/backend-image.tar.gz.part05
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 3
+      - name: Upload candidate image part 06
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ability-candidate-${{ github.sha }}-part06
+          path: candidate-image/backend-image.tar.gz.part06
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 3
+      - name: Upload candidate image part 07
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ability-candidate-${{ github.sha }}-part07
+          path: candidate-image/backend-image.tar.gz.part07
           compression-level: 0
           if-no-files-found: error
           retention-days: 3
@@ -70,15 +140,21 @@ jobs:
           if available < 5 * 1024**2:
               raise SystemExit('At least 5 GiB available RAM is required for isolated acceptance')
           PY
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        timeout-minutes: 20
         with:
-          name: ability-candidate-${{ github.sha }}
+          pattern: ability-candidate-${{ github.sha }}-*
+          merge-multiple: true
+          digest-mismatch: error
           path: candidate-image
       - name: Load verified image and install isolated test dependencies
         run: |
           set -euo pipefail
           cd candidate-image
+          sha256sum -c PARTSUMS
+          cat backend-image.tar.gz.part* > backend-image.tar.gz
           sha256sum -c SHA256SUMS
+          python3 -c "from pathlib import Path; [file.unlink() for file in Path('.').glob('backend-image.tar.gz.part*')]"
           gzip -dc backend-image.tar.gz | docker load
           python3 -c "from pathlib import Path; Path('backend-image.tar.gz').unlink()"
           cd ..
