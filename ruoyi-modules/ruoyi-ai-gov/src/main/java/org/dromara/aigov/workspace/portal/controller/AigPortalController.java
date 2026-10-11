@@ -3,12 +3,20 @@ package org.dromara.aigov.workspace.portal.controller;
 import cn.dev33.satoken.annotation.SaCheckLogin;
 import lombok.RequiredArgsConstructor;
 import org.dromara.aigov.task.domain.bo.AigTaskQueryBo;
+import org.dromara.aigov.workspace.portal.domain.vo.AigPortalArtifactVo;
+import org.dromara.aigov.workspace.portal.domain.vo.AigPortalAssetGroupVo;
+import org.dromara.aigov.workspace.portal.domain.vo.AigPortalMyAssetVo;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalRoleHomeVo;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalRoleVo;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalTaskVo;
 import org.dromara.aigov.workspace.portal.helper.AigPortalActor;
 import org.dromara.aigov.workspace.portal.helper.AigPortalActorProvider;
+import org.dromara.aigov.workspace.portal.service.IAigAssetIndexService;
+import org.dromara.aigov.workspace.portal.service.IAigPortalAssetService;
 import org.dromara.aigov.workspace.portal.service.IAigPortalService;
+import org.dromara.aigov.workspace.recommend.domain.bo.AigRecommendSuggestBo;
+import org.dromara.aigov.workspace.recommend.domain.vo.AigRecommendResultVo;
+import org.dromara.aigov.workspace.recommend.service.IAigRecommendService;
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.core.domain.R;
 import org.dromara.common.core.exception.ServiceException;
@@ -17,13 +25,19 @@ import org.dromara.common.web.core.BaseController;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
 /**
- * 员工 AI 工作台（门户）只读接口（主文档线增量 2；附件 §7、§9）。
+ * 员工 AI 工作台（门户）接口（主文档线增量 2；附件 §7、§9）。
+ *
+ * <p>除 {@code /intent/suggest} 外都是**只读**接口。那个推荐接口也不改平台业务数据，
+ * 但它会发起一次**受治理的模型调用**（默认关闭、真花钱），所以方法和语义上都与只读接口区分开。</p>
  *
  * <h3>为什么用 {@code @SaCheckLogin} 而不是权限点</h3>
  * <p>这个入口对<b>每一个员工</b>开放，它只返回"当前用户自己"能看到的东西
@@ -43,6 +57,9 @@ import java.util.List;
 public class AigPortalController extends BaseController {
 
     private final IAigPortalService portalService;
+    private final IAigPortalAssetService assetService;
+    private final IAigAssetIndexService assetIndexService;
+    private final IAigRecommendService recommendService;
     private final AigPortalActorProvider actorProvider;
 
     /**
@@ -79,6 +96,96 @@ public class AigPortalController extends BaseController {
     @GetMapping("/my-tasks")
     public R<PageResult<AigPortalTaskVo>> myTasks(AigTaskQueryBo bo, PageQuery pageQuery) {
         return R.ok(portalService.myTasks(bo, pageQuery, requireActor()));
+    }
+
+    /**
+     * 我的产物（平台产物台账；范围恒为当前用户）。
+     *
+     * @param taskId    任务ID（可空：只看某个任务的产物）
+     * @param pageQuery 分页参数
+     * @return 分页结果
+     */
+    @SaCheckLogin
+    @GetMapping("/my-artifacts")
+    public R<PageResult<AigPortalArtifactVo>> myArtifacts(
+        @RequestParam(required = false) Long taskId, PageQuery pageQuery) {
+        return R.ok(portalService.myArtifacts(taskId, pageQuery, requireActor()));
+    }
+
+    /**
+     * 我的资产（跨域只读；按域分组，每域最多几条）。
+     *
+     * <p>各域的"我的"口径由各域自己的 {@code MyAssetPort} 实现决定（图片/视频看 user_id，
+     * 内容看任务负责人）；这里只做分组展示，<b>不直连任何业务域的表</b>。
+     * 不承诺跨域排序/分页——那需要抹平三套口径，见 {@code AigPortalAssetGroupVo} 的说明。</p>
+     *
+     * @return 分组（IMAGE / VIDEO / CONTENT / 其他）
+     */
+    @SaCheckLogin
+    @GetMapping("/my-assets")
+    public R<List<AigPortalAssetGroupVo>> myAssets() {
+        return R.ok(assetService.myAssets(requireActor()));
+    }
+
+    /**
+     * 最近资产（各域各取最近若干条后按时间倒序合并）。
+     *
+     * <p><b>它不是分页</b>：没有 total、翻不到第二页、不承诺全量；要看全量去各域自己的入口。
+     * 路径刻意是 {@code /my-assets/recent} 而不是给 {@code /my-assets} 加 page 参数——
+     * 后者会让人以为它是分页接口。</p>
+     *
+     * @return 合并后的资产（条数有上限）
+     */
+    @SaCheckLogin
+    @GetMapping("/my-assets/recent")
+    public R<List<AigPortalMyAssetVo>> recentAssets() {
+        return R.ok(assetService.recentAssets(requireActor()));
+    }
+
+    /**
+     * 我的资产·全局分页（读聚合索引；时间倒序）。
+     *
+     * <p><b>这是真正的分页路由</b>：数据来自 {@code aig_asset_index}，由"刷新"触发按用户重建。
+     * 索引还没同步过时为空页——它是派生缓存，不是实时视图。</p>
+     *
+     * @param domain    域编码（可空：全部域）
+     * @param pageQuery 分页参数
+     * @return 分页结果
+     */
+    @SaCheckLogin
+    @GetMapping("/my-assets/page")
+    public R<PageResult<AigPortalMyAssetVo>> myAssetPage(
+        @RequestParam(required = false) String domain, PageQuery pageQuery) {
+        return R.ok(assetIndexService.pageAssets(requireActor().userId(), domain, pageQuery));
+    }
+
+    /**
+     * 刷新我的资产索引（按当前用户重建；先删后插，同一事务）。
+     *
+     * <p>没有 MQ/调度依赖，所以同步入口就是这里——由用户在门户点"刷新"。
+     * 将来做定时清扫时调用同一个服务方法即可。</p>
+     *
+     * @return 本次写入的索引行数
+     */
+    @SaCheckLogin
+    @PostMapping("/my-assets/refresh")
+    public R<Integer> refreshMyAssets() {
+        return R.ok(assetIndexService.rebuildForUser(requireActor().userId()));
+    }
+
+    /**
+     * 自然语言推荐（只推荐、不启动；一次调用会花真钱，默认关闭）。
+     *
+     * <p>候选清单由服务端按当前用户可见卡片算出，调用方只能给"一句话需求"。
+     * 关着时**明确报错**（返回空列表会被读成"没有相关卡片"）。</p>
+     *
+     * @param bo 入参（一句话需求）
+     * @return 推荐结果（已按可见清单过滤）
+     */
+    @SaCheckLogin
+    @PostMapping("/intent/suggest")
+    public R<AigRecommendResultVo> suggest(@RequestBody(required = false) AigRecommendSuggestBo bo) {
+        return R.ok(recommendService.suggest(bo, requireActor()));
     }
 
     /**

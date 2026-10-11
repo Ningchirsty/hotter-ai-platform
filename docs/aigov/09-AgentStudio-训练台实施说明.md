@@ -365,16 +365,35 @@ script/sql/aig_studio.sql
 
 ## 七、后续与独立的变更
 
-**留给后续的一次独立变更**：`AigAgentCategoryEnum` 只有四个与创作工厂实现绑定的类别。
-若要支持"行业分析"这类非创作 Agent，需要一次**独立的类别/契约扩展**（会动枚举与
-`docs/platform-v2` 的契约面），不应夹在 Studio 增量里顺手加。
+**已完成（2026-10-11）：`AigAgentCategoryEnum` 扩展了非创作类 `ANALYSIS`（行业分析）。**
 
-**若要把测试结果用作发布门槛证据**：`SANDBOX_RUN` 已是"要证据"（`aig_sandbox_run`），
-`HUMAN_APPROVAL` 也有 ADR-014 的"管理员人工评测"通道。本增量的测试证据落在
-`aig_studio_execution_link`，**目前不参与任何门槛判定**——要把它接进门槛是一次独立决定，
-需按 `docs/platform-v2/02-Execution-Contract-v1.md` 与 `AigReleaseGateEnum` 把证据来源逐条对上，
-并明确"训练台的测试调用算不算 SANDBOX_RUN 证据"（**测试调用不等于沙箱执行**）。
+此前四个取值都与创作工厂的具体实现绑定，"行业分析"这类不产出设计物料的 Agent 无处归类，
+只能硬塞进 `PLANNING`——于是按类统计与筛选都会失真。本次：
 
-**留给后续的一次独立变更**：`AigAgentCategoryEnum` 只有四个与创作工厂实现绑定的类别。
-若要支持"行业分析"这类非创作 Agent，需要一次**独立的类别/契约扩展**（会动枚举与
-`docs/platform-v2` 的契约面），不应夹在 Studio 增量里顺手加。
+- 枚举新增 `ANALYSIS("ANALYSIS", "行业分析", …)`（第五个取值）；它的 `implementation` 是
+  **说明性占位**（仓库暂无对应实现），接入真实实现时再登记——不假装已经有一个实现。
+- **前端两处下拉同步补齐**：`views/aigov/studio/index.vue` 与 `views/aigov/agent/index.vue`；
+  少了它们，新类别就是"配不出来"，而那种失效只会表现为"没人用"。
+- 新增封闭集合守卫 `AigAgentCategoryContractTest`：取值集合**双向**断言
+  （`{PLANNING, VISUAL_DNA, GENERATION, QA, ANALYSIS}`）、编码必须是大写常量形态、
+  描述非空、`find` 大小写/空白容错但认不出返回 null。要扩值必须先改这条用例。
+- 与 `docs/platform-v2` 的关系：该类**不在** `AigContractEnumDriftTest` 的镜像清单里
+  （契约没有 Agent 类别词表），所以本次不改 `docs/platform-v2`；漂移由上面这条守卫自己兜。
+
+**已裁定（2026-10-11）：训练台测试证据不参与发布门槛判定，只作参考。**
+
+`SANDBOX_RUN` 的判据来源只有 `aig_sandbox_run`（宿主侧 worker 的一次性受限容器：退出码 0、未超时、
+无网，见 ADR-015）；训练台的测试证据落在 `aig_studio_execution_link`，它是**一次受治理的模型调用**，
+不等于隔离执行。两者混淆的失效形态正是最难发现的那种：接进门槛后会**编译过、单测过、页面还是绿灯**，
+但唯一能证明"不可信代码真的在隔离环境跑起来过"的证据被换成了"模型说这次没问题"，
+于是从未在沙箱验证过的外部代码可以顺利发布。
+
+因此这条口径被钉成构建期断言：守卫 `AigSandboxEvidenceSourceContractTest` **目录扫描**
+发布门槛源码（`org/dromara/aigov/agent`），要求其中不得出现 `AigStudioExecutionLink` /
+`aig_studio_execution_link`，并正向断言 `SANDBOX_RUN` 的发布断言确实走 `sandboxRunEvidence`
+（另有扫描文件数下限，防守卫空转）。发布推进界面的「沙箱证据」处也直接写明"测试调用只作参考、
+不参与门槛判定"。要改这条口径，必须先改这条用例——那一刻人必须回答"训练台的模型调用算不算沙箱执行"。
+
+> 口径出处：`AigReleaseGateEnum`（`basis` 指向设计 §5.4/§6.3）与 ADR-015。
+> 实测 `docs/platform-v2/02-Execution-Contract-v1.md` 文本里**没有** SANDBOX_RUN/沙箱条目，
+> 所以那里不是这条口径的依据。

@@ -1,5 +1,6 @@
 package org.dromara.aigov.workspace.portal.service.impl;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,7 +17,9 @@ import org.dromara.aigov.workspace.mapper.AigRoleActionMapper;
 import org.dromara.aigov.workspace.mapper.AigRoleBindingMapper;
 import org.dromara.aigov.workspace.mapper.AigRoleProfileMapper;
 import org.dromara.aigov.workspace.mapper.AigRoleVersionMapper;
+import org.dromara.aigov.workspace.portal.domain.AigPortalActionContext;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalActionVo;
+import org.dromara.aigov.workspace.portal.domain.vo.AigPortalArtifactVo;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalCategoryVo;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalRoleHomeVo;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalRoleVo;
@@ -24,6 +27,7 @@ import org.dromara.aigov.workspace.portal.domain.vo.AigPortalTaskVo;
 import org.dromara.aigov.workspace.portal.helper.AigPortalActor;
 import org.dromara.aigov.workspace.portal.helper.AigRoleVisibilityResolver;
 import org.dromara.aigov.workspace.portal.helper.AigVersionPick;
+import org.dromara.aigov.workspace.portal.mapper.AigPortalArtifactMapper;
 import org.dromara.aigov.workspace.portal.service.IAigPortalService;
 import org.dromara.aigov.workspace.helper.AigRolePackageManifest;
 import org.dromara.common.core.domain.PageResult;
@@ -63,12 +67,19 @@ public class AigPortalServiceImpl implements IAigPortalService {
     private final AigRoleVersionMapper roleVersionMapper;
     private final AigRoleActionMapper roleActionMapper;
     private final AigRoleBindingMapper roleBindingMapper;
+    private final AigPortalArtifactMapper artifactMapper;
     private final IAigTaskService taskService;
 
     @Override
     public List<AigPortalRoleVo> listMyRoles(AigPortalActor actor) {
+        // 复用同一条路径（含卡片读取）：列表与详情、推荐目录三处只有一份可见性实现
+        return new ArrayList<>(listMyRoleHomes(actor));
+    }
+
+    @Override
+    public List<AigPortalRoleHomeVo> listMyRoleHomes(AigPortalActor actor) {
         return visibleRoleHomes(actor).values().stream()
-            .map(home -> (AigPortalRoleVo) home)
+            .map(HomeEntry::home)
             .sorted(Comparator.comparing(AigPortalRoleVo::getRoleCode,
                 Comparator.nullsLast(Comparator.naturalOrder())))
             .toList();
@@ -80,12 +91,45 @@ public class AigPortalServiceImpl implements IAigPortalService {
         if (StringUtils.isBlank(roleCode)) {
             throw new ServiceException("岗位编码不能为空");
         }
-        AigPortalRoleHomeVo home = visibleRoleHomes(actor).get(roleCode.trim());
-        if (home == null) {
-            // 刻意不说"这个岗位存在但你没权限"：那等于确认了岗位存在，会变成信息泄漏
+        return requireHome(roleCode, actor).home();
+    }
+
+    @Override
+    public AigPortalActionContext resolveAction(String roleCode, String actionCode, AigPortalActor actor) {
+        if (StringUtils.isBlank(actionCode)) {
+            throw new ServiceException("卡片编码不能为空");
+        }
+        HomeEntry entry = requireHome(roleCode, actor);
+        AigRoleAction action = entry.actions().get(actionCode.trim());
+        if (action == null) {
+            // 卡片不存在、被停用、或分类已不在清单里（漂移）：对用户都是"这张卡片现在不可用"
+            throw new ServiceException("卡片不存在或当前不可用：" + actionCode.trim());
+        }
+        return new AigPortalActionContext(entry.version().getRoleVersionId(),
+            entry.version().getRoleId(), entry.home().getRoleCode(), entry.version().getVersion(),
+            action.getActionCode(), action.getTitle(), action.getLaunchMode(), action.getTargetType(),
+            action.getTargetRef(), action.getStudioRouteKey(), splitContextKeys(action.getRequiredContext()));
+    }
+
+    /**
+     * 取某个岗位对当前用户可见的那一份（取不到就按"不存在"拒绝）。
+     *
+     * <p>刻意不说"这个岗位存在但你没权限"：那等于确认了岗位存在，会变成信息泄漏。</p>
+     *
+     * @param roleCode 岗位编码
+     * @param actor    当前用户
+     * @return 岗位条目
+     */
+    private HomeEntry requireHome(String roleCode, AigPortalActor actor) {
+        requireActor(actor);
+        if (StringUtils.isBlank(roleCode)) {
+            throw new ServiceException("岗位编码不能为空");
+        }
+        HomeEntry entry = visibleRoleHomes(actor).get(roleCode.trim());
+        if (entry == null) {
             throw new ServiceException("岗位不存在或当前没有对你开放的版本：" + roleCode.trim());
         }
-        return home;
+        return entry;
     }
 
     @Override
@@ -103,6 +147,16 @@ public class AigPortalServiceImpl implements IAigPortalService {
         return PageResult.build(rows, page.getTotal());
     }
 
+    @Override
+    public PageResult<AigPortalArtifactVo> myArtifacts(Long taskId, PageQuery pageQuery, AigPortalActor actor) {
+        requireActor(actor);
+        // ★userId 由登录态取，SQL 里也**没有**"查谁的"这个参数：调用方无法指定别人的产物。
+        // 口径（只查自己提交的任务、只取 PASS）写在 XML 里，见 AigPortalArtifactMapper
+        IPage<AigPortalArtifactVo> page = artifactMapper.selectMyArtifactPage(
+            pageQuery == null ? new PageQuery().build() : pageQuery.build(), actor.userId(), taskId);
+        return PageResult.build(page.getRecords(), page.getTotal());
+    }
+
     /**
      * 当前用户可见的岗位 → 岗位首页（每个岗位取最新可见版本）。
      *
@@ -112,11 +166,11 @@ public class AigPortalServiceImpl implements IAigPortalService {
      * 应优化查询而不是另写一份判定。</p>
      *
      * @param actor 当前用户
-     * @return 岗位编码 → 岗位首页（保留插入顺序）
+     * @return 岗位编码 → 岗位条目（保留插入顺序）
      */
-    private Map<String, AigPortalRoleHomeVo> visibleRoleHomes(AigPortalActor actor) {
+    private Map<String, HomeEntry> visibleRoleHomes(AigPortalActor actor) {
         requireActor(actor);
-        Map<String, AigPortalRoleHomeVo> result = new LinkedHashMap<>();
+        Map<String, HomeEntry> result = new LinkedHashMap<>();
         List<AigRoleVersion> versions = roleVersionMapper.selectList(Wrappers.<AigRoleVersion>lambdaQuery()
             .eq(AigRoleVersion::getReleaseStatus, AigRoleReleaseStatusEnum.PUBLISHED.getCode())
             .orderByDesc(AigRoleVersion::getRoleVersionId));
@@ -138,9 +192,10 @@ public class AigPortalServiceImpl implements IAigPortalService {
             if (!visible) {
                 continue;
             }
-            AigPortalRoleHomeVo candidate = buildHome(profile, version, manifest);
-            AigPortalRoleHomeVo existing = result.get(profile.getRoleCode());
-            if (existing == null || AigVersionPick.compare(version.getVersion(), existing.getVersion()) > 0) {
+            HomeEntry candidate = buildHome(profile, version, manifest);
+            HomeEntry existing = result.get(profile.getRoleCode());
+            if (existing == null
+                || AigVersionPick.compare(version.getVersion(), existing.version().getVersion()) > 0) {
                 result.put(profile.getRoleCode(), candidate);
             }
         }
@@ -153,10 +208,10 @@ public class AigPortalServiceImpl implements IAigPortalService {
      * @param profile  岗位
      * @param version  版本
      * @param manifest 清单
-     * @return 岗位首页
+     * @return 岗位条目（含过滤后的卡片行，供启动链路定位"确切的哪张卡片"）
      */
-    private AigPortalRoleHomeVo buildHome(AigRoleProfile profile, AigRoleVersion version,
-                                          AigRolePackageDraft manifest) {
+    private HomeEntry buildHome(AigRoleProfile profile, AigRoleVersion version,
+                                AigRolePackageDraft manifest) {
         List<String> categoryCodes = new ArrayList<>();
         Map<String, String> categoryNames = new LinkedHashMap<>();
         for (AigRolePackageDraft.CategoryDraft category : manifest.categories()) {
@@ -167,6 +222,7 @@ public class AigPortalServiceImpl implements IAigPortalService {
             categoryNames.put(category.code().trim(), category.name());
         }
         List<AigPortalActionVo> actions = new ArrayList<>();
+        Map<String, AigRoleAction> actionRows = new LinkedHashMap<>();
         Map<String, Integer> counts = new LinkedHashMap<>();
         for (String code : categoryCodes) {
             counts.put(code, 0);
@@ -182,6 +238,7 @@ public class AigPortalServiceImpl implements IAigPortalService {
                 continue;
             }
             actions.add(toActionVo(action));
+            actionRows.put(action.getActionCode(), action);
             counts.put(category, counts.get(category) + 1);
         }
         AigPortalRoleHomeVo home = new AigPortalRoleHomeVo();
@@ -200,7 +257,38 @@ public class AigPortalServiceImpl implements IAigPortalService {
             categories.add(vo);
         }
         home.setCategories(categories);
-        return home;
+        return new HomeEntry(version, home, actionRows);
+    }
+
+    /**
+     * 岗位条目：可见的那一份版本 + 首页视图 + 通过过滤的卡片行。
+     *
+     * @param version 版本
+     * @param home    首页视图
+     * @param actions 卡片行（按卡片编码索引）
+     * @author ai-gov
+     */
+    private record HomeEntry(AigRoleVersion version, AigPortalRoleHomeVo home,
+                             Map<String, AigRoleAction> actions) {
+    }
+
+    /**
+     * 拆分上下文字符串。
+     *
+     * @param requiredContext 逗号分隔
+     * @return 键列表
+     */
+    private static List<String> splitContextKeys(String requiredContext) {
+        List<String> keys = new ArrayList<>();
+        if (StringUtils.isBlank(requiredContext)) {
+            return keys;
+        }
+        for (String raw : requiredContext.split(",")) {
+            if (StringUtils.isNotBlank(raw)) {
+                keys.add(raw.trim());
+            }
+        }
+        return keys;
     }
 
     /**

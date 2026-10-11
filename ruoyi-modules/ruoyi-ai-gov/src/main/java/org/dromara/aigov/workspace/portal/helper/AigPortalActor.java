@@ -12,7 +12,7 @@ import java.util.Set;
  * @param userId   用户ID
  * @param deptId   所在部门（可空）
  * @param orgIds   组织范围：本部门 + 全部祖级（见 {@link AigOrgScopeResolver}）
- * @param brandIds 所属品牌（今天恒为空集，理由见 {@code LoginPortalActorProvider}）
+ * @param brandIds 所属品牌（今天恒为空集：没有用户↔品牌数据源，见 {@link AigUserBrandResolver}）
  * @author ai-gov
  */
 public record AigPortalActor(Long userId, Long deptId, Set<Long> orgIds, Set<Long> brandIds) {

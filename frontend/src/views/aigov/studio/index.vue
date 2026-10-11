@@ -375,12 +375,13 @@ import { PROMPT_SECTION_LABELS, diffSummary, parseDraftContent, sectionDiff } fr
 
 defineOptions({ name: 'AigStudio' });
 
-/** 当前后端只支持这四个类别（与创作工厂的具体实现绑定） */
+/** 与后端 AigAgentCategoryEnum 一致（含非创作类 ANALYSIS） */
 const categoryOptions = [
   { code: 'PLANNING', label: 'PLANNING（详情页策划）' },
   { code: 'VISUAL_DNA', label: 'VISUAL_DNA（视觉 DNA）' },
   { code: 'GENERATION', label: 'GENERATION（生成任务构建）' },
-  { code: 'QA', label: 'QA（视觉 QA）' }
+  { code: 'QA', label: 'QA（视觉 QA）' },
+  { code: 'ANALYSIS', label: 'ANALYSIS（行业分析，非创作类）' }
 ];
 
 const sectionKeys = Object.keys(PROMPT_SECTION_LABELS);

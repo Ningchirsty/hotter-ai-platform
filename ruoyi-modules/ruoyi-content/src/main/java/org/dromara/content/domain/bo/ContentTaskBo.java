@@ -51,6 +51,11 @@ public class ContentTaskBo implements Serializable {
     private Long productId;
 
     /**
+     * 来源平台任务ID（岗位场景派发时写入；唯一，NULL=非派发创建）
+     */
+    private Long platformTaskId;
+
+    /**
      * SKU编码
      */
     @Size(max = 64, message = "SKU编码长度不能超过 64", groups = {AddGroup.class, EditGroup.class})

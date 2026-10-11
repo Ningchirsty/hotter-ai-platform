@@ -253,6 +253,19 @@ public interface AigConstants {
      */
     String PERM_SANDBOX_LIST = "aig:sandbox:list";
 
+    /**
+     * 用户↔品牌归属查看（④；看"谁属于哪些品牌"）
+     */
+    String PERM_USER_BRAND_LIST = "aig:user-brand:list";
+
+    /**
+     * 用户↔品牌归属编辑（④；登记/停用某人的品牌归属）
+     *
+     * <p>它直接改变"谁能看到按品牌定向的岗位"，因此与查看分开授权：
+     * 能看的人不一定要能改（口径同 {@link #PERM_SANDBOX_RECORD} 之于 {@link #PERM_SANDBOX_LIST}）。</p>
+     */
+    String PERM_USER_BRAND_EDIT = "aig:user-brand:edit";
+
 
     /**
      * 人均配额清单（读）：谁有多少额度、当前用了多少

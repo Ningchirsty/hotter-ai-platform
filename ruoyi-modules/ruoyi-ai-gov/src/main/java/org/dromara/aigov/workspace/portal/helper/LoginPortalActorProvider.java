@@ -6,8 +6,6 @@ import org.dromara.aigov.workspace.portal.mapper.AigPortalDeptMapper;
 import org.dromara.common.satoken.utils.LoginHelper;
 import org.springframework.stereotype.Component;
 
-import java.util.Set;
-
 /**
  * 基于 Sa-Token 登录态的门户用户解析（主文档线增量 2）。
  *
@@ -18,10 +16,10 @@ import java.util.Set;
  *
  * <h3>品牌集今天恒为空——这是刻意的</h3>
  * <p>本仓目前<b>没有任何"用户属于哪个品牌"的数据源</b>（F-05 已冻：不为岗位可见性新造授权体系，
- * 品牌归属属于业务侧主数据）。因此这里返回空集，含义是
- * <b>"按品牌定向的绑定暂时对谁都不生效"</b>——fail-closed。
- * 若将来业务侧提供了品牌归属，改动点只有这一个方法；
- * 判定规则（命中品牌即可见）已被 {@code AigRoleVisibilityResolverTest} 钉住，不需要重写。</p>
+ * 品牌归属属于业务侧主数据）。因此这里交给 {@link AigUserBrandResolver}，默认实现返回空集，
+ * 含义是<b>"按品牌定向的绑定暂时对谁都不生效"</b>——fail-closed。
+ * 若将来业务侧提供了品牌归属，替换那个实现即可；判定规则（命中品牌即可见）已被
+ * {@code AigRoleVisibilityResolverTest} 钉住，不需要重写。</p>
  *
  * <p><b>取不到登录人返回 null</b>，由服务层拒绝，不在这里编造身份。</p>
  *
@@ -33,6 +31,7 @@ import java.util.Set;
 public class LoginPortalActorProvider implements AigPortalActorProvider {
 
     private final AigPortalDeptMapper deptMapper;
+    private final AigUserBrandResolver brandResolver;
 
     @Override
     public AigPortalActor currentActor() {
@@ -60,7 +59,8 @@ public class LoginPortalActorProvider implements AigPortalActorProvider {
                     e.getClass().getSimpleName());
             }
         }
-        return new AigPortalActor(userId, deptId, AigOrgScopeResolver.resolve(deptId, ancestors), Set.of());
+        return new AigPortalActor(userId, deptId, AigOrgScopeResolver.resolve(deptId, ancestors),
+            brandResolver.brandsOf(userId));
     }
 
 }

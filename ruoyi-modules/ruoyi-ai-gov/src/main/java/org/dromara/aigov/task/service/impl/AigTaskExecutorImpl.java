@@ -18,8 +18,15 @@ import org.dromara.aigov.task.enums.AigTaskPolicyResultEnum;
 import org.dromara.aigov.task.enums.AigTaskStatusEnum;
 import org.dromara.aigov.task.service.IAigTaskExecutor;
 import org.dromara.aigov.task.service.IAigTaskService;
+import org.dromara.aigov.workspace.domain.AigScenarioVersion;
+import org.dromara.aigov.workspace.helper.AigScenarioDispatch;
+import org.dromara.aigov.workspace.scenario.config.AigScenarioDispatchProperties;
+import org.dromara.aigov.workspace.scenario.service.IAigScenarioFlowDispatcher;
+import org.dromara.aigov.workspace.scenario.service.IAigScenarioVersionResolver;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
+import org.dromara.scenario.api.domain.AigScenarioFlowRequest;
+import org.dromara.scenario.api.domain.AigScenarioFlowResult;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -39,6 +46,9 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
 
     private final IAigTaskService taskService;
     private final IAigInvokeService invokeService;
+    private final AigScenarioDispatchProperties scenarioDispatchProperties;
+    private final IAigScenarioVersionResolver scenarioVersionResolver;
+    private final IAigScenarioFlowDispatcher scenarioFlowDispatcher;
     private final JsonMapper jsonMapper;
 
     @Override
@@ -66,6 +76,14 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
         // 1) 入队 → 执行中。同步 Provider 没有「派发」这一可观测中间态，故直接进 RUNNING。
         AigTask running = taskService.transition(bo.getTaskId(), task.getVersion(),
             AigTaskStatusEnum.RUNNING, "开始执行（走统一调用入口）", null);
+
+        // 1.5) 场景任务：交给"既有链路"执行，而不是普通模型调用（增量 13）。
+        //      由 aigov.scenario.dispatch.enabled 控制，默认关闭——关着时行为与以前完全一致。
+        //      走到这里说明任务带 scenarioCode：场景类卡片的任务不带能力编码，
+        //      普通模型调用路径本来也走不通（会报"未登记能力编码"）。
+        if (scenarioDispatchProperties.isEnabled() && StringUtils.isNotBlank(task.getScenarioCode())) {
+            return dispatchScenario(bo, task, snapshot, running);
+        }
 
         // 2) 组装调用入参：能力、数据等级、场景都取自任务本身——
         //    这样「任务是怎么登记的」与「实际怎么调用的」不可能不一致
@@ -162,6 +180,130 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
         log.warn("任务执行失败, taskId={}, traceId={}, errorCode={}, 落点={}",
             bo.getTaskId(), invoked.getTraceId(), vo.getErrorCode(), vo.getStatus());
         return vo;
+    }
+
+    /**
+     * 场景任务的跨模块派发（增量 13；用户拍板：按 {@code scenarioCode} 解析当时的 STABLE 版本）。
+     *
+     * <p><b>为什么失败要落到任务上而不是抛异常</b>：任务已经被置为 RUNNING；抛出去会让它停在
+     * RUNNING 等超时清扫，并被记成 TIMEOUT（假账）。所以这里一律把结论写进任务（SUCCEEDED/FAILED），
+     * 再在返回体里说明。</p>
+     *
+     * <p><b>"纯登记"（适配器 NONE）不造假输出</b>：不挂流程也没有模型能力可调，任务记成"已登记"，
+     * 而不是回一段编出来的 output。</p>
+     *
+     * @param bo       执行入参
+     * @param task     任务视图
+     * @param snapshot 输入快照
+     * @param running  已置为 RUNNING 的任务
+     * @return 执行结果
+     */
+    private AigTaskExecuteVo dispatchScenario(AigTaskExecuteBo bo, AigTaskVo task,
+                                              AigTaskSnapshotVo snapshot, AigTask running) {
+        AigScenarioVersion version = scenarioVersionResolver.stableVersion(task.getScenarioCode());
+        if (version == null) {
+            return failDispatch(bo.getTaskId(), running.getVersion(),
+                "场景没有 STABLE 版本，无法确定由谁执行：scenarioCode=" + task.getScenarioCode());
+        }
+        String adapter = AigScenarioDispatch.normalize(version.getWorkflowAdapter());
+        if (adapter == null) {
+            return failDispatch(bo.getTaskId(), running.getVersion(),
+                "场景版本的流程适配器不可识别，拒绝执行：scenarioCode=" + task.getScenarioCode()
+                    + "，adapter=" + version.getWorkflowAdapter());
+        }
+        if (!AigScenarioDispatch.requiresWorkflow(adapter)) {
+            AigTask done = taskService.transition(bo.getTaskId(), running.getVersion(),
+                AigTaskStatusEnum.SUCCEEDED, "纯登记场景（适配器 NONE）：不挂流程，无需执行",
+                dispatchSnapshot(adapter, null, "REGISTERED_ONLY"));
+            AigTaskExecuteVo vo = new AigTaskExecuteVo();
+            vo.setTaskId(bo.getTaskId());
+            vo.setSuccess(true);
+            vo.setStatus(done == null ? null : done.getStatus());
+            vo.setReason("纯登记场景：不挂流程");
+            return vo;
+        }
+
+        AigScenarioFlowRequest request = new AigScenarioFlowRequest();
+        request.setTaskId(bo.getTaskId());
+        request.setTaskNo(task.getTaskNo());
+        request.setScenarioCode(task.getScenarioCode());
+        request.setScenarioVersion(version.getVersion());
+        request.setAdapter(adapter);
+        request.setDataLevel(task.getDataLevel());
+        request.setProjectType(task.getProjectType());
+        request.setProjectId(task.getProjectId());
+        request.setSnapshotJson(snapshot.getSnapshotJson());
+        AigTask entity = taskService.getTask(bo.getTaskId());
+        request.setRequesterId(entity == null ? null : entity.getCreateBy());
+
+        AigScenarioFlowResult result;
+        try {
+            result = scenarioFlowDispatcher.dispatch(request);
+        } catch (Exception e) {
+            return failDispatch(bo.getTaskId(), running.getVersion(), "场景派发失败：" + e.getMessage());
+        }
+        if (result == null || !result.isAccepted()) {
+            return failDispatch(bo.getTaskId(), running.getVersion(),
+                StringUtils.blankToDefault(result == null ? null : result.getMessage(), "业务域拒绝了这次派发"));
+        }
+
+        // 受理 = 交接完成，但**不置终态**：域内是长跑作业（内容侧：解析 → 闸门），
+        // 由域通过回执服务（IAigScenarioReportService）来收尾平台任务。
+        // 这里只记录"交给了谁"，任务保持 RUNNING。没有回执时会被既有清扫按 TIMEOUT 处理——
+        // 那正好是"域没回执"的信号，而不是把交接当成"已完成"。
+        AigTask afterFacts = taskService.recordExecutionFacts(bo.getTaskId(), running.getVersion(), null,
+            dispatchSnapshot(adapter, result.getExternalRef(), "ACCEPTED"), false, null);
+        AigTaskExecuteVo vo = new AigTaskExecuteVo();
+        vo.setTaskId(bo.getTaskId());
+        vo.setSuccess(true);
+        vo.setStatus(afterFacts == null ? running.getStatus() : afterFacts.getStatus());
+        vo.setReason("已派发，等待域回执（" + adapter + "，externalRef=" + result.getExternalRef() + "）");
+        log.info("场景任务已派发（等待回执）, taskId={}, adapter={}, externalRef={}",
+            bo.getTaskId(), adapter, result.getExternalRef());
+        return vo;
+    }
+
+    /**
+     * 场景派发失败：把结论写进任务，返回失败结果（不抛异常，理由见 {@link #dispatchScenario}）。
+     *
+     * @param taskId  任务ID
+     * @param version 期望版本（乐观锁）
+     * @param reason  可读原因
+     * @return 执行结果
+     */
+    private AigTaskExecuteVo failDispatch(Long taskId, Integer version, String reason) {
+        String text = StringUtils.substring(reason, 0, 500);
+        // 失败分类留空：域拒绝/配置缺失不是"可编程的粗分类"，猜一个只会误导重试策略
+        AigTaskStatusEnum resting = taskService.recordFailure(taskId, version, null, text);
+        log.warn("场景派发失败, taskId={}, reason={}", taskId, text);
+        AigTaskExecuteVo vo = new AigTaskExecuteVo();
+        vo.setTaskId(taskId);
+        vo.setSuccess(false);
+        vo.setStatus(resting == null ? null : resting.getCode());
+        vo.setReason(text);
+        vo.setErrorCode(AigErrorClassEnum.UNKNOWN.getCode());
+        return vo;
+    }
+
+    /**
+     * 场景派发的路由快照（写进任务的 route_snapshot：事后能回答"这次交给了谁"）。
+     *
+     * @param adapter     适配器编码
+     * @param externalRef 业务域的任务/作业引用（可空）
+     * @param handoff     交接状态（ACCEPTED / REGISTERED_ONLY）
+     * @return JSON 文本；组装失败返回 null
+     */
+    private String dispatchSnapshot(String adapter, String externalRef, String handoff) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("dispatch", adapter);
+        snapshot.put("externalRef", externalRef);
+        snapshot.put("handoff", handoff);
+        try {
+            return jsonMapper.writeValueAsString(snapshot);
+        } catch (Exception e) {
+            log.error("组装场景派发快照失败, adapter={}", adapter, e);
+            return null;
+        }
     }
 
     /**
