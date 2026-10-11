@@ -365,9 +365,20 @@ script/sql/aig_studio.sql
 
 ## 七、后续与独立的变更
 
-**留给后续的一次独立变更**：`AigAgentCategoryEnum` 只有四个与创作工厂实现绑定的类别。
-若要支持"行业分析"这类非创作 Agent，需要一次**独立的类别/契约扩展**（会动枚举与
-`docs/platform-v2` 的契约面），不应夹在 Studio 增量里顺手加。
+**已完成（2026-10-11）：`AigAgentCategoryEnum` 扩展了非创作类 `ANALYSIS`（行业分析）。**
+
+此前四个取值都与创作工厂的具体实现绑定，"行业分析"这类不产出设计物料的 Agent 无处归类，
+只能硬塞进 `PLANNING`——于是按类统计与筛选都会失真。本次：
+
+- 枚举新增 `ANALYSIS("ANALYSIS", "行业分析", …)`（第五个取值）；它的 `implementation` 是
+  **说明性占位**（仓库暂无对应实现），接入真实实现时再登记——不假装已经有一个实现。
+- **前端两处下拉同步补齐**：`views/aigov/studio/index.vue` 与 `views/aigov/agent/index.vue`；
+  少了它们，新类别就是"配不出来"，而那种失效只会表现为"没人用"。
+- 新增封闭集合守卫 `AigAgentCategoryContractTest`：取值集合**双向**断言
+  （`{PLANNING, VISUAL_DNA, GENERATION, QA, ANALYSIS}`）、编码必须是大写常量形态、
+  描述非空、`find` 大小写/空白容错但认不出返回 null。要扩值必须先改这条用例。
+- 与 `docs/platform-v2` 的关系：该类**不在** `AigContractEnumDriftTest` 的镜像清单里
+  （契约没有 Agent 类别词表），所以本次不改 `docs/platform-v2`；漂移由上面这条守卫自己兜。
 
 **已裁定（2026-10-11）：训练台测试证据不参与发布门槛判定，只作参考。**
 
@@ -386,7 +397,3 @@ script/sql/aig_studio.sql
 > 口径出处：`AigReleaseGateEnum`（`basis` 指向设计 §5.4/§6.3）与 ADR-015。
 > 实测 `docs/platform-v2/02-Execution-Contract-v1.md` 文本里**没有** SANDBOX_RUN/沙箱条目，
 > 所以那里不是这条口径的依据。
-
-**留给后续的一次独立变更**：`AigAgentCategoryEnum` 只有四个与创作工厂实现绑定的类别。
-若要支持"行业分析"这类非创作 Agent，需要一次**独立的类别/契约扩展**（会动枚举与
-`docs/platform-v2` 的契约面），不应夹在 Studio 增量里顺手加。
