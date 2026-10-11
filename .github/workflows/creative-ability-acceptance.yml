@@ -189,9 +189,9 @@ jobs:
                   if subprocess.run(['docker','image','inspect',reference],env=env,capture_output=True).returncode==0:
                       print('CANDIDATE_IMAGE_CACHE_HIT',flush=True)
                   else:
-                      for attempt in [1,2,3]:
+                      for attempt in [1,2]:
                           try:
-                              stream_docker('pull',reference,timeout=3600)
+                              stream_docker('pull',reference,timeout=2400)
                               break
                           except RuntimeError:
                               print('CANDIDATE_IMAGE_PULL_ATTEMPT',attempt,'FAILED',flush=True)
@@ -204,12 +204,33 @@ jobs:
               finally:
                   docker('logout','ghcr.io')
           PY
-          python3 -m venv candidate-venv
-          candidate-venv/bin/pip install --disable-pip-version-check 'requests==2.32.5' 'Pillow==11.3.0' 'bcrypt==4.3.0'
+          # 该 runner 的 python3 缺 ensurepip（apt 提示装 python3.12-venv），
+          # `python3 -m venv` 在此必定失败 —— 这是原工作流里一处从未被触发的潜在缺陷，
+          # 因为此前每次都先卡在拉取上。这里按 1→2→3 逐级降级，并把可用的解释器
+          # 固化成包装脚本，供下一步统一调用。
+          python3 -V || true
+          python3 -m pip --version || true
+          bin=''; prefix=''
+          if python3 -m venv candidate-venv 2>/dev/null \
+             && candidate-venv/bin/pip install -q --disable-pip-version-check 'requests==2.32.5' 'Pillow==11.3.0' 'bcrypt==4.3.0'; then
+            bin='candidate-venv/bin/python'; echo "CANDIDATE_PY_STRATEGY=venv"
+          elif python3 -m pip install -q --disable-pip-version-check --break-system-packages --target candidate-libs 'requests==2.32.5' 'Pillow==11.3.0' 'bcrypt==4.3.0'; then
+            bin='python3'; prefix='PYTHONPATH=candidate-libs'; echo "CANDIDATE_PY_STRATEGY=pip-target"
+          elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null \
+             && sudo -n apt-get install -y -qq python3-venv python3-pip \
+             && python3 -m venv candidate-venv \
+             && candidate-venv/bin/pip install -q --disable-pip-version-check 'requests==2.32.5' 'Pillow==11.3.0' 'bcrypt==4.3.0'; then
+            bin='candidate-venv/bin/python'; echo "CANDIDATE_PY_STRATEGY=apt-venv"
+          else
+            echo "::error::no usable python environment (venv/pip/apt all failed)"; exit 1
+          fi
+          printf '%s\n' '#!/usr/bin/env bash' "exec ${prefix} ${bin} \"\$@\"" > candidate-python.sh
+          chmod +x candidate-python.sh
+          ./candidate-python.sh -c 'import requests,PIL,bcrypt;print("CANDIDATE_PY_ENV_OK")'
       - name: Run every image and video purpose through the platform
         working-directory: ${{ runner.temp }}/hotter-ability-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
-          candidate-venv/bin/python - <<'PY'
+          ./candidate-python.sh - <<'PY'
           """Isolated platform acceptance; never mounts or reads production data/configuration."""
           import hashlib
           import json
