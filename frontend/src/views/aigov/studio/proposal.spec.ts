@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  canChat,
+  copilotStatusLabel,
+  copilotStatusTag,
+  copilotTurnSummary,
+  DATA_LEVEL_OPTIONS,
   formatDiffValue,
   isPending,
   previewItems,
@@ -8,7 +13,7 @@ import {
   proposalStatusTag,
   proposalSummary
 } from './proposal';
-import type { AigStudioChangeProposalVO } from '@/api/aigov/studio/types';
+import type { AigStudioChangeProposalVO, AigStudioCopilotTurnVO } from '@/api/aigov/studio/types';
 
 /**
  * 变更提案展示助手测试。
@@ -83,5 +88,63 @@ describe('训练台变更提案展示助手', () => {
   it('没有可展示改动时给出明确说明（而不是空字符串）', () => {
     expect(proposalSummary(undefined)).toBe('这个提案没有可展示的改动');
     expect(proposalSummary({ ...pending, preview: [] })).toBe('这个提案没有可展示的改动');
+  });
+
+  describe('对话式 Copilot', () => {
+    const turn: AigStudioCopilotTurnVO = {
+      turnId: 8801,
+      draftId: 9001,
+      revision: 3,
+      status: 'SUCCEEDED',
+      proposalId: 5001,
+      userMessage: '把目标改成新目标'
+    };
+
+    it('结论中文映射与后端枚举一致；认不出的 code 原样返回', () => {
+      expect(copilotStatusLabel('SUCCEEDED')).toBe('已产出提案');
+      expect(copilotStatusLabel('REJECTED')).toBe('提案被拒绝');
+      expect(copilotStatusLabel('FAILED')).toBe('调用失败');
+      expect(copilotStatusLabel('SOMETHING')).toBe('SOMETHING');
+      expect(copilotStatusLabel(null)).toBe('未知');
+    });
+
+    it('★ REJECTED 标成 warning 而不是 danger：那是"模型越界被挡住"，正是通道在工作', () => {
+      expect(copilotStatusTag('SUCCEEDED')).toBe('success');
+      expect(copilotStatusTag('REJECTED')).toBe('warning');
+      expect(copilotStatusTag('FAILED')).toBe('danger');
+      expect(copilotStatusTag('RUNNING')).toBe('info');
+      expect(copilotStatusTag(undefined)).toBe('info');
+    });
+
+    it('一轮结论：成功说清提案号与基于哪一版；其余说清状态与版本', () => {
+      expect(copilotTurnSummary(turn)).toBe('已产出提案 #5001（基于修订 #3）');
+      expect(copilotTurnSummary({ ...turn, status: 'REJECTED', proposalId: null })).toBe(
+        '提案被拒绝（基于修订 #3）'
+      );
+      expect(copilotTurnSummary({ turnId: 1, draftId: 1, status: 'FAILED' })).toBe(
+        '调用失败（基于修订 #—）'
+      );
+      expect(copilotTurnSummary(null)).toBe('');
+    });
+
+    it('★ 没消息或没选数据等级就不让发（等级决定能不能外发，选错等于测错对象）', () => {
+      expect(canChat('改一下', 'INTERNAL')).toBe(true);
+      expect(canChat('  改一下  ', 'INTERNAL')).toBe(true);
+      expect(canChat('', 'INTERNAL')).toBe(false);
+      expect(canChat('   ', 'INTERNAL')).toBe(false);
+      expect(canChat(undefined, 'INTERNAL')).toBe(false);
+      expect(canChat('改一下', '')).toBe(false);
+      expect(canChat('改一下', null)).toBe(false);
+      expect(canChat('改一下', undefined)).toBe(false);
+    });
+
+    it('数据等级选项四个都在（STRICT 必须在：否则持严格级数据的人只能把等级标低再调）', () => {
+      expect(DATA_LEVEL_OPTIONS.map(item => item.value)).toEqual([
+        'PUBLIC',
+        'INTERNAL',
+        'RESTRICTED',
+        'STRICT'
+      ]);
+    });
   });
 });

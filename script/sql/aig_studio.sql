@@ -227,10 +227,41 @@ create table if not exists aig_studio_action_draft (
     key idx_aig_studio_action_draft_owner (owner_id, enabled, del_flag)
 ) engine=innodb comment = 'Agent Studio 快捷指令草案（只产可提交内容，不等同可执行）';
 
--- 核对：七张表都在
+-- ----------------------------
+-- 6、对话式 Copilot 对话账本（逐轮：谁说了什么、模型回了什么、产出了哪条提案；
+--    追加型，无 del_flag；拒绝/失败原因必须留痕——见 aig_studio_copilot_turn.sql 头部）
+-- ----------------------------
+create table if not exists aig_studio_copilot_turn (
+    turn_id         bigint(20)    not null                   comment '对话轮次ID',
+    draft_id        bigint(20)    not null                   comment '所属训练草稿',
+    revision        int(11)       default null               comment '对话基于的修订号',
+    content_hash    char(64)      default null               comment '对话基于的草稿内容哈希',
+    user_message    varchar(2000) not null                   comment '用户消息',
+    data_level      varchar(16)   not null                   comment '本次数据等级',
+    model_output    longtext      default null               comment '模型原文（截断）',
+    status          varchar(16)   not null                   comment '结论（RUNNING/SUCCEEDED/REJECTED/FAILED）',
+    failure_reason  varchar(500)  default null               comment '拒绝/失败原因',
+    proposal_id     bigint(20)    default null               comment '产出的提案ID',
+    trace_id        varchar(64)   default null               comment '网关调用链ID',
+    model_key       varchar(128)  default null               comment '命中的模型键',
+    deployment_type varchar(32)   default null               comment '部署类型',
+    external_call   char(1)       default null               comment '是否发生外发（Y/N）',
+    latency_ms      bigint(20)    default null               comment '耗时（毫秒）',
+    create_dept     bigint(20)    default null               comment '创建部门',
+    create_by       bigint(20)    default null               comment '创建者',
+    create_time     datetime                                 comment '创建时间',
+    update_by       bigint(20)    default null               comment '更新者',
+    update_time     datetime                                 comment '更新时间',
+    primary key (turn_id),
+    key idx_aig_studio_copilot_draft (draft_id, turn_id),
+    key idx_aig_studio_copilot_trace (trace_id)
+) engine=innodb comment = 'Agent Studio 对话式 Copilot 对话账本（只产提案，不改草稿）';
+
+-- 核对：八张表都在
 select table_name, table_comment
   from information_schema.tables
  where table_schema = database()
    and table_name in ('aig_studio_draft', 'aig_studio_revision', 'aig_studio_execution_link',
                       'aig_studio_change_proposal', 'aig_studio_skill_draft',
-                      'aig_studio_child_agent_draft', 'aig_studio_action_draft');
+                      'aig_studio_child_agent_draft', 'aig_studio_action_draft',
+                      'aig_studio_copilot_turn');

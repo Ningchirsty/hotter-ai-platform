@@ -155,6 +155,44 @@ export interface AigStudioProposalDecideForm {
   reason?: string;
 }
 
+/**
+ * 对话式 Copilot 的一轮对话（培训助手在某一版草稿上提了几次案）。
+ *
+ * `status` 区分三件事，页面不该混着显示：`SUCCEEDED` 产出了提案、`REJECTED` 模型越界被平台拒绝、
+ * `FAILED` 这次没调通/输出不是要求的格式。
+ */
+export interface AigStudioCopilotTurnVO {
+  turnId: string | number;
+  draftId: string | number;
+  /** 对话基于的修订号 */
+  revision?: number;
+  contentHash?: string;
+  userMessage?: string;
+  dataLevel?: string;
+  /** 模型原文（截断） */
+  modelOutput?: string | null;
+  /** SUCCEEDED=已产出提案 / REJECTED=提案被拒绝 / FAILED=调用失败 / RUNNING=进行中 */
+  status?: string;
+  failureReason?: string | null;
+  /** 产出的提案ID（仅 SUCCEEDED） */
+  proposalId?: string | number | null;
+  traceId?: string;
+  modelKey?: string;
+  deploymentType?: string;
+  /** 是否发生外发（Y/N） */
+  externalCall?: string | null;
+  latencyMs?: number;
+  createTime?: string;
+}
+
+/** 与培训助手对话入参（数据等级必填：它决定能不能外发） */
+export interface AigStudioCopilotChatForm {
+  message: string;
+  dataLevel: string;
+  /** 本次调用可接受的最高成本（美元 USD；可空） */
+  maxCost?: number;
+}
+
 /** 测试调用入参（数据等级必填：它决定能不能外发，测错等级等于没测） */
 export interface AigStudioTestRunForm {
   dataLevel: string;

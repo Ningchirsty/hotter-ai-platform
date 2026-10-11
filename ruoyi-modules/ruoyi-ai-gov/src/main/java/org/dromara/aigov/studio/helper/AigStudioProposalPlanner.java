@@ -72,7 +72,40 @@ public final class AigStudioProposalPlanner {
      */
     private static final String PROMPT_PREFIX = "/promptSections/";
 
+    /**
+     * <b>刻意不开放</b>的结构性/安全字段（白名单的补集）。
+     *
+     * <p>它被两处用到：拒绝文案（列出来，调用方才知道自己踩了哪条），以及对话式 Copilot 的提示词
+     * （明确告诉模型这些不能碰）。把"不能改什么"只写在提示词里、代码里靠 else 分支兜底是可以的；
+     * 反过来只写在代码里、提示词不提，模型就会持续输出一个必然被拒绝的操作。</p>
+     */
+    public static final List<String> RESERVED_PATHS = List.of(
+        "/agentCategory", "/providerCapability", "/allowExternal",
+        "/inputSchema", "/outputSchema", "/pageCustomizationJson");
+
     private AigStudioProposalPlanner() {
+    }
+
+    /**
+     * 白名单路径全集（文本字段 → 清单字段 → 展开的八个 Prompt 分节）。
+     *
+     * <p><b>提示词必须由它生成，而不是手工抄一份</b>：抄一份的结果是"代码改了、提示词没改"，
+     * 于是模型会一直输出一个必然被拒绝的操作——而那条错误看起来像模型不行，实际是提示词过期。</p>
+     *
+     * @return 路径清单（顺序固定：文本、清单、分节）
+     */
+    public static List<String> allowedPaths() {
+        List<String> paths = new ArrayList<>();
+        for (TextField field : TEXT_FIELDS) {
+            paths.add(field.path());
+        }
+        for (ListField field : LIST_FIELDS) {
+            paths.add(field.path());
+        }
+        for (String key : AigStudioDraftContent.PROMPT_SECTION_KEYS) {
+            paths.add(PROMPT_PREFIX + key);
+        }
+        return List.copyOf(paths);
     }
 
     /**
@@ -166,7 +199,7 @@ public final class AigStudioProposalPlanner {
             return new DiffItem(path, before, text);
         }
         throw new IllegalArgumentException("提案不允许改这个字段：" + path
-            + "（只允许改文案/清单/主 Prompt 分节；类别、能力编码、外发许可与 Schema 不开放给提案）");
+            + "（只允许改文案/清单/主 Prompt 分节；不开放的是：" + String.join("、", RESERVED_PATHS) + "）");
     }
 
     /**

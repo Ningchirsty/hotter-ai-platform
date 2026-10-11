@@ -369,6 +369,16 @@ public interface AigConstants {
     String PERM_STUDIO_COPILOT_USE = "aig:studio:copilot:use";
 
     /**
+     * Agent Studio：与培训助手对话（对话式 Copilot，附件 07 增量 6）。
+     *
+     * <p><b>为什么要与"看提案/处理提案"分开</b>：对话会发起<b>真实计费的模型调用</b>，
+     * 而且它是对话式的——连着说几句就是几次调用，比点一次测试更容易不知不觉花掉钱。
+     * 这与 {@code aig:studio:test:view}（看测试记录）与 {@code aig:studio:test:run}（花钱跑一次）
+     * 的分法是同一条口径：**花钱的动作单独授权**。</p>
+     */
+    String PERM_STUDIO_COPILOT_CHAT = "aig:studio:copilot:chat";
+
+    /**
      * Agent Studio：草案生成器（Skill / 子 Agent / 快捷指令草案，附件 07 增量 7）。
      *
      * <p>管的是"草案"这个对象的增删查与生成。它与「编辑草稿」分开：草案本身不改任何草稿，

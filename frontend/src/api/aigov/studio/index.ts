@@ -3,6 +3,8 @@ import type { AxiosPromise } from '@/utils/api-types';
 import request from '@/utils/request';
 import type {
   AigStudioChangeProposalVO,
+  AigStudioCopilotChatForm,
+  AigStudioCopilotTurnVO,
   AigStudioDraftCreateForm,
   AigStudioDraftDetailVO,
   AigStudioDraftQuery,
@@ -176,5 +178,31 @@ export function rejectProposal(
     url: '/aigov/studio/copilot/proposals/' + proposalId + '/reject',
     method: 'post',
     data
+  });
+}
+
+/**
+ * 与培训助手对话一轮（**会真实调用模型并计费**；草稿不会被改动，只产提案）。
+ *
+ * 后端开关 `aigov.studio.copilot.enabled` 默认为关，关着时会明确报错。
+ */
+export function chatCopilot(
+  draftId: string | number,
+  data: AigStudioCopilotChatForm
+): AxiosPromise<AigStudioCopilotTurnVO> {
+  return request({
+    url: '/aigov/studio/drafts/' + draftId + '/copilot/chat',
+    method: 'post',
+    data
+  });
+}
+
+/** 会话历史（最近若干条，最新在前；含被拒绝/失败的那些轮次） */
+export function listCopilotTurns(
+  draftId: string | number
+): AxiosPromise<AigStudioCopilotTurnVO[]> {
+  return request({
+    url: '/aigov/studio/drafts/' + draftId + '/copilot/turns',
+    method: 'get'
   });
 }
