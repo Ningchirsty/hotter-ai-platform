@@ -13,10 +13,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 启动校验链测试（增量 3）。
+ * 启动校验链测试（增量 3；增量 21 增补 AGENT_VERSION）。
  *
  * <p>它是员工点卡片后的即时反馈。守的是"该拦的必须拦"（导航目标不在白名单、
- * 场景版本没就绪、缺必填输入、缺上下文、项目无权、运行时异常）
+ * 场景版本没就绪、Agent 版本没就绪、缺必填输入、缺上下文、项目无权、运行时异常）
  * 以及"不该拦的不能拦"（NAVIGATION 不需要任务描述字段）。</p>
  *
  * @author ai-gov
@@ -27,11 +27,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class AigLaunchChecklistTest {
 
     /**
-     * 造一份"都合规"的输入。
+     * 造一份"都合规"的输入（新增参数的顺序：场景可用、Agent 可用、项目被拒、运行时不可用）。
      */
     private static AigLaunchChecklist.Input ok(String launchMode, String targetType, String targetRef) {
         return new AigLaunchChecklist.Input(launchMode, targetType, targetRef, null, List.of(),
-            Map.of(), "TEXT_GENERATION", "creative", "INTERNAL", "{\"a\":1}", true, false, false);
+            Map.of(), "TEXT_GENERATION", "creative", "INTERNAL", "{\"a\":1}", true, true, false, false);
     }
 
     @Test
@@ -42,7 +42,7 @@ class AigLaunchChecklistTest {
             AigLaunchChecklist.check(ok("NAVIGATION", "NAVIGATION", "NOT_A_KEY")));
         // 页面跳转不建任务：任务类型/快照都不需要（这是"该放行的要放行"）
         AigLaunchChecklist.Input nav = new AigLaunchChecklist.Input("NAVIGATION", "NAVIGATION",
-            "AIGOV_TASK", null, List.of(), Map.of(), null, null, null, null, true, false, false);
+            "AIGOV_TASK", null, List.of(), Map.of(), null, null, null, null, true, true, false, false);
         assertTrue(AigLaunchChecklist.check(nav).isEmpty());
     }
 
@@ -55,9 +55,26 @@ class AigLaunchChecklistTest {
             AigLaunchChecklist.check(ok("QUICK", "SCENARIO", "COMMERCE@1.0.0")), "形态不对");
         AigLaunchChecklist.Input notUsable = new AigLaunchChecklist.Input("QUICK", "SCENARIO",
             "scenario://COMMERCE@1.0.0", null, List.of(), Map.of(), "TEXT_GENERATION", "creative",
-            "INTERNAL", "{}", false, false, false);
+            "INTERNAL", "{}", false, true, false, false);
         assertEquals(List.of(AigLaunchErrorEnum.SCENE_VERSION_BLOCKED),
             AigLaunchChecklist.check(notUsable), "场景还没就绪");
+    }
+
+    @Test
+    @DisplayName("★AGENT_VERSION：引用要非空、版本此刻必须可用，否则卡片不可用")
+    void agentVersionMustBeUsableAndHaveTarget() {
+        // 可用：放行
+        assertTrue(AigLaunchChecklist.check(
+            ok("QUICK", "AGENT_VERSION", "700001")).isEmpty());
+        // 引用为空
+        assertEquals(List.of(AigLaunchErrorEnum.ACTION_NOT_AVAILABLE),
+            AigLaunchChecklist.check(ok("QUICK", "AGENT_VERSION", "")));
+        // 版本不可用（没到 STABLE / Agent 停用 / 缺能力编码）
+        AigLaunchChecklist.Input notUsable = new AigLaunchChecklist.Input("QUICK", "AGENT_VERSION",
+            "700001", null, List.of(), Map.of(), "TEXT_GENERATION", "creative", "INTERNAL", "{}",
+            true, false, false, false);
+        assertEquals(List.of(AigLaunchErrorEnum.ACTION_NOT_AVAILABLE),
+            AigLaunchChecklist.check(notUsable), "版本没就绪就不能让员工点");
     }
 
     @Test
@@ -65,11 +82,11 @@ class AigLaunchChecklistTest {
     void studioNeedsWhitelistedRouteKey() {
         AigLaunchChecklist.Input good = new AigLaunchChecklist.Input("STUDIO", "QUICK_CAPABILITY", "cap/x",
             "CREATIVE_PRODUCTION", List.of(), Map.of(), "TEXT_GENERATION", "creative", "INTERNAL", "{}",
-            true, false, false);
+            true, true, false, false);
         assertTrue(AigLaunchChecklist.check(good).isEmpty());
         AigLaunchChecklist.Input bad = new AigLaunchChecklist.Input("STUDIO", "QUICK_CAPABILITY", "cap/x",
             "NOT_A_KEY", List.of(), Map.of(), "TEXT_GENERATION", "creative", "INTERNAL", "{}",
-            true, false, false);
+            true, true, false, false);
         assertEquals(List.of(AigLaunchErrorEnum.ACTION_NOT_AVAILABLE), AigLaunchChecklist.check(bad));
     }
 
@@ -77,19 +94,19 @@ class AigLaunchChecklistTest {
     @DisplayName("缺必填输入：任务描述不全、或卡片要求的上下文没给")
     void missingInputsAreCaught() {
         AigLaunchChecklist.Input missingTask = new AigLaunchChecklist.Input("QUICK", "QUICK_CAPABILITY",
-            "cap/x", null, List.of(), Map.of(), null, "creative", "INTERNAL", "{}", true, false, false);
+            "cap/x", null, List.of(), Map.of(), null, "creative", "INTERNAL", "{}", true, true, false, false);
         assertEquals(List.of(AigLaunchErrorEnum.REQUIRED_INPUT_MISSING),
             AigLaunchChecklist.check(missingTask), "没有任务类型");
 
         AigLaunchChecklist.Input badTaskType = new AigLaunchChecklist.Input("QUICK", "QUICK_CAPABILITY",
             "cap/x", null, List.of(), Map.of(), "NOT_A_TASK_TYPE", "creative", "INTERNAL", "{}",
-            true, false, false);
+            true, true, false, false);
         assertEquals(List.of(AigLaunchErrorEnum.REQUIRED_INPUT_MISSING),
             AigLaunchChecklist.check(badTaskType), "平台不认识的任务类型不能放行");
 
         AigLaunchChecklist.Input missingContext = new AigLaunchChecklist.Input("QUICK", "QUICK_CAPABILITY",
             "cap/x", null, List.of("productId", "brandId"), Map.of("productId", "9"), "TEXT_GENERATION",
-            "creative", "INTERNAL", "{}", true, false, false);
+            "creative", "INTERNAL", "{}", true, true, false, false);
         List<AigLaunchErrorEnum> contextProblems = AigLaunchChecklist.check(missingContext);
         assertEquals(1, contextProblems.size(), "缺一个上下文键只报一次，不重复刷");
         assertEquals(AigLaunchErrorEnum.REQUIRED_INPUT_MISSING, contextProblems.get(0));
@@ -97,7 +114,7 @@ class AigLaunchChecklistTest {
         AigLaunchChecklist.Input fullContext = new AigLaunchChecklist.Input("QUICK", "QUICK_CAPABILITY",
             "cap/x", null, List.of("productId", "brandId"),
             Map.of("productId", "9", "brandId", "3"), "TEXT_GENERATION", "creative", "INTERNAL", "{}",
-            true, false, false);
+            true, true, false, false);
         assertTrue(AigLaunchChecklist.check(fullContext).isEmpty());
     }
 
@@ -106,11 +123,11 @@ class AigLaunchChecklistTest {
     void resourceProblemsHaveTheirOwnCodes() {
         AigLaunchChecklist.Input denied = new AigLaunchChecklist.Input("QUICK", "QUICK_CAPABILITY",
             "cap/x", null, List.of(), Map.of(), "TEXT_GENERATION", "creative", "INTERNAL", "{}",
-            true, true, false);
+            true, true, true, false);
         assertEquals(List.of(AigLaunchErrorEnum.PROJECT_ACCESS_DENIED), AigLaunchChecklist.check(denied));
         AigLaunchChecklist.Input unhealthy = new AigLaunchChecklist.Input("QUICK", "QUICK_CAPABILITY",
             "cap/x", null, List.of(), Map.of(), "TEXT_GENERATION", "creative", "INTERNAL", "{}",
-            true, false, true);
+            true, true, false, true);
         assertEquals(List.of(AigLaunchErrorEnum.RUNTIME_UNHEALTHY), AigLaunchChecklist.check(unhealthy));
     }
 
@@ -118,7 +135,7 @@ class AigLaunchChecklistTest {
     @DisplayName("读不懂的卡片（启动方式/目标类型非法）不进后续判定，直接报卡片不可用")
     void unknownCardFailsFast() {
         AigLaunchChecklist.Input unknownMode = new AigLaunchChecklist.Input("SOMETHING", "NAVIGATION",
-            "AIGOV_TASK", null, List.of(), Map.of(), null, null, null, null, true, false, false);
+            "AIGOV_TASK", null, List.of(), Map.of(), null, null, null, null, true, true, false, false);
         assertEquals(List.of(AigLaunchErrorEnum.ACTION_NOT_AVAILABLE),
             AigLaunchChecklist.check(unknownMode));
         assertEquals(List.of(AigLaunchErrorEnum.ACTION_NOT_AVAILABLE), AigLaunchChecklist.check(null));

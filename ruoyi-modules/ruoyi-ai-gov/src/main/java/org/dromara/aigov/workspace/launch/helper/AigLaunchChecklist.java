@@ -51,6 +51,7 @@ public final class AigLaunchChecklist {
      * @param dataLevel          数据等级（要建任务时必填）
      * @param snapshotJson       输入快照（要建任务时必填）
      * @param scenarioUsable     场景版本当前是否可用（由调用方查好）
+     * @param agentVersionUsable Agent 版本当前是否可用（STABLE + Agent 未停用 + 有 provider_capability；由调用方查好）
      * @param projectAccessDenied 项目权是否被拒（由调用方查好）
      * @param runtimeUnhealthy    运行时是否报告不可用（由调用方查好）
      * @author ai-gov
@@ -67,6 +68,7 @@ public final class AigLaunchChecklist {
         String dataLevel,
         String snapshotJson,
         boolean scenarioUsable,
+        boolean agentVersionUsable,
         boolean projectAccessDenied,
         boolean runtimeUnhealthy) {
 
@@ -140,8 +142,15 @@ public final class AigLaunchChecklist {
             }
             return;
         }
-        // 轻量能力：目标引用就是能力编码，空编码等于没有目标
-        if (StringUtils.isBlank(targetRef)) {
+        if (targetType == AigLaunchTargetTypeEnum.AGENT_VERSION) {
+            // Agent 卡片：引用就是版本ID，且**此刻必须可用**（STABLE + Agent 未停用 + 有可用于路由的能力编码）。
+            // 为什么不像场景那样单独给个错误码：可用的判据与"这张卡片能不能用"是同一件事，
+            // 再分一个码只会让前端多一张要维护的文案表（启动来源与原因仍在日志/记录里可查）。
+            if (StringUtils.isBlank(targetRef) || !input.agentVersionUsable()) {
+                problems.add(AigLaunchErrorEnum.ACTION_NOT_AVAILABLE);
+            }
+        } else if (StringUtils.isBlank(targetRef)) {
+            // 轻量能力：目标引用就是能力编码，空编码等于没有目标
             problems.add(AigLaunchErrorEnum.ACTION_NOT_AVAILABLE);
         }
         if (mode == AigActionLaunchModeEnum.STUDIO && !AigRouteKeyRegistry.contains(trim(input.studioRouteKey()))) {

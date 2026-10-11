@@ -417,6 +417,7 @@ const launchModeOptions = [
 const targetTypeOptions = [
   { code: 'SCENARIO', label: 'SCENARIO（场景）' },
   { code: 'QUICK_CAPABILITY', label: 'QUICK_CAPABILITY（轻量能力）' },
+  { code: 'AGENT_VERSION', label: 'AGENT_VERSION（Agent 版本，填版本ID）' },
   { code: 'NAVIGATION', label: 'NAVIGATION（页面）' }
 ];
 

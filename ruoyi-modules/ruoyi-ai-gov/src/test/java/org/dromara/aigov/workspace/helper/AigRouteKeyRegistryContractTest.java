@@ -105,7 +105,7 @@ class AigRouteKeyRegistryContractTest {
     @DisplayName("启动方式与目标类型是封闭集合（扩值必须同时改这里，不能悄悄加）")
     void launchEnumsAreClosedSets() {
         assertEquals(Set.of("QUICK", "FORM", "STUDIO", "NAVIGATION"), codesOf(AigActionLaunchModeEnum.values()));
-        assertEquals(Set.of("SCENARIO", "QUICK_CAPABILITY", "NAVIGATION"),
+        assertEquals(Set.of("SCENARIO", "QUICK_CAPABILITY", "AGENT_VERSION", "NAVIGATION"),
             codesOf(AigLaunchTargetTypeEnum.values()));
         assertEquals(Set.of("DRAFT", "TESTING", "PUBLISHED", "DISABLED"),
             codesOf(AigRoleReleaseStatusEnum.values()));

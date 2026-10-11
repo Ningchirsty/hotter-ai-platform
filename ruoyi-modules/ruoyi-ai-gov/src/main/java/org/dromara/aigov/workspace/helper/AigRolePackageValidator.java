@@ -179,7 +179,7 @@ public final class AigRolePackageValidator {
             AigLaunchTargetTypeEnum targetType = AigLaunchTargetTypeEnum.find(action.targetType());
             if (targetType == null) {
                 problems.add("卡片 " + code + " 的目标类型非法：" + action.targetType()
-                    + "（只允许 SCENARIO/QUICK_CAPABILITY/NAVIGATION）");
+                    + "（只允许 SCENARIO/QUICK_CAPABILITY/AGENT_VERSION/NAVIGATION）");
             }
             checkTarget(action, code, launchMode, targetType, lookup, problems);
             checkRequiredContext(action, code, problems);
@@ -225,6 +225,15 @@ public final class AigRolePackageValidator {
                 problems.add("卡片 " + code + " 的 SCENARIO 引用必须是 scenario://<code>@<版本>，实际=" + targetRef);
             } else if (lookup == null || !lookup.scenarioExists(ref.code(), ref.version())) {
                 problems.add("卡片 " + code + " 引用的场景版本不存在：" + targetRef);
+            }
+        } else if (targetType == AigLaunchTargetTypeEnum.AGENT_VERSION) {
+            // Agent 版本：引用就是版本ID（十进制）。发布时只要求"引用存在"——
+            // 版本此刻可能还没走到 STABLE，但引用是对的；能否点下去由启动链判定。
+            Long agentVersionId = positiveLong(targetRef);
+            if (agentVersionId == null) {
+                problems.add("卡片 " + code + " 的 AGENT_VERSION 引用必须是 Agent 版本ID（十进制数字），实际=" + targetRef);
+            } else if (lookup == null || !lookup.agentVersionExists(agentVersionId)) {
+                problems.add("卡片 " + code + " 引用的 Agent 版本不存在：" + agentVersionId);
             }
         } else if (AigRouteKeyRegistry.contains(targetRef)) {
             // 轻量能力不该指向一个页面——那是 NAVIGATION 的语义，混在一起会让"启动方式"失去意义
@@ -285,6 +294,24 @@ public final class AigRolePackageValidator {
         if (defaultLevel != null && maxLevel != null && defaultLevel.getRank() > maxLevel.getRank()) {
             problems.add("默认数据等级（" + defaultLevel.getCode() + "）比最高等级（" + maxLevel.getCode()
                 + "）还宽：这是自相矛盾的声明，岗位包只能收紧、不能放宽");
+        }
+    }
+
+    /**
+     * 解析十进制正整数ID；不是数字/非正/超长一律 null。
+     *
+     * @param value 文本
+     * @return 正数；非法返回 null
+     */
+    private static Long positiveLong(String value) {
+        if (StringUtils.isBlank(value) || !value.chars().allMatch(Character::isDigit)) {
+            return null;
+        }
+        try {
+            long parsed = Long.parseLong(value.trim());
+            return parsed > 0 ? parsed : null;
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
 
