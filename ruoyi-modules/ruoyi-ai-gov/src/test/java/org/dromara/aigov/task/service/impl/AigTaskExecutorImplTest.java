@@ -66,13 +66,23 @@ class AigTaskExecutorImplTest {
 
     private IAigTaskService taskService;
     private IAigInvokeService invokeService;
+    private org.dromara.aigov.workspace.scenario.config.AigScenarioDispatchProperties scenarioDispatchProperties;
+    private org.dromara.aigov.workspace.scenario.service.IAigScenarioVersionResolver scenarioVersionResolver;
+    private org.dromara.aigov.workspace.scenario.service.IAigScenarioFlowDispatcher scenarioFlowDispatcher;
     private AigTaskExecutorImpl executor;
 
     @BeforeEach
     void setUp() {
         taskService = mock(IAigTaskService.class);
         invokeService = mock(IAigInvokeService.class);
-        executor = new AigTaskExecutorImpl(taskService, invokeService, JsonMapper.builder().build());
+        // 场景派发默认关闭：既有用例（任务带 scenarioCode）仍然走普通模型调用路径
+        scenarioDispatchProperties = new org.dromara.aigov.workspace.scenario.config.AigScenarioDispatchProperties();
+        scenarioVersionResolver =
+            mock(org.dromara.aigov.workspace.scenario.service.IAigScenarioVersionResolver.class);
+        scenarioFlowDispatcher =
+            mock(org.dromara.aigov.workspace.scenario.service.IAigScenarioFlowDispatcher.class);
+        executor = new AigTaskExecutorImpl(taskService, invokeService, scenarioDispatchProperties,
+            scenarioVersionResolver, scenarioFlowDispatcher, JsonMapper.builder().build());
     }
 
     /**
@@ -419,6 +429,115 @@ class AigTaskExecutorImplTest {
         assertTrue(routeSnapshot.contains("OpenAiImageInvoker"), "要含实际调用器；实际=" + routeSnapshot);
         assertTrue(routeSnapshot.contains("policyHits"),
             "要含策略命中：只看「用了哪个模型」回答不了「当时为什么是它」；实际=" + routeSnapshot);
+    }
+
+    @Test
+    @DisplayName("★场景派发开启：没有 STABLE 版本 → 任务落失败，且不调模型")
+    void scenarioWithoutStableVersionFails() {
+        scenarioDispatchProperties.setEnabled(true);
+        stubDispatchSkeleton();
+        when(scenarioVersionResolver.stableVersion("POSTER")).thenReturn(null);
+        when(taskService.recordFailure(eq(TASK_ID), eq(3), isNull(), any()))
+            .thenReturn(AigTaskStatusEnum.FAILED);
+
+        AigTaskExecuteVo vo = executor.execute(executedBo());
+
+        assertFalse(vo.isSuccess());
+        assertTrue(vo.getReason().contains("STABLE"), vo.getReason());
+        verify(invokeService, never()).invoke(any());
+        verify(scenarioFlowDispatcher, never()).dispatch(any());
+    }
+
+    @Test
+    @DisplayName("适配器 NONE（纯登记）：记成成功但不造假输出，也不调模型/不派发")
+    void noneAdapterIsRegistrationOnly() {
+        scenarioDispatchProperties.setEnabled(true);
+        stubDispatchSkeleton();
+        when(scenarioVersionResolver.stableVersion("POSTER")).thenReturn(scenarioVersion("1.0.0", "NONE"));
+        when(taskService.transition(eq(TASK_ID), eq(3), eq(AigTaskStatusEnum.SUCCEEDED), any(), any()))
+            .thenReturn(task("SUCCEEDED", 4));
+
+        AigTaskExecuteVo vo = executor.execute(executedBo());
+
+        assertTrue(vo.isSuccess());
+        assertNull(vo.getOutput(), "纯登记场景不该编一段 output");
+        verify(invokeService, never()).invoke(any());
+        verify(scenarioFlowDispatcher, never()).dispatch(any());
+    }
+
+    @Test
+    @DisplayName("★有实现且被受理：写 SUCCEEDED + 派发快照（externalRef），不调模型")
+    void acceptedDispatchSucceeds() {
+        scenarioDispatchProperties.setEnabled(true);
+        stubDispatchSkeleton();
+        when(scenarioVersionResolver.stableVersion("POSTER"))
+            .thenReturn(scenarioVersion("1.0.0", "CREATIVE_EXISTING_FLOW"));
+        when(scenarioFlowDispatcher.dispatch(any()))
+            .thenReturn(org.dromara.scenario.api.domain.AigScenarioFlowResult.accepted("creative-9"));
+        when(taskService.transition(eq(TASK_ID), eq(3), eq(AigTaskStatusEnum.SUCCEEDED), any(), any()))
+            .thenReturn(task("SUCCEEDED", 4));
+
+        AigTaskExecuteVo vo = executor.execute(executedBo());
+
+        assertTrue(vo.isSuccess());
+        ArgumentCaptor<org.dromara.scenario.api.domain.AigScenarioFlowRequest> requestCaptor =
+            ArgumentCaptor.forClass(org.dromara.scenario.api.domain.AigScenarioFlowRequest.class);
+        verify(scenarioFlowDispatcher).dispatch(requestCaptor.capture());
+        var request = requestCaptor.getValue();
+        assertEquals("POSTER", request.getScenarioCode());
+        assertEquals("1.0.0", request.getScenarioVersion());
+        assertEquals("CREATIVE_EXISTING_FLOW", request.getAdapter());
+        assertEquals(SNAPSHOT_JSON, request.getSnapshotJson());
+        ArgumentCaptor<String> snapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(taskService).transition(eq(TASK_ID), eq(3), eq(AigTaskStatusEnum.SUCCEEDED), any(),
+            snapshotCaptor.capture());
+        assertTrue(snapshotCaptor.getValue().contains("creative-9"),
+            "派发快照要留 externalRef；实际=" + snapshotCaptor.getValue());
+        verify(invokeService, never()).invoke(any());
+    }
+
+    @Test
+    @DisplayName("派发被业务域拒绝：任务落失败并带上域给的可读原因，不调模型")
+    void dispatchRejectionIsRecordedOnTask() {
+        scenarioDispatchProperties.setEnabled(true);
+        stubDispatchSkeleton();
+        when(scenarioVersionResolver.stableVersion("POSTER"))
+            .thenReturn(scenarioVersion("1.0.0", "CONTENT_EXISTING_FLOW"));
+        when(scenarioFlowDispatcher.dispatch(any()))
+            .thenReturn(org.dromara.scenario.api.domain.AigScenarioFlowResult.rejected("快照缺少 productId"));
+        when(taskService.recordFailure(eq(TASK_ID), eq(3), isNull(), any()))
+            .thenReturn(AigTaskStatusEnum.FAILED);
+
+        AigTaskExecuteVo vo = executor.execute(executedBo());
+
+        assertFalse(vo.isSuccess());
+        assertTrue(vo.getReason().contains("productId"), vo.getReason());
+        verify(invokeService, never()).invoke(any());
+    }
+
+    /**
+     * 场景派发路径的骨架：详情 + QUEUED→RUNNING。
+     */
+    private void stubDispatchSkeleton() {
+        when(taskService.getDetail(TASK_ID)).thenReturn(detail("QUEUED", null));
+        when(taskService.transition(eq(TASK_ID), eq(2), eq(AigTaskStatusEnum.RUNNING), any(), isNull()))
+            .thenReturn(task("RUNNING", 3));
+    }
+
+    /**
+     * 造一个场景版本行。
+     *
+     * @param version 版本号
+     * @param adapter 适配器
+     * @return 版本
+     */
+    private static org.dromara.aigov.workspace.domain.AigScenarioVersion scenarioVersion(String version,
+                                                                                          String adapter) {
+        var row = new org.dromara.aigov.workspace.domain.AigScenarioVersion();
+        row.setVersion(version);
+        row.setWorkflowAdapter(adapter);
+        row.setReleaseStatus("STABLE");
+        return row;
     }
 
 }
