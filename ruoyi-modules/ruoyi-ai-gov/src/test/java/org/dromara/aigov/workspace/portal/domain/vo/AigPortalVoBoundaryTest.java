@@ -66,6 +66,21 @@ class AigPortalVoBoundaryTest {
         // 增量 7：推荐结果同样是对员工下发的，审计/traceId/模型这些运维视角一并禁掉
         assertNoneOf(AigRecommendResultVo.class, FORBIDDEN);
         assertNoneOf(AigRecommendSuggestionVo.class, FORBIDDEN);
+        // 增量 8：跨域资产只给展示字段，存储键/下载直链不进门户契约
+        assertNoneOf(AigPortalMyAssetVo.class, FORBIDDEN);
+        assertNoneOf(AigPortalAssetGroupVo.class, FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("我的资产视图带展示字段，但不给存储键与下载直链")
+    void myAssetViewKeepsDisplayOnly() {
+        Set<String> names = fieldNames(AigPortalMyAssetVo.class);
+        Set<String> missing = new LinkedHashSet<>(
+            Set.of("assetId", "assetType", "name", "sizeBytes", "taskId", "createTime"));
+        missing.removeAll(names);
+        assertTrue(missing.isEmpty(), "我的资产视图缺少展示字段：" + missing);
+        assertTrue(!names.contains("downloadUrl"), "我的资产视图不应提供下载直链：" + names);
+        assertTrue(!names.contains("storageRef"), "我的资产视图不应带存储键：" + names);
     }
 
     @Test

@@ -190,3 +190,30 @@ export interface AigRecommendResultVO {
   /** 调用成功但确实没有可推荐内容时的说明（调用失败会直接报错，不会伪装成空结果） */
   reason?: string;
 }
+
+/**
+ * 我的资产一条（跨域只读；增量 8）。
+ *
+ * 只给展示字段：**没有**存储键、没有下载直链——下载走各域自己的入口，那里的权限仍然生效。
+ */
+export interface AigPortalMyAssetVO {
+  assetId?: string | number;
+  assetType?: string;
+  sourceKind?: string;
+  name?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  taskId?: string | number;
+  createTime?: string;
+}
+
+/**
+ * 我的资产分组（按域分栏）。
+ *
+ * 某域没接入时该组根本不出现；接入但你没有数据时该组出现且 `items` 为空——两者含义不同。
+ * 不承诺跨域排序/分页（各域"我的"口径不同，全局分页会漏或重）。
+ */
+export interface AigPortalAssetGroupVO {
+  domain: string;
+  items?: AigPortalMyAssetVO[];
+}

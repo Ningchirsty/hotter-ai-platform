@@ -4,11 +4,13 @@ import cn.dev33.satoken.annotation.SaCheckLogin;
 import lombok.RequiredArgsConstructor;
 import org.dromara.aigov.task.domain.bo.AigTaskQueryBo;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalArtifactVo;
+import org.dromara.aigov.workspace.portal.domain.vo.AigPortalAssetGroupVo;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalRoleHomeVo;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalRoleVo;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalTaskVo;
 import org.dromara.aigov.workspace.portal.helper.AigPortalActor;
 import org.dromara.aigov.workspace.portal.helper.AigPortalActorProvider;
+import org.dromara.aigov.workspace.portal.service.IAigPortalAssetService;
 import org.dromara.aigov.workspace.portal.service.IAigPortalService;
 import org.dromara.aigov.workspace.recommend.domain.bo.AigRecommendSuggestBo;
 import org.dromara.aigov.workspace.recommend.domain.vo.AigRecommendResultVo;
@@ -53,6 +55,7 @@ import java.util.List;
 public class AigPortalController extends BaseController {
 
     private final IAigPortalService portalService;
+    private final IAigPortalAssetService assetService;
     private final IAigRecommendService recommendService;
     private final AigPortalActorProvider actorProvider;
 
@@ -104,6 +107,21 @@ public class AigPortalController extends BaseController {
     public R<PageResult<AigPortalArtifactVo>> myArtifacts(
         @RequestParam(required = false) Long taskId, PageQuery pageQuery) {
         return R.ok(portalService.myArtifacts(taskId, pageQuery, requireActor()));
+    }
+
+    /**
+     * 我的资产（跨域只读；按域分组，每域最多几条）。
+     *
+     * <p>各域的"我的"口径由各域自己的 {@code MyAssetPort} 实现决定（图片/视频看 user_id，
+     * 内容看任务负责人）；这里只做分组展示，<b>不直连任何业务域的表</b>。
+     * 不承诺跨域排序/分页——那需要抹平三套口径，见 {@code AigPortalAssetGroupVo} 的说明。</p>
+     *
+     * @return 分组（IMAGE / VIDEO / CONTENT / 其他）
+     */
+    @SaCheckLogin
+    @GetMapping("/my-assets")
+    public R<List<AigPortalAssetGroupVo>> myAssets() {
+        return R.ok(assetService.myAssets(requireActor()));
     }
 
     /**

@@ -8,6 +8,7 @@ import type {
   AigLaunchRequestForm,
   AigPortalArtifactQuery,
   AigPortalArtifactVO,
+  AigPortalAssetGroupVO,
   AigPortalPrefVO,
   AigPortalRoleHomeVO,
   AigPortalRoleVO,
@@ -146,5 +147,18 @@ export function suggestIntents(input: string): AxiosPromise<AigRecommendResultVO
     url: '/aigov/portal/intent/suggest',
     method: 'post',
     data: { input }
+  });
+}
+
+/**
+ * 我的资产（跨域只读，按域分组；各域的"我的"口径由各域自己决定）。
+ *
+ * 某域没接入时该组不出现；接入但没数据时该组为空——两者含义不同，界面要分开表达。
+ * 不承诺跨域排序/分页。
+ */
+export function listMyAssets(): AxiosPromise<AigPortalAssetGroupVO[]> {
+  return request({
+    url: '/aigov/portal/my-assets',
+    method: 'get'
   });
 }

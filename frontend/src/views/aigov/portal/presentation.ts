@@ -301,3 +301,30 @@ export function formatBytes(size?: number | null): string {
 export function suggestionKey(item: { roleCode?: string; action?: { actionCode?: string } }): string {
   return (item.roleCode ?? '') + '#' + (item.action?.actionCode ?? '');
 }
+
+/* ------------------------------------------------------------------ *
+ * 我的资产（增量 8）
+ * ------------------------------------------------------------------ */
+
+/** 资产域 → 显示文案 */
+const ASSET_DOMAIN_LABELS: Record<string, string> = {
+  IMAGE: '图片素材',
+  VIDEO: '视频素材',
+  CONTENT: '内容附件'
+};
+
+/**
+ * 资产域的显示文案。
+ *
+ * <p>未知域**原样显示**，不并到"其他"里：以后新接一个域而界面还没加文案时，
+ * 显示编码至少说明"这一栏是什么"，合并掉就等于把它藏起来了。</p>
+ *
+ * @param domain 域编码
+ * @returns 文案
+ */
+export function assetDomainLabel(domain?: string): string {
+  if (!domain) {
+    return '资产';
+  }
+  return ASSET_DOMAIN_LABELS[domain] ?? domain;
+}
