@@ -9,7 +9,7 @@ export interface AigAgentVO extends BaseEntity {
   /** Agent 编码（跨版本稳定） */
   agentCode?: string;
   agentName?: string;
-  /** 类别：PLANNING / VISUAL_DNA / GENERATION / QA */
+  /** 类别：PLANNING / VISUAL_DNA / GENERATION / QA / ANALYSIS（后端 AigAgentCategoryEnum） */
   category?: string;
   ownerId?: string | number;
   /** 是否平台内置（Y/N）：第三方 Package 带入的是 N */

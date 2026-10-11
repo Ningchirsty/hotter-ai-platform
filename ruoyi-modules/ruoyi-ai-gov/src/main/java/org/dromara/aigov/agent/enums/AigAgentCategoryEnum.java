@@ -13,6 +13,14 @@ import lombok.Getter;
  * <p>四个取值与设计 §5.2 的表格一一对应；{@code assistant} 列写的是该 Agent 在
  * 仓库里对应的现有实现（WP3 只是把它包成受控版本，<b>算法不重写</b>）。</p>
  *
+ * <p><b>2026-10-11 扩了一个非创作类取值 {@link #ANALYSIS}</b>：此前四个取值都与创作工厂的
+ * 具体实现绑定，"行业分析"这类不产出设计物料的 Agent 无处归类，只能硬塞进 {@code PLANNING}
+ * （于是按类统计与筛选都会失真）。扩值与创作域无关，因此不新增任何创作侧实现——
+ * 它的 {@code implementation} 是<b>说明性占位</b>，接入真实实现时再登记。</p>
+ *
+ * <p>取值集合由 {@code AigAgentCategoryContractTest} 封闭断言：扩值必须同时改那条用例，
+ * 否则"拼错的类别"与"没登记的类别"会以同样的方式静默消失。</p>
+ *
  * @author ai-gov
  */
 @Getter
@@ -37,7 +45,16 @@ public enum AigAgentCategoryEnum {
     /**
      * 视觉 QA
      */
-    QA("QA", "视觉 QA", "CreativeImageRuleChecker / cp_output_check");
+    QA("QA", "视觉 QA", "CreativeImageRuleChecker / cp_output_check"),
+
+    /**
+     * 行业分析（**非创作类**：不产出设计物料，只做分析结论）
+     *
+     * <p>它是本次扩展加的第五个取值：把"分析"从 {@code PLANNING} 里分出来，
+     * 让按类统计/筛选不再把两类完全不同的 Agent 混在一起。仓库里暂无对应实现，
+     * 第三个字段是占位说明。</p>
+     */
+    ANALYSIS("ANALYSIS", "行业分析", "（非创作类：暂无现有实现，接入时在此登记）");
 
     /**
      * 编码（入库值）

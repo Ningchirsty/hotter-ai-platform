@@ -280,7 +280,8 @@ const categoryOptions = [
   { value: 'PLANNING', label: '详情页策划' },
   { value: 'VISUAL_DNA', label: '视觉 DNA' },
   { value: 'GENERATION', label: '生成任务构建' },
-  { value: 'QA', label: '视觉 QA' }
+  { value: 'QA', label: '视觉 QA' },
+  { value: 'ANALYSIS', label: '行业分析（非创作类）' }
 ];
 
 /** 五道门槛（与后端 AigReleaseGateEnum 一致） */
