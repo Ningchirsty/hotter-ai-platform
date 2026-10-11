@@ -28,6 +28,8 @@ describe('员工 AI 工作台展示层', () => {
     expect(isNavigable({ actionCode: 'B', launchMode: 'NAVIGATION', targetType: 'QUICK_CAPABILITY' })).toBe(true);
     expect(isNavigable({ actionCode: 'C', launchMode: 'STUDIO', targetType: 'QUICK_CAPABILITY' })).toBe(false);
     expect(isNavigable({ actionCode: 'D', launchMode: 'QUICK', targetType: 'QUICK_CAPABILITY' })).toBe(false);
+    // AGENT_VERSION（增量 21）是**启动类**卡片：点它走启动表单，不是直接跳页面
+    expect(isNavigable({ actionCode: 'E', launchMode: 'QUICK', targetType: 'AGENT_VERSION' })).toBe(false);
     expect(isNavigable(undefined)).toBe(false);
   });
 
