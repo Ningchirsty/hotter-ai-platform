@@ -68,7 +68,7 @@ jobs:
   platform-acceptance:
     needs: candidate-image
     runs-on: [shenzhen, deploy]
-    timeout-minutes: 120
+    timeout-minutes: 150
     permissions:
       contents: read
       packages: read
@@ -97,7 +97,7 @@ jobs:
           set -euo pipefail
           (cd candidate-module && sha256sum -c SHA256SUMS)
           python3 - <<'PY'
-          import hashlib,json,os,shutil,subprocess,tempfile,zipfile
+          import hashlib,json,os,shutil,subprocess,tempfile,time,urllib.error,urllib.request,zipfile
           from pathlib import Path
           ROOT=Path.cwd()
           BASE='ghcr.io/ningchirsty/hotter-ai-platform-backend@sha256:b70659a956754a589f34c223c481cbb53c26980ba688d2f1f99387ed61434382'
@@ -128,9 +128,40 @@ jobs:
                   result=subprocess.run(['docker',*args],input=input,capture_output=True,env=env,timeout=600)
                   if result.returncode: raise RuntimeError('Candidate image operation failed: '+args[0])
                   return result.stdout.decode().strip()
+              def stream_docker(*args,timeout):
+                  # Pull progress must stay visible: a swallowed slow pull is undiagnosable.
+                  started=time.monotonic()
+                  process=subprocess.Popen(['docker',*args],env=env)
+                  try:
+                      code=process.wait(timeout=timeout)
+                  except subprocess.TimeoutExpired:
+                      process.kill();process.wait()
+                      raise RuntimeError('docker '+args[0]+' killed after '+str(round(time.monotonic()-started))+'s; live progress is logged above') from None
+                  if code: raise RuntimeError('Candidate image operation failed: '+args[0]+' exit='+str(code))
               try:
+                  print('GHCR_PROBE_PROXY_ENV_KEYS',[k for k in os.environ if k.lower() in ('http_proxy','https_proxy','no_proxy','all_proxy')],flush=True)
+                  probe_started=time.monotonic()
+                  try:
+                      urllib.request.urlopen('https://ghcr.io/v2/',timeout=30).read()
+                      print('GHCR_PROBE_REACHED_HTTP_200',flush=True)
+                  except urllib.error.HTTPError as probe_error:
+                      if probe_error.code!=401: raise
+                      print('GHCR_PROBE_REACHED_HTTP_401_AS_EXPECTED',flush=True)
+                  print('GHCR_PROBE_SECONDS',round(time.monotonic()-probe_started,2),flush=True)
                   docker('login','ghcr.io','--username',os.environ['GITHUB_ACTOR'],'--password-stdin',input=os.environ['GHCR_READ_TOKEN'].encode())
-                  docker('pull',BASE)
+                  if subprocess.run(['docker','image','inspect',BASE],env=env,capture_output=True).returncode==0:
+                      print('BASE_IMAGE_CACHE_HIT',flush=True)
+                  else:
+                      for attempt in [1,2]:
+                          pull_started=time.monotonic()
+                          try:
+                              stream_docker('pull',BASE,timeout=1800)
+                              print('BASE_IMAGE_PULL_SECONDS',round(time.monotonic()-pull_started,1),flush=True)
+                              break
+                          except RuntimeError as pull_error:
+                              print('BASE_IMAGE_PULL_ATTEMPT',attempt,'FAILED_AFTER_SECONDS',round(time.monotonic()-pull_started,1),flush=True)
+                              if attempt==2: raise
+                              time.sleep(15)
                   if docker('image','inspect',BASE,'--format','{{index .Config.Labels "org.opencontainers.image.revision"}}')!=BASE_SHA: raise ValueError('Runtime base image revision mismatch')
                   docker('create','--name',name,'--label','hotter.creative.module-extract='+SHA,'--entrypoint','/bin/true',BASE)
                   created=True
