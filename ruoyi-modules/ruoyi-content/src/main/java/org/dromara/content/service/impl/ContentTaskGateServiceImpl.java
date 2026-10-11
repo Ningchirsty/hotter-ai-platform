@@ -59,6 +59,11 @@ public class ContentTaskGateServiceImpl implements IContentTaskGateService {
      */
     private final ContentGateEngine gateEngine;
 
+    /**
+     * 场景任务回执（只对"由岗位场景派发创建"的任务回报，见 {@code ContentScenarioReporter}）
+     */
+    private final org.dromara.content.api.ContentScenarioReporter scenarioReporter;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public ContentGateEngine.GateResult recheckAndApply(Long taskId) {
@@ -84,6 +89,10 @@ public class ContentTaskGateServiceImpl implements IContentTaskGateService {
         log.info("闸门重算完成, taskId={}, deliverableType={}, status={}, blockCount={}, conditionCount={}",
             taskId, task.getDeliverableType(), result.getStatus(),
             result.getBlockUnsatisfied().size(), result.getConditionUnsatisfied().size());
+
+        // 位置很关键：站在这唯一一处"内容任务状态被重新判定并落库"的收口上回报，
+        // 不必在解析/闸门/人工改状态各处分散埋点（散点迟早漏一个）。
+        scenarioReporter.reportIfDispatched(taskId);
         return result;
     }
 

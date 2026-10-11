@@ -247,15 +247,18 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
                 StringUtils.blankToDefault(result == null ? null : result.getMessage(), "业务域拒绝了这次派发"));
         }
 
-        AigTask done = taskService.transition(bo.getTaskId(), running.getVersion(),
-            AigTaskStatusEnum.SUCCEEDED, "已交给既有链路执行：" + adapter,
-            dispatchSnapshot(adapter, result.getExternalRef(), "ACCEPTED"));
+        // 受理 = 交接完成，但**不置终态**：域内是长跑作业（内容侧：解析 → 闸门），
+        // 由域通过回执服务（IAigScenarioReportService）来收尾平台任务。
+        // 这里只记录"交给了谁"，任务保持 RUNNING。没有回执时会被既有清扫按 TIMEOUT 处理——
+        // 那正好是"域没回执"的信号，而不是把交接当成"已完成"。
+        AigTask afterFacts = taskService.recordExecutionFacts(bo.getTaskId(), running.getVersion(), null,
+            dispatchSnapshot(adapter, result.getExternalRef(), "ACCEPTED"), false, null);
         AigTaskExecuteVo vo = new AigTaskExecuteVo();
         vo.setTaskId(bo.getTaskId());
         vo.setSuccess(true);
-        vo.setStatus(done == null ? null : done.getStatus());
-        vo.setReason("已交给 " + adapter + " 执行（externalRef=" + result.getExternalRef() + "）");
-        log.info("场景任务已派发, taskId={}, adapter={}, externalRef={}",
+        vo.setStatus(afterFacts == null ? running.getStatus() : afterFacts.getStatus());
+        vo.setReason("已派发，等待域回执（" + adapter + "，externalRef=" + result.getExternalRef() + "）");
+        log.info("场景任务已派发（等待回执）, taskId={}, adapter={}, externalRef={}",
             bo.getTaskId(), adapter, result.getExternalRef());
         return vo;
     }
