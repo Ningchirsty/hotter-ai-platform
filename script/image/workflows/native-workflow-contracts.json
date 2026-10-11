@@ -1,0 +1,1596 @@
+{
+  "capabilities": [
+    {
+      "capabilityCode": "T2I",
+      "fields": [
+        {
+          "field": "prompt"
+        },
+        {
+          "field": "size"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-local-ready-qwen-image-2-1-t2i",
+          "modelCode": "QWEN21",
+          "version": "v1.0.0-local",
+          "status": "DRAFT",
+          "apiJsonFile": "image/workflows/local-verified/wf-local-ready-qwen-image-2-1-t2i.json",
+          "checksum": "24fd9f3e9c4233efd6365be24fc2b0f47bbdde3bfc705ccd9220772e69f65480",
+          "mapping": [
+            {
+              "field": "prompt",
+              "nodeId": "4",
+              "inputKey": "prompt"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "6",
+              "inputKey": "seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "8",
+            "outputField": "images",
+            "format": "png",
+            "mime": "image/png",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128
+          },
+          "supportedOutputs": [
+            {
+              "size": "验证尺寸 · 1024×1024",
+              "width": 1024,
+              "height": 1024
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "size": "验证尺寸 · 1024×1024",
+            "supportedSizes": [
+              "验证尺寸 · 1024×1024"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "T2I",
+      "fields": [
+        {
+          "field": "prompt"
+        },
+        {
+          "field": "size"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-local-official-qwen-image-2-1-t2i",
+          "modelCode": "QWEN21",
+          "version": "v1.0.0-local",
+          "status": "DRAFT",
+          "apiJsonFile": "image/workflows/local-verified/wf-local-official-qwen-image-2-1-t2i.json",
+          "checksum": "d02412ad1a2e98a67fc1f25ce9cdef3190b6d21fec6e19c65a35d9b6333bf170",
+          "mapping": [
+            {
+              "field": "prompt",
+              "nodeId": "459:472",
+              "inputKey": "source"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "459:458",
+              "inputKey": "seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "461",
+            "outputField": "images",
+            "format": "png",
+            "mime": "image/png",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128
+          },
+          "supportedOutputs": [
+            {
+              "size": "验证尺寸 · 1024×1024",
+              "width": 1024,
+              "height": 1024
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "size": "验证尺寸 · 1024×1024",
+            "supportedSizes": [
+              "验证尺寸 · 1024×1024"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "T2I",
+      "fields": [
+        {
+          "field": "prompt"
+        },
+        {
+          "field": "size"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-local-image-qwen-image-2-1-t2i",
+          "modelCode": "QWEN21",
+          "version": "v1.0.0-local",
+          "status": "DRAFT",
+          "apiJsonFile": "image/workflows/local-verified/wf-local-image-qwen-image-2-1-t2i.json",
+          "checksum": "01b6e29f65c36e2a16c250c2ba7b65e93ac1fdec9071887e96e69c924b77ac24",
+          "mapping": [
+            {
+              "field": "prompt",
+              "nodeId": "459:472",
+              "inputKey": "source"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "459:458",
+              "inputKey": "seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "461",
+            "outputField": "images",
+            "format": "png",
+            "mime": "image/png",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128
+          },
+          "supportedOutputs": [
+            {
+              "size": "验证尺寸 · 1024×1024",
+              "width": 1024,
+              "height": 1024
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "size": "验证尺寸 · 1024×1024",
+            "supportedSizes": [
+              "验证尺寸 · 1024×1024"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "EDIT",
+      "fields": [
+        {
+          "field": "image1"
+        },
+        {
+          "field": "prompt"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-local-image-flux2-klein-image-edit-4b-distilled",
+          "modelCode": "FLUX4B",
+          "version": "v1.0.0-local",
+          "status": "DRAFT",
+          "apiJsonFile": "image/workflows/local-verified/wf-local-image-flux2-klein-image-edit-4b-distilled.json",
+          "checksum": "f18f7bfc3d6c3f9f415d062f58b71f44bbb393444a5c6c4e15ec0f8aa961097b",
+          "mapping": [
+            {
+              "field": "prompt",
+              "nodeId": "75:74",
+              "inputKey": "text"
+            },
+            {
+              "field": "image1",
+              "nodeId": "76",
+              "inputKey": "image"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "75:73",
+              "inputKey": "noise_seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "9",
+            "outputField": "images",
+            "format": "png",
+            "mime": "image/png",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128
+          },
+          "supportedOutputs": [
+            {
+              "size": "验证尺寸 · 1024×1024",
+              "width": 1024,
+              "height": 1024
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {}
+        }
+      ]
+    },
+    {
+      "capabilityCode": "T2I",
+      "fields": [
+        {
+          "field": "prompt"
+        },
+        {
+          "field": "size"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-local-image-flux2-klein-4b-fast-t2i",
+          "modelCode": "FLUX4B",
+          "version": "v1.0.0-local",
+          "status": "DRAFT",
+          "apiJsonFile": "image/workflows/local-verified/wf-local-image-flux2-klein-4b-fast-t2i.json",
+          "checksum": "d838be9e00f2f71b71529a150226cc8093c2a3619f95690f560b3f2d1b76e49e",
+          "mapping": [
+            {
+              "field": "prompt",
+              "nodeId": "75:74",
+              "inputKey": "text"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "75:73",
+              "inputKey": "noise_seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "9",
+            "outputField": "images",
+            "format": "png",
+            "mime": "image/png",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128
+          },
+          "supportedOutputs": [
+            {
+              "size": "验证尺寸 · 1024×1024",
+              "width": 1024,
+              "height": 1024
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "size": "验证尺寸 · 1024×1024",
+            "supportedSizes": [
+              "验证尺寸 · 1024×1024"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "T2I",
+      "fields": [
+        {
+          "field": "prompt"
+        },
+        {
+          "field": "size"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-local-image-flux2-klein-text-to-image",
+          "modelCode": "FLUX4B",
+          "version": "v1.0.0-local",
+          "status": "DRAFT",
+          "apiJsonFile": "image/workflows/local-verified/wf-local-image-flux2-klein-text-to-image.json",
+          "checksum": "15feb71ceb78fe75beab3a72b5c99f49aa0efa710662cc040330a472c8ec2d52",
+          "mapping": [
+            {
+              "field": "prompt",
+              "nodeId": "75:74",
+              "inputKey": "text"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "75:73",
+              "inputKey": "noise_seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "9",
+            "outputField": "images",
+            "format": "png",
+            "mime": "image/png",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128
+          },
+          "supportedOutputs": [
+            {
+              "size": "验证尺寸 · 1024×1024",
+              "width": 1024,
+              "height": 1024
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "size": "验证尺寸 · 1024×1024",
+            "supportedSizes": [
+              "验证尺寸 · 1024×1024"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "T2I",
+      "fields": [
+        {
+          "field": "prompt"
+        },
+        {
+          "field": "size"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-local-image-z-image-turbo",
+          "modelCode": "ZIMAGE",
+          "version": "v1.0.0-local",
+          "status": "DRAFT",
+          "apiJsonFile": "image/workflows/local-verified/wf-local-image-z-image-turbo.json",
+          "checksum": "055a66435df3c08d301e9709133884c74dfd0e7f20379b2af06f2daba76b7ef7",
+          "mapping": [
+            {
+              "field": "prompt",
+              "nodeId": "57:27",
+              "inputKey": "text"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "57:3",
+              "inputKey": "seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "9",
+            "outputField": "images",
+            "format": "png",
+            "mime": "image/png",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128
+          },
+          "supportedOutputs": [
+            {
+              "size": "验证尺寸 · 1024×1024",
+              "width": 1024,
+              "height": 1024
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "size": "验证尺寸 · 1024×1024",
+            "supportedSizes": [
+              "验证尺寸 · 1024×1024"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "CONTROL",
+      "fields": [
+        {
+          "field": "img"
+        },
+        {
+          "field": "prompt"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-local-image-z-image-turbo-fun-union-controlnet",
+          "modelCode": "ZIMAGE",
+          "version": "v1.0.0-local",
+          "status": "DRAFT",
+          "apiJsonFile": "image/workflows/local-verified/wf-local-image-z-image-turbo-fun-union-controlnet.json",
+          "checksum": "2e12f1cb4bdd7c4d98d48e482074afe6031cbfab75fd98534f933c34d3953570",
+          "mapping": [
+            {
+              "field": "prompt",
+              "nodeId": "70:45",
+              "inputKey": "text"
+            },
+            {
+              "field": "img",
+              "nodeId": "58",
+              "inputKey": "image"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "70:44",
+              "inputKey": "seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "9",
+            "outputField": "images",
+            "format": "png",
+            "mime": "image/png",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128
+          },
+          "supportedOutputs": [
+            {
+              "size": "验证尺寸 · 512×512",
+              "width": 512,
+              "height": 512
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {}
+        }
+      ]
+    },
+    {
+      "capabilityCode": "T2I",
+      "fields": [
+        {
+          "field": "prompt"
+        },
+        {
+          "field": "size"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-local-image-qwen-image-2512",
+          "modelCode": "QWEN2512",
+          "version": "v1.0.0-local",
+          "status": "DRAFT",
+          "apiJsonFile": "image/workflows/local-verified/wf-local-image-qwen-image-2512.json",
+          "checksum": "18119e4a42c70bdc69142b508299a6f8db91b2bf2dd6373aff4103154e9bcdcc",
+          "mapping": [
+            {
+              "field": "prompt",
+              "nodeId": "238:227",
+              "inputKey": "text"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "238:230",
+              "inputKey": "seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "60",
+            "outputField": "images",
+            "format": "png",
+            "mime": "image/png",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128
+          },
+          "supportedOutputs": [
+            {
+              "size": "验证尺寸 · 1328×1328",
+              "width": 1328,
+              "height": 1328
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "size": "验证尺寸 · 1328×1328",
+            "supportedSizes": [
+              "验证尺寸 · 1328×1328"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "T2I",
+      "fields": [
+        {
+          "field": "prompt"
+        },
+        {
+          "field": "size"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-local-image-ideogram4-t2i",
+          "modelCode": "IDEOGRAM",
+          "version": "v1.0.0-local",
+          "status": "DRAFT",
+          "apiJsonFile": "image/workflows/local-verified/wf-local-image-ideogram4-t2i.json",
+          "checksum": "d76fc0cb3077ea5198e9a9f117c946c99812d1afa8e486c231deb17d056b98e1",
+          "mapping": [
+            {
+              "field": "prompt",
+              "nodeId": "98:24",
+              "inputKey": "text"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "98:18",
+              "inputKey": "noise_seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "158",
+            "outputField": "images",
+            "format": "png",
+            "mime": "image/png",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128
+          },
+          "supportedOutputs": [
+            {
+              "size": "验证尺寸 · 768×1376",
+              "width": 768,
+              "height": 1376
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "size": "验证尺寸 · 768×1376",
+            "supportedSizes": [
+              "验证尺寸 · 768×1376"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "T2I",
+      "fields": [
+        {
+          "field": "prompt"
+        },
+        {
+          "field": "size"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-local-image-krea2-turbo-t2i",
+          "modelCode": "KREA",
+          "version": "v1.0.0-local",
+          "status": "DRAFT",
+          "apiJsonFile": "image/workflows/local-verified/wf-local-image-krea2-turbo-t2i.json",
+          "checksum": "6bb0cc8204bf52550bbeb02de46833c0fbc1488c9f8bb85cb923bc55cff2c45c",
+          "mapping": [
+            {
+              "field": "prompt",
+              "nodeId": "30:17",
+              "inputKey": "string_b"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "30:16",
+              "inputKey": "sampling_mode.seed"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "30:3",
+              "inputKey": "seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "29",
+            "outputField": "images",
+            "format": "png",
+            "mime": "image/png",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128
+          },
+          "supportedOutputs": [
+            {
+              "size": "验证尺寸 · 1024×1024",
+              "width": 1024,
+              "height": 1024
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "size": "验证尺寸 · 1024×1024",
+            "supportedSizes": [
+              "验证尺寸 · 1024×1024"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "T2I",
+      "fields": [
+        {
+          "field": "prompt"
+        },
+        {
+          "field": "size"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-ability-image-poster-qwen2512",
+          "modelCode": "QWEN2512",
+          "version": "v1.0.0-ability",
+          "status": "DRAFT",
+          "apiJsonFile": "image/workflows/abilities-api/wf-ability-image-poster-qwen2512.json",
+          "checksum": "eda12335c220428e45c0bc77ae06f1e68053744bc15552545d82e19089cda523",
+          "mapping": [
+            {
+              "field": "prompt",
+              "nodeId": "238:227",
+              "inputKey": "text"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "238:230",
+              "inputKey": "seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "60",
+            "outputField": "images",
+            "format": "png",
+            "mime": "image/png",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128
+          },
+          "supportedOutputs": [
+            {
+              "size": "验证尺寸 · 1328×1328",
+              "width": 1328,
+              "height": 1328
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "size": "验证尺寸 · 1328×1328",
+            "supportedSizes": [
+              "验证尺寸 · 1328×1328"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "T2I",
+      "fields": [
+        {
+          "field": "prompt"
+        },
+        {
+          "field": "size"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-ability-image-poster-qwen21",
+          "modelCode": "QWEN21",
+          "version": "v1.0.0-ability",
+          "status": "DRAFT",
+          "apiJsonFile": "image/workflows/abilities-api/wf-ability-image-poster-qwen21.json",
+          "checksum": "21e677fe6c393398b433713352f0868180b4c28f5f6a8fb262e5619d38217e87",
+          "mapping": [
+            {
+              "field": "prompt",
+              "nodeId": "4",
+              "inputKey": "prompt"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "6",
+              "inputKey": "seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "8",
+            "outputField": "images",
+            "format": "png",
+            "mime": "image/png",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128
+          },
+          "supportedOutputs": [
+            {
+              "size": "验证尺寸 · 1024×1024",
+              "width": 1024,
+              "height": 1024
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "size": "验证尺寸 · 1024×1024",
+            "supportedSizes": [
+              "验证尺寸 · 1024×1024"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "T2I",
+      "fields": [
+        {
+          "field": "prompt"
+        },
+        {
+          "field": "size"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-ability-image-poster-ideogram",
+          "modelCode": "IDEOGRAM",
+          "version": "v1.0.0-ability",
+          "status": "DRAFT",
+          "apiJsonFile": "image/workflows/abilities-api/wf-ability-image-poster-ideogram.json",
+          "checksum": "88849d1eeea1203eb72dd446cda41483225ecc9900f4e1f6383e74574adc1d2a",
+          "mapping": [
+            {
+              "field": "prompt",
+              "nodeId": "98:24",
+              "inputKey": "text"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "98:18",
+              "inputKey": "noise_seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "158",
+            "outputField": "images",
+            "format": "png",
+            "mime": "image/png",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128
+          },
+          "supportedOutputs": [
+            {
+              "size": "验证尺寸 · 768×1376",
+              "width": 768,
+              "height": 1376
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "size": "验证尺寸 · 768×1376",
+            "supportedSizes": [
+              "验证尺寸 · 768×1376"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "T2I",
+      "fields": [
+        {
+          "field": "prompt"
+        },
+        {
+          "field": "size"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-ability-image-quick-image-zimage",
+          "modelCode": "ZIMAGE",
+          "version": "v1.0.0-ability",
+          "status": "DRAFT",
+          "apiJsonFile": "image/workflows/abilities-api/wf-ability-image-quick-image-zimage.json",
+          "checksum": "834af4ca6235cb601b3aed4e1814a3f9a07681917033c42cf40e3c3642a77e70",
+          "mapping": [
+            {
+              "field": "prompt",
+              "nodeId": "57:27",
+              "inputKey": "text"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "57:3",
+              "inputKey": "seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "9",
+            "outputField": "images",
+            "format": "png",
+            "mime": "image/png",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128
+          },
+          "supportedOutputs": [
+            {
+              "size": "验证尺寸 · 1024×1024",
+              "width": 1024,
+              "height": 1024
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "size": "验证尺寸 · 1024×1024",
+            "supportedSizes": [
+              "验证尺寸 · 1024×1024"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "T2I",
+      "fields": [
+        {
+          "field": "prompt"
+        },
+        {
+          "field": "size"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-ability-image-quick-image-flux4b",
+          "modelCode": "FLUX4B",
+          "version": "v1.0.0-ability",
+          "status": "DRAFT",
+          "apiJsonFile": "image/workflows/abilities-api/wf-ability-image-quick-image-flux4b.json",
+          "checksum": "ed059207cce4282c973c459f5a9af98f19fb8ba7c0fb2c06ccffceb4e6eaf787",
+          "mapping": [
+            {
+              "field": "prompt",
+              "nodeId": "75:74",
+              "inputKey": "text"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "75:73",
+              "inputKey": "noise_seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "9",
+            "outputField": "images",
+            "format": "png",
+            "mime": "image/png",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128
+          },
+          "supportedOutputs": [
+            {
+              "size": "验证尺寸 · 1024×1024",
+              "width": 1024,
+              "height": 1024
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "size": "验证尺寸 · 1024×1024",
+            "supportedSizes": [
+              "验证尺寸 · 1024×1024"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "T2I",
+      "fields": [
+        {
+          "field": "prompt"
+        },
+        {
+          "field": "size"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-ability-image-product-shot-krea",
+          "modelCode": "KREA",
+          "version": "v1.0.0-ability",
+          "status": "DRAFT",
+          "apiJsonFile": "image/workflows/abilities-api/wf-ability-image-product-shot-krea.json",
+          "checksum": "d893f351cf615faa2451cabcced7cea98fc24f76345ebe61c14672da0bf8aad2",
+          "mapping": [
+            {
+              "field": "prompt",
+              "nodeId": "30:17",
+              "inputKey": "string_b"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "30:16",
+              "inputKey": "sampling_mode.seed"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "30:3",
+              "inputKey": "seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "29",
+            "outputField": "images",
+            "format": "png",
+            "mime": "image/png",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128
+          },
+          "supportedOutputs": [
+            {
+              "size": "验证尺寸 · 1024×1024",
+              "width": 1024,
+              "height": 1024
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "size": "验证尺寸 · 1024×1024",
+            "supportedSizes": [
+              "验证尺寸 · 1024×1024"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "T2I",
+      "fields": [
+        {
+          "field": "prompt"
+        },
+        {
+          "field": "size"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-ability-image-product-shot-qwen2512",
+          "modelCode": "QWEN2512",
+          "version": "v1.0.0-ability",
+          "status": "DRAFT",
+          "apiJsonFile": "image/workflows/abilities-api/wf-ability-image-product-shot-qwen2512.json",
+          "checksum": "4d626e2c16229be2d2429862156dc680ee42618bc3b40d5d906015815563bc8d",
+          "mapping": [
+            {
+              "field": "prompt",
+              "nodeId": "238:227",
+              "inputKey": "text"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "238:230",
+              "inputKey": "seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "60",
+            "outputField": "images",
+            "format": "png",
+            "mime": "image/png",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128
+          },
+          "supportedOutputs": [
+            {
+              "size": "验证尺寸 · 1328×1328",
+              "width": 1328,
+              "height": 1328
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {
+            "size": "验证尺寸 · 1328×1328",
+            "supportedSizes": [
+              "验证尺寸 · 1328×1328"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "EDIT",
+      "fields": [
+        {
+          "field": "image1"
+        },
+        {
+          "field": "prompt"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-ability-image-background-replace-flux4b",
+          "modelCode": "FLUX4B",
+          "version": "v1.0.0-ability",
+          "status": "DRAFT",
+          "apiJsonFile": "image/workflows/abilities-api/wf-ability-image-background-replace-flux4b.json",
+          "checksum": "06d9843b7337a95c51ab51fb9f6aae299ebbc442cbe9d894bc70e4bfa644a0ce",
+          "mapping": [
+            {
+              "field": "prompt",
+              "nodeId": "75:74",
+              "inputKey": "text"
+            },
+            {
+              "field": "image1",
+              "nodeId": "76",
+              "inputKey": "image"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "75:73",
+              "inputKey": "noise_seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "9",
+            "outputField": "images",
+            "format": "png",
+            "mime": "image/png",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128
+          },
+          "supportedOutputs": [
+            {
+              "size": "验证尺寸 · 1024×1024",
+              "width": 1024,
+              "height": 1024
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {}
+        }
+      ]
+    },
+    {
+      "capabilityCode": "EDIT",
+      "fields": [
+        {
+          "field": "image1",
+          "required": true,
+          "type": "file",
+          "accept": [
+            "jpg",
+            "png",
+            "webp"
+          ],
+          "note": "编辑目标图（决定输出画布尺寸），prompt 中以 <image1> 引用"
+        },
+        {
+          "field": "image2",
+          "required": false,
+          "type": "file",
+          "accept": [
+            "jpg",
+            "png",
+            "webp"
+          ],
+          "note": "可选参考图，prompt 中以 <image2> 引用"
+        },
+        {
+          "field": "image3",
+          "required": false,
+          "type": "file",
+          "accept": [
+            "jpg",
+            "png",
+            "webp"
+          ],
+          "note": "可选参考图，prompt 中以 <image3> 引用"
+        },
+        {
+          "field": "prompt",
+          "required": true,
+          "type": "string",
+          "maxLength": 1000
+        },
+        {
+          "field": "negative_prompt",
+          "required": false,
+          "type": "string",
+          "maxLength": 500
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-ability-image-background-replace-qwen21",
+          "modelCode": "QWEN21",
+          "version": "v1.0.0-ability",
+          "status": "DRAFT",
+          "apiJsonFile": "image/workflows/abilities-api/wf-ability-image-background-replace-qwen21.json",
+          "checksum": "bbee4eaf039c2474126ffccb635f62f59550d1bc2ff9e60bea07c11c0ddcac27",
+          "billing": {
+            "type": "credits",
+            "credits": 4
+          },
+          "mapping": [
+            {
+              "field": "image1",
+              "nodeId": "4",
+              "inputKey": "image",
+              "note": "模板中该节点已固定连到 TextEncodeQwenImage21 的 images.image_1"
+            },
+            {
+              "field": "image2",
+              "nodeId": "5",
+              "inputKey": "image",
+              "note": "模板中该节点已固定连到 images.image_2；未提供时必须删节点与其 images.image_2 输入"
+            },
+            {
+              "field": "image3",
+              "nodeId": "6",
+              "inputKey": "image",
+              "note": "模板中该节点已固定连到 images.image_3；未提供时必须删节点与其 images.image_3 输入"
+            },
+            {
+              "field": "prompt",
+              "nodeId": "7",
+              "inputKey": "prompt",
+              "note": "用 <image1>/<image2>/<image3> 引用参考图；不写占位符参考图几乎不生效"
+            },
+            {
+              "field": "negative_prompt",
+              "nodeId": "7",
+              "inputKey": "negative_prompt",
+              "note": "cfg=1 时为官方路径，通常留空"
+            }
+          ],
+          "fixedParams": {
+            "model": "Qwen-Image-2.1 int8_convrot",
+            "textEncoder": "qwen3vl_8b_int8_convrot",
+            "vae": "qwen_image_2.1_vae_bf16",
+            "sampler": "euler",
+            "scheduler": "simple",
+            "steps": 25,
+            "cfg": 1,
+            "denoise": 1,
+            "seedPolicy": "set by server per task",
+            "sizePolicy": "画布由 image1 决定（resolution=1536 决定总像素），服务端不覆写宽高",
+            "resolution": 1536
+          },
+          "outputRule": {
+            "nodeId": "10",
+            "outputField": "images",
+            "format": "png",
+            "mime": "image/png",
+            "multiple": false,
+            "maxSizeMB": 32,
+            "maxPixels": 4194304,
+            "alpha": "preserved"
+          },
+          "perf": {
+            "avgSeconds": 40,
+            "maxSeconds": 120,
+            "timeoutSeconds": 300,
+            "concurrency": 1,
+            "measuredNote": "真机实测（2026-09-22）：39.3s / 1152×2048（输入 1276×2270，resolution=1536）；同图 1024 档约 20s"
+          },
+          "supportedOutputs": [
+            {
+              "size": "跟随 image1",
+              "width": 0,
+              "height": 0
+            }
+          ],
+          "fixedFieldValidation": {
+            "maxReferenceImages": 3,
+            "requiredFirstImage": "image1"
+          },
+          "note": "resolution=1536（v0.1.0 为 1024）：修掉「输入 2.9MP 却输出 1MP」的静默降分辨率"
+        }
+      ]
+    },
+    {
+      "capabilityCode": "I2I",
+      "fields": [
+        {
+          "field": "img",
+          "required": true,
+          "type": "file",
+          "accept": [
+            "jpg",
+            "png",
+            "webp"
+          ]
+        },
+        {
+          "field": "prompt",
+          "required": true,
+          "type": "string",
+          "maxLength": 1000
+        },
+        {
+          "field": "negative_prompt",
+          "required": false,
+          "type": "string",
+          "maxLength": 500
+        },
+        {
+          "field": "strength",
+          "required": true,
+          "type": "enum",
+          "options": [
+            "轻微变化 · 0.4",
+            "标准重绘 · 0.75",
+            "强烈重绘 · 0.9"
+          ]
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-ability-image-style-redraw-qwen21",
+          "modelCode": "QWEN21",
+          "version": "v1.0.0-ability",
+          "status": "DRAFT",
+          "apiJsonFile": "image/workflows/abilities-api/wf-ability-image-style-redraw-qwen21.json",
+          "checksum": "ed6df7b17ea5a023d9f91b55cb286b52355eb63c3d6cd10e445a486cf2ccfbaa",
+          "billing": {
+            "type": "credits",
+            "credits": 2
+          },
+          "mapping": [
+            {
+              "field": "img",
+              "nodeId": "4",
+              "inputKey": "image",
+              "note": "后端先上传素材，再把 ComfyUI 输入文件名写入 LoadImage.image"
+            },
+            {
+              "field": "prompt",
+              "nodeId": "6",
+              "inputKey": "prompt",
+              "note": "正向提示词"
+            },
+            {
+              "field": "negative_prompt",
+              "nodeId": "6",
+              "inputKey": "negative_prompt",
+              "note": "cfg=1 时为官方路径，通常留空"
+            },
+            {
+              "field": "strength",
+              "nodeId": "7",
+              "inputKey": "denoise",
+              "note": "唯一允许覆写的采样参数；其余 steps/cfg/sampler 固定"
+            }
+          ],
+          "fixedParams": {
+            "model": "Qwen-Image-2.1 int8_convrot",
+            "textEncoder": "qwen3vl_8b_int8_convrot",
+            "vae": "qwen_image_2.1_vae_bf16",
+            "sampler": "euler",
+            "scheduler": "simple",
+            "steps": 25,
+            "cfg": 1,
+            "seedPolicy": "set by server per task",
+            "sizePolicy": "跟随输入图尺寸，服务端不改写宽高"
+          },
+          "outputRule": {
+            "nodeId": "9",
+            "outputField": "images",
+            "format": "png",
+            "mime": "image/png",
+            "multiple": false,
+            "maxSizeMB": 32,
+            "maxPixels": 4194304,
+            "alpha": "preserved"
+          },
+          "perf": {
+            "avgSeconds": 8,
+            "maxSeconds": 60,
+            "timeoutSeconds": 300,
+            "concurrency": 1,
+            "measuredNote": "真机实测：4.0s / 896×1152（跟随 896×1152 输入图）"
+          },
+          "supportedOutputs": [
+            {
+              "size": "跟随输入图",
+              "width": 0,
+              "height": 0
+            }
+          ],
+          "fixedFieldValidation": {
+            "strength": "标准重绘 · 0.75",
+            "supportedStrengths": [
+              "轻微变化 · 0.4",
+              "标准重绘 · 0.75",
+              "强烈重绘 · 0.9"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "BGREMOVE",
+      "fields": [
+        {
+          "field": "img",
+          "required": true,
+          "type": "file",
+          "accept": [
+            "jpg",
+            "png",
+            "webp"
+          ]
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-ability-image-cutout-qwen21",
+          "modelCode": "QWEN21",
+          "version": "v1.0.0-ability",
+          "status": "DRAFT",
+          "apiJsonFile": "image/workflows/abilities-api/wf-ability-image-cutout-qwen21.json",
+          "checksum": "1aac8181da3300a2677937bb490a1bf9155beb456542be4bb60b3cbbafd0d5c9",
+          "billing": {
+            "type": "credits",
+            "credits": 3
+          },
+          "mapping": [
+            {
+              "field": "img",
+              "nodeId": "4",
+              "inputKey": "image",
+              "note": "模板中该节点已固定连到 TextEncodeQwenImage21 的 images.image_1"
+            }
+          ],
+          "fixedParams": {
+            "model": "Qwen-Image-2.1 int8_convrot",
+            "textEncoder": "qwen3vl_8b_int8_convrot",
+            "vae": "qwen_image_2.1_vae_bf16",
+            "prompt": "Remove the background, and output a PNG image",
+            "promptPolicy": "固定提示词，不接受前端覆写",
+            "sampler": "euler",
+            "scheduler": "simple",
+            "steps": 25,
+            "cfg": 1,
+            "denoise": 1,
+            "seedPolicy": "set by server per task",
+            "sizePolicy": "画布由输入图决定（resolution=1536 决定总像素），服务端不覆写宽高",
+            "resolution": 1536
+          },
+          "outputRule": {
+            "nodeId": "8",
+            "outputField": "images",
+            "format": "png",
+            "mime": "image/png",
+            "multiple": false,
+            "maxSizeMB": 32,
+            "maxPixels": 4194304,
+            "alpha": "required"
+          },
+          "perf": {
+            "avgSeconds": 40,
+            "maxSeconds": 120,
+            "timeoutSeconds": 300,
+            "concurrency": 1,
+            "measuredNote": "真机实测（2026-09-22）：39.2s / 1152×2048（resolution=1536）；同图 1024 档约 15s"
+          },
+          "supportedOutputs": [
+            {
+              "size": "跟随输入图",
+              "width": 0,
+              "height": 0,
+              "alpha": true
+            }
+          ],
+          "fixedFieldValidation": {
+            "alphaRequired": true
+          },
+          "note": "resolution=1536（v0.1.0 为 1024）：抠图蒙版不再被降到 1MP"
+        }
+      ]
+    },
+    {
+      "capabilityCode": "WHITEBG",
+      "fields": [
+        {
+          "field": "img",
+          "required": true,
+          "type": "file",
+          "accept": [
+            "jpg",
+            "png",
+            "webp"
+          ]
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-ability-image-white-background-qwen21",
+          "modelCode": "QWEN21",
+          "version": "v1.0.0-ability",
+          "status": "DRAFT",
+          "apiJsonFile": "image/workflows/abilities-api/wf-ability-image-white-background-qwen21.json",
+          "checksum": "dc4628fe6546552396de13e1436f9a74211a2ed7efb03462f1d25ebd1372b949",
+          "billing": {
+            "type": "credits",
+            "credits": 3
+          },
+          "mapping": [
+            {
+              "field": "img",
+              "nodeId": "4",
+              "inputKey": "image",
+              "note": "模板中该节点已固定连到 TextEncodeQwenImage21 的 images.image_1"
+            }
+          ],
+          "fixedParams": {
+            "model": "Qwen-Image-2.1 int8_convrot",
+            "textEncoder": "qwen3vl_8b_int8_convrot",
+            "vae": "qwen_image_2.1_vae_bf16",
+            "prompt": "Remove the background, and output a PNG image",
+            "promptPolicy": "固定提示词，不接受前端覆写",
+            "sampler": "euler",
+            "scheduler": "simple",
+            "steps": 25,
+            "cfg": 1,
+            "denoise": 1,
+            "resolution": 1536,
+            "seedPolicy": "set by server per task",
+            "sizePolicy": "画布由输入图决定（resolution=1536 决定总像素），服务端不覆写宽高"
+          },
+          "outputRule": {
+            "nodeId": "8",
+            "outputField": "images",
+            "format": "png",
+            "mime": "image/png",
+            "multiple": false,
+            "maxSizeMB": 32,
+            "maxPixels": 4194304,
+            "alpha": "composited-on-white",
+            "alphaNote": "ComfyUI 侧必须产出带 alpha 的蒙版（后端会断言），但最终交付物是合成后的不透明 PNG"
+          },
+          "perf": {
+            "avgSeconds": 30,
+            "maxSeconds": 120,
+            "timeoutSeconds": 300,
+            "concurrency": 1,
+            "measuredNote": "真机实测（2026-09-22）：30.3s / 1152×2048（随机 seed，非缓存）；同图结构缓存命中时 3s"
+          },
+          "supportedOutputs": [
+            {
+              "size": "跟随输入图",
+              "width": 0,
+              "height": 0
+            }
+          ],
+          "postProcess": {
+            "step": "composite-on-white",
+            "implementation": "org.dromara.ai.image.service.ImageWhiteBackgroundCompositor",
+            "backgroundColor": "#FFFFFF",
+            "outputMime": "image/png"
+          }
+        }
+      ]
+    },
+    {
+      "capabilityCode": "CONTROL",
+      "fields": [
+        {
+          "field": "img"
+        },
+        {
+          "field": "prompt"
+        }
+      ],
+      "workflows": [
+        {
+          "workflowCode": "wf-ability-image-structure-guided-zimage",
+          "modelCode": "ZIMAGE",
+          "version": "v1.0.0-ability",
+          "status": "DRAFT",
+          "apiJsonFile": "image/workflows/abilities-api/wf-ability-image-structure-guided-zimage.json",
+          "checksum": "78acde19a52f404e3ed2c32c1b9ef34e321bc1cccb2cc167b76f301d9f4b7825",
+          "mapping": [
+            {
+              "field": "prompt",
+              "nodeId": "70:45",
+              "inputKey": "text"
+            },
+            {
+              "field": "img",
+              "nodeId": "58",
+              "inputKey": "image"
+            },
+            {
+              "field": "_seed",
+              "nodeId": "70:44",
+              "inputKey": "seed"
+            }
+          ],
+          "outputRule": {
+            "nodeId": "9",
+            "outputField": "images",
+            "format": "png",
+            "mime": "image/png",
+            "maxPixels": 4194304,
+            "maxSizeMB": 128
+          },
+          "supportedOutputs": [
+            {
+              "size": "验证尺寸 · 512×512",
+              "width": 512,
+              "height": 512
+            }
+          ],
+          "requiresAudio": false,
+          "perf": {
+            "timeoutSeconds": 1800
+          },
+          "fixedFieldValidation": {}
+        }
+      ]
+    }
+  ]
+}

@@ -46,7 +46,7 @@
       <p class="field-help model-id">{{ draft.model }}</p>
     </div>
     <div class="cloud-field">
-      <label>创作能力</label>
+      <label>视频创作能力</label>
       <div class="cloud-capabilities">
         <button
           v-for="code in selected.capabilities"

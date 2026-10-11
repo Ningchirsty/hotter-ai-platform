@@ -1,0 +1,1443 @@
+{
+  "id": "4c513ac0-f7ef-5a22-b8dd-6afd0d7784f4",
+  "revision": 0,
+  "last_node_id": 28,
+  "last_link_id": 32,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "RandomNoise",
+      "title": null,
+      "pos": [
+        0,
+        0
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "NOISE",
+          "type": "NOISE",
+          "links": [
+            25
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "RandomNoise"
+      },
+      "widgets_values": [
+        42,
+        "fixed"
+      ]
+    },
+    {
+      "id": 2,
+      "type": "UNETLoader",
+      "title": "Load Diffusion Model",
+      "pos": [
+        0,
+        450
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            1
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "UNETLoader"
+      },
+      "widgets_values": [
+        "ideogram4_fp8_scaled.safetensors",
+        "default"
+      ]
+    },
+    {
+      "id": 3,
+      "type": "CFGOverride",
+      "title": "CFG Override",
+      "pos": [
+        410,
+        0
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 1
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            4
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CFGOverride"
+      },
+      "widgets_values": [
+        3,
+        0.7,
+        1
+      ]
+    },
+    {
+      "id": 4,
+      "type": "CLIPLoader",
+      "title": "Load CLIP",
+      "pos": [
+        0,
+        900
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            2
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPLoader"
+      },
+      "widgets_values": [
+        "qwen3vl_8b_fp8_scaled.safetensors",
+        "ideogram4",
+        "default"
+      ]
+    },
+    {
+      "id": 5,
+      "type": "CLIPTextEncode",
+      "title": "CLIP Text Encode (Prompt)",
+      "pos": [
+        410,
+        450
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 2
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            3,
+            5
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPTextEncode"
+      },
+      "widgets_values": [
+        "设计一张平面中文海报，直接输出设计稿，不展示墙面、画框或纸张实物。只允许出现两段文字：主标题「春日新品」；正文「把自然带进生活」（正文为空时省略）。严格逐字排版，除此之外不要出现任何文字：不要英文、拼音、品牌、数字、说明、标语或乱码。画面主体：青色陶瓷茶壶与春日花枝。设计风格：清新简约。版式：标题在上，主体居中。文字清晰、层次分明，画面主体不遮挡文字。"
+      ]
+    },
+    {
+      "id": 6,
+      "type": "UNETLoader",
+      "title": "Load Diffusion Model",
+      "pos": [
+        0,
+        1350
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            6
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "UNETLoader"
+      },
+      "widgets_values": [
+        "ideogram4_unconditional_fp8_scaled.safetensors",
+        "default"
+      ]
+    },
+    {
+      "id": 7,
+      "type": "ConditioningZeroOut",
+      "title": "Conditioning Zero Out",
+      "pos": [
+        820,
+        0
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "conditioning",
+          "type": "CONDITIONING",
+          "link": 3
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            7
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ConditioningZeroOut"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 8,
+      "type": "DualModelGuider",
+      "title": "Dual Model CFG Guider",
+      "pos": [
+        1230,
+        0
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 4
+        },
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 5
+        },
+        {
+          "name": "model_negative",
+          "type": "MODEL",
+          "link": 6
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "GUIDER",
+          "type": "GUIDER",
+          "links": [
+            26
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "DualModelGuider"
+      },
+      "widgets_values": [
+        7
+      ]
+    },
+    {
+      "id": 9,
+      "type": "KSamplerSelect",
+      "title": null,
+      "pos": [
+        0,
+        1800
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "SAMPLER",
+          "type": "SAMPLER",
+          "links": [
+            27
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "KSamplerSelect"
+      },
+      "widgets_values": [
+        "euler"
+      ]
+    },
+    {
+      "id": 10,
+      "type": "CustomCombo",
+      "title": "Custom Combo",
+      "pos": [
+        0,
+        2250
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            8
+          ]
+        },
+        {
+          "name": "INDEX",
+          "type": "INT",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CustomCombo"
+      },
+      "widgets_values": [
+        "Default"
+      ]
+    },
+    {
+      "id": 11,
+      "type": "JsonExtractString",
+      "title": "Extract Text from JSON",
+      "pos": [
+        410,
+        900
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "key",
+          "type": "STRING",
+          "link": 8,
+          "widget": {
+            "name": "key"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            9
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "JsonExtractString"
+      },
+      "widgets_values": [
+        "{\n  \"Quality\": {\n    \"num_steps\": 48,\n    \"mu\": 0.0,\n    \"std\": 1.5,\n    \"preset_id\": \"V4_QUALITY_48\"\n  },\n  \"Default\": {\n    \"num_steps\": 20,\n    \"mu\": 0.0,\n    \"std\": 1.75,\n    \"preset_id\": \"V4_DEFAULT_20\"\n  },\n  \"Turbo\": {\n    \"num_steps\": 12,\n    \"mu\": 0.5,\n    \"std\": 1.75,\n    \"preset_id\": \"V4_TURBO_12\"\n  }\n}",
+        ""
+      ]
+    },
+    {
+      "id": 12,
+      "type": "StringReplace",
+      "title": "Replace Text",
+      "pos": [
+        820,
+        450
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "string",
+          "type": "STRING",
+          "link": 9,
+          "widget": {
+            "name": "string"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            10,
+            14,
+            16
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "StringReplace"
+      },
+      "widgets_values": [
+        "",
+        "'",
+        "\""
+      ]
+    },
+    {
+      "id": 13,
+      "type": "JsonExtractString",
+      "title": "Extract Text from JSON",
+      "pos": [
+        1230,
+        450
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 12,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "json_string",
+          "type": "STRING",
+          "link": 10,
+          "widget": {
+            "name": "json_string"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            11
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "JsonExtractString"
+      },
+      "widgets_values": [
+        "",
+        "num_steps"
+      ]
+    },
+    {
+      "id": 14,
+      "type": "ComfyNumberConvert",
+      "title": "Convert Number",
+      "pos": [
+        1640,
+        0
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 13,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "value",
+          "type": "STRING",
+          "link": 11
+        }
+      ],
+      "outputs": [
+        {
+          "name": "FLOAT",
+          "type": "FLOAT",
+          "links": []
+        },
+        {
+          "name": "INT",
+          "type": "INT",
+          "links": [
+            18
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ComfyNumberConvert"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 15,
+      "type": "ResolutionSelector",
+      "title": "Resolution Selector",
+      "pos": [
+        0,
+        2700
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 14,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "width",
+          "type": "INT",
+          "links": [
+            12
+          ]
+        },
+        {
+          "name": "height",
+          "type": "INT",
+          "links": [
+            13
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ResolutionSelector"
+      },
+      "widgets_values": [
+        "9:16 (Portrait Widescreen)",
+        1,
+        8
+      ]
+    },
+    {
+      "id": 16,
+      "type": "ComfyMathExpression",
+      "title": "Math Expression",
+      "pos": [
+        410,
+        1350
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 15,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "values.a",
+          "type": "INT",
+          "link": 12
+        }
+      ],
+      "outputs": [
+        {
+          "name": "FLOAT",
+          "type": "FLOAT",
+          "links": []
+        },
+        {
+          "name": "INT",
+          "type": "INT",
+          "links": [
+            19,
+            23
+          ]
+        },
+        {
+          "name": "BOOL",
+          "type": "BOOLEAN",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ComfyMathExpression"
+      },
+      "widgets_values": [
+        "max(((a + 15) // 16) * 16, 256)"
+      ]
+    },
+    {
+      "id": 17,
+      "type": "ComfyMathExpression",
+      "title": "Math Expression",
+      "pos": [
+        410,
+        1800
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 16,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "values.a",
+          "type": "INT",
+          "link": 13
+        }
+      ],
+      "outputs": [
+        {
+          "name": "FLOAT",
+          "type": "FLOAT",
+          "links": []
+        },
+        {
+          "name": "INT",
+          "type": "INT",
+          "links": [
+            20,
+            24
+          ]
+        },
+        {
+          "name": "BOOL",
+          "type": "BOOLEAN",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ComfyMathExpression"
+      },
+      "widgets_values": [
+        "max(((a + 15) // 16) * 16, 256)"
+      ]
+    },
+    {
+      "id": 18,
+      "type": "JsonExtractString",
+      "title": "Extract Text from JSON",
+      "pos": [
+        1230,
+        900
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 17,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "json_string",
+          "type": "STRING",
+          "link": 14,
+          "widget": {
+            "name": "json_string"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            15
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "JsonExtractString"
+      },
+      "widgets_values": [
+        "",
+        "mu"
+      ]
+    },
+    {
+      "id": 19,
+      "type": "ComfyNumberConvert",
+      "title": "Convert Number",
+      "pos": [
+        1640,
+        450
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 18,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "value",
+          "type": "STRING",
+          "link": 15
+        }
+      ],
+      "outputs": [
+        {
+          "name": "FLOAT",
+          "type": "FLOAT",
+          "links": [
+            21
+          ]
+        },
+        {
+          "name": "INT",
+          "type": "INT",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ComfyNumberConvert"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 20,
+      "type": "JsonExtractString",
+      "title": "Extract Text from JSON",
+      "pos": [
+        1230,
+        1350
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 19,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "json_string",
+          "type": "STRING",
+          "link": 16,
+          "widget": {
+            "name": "json_string"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            17
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "JsonExtractString"
+      },
+      "widgets_values": [
+        "",
+        "std"
+      ]
+    },
+    {
+      "id": 21,
+      "type": "ComfyNumberConvert",
+      "title": "Convert Number",
+      "pos": [
+        1640,
+        900
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 20,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "value",
+          "type": "STRING",
+          "link": 17
+        }
+      ],
+      "outputs": [
+        {
+          "name": "FLOAT",
+          "type": "FLOAT",
+          "links": [
+            22
+          ]
+        },
+        {
+          "name": "INT",
+          "type": "INT",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ComfyNumberConvert"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 22,
+      "type": "Ideogram4Scheduler",
+      "title": "Ideogram 4 Scheduler",
+      "pos": [
+        2050,
+        0
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 21,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "steps",
+          "type": "INT",
+          "link": 18,
+          "widget": {
+            "name": "steps"
+          }
+        },
+        {
+          "name": "width",
+          "type": "INT",
+          "link": 19,
+          "widget": {
+            "name": "width"
+          }
+        },
+        {
+          "name": "height",
+          "type": "INT",
+          "link": 20,
+          "widget": {
+            "name": "height"
+          }
+        },
+        {
+          "name": "mu",
+          "type": "FLOAT",
+          "link": 21,
+          "widget": {
+            "name": "mu"
+          }
+        },
+        {
+          "name": "std",
+          "type": "FLOAT",
+          "link": 22,
+          "widget": {
+            "name": "std"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "SIGMAS",
+          "type": "SIGMAS",
+          "links": [
+            28
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "Ideogram4Scheduler"
+      },
+      "widgets_values": [
+        20,
+        1024,
+        1024,
+        0.0,
+        1.75
+      ]
+    },
+    {
+      "id": 23,
+      "type": "EmptyFlux2LatentImage",
+      "title": "Empty Flux 2 Latent",
+      "pos": [
+        820,
+        900
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 22,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "width",
+          "type": "INT",
+          "link": 23,
+          "widget": {
+            "name": "width"
+          }
+        },
+        {
+          "name": "height",
+          "type": "INT",
+          "link": 24,
+          "widget": {
+            "name": "height"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            29
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "EmptyFlux2LatentImage"
+      },
+      "widgets_values": [
+        1024,
+        1024,
+        1
+      ]
+    },
+    {
+      "id": 24,
+      "type": "SamplerCustomAdvanced",
+      "title": null,
+      "pos": [
+        2460,
+        0
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 23,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "noise",
+          "type": "NOISE",
+          "link": 25
+        },
+        {
+          "name": "guider",
+          "type": "GUIDER",
+          "link": 26
+        },
+        {
+          "name": "sampler",
+          "type": "SAMPLER",
+          "link": 27
+        },
+        {
+          "name": "sigmas",
+          "type": "SIGMAS",
+          "link": 28
+        },
+        {
+          "name": "latent_image",
+          "type": "LATENT",
+          "link": 29
+        }
+      ],
+      "outputs": [
+        {
+          "name": "output",
+          "type": "LATENT",
+          "links": [
+            30
+          ]
+        },
+        {
+          "name": "denoised_output",
+          "type": "LATENT",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SamplerCustomAdvanced"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 25,
+      "type": "VAELoader",
+      "title": "Load VAE",
+      "pos": [
+        0,
+        3150
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 24,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            31
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAELoader"
+      },
+      "widgets_values": [
+        "flux2-vae.safetensors"
+      ]
+    },
+    {
+      "id": 26,
+      "type": "VAEDecode",
+      "title": "VAE Decode",
+      "pos": [
+        2870,
+        0
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 25,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 30
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 31
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            32
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAEDecode"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 27,
+      "type": "SaveImage",
+      "title": "Save Image",
+      "pos": [
+        3280,
+        0
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 26,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 32
+        }
+      ],
+      "outputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SaveImage"
+      },
+      "widgets_values": [
+        "Codex_Abilities/wf-ability-image-poster-ideogram"
+      ]
+    },
+    {
+      "id": 28,
+      "type": "Note",
+      "title": "中文海报 · 用途契约",
+      "pos": [
+        -500,
+        0
+      ],
+      "size": [
+        460,
+        260
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": [
+        "中文海报 · wf-ability-image-poster-ideogram\n输入与描述由平台用途表单校验，再由后端填入此节点图。\n当前保存的是独立实测样例，可手动调整文字和素材。\n后端发布状态：DRAFT。"
+      ]
+    }
+  ],
+  "links": [
+    [
+      1,
+      2,
+      0,
+      3,
+      0,
+      "MODEL"
+    ],
+    [
+      2,
+      4,
+      0,
+      5,
+      0,
+      "CLIP"
+    ],
+    [
+      3,
+      5,
+      0,
+      7,
+      0,
+      "CONDITIONING"
+    ],
+    [
+      4,
+      3,
+      0,
+      8,
+      0,
+      "MODEL"
+    ],
+    [
+      5,
+      5,
+      0,
+      8,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      6,
+      6,
+      0,
+      8,
+      2,
+      "MODEL"
+    ],
+    [
+      7,
+      7,
+      0,
+      8,
+      3,
+      "CONDITIONING"
+    ],
+    [
+      8,
+      10,
+      0,
+      11,
+      0,
+      "STRING"
+    ],
+    [
+      9,
+      11,
+      0,
+      12,
+      0,
+      "STRING"
+    ],
+    [
+      10,
+      12,
+      0,
+      13,
+      0,
+      "STRING"
+    ],
+    [
+      11,
+      13,
+      0,
+      14,
+      0,
+      "STRING"
+    ],
+    [
+      12,
+      15,
+      0,
+      16,
+      0,
+      "INT"
+    ],
+    [
+      13,
+      15,
+      1,
+      17,
+      0,
+      "INT"
+    ],
+    [
+      14,
+      12,
+      0,
+      18,
+      0,
+      "STRING"
+    ],
+    [
+      15,
+      18,
+      0,
+      19,
+      0,
+      "STRING"
+    ],
+    [
+      16,
+      12,
+      0,
+      20,
+      0,
+      "STRING"
+    ],
+    [
+      17,
+      20,
+      0,
+      21,
+      0,
+      "STRING"
+    ],
+    [
+      18,
+      14,
+      1,
+      22,
+      0,
+      "INT"
+    ],
+    [
+      19,
+      16,
+      1,
+      22,
+      1,
+      "INT"
+    ],
+    [
+      20,
+      17,
+      1,
+      22,
+      2,
+      "INT"
+    ],
+    [
+      21,
+      19,
+      0,
+      22,
+      3,
+      "FLOAT"
+    ],
+    [
+      22,
+      21,
+      0,
+      22,
+      4,
+      "FLOAT"
+    ],
+    [
+      23,
+      16,
+      1,
+      23,
+      0,
+      "INT"
+    ],
+    [
+      24,
+      17,
+      1,
+      23,
+      1,
+      "INT"
+    ],
+    [
+      25,
+      1,
+      0,
+      24,
+      0,
+      "NOISE"
+    ],
+    [
+      26,
+      8,
+      0,
+      24,
+      1,
+      "GUIDER"
+    ],
+    [
+      27,
+      9,
+      0,
+      24,
+      2,
+      "SAMPLER"
+    ],
+    [
+      28,
+      22,
+      0,
+      24,
+      3,
+      "SIGMAS"
+    ],
+    [
+      29,
+      23,
+      0,
+      24,
+      4,
+      "LATENT"
+    ],
+    [
+      30,
+      24,
+      0,
+      26,
+      0,
+      "LATENT"
+    ],
+    [
+      31,
+      25,
+      0,
+      26,
+      1,
+      "VAE"
+    ],
+    [
+      32,
+      26,
+      0,
+      27,
+      0,
+      "IMAGE"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "codex_ability": {
+      "code": "POSTER",
+      "workflowCode": "wf-ability-image-poster-ideogram",
+      "media": "image",
+      "backendPreparedGraphSha256": "e270230e685f1f47d1e43ac8e271ad8cba03dfa6505576bbf7a1b3dc836281fe",
+      "publicationStatus": "DRAFT"
+    }
+  },
+  "version": 0.4
+}

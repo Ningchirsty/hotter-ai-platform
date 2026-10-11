@@ -1,5 +1,11 @@
 /** Local, read-only preview fixtures. No HTTP client or production endpoint is imported. */
 import workflows from './workflow-fixtures.json';
+import imageAbilities from '../src/views/image/abilities.json';
+import videoAbilities from '../src/views/video/abilities.json';
+export const listImageAbilities = () => ok(imageAbilities);
+export const listVideoAbilities = () => ok(videoAbilities);
+export const createImageAbilityTask = (...args: unknown[]) => blocked(...args);
+export const createVideoAbilityTask = (...args: unknown[]) => blocked(...args);
 const ok = async <T>(data: T) => ({ data });
 const blocked = async (..._args: unknown[]): Promise<never> => {
   throw new Error('只读界面预览：不上传、不生成、不修改服务器数据。');

@@ -139,6 +139,18 @@ public final class H3TemplatePreparer {
         }
         validateFields(capability, version, fields);
 
+        if (isNative(version)) {
+            Map<String, Object> input = new java.util.HashMap<>();
+            input.put("desc", fields.text()); input.put("img", fields.imageFile());
+            input.put("first", fields.firstFile()); input.put("last", fields.lastFile());
+            input.put("reference1", fields.firstFile()); input.put("reference2", fields.lastFile());
+            input.put("_seed", java.util.concurrent.ThreadLocalRandom.current().nextLong(Long.MAX_VALUE));
+            try {
+                return org.dromara.ai.creative.NativeGraph.prepare(mapper, templateContent,
+                    version.mapping().stream().map(m -> new org.dromara.ai.creative.NativeGraph.Input(m.field(), m.nodeId(), m.inputKey())).toList(), input);
+            } catch (IllegalArgumentException e) { throw VideoTaskException.invalidContract(e.getMessage()); }
+        }
+
         JsonNode parsed;
         try {
             parsed = mapper.readTree(templateContent);
@@ -433,7 +445,7 @@ public final class H3TemplatePreparer {
             }
             // 时长与档位互相约束（长时长只在低分辨率档位开放），因此按「档位 + 时长」组合校验。
             // 配置了档位表时以它为准；未配置时退回契约的单一 dur，保持向后兼容。
-            if (tierResolutions != null) {
+            if (tierResolutions != null && !isNative(version)) {
                 java.util.List<String> allowedDurations = tierResolutions.durationsOf(fields.tier());
                 if (!allowedDurations.isEmpty() && !allowedDurations.contains(fields.durationLabel())) {
                     throw VideoTaskException.invalidContract(
@@ -456,6 +468,13 @@ public final class H3TemplatePreparer {
             && (isBlank(fields.firstFile()) || isBlank(fields.lastFile()))) {
             throw VideoTaskException.invalidContract("首尾帧生视频必须同时提供首帧和尾帧");
         }
+        if (capability == VideoCapability.R2V && (isBlank(fields.firstFile()) || isBlank(fields.lastFile()))) {
+            throw VideoTaskException.invalidContract("双图参考短片必须提供两张参考图");
+        }
+    }
+
+    public static boolean isNative(WorkflowVersion version) {
+        return version.mapping() != null && version.mapping().stream().anyMatch(m -> "_seed".equals(m.field()));
     }
 
     /**

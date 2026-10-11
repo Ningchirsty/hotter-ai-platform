@@ -2,7 +2,7 @@
   <div :class="['studio', 'creative-light', { 'creation-workbench': activeView === 'create' }]">
     <div v-if="showGuide" class="guide-bar">
       <el-icon><MagicStick /></el-icon>
-      <span>创建任务：选择视频方式和模型，添加素材与描述，确认输出档位。</span>
+      <span>创建视频：先选择模型和创作能力，再添加画面参考与描述，确认输出设置。</span>
       <button type="button" title="关闭引导" aria-label="关闭引导" @click="showGuide = false">
         <el-icon><Close /></el-icon>
       </button>
@@ -10,8 +10,8 @@
 
     <header v-if="activeView === 'create'" class="creation-title">
       <div>
-        <h1>创作工作台</h1>
-        <p>发现喜欢的作品，选择适合的模型，开启你的创作。</p>
+        <h1>视频创作工作台</h1>
+        <p>选择模型与创作能力，填写内容，完成你的作品。</p>
       </div>
       <nav class="media-switch" aria-label="创作类型">
         <router-link to="/ai-tools/video-creation" class="current" aria-current="page">视频创作</router-link>
@@ -39,40 +39,13 @@
         <CloudVideoGenerationForm v-show="generationSource === 'cloud'" :busy="uploading || submitting || cloudUploading"
           :status="cloudStatus" ref="cloudForm" @change="updateCloudDraft" @uploading="cloudUploading = $event" />
         <div v-show="generationSource === 'local'" class="editor-body">
-          <div class="section-heading">
-            <div>
-              <span>创建任务</span>
-              <h2>{{ currentModule.name }}</h2>
-            </div>
-            <span class="version-pill">{{ versionPill }}</span>
-          </div>
-
-          <div class="capability-grid" aria-label="视频能力">
-            <button
-              v-for="item in VIDEO_MODULES"
-              :key="item.code"
-              type="button"
-              :class="['capability', { active: item.code === currentModule.code }]"
-              :aria-pressed="item.code === currentModule.code"
-              :disabled="uploading || submitting"
-              @click="selectModule(item)"
-            >
-              <el-icon><component :is="moduleIcons[item.code]" /></el-icon>
-              <strong>{{ item.name }}</strong>
-              <small>{{ item.desc }}</small>
-            </button>
-          </div>
-
+          <LocalModelSelector media="video" :abilities="abilities" :catalog="localCreationCatalog" :general="VIDEO_MODULES"
+            :registry="workflows" :model-value="selectedWorkflowCode" :busy="uploading || submitting" hide-workflow-settings @choose="selectLocalCreation" />
           <div class="form-divider" />
-
-          <LocalWorkflowPicker media="video" :items="workflowOptions" :catalog="localCatalog" :model-value="selectedWorkflowCode"
-            :total="localCatalog.length" :busy="uploading || submitting" :registered="registeredWorkflow"
-            @update:model-value="selectWorkflow" @choose="browseWorkflow" />
-
           <template v-for="field in currentModule.fields" :key="field">
             <div v-if="isUploadField(field)" class="field-block">
               <label>
-                {{ fieldLabels[field] }}
+                {{ selectedAbility?.assets.find(item => item.key === field)?.label || fieldLabels[field] }}
                 <em v-if="isRequired(field)">*</em>
               </label>
               <label class="upload-zone" :class="{ complete: uploadAssetIds[field]?.length }">
@@ -134,6 +107,8 @@
             </div>
 
             <div v-else-if="field === 'desc'" class="field-block">
+              <AbilityForm v-if="selectedAbility" :ability="selectedAbility" v-model:values="abilityValues" :workflow="selectedOption" :busy="uploading || submitting" />
+              <template v-else>
               <label>
                 {{ currentModule.promptLabel }}
                 <em v-if="isRequired(field)">*</em>
@@ -157,6 +132,7 @@
                   优化描述
                 </button>
               </div>
+              </template>
             </div>
 
             <div v-else-if="field === 'tier' || field === 'dur'" class="field-block">
@@ -203,6 +179,9 @@
                   {{ item }}
                 </button>
               </div>
+              <p v-if="field === 'dur'" class="workflow-note">
+                {{ optionsFor('dur').length === 1 ? '当前输出档位仅开放此时长。' : '可选择当前输出档位支持的时长。' }}
+              </p>
             </div>
 
             <div v-else class="field-block">
@@ -217,8 +196,8 @@
           </template>
 
           <p class="workflow-note">
-            每个模型仅展示当前创作方式适用的工作流。输出尺寸、时长与音频能力随所选版本变化。
-            本地验证版本展示实际生成过的参数；平台开放后可提交生成。
+            输出尺寸、时长与音频能力随所选模型和创作能力变化。
+            当前展示已验证的输出规格；平台开放后可提交生成。
           </p>
         </div>
         <div class="submit-row">
@@ -526,6 +505,8 @@ import type {
 import {
   cancelVideoTask,
   createVideoTask,
+  createVideoAbilityTask,
+  listVideoAbilities,
   deleteVideoAsset,
   executeVideoTask,
   fetchVideoAssetBlobUrl,
@@ -561,9 +542,15 @@ import {
   type StudioModule
 } from './modules';
 
-import LocalWorkflowPicker from '@/components/LocalWorkflowPicker/index.vue';
 import { matchRegisteredWorkflow, workflowFields, type LocalWorkflowOption } from '@/components/LocalWorkflowPicker/types';
 import videoCatalog from './local-workflows.json';
+import abilityDefinitions from './abilities.json';
+import LocalModelSelector from '@/components/CreativeAbility/LocalModelSelector.vue';
+import AbilityForm from '@/components/CreativeAbility/Form.vue';
+import { abilityDefaults, abilityRequest, compileAbility, type CreativeAbility } from '@/components/CreativeAbility/types';
+const abilities = ref<CreativeAbility[]>(import.meta.env.VITE_LOCAL_WORKFLOW_PREVIEW === 'true' ? abilityDefinitions as unknown as CreativeAbility[] : []);
+const selectedAbility = ref<CreativeAbility>();
+const abilityValues = ref<Record<string, string>>({});
 
 type StudioView = 'create' | 'tasks' | 'assets';
 type AssetKind = 'image' | 'video' | 'audio';
@@ -729,10 +716,18 @@ const showGuide = ref(true);
 /** 服务端返回的工作流视图：提交按钮的可用性完全由它的 status 决定。 */
 const workflows = ref<VideoWorkflowVO[]>([]);
 const localCatalog = videoCatalog as unknown as Array<LocalWorkflowOption & VideoWorkflowVO>;
+const localCreationCatalog = computed<LocalWorkflowOption[]>(() => [
+  ...VIDEO_MODULES.filter(item => item.code !== 'R2V').map(item => ({ media: 'video' as const,
+    workflowCode: resolveWorkflowCode(item, 'H3'), capabilityCode: item.code, modelCode: 'H3', modelName: 'MiniMax H3',
+    name: '平台现有导演工作流', version: '', fields: item.fields })), ...localCatalog
+]);
+const businessCatalog = computed(() => abilities.value.flatMap(item => item.workflows) as unknown as Array<LocalWorkflowOption & VideoWorkflowVO>);
+const executableCatalog = computed(() => [...localCatalog, ...businessCatalog.value]);
 const localWorkflowPreview = import.meta.env.VITE_LOCAL_WORKFLOW_PREVIEW === 'true';
 const selectedWorkflowCode = ref(localWorkflowPreview ? 'wf-local-ready-minimaxh3-turbo-i2v-av' : 'wf-i2v-h3');
 const workflowOptions = computed<LocalWorkflowOption[]>(() => {
   const base = selectedModule.value;
+  if (selectedAbility.value) return selectedAbility.value.workflows.filter(item => item.media === 'video');
   const native = localCatalog.filter(item => item.media === 'video' && item.capabilityCode === base.code);
   const legacy: LocalWorkflowOption[] = base.code === 'R2V' ? [] : [{
     media: 'video', workflowCode: resolveWorkflowCode(base, 'H3'), capabilityCode: base.code,
@@ -818,7 +813,7 @@ const requiredFields: FieldKey[] = [
 const currentWorkflowCode = computed(() => selectedWorkflowCode.value);
 const registeredWorkflow = computed(() => matchRegisteredWorkflow('video', selectedOption.value, workflows.value));
 const currentWorkflow = computed(() => registeredWorkflow.value ?? (() => {
-  const native = localCatalog.find(item => item.workflowCode === selectedWorkflowCode.value);
+  const native = executableCatalog.value.find(item => item.workflowCode === selectedWorkflowCode.value);
   return native ? { ...native, status: 'DRAFT' as const, submittable: false, testable: false } : null;
 })());
 
@@ -923,7 +918,7 @@ watch(
 
 const submitBlockReason = computed(() => {
   if (generationSource.value === 'cloud') return cloudBlockReason.value;
-  if (localWorkflowPreview) return '本地只读预览：可选择模型和参数，确认后再接入平台任务服务';
+  if (localWorkflowPreview) return '本地界面预览：用途已绑定后端工作流，生成需完成部署与发布验收';
   if (!registeredWorkflow.value) return '本地 ComfyUI 已验证，平台工作流尚未注册，暂不可提交';
   const workflow = currentWorkflow.value;
   if (!workflow) return `${currentWorkflowCode.value} 尚未在服务端注册`;
@@ -933,14 +928,6 @@ const submitBlockReason = computed(() => {
   return '';
 });
 
-const versionPill = computed(() => {
-  if (selectedOption.value?.verifiedAt) return selectedOption.value.modelName + ' · 本地已验证';
-  const workflow = currentWorkflow.value;
-  if (workflow) return `${workflow.modelCode ?? currentModel.value.name} · ${workflow.version} · ${workflow.status}`;
-  return currentModule.value.models.length
-    ? `${currentModel.value.name} · ${currentModel.value.version}`
-    : `${currentModule.value.fixedWorkflow!.name} · ${currentModule.value.fixedWorkflow!.version}`;
-});
 
 const filteredTasks = computed(() => tasks.value);
 
@@ -962,6 +949,12 @@ onMounted(() => {
 });
 
 async function loadWorkflows() {
+  try {
+    const result = await listVideoAbilities();
+    abilities.value = (result.data || []).filter(item => item.media === 'video');
+    if (!selectedAbility.value && abilities.value[0]) selectAbility(abilities.value[0]);
+  } catch { abilities.value = []; }
+
   try {
     const res = await listVideoWorkflows();
     workflows.value = res.data ?? [];
@@ -1011,7 +1004,22 @@ async function loadAssets() {
   }
 }
 
+function selectAbility(ability: CreativeAbility, workflowCode = ability.recommendedWorkflowCode) {
+  if (ability.media !== 'video' || uploading.value || submitting.value || !ability.workflows.some(item => item.media === 'video' && item.workflowCode === workflowCode)) return;
+  const module = VIDEO_MODULES.find(item => item.code === ability.capabilityCode);
+  if (!module) return;
+  selectModule(module);
+  selectedAbility.value = ability;
+  abilityValues.value = abilityDefaults(ability);
+  selectWorkflow(workflowCode);
+}
+
+watch(() => selectedAbility.value ? compileAbility(selectedAbility.value, abilityValues.value).prompt : undefined,
+  prompt => { if (prompt !== undefined) values.desc = prompt; });
+
 function selectModule(item: StudioModule) {
+  if (uploading.value || submitting.value) return;
+  selectedAbility.value = undefined; abilityValues.value = {};
   appliedInspirationTitle.value = '';
   selectedModule.value = item;
   selectedWorkflowCode.value = localWorkflowPreview || item.code === 'R2V'
@@ -1041,12 +1049,18 @@ function selectWorkflow(code: string) {
   appliedInspirationTitle.value = '';
 }
 
-function browseWorkflow(code: string) {
-  if (uploading.value || submitting.value) return;
-  const option = localCatalog.find(item => item.media === 'video' && item.workflowCode === code);
+function selectLocalCreation(code: string) {
+  if (uploading.value || submitting.value || code === selectedWorkflowCode.value) return;
+  const ability = abilities.value.find(item => item.media === 'video' && item.workflows.some(workflow => workflow.media === 'video' && workflow.workflowCode === code));
+  if (ability) {
+    if (selectedAbility.value?.code === ability.code) selectWorkflow(code);
+    else selectAbility(ability, code);
+    return;
+  }
+  const option = localCreationCatalog.value.find(item => item.media === 'video' && item.workflowCode === code);
   const module = VIDEO_MODULES.find(item => item.code === option?.capabilityCode);
   if (!module) return;
-  if (selectedModule.value.code !== module.code) selectModule(module);
+  if (selectedAbility.value || selectedModule.value.code !== module.code) selectModule(module);
   selectWorkflow(code);
 }
 
@@ -1055,6 +1069,8 @@ function isUploadField(field: FieldKey) {
 }
 
 function isRequired(field: FieldKey) {
+  const asset = selectedAbility.value?.assets.find(item => item.key === field);
+  if (asset) return asset.required;
   if (field === 'desc') return ['I2V', 'T2V', 'FL2V', 'R2V'].includes(currentModule.value.code);
   if (field === 'last') return currentModule.value.code === 'FL2V';
   return requiredFields.includes(field);
@@ -1239,7 +1255,10 @@ async function submitTask() {
 
   submitting.value = true;
   try {
-    const created = await createVideoTask(payload);
+    const created = selectedAbility.value
+      ? await createVideoAbilityTask(abilityRequest(selectedAbility.value, 'video', currentWorkflowCode.value, abilityValues.value,
+          Object.fromEntries(Object.entries(uploadAssetIds).map(([key, ids]) => [key, ids?.[0]])), values, payload.idempotencyKey))
+      : await createVideoTask(payload);
     const taskId = created.data?.taskId;
     if (taskId === undefined) {
       ElMessage.error('创建任务失败：未返回任务 ID');
@@ -1581,7 +1600,17 @@ async function recreateTask(task: VideoTaskVO) {
     }catch(error){ElMessage.error((await extractErrorMessage(error))??'读取云端任务参数失败');}
     return;
   }
+  if (uploading.value || submitting.value) return;
   generationSource.value='local';
+  const ability = abilities.value.find(item => item.workflows.some(workflow => workflow.workflowCode === task.workflowCode));
+  if (ability) {
+    selectAbility(ability);
+    selectWorkflow(task.workflowCode);
+    activeView.value = 'create';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    ElMessage.info('已选择相同用途与模型，请填写新的内容并选择素材');
+    return;
+  }
   const module = VIDEO_MODULES.find(item => item.code === task.capabilityCode);
   if (!module || uploading.value || submitting.value) return;
   selectModule(module);
@@ -1604,7 +1633,7 @@ function applyCreativeInspiration(route: InspirationRoute, title: string) {
   const model = VIDEO_MODELS.find(item => item.code === 'H3');
   if (!module || !model) return;
   generationSource.value = 'local';
-  if (currentModule.value.code !== module.code) selectModule(module);
+  if (selectedAbility.value || currentModule.value.code !== module.code) selectModule(module);
   currentModel.value = model;
   selectWorkflow(route.workflowCode);
   values.desc = route.prompt;
@@ -2911,4 +2940,7 @@ button {
 
 <style scoped lang="scss">
 @use '@/assets/styles/creative-workbench.scss';
+</style>
+
+<style scoped>
 </style>

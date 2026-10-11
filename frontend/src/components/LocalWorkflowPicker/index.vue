@@ -1,13 +1,13 @@
 <template>
   <div class="local-workflows">
-    <div class="picker-heading">
-      <label>生成模型与工作流</label>
+    <div v-if="!browserOnly" class="picker-heading">
+      <label>{{ business ? '此用途适用的模型' : '生成模型与工作流' }}</label>
       <span>{{ total }} 个新增{{ media === 'image' ? '图像' : '视频' }}工作流</span>
     </div>
     <button type="button" class="browse-button" :disabled="busy" @click="browserOpen = true">
       查看全部{{ media === 'image' ? '图像' : '视频' }}工作流 →
     </button>
-    <div class="family-grid" :aria-label="media === 'image' ? '图像模型' : '视频模型'">
+    <div v-if="!browserOnly" class="family-grid" :aria-label="media === 'image' ? '图像模型' : '视频模型'">
       <button v-for="model in models" :key="model.code" type="button"
         :disabled="busy" :class="{ active: selected?.modelCode === model.code }"
         :aria-pressed="selected?.modelCode === model.code" @click="chooseModel(model.code)">
@@ -15,15 +15,15 @@
         <small>{{ model.count }} 个适用工作流</small>
       </button>
     </div>
-    <label class="variant-label">工作流版本</label>
-    <el-select :model-value="modelValue" :disabled="busy" filterable class="variant-select"
+    <label v-if="!browserOnly" class="variant-label">工作流版本</label>
+    <el-select v-if="!browserOnly" :model-value="modelValue" :disabled="busy" filterable class="variant-select"
       aria-label="工作流版本" @update:model-value="emit('update:modelValue', $event)">
       <el-option v-for="item in variants" :key="item.workflowCode" :value="item.workflowCode"
         :label="item.name" />
     </el-select>
-    <div v-if="selected" class="workflow-summary" role="status">
+    <div v-if="selected && !browserOnly" class="workflow-summary" role="status">
       <span :class="['state', { available: registered?.status === 'PUBLISHED' && registered?.submittable }]">
-        {{ registered?.status === 'PUBLISHED' && registered?.submittable ? '平台可提交' : selected.verifiedAt ? 'ComfyUI 已验证 · 平台待接入' : '平台工作流' }}
+        {{ registered?.status === 'PUBLISHED' && registered?.submittable ? '平台可提交' : business ? '用途流程待验收' : selected.verifiedAt ? 'ComfyUI 已验证 · 平台待接入' : '平台工作流' }}
       </span>
       <span v-if="selected.hasAudio">含音频</span>
       <span v-if="selected.fps">{{ selected.fps }} FPS</span>
@@ -31,7 +31,7 @@
     </div>
     <el-drawer v-model="browserOpen" :title="media === 'image' ? '图像工作流 · 11 个新增' : '视频工作流 · 20 个新增'"
       size="min(620px, 100vw)" append-to-body>
-      <p class="browse-intro">按创作方式选择已验证的模型版本，带入左侧创作表单。</p>
+      <p class="browse-intro">这里保留全部通用工作流版本。带入后会同步选择对应模型与创作能力；专用用途可在模型下方选择。</p>
       <div v-for="item in catalogOptions" :key="item.workflowCode" class="browse-row">
         <div><b>{{ item.modelName }}</b><p>{{ item.name }}</p>
           <small>{{ capabilityNames[item.capabilityCode] }} · {{ item.sizes?.[0]?.label ?? item.supportedTiers?.[0] }}{{ item.hasAudio ? ' · 含音频' : '' }}</small>
@@ -50,6 +50,8 @@ const props = defineProps<{
   catalog: LocalWorkflowOption[];
   modelValue: string;
   total: number;
+  business?: boolean;
+  browserOnly?: boolean;
   busy?: boolean;
   registered?: RegisteredWorkflow | null;
 }>();

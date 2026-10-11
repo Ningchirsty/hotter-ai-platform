@@ -184,8 +184,7 @@ public class VideoCreationController extends BaseController {
     @SaCheckPermission("video:creation:view")
     public R<List<Map<String, Object>>> capabilities() {
         List<Map<String, Object>> result = new ArrayList<>();
-        for (String code : List.of("wf-t2v-h3", "wf-i2v-h3", "wf-fl2v-h3")) {
-            WorkflowVersion version = registry.peek(code);
+        for (WorkflowVersion version : registry.registeredVersions()) {
             if (version == null) {
                 continue;
             }
@@ -208,7 +207,8 @@ public class VideoCreationController extends BaseController {
             // 各档位允许的时长。时长与档位互相约束（长时长只在低分辨率档位开放，
             // 因为 H3 的帧数随时长线性增长、显存与耗时显著上升），所以按时长给出矩阵，
             // 而不是给一个「所有档位通用」的时长列表。
-            item.put("supportedDurationsByTier", tierResolutions == null
+            item.put("supportedDurationsByTier", H3TemplatePreparer.isNative(version)
+                ? Map.of(version.fixedFieldValidation().tier(), List.of(version.fixedFieldValidation().dur())) : tierResolutions == null
                 ? java.util.Map.of()
                 : new java.util.LinkedHashMap<>(tierResolutions.getDurations()));
             // 画面比例与「比例 → 档位」分组：前端据此渲染"先选比例、再选清晰度"。
@@ -442,6 +442,7 @@ public class VideoCreationController extends BaseController {
     @PostMapping("/tasks")
     @SaCheckPermission("video:creation:submit")
     public R<Map<String, Object>> createTask(@RequestBody Map<String, Object> payload) {
+        payload = registry.normalizeAbility(payload);
         String tenantId = requireTenantId();
         long userId = LoginHelper.getUserId();
 
@@ -467,8 +468,8 @@ public class VideoCreationController extends BaseController {
         String tier = stringOf(fields.get("tier"));
         String durationLabel = stringOf(fields.get("dur"));
         Long imageAssetId = longOf(fields.get("img"));
-        Long firstAssetId = longOf(fields.get("first"));
-        Long lastAssetId = longOf(fields.get("last"));
+        Long firstAssetId = longOf(fields.get(capability == VideoCapability.R2V ? "reference1" : "first"));
+        Long lastAssetId = longOf(fields.get(capability == VideoCapability.R2V ? "reference2" : "last"));
 
         // 固定档位 + 必需素材 + 提示词校验，必须在入库前完成。
         // 注意：这里必须传真实提示词与真实的素材存在标志——曾因传占位符
@@ -505,6 +506,7 @@ public class VideoCreationController extends BaseController {
         String taskNo = "VIDEO-" + LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE)
             + "-" + String.format("%06d", Math.floorMod(taskId, 1_000_000L));
         Map<String, Object> inputJson = new HashMap<>();
+        inputJson.put("durationLabel", durationLabel);
         if (imageAssetId != null) {
             inputJson.put("img", imageAssetId);
         }
@@ -653,7 +655,7 @@ public class VideoCreationController extends BaseController {
             String.valueOf(task.get("workflow_code")),
             task.get("prompt") == null ? null : String.valueOf(task.get("prompt")),
             String.valueOf(task.get("tier")),
-            durationLabelOf(task.get("duration_seconds")),
+            taskDurationLabel(inputJson, task.get("duration_seconds")),
             assetIdFrom(inputJson, "img"),
             assetIdFrom(inputJson, "first"),
             assetIdFrom(inputJson, "last"),
@@ -723,8 +725,19 @@ public class VideoCreationController extends BaseController {
     }
 
     private List<String> allowedFieldsOf(WorkflowVersion version) {
-        return List.of("desc", "tier", "dur", "img", "first", "last");
+        List<String> fields = new ArrayList<>(List.of("desc", "tier", "dur"));
+        switch (VideoCapability.parse(version.capabilityCode())) {
+            case I2V -> fields.add("img");
+            case FL2V -> fields.addAll(List.of("first", "last"));
+            case R2V -> fields.addAll(List.of("reference1", "reference2"));
+            case T2V -> { }
+        }
+        return fields;
     }
+
+    @GetMapping("/abilities")
+    @SaCheckPermission("video:creation:view")
+    public R<com.fasterxml.jackson.databind.JsonNode> abilities() { return R.ok(registry.abilities()); }
 
     private static int offset(PageQuery pageQuery) {        int pageNum = pageQuery.getPageNum() == null ? 1 : Math.max(1, pageQuery.getPageNum());
         return (pageNum - 1) * size(pageQuery);
@@ -739,15 +752,24 @@ public class VideoCreationController extends BaseController {
         if (label == null) {
             return 5;
         }
-        String digits = label.replaceAll("[^0-9]", "");
+        java.util.regex.Matcher duration = java.util.regex.Pattern.compile("([0-9]+(?:\\.[0-9]+)?)").matcher(label);
+        String digits = duration.find() ? duration.group(1) : "";
         if (digits.isEmpty()) {
             return 5;
         }
         try {
-            return Integer.parseInt(digits);
+            return (int) Math.ceil(Double.parseDouble(digits));
         } catch (NumberFormatException e) {
             return 5;
         }
+    }
+
+    private static String taskDurationLabel(String inputJson, Object seconds) {
+        try {
+            String label = new ObjectMapper().readTree(inputJson).path("durationLabel").asText();
+            if (!label.isBlank()) return label;
+        } catch (Exception ignored) { }
+        return durationLabelOf(seconds);
     }
 
     private static String durationLabelOf(Object seconds) {

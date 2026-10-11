@@ -18,7 +18,7 @@ import { describe, expect, it } from 'vitest';
 
 /** 读一个组件源码（相对 views/creative） */
 function source(relative: string): string {
-  return readFileSync(new URL('../' + relative, import.meta.url), 'utf-8');
+  return readFileSync(new URL('../' + relative, import.meta.url), 'utf-8').replace(/\r\n/g, '\n');
 }
 
 describe('界面说明文案与界面实际显示保持一致', () => {

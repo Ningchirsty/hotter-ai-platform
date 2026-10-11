@@ -19,7 +19,8 @@ public enum VideoCapability {
     /**
      * 首尾帧生视频。
      */
-    FL2V("fl2v");
+    FL2V("fl2v"),
+    R2V("r2v");
 
     private final String taskTypeMarker;
 

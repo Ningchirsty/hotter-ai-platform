@@ -179,6 +179,10 @@ public class ImageCreationController extends BaseController {
     /**
      * 上传素材，立即返回素材 ID（提交任务时只传 ID，浏览器本地文件名不进后端）。
      */
+    @GetMapping("/abilities")
+    @SaCheckPermission("image:creation:view")
+    public R<com.fasterxml.jackson.databind.JsonNode> abilities() { return R.ok(registry.abilities()); }
+
     @PostMapping(value = "/assets", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @SaCheckPermission("image:creation:submit")
     public R<Map<String, Object>> uploadAsset(@RequestParam("file") MultipartFile file) {
@@ -293,6 +297,7 @@ public class ImageCreationController extends BaseController {
     @PostMapping("/tasks")
     @SaCheckPermission("image:creation:submit")
     public R<Map<String, Object>> createTask(@RequestBody Map<String, Object> payload) {
+        payload = registry.normalizeAbility(payload);
         Map<String, Object> fields = asMap(payload.get("fields"));
         String capabilityCode = text(payload.get("capabilityCode"));
         ImageCapability capability = ImageCapability.parse(capabilityCode);

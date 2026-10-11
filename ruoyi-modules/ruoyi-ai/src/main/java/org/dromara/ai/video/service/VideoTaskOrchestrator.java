@@ -337,7 +337,7 @@ public class VideoTaskOrchestrator {
             long assetId = capability == VideoCapability.I2V ? context.imageAssetId() : context.firstAssetId();
             firstFile = uploadOwnedAsset(assetId, context, client);
         }
-        if (capability == VideoCapability.FL2V) {
+        if (capability == VideoCapability.FL2V || capability == VideoCapability.R2V) {
             lastFile = uploadOwnedAsset(context.lastAssetId(), context, client);
         }
 
@@ -345,8 +345,8 @@ public class VideoTaskOrchestrator {
             new H3TemplatePreparer.H3Fields(
                 context.prompt(),
                 capability == VideoCapability.I2V ? firstFile : null,
-                capability == VideoCapability.FL2V ? firstFile : null,
-                capability == VideoCapability.FL2V ? lastFile : null,
+                capability == VideoCapability.FL2V || capability == VideoCapability.R2V ? firstFile : null,
+                capability == VideoCapability.FL2V || capability == VideoCapability.R2V ? lastFile : null,
                 context.tier(),
                 context.durationLabel()));
 
@@ -457,6 +457,15 @@ public class VideoTaskOrchestrator {
         // 超过产品 5 秒上限；只依赖 ComfyUI 元数据会漏判。
         Path storagePath = assetStorage.localPath(storageKey);
         MediaProbe.Probe probe = mediaProbe.probe(storagePath);
+        if (H3TemplatePreparer.isNative(version)) {
+            JsonNode expected = registry.nativeOutput(version.workflowCode());
+            if (!probe.measured() || expected == null) throw VideoTaskException.invalidContract("原生成片必须通过媒体实测");
+            double seconds = expected.path("durationSeconds").asDouble();
+            if (probe.durationMillis() == null || Math.abs(probe.durationMillis() - seconds * 1000) > 150)
+                throw VideoTaskException.invalidContract("原生成片时长与受控流程不一致");
+            if (expected.path("requiresAudio").asBoolean() && !mediaProbe.hasAudio(storagePath))
+                throw VideoTaskException.invalidContract("此用途要求音轨，成片未检测到音频");
+        }
         boolean truncated = false;
         if (probe.measured() && probe.exceeds(maxDurationMillis)) {
             // 传入实测帧率：24fps 下 5.000 秒 = 恰好 120 帧，必须帧精确截断。
@@ -480,7 +489,7 @@ public class VideoTaskOrchestrator {
         if (probe.measured()) {
             // 分辨率断言必须跟随所选档位：这里曾经写死 1920×1080，开放 720P/480P 后
             // 把已经生成并落盘的 720P 成片误判为不合规，任务卡在 RUNNING、成片被丢弃。
-            int[] expected = preparer.expectedOutputSize(context.tier());
+            int[] expected = H3TemplatePreparer.isNative(version) ? registry.nativeOutputSize(version.workflowCode()) : preparer.expectedOutputSize(context.tier());
             if (expected == null) {
                 log.warn("任务 {} 档位 {} 未配置目标分辨率，跳过分辨率断言",
                     context.taskId(), context.tier());
@@ -552,6 +561,7 @@ public class VideoTaskOrchestrator {
      */
     public long resolveDurationCapMillis(String durationLabel, WorkflowVersion version) {
         long contractCap = (version.maxDurationSeconds() == null ? 5 : version.maxDurationSeconds()) * 1000L;
+        if (H3TemplatePreparer.isNative(version)) return contractCap;
         int requested = H3TemplatePreparer.parseDurationSeconds(durationLabel);
         if (requested <= 0) {
             return contractCap;

@@ -1,0 +1,509 @@
+{
+  "id": "24db945d-3d3b-5831-acf2-0c4d60502be9",
+  "revision": 0,
+  "last_node_id": 11,
+  "last_link_id": 10,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "UNETLoader",
+      "title": "Load Diffusion Model",
+      "pos": [
+        0,
+        0
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            1
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "UNETLoader"
+      },
+      "widgets_values": [
+        "qwen_image_2512_fp8_e4m3fn.safetensors",
+        "default"
+      ]
+    },
+    {
+      "id": 2,
+      "type": "ModelSamplingAuraFlow",
+      "title": "ModelSamplingAuraFlow",
+      "pos": [
+        410,
+        0
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 1
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            4
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ModelSamplingAuraFlow"
+      },
+      "widgets_values": [
+        3.1000000000000005,
+        "flow"
+      ]
+    },
+    {
+      "id": 3,
+      "type": "CLIPLoader",
+      "title": "Load CLIP",
+      "pos": [
+        0,
+        450
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            2,
+            3
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPLoader"
+      },
+      "widgets_values": [
+        "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+        "qwen_image",
+        "default"
+      ]
+    },
+    {
+      "id": 4,
+      "type": "CLIPTextEncode",
+      "title": "CLIP Text Encode (Prompt)",
+      "pos": [
+        410,
+        450
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 2
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            5
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPTextEncode"
+      },
+      "widgets_values": [
+        "Commercial product photography. Product: 青色陶瓷茶壶，竹编提手. Scene: 温暖的木桌，窗边自然光. Lighting: 自然窗光. Clear material detail, balanced composition, no text, logos or watermark."
+      ]
+    },
+    {
+      "id": 5,
+      "type": "CLIPTextEncode",
+      "title": "CLIP Text Encode (Prompt)",
+      "pos": [
+        410,
+        900
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 3
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            6
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPTextEncode"
+      },
+      "widgets_values": [
+        "低分辨率，低画质，肢体畸形，手指畸形，画面过饱和，蜡像感，人脸无细节，过度光滑，画面具有AI感。构图混乱。文字模糊，扭曲"
+      ]
+    },
+    {
+      "id": 6,
+      "type": "EmptySD3LatentImage",
+      "title": null,
+      "pos": [
+        0,
+        900
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            7
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "EmptySD3LatentImage"
+      },
+      "widgets_values": [
+        1328,
+        1328,
+        1
+      ]
+    },
+    {
+      "id": 7,
+      "type": "KSampler",
+      "title": "KSampler",
+      "pos": [
+        820,
+        0
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 4
+        },
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 5
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 6
+        },
+        {
+          "name": "latent_image",
+          "type": "LATENT",
+          "link": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            8
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "KSampler"
+      },
+      "widgets_values": [
+        42,
+        "fixed",
+        50,
+        4,
+        "euler",
+        "simple",
+        1
+      ]
+    },
+    {
+      "id": 8,
+      "type": "VAELoader",
+      "title": "Load VAE",
+      "pos": [
+        0,
+        1350
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            9
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAELoader"
+      },
+      "widgets_values": [
+        "qwen_image_vae.safetensors"
+      ]
+    },
+    {
+      "id": 9,
+      "type": "VAEDecode",
+      "title": "VAE Decode",
+      "pos": [
+        1230,
+        0
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 8
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 9
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            10
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAEDecode"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 10,
+      "type": "SaveImage",
+      "title": "Save Image",
+      "pos": [
+        1640,
+        0
+      ],
+      "size": [
+        350,
+        380
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 10
+        }
+      ],
+      "outputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SaveImage"
+      },
+      "widgets_values": [
+        "Codex_Abilities/wf-ability-image-product-shot-qwen2512"
+      ]
+    },
+    {
+      "id": 11,
+      "type": "Note",
+      "title": "商品场景图 · 用途契约",
+      "pos": [
+        -500,
+        0
+      ],
+      "size": [
+        460,
+        260
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": [
+        "商品场景图 · wf-ability-image-product-shot-qwen2512\n输入与描述由平台用途表单校验，再由后端填入此节点图。\n当前保存的是独立实测样例，可手动调整文字和素材。\n后端发布状态：DRAFT。"
+      ]
+    }
+  ],
+  "links": [
+    [
+      1,
+      1,
+      0,
+      2,
+      0,
+      "MODEL"
+    ],
+    [
+      2,
+      3,
+      0,
+      4,
+      0,
+      "CLIP"
+    ],
+    [
+      3,
+      3,
+      0,
+      5,
+      0,
+      "CLIP"
+    ],
+    [
+      4,
+      2,
+      0,
+      7,
+      0,
+      "MODEL"
+    ],
+    [
+      5,
+      4,
+      0,
+      7,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      6,
+      5,
+      0,
+      7,
+      2,
+      "CONDITIONING"
+    ],
+    [
+      7,
+      6,
+      0,
+      7,
+      3,
+      "LATENT"
+    ],
+    [
+      8,
+      7,
+      0,
+      9,
+      0,
+      "LATENT"
+    ],
+    [
+      9,
+      8,
+      0,
+      9,
+      1,
+      "VAE"
+    ],
+    [
+      10,
+      9,
+      0,
+      10,
+      0,
+      "IMAGE"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "codex_ability": {
+      "code": "PRODUCT_SHOT",
+      "workflowCode": "wf-ability-image-product-shot-qwen2512",
+      "media": "image",
+      "backendPreparedGraphSha256": "1511605fa5a2513d5578ef9e73f4300d462bbd49f13217037cec54caea9389e7",
+      "publicationStatus": "DRAFT"
+    }
+  },
+  "version": 0.4
+}

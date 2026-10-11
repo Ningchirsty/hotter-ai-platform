@@ -36,7 +36,8 @@ public enum ImageCapability {
      * <b>产品像素级不变 + 背景恒为纯白 255</b>。所以这里的分工是「模型负责抠图，程序负责合成」，
      * 合成这一步没有任何随机性，永远不会把产品画坏。</p>
      */
-    WHITE_BG("whitebg", "白底图", true, false);
+    WHITE_BG("whitebg", "白底图", true, false),
+    CONTROL("control", "参考构图", true, false);
 
     private final String code;
     private final String label;
@@ -76,7 +77,7 @@ public enum ImageCapability {
      * 是否允许前端覆写提示词（抠图与白底图都是固定提示词）。
      */
     public boolean allowsPrompt() {
-        return this == T2I || this == I2I || this == EDIT;
+        return this == T2I || this == I2I || this == EDIT || this == CONTROL;
     }
 
     /**

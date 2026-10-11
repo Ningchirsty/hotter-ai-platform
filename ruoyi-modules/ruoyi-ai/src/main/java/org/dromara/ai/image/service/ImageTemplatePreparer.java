@@ -68,6 +68,17 @@ public class ImageTemplatePreparer {
         }
         validateFields(capability, version, fields);
 
+        if (version.mapping().stream().anyMatch(m -> "_seed".equals(m.field()))) {
+            Map<String, Object> input = new java.util.HashMap<>();
+            input.put("prompt", nullSafe(fields.prompt())); input.put("_seed", fields.seed());
+            for (int i = 0; i < fields.imageFiles().size(); i++) input.put("image" + (i + 1), fields.imageFiles().get(i));
+            if (!fields.imageFiles().isEmpty()) input.put("img", fields.imageFiles().get(0));
+            try {
+                return org.dromara.ai.creative.NativeGraph.prepare(mapper, templateContent,
+                    version.mapping().stream().map(m -> new org.dromara.ai.creative.NativeGraph.Input(m.field(), m.nodeId(), m.inputKey())).toList(), input);
+            } catch (IllegalArgumentException e) { throw ImageTaskException.invalidContract(e.getMessage()); }
+        }
+
         JsonNode parsed;
         try {
             parsed = mapper.readTree(templateContent);
