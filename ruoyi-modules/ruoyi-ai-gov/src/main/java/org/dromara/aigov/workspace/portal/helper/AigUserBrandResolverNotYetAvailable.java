@@ -1,6 +1,7 @@
 package org.dromara.aigov.workspace.portal.helper;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.Set;
@@ -12,12 +13,15 @@ import java.util.Set;
  * <b>"按品牌定向的绑定暂时对谁都不生效"</b>，而不是"所有用户都没有品牌"。
  * 前者是可以解释的 fail-closed，后者会把一个"没接数据源"说成一个业务事实。</p>
  *
- * <p>业务侧提供用户↔品牌归属后，用一个真实实现替换本 Bean 即可；判定规则不用动。</p>
+ * <p><b>与数据库实现互斥</b>：本 Bean 在 {@code aigov.user-brand.enabled=false}（含未配置）时装配；
+ * 打开开关后由 {@link AigUserBrandDbResolver} 接管，两者不会同时存在。</p>
  *
  * @author ai-gov
  */
 @Slf4j
 @Component
+@ConditionalOnProperty(prefix = "aigov.user-brand", name = "enabled",
+    havingValue = "false", matchIfMissing = true)
 public class AigUserBrandResolverNotYetAvailable implements AigUserBrandResolver {
 
     @Override
