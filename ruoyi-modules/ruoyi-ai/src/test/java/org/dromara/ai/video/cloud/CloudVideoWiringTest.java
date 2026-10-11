@@ -11,7 +11,7 @@ import static org.mockito.Mockito.mock;
 /** Checks default-off cloud wiring alongside the original local video beans. */
 class CloudVideoWiringTest {
  private final ApplicationContextRunner runner=new ApplicationContextRunner()
-  .withUserConfiguration(VideoModuleConfiguration.class,VideoCreationController.class,VideoCloudConfiguration.class,VideoCloudController.class)
+  .withUserConfiguration(VideoModuleConfiguration.class,VideoCreationController.class,org.dromara.ai.video.service.VideoTaskSubmissionService.class,VideoCloudConfiguration.class,VideoCloudController.class)
   .withBean(JdbcTemplate.class,()->mock(JdbcTemplate.class))
   .withBean(VideoTaskRepository.class,()->mock(VideoTaskRepository.class))
   .withPropertyValues("video.contract-root="+Path.of("..","..","script").toAbsolutePath(),"video.comfy-base-url=http://192.0.2.1:8188","video.sync-contract-to-db=false","video.fail-stale-running-on-startup=false");

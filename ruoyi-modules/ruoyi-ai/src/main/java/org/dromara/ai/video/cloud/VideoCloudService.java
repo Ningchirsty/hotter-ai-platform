@@ -75,7 +75,7 @@ public class VideoCloudService {
         if(old!=null)return existing(old,request,tenant,user);
         long id=ids.getAsLong();String no="VIDEO-CLOUD-"+id;
         try {
-            repository.insertTask(new VideoTaskRepository.TaskRow(id,tenant,user,no,request.model()+" · "+request.capability(),request.capability(),WORKFLOW,"1",request.model(),"QUEUED",request.resolution(),request.seconds(),request.prompt(),mapper.writeValueAsString(Map.of("request",request)),request.idempotencyKey(),dept));
+            repository.insertTask(new VideoTaskRepository.TaskRow(id,tenant,user,no,request.model()+" · "+request.capability(),request.capability(),WORKFLOW,"1",request.model(),"QUEUED",request.resolution(),request.seconds(),request.prompt(),mapper.writeValueAsString(Map.of("request",request)),request.idempotencyKey(),dept,null));
         } catch(DuplicateKeyException e){Long raced=repository.findByIdempotencyKey(tenant,user,request.idempotencyKey());if(raced==null)throw e;return existing(raced,request,tenant,user);}
         catch(Exception e){if(e instanceof RuntimeException r)throw r;throw VideoTaskException.invalidContract("视频任务参数无法保存");}
         event(id,tenant,"CREATED","已创建云端视频任务");return Map.of("taskId",id,"taskNo",no,"status","QUEUED");

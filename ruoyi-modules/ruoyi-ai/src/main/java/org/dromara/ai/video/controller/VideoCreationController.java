@@ -11,9 +11,9 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.dromara.ai.video.domain.WorkflowVersion;
 import org.dromara.ai.video.exception.VideoTaskException;
 import org.dromara.ai.video.service.AssetStorage;
-import org.dromara.ai.video.service.H3TemplatePreparer;
 import org.dromara.ai.video.service.VideoTaskOrchestrator;
 import org.dromara.ai.video.service.VideoTaskRepository;
+import org.dromara.ai.video.service.VideoTaskSubmissionService;
 import org.dromara.ai.video.service.WorkflowContractRegistry;
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.core.domain.R;
@@ -48,8 +48,6 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -95,8 +93,11 @@ public class VideoCreationController extends BaseController {
         List.of("image/png", "image/jpeg", "image/jpg", "image/webp");
 
     private final WorkflowContractRegistry registry;
-    private final H3TemplatePreparer preparer;
     private final VideoTaskRepository repository;
+    /**
+     * 建任务编排的共享实现（场景派发端口与页面提交共用同一条规则）
+     */
+    private final VideoTaskSubmissionService submissionService;
     private final ObjectProvider<VideoCloudService> cloudService;
 
     /**
@@ -444,103 +445,14 @@ public class VideoCreationController extends BaseController {
     public R<Map<String, Object>> createTask(@RequestBody Map<String, Object> payload) {
         String tenantId = requireTenantId();
         long userId = LoginHelper.getUserId();
-
-        String capabilityCode = stringOf(payload.get("capabilityCode"));
-        String workflowCode = stringOf(payload.get("workflowCode"));
-        VideoCapability capability = VideoCapability.parse(capabilityCode);
-        if (capability == null) {
-            throw VideoTaskException.invalidContract("不支持的能力编码");
+        // 建任务编排集中在 VideoTaskSubmissionService：场景派发端口与页面提交共用同一条规则
+        VideoTaskSubmissionService.SubmissionResult result =
+            submissionService.submit(payload, tenantId, userId, null);
+        if (result.idempotent()) {
+            return R.ok(Map.of("taskId", result.taskId(), "idempotent", true));
         }
-        WorkflowVersion version = registry.require(workflowCode, false);
-        if (!capability.name().equalsIgnoreCase(version.capabilityCode())) {
-            throw VideoTaskException.invalidContract("能力与工作流不匹配");
-        }
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> fields = payload.get("fields") instanceof Map
-            ? (Map<String, Object>) payload.get("fields") : Map.of();
-
-        // 字段白名单：拒绝任何不在契约内的键（例如试图覆写 sampler/nodeId）。
-        preparer.validateFieldWhitelist(allowedFieldsOf(version), fields);
-
-        String prompt = stringOf(fields.get("desc"));
-        String tier = stringOf(fields.get("tier"));
-        String durationLabel = stringOf(fields.get("dur"));
-        Long imageAssetId = longOf(fields.get("img"));
-        Long firstAssetId = longOf(fields.get("first"));
-        Long lastAssetId = longOf(fields.get("last"));
-
-        // 固定档位 + 必需素材 + 提示词校验，必须在入库前完成。
-        // 注意：这里必须传真实提示词与真实的素材存在标志——曾因传占位符
-        // "pending" 导致空提示词被放过、任务被错误入库，属于已修复的缺陷。
-        preparer.validateFields(capability, version, new H3TemplatePreparer.H3Fields(
-            prompt,
-            imageAssetId == null ? null : "provided",
-            firstAssetId == null ? null : "provided",
-            lastAssetId == null ? null : "provided",
-            tier, durationLabel));
-
-        // 素材归属必须属于当前租户与用户。
-        if (imageAssetId != null) {
-            repository.requireOwnedAsset(imageAssetId, tenantId, userId);
-        }
-        if (firstAssetId != null) {
-            repository.requireOwnedAsset(firstAssetId, tenantId, userId);
-        }
-        if (lastAssetId != null) {
-            repository.requireOwnedAsset(lastAssetId, tenantId, userId);
-        }
-
-        String idempotencyKey = stringOf(payload.get("idempotencyKey"));
-        Long existing = repository.findByIdempotencyKey(tenantId, userId, idempotencyKey);
-        if (existing != null) {
-            return R.ok(Map.of("taskId", existing, "idempotent", true));
-        }
-
-        int durationSeconds = parseDurationSeconds(durationLabel);
-        // 任务主键先算出来，taskNo 由它派生以保证唯一。
-        // 曾用 System.nanoTime() % 100000 生成序号，实测发生碰撞，触发
-        // uk_task_no 唯一键冲突并向用户返回 409（属于命名缺陷，不是并发问题）。
-        long taskId = IdGeneratorUtil.nextLongId();
-        String taskNo = "VIDEO-" + LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE)
-            + "-" + String.format("%06d", Math.floorMod(taskId, 1_000_000L));
-        Map<String, Object> inputJson = new HashMap<>();
-        if (imageAssetId != null) {
-            inputJson.put("img", imageAssetId);
-        }
-        if (firstAssetId != null) {
-            inputJson.put("first", firstAssetId);
-        }
-        if (lastAssetId != null) {
-            inputJson.put("last", lastAssetId);
-        }
-        String inputJsonText;
-        try {
-            inputJsonText = mapper.writeValueAsString(inputJson);
-        } catch (Exception e) {
-            throw VideoTaskException.invalidContract("输入素材序列化失败");
-        }
-
-        try {
-            repository.insertTask(new VideoTaskRepository.TaskRow(
-                taskId, tenantId, userId, taskNo,
-                stringOf(payload.getOrDefault("taskName", capabilityCode + " 任务")),
-                capability.name(), version.workflowCode(), version.version(), version.modelCode(),
-                VideoTaskStatus.QUEUED.name(), tier, durationSeconds, prompt, inputJsonText,
-                idempotencyKey, null));
-        } catch (org.springframework.dao.DuplicateKeyException e) {
-            // 幂等键上的唯一索引兜底：(tenant,user,idempotency_key) 在并发下可能同时通过上面的
-            // 预检查，此时数据库会拒绝第二条。这属于「重复提交」而非错误——必须返回已存在的那条，
-            // 否则并发重复提交的用户会看到失败（实测曾出现 409 Conflict），却又确实建了任务。
-            Long existingId = repository.findByIdempotencyKey(tenantId, userId, idempotencyKey);
-            if (existingId != null) {
-                log.info("幂等键 {} 并发重复提交，返回已存在任务 {}", idempotencyKey, existingId);
-                return R.ok(Map.of("taskId", existingId, "idempotent", true));
-            }
-            throw e;
-        }
-
-        return R.ok(Map.of("taskId", taskId, "taskNo", taskNo, "status", VideoTaskStatus.QUEUED.name()));
+        return R.ok(Map.of("taskId", result.taskId(), "taskNo", result.taskNo(),
+            "status", VideoTaskStatus.QUEUED.name()));
     }
 
     /**
@@ -722,32 +634,14 @@ public class VideoCreationController extends BaseController {
         return R.ok();
     }
 
-    private List<String> allowedFieldsOf(WorkflowVersion version) {
-        return List.of("desc", "tier", "dur", "img", "first", "last");
-    }
-
-    private static int offset(PageQuery pageQuery) {        int pageNum = pageQuery.getPageNum() == null ? 1 : Math.max(1, pageQuery.getPageNum());
+    private static int offset(PageQuery pageQuery) {
+        int pageNum = pageQuery.getPageNum() == null ? 1 : Math.max(1, pageQuery.getPageNum());
         return (pageNum - 1) * size(pageQuery);
     }
 
     private static int size(PageQuery pageQuery) {
         int pageSize = pageQuery.getPageSize() == null ? 10 : pageQuery.getPageSize();
         return Math.min(Math.max(1, pageSize), 100);
-    }
-
-    private static int parseDurationSeconds(String label) {
-        if (label == null) {
-            return 5;
-        }
-        String digits = label.replaceAll("[^0-9]", "");
-        if (digits.isEmpty()) {
-            return 5;
-        }
-        try {
-            return Integer.parseInt(digits);
-        } catch (NumberFormatException e) {
-            return 5;
-        }
     }
 
     private static String durationLabelOf(Object seconds) {
@@ -767,24 +661,6 @@ public class VideoCreationController extends BaseController {
             return node == null || node.isNull() ? null : node.asLong();
         } catch (Exception e) {
             return null;
-        }
-    }
-
-    private static String stringOf(Object value) {
-        return value == null ? null : String.valueOf(value);
-    }
-
-    private static Long longOf(Object value) {
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof Number number) {
-            return number.longValue();
-        }
-        try {
-            return Long.parseLong(String.valueOf(value).trim());
-        } catch (NumberFormatException e) {
-            throw VideoTaskException.invalidContract("素材 ID 必须是数字");
         }
     }
 

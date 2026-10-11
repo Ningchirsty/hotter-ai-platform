@@ -42,10 +42,9 @@ class VideoImageCoexistenceTest {
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
         // ImageTaskSubmissionService / VideoTaskSubmissionService 是 @Service（生产靠组件扫描注册），
         // ApplicationContextRunner **不做组件扫描**，所以这里必须显式把它们当作用户配置注册进来——
-        // 否则「创建控制器」会因为没有 ImageTaskSubmissionService 而不满足依赖，测试假失败。
-        // 视频侧没有对应的 SubmissionService（它的依赖都是 VideoModuleConfiguration 里的 @Bean），
-        // 所以只补图片侧这一个。
+        // 否则「创建控制器」会因为没有对应的 SubmissionService 而不满足依赖，测试假失败。
         .withUserConfiguration(VideoModuleConfiguration.class, VideoCreationController.class,
+            org.dromara.ai.video.service.VideoTaskSubmissionService.class,
             ImageModuleConfiguration.class, ImageCreationController.class,
             ImageTaskSubmissionService.class, org.dromara.ai.image.cloud.ImageCloudConfiguration.class)
         .withBean(JdbcTemplate.class, () -> mock(JdbcTemplate.class))

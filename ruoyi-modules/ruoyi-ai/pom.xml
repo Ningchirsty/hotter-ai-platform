@@ -47,6 +47,11 @@
             <groupId>org.dromara</groupId>
             <artifactId>ruoyi-common-mybatis</artifactId>
         </dependency>
+        <!-- 场景回执：视频任务进终态时回报平台任务（复用 aigov 的进程内回执服务） -->
+        <dependency>
+            <groupId>org.dromara</groupId>
+            <artifactId>ruoyi-ai-gov</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-jdbc</artifactId>

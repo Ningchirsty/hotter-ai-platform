@@ -548,6 +548,11 @@ class VideoTaskOrchestratorTest {
         }
 
         @Override
+        public Long findByPlatformTaskId(Long platformTaskId) {
+            return null;
+        }
+
+        @Override
         public int transition(long taskId, VideoTaskStatus from, VideoTaskStatus to,
                               String errorCode, String errorMessage) {
             transitions.add(from + "->" + to);
