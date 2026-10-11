@@ -296,7 +296,7 @@ jobs:
               name = NAMES[role]
               # Newly created named containers only; no production mounts, host networking, or privileged mode.
               docker('run', '-d', '--name', name, '--label', LABEL, '--network', PREFIX, '--network-alias', role,
-                     *args, image, timeout=180)
+                     *args, image, timeout=600)
               containers_created.append(name)
 
           def wait_ready(callback, budget):
@@ -328,7 +328,13 @@ jobs:
               docker('run', '-d', '--name', NAMES['redis'], '--label', LABEL, '--network', PREFIX,
                      '--network-alias', 'redis', '--memory', '128m', 'redis:7.4-alpine', 'redis-server', '--requirepass', REDIS_PASSWORD)
               containers_created.append(NAMES['redis'])
-              wait_ready(lambda: mysql(b'SELECT 1;') == '1\n1', 180)
+              try:
+                  wait_ready(lambda: mysql(b'SELECT 1;') == '1\n1', 600)
+              except TimeoutError:
+                  # 只打印状态，不打印容器日志（日志可能含凭据）。
+                  print('MYSQL_STATE',docker('inspect',NAMES['mysql'],'--format','{{.State.Status}} exit={{.State.ExitCode}} restarts={{.RestartCount}}'),flush=True)
+                  print('CANDIDATE_CONTAINERS',docker('ps','-a','--filter','name='+PREFIX,'--format','{{.Names}} {{.Status}}'),flush=True)
+                  raise
               for file in ['ry_vue.sql', 'ry_image_task.sql', 'ry_image_workflow.sql', 'ry_video_task.sql',
                            'ry_video_workflow.sql', 'ry_video_task_migration.sql', 'ry_video_task_platform_ref.sql']:
                   mysql((ROOT / 'script/sql' / file).read_bytes())
@@ -363,7 +369,7 @@ jobs:
               FFPROBE, FFMPEG = [str(binaries / tool) for tool in ['ffprobe','ffmpeg']]
               port = docker('port', NAMES['backend'], '8080/tcp').split(':')[-1]
               BASE = 'http://127.0.0.1:' + port
-              wait_ready(lambda: api('/auth/code') is not None, 240)
+              wait_ready(lambda: api('/auth/code') is not None, 600)
               login = api('/auth/login', {'clientId': 'e5cd7e4891bf95d1d19206ce24a7b32e', 'grantType': 'password', 'username': 'admin', 'password': LOGIN_PASSWORD})
               token = login['access_token']
               print('::add-mask::' + token, flush=True)
