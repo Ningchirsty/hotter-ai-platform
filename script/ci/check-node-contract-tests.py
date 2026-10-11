@@ -129,6 +129,9 @@ def main() -> int:
             print(f'  - {problem}')
         return 1
     print('Node contract-test gate OK.')
+    publication_tests = subprocess.run([sys.executable,'script/test_creative_publication.py'],check=False)
+    if publication_tests.returncode:
+        return publication_tests.returncode
     return 0
 
 
