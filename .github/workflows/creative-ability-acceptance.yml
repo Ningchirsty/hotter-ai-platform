@@ -370,6 +370,42 @@ jobs:
                       process.kill();process.wait()
                       raise RuntimeError('docker '+args[0]+' killed after '+str(round(time.monotonic()-started))+'s; live progress is logged above') from None
                   if code: raise RuntimeError('Candidate image operation failed: '+args[0]+' exit='+str(code))
+              def verified_lan_load(reference, local, docker):
+                  # Temporary public-image transfer only; never relay credentials or source archives.
+                  expected='ghcr.io/ningchirsty/hotter-ability-candidate@sha256:da7308449a79bbae480098033028f8f16f30f97e101a67c379e26010571ed151'
+                  if reference!=expected: return False
+                  config='sha256:0a49ac1670c2459690f6e7a82b9a86c7f7f3ae6d1d62bee78b0bc544e6c251d1'
+                  checksum='ebcb905e89c72afda83e1a9942e1c307165a9a6fe200eb70261ae81c52a5170a'
+                  size=779376640
+                  url='http://192.168.2.144:18791/candidate-'+expected.split(':')[-1]+'.tar'
+                  with tempfile.TemporaryDirectory(prefix='verified-lan-candidate-',dir=Path.cwd()) as temporary:
+                      root=Path(temporary)
+                      if shutil.disk_usage(root).free<size*2+2*1024**3:
+                          raise RuntimeError('Insufficient capacity for verified LAN image transfer')
+                      archive=root/'image.tar'
+                      value=hashlib.sha256();received=0;deadline=time.monotonic()+600
+                      opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+                      try:
+                          with opener.open(url,timeout=10) as source, archive.open('wb') as target:
+                              if source.status!=200 or source.headers.get('Content-Length')!=str(size):
+                                  raise ValueError('Unexpected LAN archive size')
+                              while data:=source.read(1024**2):
+                                  received+=len(data)
+                                  if received>size or time.monotonic()>deadline:
+                                      raise ValueError('LAN archive transfer bound exceeded')
+                                  value.update(data);target.write(data)
+                      except OSError as error:
+                          print('CANDIDATE_LAN_UNAVAILABLE',type(error).__name__,flush=True)
+                          return False
+                      if received!=size or value.hexdigest()!=checksum:
+                          raise ValueError('Pinned LAN archive checksum mismatch; refusing Docker load')
+                      if shutil.disk_usage(root).free<size+2*1024**3:
+                          raise RuntimeError('Insufficient capacity to load the verified LAN image')
+                      docker('load','--input',str(archive),timeout=600)
+                      if docker('image','inspect',local,'--format','{{.Id}}')!=config:
+                          raise ValueError('Loaded LAN image config mismatch')
+                      print('VERIFIED_CANDIDATE_LAN_READY',expected,flush=True)
+                      return True
               def verified_registry_load(reference, local, docker):
                   import concurrent.futures
                   import gzip
@@ -509,6 +545,8 @@ jobs:
                   if subprocess.run(['docker','image','inspect',reference],env=env,capture_output=True).returncode==0:
                       print('CANDIDATE_IMAGE_CACHE_HIT',flush=True)
                       docker('tag',reference,local)
+                  elif verified_lan_load(reference,local,docker):
+                      pass
                   else:
                       try:
                           stream_docker('pull',reference,timeout=300)
