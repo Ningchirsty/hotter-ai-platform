@@ -104,6 +104,16 @@ select 1768400000000000008, '查看训练台测试记录', 1763000000000000001, 
     and not exists (select 1 from (select perms from sys_menu) p
                      where p.perms = 'aig:studio:test:view');
 
+insert into sys_menu (menu_id, menu_name, parent_id, order_num, path, component, is_frame, is_cache,
+                      menu_type, visible, status, perms, icon, create_dept, create_by, create_time, remark)
+select 1768400000000000009, '采纳培训助手提案', 1763000000000000001, 138, '', '', 'N', 'Y', 'F', '0', '0',
+       'aig:studio:copilot:use', '#', 1761000000000000103, 1761100000000000001, sysdate(),
+       '训练台：提出/审阅/采纳/拒绝变更提案（Copilot 只提案，采纳才产生新修订）'
+  where not exists (select 1 from (select menu_id from sys_menu) t
+                     where t.menu_id = 1768400000000000009)
+    and not exists (select 1 from (select perms from sys_menu) p
+                     where p.perms = 'aig:studio:copilot:use');
+
 -- ----------------------------
 -- 二、角色授权（只给 AI 管理员）
 -- ----------------------------
@@ -111,7 +121,7 @@ insert ignore into sys_role_menu (role_id, menu_id)
 select 1763100000000000001, menu_id from sys_menu
  where perms in ('aig:studio:draft:list', 'aig:studio:draft:query', 'aig:studio:draft:create',
                  'aig:studio:draft:edit', 'aig:studio:draft:validate', 'aig:studio:draft:submit',
-                 'aig:studio:test:run', 'aig:studio:test:view');
+                 'aig:studio:test:run', 'aig:studio:test:view', 'aig:studio:copilot:use');
 
 -- ⚠️ 父菜单也必须授权，否则菜单树里看不到这一组（RuoYi 按「用户已授权的菜单」建树）
 insert ignore into sys_role_menu (role_id, menu_id)

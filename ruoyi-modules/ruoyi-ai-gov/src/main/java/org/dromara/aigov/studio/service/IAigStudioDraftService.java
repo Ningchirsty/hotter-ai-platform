@@ -1,5 +1,6 @@
 package org.dromara.aigov.studio.service;
 
+import org.dromara.aigov.studio.domain.AigStudioDraftContent;
 import org.dromara.aigov.studio.domain.bo.AigStudioDraftCreateBo;
 import org.dromara.aigov.studio.domain.bo.AigStudioDraftQueryBo;
 import org.dromara.aigov.studio.domain.bo.AigStudioDraftSaveBo;
@@ -9,6 +10,7 @@ import org.dromara.aigov.studio.domain.vo.AigStudioDraftSubmitVo;
 import org.dromara.aigov.studio.domain.vo.AigStudioDraftVo;
 import org.dromara.aigov.studio.domain.vo.AigStudioRevisionVo;
 import org.dromara.aigov.studio.domain.vo.AigStudioValidateVo;
+import org.dromara.aigov.studio.enums.AigStudioRevisionSourceEnum;
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.mybatis.core.page.PageQuery;
 
@@ -86,6 +88,27 @@ public interface IAigStudioDraftService {
      * @return 回滚后的详情
      */
     AigStudioDraftDetailVo rollback(Long draftId, Integer targetRevisionNo, Integer expectedRevision, Long actorId);
+
+    /**
+     * 把一份已经算好的内容落成一条<b>新修订</b>（带 CAS），供"采纳变更提案"复用。
+     *
+     * <p><b>为什么由草稿服务提供这个入口</b>：写修订的三件事（内容没变就不产生修订、
+     * 修订号 +1、CAS 冲突检测）只能有一处实现。提案服务自己写一遍，就会出现
+     * "两条路径对同一个草稿的并发语义不一样"——那是最难查的一类不一致。</p>
+     *
+     * <p><b>它不产生"提案"语义</b>：这里只负责把内容落库成修订；
+     * "这条修订来自被采纳的提案"由调用方以 {@code source=COPILOT_ACCEPTED} 声明。</p>
+     *
+     * @param draftId          草稿ID
+     * @param expectedRevision 期望的当前修订号（CAS）
+     * @param content          已应用完改动的内容（服务端会自行序列化 + 规范化 + 算哈希）
+     * @param source           修订来源
+     * @param summary          修订说明
+     * @param actorId          操作用户ID（必须是草稿责任人）
+     * @return 落库后的草稿详情（{@code revisionCreated} 表示是否真的产生了新修订）
+     */
+    AigStudioDraftDetailVo applyRevision(Long draftId, Integer expectedRevision, AigStudioDraftContent content,
+                                         AigStudioRevisionSourceEnum source, String summary, Long actorId);
 
     /**
      * 归档草稿（终态；归档后不可再编辑）。

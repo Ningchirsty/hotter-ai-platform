@@ -105,8 +105,36 @@ create table if not exists aig_studio_execution_link (
     key idx_aig_studio_link_exec (execution_id)
 ) engine=innodb comment = '岗位 Agent Studio 测试证据链（修订快照 ↔ 真实执行/评测）';
 
--- 核对：三张表都在
+-- ----------------------------
+-- 4、变更提案（培训助手只"提案"，人工采纳才产生新修订；附件 07 增量 6）
+-- ----------------------------
+create table if not exists aig_studio_change_proposal (
+    proposal_id         bigint(20)    not null                   comment '提案ID',
+    draft_id            bigint(20)    not null                   comment '所属草稿（aig_studio_draft.draft_id）',
+    base_revision       int(11)       not null                   comment '提案基于的修订号（CAS：采纳时必须仍是当前修订）',
+    source              varchar(24)   not null default 'COPILOT' comment '提案来源（COPILOT培训助手 / MANUAL人工草拟）',
+    operations_json     longtext      not null                   comment '规范化后的操作清单（白名单操作 + JSON Pointer）',
+    preview_json        longtext      default null               comment '改动预览（path/before/after；供人工审阅）',
+    content_hash_before char(64)      not null                   comment '提案时的草稿内容哈希',
+    content_hash_after  char(64)      not null                   comment '应用后预计的内容哈希（采纳时重算比对）',
+    status              varchar(16)   not null default 'PENDING' comment '状态（PENDING待人工处理 / APPLIED已采纳 / REJECTED已拒绝）',
+    decided_by          bigint(20)    default null               comment '处理人（采纳/拒绝）',
+    decided_at          datetime      default null               comment '处理时间',
+    decided_reason      varchar(200)  default null               comment '处理说明（拒绝原因；采纳时可为空）',
+    summary             varchar(200)  default null               comment '提案说明',
+    del_flag            char(1)       default '0'                comment '删除标志（0代表存在 1代表删除）',
+    create_dept         bigint(20)    default null               comment '创建部门',
+    create_by           bigint(20)    default null               comment '创建者',
+    create_time         datetime                                 comment '创建时间',
+    update_by           bigint(20)    default null               comment '更新者',
+    update_time         datetime                                 comment '更新时间',
+    primary key (proposal_id),
+    key idx_aig_studio_proposal_draft (draft_id, status, create_time)
+) engine=innodb comment = '岗位 Agent Studio 变更提案（培训助手只提案，人工采纳才产生新修订）';
+
+-- 核对：四张表都在
 select table_name, table_comment
   from information_schema.tables
  where table_schema = database()
-   and table_name in ('aig_studio_draft', 'aig_studio_revision', 'aig_studio_execution_link');
+   and table_name in ('aig_studio_draft', 'aig_studio_revision', 'aig_studio_execution_link',
+                      'aig_studio_change_proposal');

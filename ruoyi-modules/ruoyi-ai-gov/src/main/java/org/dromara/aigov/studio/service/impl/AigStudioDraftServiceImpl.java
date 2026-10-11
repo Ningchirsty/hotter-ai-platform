@@ -202,6 +202,46 @@ public class AigStudioDraftServiceImpl implements IAigStudioDraftService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public AigStudioDraftDetailVo applyRevision(Long draftId, Integer expectedRevision,
+                                                AigStudioDraftContent content,
+                                                AigStudioRevisionSourceEnum source,
+                                                String summary, Long actorId) {
+        if (content == null) {
+            throw new ServiceException("要落成修订的内容不能为空");
+        }
+        if (expectedRevision == null) {
+            throw new ServiceException("期望修订号不能为空：写修订必须带版本（否则会覆盖别人的修改）");
+        }
+        AigStudioDraft draft = requireDraft(draftId);
+        requireOwner(draft, actorId);
+        requireEditable(draft);
+        requireFresh(draft, expectedRevision);
+
+        String json;
+        try {
+            json = jsonMapper.writeValueAsString(content);
+        } catch (Exception e) {
+            throw new ServiceException("内容序列化失败：" + e.getMessage());
+        }
+        String canonical = canonicalize(json);
+        String hash = AigStudioContentHasher.hash(canonical);
+        if (hash.equals(draft.getContentHash())) {
+            // 与当前内容相同：不产生噪声修订（与 save/rollback 同一条不变式）
+            return toDetail(draft, false);
+        }
+        int next = draft.getLatestRevision() + 1;
+        applyContent(draft, canonical, hash, next);
+        AigStudioRevisionSourceEnum effective =
+            source == null ? AigStudioRevisionSourceEnum.MANUAL : source;
+        revisionMapper.insert(newRevision(draft.getDraftId(), next, canonical, hash, actorId,
+            effective, StringUtils.blankToDefault(summary, "变更提案采纳")));
+        log.info("训练草稿已按来源落成新修订, draftId={}, revision={}, source={}",
+            draft.getDraftId(), next, effective.getCode());
+        return toDetail(requireDraft(draft.getDraftId()), true);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public void archive(Long draftId, Long actorId) {
         AigStudioDraft draft = requireDraft(draftId);
         requireOwner(draft, actorId);

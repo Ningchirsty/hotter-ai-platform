@@ -353,6 +353,13 @@ public interface AigConstants {
     String PERM_STUDIO_TEST_VIEW = "aig:studio:test:view";
 
     /**
+     * Agent Studio：变更提案（培训助手只提案，人工采纳才产生新修订；增量 21／附件 07 增量 6）。
+     *
+     * <p>与"编辑草稿"分开授权：提案是<b>待审对象</b>，采纳它才会改草稿内容。</p>
+     */
+    String PERM_STUDIO_COPILOT_USE = "aig:studio:copilot:use";
+
+    /**
      * 岗位包清单（读）：有哪些岗位、各自有哪些版本、当前是什么发布状态
      */
     String PERM_ROLE_PACKAGE_LIST = "aig:role:list";
