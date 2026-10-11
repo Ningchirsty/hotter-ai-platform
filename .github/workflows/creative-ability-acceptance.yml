@@ -540,7 +540,9 @@ jobs:
               docker('network', 'create', '--label', LABEL, PREFIX)
               network_created = True
               DB_PASSWORD, REDIS_PASSWORD, LOGIN_PASSWORD = [secrets.token_urlsafe(18) for _ in range(3)]
-              for value in (DB_PASSWORD, REDIS_PASSWORD, LOGIN_PASSWORD):
+              # AES 密钥须为 16/24/32 字节；隔离栈一次性随机，与生产 HR_ENCRYPT_KEY 无关。
+              ENCRYPT_KEY = secrets.token_hex(8)
+              for value in (DB_PASSWORD, REDIS_PASSWORD, LOGIN_PASSWORD, ENCRYPT_KEY):
                   print('::add-mask::' + value, flush=True)
               start('mysql', 'mysql:8.0.36', '--memory', '1g', '--cpus', '1', '-e', 'MYSQL_ROOT_PASSWORD=' + DB_PASSWORD, '-e', 'MYSQL_DATABASE=candidate')
               docker('run', '-d', '--name', NAMES['redis'], '--label', LABEL, '--network', PREFIX,
@@ -567,6 +569,7 @@ jobs:
                   'spring.datasource.dynamic.datasource.master.username': 'root', 'spring.datasource.dynamic.datasource.master.password': DB_PASSWORD,
                   'spring.data.redis.host': 'redis', 'spring.data.redis.password': REDIS_PASSWORD,
                   'captcha.enable': 'false', 'api-decrypt.enabled': 'false', 'warm-flow.enabled': 'false',
+                  'mybatis-encryptor.password': ENCRYPT_KEY,
                   'aigov.scheduling.enabled': 'false', 'aigov.model.health-probe.enabled': 'false',
                   'aigov.task.scheduler.enabled': 'false', 'aigov.approval.expire-scan-enabled': 'false',
                   'snail-job.enabled': 'false', 'snail-ai.enabled': 'false', 'spring.boot.admin.client.enabled': 'false',
