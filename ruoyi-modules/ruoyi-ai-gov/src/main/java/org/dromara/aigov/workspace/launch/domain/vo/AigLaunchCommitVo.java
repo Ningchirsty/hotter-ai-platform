@@ -53,6 +53,16 @@ public class AigLaunchCommitVo implements Serializable {
     private String targetRef;
 
     /**
+     * 场景类卡片的流程适配器（{@code AigScenarioAdapterEnum} 规范编码；非场景卡片为空）
+     */
+    private String workflowAdapter;
+
+    /**
+     * 场景类卡片的结果页跳转键（启动成功后界面据此跳转；白名单里的键）
+     */
+    private String scenarioRouteKey;
+
+    /**
      * 启动状态（COMMITTED/FAILED）
      */
     private String launchStatus;

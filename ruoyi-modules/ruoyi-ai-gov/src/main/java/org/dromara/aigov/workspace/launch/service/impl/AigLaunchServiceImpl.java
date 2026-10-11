@@ -12,6 +12,7 @@ import org.dromara.aigov.workspace.domain.AigScenarioVersion;
 import org.dromara.aigov.workspace.domain.AigRoleProfile;
 import org.dromara.aigov.workspace.enums.AigActionLaunchModeEnum;
 import org.dromara.aigov.workspace.enums.AigLaunchTargetTypeEnum;
+import org.dromara.aigov.workspace.helper.AigScenarioDispatch;
 import org.dromara.aigov.workspace.helper.AigScenarioRef;
 import org.dromara.aigov.workspace.launch.config.AigLaunchProperties;
 import org.dromara.aigov.workspace.launch.domain.AigLaunchRecord;
@@ -229,6 +230,7 @@ public class AigLaunchServiceImpl implements IAigLaunchService {
         }
         ticketStore.consume(ticket.ticketId());
         AigLaunchCommitVo vo = toCommitVo(record);
+        applyScenarioDispatch(vo, context);
         vo.setReplayed(false);
         vo.setPassed(true);
         vo.setProblems(List.of());
@@ -285,26 +287,81 @@ public class AigLaunchServiceImpl implements IAigLaunchService {
     /**
      * 场景版本此刻是否可用（查库；判定规则在 {@link AigLaunchChecklist#scenarioUsable}）。
      *
+     * <p>可用除了"状态是 STABLE"，还要求 {@code workflow_adapter} 是封闭枚举里的值：
+     * 适配器认不出意味着**没人知道这次交给谁跑**，任务建出来也只会卡在那里。与其建一个
+     * 起不来的任务，不如在启动前就拒绝（与枚举文档警告的"卡片能点、任务起不来"对齐）。</p>
+     *
      * @param targetRef 场景引用
      * @return 可用返回 true
      */
     private boolean scenarioUsable(String targetRef) {
+        AigScenarioVersion version = scenarioVersionByRef(targetRef);
+        if (version == null || !AigLaunchChecklist.scenarioUsable(version.getReleaseStatus())) {
+            return false;
+        }
+        return AigScenarioDispatch.normalize(version.getWorkflowAdapter()) != null;
+    }
+
+    /**
+     * 按场景引用读出对应的版本行。
+     *
+     * @param targetRef 场景引用（{@code scenario://code@version}）
+     * @return 版本行；引用不可解析或查不到返回 null
+     */
+    private AigScenarioVersion scenarioVersionByRef(String targetRef) {
         AigScenarioRef ref = AigScenarioRef.parse(targetRef);
         if (ref == null) {
-            return false;
+            return null;
         }
         AigScenario scenario = scenarioMapper.selectOne(Wrappers.<AigScenario>lambdaQuery()
             .eq(AigScenario::getScenarioCode, ref.code())
             .last("limit 1"));
         if (scenario == null) {
-            return false;
+            return null;
         }
-        AigScenarioVersion version = scenarioVersionMapper.selectOne(
-            Wrappers.<AigScenarioVersion>lambdaQuery()
-                .eq(AigScenarioVersion::getScenarioId, scenario.getScenarioId())
-                .eq(AigScenarioVersion::getVersion, ref.version())
-                .last("limit 1"));
-        return version != null && AigLaunchChecklist.scenarioUsable(version.getReleaseStatus());
+        return scenarioVersionMapper.selectOne(Wrappers.<AigScenarioVersion>lambdaQuery()
+            .eq(AigScenarioVersion::getScenarioId, scenario.getScenarioId())
+            .eq(AigScenarioVersion::getVersion, ref.version())
+            .last("limit 1"));
+    }
+
+    /**
+     * 取卡片对应场景版本（非场景卡片返回 null）。
+     *
+     * @param context 卡片上下文
+     * @return 场景版本；不适用返回 null
+     */
+    private AigScenarioVersion scenarioVersion(AigPortalActionContext context) {
+        if (context == null
+            || !AigLaunchTargetTypeEnum.SCENARIO.getCode().equals(context.targetType())) {
+            return null;
+        }
+        return scenarioVersionByRef(context.targetRef());
+    }
+
+    /**
+     * 把场景分发信息（交给谁跑 / 结果页）贴到 commit 结果上。
+     *
+     * @param vo      commit 结果
+     * @param context 卡片上下文
+     */
+    private void applyScenarioDispatch(AigLaunchCommitVo vo, AigPortalActionContext context) {
+        AigScenarioVersion scenarioVersion = scenarioVersion(context);
+        if (scenarioVersion == null) {
+            return;
+        }
+        vo.setWorkflowAdapter(AigScenarioDispatch.normalize(scenarioVersion.getWorkflowAdapter()));
+        vo.setScenarioRouteKey(trimToNull(scenarioVersion.getRouteKey()));
+    }
+
+    /**
+     * 空白转 null（空字符串与"没有这个值"对界面应当是同一件事）。
+     *
+     * @param value 值
+     * @return 去空白后的值；空为 null
+     */
+    private static String trimToNull(String value) {
+        return StringUtils.isBlank(value) ? null : value.trim();
     }
 
     /**
@@ -432,6 +489,11 @@ public class AigLaunchServiceImpl implements IAigLaunchService {
             vo.setTargetType(context.targetType());
             vo.setTargetRef(context.targetRef());
             vo.setStudioRouteKey(context.studioRouteKey());
+            AigScenarioVersion scenarioVersion = scenarioVersion(context);
+            if (scenarioVersion != null) {
+                vo.setWorkflowAdapter(AigScenarioDispatch.normalize(scenarioVersion.getWorkflowAdapter()));
+                vo.setScenarioRouteKey(trimToNull(scenarioVersion.getRouteKey()));
+            }
             vo.setWillCreateTask(requiresTask(context.launchMode()));
         }
         return vo;

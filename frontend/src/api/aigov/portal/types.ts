@@ -105,6 +105,10 @@ export interface AigLaunchPrepareVO {
   targetType?: string;
   targetRef?: string;
   studioRouteKey?: string;
+  /** 场景类卡片的流程适配器（交给哪条既有链路跑；非场景卡片为空） */
+  workflowAdapter?: string;
+  /** 场景类卡片的结果页跳转键（启动成功后据此跳转，仍走 routeKey 白名单） */
+  scenarioRouteKey?: string;
   willCreateTask?: boolean;
   taskType?: string;
   projectType?: string;
@@ -126,6 +130,10 @@ export interface AigLaunchCommitVO {
   launchMode?: string;
   targetType?: string;
   targetRef?: string;
+  /** 场景类卡片的流程适配器（非场景卡片为空） */
+  workflowAdapter?: string;
+  /** 场景类卡片的结果页跳转键（启动成功后界面据此跳转） */
+  scenarioRouteKey?: string;
   launchStatus?: string;
   replayed?: boolean;
   committedAt?: string;

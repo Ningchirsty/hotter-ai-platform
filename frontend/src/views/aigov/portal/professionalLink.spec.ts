@@ -5,7 +5,8 @@ import {
   buildProfessionalUrl,
   buildWorkspaceBackUrl,
   readLaunchContext,
-  resolveProfessionalPath
+  resolveProfessionalPath,
+  resolveScenarioPath
 } from './professionalLink';
 
 /**
@@ -86,5 +87,12 @@ describe('岗位工作台 ↔ 专业台 链接', () => {
     expect(resolveProfessionalPath({ actionCode: 'C', launchMode: 'STUDIO', targetType: 'QUICK_CAPABILITY', studioRouteKey: 'NOT_A_KEY' })).toBeNull();
     expect(resolveProfessionalPath({ actionCode: 'D', launchMode: 'QUICK', targetType: 'QUICK_CAPABILITY', targetRef: 'cap/x' })).toBeNull();
     expect(resolveProfessionalPath(undefined)).toBeNull();
+  });
+
+  it('场景卡片的结果页也走白名单：认不出就不跳（而不是跳到一个不存在的页面）', () => {
+    expect(resolveScenarioPath('CREATIVE_PROJECT')).toBeTruthy();
+    expect(resolveScenarioPath('NOT_A_KEY')).toBeNull();
+    expect(resolveScenarioPath(undefined)).toBeNull();
+    expect(resolveScenarioPath('')).toBeNull();
   });
 });

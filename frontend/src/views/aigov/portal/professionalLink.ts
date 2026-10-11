@@ -42,6 +42,22 @@ export function resolveProfessionalPath(action?: AigPortalActionVO): string | nu
   return null;
 }
 
+/**
+ * 场景类卡片启动成功后的落点（场景版本自己的 `route_key`）。
+ *
+ * <p>与 NAVIGATION/STUDIO 一样**只认白名单**（`resolveAiWorkspaceRoute` 解析不到返回 null）：
+ * 场景配置里写了一个平台没注册的键时，表现应当是"不跳转"，而不是"跳到一个不存在的页面"。</p>
+ *
+ * @param routeKey 场景版本的结果页跳转键
+ * @returns 专业页路径；不在白名单或为空时返回 null
+ */
+export function resolveScenarioPath(routeKey?: string): string | null {
+  if (!routeKey) {
+    return null;
+  }
+  return resolveAiWorkspaceRoute(routeKey)?.path ?? null;
+}
+
 /** 标记"这次是从岗位工作台来的"（专业页据此决定要不要显示返回入口） */
 export const FROM_WORKSPACE_FLAG = 'ai-workspace';
 
