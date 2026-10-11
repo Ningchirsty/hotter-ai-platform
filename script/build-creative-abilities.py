@@ -7,6 +7,7 @@ import hashlib
 import json
 import math
 from pathlib import Path
+from creative_publication import apply_publication
 
 ROOT = Path(__file__).resolve().parents[1]
 def read(path): return json.loads(path.read_text(encoding='utf-8'))
@@ -161,6 +162,8 @@ for definition in ABILITIES:
         choices.append(public)
     definition['workflows']=choices
     definition['recommendedWorkflowCode']=choices[0]['workflowCode']
+
+apply_publication(ROOT, ABILITIES, contracts)
 
 for media in ['image','video']:
     defs=[d for d in ABILITIES if d['media']==media]
