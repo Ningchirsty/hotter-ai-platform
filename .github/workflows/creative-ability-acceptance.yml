@@ -488,6 +488,8 @@ jobs:
                               layer.unlink();compressed.unlink()
                           body=json.dumps([{'Config':config_path.name+'.json','RepoTags':[local],'Layers':layer_names}]).encode()
                           info=tarfile.TarInfo('manifest.json');info.size=len(body);output.addfile(info,io.BytesIO(body))
+                      if shutil.disk_usage(root).free < archive.stat().st_size + 2*1024**3:
+                          raise RuntimeError('Insufficient capacity to load the verified image while retaining reserve')
                       docker('load','--input',str(archive),timeout=600)
                       if docker('image','inspect',local,'--format','{{.Id}}')!=manifest['config']['digest']:
                           raise ValueError('Loaded candidate config differs from the verified manifest')
