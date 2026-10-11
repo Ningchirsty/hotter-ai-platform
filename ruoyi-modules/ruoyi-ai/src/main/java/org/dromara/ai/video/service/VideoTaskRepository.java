@@ -29,6 +29,14 @@ public interface VideoTaskRepository {
     long insertTask(TaskRow task);
 
     /**
+     * 按来源平台任务ID查视频任务（场景派发幂等用）。
+     *
+     * @param platformTaskId 平台任务ID
+     * @return 视频任务ID；不存在返回 null
+     */
+    Long findByPlatformTaskId(Long platformTaskId);
+
+    /**
      * 幂等查询：同一租户同一用户同一幂等键只应有一条任务。
      */
     Long findByIdempotencyKey(String tenantId, long userId, String idempotencyKey);
@@ -178,6 +186,7 @@ public interface VideoTaskRepository {
     record TaskRow(Long id, String tenantId, Long userId, String taskNo, String taskName,
                    String capabilityCode, String workflowCode, String workflowVersion,
                    String modelCode, String status, String tier, Integer durationSeconds,
-                   String prompt, String inputJson, String idempotencyKey, Long createDept) {
+                   String prompt, String inputJson, String idempotencyKey, Long createDept,
+                   Long platformTaskId) {
     }
 }

@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS video_task (
   output_duration_ms BIGINT      NULL                 COMMENT '成片实测时长（毫秒）',
   truncation_applied TINYINT(1)  NOT NULL DEFAULT 0   COMMENT '是否因超过 5 秒被截断',
   idempotency_key   VARCHAR(128) NULL                 COMMENT '客户端幂等键',
+  platform_task_id  BIGINT       NULL                 COMMENT '来源平台任务ID（岗位场景派发时写入；唯一，NULL=非派发创建）',
   submitted_time    DATETIME     NULL                 COMMENT '提交到 ComfyUI 的时间',
   started_time      DATETIME     NULL                 COMMENT '开始执行时间',
   finished_time     DATETIME     NULL                 COMMENT '终态时间',
@@ -84,6 +85,7 @@ CREATE TABLE IF NOT EXISTS video_task (
   PRIMARY KEY (id),
   UNIQUE KEY uk_task_no (task_no),
   UNIQUE KEY uk_task_idempotency (tenant_id, user_id, idempotency_key),
+  UNIQUE KEY uk_task_platform (platform_task_id),
   KEY idx_task_owner (tenant_id, user_id, status, del_flag),
   KEY idx_task_comfy (comfy_prompt_id),
   KEY idx_task_status (status, update_time)

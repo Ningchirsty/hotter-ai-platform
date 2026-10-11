@@ -1,8 +1,10 @@
 package org.dromara.ai.video.service;
 
 import lombok.RequiredArgsConstructor;
+import org.dromara.ai.video.api.VideoScenarioReporter;
 import org.dromara.ai.video.domain.VideoTaskStatus;
 import org.dromara.ai.video.exception.VideoTaskException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
@@ -25,6 +27,16 @@ import java.util.Map;
 public class JdbcVideoTaskRepository implements VideoTaskRepository {
 
     private final JdbcTemplate jdbc;
+
+    /**
+     * 场景回执（可选注入）。
+     *
+     * <p>视频模块可以脱离 aigov 单独启用，因此这里按可选注入：没有回执服务就跳过，
+     * 而不是让应用因为少一个协作 Bean 起不来。只有"由派发创建"的任务
+     * （{@code platform_task_id} 非空）才会回报，页面直接提交的任务不受影响。</p>
+     */
+    @Autowired(required = false)
+    private VideoScenarioReporter scenarioReporter;
 
     @Override
     public long insertAsset(AssetRow asset) {
@@ -94,9 +106,9 @@ public class JdbcVideoTaskRepository implements VideoTaskRepository {
                 INSERT INTO video_task
                   (id, tenant_id, user_id, task_no, task_name, capability_code, workflow_code,
                    workflow_version, model_code, status, tier, duration_seconds, prompt, input_json,
-                   progress, attempt_count, truncation_applied, idempotency_key,
+                   progress, attempt_count, truncation_applied, idempotency_key, platform_task_id,
                    create_dept, create_by, create_time, update_time, del_flag)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, NOW(), NOW(), '0')
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, NOW(), NOW(), '0')
                 """, Statement.RETURN_GENERATED_KEYS);
             ps.setObject(1, task.id());
             ps.setString(2, task.tenantId());
@@ -113,8 +125,13 @@ public class JdbcVideoTaskRepository implements VideoTaskRepository {
             ps.setString(13, task.prompt());
             ps.setString(14, task.inputJson());
             ps.setString(15, task.idempotencyKey());
-            ps.setObject(16, task.createDept());
-            ps.setObject(17, task.userId());
+            if (task.platformTaskId() == null) {
+                ps.setNull(16, java.sql.Types.BIGINT);
+            } else {
+                ps.setLong(16, task.platformTaskId());
+            }
+            ps.setObject(17, task.createDept());
+            ps.setObject(18, task.userId());
             return ps;
         }, keyHolder);
         Number key = keyHolder.getKey();
@@ -130,6 +147,48 @@ public class JdbcVideoTaskRepository implements VideoTaskRepository {
             SELECT id FROM video_task
             WHERE tenant_id = ? AND user_id = ? AND idempotency_key = ? AND del_flag = '0'
             """, Long.class, tenantId, userId, idempotencyKey);
+        return ids.isEmpty() ? null : ids.get(0);
+    }
+
+    @Override
+    public Long findByPlatformTaskId(Long platformTaskId) {
+        if (platformTaskId == null) {
+            return null;
+        }
+        List<Long> ids = jdbc.queryForList("""
+            SELECT id FROM video_task
+            WHERE platform_task_id = ? AND del_flag = '0'
+            """, Long.class, platformTaskId);
+        return ids.isEmpty() ? null : ids.get(0);
+    }
+
+    /**
+     * 视频任务进终态后，把结论回报给来源平台任务（若这条任务由场景派发创建）。
+     *
+     * @param taskId  视频任务ID
+     * @param status  新状态（决定平台任务的结论）
+     * @param message 可读说明
+     */
+    private void reportTerminal(long taskId, VideoTaskStatus status, String message) {
+        if (scenarioReporter == null) {
+            return;
+        }
+        Long platformTaskId = platformTaskIdOf(taskId);
+        if (platformTaskId == null) {
+            return;
+        }
+        scenarioReporter.report(platformTaskId, taskId, status, message);
+    }
+
+    /**
+     * 读任务的来源平台任务ID。
+     *
+     * @param taskId 视频任务ID
+     * @return 平台任务ID；非派发创建或不存在返回 null
+     */
+    private Long platformTaskIdOf(long taskId) {
+        List<Long> ids = jdbc.queryForList(
+            "SELECT platform_task_id FROM video_task WHERE id = ?", Long.class, taskId);
         return ids.isEmpty() ? null : ids.get(0);
     }
 
@@ -229,13 +288,17 @@ public class JdbcVideoTaskRepository implements VideoTaskRepository {
     @Override
     public int transition(long taskId, VideoTaskStatus expectedFrom, VideoTaskStatus target,
                           String errorCode, String errorMessage) {
-        return jdbc.update("""
+        int moved = jdbc.update("""
             UPDATE video_task
             SET status = ?, error_code = ?, error_message = ?, update_time = NOW(),
                 finished_time = CASE WHEN ? = 1 THEN NOW() ELSE finished_time END
             WHERE id = ? AND status = ?
             """, target.name(), errorCode, errorMessage,
             target.isTerminal() ? 1 : 0, taskId, expectedFrom.name());
+        if (moved > 0 && target.isTerminal()) {
+            reportTerminal(taskId, target, errorMessage);
+        }
+        return moved;
     }
 
     @Override
@@ -256,12 +319,16 @@ public class JdbcVideoTaskRepository implements VideoTaskRepository {
             .filter(VideoTaskStatus::isTerminal)
             .map(Enum::name)
             .collect(java.util.stream.Collectors.joining("', '"));
-        return jdbc.update("""
+        int moved = jdbc.update("""
             UPDATE video_task
             SET status = ?, error_code = ?, error_message = ?, update_time = NOW(),
                 finished_time = NOW()
             WHERE id = ? AND status NOT IN ('%s')
             """.formatted(terminal), VideoTaskStatus.FAILED.name(), errorCode, errorMessage, taskId);
+        if (moved > 0) {
+            reportTerminal(taskId, VideoTaskStatus.FAILED, errorMessage);
+        }
+        return moved;
     }
 
     @Override
@@ -297,7 +364,7 @@ public class JdbcVideoTaskRepository implements VideoTaskRepository {
     public int markSucceeded(long taskId, long outputAssetId, long coverAssetId,
                              Integer width, Integer height, Double fps, Long durationMillis,
                              boolean truncated) {
-        return jdbc.update("""
+        int moved = jdbc.update("""
             UPDATE video_task
             SET status = ?, output_asset_id = ?, cover_asset_id = ?, progress = 100,
                 output_width = ?, output_height = ?, output_fps = ?, output_duration_ms = ?,
@@ -306,6 +373,11 @@ public class JdbcVideoTaskRepository implements VideoTaskRepository {
             """, VideoTaskStatus.SUCCEEDED.name(), outputAssetId, coverAssetId,
             width, height, fps, durationMillis, truncated ? 1 : 0,
             taskId, VideoTaskStatus.RUNNING.name());
+        if (moved > 0) {
+            reportTerminal(taskId, VideoTaskStatus.SUCCEEDED,
+                "视频任务已完成（videoTaskId=" + taskId + "）");
+        }
+        return moved;
     }
 
     @Override
@@ -329,11 +401,15 @@ public class JdbcVideoTaskRepository implements VideoTaskRepository {
 
     @Override
     public int cancelQueued(long taskId, String tenantId, long userId) {
-        return jdbc.update("""
+        int moved = jdbc.update("""
             UPDATE video_task
             SET status = ?, finished_time = NOW(), update_time = NOW()
             WHERE id = ? AND tenant_id = ? AND user_id = ? AND status = ? AND del_flag = '0'
             """, VideoTaskStatus.CANCELED.name(), taskId, tenantId, userId,
             VideoTaskStatus.QUEUED.name());
+        if (moved > 0) {
+            reportTerminal(taskId, VideoTaskStatus.CANCELED, "视频任务已取消（videoTaskId=" + taskId + "）");
+        }
+        return moved;
     }
 }
