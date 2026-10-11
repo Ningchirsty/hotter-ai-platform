@@ -17,7 +17,12 @@ jobs:
   candidate-image:
     if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'codex/creative-abilities-production')
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    env:
+      CANDIDATE_IMAGE: ghcr.io/ningchirsty/hotter-ability-candidate:sha-${{ github.sha }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -33,29 +38,65 @@ jobs:
           bash mvnw --batch-mode --no-transfer-progress -Dmaven.test.skip=false '-Dtest.groups=!exclude' verify
           python3 script/ci/check-test-results.py
           python3 script/ci/check-node-contract-tests.py
-      - name: Export exact tested module with provenance
+      # 构建候选镜像的输入与 ci.yml 保持一致：ffmpeg 归档只下一次并缓存，
+      # 不留给 Dockerfile 现场下载（该源站会限速，本仓已因此失败过两次）。
+      - name: Cache ffmpeg static archive
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: build-cache
+          key: ffmpeg-static-abda8d77ce830914-41888096
+      - name: Fetch ffmpeg static archive
+        run: bash script/ci/fetch-ffmpeg.sh build-cache
+      # 完整候选构建：不再把「已测试的 ruoyi-ai 模块」塞进某个钉住的旧基线，
+      # 而是从本次精确提交构建整个后端镜像，让验收跑的就是将要发布的那个产物。
+      # 为什么放弃钉住基线：main 迁移频繁（798e890b→…→000974c5，两小时内 11 个提交），
+      # 每次都改 ruoyi-ai-gov/src/main/，会让「基线无法代表本候选」的守卫必然报错；
+      # 且 runner 上既要拉 1.6 GiB 基线、又要本地再 build 一次，是双份 IO。
+      - name: Build candidate image from this exact commit
+        run: |
+          docker build --pull \
+            -f Dockerfile \
+            --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --tag "hotter-ability-candidate:${GITHUB_SHA}" .
+      - name: Smoke test candidate image
+        run: |
+          # 契约与模板是后端启动依赖，ffprobe/ffmpeg 是成片实测与截断的运行时依赖。
+          docker run --rm --entrypoint /bin/bash "hotter-ability-candidate:${GITHUB_SHA}" -ec \
+            'set -e
+             java -version
+             test -s /ruoyi/server/app.jar
+             test -w /ruoyi/server/logs
+             test -w /ruoyi/server/temp
+             test -s /ruoyi/server/script/video/workflows/video-workflow-contracts.json
+             test -s /ruoyi/server/script/image/workflows/image-workflow-contracts.json
+             command -v ffprobe
+             command -v ffmpeg
+             echo "candidate image smoke OK"'
+      - name: Publish candidate image for the acceptance runner
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          trap 'docker logout ghcr.io' EXIT
+          docker tag "hotter-ability-candidate:${GITHUB_SHA}" "$CANDIDATE_IMAGE"
+          docker push "$CANDIDATE_IMAGE"
+          echo "CANDIDATE_IMAGE_PUSHED $CANDIDATE_IMAGE"
+          docker image inspect "$CANDIDATE_IMAGE" --format 'CANDIDATE_REPO_DIGESTS {{json .RepoDigests}}'
+      - name: Export tested runtime sources with provenance
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import hashlib,json,subprocess,zipfile
-          base='000974c5c4eeafb7e139d4a71427eb6f8fe6da71'
-          changed=subprocess.check_output(['git','diff','--name-only',base,'HEAD'],text=True).splitlines()
-          for file in changed:
-              if file.endswith('pom.xml') or file.endswith('Dockerfile') or ('/src/main/' in file and not file.startswith('ruoyi-modules/ruoyi-ai/')):
-                  raise ValueError('Runtime base cannot represent this candidate source: '+file)
+          import hashlib,json,os,subprocess,zipfile
           out=Path('candidate-module');out.mkdir(exist_ok=True)
-          with zipfile.ZipFile('ruoyi-admin/target/ruoyi-admin.jar') as app:
-              names=[name for name in app.namelist() if name.startswith('BOOT-INF/lib/ruoyi-ai-') and name.removeprefix('BOOT-INF/lib/ruoyi-ai-')[0].isdigit() and name.endswith('.jar')]
-              if len(names)!=1: raise ValueError('Expected exactly one compiled ruoyi-ai module')
-              data=app.read(names[0])
-          (out/'ruoyi-ai.jar').write_bytes(data)
           sql=['ry_vue.sql','ry_image_task.sql','ry_image_workflow.sql','ry_video_task.sql','ry_video_workflow.sql','ry_video_task_migration.sql','ry_video_task_platform_ref.sql']
           with zipfile.ZipFile(out/'runtime-source.zip','w',compression=zipfile.ZIP_DEFLATED) as archive:
               files=[f for media in ['image','video'] for f in Path('script/'+media+'/workflows').rglob('*') if f.is_file()]+[Path('script/sql')/name for name in sql]
               for file in files: archive.write(file,file.as_posix())
-          (out/'manifest.json').write_text(json.dumps(dict(commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),baseCommit=base,member=names[0],moduleSha256=hashlib.sha256(data).hexdigest(),runtimeSha256=hashlib.sha256((out/'runtime-source.zip').read_bytes()).hexdigest())))
-          (out/'SHA256SUMS').write_text(''.join(hashlib.sha256((out/name).read_bytes()).hexdigest()+'  '+name+'\n' for name in ['ruoyi-ai.jar','runtime-source.zip','manifest.json']))
-          print('TESTED_MODULE_BYTES',len(data))
+          (out/'manifest.json').write_text(json.dumps(dict(commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),runtimeSha256=hashlib.sha256((out/'runtime-source.zip').read_bytes()).hexdigest(),image=os.environ['CANDIDATE_IMAGE'],buildStrategy='full-candidate-image-from-tested-commit')))
+          (out/'SHA256SUMS').write_text(''.join(hashlib.sha256((out/name).read_bytes()).hexdigest()+'  '+name+'\n' for name in ['runtime-source.zip','manifest.json']))
+          print('RUNTIME_SOURCE_BYTES',(out/'runtime-source.zip').stat().st_size)
           PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -89,7 +130,7 @@ jobs:
           name: ability-candidate-module-${{ github.sha }}
           path: ${{ runner.temp }}/hotter-ability-${{ github.run_id }}-${{ github.run_attempt }}/candidate-module
           digest-mismatch: error
-      - name: Build candidate from verified runtime and exact tested module
+      - name: Fetch candidate image built from the exact tested commit
         working-directory: ${{ runner.temp }}/hotter-ability-${{ github.run_id }}-${{ github.run_attempt }}
         env:
           GHCR_READ_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -100,14 +141,10 @@ jobs:
           import hashlib,json,os,shutil,subprocess,tempfile,time,urllib.error,urllib.request,zipfile
           from pathlib import Path
           ROOT=Path.cwd()
-          BASE='ghcr.io/ningchirsty/hotter-ai-platform-backend@sha256:1c2b2a4fe9115269c59ac9d4d47902148d188f8bcea6d74f9e22a425e94cbf18'
-          BASE_SHA='000974c5c4eeafb7e139d4a71427eb6f8fe6da71'
           SHA=os.environ['GITHUB_SHA']
           payload=ROOT/'candidate-module'
           manifest=json.loads((payload/'manifest.json').read_text())
-          if manifest['commit']!=SHA or manifest['baseCommit']!=BASE_SHA: raise ValueError('Candidate module provenance mismatch')
-          data=(payload/'ruoyi-ai.jar').read_bytes()
-          if hashlib.sha256(data).hexdigest()!=manifest['moduleSha256']: raise ValueError('Compiled module checksum mismatch')
+          if manifest['commit']!=SHA: raise ValueError('Candidate provenance mismatch')
           archive=payload/'runtime-source.zip'
           if hashlib.sha256(archive.read_bytes()).hexdigest()!=manifest['runtimeSha256']: raise ValueError('Tested runtime source checksum mismatch')
           sql={'ry_vue.sql','ry_image_task.sql','ry_image_workflow.sql','ry_video_task.sql','ry_video_workflow.sql','ry_video_task_migration.sql','ry_video_task_platform_ref.sql'}
@@ -119,17 +156,16 @@ jobs:
                   if not allowed or not target.is_relative_to(ROOT.resolve()) or (info.external_attr>>16)&0o170000==0o120000: raise ValueError('Unexpected runtime archive member')
                   target.parent.mkdir(parents=True,exist_ok=True)
                   target.write_bytes(source.read(info))
-          context=ROOT/'candidate-runtime';context.mkdir(exist_ok=True)
-          name='hotter-ability-module-extract-'+os.environ['GITHUB_RUN_ID']+'-'+os.environ['GITHUB_RUN_ATTEMPT']
-          created=False
+          reference=manifest['image']
+          local='hotter-ability-candidate:'+SHA
           with tempfile.TemporaryDirectory(prefix='hotter-candidate-registry-',dir=os.environ['RUNNER_TEMP']) as auth:
               env=dict(os.environ,DOCKER_CONFIG=auth)
-              def docker(*args,input=None):
-                  result=subprocess.run(['docker',*args],input=input,capture_output=True,env=env,timeout=600)
+              def docker(*args,input=None,timeout=1800):
+                  result=subprocess.run(['docker',*args],input=input,capture_output=True,env=env,timeout=timeout)
                   if result.returncode: raise RuntimeError('Candidate image operation failed: '+args[0])
                   return result.stdout.decode().strip()
               def stream_docker(*args,timeout):
-                  # Pull progress must stay visible: a swallowed slow pull is undiagnosable.
+                  # 拉取进度必须留在日志里：被吞掉的慢拉取是没法诊断的。
                   started=time.monotonic()
                   process=subprocess.Popen(['docker',*args],env=env)
                   try:
@@ -149,40 +185,23 @@ jobs:
                       print('GHCR_PROBE_REACHED_HTTP_401_AS_EXPECTED',flush=True)
                   print('GHCR_PROBE_SECONDS',round(time.monotonic()-probe_started,2),flush=True)
                   docker('login','ghcr.io','--username',os.environ['GITHUB_ACTOR'],'--password-stdin',input=os.environ['GHCR_READ_TOKEN'].encode())
-                  if subprocess.run(['docker','image','inspect',BASE],env=env,capture_output=True).returncode==0:
-                      print('BASE_IMAGE_CACHE_HIT',flush=True)
+                  print('DISK_FREE_BEFORE_PULL',shutil.disk_usage('/').free,flush=True)
+                  if subprocess.run(['docker','image','inspect',reference],env=env,capture_output=True).returncode==0:
+                      print('CANDIDATE_IMAGE_CACHE_HIT',flush=True)
                   else:
-                      for attempt in [1,2]:
-                          pull_started=time.monotonic()
+                      for attempt in [1,2,3]:
                           try:
-                              stream_docker('pull',BASE,timeout=1800)
-                              print('BASE_IMAGE_PULL_SECONDS',round(time.monotonic()-pull_started,1),flush=True)
+                              stream_docker('pull',reference,timeout=3600)
                               break
-                          except RuntimeError as pull_error:
-                              print('BASE_IMAGE_PULL_ATTEMPT',attempt,'FAILED_AFTER_SECONDS',round(time.monotonic()-pull_started,1),flush=True)
-                              if attempt==2: raise
-                              time.sleep(15)
-                  if docker('image','inspect',BASE,'--format','{{index .Config.Labels "org.opencontainers.image.revision"}}')!=BASE_SHA: raise ValueError('Runtime base image revision mismatch')
-                  docker('create','--name',name,'--label','hotter.creative.module-extract='+SHA,'--entrypoint','/bin/true',BASE)
-                  created=True
-                  docker('cp',name+':/ruoyi/server/app.jar',str(context/'base-app.jar'))
-                  with zipfile.ZipFile(context/'base-app.jar') as before,zipfile.ZipFile(context/'app.jar','w') as after:
-                      if manifest['member'] not in before.namelist(): raise ValueError('Compiled module name differs from verified runtime base')
-                      for info in before.infolist():
-                          value=data if info.filename==manifest['member'] else before.read(info.filename)
-                          after.writestr(info,value)
-                  with zipfile.ZipFile(context/'app.jar') as app:
-                      if hashlib.sha256(app.read(manifest['member'])).hexdigest()!=manifest['moduleSha256']: raise ValueError('Packaged module checksum mismatch')
-                  (context/'base-app.jar').unlink()
-                  for media in ['image','video']:
-                      shutil.copytree(ROOT/f'script/{media}/workflows',context/f'script/{media}/workflows',dirs_exist_ok=True)
-                  (context/'Dockerfile').write_text('FROM '+BASE+'\nCOPY app.jar /ruoyi/server/app.jar\nRUN rm -rf /ruoyi/server/script/image/workflows /ruoyi/server/script/video/workflows\nCOPY script /ruoyi/server/script\n')
-                  docker('build','--network','none','--label','org.opencontainers.image.revision='+SHA,'--label','hotter.creative.base-commit='+BASE_SHA,'--label','hotter.creative.module-sha256='+manifest['moduleSha256'],'--tag','hotter-ability-candidate:'+SHA,str(context))
-                  (context/'app.jar').unlink()
-                  print('CANDIDATE_EXACT_MODULE_IMAGE_READY',SHA,flush=True)
+                          except RuntimeError:
+                              print('CANDIDATE_IMAGE_PULL_ATTEMPT',attempt,'FAILED',flush=True)
+                              if attempt==3: raise
+                              time.sleep(15*attempt)
+                  print('DISK_FREE_AFTER_PULL',shutil.disk_usage('/').free,flush=True)
+                  docker('tag',reference,local)
+                  if docker('image','inspect',local,'--format','{{index .Config.Labels "org.opencontainers.image.revision"}}')!=SHA: raise ValueError('Candidate image revision does not match the tested commit')
+                  print('CANDIDATE_IMAGE_READY',SHA,flush=True)
               finally:
-                  if created and docker('inspect',name,'--format','{{index .Config.Labels "hotter.creative.module-extract"}}')==SHA:
-                      docker('rm','-v',name)
                   docker('logout','ghcr.io')
           PY
           python3 -m venv candidate-venv
@@ -215,7 +234,7 @@ jobs:
           NAMES = {role: PREFIX + '-' + role for role in ['mysql', 'redis', 'backend']}
           network_created = False
           containers_created = []
-          report = dict(commit=os.environ['GITHUB_SHA'], scope='isolated-platform', productionModified=False, qualityReview='pending', buildStrategy='verified-main-runtime-with-tested-ai-module', baseCommit=json.loads(Path('candidate-module/manifest.json').read_text())['baseCommit'], workflows=[])
+          report = dict(commit=os.environ['GITHUB_SHA'], scope='isolated-platform', productionModified=False, qualityReview='pending', buildStrategy='full-candidate-image-from-tested-commit', workflows=[])
           session = requests.Session()
           session.trust_env = False
 
