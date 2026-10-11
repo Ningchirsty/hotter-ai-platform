@@ -99,7 +99,8 @@
     <el-dialog v-model="versionVisible" :title="'版本 · ' + (currentAgent?.agentName || '')" width="1000px" append-to-body>
       <el-alert type="info" :closable="false" class="mb-2">
         发布状态机：DRAFT → VALIDATED → SANDBOX_TESTED → CANDIDATE → STABLE（另有 DISABLED/ARCHIVED）。
-        推进时服务层会核对门槛证据：Manifest 校验看 scan_result、黄金用例看评测账本。
+        推进时服务层会核对门槛证据：Manifest 校验看 scan_result、沙箱运行看沙箱账本、黄金用例看评测账本、
+        灰度达标看调用统计；<b>「三方人工批准」是唯一例外——它是声明式的，平台不核对批准记录</b>。
       </el-alert>
       <el-table v-loading="versionLoading" border :data="versionList">
         <el-table-column label="版本" align="center" prop="version" width="90" />
@@ -149,8 +150,16 @@
             <el-checkbox v-for="gate in gateOptions" :key="gate.value" :value="gate.value">{{ gate.label }}</el-checkbox>
           </el-checkbox-group>
           <div class="gate-hint">
-            服务层不会只看这里勾了什么：Manifest 校验、沙箱运行、黄金用例、灰度达标都会去库里核对证据，
-            没有证据的声明一律拒绝。缺哪些门槛可点下面的「查还差什么」。
+            服务层不会只看这里勾了什么。<b>四道门槛会去库里核对证据</b>：Manifest 校验看扫描结论、
+            沙箱运行看沙箱账本、黄金用例看评测账本、灰度达标看调用统计——没有证据的声明一律拒绝。
+            <br />
+            <b>例外：「三方人工批准」是声明式的</b>——平台<b>不核对</b>批准记录（本仓没有"谁批的"这张表，
+            且已冻「不新造审批表」；调用授权表是「人×能力×数据等级」，与"某版本该不该发布"不是一回事）。
+            勾它就等于声明已线下完成三方批准（业务 Owner / AI 管理员 / 平台管理员）；
+            平台会把这句话记进发布事件与版本行（approved_by / approved_at）作为留痕，
+            但<b>不把它当成已验证的事实</b>。
+            <br />
+            缺哪些门槛可点下面的「查还差什么」。
           </div>
         </el-form-item>
         <el-form-item label="沙箱证据">
@@ -621,7 +630,8 @@ const submitAdvance = async () => {
     modal.msgError('请选择目标状态');
     return;
   }
-  await modal.confirm('确认把该版本推进到「' + advanceForm.value.toStatus + '」？服务层会核对门槛证据。');
+  await modal.confirm('确认把该版本推进到「' + advanceForm.value.toStatus
+    + '」？服务层会核对**有证据的那几道**门槛；「三方人工批准」是声明式的，不会被核对。');
   const res = await advanceRelease(advanceForm.value);
   modal.msgSuccess('已推进到 ' + res.data);
   advanceVisible.value = false;

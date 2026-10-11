@@ -281,11 +281,14 @@ class AigAgentRegistryServiceImplTest {
     }
 
     @Test
-    @DisplayName("★ 现状钉住（已知缺口）：HUMAN_APPROVAL 只写批准人，不核对任何批准证据")
-    void humanApprovalGateIsDeclarationOnly() {
+    @DisplayName("★ 口径裁定（2026-10-11 用户选①）：HUMAN_APPROVAL 是**声明式**门槛，平台不核对批准证据")
+    void humanApprovalGateIsDeclarationByPolicy() {
         stubVersion("SANDBOX_TESTED", "GENERAL");
 
-        // 库里没有任何"谁批的、依据是什么"的记录，只声明这把门槛就能推进
+        // 库里没有任何"谁批的、依据是什么"的记录，只声明这把门槛就能推进——这是**有意如此**，
+        // 不是漏了校验：①本仓没有版本批准表；②F-10 已冻「不新造审批表」；
+        // ③aig_call_approval 是「人 × 能力 × 数据等级」的调用授权，与"某版本该不该发布"无关。
+        // 边界由界面说明 + 这段留痕承担：平台记下 approved_by/at，但不声称验证过。
         assertEquals(AigReleaseStatusEnum.CANDIDATE, service.advanceRelease(bo("SANDBOX_TESTED",
             "CANDIDATE", List.of(AigReleaseGateEnum.GOLDEN_CASE.getCode(),
                 AigReleaseGateEnum.HUMAN_APPROVAL.getCode()))));
@@ -302,7 +305,8 @@ class AigAgentRegistryServiceImplTest {
 
         // 这条用例是**刻意的摩擦**：一旦哪天给这把门槛接上证据核对（要求三方批准记录等），
         // 本用例必须一起改——那一刻人必须回答"批准记录从哪来、谁写"。
-        // 缺口本身记在 docs/aigov/10-岗位工作台-实施说明.md 的待办表里。
+        // 口径记在 AigReleaseGateEnum.HUMAN_APPROVAL 的 javadoc 与
+        // docs/aigov/10-岗位工作台-实施说明.md 的待办表里。
     }
 
     @Test

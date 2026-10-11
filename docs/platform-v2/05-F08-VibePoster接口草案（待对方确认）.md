@@ -19,7 +19,7 @@
 | 回调语义 | `(providerCode, eventId)` 幂等；**没有时间窗**（重放靠幂等挡）；错误码由**平台**归类（`classifyCallbackError`）；**回调失败不自动重试**（落 FAILED） | ADR-012 的「必须同时接受的限制」 |
 | 任务边界 | `aig_task.execution_mode`：`PLATFORM`=平台执行（走统一调用入口）；**`EXTERNAL`=业务域执行，平台只登记与展示、不执行也不扫描** | 基线补遗 §2.1、`AigTaskExecutionModeEnum` |
 | 制品账本 | `POST /aigov/task/artifact` 登记制品：平台铸造 `artifact_id`、`storage_ref` 指字节、`sha256`、被拒也留 `FAIL` 证据行；`hash_verified` 标出「哈希是声明值还是被平台回读重算过」（**v1 一律 `N`**：平台不回读对象存储） | ADR-010 |
-| 机器身份 | 服务令牌表/过滤器/管理面都在（`X-Service-Token` → Sa-Token 身份），**开关仍关**；这是外部调用方进入治理层的唯一合规身份 | ADR-002 追加前置、契约 §7.3 |
+| 机器身份 | 服务令牌表/过滤器/管理面都在（`X-Service-Token` → Sa-Token 身份）；**开关已于 2026-10-11 在生产打开**（`application-prod.yml`，安全性与切换清单见 `docs/aigov/07-部署与发布运行手册.md §十二`），即通道已就绪、随时可发令牌；**但尚未给任何调用方发过令牌**——等 Q6 定了鉴权方式再发 | ADR-002 追加前置、契约 §7.3 |
 | 取消（平台侧） | `POST /aigov/task/{taskId}/cancel` 把任务置 `CANCEL_REQUESTED`；**平台没有向外部执行方推送的通道**（无 MQ、无出站 webhook） | `AigTaskController`、ADR 里的"无 MQ"实测 |
 
 ### 1.1 两条"看起来没事、其实会静默卡住"的地方（**这是本草案最该被拍板的部分**）
