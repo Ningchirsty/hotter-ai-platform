@@ -232,7 +232,7 @@ jobs:
               echo "::error::no usable python environment"; exit 1
             fi
           fi
-          printf '%s\n' '#!/usr/bin/env bash' "exec PYTHONPATH=${prefix:-} ${bin} \"\$@\"" > candidate-python.sh
+          printf '#!/usr/bin/env bash\nexec env PYTHONPATH=%s %s "$@"\n' "${prefix:-}" "$bin" > candidate-python.sh
           chmod +x candidate-python.sh
           ./candidate-python.sh -c 'import requests,PIL,bcrypt;print("CANDIDATE_PY_ENV_OK")'
       - name: Run every image and video purpose through the platform
