@@ -103,16 +103,19 @@ public class WorkflowContractDbSync implements org.springframework.boot.Applicat
      */
     private Map<String, JsonNode> readContractExtras() throws Exception {
         Map<String, JsonNode> map = new HashMap<>();
-        Path contractPath = contractRoot.resolve(WorkflowContractRegistry.CONTRACT_FILE);
-        if (!Files.isRegularFile(contractPath)) {
-            return map;
-        }
-        JsonNode root = mapper.readTree(Files.readString(contractPath, StandardCharsets.UTF_8));
-        for (JsonNode capability : root.path("capabilities")) {
-            for (JsonNode binding : capability.path("workflows")) {
-                String code = binding.path("workflowCode").asText("");
-                if (!code.isBlank()) {
-                    map.put(code, binding);
+        for (String file : List.of(WorkflowContractRegistry.CONTRACT_FILE,
+                "video/workflows/native-workflow-contracts.json")) {
+            Path contractPath = contractRoot.resolve(file);
+            if (!Files.isRegularFile(contractPath)) {
+                continue;
+            }
+            JsonNode root = mapper.readTree(Files.readString(contractPath, StandardCharsets.UTF_8));
+            for (JsonNode capability : root.path("capabilities")) {
+                for (JsonNode binding : capability.path("workflows")) {
+                    String code = binding.path("workflowCode").asText("");
+                    if (!code.isBlank()) {
+                        map.put(code, binding);
+                    }
                 }
             }
         }
