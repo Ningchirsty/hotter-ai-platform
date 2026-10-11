@@ -405,7 +405,10 @@ jobs:
               env=dict(os.environ,DOCKER_CONFIG=auth)
               def docker(*args,input=None,timeout=1800):
                   result=subprocess.run(['docker',*args],input=input,capture_output=True,env=env,timeout=timeout)
-                  if result.returncode: raise RuntimeError('Candidate image operation failed: '+args[0])
+                  if result.returncode:
+                      if args[:2]==('image','inspect'):
+                          print('CANDIDATE_IMAGE_INSPECT_ERROR',result.stderr.decode().strip()[:500],flush=True)
+                      raise RuntimeError('Candidate image operation failed: '+args[0])
                   return result.stdout.decode().strip()
               def stream_docker(*args,timeout):
                   # 拉取进度必须留在日志里：被吞掉的慢拉取是没法诊断的。
@@ -421,8 +424,10 @@ jobs:
                   # containerd's image ID identifies a manifest, whereas classic Docker uses config.
                   # Compare the actual runtime configuration and ordered rootfs against the verified config.
                   import re
-                  raw=docker('image','inspect',local,'--format','{"id":{{json .Id}},"config":{{json .Config}},"layers":{{json .RootFS.Layers}},"architecture":{{json .Architecture}},"os":{{json .Os}},"variant":{{json .Variant}}}')
-                  actual=json.loads(raw)
+                  # Optional fields differ across Docker CLI API versions; parse native JSON.
+                  image=json.loads(docker('image','inspect',local))[0]
+                  actual=dict(id=image['Id'],config=image['Config'],layers=image['RootFS']['Layers'],
+                              architecture=image['Architecture'],os=image['Os'],variant=image.get('Variant',''))
                   def normalized(config):
                       return {key:value for key,value in config.items() if value not in (None,False,'',[],{})}
                   if not re.fullmatch(r'sha256:[0-9a-f]{64}',actual['id']):
