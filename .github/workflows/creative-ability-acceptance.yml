@@ -5,6 +5,11 @@ on:
     branches: [main]
     paths: [.github/workflows/creative-ability-acceptance.yml]
   workflow_dispatch:
+    inputs:
+      reuse_candidate_run_id:
+        description: 'Optional prior successful candidate build; reuse only when runtime source is unchanged'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -14,8 +19,56 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  candidate-image:
+  select-candidate:
     if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'codex/creative-abilities-production')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      reuse: ${{ steps.select.outputs.reuse }}
+      prior_run: ${{ steps.select.outputs.prior_run }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select an unchanged tested runtime or a fresh full build
+        id: select
+        env:
+          REQUESTED_RUN: ${{ inputs.reuse_candidate_run_id }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json,os,re,subprocess,urllib.request
+          explicit=os.environ['REQUESTED_RUN']
+          prior=explicit or '38135127581'
+          reuse=False
+          try:
+              if not re.fullmatch(r'[1-9][0-9]*',prior): raise ValueError('Invalid prior run ID')
+              base=os.environ['GITHUB_API_URL']+'/repos/'+os.environ['GITHUB_REPOSITORY']
+              request=urllib.request.Request(base+'/actions/runs/'+prior+'/artifacts',headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+              with urllib.request.urlopen(request,timeout=30) as response: artifacts=json.load(response)['artifacts']
+              matches=[a for a in artifacts if re.fullmatch(r'ability-candidate-module-[0-9a-f]{40}',a['name']) and not a['expired']]
+              if len(matches)!=1: raise ValueError('No unique prior candidate artifact')
+              sha=matches[0]['name'].rsplit('-',1)[1]
+              subprocess.run(['git','fetch','origin',sha],check=True)
+              changed=subprocess.check_output(['git','diff','--name-only',sha,'HEAD'],text=True).splitlines()
+              allowed={'.github/workflows/creative-ability-acceptance.yml','.github/workflows/creative-ability-preflight.yml'}
+              reuse=not (set(changed)-allowed)
+              if explicit and not reuse: raise ValueError('Runtime changed; clear reuse_candidate_run_id for a fresh build')
+          except Exception:
+              if explicit: raise
+              print('NO_COMPATIBLE_PRIOR_RUNTIME; using a fresh full build')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as output:
+              output.write('reuse='+str(reuse).lower()+'\nprior_run='+prior+'\n')
+          print('CANDIDATE_SELECTION','reuse' if reuse else 'build')
+          PY
+
+  candidate-image:
+    needs: select-candidate
+    if: needs.select-candidate.outputs.reuse != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
@@ -23,6 +76,8 @@ jobs:
       packages: write
     env:
       CANDIDATE_IMAGE: ghcr.io/ningchirsty/hotter-ability-candidate:sha-${{ github.sha }}
+    outputs:
+      runtime_commit: ${{ steps.provenance.outputs.runtime_commit }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -85,6 +140,7 @@ jobs:
           echo "CANDIDATE_IMAGE_PUSHED $CANDIDATE_IMAGE"
           docker image inspect "$CANDIDATE_IMAGE" --format 'CANDIDATE_REPO_DIGESTS {{json .RepoDigests}}'
       - name: Export tested runtime sources with provenance
+        id: provenance
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -94,7 +150,10 @@ jobs:
           with zipfile.ZipFile(out/'runtime-source.zip','w',compression=zipfile.ZIP_DEFLATED) as archive:
               files=[f for media in ['image','video'] for f in Path('script/'+media+'/workflows').rglob('*') if f.is_file()]+[Path('script/sql')/name for name in sql]
               for file in files: archive.write(file,file.as_posix())
-          (out/'manifest.json').write_text(json.dumps(dict(commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),runtimeSha256=hashlib.sha256((out/'runtime-source.zip').read_bytes()).hexdigest(),image=os.environ['CANDIDATE_IMAGE'],buildStrategy='full-candidate-image-from-tested-commit')))
+          digests=json.loads(subprocess.check_output(['docker','image','inspect',os.environ['CANDIDATE_IMAGE'],'--format','{{json .RepoDigests}}'],text=True))
+          image=next(value for value in digests if value.startswith('ghcr.io/ningchirsty/hotter-ability-candidate@sha256:'))
+          (out/'manifest.json').write_text(json.dumps(dict(commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),runtimeSha256=hashlib.sha256((out/'runtime-source.zip').read_bytes()).hexdigest(),image=image,buildStrategy='full-candidate-image-from-tested-commit')))
+          with open(os.environ['GITHUB_OUTPUT'],'a') as output: output.write('runtime_commit='+os.environ['GITHUB_SHA']+'\n')
           (out/'SHA256SUMS').write_text(''.join(hashlib.sha256((out/name).read_bytes()).hexdigest()+'  '+name+'\n' for name in ['runtime-source.zip','manifest.json']))
           print('RUNTIME_SOURCE_BYTES',(out/'runtime-source.zip').stat().st_size)
           PY
@@ -120,8 +179,102 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
+  reuse-candidate:
+    needs: select-candidate
+    if: needs.select-candidate.outputs.reuse == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+    outputs:
+      runtime_commit: ${{ steps.provenance.outputs.runtime_commit }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check the prior candidate build and identify its artifact
+        id: prior
+        env:
+          PRIOR_RUN: ${{ needs.select-candidate.outputs.prior_run }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json,os,re,urllib.request
+          run=os.environ['PRIOR_RUN']
+          if not re.fullmatch(r'[1-9][0-9]*',run): raise ValueError('Invalid prior run ID')
+          base=os.environ['GITHUB_API_URL']+'/repos/'+os.environ['GITHUB_REPOSITORY']
+          def get(path):
+              request=urllib.request.Request(base+path,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+              with urllib.request.urlopen(request,timeout=30) as response: return json.load(response)
+          prior=get('/actions/runs/'+run)
+          if prior['path']!='.github/workflows/creative-ability-acceptance.yml' or prior['head_repository']['full_name']!=os.environ['GITHUB_REPOSITORY']:
+              raise ValueError('Prior build must come from this repository acceptance workflow')
+          if prior['status']!='completed': raise ValueError('Wait for the prior acceptance run to finish before reuse')
+          jobs=get('/actions/runs/'+run+'/jobs')['jobs']
+          if not any(job['name']=='candidate-image' and job['conclusion']=='success' for job in jobs):
+              raise ValueError('Prior candidate build did not pass')
+          artifacts=get('/actions/runs/'+run+'/artifacts')['artifacts']
+          matches=[a for a in artifacts if re.fullmatch(r'ability-candidate-module-[0-9a-f]{40}',a['name']) and not a['expired']]
+          if len(matches)!=1: raise ValueError('Expected exactly one tested candidate artifact')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as output: output.write('artifact='+matches[0]['name']+'\n')
+          PY
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: ${{ steps.prior.outputs.artifact }}
+          run-id: ${{ needs.select-candidate.outputs.prior_run }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: candidate-module
+          digest-mismatch: error
+      - name: Require identical runtime source and pin the prior image digest
+        id: provenance
+        env:
+          GHCR_READ_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          (cd candidate-module && sha256sum -c SHA256SUMS)
+          python3 - <<'PY'
+          import hashlib,json,os,re,subprocess,tempfile
+          from pathlib import Path
+          root=Path('candidate-module')
+          manifest=json.loads((root/'manifest.json').read_text())
+          sha=manifest['commit']
+          if not re.fullmatch(r'[0-9a-f]{40}',sha): raise ValueError('Invalid prior runtime commit')
+          subprocess.run(['git','fetch','origin',sha],check=True)
+          changed=subprocess.check_output(['git','diff','--name-only',sha,'HEAD'],text=True).splitlines()
+          allowed={'.github/workflows/creative-ability-acceptance.yml','.github/workflows/creative-ability-preflight.yml'}
+          if set(changed)-allowed: raise ValueError('Runtime source changed; a fresh full candidate build is required')
+          if hashlib.sha256((root/'runtime-source.zip').read_bytes()).hexdigest()!=manifest['runtimeSha256']:
+              raise ValueError('Prior source checksum mismatch')
+          image=manifest['image']
+          repository='ghcr.io/ningchirsty/hotter-ability-candidate'
+          if image!=repository+':sha-'+sha and not re.fullmatch(re.escape(repository)+r'@sha256:[0-9a-f]{64}',image):
+              raise ValueError('Unexpected prior candidate image')
+          if '@sha256:' not in image:
+              with tempfile.TemporaryDirectory() as auth:
+                  env=dict(os.environ,DOCKER_CONFIG=auth)
+                  subprocess.run(['docker','login','ghcr.io','--username',os.environ['GITHUB_ACTOR'],'--password-stdin'],input=os.environ['GHCR_READ_TOKEN'].encode(),env=env,check=True,stdout=subprocess.DEVNULL)
+                  digest=subprocess.check_output(['docker','buildx','imagetools','inspect',image,'--format','{{.Manifest.Digest}}'],env=env,text=True).strip()
+                  if not re.fullmatch(r'sha256:[0-9a-f]{64}',digest): raise ValueError('Invalid candidate digest')
+                  manifest['image']=repository+'@'+digest
+          (root/'manifest.json').write_text(json.dumps(manifest))
+          (root/'SHA256SUMS').write_text(''.join(hashlib.sha256((root/name).read_bytes()).hexdigest()+'  '+name+'\n' for name in ['runtime-source.zip','manifest.json']))
+          with open(os.environ['GITHUB_OUTPUT'],'a') as output: output.write('runtime_commit='+sha+'\n')
+          print('REUSED_EXACT_TESTED_RUNTIME',sha,'script-only changes',changed)
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ability-candidate-module-${{ github.sha }}
+          path: candidate-module/
+          compression-level: 9
+          if-no-files-found: error
+          retention-days: 3
+
   platform-acceptance:
-    needs: candidate-image
+    needs: [candidate-image, reuse-candidate]
+    if: always() && (needs.candidate-image.result == 'success' || needs.reuse-candidate.result == 'success')
     runs-on: [shenzhen, deploy]
     timeout-minutes: 150
     permissions:
@@ -129,17 +282,37 @@ jobs:
       packages: read
     steps:
       - name: Check capacity before isolated acceptance
+        env:
+          RUNTIME_COMMIT: ${{ needs.candidate-image.outputs.runtime_commit || needs.reuse-candidate.outputs.runtime_commit }}
         run: |
-          set -euo pipefail
-          # 只清理本管线自己的遗留（候选镜像仓库名与容器名前缀精确匹配），
-          # 不触碰 hotter-ai-platform-backend 生产镜像、ruoyi-web-* 生产容器，也不是全局 prune。
-          docker ps -a --filter 'name=hotter-ability-' --format '{{.Names}}' | xargs -r docker rm -f || true
-          docker images 'hotter-ability-candidate' --format '{{.Repository}}:{{.Tag}}' | xargs -r docker rmi -f || true
-          docker image prune -f --filter 'label=hotter.creative.base-commit' || true
-          rm -rf "${RUNNER_TEMP:?}"/hotter-ability-* || true
-          df -h / | sed -n '1,2p'
           python3 - <<'PY'
-          import shutil
+          import json,os,re,shutil,subprocess
+          from pathlib import Path
+          def command(*args):
+              result=subprocess.run(['docker',*args],capture_output=True,text=True,timeout=120)
+              if result.returncode: raise RuntimeError('Candidate cleanup operation failed: '+args[0])
+              return result.stdout.strip()
+          keep=os.environ['RUNTIME_COMMIT']
+          current=os.environ['GITHUB_RUN_ID']+'-'+os.environ['GITHUB_RUN_ATTEMPT']
+          # Only expired acceptance containers with matching names AND ownership labels.
+          for identifier in command('ps','-aq','--filter','label=hotter.creative.acceptance').splitlines():
+              state=json.loads(command('inspect',identifier))[0]
+              owner=state['Config'].get('Labels',{}).get('hotter.creative.acceptance','')
+              name=state['Name'].lstrip('/')
+              if re.fullmatch(r'[0-9]+-[0-9]+',owner) and owner!=current and name in ['hotter-ability-test-'+owner+'-'+role for role in ['mysql','redis','backend']]:
+                  command('rm','-f',identifier)
+          # Keep the reusable runtime image; remove tags only in the two candidate repositories.
+          for repository in ['hotter-ability-candidate','ghcr.io/ningchirsty/hotter-ability-candidate']:
+              for tag in command('images',repository,'--format','{{.Repository}}:{{.Tag}}').splitlines():
+                  suffix=tag.rsplit(':',1)[-1]
+                  if re.fullmatch(r'(?:sha-)?[0-9a-f]{40}',suffix) and suffix.removeprefix('sha-')!=keep:
+                      command('rmi',tag)
+          command('image','prune','-f','--filter','label=hotter.creative.base-commit')
+          temporary=Path(os.environ['RUNNER_TEMP']).resolve(strict=True)
+          for directory in temporary.glob('hotter-ability-*'):
+              if not directory.is_symlink() and re.fullmatch(r'hotter-ability-[0-9]+-[0-9]+',directory.name) and directory.name!='hotter-ability-'+current and directory.resolve().parent==temporary:
+                  shutil.rmtree(directory)
+          print('CANDIDATE_CAPACITY_FREE_BYTES',shutil.disk_usage('/').free,flush=True)
           if shutil.disk_usage('/').free < 6 * 1024**3:
               raise SystemExit('At least 6 GiB free is required for isolated acceptance')
           available = next(int(line.split()[1]) for line in open('/proc/meminfo') if line.startswith('MemAvailable:'))
@@ -156,6 +329,7 @@ jobs:
         working-directory: ${{ runner.temp }}/hotter-ability-${{ github.run_id }}-${{ github.run_attempt }}
         env:
           GHCR_READ_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUNTIME_COMMIT: ${{ needs.candidate-image.outputs.runtime_commit || needs.reuse-candidate.outputs.runtime_commit }}
         run: |
           set -euo pipefail
           (cd candidate-module && sha256sum -c SHA256SUMS)
@@ -163,7 +337,7 @@ jobs:
           import hashlib,json,os,shutil,subprocess,tempfile,time,urllib.error,urllib.request,zipfile
           from pathlib import Path
           ROOT=Path.cwd()
-          SHA=os.environ['GITHUB_SHA']
+          SHA=os.environ['RUNTIME_COMMIT']
           payload=ROOT/'candidate-module'
           manifest=json.loads((payload/'manifest.json').read_text())
           if manifest['commit']!=SHA: raise ValueError('Candidate provenance mismatch')
@@ -211,13 +385,14 @@ jobs:
                   if subprocess.run(['docker','image','inspect',reference],env=env,capture_output=True).returncode==0:
                       print('CANDIDATE_IMAGE_CACHE_HIT',flush=True)
                   else:
-                      for attempt in [1,2]:
+                      pull_attempts=2
+                      for attempt in range(1,pull_attempts+1):
                           try:
                               stream_docker('pull',reference,timeout=2400)
                               break
                           except RuntimeError:
                               print('CANDIDATE_IMAGE_PULL_ATTEMPT',attempt,'FAILED',flush=True)
-                              if attempt==3: raise
+                              if attempt==pull_attempts: raise
                               time.sleep(15*attempt)
                   print('DISK_FREE_AFTER_PULL',shutil.disk_usage('/').free,flush=True)
                   docker('tag',reference,local)
@@ -245,12 +420,15 @@ jobs:
           ./candidate-python.sh -c 'import requests,PIL,bcrypt;print("CANDIDATE_PY_ENV_OK")'
       - name: Run every image and video purpose through the platform
         working-directory: ${{ runner.temp }}/hotter-ability-${{ github.run_id }}-${{ github.run_attempt }}
+        env:
+          RUNTIME_COMMIT: ${{ needs.candidate-image.outputs.runtime_commit || needs.reuse-candidate.outputs.runtime_commit }}
         run: |
           ./candidate-python.sh - <<'PY'
           """Isolated platform acceptance; never mounts or reads production data/configuration."""
           import hashlib
           import json
           import os
+          import re
           from pathlib import Path
           import secrets
           import shutil
@@ -267,11 +445,11 @@ jobs:
           RUN = os.environ['GITHUB_RUN_ID'] + '-' + os.environ['GITHUB_RUN_ATTEMPT']
           LABEL = 'hotter.creative.acceptance=' + RUN
           PREFIX = 'hotter-ability-test-' + RUN
-          IMAGE = 'hotter-ability-candidate:' + os.environ['GITHUB_SHA']
+          IMAGE = 'hotter-ability-candidate:' + os.environ['RUNTIME_COMMIT']
           NAMES = {role: PREFIX + '-' + role for role in ['mysql', 'redis', 'backend']}
           network_created = False
           containers_created = []
-          report = dict(commit=os.environ['GITHUB_SHA'], scope='isolated-platform', productionModified=False, qualityReview='pending', buildStrategy='full-candidate-image-from-tested-commit', workflows=[])
+          report = dict(commit=os.environ['RUNTIME_COMMIT'], scope='isolated-platform', productionModified=False, qualityReview='pending', buildStrategy='full-candidate-image-from-tested-commit', workflows=[])
           session = requests.Session()
           session.trust_env = False
 
@@ -307,25 +485,48 @@ jobs:
                      *args, image, timeout=600)
               containers_created.append(name)
 
-          def wait_ready(callback, budget):
-              end = time.monotonic() + budget
+          def safe_diagnostic(text):
+              for key in ['DB_PASSWORD','REDIS_PASSWORD','LOGIN_PASSWORD','password_hash','token']:
+                  value=globals().get(key)
+                  if value: text=text.replace(value,'[REDACTED]')
+              return re.sub(r'(?i)((?:password|secret|token|access.?key)\s*[=:]\s*)[^\s,;]+',r'\1[REDACTED]',text)
+
+          def service_diagnostics(role):
+              name=NAMES[role]
+              if docker('inspect',name,'--format','{{index .Config.Labels "hotter.creative.acceptance"}}')!=RUN:
+                  raise ValueError('Refusing diagnostics for a container not owned by this invocation')
+              print('ISOLATED_SERVICE_STATE',role,docker('inspect',name,'--format','status={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} restarts={{.RestartCount}}'),flush=True)
+              print('DISK_FREE_ON_FAILURE',shutil.disk_usage('/').free,flush=True)
+              logs=subprocess.run(['docker','logs','--tail','200',name],capture_output=True,text=True,timeout=20)
+              lines=(logs.stdout+'\n'+logs.stderr).splitlines()
+              # Candidate containers only; expose diagnostic lines, never environment dumps or production logs.
+              selected=[line for line in lines if any(marker in line for marker in ['ERROR','Exception','Caused by:','APPLICATION FAILED','Description:','Action:','Port ','required a bean','Could not','Failed to'])]
+              print('ISOLATED_SERVICE_ERRORS',role,safe_diagnostic('\n'.join(selected[-60:])),flush=True)
+
+          def wait_ready(callback, budget, role):
               started = time.monotonic()
-              last = 'no error observed yet'
-              reported = -1
+              end = time.monotonic() + budget
+              last_error=None
+              reported=-30
               while time.monotonic() < end:
                   try:
                       if callback():
-                          if reported >= 0: print('READY_WAIT_OK_AFTER_SECONDS',round(time.monotonic()-started),flush=True)
+                          print('ISOLATED_SERVICE_READY',role,flush=True)
                           return
                   except Exception as error:
-                      last = type(error).__name__ + ': ' + str(error)[:140]
-                  elapsed = round(time.monotonic() - started)
-                  if elapsed - reported >= 30:
-                      reported = elapsed
-                      print('READY_WAIT_SECONDS',elapsed,'last=',last,flush=True)
+                      last_error=type(error).__name__+': '+str(error)[:350]
+                  elapsed=round(time.monotonic()-started)
+                  if elapsed-reported>=30:
+                      reported=elapsed
+                      print('READY_WAIT_SECONDS',role,elapsed,'last=',safe_diagnostic(last_error or 'service not ready'),flush=True)
+                  state=docker('inspect',NAMES[role],'--format','{{.State.Status}}')
+                  if state in ['exited','dead']:
+                      service_diagnostics(role)
+                      raise RuntimeError('Isolated '+role+' exited before readiness')
                   time.sleep(3)
-              print('READY_WAIT_TIMEOUT_LAST_ERROR',last,flush=True)
-              raise TimeoutError('Isolated service readiness timed out')
+              if last_error: print('ISOLATED_READINESS_LAST_ERROR',role,safe_diagnostic(last_error),flush=True)
+              service_diagnostics(role)
+              raise TimeoutError('Isolated '+role+' readiness timed out')
 
           try:
               if shutil.disk_usage('/').free < 4 * 1024**3:
@@ -346,12 +547,11 @@ jobs:
                      '--network-alias', 'redis', '--memory', '128m', 'redis:7.4-alpine', 'redis-server', '--requirepass', REDIS_PASSWORD)
               containers_created.append(NAMES['redis'])
               try:
-                  wait_ready(lambda: mysql(b'SELECT 1;') == '1\n1', 600)
+                  wait_ready(lambda: mysql(b'SELECT 1;') == '1\n1', 600, 'mysql')
               except TimeoutError:
                   # 只打印状态，不打印容器日志（日志可能含凭据）。
                   print('MYSQL_STATE',docker('inspect',NAMES['mysql'],'--format','{{.State.Status}} exit={{.State.ExitCode}} restarts={{.RestartCount}}'),flush=True)
                   print('CANDIDATE_CONTAINERS',docker('ps','-a','--filter','name='+PREFIX,'--format','{{.Names}} {{.Status}}'),flush=True)
-                  print('DISK_FREE_ON_FAILURE',shutil.disk_usage('/').free,flush=True)
                   raise
               for file in ['ry_vue.sql', 'ry_image_task.sql', 'ry_image_workflow.sql', 'ry_video_task.sql',
                            'ry_video_workflow.sql', 'ry_video_task_migration.sql', 'ry_video_task_platform_ref.sql']:
@@ -387,18 +587,7 @@ jobs:
               FFPROBE, FFMPEG = [str(binaries / tool) for tool in ['ffprobe','ffmpeg']]
               port = docker('port', NAMES['backend'], '8080/tcp').split(':')[-1]
               BASE = 'http://127.0.0.1:' + port
-              try:
-                  wait_ready(lambda: api('/auth/code') is not None, 600)
-              except TimeoutError:
-                  # 隔离栈的密码与令牌全部已 add-mask，启动日志是定位后端未就绪的唯一证据。
-                  print('BACKEND_STATE',docker('inspect',NAMES['backend'],'--format','{{.State.Status}} exit={{.State.ExitCode}} restarts={{.RestartCount}} oom={{.State.OOMKilled}}'),flush=True)
-                  print('CANDIDATE_CONTAINERS',docker('ps','-a','--filter','name='+PREFIX,'--format','{{.Names}} {{.Status}}'),flush=True)
-                  print('DISK_FREE_ON_FAILURE',shutil.disk_usage('/').free,flush=True)
-                  boot = subprocess.run(['docker','logs','--tail','60',NAMES['backend']],capture_output=True,text=True)
-                  print('BACKEND_BOOT_LOG_BEGIN',flush=True)
-                  print((boot.stdout + boot.stderr)[-4000:],flush=True)
-                  print('BACKEND_BOOT_LOG_END',flush=True)
-                  raise
+              wait_ready(lambda: api('/auth/code') is not None, 600, 'backend')
               login = api('/auth/login', {'clientId': 'e5cd7e4891bf95d1d19206ce24a7b32e', 'grantType': 'password', 'username': 'admin', 'password': LOGIN_PASSWORD})
               token = login['access_token']
               print('::add-mask::' + token, flush=True)
