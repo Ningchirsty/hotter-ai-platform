@@ -8,6 +8,7 @@ import type {
   CreativeDnaForm,
   CreativeDirectionForm,
   CreativeHeroForm,
+  CreativeLedgerReconciliationVO,
   CreativeProjectForm,
   CreativeProjectQuery,
   CreativeProjectVO,
@@ -320,6 +321,19 @@ export function retryGeneration(generationId: string | number): AxiosPromise<DpG
   return request({
     url: '/creative/generations/' + generationId + '/retry',
     method: 'post'
+  });
+}
+
+/**
+ * 项目候选侧的「父子对账」（增量 19）。
+ *
+ * <p>父＝场景派发出的平台任务，子＝逐候选登记的治理任务；纯只读，不刷新内核状态。
+ * 用于回答"治理台与创作页为什么各说各话"：两边状态并排给出，并对每个候选给出是否一致与漂移原因。</p>
+ */
+export function getLedgerReconciliation(taskId: string | number): AxiosPromise<CreativeLedgerReconciliationVO> {
+  return request({
+    url: '/creative/projects/' + taskId + '/ledger-reconciliation',
+    method: 'get'
   });
 }
 

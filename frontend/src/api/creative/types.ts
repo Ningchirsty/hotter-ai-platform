@@ -946,3 +946,63 @@ export interface ProjectMaterialsVO {
   purgedBytes?: number;
   note?: string;
 }
+
+// ------------------------------------------------------------------
+// 候选侧「父子对账」（增量 19；对齐后端 CreativeLedgerReconciliationVo）
+// ------------------------------------------------------------------
+
+/** 对账里的任务摘要（父、子共用同一形状） */
+export interface CreativeLedgerTaskRowVO {
+  taskId?: string | number;
+  taskNo?: string;
+  taskType?: string;
+  status?: string;
+  /** 执行方：PLATFORM=平台执行 / EXTERNAL=业务域执行 */
+  executionMode?: string;
+  providerCode?: string;
+  scenarioCode?: string;
+  capabilityCode?: string;
+  /** 派发快照里的 externalRef（父任务才有，通常是项目ID） */
+  externalRef?: string;
+  /** 派发/路由快照原文（排障用） */
+  routeSnapshot?: string;
+  createTime?: string;
+}
+
+/** 对账里的一个候选（子） */
+export interface CreativeLedgerChildRowVO {
+  generationId?: string | number;
+  candidateNo?: number;
+  /** 候选状态（内核口径，已落库值） */
+  candidateStatus?: string;
+  /** 按映射，该候选状态应记的任务状态；为空＝两套状态机在此不映射 */
+  expectedLedgerStatus?: string;
+  /** 治理任务ID；为空＝该候选未登记 */
+  ledgerTaskId?: string | number;
+  ledgerTaskNo?: string;
+  ledgerStatus?: string;
+  /** 一致=true / 漂移=false / 判不了=null */
+  consistent?: boolean | null;
+  /** 不一致或未登记时的可读原因；一致时为 null */
+  drift?: string;
+}
+
+/** 对账汇总 */
+export interface CreativeLedgerSummaryVO {
+  total: number;
+  consistent: number;
+  drifted: number;
+  unregistered: number;
+  /** 项目标记了来源平台任务却读不到那条任务（数据缺失） */
+  parentMissing: boolean;
+}
+
+/** 候选侧「父子对账」视图：父=场景派发出的平台任务，子=逐候选登记的治理任务 */
+export interface CreativeLedgerReconciliationVO {
+  projectId?: string | number;
+  /** 项目 cp_task.platform_task_id；为空＝非派发创建 */
+  platformTaskId?: string | number;
+  parent?: CreativeLedgerTaskRowVO | null;
+  children?: CreativeLedgerChildRowVO[];
+  summary?: CreativeLedgerSummaryVO;
+}

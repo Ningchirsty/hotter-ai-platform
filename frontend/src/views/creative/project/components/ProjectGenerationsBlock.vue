@@ -45,12 +45,17 @@
         </div>
       </div>
     </div>
+
+    <!-- 父子对账（增量 19）：父＝场景派发出的平台任务，子＝逐候选登记的治理任务。
+         折叠、按需取数、纯只读——它是观测面，不该给"看项目"这个常用动作加一次往返。 -->
+    <LedgerReconciliationPanel :task-id="taskId" />
   </section>
 </template>
 
 <script setup lang="ts">
 import type { DpGenerationVO } from '@/api/creative/types';
 import { useStepHeading } from '../../composables/stepNumbering';
+import LedgerReconciliationPanel from './LedgerReconciliationPanel.vue';
 
 /** 标题编号：本页步骤号（v1 反馈；没有工作台上下文时不显示编号） */
 const stepHeading = useStepHeading('ProjectGenerationsBlock');
@@ -79,6 +84,8 @@ defineProps<{
   statusType: (status?: string) => string;
   /** 正在重试的候选ID（按钮 loading） */
   retryingId: string;
+  /** 当前项目ID（父子对账面板按需取数；为空时不取） */
+  taskId?: string | number | null;
 }>();
 
 defineEmits<{
