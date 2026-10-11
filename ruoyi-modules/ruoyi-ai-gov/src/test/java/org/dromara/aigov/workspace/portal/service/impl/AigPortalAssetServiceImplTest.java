@@ -1,6 +1,7 @@
 package org.dromara.aigov.workspace.portal.service.impl;
 
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalAssetGroupVo;
+import org.dromara.aigov.workspace.portal.domain.vo.AigPortalMyAssetVo;
 import org.dromara.aigov.workspace.portal.helper.AigPortalActor;
 import org.dromara.asset.api.MyAssetPort;
 import org.dromara.asset.api.domain.MyAssetDTO;
@@ -127,6 +128,66 @@ class AigPortalAssetServiceImplTest {
         assertEquals(2048L, item.getSizeBytes());
         assertEquals(123L, item.getTaskId());
         assertEquals(created, item.getCreateTime());
+    }
+
+    @Test
+    @DisplayName("最近资产：按时间倒序合并，无时间的排最后，且逐条带域")
+    void recentAssetsMergedByTimeDesc() {
+        MyAssetDTO older = asset("IMAGE", 1L);
+        older.setCreateTime(LocalDateTime.of(2026, 1, 1, 0, 0));
+        MyAssetDTO newer = asset("VIDEO", 2L);
+        newer.setCreateTime(LocalDateTime.of(2026, 5, 1, 0, 0));
+        MyAssetDTO noTime = asset("CONTENT", 3L);
+
+        List<AigPortalMyAssetVo> recent = recent(List.of(
+            port("IMAGE", List.of(older)), port("VIDEO", List.of(newer)), port("CONTENT", List.of(noTime))));
+
+        assertEquals(List.of(2L, 1L, 3L), recent.stream().map(AigPortalMyAssetVo::getAssetId).toList());
+        // 合并视图逐条带域：没有它就看不出这条来自哪个域
+        assertEquals("VIDEO", recent.get(0).getDomain());
+        assertEquals("CONTENT", recent.get(2).getDomain());
+    }
+
+    @Test
+    @DisplayName("最近资产有总上限：不承诺全量，也不假装是分页")
+    void recentAssetsIsCapped() {
+        List<MyAssetDTO> many = new ArrayList<>();
+        for (int i = 0; i < 30; i++) {
+            MyAssetDTO dto = asset("IMAGE", i);
+            dto.setCreateTime(LocalDateTime.of(2026, 1, 1, 0, 0).plusMinutes(i));
+            many.add(dto);
+        }
+
+        List<AigPortalMyAssetVo> recent = recent(List.of(port("IMAGE", many)));
+
+        assertEquals(20, recent.size(), "合并视图条数有上限，它不是分页");
+        assertEquals(29L, recent.get(0).getAssetId(), "留下的应是最近的那些");
+    }
+
+    @Test
+    @DisplayName("最近资产也把每域上限传给提供方")
+    void recentPassesPerDomainLimit() {
+        AtomicInteger seen = new AtomicInteger(-1);
+        MyAssetPort port = new MyAssetPort() {
+            @Override
+            public String domain() {
+                return "IMAGE";
+            }
+
+            @Override
+            public List<MyAssetDTO> listMyAssets(long userId, int limit) {
+                seen.set(limit);
+                return List.of();
+            }
+        };
+
+        recent(List.of(port));
+
+        assertEquals(10, seen.get());
+    }
+
+    private static List<AigPortalMyAssetVo> recent(List<MyAssetPort> ports) {
+        return new AigPortalAssetServiceImpl(ports).recentAssets(ACTOR);
     }
 
     private static List<AigPortalAssetGroupVo> groups(List<MyAssetPort> ports) {

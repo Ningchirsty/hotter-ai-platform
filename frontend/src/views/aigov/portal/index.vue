@@ -265,6 +265,30 @@
         description="各域上线后这里会出现对应分栏（图片/视频/内容附件）。"
       />
 
+      <!--
+        "最近资产"是**有界合并视图**，不是分页：各域各取最近若干条后按时间倒序合并，最多显示固定条数。
+        标题里必须写清"不承诺全量"，否则会被读成一个能翻页的接口。
+      -->
+      <section v-if="recentAssets.length" class="asset-group">
+        <h4 class="group-title">
+          最近资产（{{ recentAssets.length }}）
+          <span class="asset-empty">各域各取最近几条后按时间倒序合并，最多显示 20 条；不承诺全量</span>
+        </h4>
+        <el-table :data="recentAssets" border class="data-table" size="small">
+          <el-table-column label="名称" min-width="200" show-overflow-tooltip>
+            <template #default="scope">{{ scope.row.name || '—' }}</template>
+          </el-table-column>
+          <el-table-column label="所属域" align="center" width="120">
+            <template #default="scope">{{ assetDomainLabel(scope.row.domain) }}</template>
+          </el-table-column>
+          <el-table-column label="类型" prop="assetType" align="center" width="110" />
+          <el-table-column label="大小" align="center" width="100">
+            <template #default="scope">{{ formatBytes(scope.row.sizeBytes) }}</template>
+          </el-table-column>
+          <el-table-column label="时间" prop="createTime" align="center" width="170" show-overflow-tooltip />
+        </el-table>
+      </section>
+
       <section v-for="group in assetGroups" :key="group.domain" class="asset-group">
         <h4 class="group-title">
           {{ assetDomainLabel(group.domain) }}（{{ (group.items || []).length }}）
@@ -306,6 +330,7 @@ import {
   listMyAssets,
   listMyRoles,
   listMyTasks,
+  listRecentAssets,
   setDefaultRole,
   suggestIntents,
   toggleFavorite
@@ -316,6 +341,7 @@ import type {
   AigPortalArtifactQuery,
   AigPortalArtifactVO,
   AigPortalAssetGroupVO,
+  AigPortalMyAssetVO,
   AigPortalRoleHomeVO,
   AigPortalRoleVO,
   AigPortalTaskQuery,
@@ -383,6 +409,8 @@ const loadingSuggest = ref(false);
  * 不能都显示成"空"。
  */
 const assetGroups = ref<AigPortalAssetGroupVO[]>([]);
+// "最近资产"：有界合并视图（不是分页——没有 total、翻不到第二页）
+const recentAssets = ref<AigPortalMyAssetVO[]>([]);
 const { loading: loadingAssets, withLoading: withAssetsLoading } = useLoading(true);
 
 /** 任务状态选项（与后端 AigTaskStatusEnum 一致） */
@@ -563,11 +591,13 @@ const getArtifacts = async () => {
 const getAssets = async () => {
   try {
     await withAssetsLoading(async () => {
-      const res = await listMyAssets();
-      assetGroups.value = res.data || [];
+      const [grouped, recent] = await Promise.all([listMyAssets(), listRecentAssets()]);
+      assetGroups.value = grouped.data || [];
+      recentAssets.value = recent.data || [];
     });
   } catch (e: any) {
     assetGroups.value = [];
+    recentAssets.value = [];
     modal.alertError(e?.message || '读取我的资产失败');
   }
 };

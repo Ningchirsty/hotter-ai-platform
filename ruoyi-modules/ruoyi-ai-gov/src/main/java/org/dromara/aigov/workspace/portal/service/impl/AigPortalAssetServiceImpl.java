@@ -14,17 +14,19 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.List;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 
 /**
- * 门户「我的资产」聚合实现（增量 8）。
+ * 门户「我的资产」聚合实现（增量 8；"最近资产"合并视图见增量 10）。
  *
- * <h3>三条取舍</h3>
+ * <h3>四条取舍</h3>
  * <ol>
- *     <li><b>排序/分页不跨域</b>：只按域分栏、每域取最近 N 条。跨域全局分页要么内存归并
- *         （受数据量上限约束），要么建聚合索引（引入同步）；在拿到真实产品需求前不做。</li>
+ *     <li><b>排序/分页不跨域</b>：分组视图只按域分栏、每域取最近 N 条。</li>
+ *     <li><b>"最近资产"不是分页</b>：各域各取最近 {@code RECENT_PER_DOMAIN_LIMIT} 条后按时间倒序合并，
+ *         最多 {@code RECENT_TOTAL_LIMIT} 条，<b>不承诺全量</b>——它是一个"最近"视图，不是一个分页接口。
+ *         真正的跨域分页要内存归并（受数据量上限约束）或建聚合索引（引入同步），在拿到真实需求前不做。</li>
  *     <li><b>域不是"有数据才出现"</b>：接了提供方但你没数据 → 该栏出现且为空；
  *         没接这个域 → 该栏不出现。两者含义不同，不能都显示成"空"。</li>
  *     <li><b>不吞异常</b>：某个域的查询失败就让整个接口失败（500），而不是把那一栏显示成空——
@@ -39,19 +41,67 @@ import java.util.Set;
 public class AigPortalAssetServiceImpl implements IAigPortalAssetService {
 
     /**
-     * 每个域最多取多少条（聚合页只展示"最近几条"，真要全量去各域自己的入口）
+     * 分组视图里每个域最多取多少条（真要全量去各域自己的入口）
      */
     private static final int PER_DOMAIN_LIMIT = 10;
+
+    /**
+     * "最近资产"合并视图里每个域最多取多少条
+     */
+    private static final int RECENT_PER_DOMAIN_LIMIT = 10;
+
+    /**
+     * "最近资产"合并视图的总条数上限（**不是分页**：只是"最多显示这么多"）
+     */
+    private static final int RECENT_TOTAL_LIMIT = 20;
 
     /**
      * 分栏顺序（不在表里的域排到最后，按编码稳定排序）
      */
     private static final List<String> DOMAIN_ORDER = List.of("IMAGE", "VIDEO", "CONTENT");
 
+    /**
+     * "最近资产"的排序：时间倒序（无时间的排最后），再按域、ID 保证结果稳定。
+     *
+     * <p>两个域的资产可能同一秒创建，只按时间排序时顺序会随查询/遍历次序漂移，
+     * 表现为"刷新一下次序就变了"。</p>
+     */
+    private static final Comparator<AigPortalMyAssetVo> RECENT_ORDER = Comparator
+        .comparing(AigPortalMyAssetVo::getCreateTime,
+            Comparator.nullsLast(Comparator.reverseOrder()))
+        .thenComparing(AigPortalMyAssetVo::getDomain,
+            Comparator.nullsLast(Comparator.naturalOrder()))
+        .thenComparing(AigPortalMyAssetVo::getAssetId,
+            Comparator.nullsLast(Comparator.reverseOrder()));
+
     private final List<MyAssetPort> assetPorts;
 
     @Override
     public List<AigPortalAssetGroupVo> myAssets(AigPortalActor actor) {
+        return collect(actor, PER_DOMAIN_LIMIT);
+    }
+
+    @Override
+    public List<AigPortalMyAssetVo> recentAssets(AigPortalActor actor) {
+        List<AigPortalMyAssetVo> merged = new ArrayList<>();
+        for (AigPortalAssetGroupVo group : collect(actor, RECENT_PER_DOMAIN_LIMIT)) {
+            merged.addAll(group.getItems());
+        }
+        merged.sort(RECENT_ORDER);
+        if (merged.size() <= RECENT_TOTAL_LIMIT) {
+            return merged;
+        }
+        return new ArrayList<>(merged.subList(0, RECENT_TOTAL_LIMIT));
+    }
+
+    /**
+     * 收集各域资产并按域分栏。
+     *
+     * @param actor          当前用户
+     * @param perDomainLimit 每个域取几条
+     * @return 分组（顺序固定：IMAGE / VIDEO / CONTENT / 其他）
+     */
+    private List<AigPortalAssetGroupVo> collect(AigPortalActor actor, int perDomainLimit) {
         if (actor == null || actor.userId() == null) {
             throw new ServiceException("AI 工作台需要登录用户");
         }
@@ -76,7 +126,7 @@ public class AigPortalAssetServiceImpl implements IAigPortalAssetService {
             }
             AigPortalAssetGroupVo group = new AigPortalAssetGroupVo();
             group.setDomain(domain);
-            for (MyAssetDTO dto : port.listMyAssets(actor.userId(), PER_DOMAIN_LIMIT)) {
+            for (MyAssetDTO dto : port.listMyAssets(actor.userId(), perDomainLimit)) {
                 if (dto == null) {
                     continue;
                 }
@@ -108,6 +158,7 @@ public class AigPortalAssetServiceImpl implements IAigPortalAssetService {
      */
     private static AigPortalMyAssetVo toVo(String domain, MyAssetDTO dto) {
         AigPortalMyAssetVo vo = new AigPortalMyAssetVo();
+        vo.setDomain(domain);
         vo.setAssetId(dto.getAssetId());
         vo.setAssetType(dto.getAssetType());
         vo.setSourceKind(dto.getSourceKind());

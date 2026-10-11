@@ -21,6 +21,13 @@ public class AigPortalMyAssetVo implements Serializable {
     private static final long serialVersionUID = 1L;
 
     /**
+     * 所属域（IMAGE / VIDEO / CONTENT）
+     *
+     * <p>分组视图里域已经写在栏上；合并的"最近资产"视图里必须逐条带上，否则看不出这条来自哪个域。</p>
+     */
+    private String domain;
+
+    /**
      * 资产ID（各域自己的主键）
      */
     private Long assetId;
