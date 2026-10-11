@@ -28,6 +28,9 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.*;
 
 /** Guards the shared submission path after merging the scenario and creative-ability implementations. */
@@ -45,6 +48,8 @@ class VideoTaskSubmissionServiceTest {
         registry = spy(new WorkflowContractRegistry(root, mapper));
         registry.load();
         repository = mock(VideoTaskRepository.class);
+        // Mockito returns 0L for an unstubbed boxed Long; absence is null in the real repository.
+        when(repository.findByIdempotencyKey(anyString(), anyLong(), nullable(String.class))).thenReturn(null);
         service = new VideoTaskSubmissionService(registry, new H3TemplatePreparer(mapper), repository, mapper);
     }
 
@@ -95,6 +100,17 @@ class VideoTaskSubmissionServiceTest {
         assertNull(row.platformTaskId());
         assertEquals(5, row.durationSeconds());
         assertEquals("5 秒", mapper.readTree(row.inputJson()).path("durationLabel").asText());
+    }
+
+    @Test
+    void existingIdempotencyKeyReturnsOriginalTaskWithoutWritingAnother() {
+        when(repository.findByIdempotencyKey("tenant-a", 9L, "existing-key")).thenReturn(42L);
+        var result = service.submit(Map.of("capabilityCode", "T2V", "workflowCode", "wf-t2v-h3",
+            "fields", Map.of("desc", "一只猫走过花园", "tier", "高清 · 1080P", "dur", "5 秒"),
+            "idempotencyKey", "existing-key"), "tenant-a", 9L, 88L);
+        assertTrue(result.idempotent());
+        assertEquals(42L, result.taskId());
+        verify(repository, never()).insertTask(any());
     }
 
     @Test
