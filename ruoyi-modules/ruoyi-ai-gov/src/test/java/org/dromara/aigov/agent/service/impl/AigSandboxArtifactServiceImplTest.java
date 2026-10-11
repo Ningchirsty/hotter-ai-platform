@@ -5,10 +5,13 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.dromara.aigov.agent.config.AigSandboxArtifactProperties;
 import org.dromara.aigov.agent.domain.AigSandboxArtifact;
+import org.dromara.aigov.agent.domain.AigSandboxArtifactDownload;
 import org.dromara.aigov.agent.domain.AigSandboxRun;
+import org.dromara.aigov.agent.domain.vo.AigSandboxArtifactDownloadVo;
 import org.dromara.aigov.agent.domain.vo.AigSandboxArtifactManifestVo;
 import org.dromara.aigov.agent.helper.AigSandboxArtifactManifest;
 import org.dromara.aigov.agent.helper.IAigSandboxArtifactStore;
+import org.dromara.aigov.agent.mapper.AigSandboxArtifactDownloadMapper;
 import org.dromara.aigov.agent.mapper.AigSandboxArtifactMapper;
 import org.dromara.aigov.agent.mapper.AigSandboxRunMapper;
 import org.dromara.aigov.agent.service.IAigSandboxArtifactService;
@@ -51,13 +54,20 @@ class AigSandboxArtifactServiceImplTest {
 
     private static final long RUN_ID = 7701L;
     private static final long ARTIFACT_ID = 9901L;
+    private static final long DOWNLOAD_ID = 6601L;
     private static final long ACTOR = 200L;
+
+    /**
+     * 下载留痕里的来源 IP（用真实取值形态，别用 "x" 这种一看就是编的）
+     */
+    private static final String CLIENT_IP = "10.12.34.56";
 
     private static final byte[] ABC = "abc".getBytes(StandardCharsets.UTF_8);
 
     private static final String ABC_SHA = AigSandboxArtifactManifest.sha256(ABC);
 
     private AigSandboxArtifactMapper artifactMapper;
+    private AigSandboxArtifactDownloadMapper downloadMapper;
     private AigSandboxRunMapper sandboxRunMapper;
     private IAigSandboxArtifactStore artifactStore;
     private AigSandboxArtifactProperties properties;
@@ -68,17 +78,23 @@ class AigSandboxArtifactServiceImplTest {
         MybatisConfiguration configuration = new MybatisConfiguration();
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(configuration, "");
         TableInfoHelper.initTableInfo(assistant, AigSandboxArtifact.class);
+        TableInfoHelper.initTableInfo(assistant, AigSandboxArtifactDownload.class);
     }
 
     @BeforeEach
     void setUp() {
         artifactMapper = mock(AigSandboxArtifactMapper.class);
+        downloadMapper = mock(AigSandboxArtifactDownloadMapper.class);
         sandboxRunMapper = mock(AigSandboxRunMapper.class);
         artifactStore = mock(IAigSandboxArtifactStore.class);
         properties = new AigSandboxArtifactProperties();
-        service = new AigSandboxArtifactServiceImpl(artifactMapper, sandboxRunMapper, artifactStore,
-            properties, JsonMapper.builder().build());
+        service = new AigSandboxArtifactServiceImpl(artifactMapper, downloadMapper, sandboxRunMapper,
+            artifactStore, properties, JsonMapper.builder().build());
 
+        when(downloadMapper.insert(any(AigSandboxArtifactDownload.class))).thenAnswer(invocation -> {
+            invocation.<AigSandboxArtifactDownload>getArgument(0).setDownloadId(DOWNLOAD_ID);
+            return 1;
+        });
         when(sandboxRunMapper.selectById(RUN_ID)).thenReturn(run(
             "{\"jobId\":\"JOB-1\",\"image\":\"img:1\",\"exitCode\":0,\"timedOut\":false,\"network\":\"none\","
                 + "\"artifacts\":[{\"path\":\"out/a.txt\",\"bytes\":3,\"sha256\":\"" + ABC_SHA + "\"}]}"));
@@ -258,7 +274,7 @@ class AigSandboxArtifactServiceImplTest {
     /* ------------------------------------------------------------------ 下载 */
 
     @Test
-    @DisplayName("下载：字节与账本一致 → 下发（文件名只取最后一段）")
+    @DisplayName("★ 下载：字节与账本一致 → 下发（文件名只取最后一段），并写一条下载留痕")
     void downloadServesVerifiedBytes() {
         AigSandboxArtifact row = new AigSandboxArtifact();
         row.setArtifactId(ARTIFACT_ID);
@@ -269,21 +285,74 @@ class AigSandboxArtifactServiceImplTest {
         when(artifactMapper.selectOne(any())).thenReturn(row);
         when(artifactStore.get("aig-private/sandbox/1/" + ABC_SHA)).thenReturn(ABC);
 
-        IAigSandboxArtifactService.AigSandboxArtifactFile file = service.download(RUN_ID, "out/a.txt");
+        IAigSandboxArtifactService.AigSandboxArtifactFile file =
+            service.download(RUN_ID, "out/a.txt", ACTOR, CLIENT_IP);
 
         assertEquals("abc", new String(file.content(), StandardCharsets.UTF_8));
         assertEquals("a.txt", file.fileName());
         assertEquals(ABC_SHA, file.sha256());
+
+        // ★ 留痕：谁、何时、从哪个 IP、取走了哪一份摘要（ADR-016 安全硬要求 ⑤）
+        ArgumentCaptor<AigSandboxArtifactDownload> download =
+            ArgumentCaptor.forClass(AigSandboxArtifactDownload.class);
+        verify(downloadMapper).insert(download.capture());
+        AigSandboxArtifactDownload saved = download.getValue();
+        assertEquals(RUN_ID, saved.getSandboxRunId());
+        assertEquals(ARTIFACT_ID, saved.getArtifactId());
+        assertEquals("out/a.txt", saved.getPath());
+        assertEquals(ABC_SHA, saved.getSha256(), "记当时下发的摘要，事后能核对给的是哪一份字节");
+        assertEquals(3L, saved.getBytes());
+        assertEquals(ACTOR, saved.getDownloadedBy());
+        assertEquals(CLIENT_IP, saved.getClientIp());
+    }
+
+    @Test
+    @DisplayName("★ 留痕写不进去 → 拒绝下发（拿不出留痕就不把不可信内容交出去）")
+    void downloadRefusesWhenAuditCannotBeWritten() {
+        AigSandboxArtifact row = new AigSandboxArtifact();
+        row.setArtifactId(ARTIFACT_ID);
+        row.setPath("out/a.txt");
+        row.setBytes(3L);
+        row.setSha256(ABC_SHA);
+        row.setObjectKey("K");
+        when(artifactMapper.selectOne(any())).thenReturn(row);
+        when(artifactStore.get("K")).thenReturn(ABC);
+        // 插入返回 0 且没回填主键 = 这次写入没有真的落地
+        when(downloadMapper.insert(any(AigSandboxArtifactDownload.class))).thenReturn(0);
+
+        ServiceException error = assertThrows(ServiceException.class,
+            () -> service.download(RUN_ID, "out/a.txt", ACTOR, CLIENT_IP));
+
+        assertTrue(error.getMessage().contains("留痕"), error.getMessage());
+    }
+
+    @Test
+    @DisplayName("留痕查询：最新在前，limit 非法值也要能工作（页面上不传就是 0）")
+    void downloadsReturnsLatestFirst() {
+        AigSandboxArtifactDownloadVo vo = new AigSandboxArtifactDownloadVo();
+        vo.setDownloadId(DOWNLOAD_ID);
+        vo.setPath("out/a.txt");
+        when(downloadMapper.selectVoPage(any(), any())).thenReturn(
+            new com.baomidou.mybatisplus.extension.plugins.pagination.Page<AigSandboxArtifactDownloadVo>(
+                1, 10).setRecords(java.util.List.of(vo)).setTotal(1));
+
+        List<AigSandboxArtifactDownloadVo> rows = service.downloads(RUN_ID, 0);
+
+        assertEquals(1, rows.size());
+        assertEquals(DOWNLOAD_ID, rows.get(0).getDownloadId());
+        assertEquals(1, service.downloads(RUN_ID, -5).size());
+        assertEquals(1, service.downloads(RUN_ID, 99999).size());
     }
 
     @Test
     @DisplayName("★ 下载：还没入库的产物 → 拒绝（账本只有声明，字节要单独交上来）")
     void downloadRejectsNotUploaded() {
         ServiceException error = assertThrows(ServiceException.class,
-            () -> service.download(RUN_ID, "out/a.txt"));
+            () -> service.download(RUN_ID, "out/a.txt", ACTOR, CLIENT_IP));
 
         assertTrue(error.getMessage().contains("还没登记"), error.getMessage());
         verify(artifactStore, never()).get(any());
+        verify(downloadMapper, never()).insert(any(AigSandboxArtifactDownload.class));
     }
 
     @Test
@@ -298,9 +367,10 @@ class AigSandboxArtifactServiceImplTest {
         when(artifactStore.get("K")).thenReturn("xyz".getBytes(StandardCharsets.UTF_8));
 
         ServiceException error = assertThrows(ServiceException.class,
-            () -> service.download(RUN_ID, "out/a.txt"));
+            () -> service.download(RUN_ID, "out/a.txt", ACTOR, CLIENT_IP));
 
         assertTrue(error.getMessage().contains("拒绝下发"), error.getMessage());
+        verify(downloadMapper, never()).insert(any(AigSandboxArtifactDownload.class));
     }
 
     @Test
@@ -314,10 +384,11 @@ class AigSandboxArtifactServiceImplTest {
         when(artifactMapper.selectOne(any())).thenReturn(row);
 
         ServiceException error = assertThrows(ServiceException.class,
-            () -> service.download(RUN_ID, "out/a.txt"));
+            () -> service.download(RUN_ID, "out/a.txt", ACTOR, CLIENT_IP));
 
         assertTrue(error.getMessage().contains("摘要不一致"), error.getMessage());
         verify(artifactStore, never()).get(any());
+        verify(downloadMapper, never()).insert(any(AigSandboxArtifactDownload.class));
     }
 
 }

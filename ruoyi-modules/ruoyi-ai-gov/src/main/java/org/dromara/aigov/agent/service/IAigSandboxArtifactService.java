@@ -1,5 +1,6 @@
 package org.dromara.aigov.agent.service;
 
+import org.dromara.aigov.agent.domain.vo.AigSandboxArtifactDownloadVo;
 import org.dromara.aigov.agent.domain.vo.AigSandboxArtifactManifestVo;
 
 import java.util.List;
@@ -54,10 +55,25 @@ public interface IAigSandboxArtifactService {
     /**
      * 下载一只已入库的产物。
      *
+     * <p><b>每次下发都会写一条下载留痕</b>（{@code aig_sandbox_artifact_download}）：
+     * 谁、何时、从哪个 IP、取走了哪一份摘要的字节。留痕写不进去就<b>拒绝下发</b>——
+     * 拿不出留痕就把不可信内容交出去，正是这条要求要防的事。</p>
+     *
      * @param sandboxRunId 沙箱运行记录ID
      * @param path         产物相对路径
+     * @param actorId      下载人ID（取自登录态）
+     * @param clientIp     来源 IP（可空）
      * @return 载荷（含文件名与摘要）
      */
-    AigSandboxArtifactFile download(Long sandboxRunId, String path);
+    AigSandboxArtifactFile download(Long sandboxRunId, String path, Long actorId, String clientIp);
+
+    /**
+     * 某次作业的下载留痕（最新在前）。
+     *
+     * @param sandboxRunId 沙箱运行记录ID
+     * @param limit        最多返回条数（≤0 时用默认值）
+     * @return 下载记录
+     */
+    List<AigSandboxArtifactDownloadVo> downloads(Long sandboxRunId, int limit);
 
 }

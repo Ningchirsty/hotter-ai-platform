@@ -1,6 +1,7 @@
 import type { AxiosPromise } from '@/utils/api-types';
 import request from '@/utils/request';
 import type {
+  AigSandboxArtifactDownloadVO,
   AigSandboxArtifactManifestVO,
   AigSandboxRunEvidence,
   AigSandboxRunRecordForm
@@ -72,6 +73,22 @@ export function uploadSandboxArtifact(
     method: 'post',
     headers: { 'Content-Type': 'multipart/form-data' },
     data
+  });
+}
+
+/**
+ * 沙箱产物的下载留痕（最新在前；ADR-016 安全硬要求 ⑤）。
+ *
+ * 用途是回答安全事件的第一个问题：这段不可信内容被谁取走过、什么时候、从哪个 IP。
+ */
+export function listArtifactDownloads(
+  runId: string | number,
+  limit?: number
+): AxiosPromise<AigSandboxArtifactDownloadVO[]> {
+  return request({
+    url: `/aigov/sandbox/run/${runId}/artifact-downloads`,
+    method: 'get',
+    params: limit ? { limit } : {}
   });
 }
 

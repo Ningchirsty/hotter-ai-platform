@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { artifactSummary, fileNameOf, pendingPaths, shortSha, uploadedCount } from './sandboxArtifact';
-import type { AigSandboxArtifactManifestVO } from '@/api/aigov/sandbox/types';
+import {
+  artifactSummary,
+  downloadSummary,
+  downloaderLabel,
+  fileNameOf,
+  pendingPaths,
+  shortSha,
+  uploadedCount
+} from './sandboxArtifact';
+import type {
+  AigSandboxArtifactDownloadVO,
+  AigSandboxArtifactManifestVO
+} from '@/api/aigov/sandbox/types';
 
 /**
  * 沙箱产物展示助手测试（ADR-016）。
@@ -50,5 +61,38 @@ describe('沙箱产物展示助手', () => {
     expect(uploadedCount([{ path: 'a' }])).toBe(0);
     expect(pendingPaths([item('a', true), item('b', false)])).toEqual(['b']);
     expect(pendingPaths(undefined)).toEqual([]);
+  });
+
+  describe('下载留痕（ADR-016 ⑤）', () => {
+    const row = (
+      id: number,
+      downloadedBy: number | null,
+      clientIp: string | null,
+      createTime?: string
+    ): AigSandboxArtifactDownloadVO => ({
+      downloadId: id,
+      path: 'out/a.txt',
+      downloadedBy,
+      clientIp,
+      createTime
+    });
+
+    it('★ 摘要要说清「共几次 + 最近一次是谁、从哪来」——安全事件的第一个问题', () => {
+      const rows = [row(3, 200, '10.12.34.56', '2026-10-11 16:00:00'), row(2, 201, '10.0.0.1')];
+      expect(downloadSummary(rows)).toBe('共 2 次下载；最近一次：用户 200 / 10.12.34.56（2026-10-11 16:00:00）');
+    });
+
+    it('没有记录时说清「还没有」，不是空字符串（空字符串会被读成加载失败）', () => {
+      expect(downloadSummary([])).toBe('还没有下载记录');
+      expect(downloadSummary(null)).toBe('还没有下载记录');
+      expect(downloadSummary(undefined)).toBe('还没有下载记录');
+    });
+
+    it('缺失字段不炸：没有用户/没有 IP/没有时间都照常给出一句话', () => {
+      expect(downloadSummary([row(1, null, null)])).toBe('共 1 次下载；最近一次：（未记录用户）');
+      expect(downloaderLabel(row(1, null, null))).toBe('（未记录用户）');
+      expect(downloaderLabel(row(1, 200, 'x'))).toBe('200');
+      expect(downloaderLabel(undefined)).toBe('（未记录用户）');
+    });
   });
 });

@@ -78,3 +78,22 @@ export interface AigSandboxArtifactManifestVO {
   /** 入库时间 */
   uploadedAt?: string;
 }
+
+/**
+ * 沙箱产物**下载**留痕（ADR-016 安全硬要求 ⑤：谁下载了哪个产物要留痕）。
+ *
+ * 记的是"本次下发的摘要与字节数"，而不只是产物ID——事后要核对"当时给他的到底是哪一份字节"。
+ */
+export interface AigSandboxArtifactDownloadVO {
+  downloadId: string | number;
+  sandboxRunId?: string | number;
+  artifactId?: string | number;
+  path?: string;
+  sha256?: string;
+  bytes?: number;
+  /** 下载人ID（取自登录态） */
+  downloadedBy?: string | number | null;
+  /** 来源 IP（审计用） */
+  clientIp?: string | null;
+  createTime?: string;
+}

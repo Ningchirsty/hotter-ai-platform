@@ -1,14 +1,18 @@
 package org.dromara.aigov.agent.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.aigov.agent.config.AigSandboxArtifactProperties;
 import org.dromara.aigov.agent.domain.AigSandboxArtifact;
+import org.dromara.aigov.agent.domain.AigSandboxArtifactDownload;
 import org.dromara.aigov.agent.domain.AigSandboxRun;
+import org.dromara.aigov.agent.domain.vo.AigSandboxArtifactDownloadVo;
 import org.dromara.aigov.agent.domain.vo.AigSandboxArtifactManifestVo;
 import org.dromara.aigov.agent.helper.AigSandboxArtifactManifest;
 import org.dromara.aigov.agent.helper.IAigSandboxArtifactStore;
+import org.dromara.aigov.agent.mapper.AigSandboxArtifactDownloadMapper;
 import org.dromara.aigov.agent.mapper.AigSandboxArtifactMapper;
 import org.dromara.aigov.agent.mapper.AigSandboxRunMapper;
 import org.dromara.aigov.agent.service.IAigSandboxArtifactService;
@@ -50,7 +54,19 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class AigSandboxArtifactServiceImpl implements IAigSandboxArtifactService {
 
+    /**
+     * 下载留痕默认返回条数
+     */
+    private static final int DEFAULT_DOWNLOAD_HISTORY = 100;
+
+    /**
+     * 下载留痕最多返回条数（防"历史很长时被一次拉爆"）
+     */
+    private static final int MAX_DOWNLOAD_HISTORY = 500;
+
     private final AigSandboxArtifactMapper artifactMapper;
+
+    private final AigSandboxArtifactDownloadMapper downloadMapper;
 
     private final AigSandboxRunMapper sandboxRunMapper;
 
@@ -158,7 +174,7 @@ public class AigSandboxArtifactServiceImpl implements IAigSandboxArtifactService
     }
 
     @Override
-    public AigSandboxArtifactFile download(Long sandboxRunId, String path) {
+    public AigSandboxArtifactFile download(Long sandboxRunId, String path, Long actorId, String clientIp) {
         AigSandboxRun run = requireRun(sandboxRunId);
         String normalized = normalize(path);
         AigSandboxArtifact row = findByPath(sandboxRunId, normalized);
@@ -180,10 +196,26 @@ public class AigSandboxArtifactServiceImpl implements IAigSandboxArtifactService
             throw new ServiceException("取回的字节与账本摘要不一致（路径 " + normalized + "）：账本 "
                 + row.getSha256() + "，实读 " + actualSha + "。拒绝下发，请检查对象存储");
         }
-        log.info("下发沙箱产物, sandboxRunId={}, path={}, bytes={}, operatorId={}",
-            sandboxRunId, normalized, content.length, row.getUploadedBy());
+
+        // ★ 先记留痕再下发：留痕写不进去就**拒绝下发**——拿不出留痕就把不可信内容交出去，
+        // 正是"谁下载了哪个产物要留痕"这条要求要防的事（ADR-016 §安全硬要求 ⑤）
+        recordDownload(run.getSandboxRunId(), row, actorId, clientIp);
+
+        log.info("下发沙箱产物, sandboxRunId={}, path={}, bytes={}, downloadedBy={}",
+            sandboxRunId, normalized, content.length, actorId);
         return new AigSandboxArtifactFile(content,
             AigSandboxArtifactManifest.downloadFileName(normalized), row.getSha256());
+    }
+
+    @Override
+    public List<AigSandboxArtifactDownloadVo> downloads(Long sandboxRunId, int limit) {
+        requireRun(sandboxRunId);
+        int size = limit <= 0 ? DEFAULT_DOWNLOAD_HISTORY : Math.min(limit, MAX_DOWNLOAD_HISTORY);
+        Page<AigSandboxArtifactDownloadVo> page = downloadMapper.selectVoPage(
+            new Page<>(1, size), new LambdaQueryWrapper<AigSandboxArtifactDownload>()
+                .eq(AigSandboxArtifactDownload::getSandboxRunId, sandboxRunId)
+                .orderByDesc(AigSandboxArtifactDownload::getDownloadId));
+        return page.getRecords() == null ? List.of() : page.getRecords();
     }
 
     /* ------------------------------------------------------------------ 内部 */
@@ -261,6 +293,35 @@ public class AigSandboxArtifactServiceImpl implements IAigSandboxArtifactService
             throw new ServiceException("这个作业的产物总字节数将超过上限（"
                 + properties.getMaxTotalBytesPerRun() + " 字节）：不再接受新上传"
                 + "（aigov.sandbox.artifact.max-total-bytes-per-run）");
+        }
+    }
+
+    /**
+     * 写一条下载留痕。
+     *
+     * <p><b>它失败就抛</b>：不吞异常、不"记个日志继续"——留痕是这个方法的唯一产出，
+     * 写不进去而照常下发，等于这条硬要求形同虚设。</p>
+     *
+     * @param runId    运行记录ID
+     * @param row      产物行（摘要与字节数的权威来源）
+     * @param actorId  下载人ID
+     * @param clientIp 来源 IP
+     */
+    private void recordDownload(Long runId, AigSandboxArtifact row, Long actorId, String clientIp) {
+        AigSandboxArtifactDownload download = new AigSandboxArtifactDownload();
+        download.setSandboxRunId(runId);
+        download.setArtifactId(row.getArtifactId());
+        download.setPath(row.getPath());
+        download.setSha256(row.getSha256());
+        download.setBytes(row.getBytes());
+        download.setDownloadedBy(actorId);
+        download.setClientIp(StringUtils.isBlank(clientIp) ? null
+            : StringUtils.substring(clientIp.trim(), 0, 64));
+        download.setCreateTime(LocalDateTime.now());
+        downloadMapper.insert(download);
+        if (download.getDownloadId() == null) {
+            // 取不回主键说明这次写入没有真的落地，不能当成留痕成功
+            throw new ServiceException("下载留痕未能落库（未取回主键）：拒绝下发产物");
         }
     }
 

@@ -1,4 +1,7 @@
-import type { AigSandboxArtifactManifestVO } from '@/api/aigov/sandbox/types';
+import type {
+  AigSandboxArtifactDownloadVO,
+  AigSandboxArtifactManifestVO
+} from '@/api/aigov/sandbox/types';
 
 /**
  * 沙箱产物展示助手（纯函数；ADR-016）。
@@ -79,4 +82,35 @@ export function artifactSummary(items?: AigSandboxArtifactManifestVO[] | null): 
 export function pendingPaths(items?: AigSandboxArtifactManifestVO[] | null): string[] {
   if (!Array.isArray(items)) return [];
   return items.filter(item => item?.uploaded !== true).map(item => item?.path ?? '');
+}
+
+/**
+ * 下载留痕的一句话结论（ADR-016 安全硬要求 ⑤）。
+ *
+ * @param rows 留痕（最新在前）
+ * @returns 摘要
+ */
+export function downloadSummary(rows?: AigSandboxArtifactDownloadVO[] | null): string {
+  const list = Array.isArray(rows) ? rows : [];
+  if (list.length === 0) {
+    return '还没有下载记录';
+  }
+  const last = list[0];
+  const who = last?.downloadedBy === null || last?.downloadedBy === undefined
+    ? '（未记录用户）'
+    : `用户 ${last.downloadedBy}`;
+  const ip = last?.clientIp ? ` / ${last.clientIp}` : '';
+  return `共 ${list.length} 次下载；最近一次：${who}${ip}` +
+    (last?.createTime ? `（${last.createTime}）` : '');
+}
+
+/**
+ * 留痕里"谁"的展示（下载人取自登录态，但老数据可能为空）。
+ *
+ * @param row 留痕
+ * @returns 展示文本
+ */
+export function downloaderLabel(row?: AigSandboxArtifactDownloadVO | null): string {
+  if (row?.downloadedBy === null || row?.downloadedBy === undefined) return '（未记录用户）';
+  return String(row.downloadedBy);
 }

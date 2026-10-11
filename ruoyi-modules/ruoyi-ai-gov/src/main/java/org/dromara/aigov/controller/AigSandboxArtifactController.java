@@ -1,13 +1,16 @@
 package org.dromara.aigov.controller;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import org.dromara.aigov.agent.domain.vo.AigSandboxArtifactDownloadVo;
 import org.dromara.aigov.agent.domain.vo.AigSandboxArtifactManifestVo;
 import org.dromara.aigov.agent.helper.AigSandboxArtifactManifest;
 import org.dromara.aigov.agent.service.IAigSandboxArtifactService;
 import org.dromara.aigov.constant.AigConstants;
 import org.dromara.common.core.domain.R;
 import org.dromara.common.core.exception.ServiceException;
+import org.dromara.common.core.utils.ServletUtils;
 import org.dromara.common.redis.annotation.RepeatSubmit;
 import org.dromara.common.satoken.utils.LoginHelper;
 import org.springframework.http.HttpHeaders;
@@ -95,21 +98,40 @@ public class AigSandboxArtifactController {
     /**
      * 下载一只已入库的产物（响应头见类注释的三条硬要求）。
      *
-     * @param runId 沙箱运行记录ID
-     * @param path  产物相对路径
+     * <p>每次下发都会写一条下载留痕（谁/何时/哪个 IP/哪份摘要），留痕写不进去就拒绝下发。</p>
+     *
+     * @param runId   沙箱运行记录ID
+     * @param path    产物相对路径
+     * @param request 请求（取来源 IP 用于留痕）
      * @return 字节响应
      */
     @SaCheckPermission(AigConstants.PERM_SANDBOX_LIST)
     @GetMapping("/run/{runId:\\d+}/artifact")
-    public ResponseEntity<byte[]> download(@PathVariable Long runId, @RequestParam String path) {
-        IAigSandboxArtifactService.AigSandboxArtifactFile file =
-            sandboxArtifactService.download(runId, path);
+    public ResponseEntity<byte[]> download(@PathVariable Long runId, @RequestParam String path,
+                                          HttpServletRequest request) {
+        IAigSandboxArtifactService.AigSandboxArtifactFile file = sandboxArtifactService.download(
+            runId, path, LoginHelper.getUserId(), ServletUtils.getClientIP(request));
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
         headers.set(HttpHeaders.CONTENT_DISPOSITION, contentDisposition(file.fileName()));
         headers.set("X-Content-Type-Options", "nosniff");
         return ResponseEntity.ok().headers(headers).body(file.content());
+    }
+
+    /**
+     * 某次作业的下载留痕（最新在前；ADR-016 安全硬要求 ⑤）。
+     *
+     * @param runId 沙箱运行记录ID
+     * @param limit 最多返回条数（可空，默认 100 / 上限 500）
+     * @return 下载记录
+     */
+    @SaCheckPermission(AigConstants.PERM_SANDBOX_LIST)
+    @GetMapping("/run/{runId:\\d+}/artifact-downloads")
+    public R<List<AigSandboxArtifactDownloadVo>> downloads(
+        @PathVariable Long runId,
+        @RequestParam(required = false, defaultValue = "0") Integer limit) {
+        return R.ok(sandboxArtifactService.downloads(runId, limit == null ? 0 : limit));
     }
 
     /**

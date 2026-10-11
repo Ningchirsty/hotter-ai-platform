@@ -1,6 +1,7 @@
 package org.dromara.aigov.controller;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import org.dromara.aigov.agent.domain.vo.AigSandboxArtifactDownloadVo;
 import org.dromara.aigov.agent.domain.vo.AigSandboxArtifactManifestVo;
 import org.dromara.aigov.agent.service.IAigSandboxArtifactService;
 import org.dromara.aigov.constant.AigConstants;
@@ -26,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -62,7 +64,7 @@ class AigSandboxArtifactControllerTest {
     @DisplayName("★ 下载：三条硬要求（octet-stream + attachment + nosniff），且绝不回显上传方声明的类型")
     void downloadSetsHardenedHeaders() throws Exception {
         byte[] html = "<html><script>alert(1)</script></html>".getBytes(StandardCharsets.UTF_8);
-        when(service.download(eq(RUN_ID), eq("out/page.html"))).thenReturn(
+        when(service.download(eq(RUN_ID), eq("out/page.html"), any(), any())).thenReturn(
             new IAigSandboxArtifactService.AigSandboxArtifactFile(html, "page.html", "sha-1"));
 
         mockMvc().perform(get("/aigov/sandbox/run/" + RUN_ID + "/artifact")
@@ -74,12 +76,15 @@ class AigSandboxArtifactControllerTest {
             .andExpect(header().string("Content-Disposition", containsString("filename=\"page.html\"")))
             .andExpect(header().string("X-Content-Type-Options", "nosniff"))
             .andExpect(content().bytes(html));
+
+        // 下载人一律取自登录态（这里没有登录态 → null），来源 IP 由 ServletUtils 取
+        verify(service).download(eq(RUN_ID), eq("out/page.html"), isNull(), any());
     }
 
     @Test
     @DisplayName("★ 下载：文件名里的引号与分号被换掉（响应头注入），并给出 RFC 5987 可读名")
     void downloadSanitizesFileName() throws Exception {
-        when(service.download(any(), any())).thenReturn(
+        when(service.download(any(), any(), any(), any())).thenReturn(
             new IAigSandboxArtifactService.AigSandboxArtifactFile("x".getBytes(StandardCharsets.UTF_8),
                 "_x__y.txt", "sha-2"));
 
@@ -87,6 +92,28 @@ class AigSandboxArtifactControllerTest {
             .andExpect(status().isOk())
             .andExpect(header().string("Content-Disposition", containsString("filename=\"_x__y.txt\"")))
             .andExpect(header().string("Content-Disposition", containsString("filename*=UTF-8''_x__y.txt")));
+    }
+
+    @Test
+    @DisplayName("下载留痕：透传运行记录ID与 limit，并回传记录（谁/何时/哪个 IP）")
+    void downloadsDelegates() throws Exception {
+        AigSandboxArtifactDownloadVo vo = new AigSandboxArtifactDownloadVo();
+        vo.setDownloadId(6601L);
+        vo.setPath("out/a.txt");
+        vo.setDownloadedBy(200L);
+        vo.setClientIp("10.12.34.56");
+        when(service.downloads(RUN_ID, 0)).thenReturn(List.of(vo));
+
+        mockMvc().perform(get("/aigov/sandbox/run/" + RUN_ID + "/artifact-downloads"))
+            .andExpect(status().isOk())
+            .andExpect(content().string(containsString("10.12.34.56")));
+        verify(service).downloads(RUN_ID, 0);
+
+        // limit 显式传入时按值透传
+        when(service.downloads(RUN_ID, 5)).thenReturn(List.of());
+        mockMvc().perform(get("/aigov/sandbox/run/" + RUN_ID + "/artifact-downloads").param("limit", "5"))
+            .andExpect(status().isOk());
+        verify(service).downloads(RUN_ID, 5);
     }
 
     @Test
@@ -128,7 +155,10 @@ class AigSandboxArtifactControllerTest {
         assertPermission("upload", new Class<?>[]{Long.class, String.class, org.springframework.web.multipart.MultipartFile.class, String.class},
             AigConstants.PERM_SANDBOX_RECORD);
         assertPermission("list", new Class<?>[]{Long.class}, AigConstants.PERM_SANDBOX_LIST);
-        assertPermission("download", new Class<?>[]{Long.class, String.class}, AigConstants.PERM_SANDBOX_LIST);
+        assertPermission("download", new Class<?>[]{Long.class, String.class,
+            jakarta.servlet.http.HttpServletRequest.class}, AigConstants.PERM_SANDBOX_LIST);
+        assertPermission("downloads", new Class<?>[]{Long.class, Integer.class},
+            AigConstants.PERM_SANDBOX_LIST);
 
         Method upload = AigSandboxArtifactController.class.getMethod("upload", Long.class, String.class,
             org.springframework.web.multipart.MultipartFile.class, String.class);

@@ -274,6 +274,49 @@
                 上传时服务端按 result.json 声明的字节数与 SHA-256 逐个校验：不符即拒绝，不落对象存储。
                 产物字节与发布门槛无关——门槛只看沙箱运行证据（上面那块）。
               </div>
+
+              <!--
+                下载留痕（ADR-016 安全硬要求 ⑤）：产物是不可信内容，"谁在何时从哪个 IP 取走了哪一份"
+                是安全事件的第一个问题——所以它单独记账，而不是只写应用日志（日志会轮转、会随容器重建丢掉）。
+                按需展开：它是审计面，不是每次打开都要拉的东西。
+              -->
+              <div class="download-block">
+                <div class="artifact-head">
+                  <el-button size="small" text type="primary" @click="toggleDownloads">
+                    {{ downloadsOpen ? '收起下载记录' : '下载记录' }}
+                  </el-button>
+                  <span class="gate-hint">{{ downloadSummary(artifactDownloads) }}</span>
+                  <el-button
+                    v-if="downloadsOpen"
+                    link
+                    size="small"
+                    icon="Refresh"
+                    :loading="downloadsLoading"
+                    @click="loadArtifactDownloads"
+                  >
+                    刷新
+                  </el-button>
+                </div>
+                <el-table
+                  v-if="downloadsOpen && artifactDownloads.length"
+                  v-loading="downloadsLoading"
+                  :data="artifactDownloads"
+                  size="small"
+                  border
+                >
+                  <el-table-column label="路径" prop="path" min-width="180" show-overflow-tooltip />
+                  <el-table-column label="下载人" align="center" width="110">
+                    <template #default="{ row }">{{ downloaderLabel(row) }}</template>
+                  </el-table-column>
+                  <el-table-column label="来源 IP" align="center" width="140">
+                    <template #default="{ row }">{{ row.clientIp || '—' }}</template>
+                  </el-table-column>
+                  <el-table-column label="下发摘要" align="center" min-width="120" show-overflow-tooltip>
+                    <template #default="{ row }">{{ shortSha(row.sha256) }}</template>
+                  </el-table-column>
+                  <el-table-column label="时间" prop="createTime" align="center" width="170" show-overflow-tooltip />
+                </el-table>
+              </div>
             </div>
             <!--
               这条口径必须出现在门槛旁边，而不是只写在文档里：训练台的"测试调用"是一次受治理的
@@ -336,8 +379,9 @@
 <script setup lang="ts">
 import { getAgentVersion, listAgent, listAgentVersion, advanceRelease, missingGates } from '@/api/aigov/agent';
 import type { AigAgentQuery, AigAgentVO, AigAgentVersionVO, AigReleaseAdvanceForm } from '@/api/aigov/agent/types';
-import { sandboxRunEvidence, recordSandboxRun, listSandboxArtifacts, uploadSandboxArtifact, downloadSandboxArtifact } from '@/api/aigov/sandbox';
+import { sandboxRunEvidence, recordSandboxRun, listSandboxArtifacts, uploadSandboxArtifact, downloadSandboxArtifact, listArtifactDownloads } from '@/api/aigov/sandbox';
 import type {
+  AigSandboxArtifactDownloadVO,
   AigSandboxArtifactManifestVO,
   AigSandboxRunEvidence,
   AigSandboxRunRecordForm
@@ -347,7 +391,7 @@ import { useSearchReset } from '@/hooks/form/useSearchReset';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import modal from '@/plugins/modal';
 import { saveBlob } from '@/utils/save';
-import { artifactSummary, fileNameOf, shortSha } from './sandboxArtifact';
+import { artifactSummary, downloadSummary, downloaderLabel, fileNameOf, shortSha } from './sandboxArtifact';
 
 defineOptions({ name: 'AigAgentRegistry' });
 
@@ -390,6 +434,11 @@ const sandboxArtifacts = ref<AigSandboxArtifactManifestVO[]>([]);
 const loadingArtifacts = ref(false);
 /** 正在上传的产物路径（按行禁用按钮，避免同一行连点） */
 const uploadingPath = ref('');
+
+/** 下载留痕（按需展开才拉：它是审计面，不该在每次打开推进弹窗时都请求） */
+const artifactDownloads = ref<AigSandboxArtifactDownloadVO[]>([]);
+const downloadsLoading = ref(false);
+const downloadsOpen = ref(false);
 const recordVisible = ref(false);
 const recordSubmitting = ref(false);
 const recordFormRef = ref<ElFormInstance>();
@@ -588,8 +637,41 @@ const doDownloadArtifact = async (row: AigSandboxArtifactManifestVO) => {
   try {
     const blob = await downloadSandboxArtifact(runId, row.path);
     saveBlob(blob, fileNameOf(row.path));
+    // 留痕是这次下发的副产物：已经展开的话立刻刷出来，别让人以为没记上
+    if (downloadsOpen.value) {
+      await loadArtifactDownloads();
+    }
   } catch (e: any) {
     modal.alertError(e?.message || '产物下载失败');
+  }
+};
+
+/** 展开/收起下载留痕；展开时取一次 */
+const toggleDownloads = async () => {
+  downloadsOpen.value = !downloadsOpen.value;
+  if (downloadsOpen.value) {
+    await loadArtifactDownloads();
+  }
+};
+
+/** 读下载留痕（谁/何时/哪个 IP/哪份摘要） */
+const loadArtifactDownloads = async () => {
+  const runId = sandboxEvidence.value?.runId;
+  if (!runId) {
+    artifactDownloads.value = [];
+    return;
+  }
+  downloadsLoading.value = true;
+  try {
+    const res = await listArtifactDownloads(runId);
+    // 取数期间换了版本/关了对话框：丢弃这次结果
+    if (sandboxEvidence.value?.runId !== runId) return;
+    artifactDownloads.value = res.data || [];
+  } catch (e: any) {
+    artifactDownloads.value = [];
+    modal.alertError(e?.message || '读取下载记录失败');
+  } finally {
+    downloadsLoading.value = false;
   }
 };
 
@@ -665,5 +747,9 @@ onMounted(() => {
   align-items: center;
   margin-bottom: 6px;
   font-size: 12.5px;
+}
+
+.download-block {
+  margin-top: 8px;
 }
 </style>
