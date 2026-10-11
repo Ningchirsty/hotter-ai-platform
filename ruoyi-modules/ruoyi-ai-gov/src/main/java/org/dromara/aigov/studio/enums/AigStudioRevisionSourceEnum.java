@@ -34,7 +34,16 @@ public enum AigStudioRevisionSourceEnum {
     /**
      * 回滚到某个历史修订（不修改历史修订本身，而是产生一条内容相同的新修订）
      */
-    ROLLBACK("ROLLBACK", "回滚");
+    ROLLBACK("ROLLBACK", "回滚"),
+
+    /**
+     * 由「草案生成器」从 Skill/子 Agent/快捷指令草案生成（附件 07 增量 7）。
+     *
+     * <p><b>为什么与 {@link #MANUAL} 分开</b>：生成物是"一份可提交内容"，但它是机器按草案
+     * 字段填出来的，不是人敲的。合并成一个来源后，"这条修订是人写的还是生成器填的"
+     * 就再也答不出来——而这正是事后复盘"哪类草案生成的版本质量更差"的唯一线索。</p>
+     */
+    DRAFT_GENERATED("DRAFT_GENERATED", "由草案生成");
 
     /**
      * 编码（入库值）

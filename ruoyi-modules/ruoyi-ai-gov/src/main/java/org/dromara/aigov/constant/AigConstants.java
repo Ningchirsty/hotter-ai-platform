@@ -369,6 +369,14 @@ public interface AigConstants {
     String PERM_STUDIO_COPILOT_USE = "aig:studio:copilot:use";
 
     /**
+     * Agent Studio：草案生成器（Skill / 子 Agent / 快捷指令草案，附件 07 增量 7）。
+     *
+     * <p>管的是"草案"这个对象的增删查与生成。它与「编辑草稿」分开：草案本身不改任何草稿，
+     * 只有把生成物落到某个训练草稿时才写草稿——那一步另外要求 {@link #PERM_STUDIO_DRAFT_EDIT}。</p>
+     */
+    String PERM_STUDIO_ARTIFACT_DRAFT = "aig:studio:artifact-draft";
+
+    /**
      * 岗位包清单（读）：有哪些岗位、各自有哪些版本、当前是什么发布状态
      */
     String PERM_ROLE_PACKAGE_LIST = "aig:role:list";

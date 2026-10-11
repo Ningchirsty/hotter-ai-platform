@@ -132,9 +132,105 @@ create table if not exists aig_studio_change_proposal (
     key idx_aig_studio_proposal_draft (draft_id, status, create_time)
 ) engine=innodb comment = '岗位 Agent Studio 变更提案（培训助手只提案，人工采纳才产生新修订）';
 
--- 核对：四张表都在
+-- ----------------------------
+-- 5、草案生成器三张表（Skill / 子 Agent / 快捷指令草案；附件 07 增量 7）
+--
+--    三类各自落表：字段确实不同（技能编码 vs 父 Agent vs 启动方式/目标），
+--    合成一张表就得给每类留一半空列，而空列会让人以为"这个字段本来该填"。
+--    详见 aig_studio_artifact_draft.sql 的头部说明。
+-- ----------------------------
+create table if not exists aig_studio_skill_draft (
+    skill_draft_id      bigint(20)    not null                   comment '草案ID',
+    draft_code          varchar(64)   not null                   comment '草案编码',
+    draft_name          varchar(128)  default null               comment '草案名称',
+    skill_code          varchar(64)   not null                   comment '技能编码（生成后落到 allowedSkills）',
+    skill_name          varchar(128)  default null               comment '技能名称',
+    capabilities        varchar(500)  default null               comment '技能声明的能力编码（逗号分隔；仅人读清单）',
+    description         varchar(1000) default null               comment '技能做什么（进 tools_and_skills 分节）',
+    usage_notes         varchar(1000) default null               comment '使用说明（进 workflow_rules 分节）',
+    agent_category      varchar(32)   not null                   comment 'Agent 类别（必填）',
+    provider_capability varchar(64)   not null                   comment '所需能力（必填）',
+    allowed_tools       varchar(500)  default null               comment '允许工具（逗号分隔）',
+    owner_id            bigint(20)    default null               comment '责任人',
+    org_id              bigint(20)    default null               comment '归属组织',
+    enabled             char(1)       not null default 'Y'       comment '是否启用（Y/N）',
+    del_flag            char(1)       default '0'                comment '删除标志（0代表存在 1代表删除）',
+    create_dept         bigint(20)    default null               comment '创建部门',
+    create_by           bigint(20)    default null               comment '创建者',
+    create_time         datetime                                 comment '创建时间',
+    update_by           bigint(20)    default null               comment '更新者',
+    update_time         datetime                                 comment '更新时间',
+    remark              varchar(500)  default null               comment '备注',
+    primary key (skill_draft_id),
+    unique key uk_aig_studio_skill_draft_code (draft_code, del_flag),
+    key idx_aig_studio_skill_draft_owner (owner_id, enabled, del_flag)
+) engine=innodb comment = 'Agent Studio 技能草案（只产可提交内容，不等同可执行）';
+
+create table if not exists aig_studio_child_agent_draft (
+    child_agent_draft_id bigint(20)    not null                   comment '草案ID',
+    draft_code           varchar(64)   not null                   comment '草案编码',
+    draft_name           varchar(128)  default null               comment '草案名称',
+    agent_code           varchar(64)   default null               comment 'Agent 编码（不在生成物里）',
+    agent_name           varchar(128)  default null               comment 'Agent 展示名',
+    agent_category       varchar(32)   not null                   comment 'Agent 类别（必填）',
+    parent_agent_code    varchar(64)   default null               comment '父 Agent 编码（草稿内容无此槽位）',
+    role_description     varchar(1000) default null               comment '角色定位',
+    objective            varchar(1000) default null               comment '主要责任',
+    prohibitions         varchar(1000) default null               comment '禁止事项',
+    output_summary       varchar(1000) default null               comment '输出成果说明',
+    prompt_sections_json longtext      default null               comment '主 Prompt 八分节（JSON 对象）',
+    provider_capability  varchar(64)   not null                   comment '所需能力（必填）',
+    allow_external       char(1)       default null               comment '是否允许外发（Y/N；缺省 N）',
+    allowed_tools        varchar(500)  default null               comment '允许工具（逗号分隔）',
+    knowledge_scope      varchar(500)  default null               comment '知识范围（逗号分隔）',
+    owner_id             bigint(20)    default null               comment '责任人',
+    org_id               bigint(20)    default null               comment '归属组织',
+    enabled              char(1)       not null default 'Y'       comment '是否启用（Y/N）',
+    del_flag             char(1)       default '0'                comment '删除标志（0代表存在 1代表删除）',
+    create_dept          bigint(20)    default null               comment '创建部门',
+    create_by            bigint(20)    default null               comment '创建者',
+    create_time          datetime                                 comment '创建时间',
+    update_by            bigint(20)    default null               comment '更新者',
+    update_time          datetime                                 comment '更新时间',
+    remark               varchar(500)  default null               comment '备注',
+    primary key (child_agent_draft_id),
+    unique key uk_aig_studio_child_agent_draft_code (draft_code, del_flag),
+    key idx_aig_studio_child_agent_draft_owner (owner_id, enabled, del_flag)
+) engine=innodb comment = 'Agent Studio 子 Agent 草案（只产可提交内容，不等同可执行）';
+
+create table if not exists aig_studio_action_draft (
+    action_draft_id     bigint(20)    not null                   comment '草案ID',
+    draft_code          varchar(64)   not null                   comment '草案编码',
+    draft_name          varchar(128)  default null               comment '草案名称',
+    action_code         varchar(64)   default null               comment '指令编码',
+    action_name         varchar(128)  default null               comment '指令名称',
+    launch_mode         varchar(16)   default null               comment '启动方式（QUICK/FORM/STUDIO/NAVIGATION）',
+    target_type         varchar(32)   default null               comment '启动目标类型',
+    target_ref          varchar(128)  default null               comment '启动目标引用',
+    agent_category      varchar(32)   not null                   comment 'Agent 类别（必填）',
+    objective           varchar(1000) default null               comment '指令目标',
+    output_contract     varchar(1000) default null               comment '产出要求',
+    provider_capability varchar(64)   not null                   comment '所需能力（必填）',
+    allowed_tools       varchar(500)  default null               comment '允许工具（逗号分隔）',
+    owner_id            bigint(20)    default null               comment '责任人',
+    org_id              bigint(20)    default null               comment '归属组织',
+    enabled             char(1)       not null default 'Y'       comment '是否启用（Y/N）',
+    del_flag            char(1)       default '0'                comment '删除标志（0代表存在 1代表删除）',
+    create_dept         bigint(20)    default null               comment '创建部门',
+    create_by           bigint(20)    default null               comment '创建者',
+    create_time         datetime                                 comment '创建时间',
+    update_by           bigint(20)    default null               comment '更新者',
+    update_time         datetime                                 comment '更新时间',
+    remark              varchar(500)  default null               comment '备注',
+    primary key (action_draft_id),
+    unique key uk_aig_studio_action_draft_code (draft_code, del_flag),
+    key idx_aig_studio_action_draft_owner (owner_id, enabled, del_flag)
+) engine=innodb comment = 'Agent Studio 快捷指令草案（只产可提交内容，不等同可执行）';
+
+-- 核对：七张表都在
 select table_name, table_comment
   from information_schema.tables
  where table_schema = database()
    and table_name in ('aig_studio_draft', 'aig_studio_revision', 'aig_studio_execution_link',
-                      'aig_studio_change_proposal');
+                      'aig_studio_change_proposal', 'aig_studio_skill_draft',
+                      'aig_studio_child_agent_draft', 'aig_studio_action_draft');

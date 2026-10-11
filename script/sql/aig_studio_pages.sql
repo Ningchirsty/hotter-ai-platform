@@ -34,11 +34,23 @@ select 1768400000000000011, 'Agent 训练台', 1763000000000000001, 111, 'studio
   where not exists (select 1 from (select menu_id from sys_menu) t
                      where t.menu_id = 1768400000000000011);
 
+insert into sys_menu (menu_id, menu_name, parent_id, order_num, path, component, is_frame, is_cache,
+                      menu_type, visible, status, perms, icon, create_dept, create_by, create_time, remark)
+select 1768400000000000012, '草案生成器', 1763000000000000001, 113, 'artifact-draft',
+       'aigov/artifactDraft/index', 'N', 'Y', 'C', '0', '0', 'aig:studio:artifact-draft', 'magic-stick',
+       1761000000000000103, 1761100000000000001, sysdate(),
+       '草案生成器（附件 07 增量 7）：Skill/子 Agent/快捷指令草案 → 预览可提交内容 → 生成到训练草稿'
+  where not exists (select 1 from (select menu_id from sys_menu) t
+                     where t.menu_id = 1768400000000000012);
+
 -- ----------------------------
 -- 二、角色授权（只给 AI 管理员）
 -- ----------------------------
 insert ignore into sys_role_menu (role_id, menu_id)
 select 1763100000000000001, 1768400000000000011;
+
+insert ignore into sys_role_menu (role_id, menu_id)
+select 1763100000000000001, 1768400000000000012;
 
 -- ⚠️ 父菜单必须授权，否则菜单树里看不到这一页
 insert ignore into sys_role_menu (role_id, menu_id)
@@ -48,4 +60,4 @@ select 1763100000000000001, 1763000000000000001;
 select m.menu_id, m.menu_name, m.component, m.perms,
        (select count(*) from sys_role_menu rm where rm.menu_id = m.menu_id) as granted_roles
   from sys_menu m
- where m.menu_id = 1768400000000000011;
+ where m.menu_id in (1768400000000000011, 1768400000000000012);
