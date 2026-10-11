@@ -319,7 +319,54 @@ jobs:
           if available < 5 * 1024**2:
               raise SystemExit('At least 5 GiB available RAM is required for isolated acceptance')
           PY
+      - name: Fetch checksum-pinned public runtime through the LAN when available
+        id: lan-runtime
+        env:
+          RUNTIME_COMMIT: ${{ needs.candidate-image.outputs.runtime_commit || needs.reuse-candidate.outputs.runtime_commit }}
+        run: |
+          python3 - <<'PY'
+          import hashlib,io,json,os,urllib.request,zipfile
+          from pathlib import Path
+          def retrieve():
+              sha='c533244221ca8d1aa293d6f9361357fa3b765eb4'
+              if os.environ['RUNTIME_COMMIT']!=sha: return False
+              size=8882902
+              digest='138c4b4abac85cba7aa31adc2a87b90dd74ecc6a9670673f41e414cb06c5d030'
+              opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+              try:
+                  with opener.open('http://192.168.2.144:18791/runtime-'+sha+'.zip',timeout=10) as source:
+                      if source.status!=200 or source.headers.get('Content-Length')!=str(size):
+                          raise ValueError('Unexpected public runtime archive size')
+                      data=source.read(size+1)
+              except OSError as error:
+                  print('PUBLIC_RUNTIME_LAN_UNAVAILABLE',type(error).__name__,flush=True)
+                  return False
+              if len(data)!=size or hashlib.sha256(data).hexdigest()!=digest:
+                  raise ValueError('Pinned public runtime checksum mismatch')
+              root=Path(os.environ['RUNNER_TEMP'])/('hotter-ability-'+os.environ['GITHUB_RUN_ID']+'-'+os.environ['GITHUB_RUN_ATTEMPT'])/'candidate-module'
+              root.mkdir(parents=True,exist_ok=True)
+              with zipfile.ZipFile(io.BytesIO(data)) as archive:
+                  members=archive.infolist()
+                  if len(members)>5000 or sum(m.file_size for m in members)>128*1024**2:
+                      raise ValueError('Runtime archive extraction bound exceeded')
+                  manifest=json.loads(archive.read('manifest.json'))
+                  if manifest['commit']!=sha or hashlib.sha256(archive.read('runtime-source.zip')).hexdigest()!=manifest['runtimeSha256']:
+                      raise ValueError('Public runtime provenance mismatch')
+                  for member in members:
+                      name=member.filename;target=(root/name).resolve()
+                      allowed=name in {'runtime-source.zip','manifest.json','SHA256SUMS'} or name.startswith('pylibs/')
+                      if not allowed or not target.is_relative_to(root.resolve()) or (member.external_attr>>16)&0o170000==0o120000:
+                          raise ValueError('Unexpected public runtime archive member')
+                      if member.is_dir(): target.mkdir(parents=True,exist_ok=True)
+                      else:
+                          target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(archive.read(member))
+              print('VERIFIED_PUBLIC_RUNTIME_LAN_READY',sha,flush=True)
+              return True
+          ready=retrieve()
+          with open(os.environ['GITHUB_OUTPUT'],'a') as output: output.write('ready='+str(ready).lower()+'\n')
+          PY
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: steps.lan-runtime.outputs.ready != 'true'
         timeout-minutes: 45
         with:
           name: ability-candidate-module-${{ github.sha }}
@@ -370,6 +417,22 @@ jobs:
                       process.kill();process.wait()
                       raise RuntimeError('docker '+args[0]+' killed after '+str(round(time.monotonic()-started))+'s; live progress is logged above') from None
                   if code: raise RuntimeError('Candidate image operation failed: '+args[0]+' exit='+str(code))
+              def verify_loaded_runtime(local, expected, expected_digest, docker):
+                  # containerd's image ID identifies a manifest, whereas classic Docker uses config.
+                  # Compare the actual runtime configuration and ordered rootfs against the verified config.
+                  import re
+                  raw=docker('image','inspect',local,'--format','{"id":{{json .Id}},"config":{{json .Config}},"layers":{{json .RootFS.Layers}},"architecture":{{json .Architecture}},"os":{{json .Os}},"variant":{{json .Variant}}}')
+                  actual=json.loads(raw)
+                  def normalized(config):
+                      return {key:value for key,value in config.items() if value not in (None,False,'',[],{})}
+                  if not re.fullmatch(r'sha256:[0-9a-f]{64}',actual['id']):
+                      raise ValueError('Invalid loaded image descriptor')
+                  if actual['layers']!=expected['rootfs']['diff_ids'] or normalized(actual['config'])!=normalized(expected.get('config',{})):
+                      raise ValueError('Loaded image runtime configuration or ordered layers mismatch')
+                  for field in ['architecture','os','variant']:
+                      if (actual.get(field) or '')!=(expected.get(field) or ''):
+                          raise ValueError('Loaded image platform mismatch')
+                  print('VERIFIED_LOADED_RUNTIME_CONFIG',expected_digest,'imageDescriptor='+actual['id'],flush=True)
               def verified_lan_load(reference, local, docker):
                   # Temporary public-image transfer only; never relay credentials or source archives.
                   expected='ghcr.io/ningchirsty/hotter-ability-candidate@sha256:da7308449a79bbae480098033028f8f16f30f97e101a67c379e26010571ed151'
@@ -401,9 +464,15 @@ jobs:
                           raise ValueError('Pinned LAN archive checksum mismatch; refusing Docker load')
                       if shutil.disk_usage(root).free<size+2*1024**3:
                           raise RuntimeError('Insufficient capacity to load the verified LAN image')
+                      import tarfile
+                      with tarfile.open(archive) as image:
+                          metadata=json.load(image.extractfile('manifest.json'))[0]
+                          raw=image.extractfile(metadata['Config']).read(1024**2)
+                          if 'sha256:'+hashlib.sha256(raw).hexdigest()!=config:
+                              raise ValueError('Pinned LAN image config checksum mismatch')
+                          expected_config=json.loads(raw)
                       docker('load','--input',str(archive),timeout=600)
-                      if docker('image','inspect',local,'--format','{{.Id}}')!=config:
-                          raise ValueError('Loaded LAN image config mismatch')
+                      verify_loaded_runtime(local,expected_config,config,docker)
                       print('VERIFIED_CANDIDATE_LAN_READY',expected,flush=True)
                       return True
               def verified_registry_load(reference, local, docker):
@@ -527,8 +596,7 @@ jobs:
                       if shutil.disk_usage(root).free < archive.stat().st_size + 2*1024**3:
                           raise RuntimeError('Insufficient capacity to load the verified image while retaining reserve')
                       docker('load','--input',str(archive),timeout=600)
-                      if docker('image','inspect',local,'--format','{{.Id}}')!=manifest['config']['digest']:
-                          raise ValueError('Loaded candidate config differs from the verified manifest')
+                      verify_loaded_runtime(local,config,manifest['config']['digest'],docker)
                       print('VERIFIED_CANDIDATE_TRANSPORT_READY',digest,flush=True)
               try:
                   print('GHCR_PROBE_PROXY_ENV_KEYS',[k for k in os.environ if k.lower() in ('http_proxy','https_proxy','no_proxy','all_proxy')],flush=True)
