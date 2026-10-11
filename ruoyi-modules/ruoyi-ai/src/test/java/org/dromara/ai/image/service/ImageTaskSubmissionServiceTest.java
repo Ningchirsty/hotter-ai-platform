@@ -239,6 +239,8 @@ class ImageTaskSubmissionServiceTest {
                  org.mockito.Mockito.mockStatic(org.dromara.common.satoken.utils.LoginHelper.class)) {
             login.when(org.dromara.common.satoken.utils.LoginHelper::getUserId).thenReturn(42L);
             login.when(org.dromara.common.satoken.utils.LoginHelper::getDeptId).thenReturn(100L);
+            // Mockito 对未打桩的 Long 默认返回 0L，会让幂等分支误判「已存在 0 号任务」——显式置空。
+            when(repository.findByIdempotencyKey("000000", 42L, "regression-edit-single-slot")).thenReturn(null);
             service.submit(new ImageTaskSubmissionService.Command(
                 "EDIT", "wf-ability-image-background-replace-flux4b", "换背景回归", "把背景换成浅米色影棚",
                 null, null, null, List.of(9001L), "regression-edit-single-slot", false, null));
