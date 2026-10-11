@@ -337,7 +337,7 @@ import {
   suggestionKey,
   taskStatusMeta
 } from './presentation';
-import { buildProfessionalUrl, resolveProfessionalPath } from './professionalLink';
+import { buildProfessionalUrl, resolveProfessionalPath, resolveScenarioPath } from './professionalLink';
 
 defineOptions({ name: 'AiWorkspace' });
 
@@ -598,6 +598,18 @@ const handleLaunched = async (result: AigLaunchCommitVO) => {
         taskId: result.taskId,
         roleCode: selectedRoleCode.value,
         actionCode: action.actionCode
+      })
+    );
+    return;
+  }
+  // 场景类卡片：落点是场景版本自己的结果页（后端把 route_key 带回，仍走白名单解析）
+  const scenarioPath = resolveScenarioPath(result.scenarioRouteKey);
+  if (scenarioPath) {
+    router.push(
+      buildProfessionalUrl(scenarioPath, {
+        taskId: result.taskId,
+        roleCode: selectedRoleCode.value,
+        actionCode: action?.actionCode
       })
     );
     return;

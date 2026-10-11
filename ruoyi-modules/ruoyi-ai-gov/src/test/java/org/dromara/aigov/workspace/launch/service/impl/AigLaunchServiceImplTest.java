@@ -21,6 +21,8 @@ import org.dromara.aigov.workspace.launch.helper.AigLaunchRequestDigest;
 import org.dromara.aigov.workspace.launch.helper.IAigLaunchTicketStore;
 import org.dromara.aigov.workspace.launch.mapper.AigLaunchRecordMapper;
 import org.dromara.aigov.workspace.domain.AigRoleProfile;
+import org.dromara.aigov.workspace.domain.AigScenario;
+import org.dromara.aigov.workspace.domain.AigScenarioVersion;
 import org.dromara.aigov.workspace.mapper.AigRoleProfileMapper;
 import org.dromara.aigov.workspace.mapper.AigScenarioMapper;
 import org.dromara.aigov.workspace.mapper.AigScenarioVersionMapper;
@@ -79,6 +81,8 @@ class AigLaunchServiceImplTest {
     private IAigTaskService taskService;
     private AigLaunchRecordMapper recordMapper;
     private AigRoleProfileMapper roleProfileMapper;
+    private AigScenarioMapper scenarioMapper;
+    private AigScenarioVersionMapper scenarioVersionMapper;
     private AigLaunchServiceImpl service;
     private InMemoryTicketStore ticketStore;
 
@@ -107,6 +111,8 @@ class AigLaunchServiceImplTest {
         MybatisConfiguration configuration = new MybatisConfiguration();
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(configuration, "");
         TableInfoHelper.initTableInfo(assistant, AigLaunchRecord.class);
+        TableInfoHelper.initTableInfo(assistant, AigScenario.class);
+        TableInfoHelper.initTableInfo(assistant, AigScenarioVersion.class);
     }
 
     @BeforeEach
@@ -115,11 +121,13 @@ class AigLaunchServiceImplTest {
         taskService = mock(IAigTaskService.class);
         recordMapper = mock(AigLaunchRecordMapper.class);
         roleProfileMapper = mock(AigRoleProfileMapper.class);
+        scenarioMapper = mock(AigScenarioMapper.class);
+        scenarioVersionMapper = mock(AigScenarioVersionMapper.class);
         ticketStore = new InMemoryTicketStore();
         // 项目权判定用**真实实现**：它当前是 fail-closed，而"判不了就拒绝"正是要被钉住的行为
         service = new AigLaunchServiceImpl(portalService, ticketStore, recordMapper, taskService,
-            mock(IAigUserQuotaService.class), mock(AigScenarioMapper.class),
-            mock(AigScenarioVersionMapper.class), roleProfileMapper,
+            mock(IAigUserQuotaService.class), scenarioMapper,
+            scenarioVersionMapper, roleProfileMapper,
             new AigLaunchProjectPolicyNotYetEnforceable(), new AigLaunchProperties());
     }
 
@@ -178,6 +186,36 @@ class AigLaunchServiceImplTest {
         assertNull(vo.getTicketId(), "校验没过绝不能发票（拿到票就能 commit）");
         List<String> problems = codes(vo.getProblems());
         assertEquals(List.of(AigLaunchErrorEnum.REQUIRED_INPUT_MISSING.getCode()), problems);
+    }
+
+    @Test
+    @DisplayName("场景卡片：适配器有效时，把「交给谁跑」与场景结果页一起带出来")
+    void scenarioCarriesWorkflowAdapterAndRouteKey() {
+        stubCard("QUICK", "SCENARIO", "scenario://COMMERCE@1.0.0");
+        stubScenario("COMMERCE", "1.0.0", "STABLE", "CREATIVE_EXISTING_FLOW", "CREATIVE_PROJECT");
+        AigLaunchRequestBo bo = taskReadyRequest("key-1");
+
+        AigLaunchPrepareVo vo = service.prepare(bo, ACTOR);
+
+        assertTrue(vo.getPassed(), "场景可用且适配器有效就该通过：" + vo.getProblems());
+        assertEquals("CREATIVE_EXISTING_FLOW", vo.getWorkflowAdapter());
+        assertEquals("CREATIVE_PROJECT", vo.getScenarioRouteKey(),
+            "界面上启动成功后要按这个键跳到场景自己的结果页（仍走 routeKey 白名单）");
+    }
+
+    @Test
+    @DisplayName("场景卡片：适配器缺失或认不出 → 拒绝启动（否则就是「卡片能点、任务起不来」）")
+    void scenarioWithoutUsableAdapterIsRejected() {
+        stubCard("QUICK", "SCENARIO", "scenario://COMMERCE@1.0.0");
+        for (String adapter : new String[]{null, "", "   ", "NOT_AN_ADAPTER"}) {
+            stubScenario("COMMERCE", "1.0.0", "STABLE", adapter, "CREATIVE_PROJECT");
+
+            AigLaunchPrepareVo vo = service.prepare(taskReadyRequest("key-1"), ACTOR);
+
+            assertFalse(vo.getPassed(), "适配器「" + adapter + "」应被拒：" + vo.getProblems());
+            assertEquals(List.of(AigLaunchErrorEnum.SCENE_VERSION_BLOCKED.getCode()), codes(vo.getProblems()));
+            assertNull(vo.getTicketId(), "适配器不可用时不能发票");
+        }
     }
 
     @Test
@@ -414,6 +452,45 @@ class AigLaunchServiceImplTest {
         when(portalService.resolveAction(any(), any(), any())).thenReturn(new AigPortalActionContext(
             7L, 1L, "GRAPHIC_DESIGNER_AI", "1.0.0", "A1", "做详情页", launchMode, targetType, targetRef,
             null, List.of()));
+    }
+
+    /**
+     * 桩掉"这个场景版本此刻长这样"（适配器/结果页是本次要带出来的两件事）。
+     *
+     * @param code          场景编码
+     * @param version       版本号
+     * @param releaseStatus 发布状态
+     * @param adapter       流程适配器（可空/可错，用于构造"不可用"）
+     * @param routeKey      结果页跳转键
+     */
+    private void stubScenario(String code, String version, String releaseStatus, String adapter, String routeKey) {
+        AigScenario scenario = new AigScenario();
+        scenario.setScenarioId(5L);
+        scenario.setScenarioCode(code);
+        when(scenarioMapper.selectOne(any())).thenReturn(scenario);
+
+        AigScenarioVersion row = new AigScenarioVersion();
+        row.setScenarioVersionId(6L);
+        row.setScenarioId(5L);
+        row.setVersion(version);
+        row.setReleaseStatus(releaseStatus);
+        row.setWorkflowAdapter(adapter);
+        row.setRouteKey(routeKey);
+        when(scenarioVersionMapper.selectOne(any())).thenReturn(row);
+    }
+
+    /**
+     * 造一个"任务描述齐全"的请求（场景/能力类卡片都要这些字段）。
+     *
+     * @param key 幂等键
+     * @return 请求
+     */
+    private static AigLaunchRequestBo taskReadyRequest(String key) {
+        AigLaunchRequestBo bo = request(key);
+        bo.setTaskType("TEXT_GENERATION");
+        bo.setDataLevel("INTERNAL");
+        bo.setSnapshotJson("{\"a\":1}");
+        return bo;
     }
 
     /**

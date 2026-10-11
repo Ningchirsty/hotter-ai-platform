@@ -73,6 +73,21 @@ public class AigLaunchPrepareVo implements Serializable {
     private String studioRouteKey;
 
     /**
+     * 场景类卡片的流程适配器（{@code AigScenarioAdapterEnum} 的规范编码；非场景卡片为空）
+     *
+     * <p>它回答"这次交给哪条既有链路跑"。界面/审计据此知道这次该由谁执行；
+     * 适配器缺失或写错时启动会被拒（否则就是"卡片能点、任务起不来"）。</p>
+     */
+    private String workflowAdapter;
+
+    /**
+     * 场景类卡片的结果页跳转键（{@code aig_scenario_version.route_key}；白名单里的键）
+     *
+     * <p>启动成功后界面据此跳到该场景自己的结果页，与 NAVIGATION/STUDIO 卡片走同一套白名单解析。
+     */
+    private String scenarioRouteKey;
+
+    /**
      * 本次是否会创建平台任务（NAVIGATION 不会）
      */
     private Boolean willCreateTask;
