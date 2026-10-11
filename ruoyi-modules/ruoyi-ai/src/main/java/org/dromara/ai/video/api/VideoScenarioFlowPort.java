@@ -26,11 +26,19 @@ import java.util.Map;
  * 素材归属全部由它校验）。这里只负责"平台任务 → 视频提交载荷"的翻译与归属确定。</p>
  *
  * <h3>快照约定（"场景 → 视频"的契约）</h3>
- * <p>平台任务的输入快照是一个 JSON 对象，字段与视频页提交载荷同构：
- * {@code capabilityCode}（**必填**，{@code T2V/I2V/FL2V}）、{@code workflowCode}（**必填**，
- * 契约内的工作流编码）、{@code fields}（对象，只允许 {@code desc/tier/dur/img/first/last}）、
- * {@code taskName}（可空）。读不懂 / 缺必填 / 契约不符 → <b>业务拒绝</b>（如实回原因），
- * 绝不建一条空视频任务。</p>
+ * <p>平台任务的输入快照是一个 JSON 对象，<b>与视频页提交载荷同构</b>，可以是两种形态之一
+ * （由 {@code VideoTaskSubmissionService#submit} 里的能力归一化统一收口，本端口只负责转发）：</p>
+ * <ul>
+ *     <li><b>用途形态（新）</b>：{@code abilityCode}（必填，如 {@code PRODUCT_MOTION}）、
+ *         {@code workflowCode}、{@code inputs}（用途字段对象）、{@code assets}（素材ID对象，
+ *         键为用途声明的素材键）、{@code output}（{@code size/strength/tier/dur} 里契约允许的那些）。
+ *         归一化会按契约拼出提示词并落到标准字段上；<b>不要</b>在这种快照里塞 {@code taskName}——
+ *         归一化会拒绝未知键，任务名由用途名派生。</li>
+ *     <li><b>经典形态</b>：{@code capabilityCode}（{@code T2V/I2V/FL2V/R2V}）、{@code workflowCode}、
+ *         {@code fields}（{@code desc/tier/dur/img/first/last/reference1/reference2} 中该能力允许的那些）、
+ *         {@code taskName}（可空；缺省由本端口给一个可读兜底名）。</li>
+ * </ul>
+ * <p>读不懂 / 缺必填 / 契约不符 → <b>业务拒绝</b>（如实回原因），绝不建一条空视频任务。</p>
  *
  * <h3>幂等</h3>
  * <p>两条一起兜底：①{@code video_task.platform_task_id} 上有唯一索引，先查后插；
@@ -88,7 +96,10 @@ public class VideoScenarioFlowPort implements AigScenarioFlowPort {
         }
         // 幂等键由平台任务ID派生：与页面提交共享"同一幂等键只有一条任务"的约束
         payload.put("idempotencyKey", IDEMPOTENCY_PREFIX + request.getTaskId());
-        if (payload.get("taskName") == null && payload.get("capabilityCode") != null) {
+        // 用途形态（abilityCode）**不加** taskName：归一化会拒绝未知键，且任务名由用途名派生。
+        // 只在经典形态（capabilityCode）下补一个可读兜底名。
+        if (payload.get("abilityCode") == null
+            && payload.get("taskName") == null && payload.get("capabilityCode") != null) {
             payload.put("taskName", payload.get("capabilityCode") + " 场景任务");
         }
 
