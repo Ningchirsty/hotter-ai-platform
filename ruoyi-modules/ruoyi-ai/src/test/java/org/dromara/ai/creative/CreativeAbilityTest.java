@@ -54,14 +54,26 @@ class CreativeAbilityTest {
                 JsonNode graph;
                 if (media.equals("image")) {
                     var version = images.peek(code); assertNotNull(version); assertTrue(images.isTemplateLoaded(code));
-                    assertFalse(version.isTestable()); assertThrows(RuntimeException.class, () -> images.require(code, true));
+                    if (version.isPublished()) {
+                        assertDoesNotThrow(() -> images.require(code, true));
+                        assertPublicationTrace(binding);
+                    } else {
+                        assertFalse(version.isTestable());
+                        assertThrows(RuntimeException.class, () -> images.require(code, true));
+                    }
                     var capability = ImageCapability.parse(version.capabilityCode());
                     graph = new ImageTemplatePreparer(MAPPER).prepare(images.templateOf(code), capability, version,
                         new ImageTemplatePreparer.ImageFields(prompt, "", (String) fields.get("size"), (String) fields.get("strength"),
                             capability.requiresImage() ? List.of("reference.png") : List.of(), 42L));
                 } else {
                     var version = videos.peek(code); assertNotNull(version); assertTrue(videos.isTemplateLoaded(code));
-                    assertFalse(version.isTestable()); assertThrows(RuntimeException.class, () -> videos.require(code, true));
+                    if (version.isPublished()) {
+                        assertDoesNotThrow(() -> videos.require(code, true));
+                        assertPublicationTrace(binding);
+                    } else {
+                        assertFalse(version.isTestable());
+                        assertThrows(RuntimeException.class, () -> videos.require(code, true));
+                    }
                     graph = new H3TemplatePreparer(MAPPER).prepare(videos.templateOf(code), VideoCapability.parse(version.capabilityCode()), version,
                         new H3TemplatePreparer.H3Fields(prompt, fields.containsKey("img") ? "reference.png" : null,
                             fields.containsKey("first") || fields.containsKey("reference1") ? "first.png" : null,
@@ -72,6 +84,15 @@ class CreativeAbilityTest {
             }
         }
         assertEquals(28, bindings);
+    }
+
+    static void assertPublicationTrace(JsonNode binding) {
+        JsonNode evidence = binding.path("publicationEvidence");
+        assertTrue(evidence.path("testedCommit").asText().matches("[0-9a-f]{40}"));
+        assertTrue(evidence.path("pipelineUrl").asText().matches(
+            "https://github\\.com/Ningchirsty/hotter-ai-platform/actions/runs/[1-9][0-9]*"));
+        assertTrue(evidence.path("taskId").asLong() > 0);
+        assertFalse(binding.path("verifiedAt").asText().isBlank());
     }
 
     @Test void rejectsCrossMediaWorkflowNodeOverridesAndMissingBusinessFields() {
