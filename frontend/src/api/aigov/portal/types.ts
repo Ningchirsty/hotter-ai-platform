@@ -221,9 +221,20 @@ export interface AigPortalMyAssetVO {
  * 我的资产分组（按域分栏）。
  *
  * 某域没接入时该组根本不出现；接入但你没有数据时该组出现且 `items` 为空——两者含义不同。
- * 不承诺跨域排序/分页（各域"我的"口径不同，全局分页会漏或重）。
+ * **按域分组这个接口**不承诺跨域排序/分页（各域"我的"口径不同）；真正的跨域全局分页走
+ * {@link AigPortalMyAssetQuery} 那条读聚合索引的路由。
  */
 export interface AigPortalAssetGroupVO {
   domain: string;
   items?: AigPortalMyAssetVO[];
+}
+
+/**
+ * 我的资产·全局分页查询（读聚合索引 `aig_asset_index`）。
+ *
+ * 数据是**派生缓存**：由「刷新索引」按用户重建；还没同步过时是空页，不是"没有资产"。
+ */
+export interface AigPortalMyAssetQuery extends PageQuery {
+  /** 域编码（空=全部域） */
+  domain?: string;
 }

@@ -3,6 +3,8 @@ import {
   START_PENDING_HINT,
   TASK_TYPE_OPTIONS,
   assetDomainLabel,
+  assetPageEmptyHint,
+  assetRefreshMessage,
   buildIdempotencyKey,
   formatBytes,
   groupPortalActions,
@@ -151,5 +153,29 @@ describe('员工 AI 工作台展示层', () => {
     expect(assetDomainLabel('CONTENT')).toBe('内容附件');
     expect(assetDomainLabel('NEW_DOMAIN')).toBe('NEW_DOMAIN');
     expect(assetDomainLabel(undefined)).toBe('资产');
+  });
+
+  it('★ 分页为空时必须说清「是索引没同步，不是你没资产」', () => {
+    const all = assetPageEmptyHint(0);
+    expect(all).toContain('派生索引');
+    expect(all).toContain('刷新索引');
+    expect(all).toContain('任何域');
+
+    // 选定了域：提示要点名那个域的中文名
+    expect(assetPageEmptyHint(0, 'VIDEO')).toContain('视频素材');
+    expect(assetPageEmptyHint(null, 'CONTENT')).toContain('内容附件');
+
+    // 有数据时不要这行提示
+    expect(assetPageEmptyHint(3)).toBe('');
+    expect(assetPageEmptyHint(1, 'IMAGE')).toBe('');
+  });
+
+  it('刷新索引：0 条也说成成功（重建是先删后插，没新资产时 0 条属正常）', () => {
+    expect(assetRefreshMessage(0)).toContain('写入 0 条');
+    expect(assetRefreshMessage(0)).toContain('正常');
+    expect(assetRefreshMessage(12)).toContain('写入 12 条');
+    // 后端没给数时按 0 处理，不显示 "null 条"
+    expect(assetRefreshMessage(null)).toContain('写入 0 条');
+    expect(assetRefreshMessage(undefined)).toContain('写入 0 条');
   });
 });

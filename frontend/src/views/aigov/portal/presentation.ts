@@ -328,3 +328,35 @@ export function assetDomainLabel(domain?: string): string {
   }
   return ASSET_DOMAIN_LABELS[domain] ?? domain;
 }
+
+/**
+ * 「全部资产」分页为空时的提示。
+ *
+ * <p><b>为什么必须区分两种情况</b>：这一页的数据来自**派生索引**（`aig_asset_index`），
+ * 还没「刷新索引」过时它<b>必然为空</b>——那不等于"你没有资产"。把两者都显示成"暂无数据"，
+ * 用户会以为资产丢了，实际只是索引没同步过。</p>
+ *
+ * @param total  当前分页总数
+ * @param domain 域编码（可空=全部域）
+ * @returns 提示文案；非空时返回空串
+ */
+export function assetPageEmptyHint(total?: number | null, domain?: string): string {
+  if (total && total > 0) return '';
+  const scope = domain ? `「${assetDomainLabel(domain)}」域` : '任何域';
+  return `索引里${scope}还没有你的资产。这个列表来自**派生索引**，需要先点「刷新索引」重建；` +
+    '重建后仍为空，才说明这些域里确实没有你的资产。';
+}
+
+/**
+ * 刷新索引后的结果文案。
+ *
+ * <p><b>0 条也要说成成功</b>：重建是"先删该用户该域、再插入"，没有新资产时写入 0 条是正常结果。
+ * 把它显示成失败会让人反复点。</p>
+ *
+ * @param written 本次写入的索引行数
+ * @returns 文案
+ */
+export function assetRefreshMessage(written?: number | null): string {
+  const rows = written === null || written === undefined ? 0 : written;
+  return `索引已重建：写入 ${rows} 条（重建是按当前用户逐域先删后插，没有新资产时写入 0 条也属正常）`;
+}

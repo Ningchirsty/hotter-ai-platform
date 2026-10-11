@@ -9,6 +9,7 @@ import type {
   AigPortalArtifactQuery,
   AigPortalArtifactVO,
   AigPortalAssetGroupVO,
+  AigPortalMyAssetQuery,
   AigPortalMyAssetVO,
   AigPortalPrefVO,
   AigPortalRoleHomeVO,
@@ -174,5 +175,33 @@ export function listRecentAssets(): AxiosPromise<AigPortalMyAssetVO[]> {
   return request({
     url: '/aigov/portal/my-assets/recent',
     method: 'get'
+  });
+}
+
+/**
+ * 我的资产·**全局分页**（读聚合索引 `aig_asset_index`，时间倒序）。
+ *
+ * 数据是**派生缓存**：还没「刷新」过时返回空页——那是"索引没同步"，不是"你没有资产"。
+ * 所以页面必须把这两种情况分开表达，并给出「刷新索引」入口。
+ */
+export function pageMyAssets(
+  query: AigPortalMyAssetQuery
+): AxiosPromise<PageResult<AigPortalMyAssetVO>> {
+  return request({
+    url: '/aigov/portal/my-assets/page',
+    method: 'get',
+    params: query
+  });
+}
+
+/**
+ * 刷新我的资产索引（按当前用户重建：逐域先删后插，同一事务）。
+ *
+ * @returns 本次写入的索引行数（没有新资产时为 0，仍然是成功）
+ */
+export function refreshMyAssets(): AxiosPromise<number> {
+  return request({
+    url: '/aigov/portal/my-assets/refresh',
+    method: 'post'
   });
 }

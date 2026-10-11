@@ -248,7 +248,9 @@
             <h3>我的资产</h3>
             <p>
               跨域只读：图片/视频/内容附件各按<b>各域自己的口径</b>过滤（图片视频看归属用户，内容附件看任务负责人）。
-              只给展示字段，下载请到对应专业台——那里的权限仍然生效；不承诺跨域排序/分页。
+              只给展示字段，下载请到对应专业台——那里的权限仍然生效。
+              下面三块是<b>三种不同口径</b>：按域分组（每域几条、不承诺分页）、最近资产（有界合并、不承诺全量）、
+              全部资产（读派生索引、<b>可翻页</b>）。
             </p>
           </div>
           <div class="toolbar-actions">
@@ -311,6 +313,57 @@
           <el-table-column label="时间" prop="createTime" align="center" width="170" show-overflow-tooltip />
         </el-table>
       </section>
+
+      <!--
+        「全部资产」是**真分页**（读派生索引 `aig_asset_index`），与上面的"按域分组""最近资产"是三种口径，
+        必须在同一张卡里分开表达：分组不承诺分页、最近是有界合并、这里才是可翻页的全量视图。
+        它是**派生缓存**：不点「刷新索引」就一直是空页——空不等于"没有资产"，所以空态文案要说清这一点。
+      -->
+      <section class="asset-group">
+        <h4 class="group-title">
+          全部资产（可翻页；读派生索引）
+          <span class="asset-empty">数据来自索引，需先「刷新索引」重建；它是缓存，不是实时视图</span>
+        </h4>
+        <div class="asset-page-toolbar">
+          <el-select
+            v-model="assetPageQuery.domain"
+            placeholder="全部域"
+            clearable
+            style="width: 180px"
+            @change="handleAssetDomainChange"
+          >
+            <el-option label="图片素材" value="IMAGE" />
+            <el-option label="视频素材" value="VIDEO" />
+            <el-option label="内容附件" value="CONTENT" />
+          </el-select>
+          <el-button icon="Refresh" :loading="refreshingAssets" @click="handleRefreshAssets">
+            刷新索引
+          </el-button>
+        </div>
+        <el-table v-loading="loadingAssetPage" :data="assetPage" border class="data-table" size="small">
+          <el-table-column label="名称" min-width="200" show-overflow-tooltip>
+            <template #default="scope">{{ scope.row.name || '—' }}</template>
+          </el-table-column>
+          <el-table-column label="所属域" align="center" width="120">
+            <template #default="scope">{{ assetDomainLabel(scope.row.domain) }}</template>
+          </el-table-column>
+          <el-table-column label="类型" prop="assetType" align="center" width="110" />
+          <el-table-column label="大小" align="center" width="100">
+            <template #default="scope">{{ formatBytes(scope.row.sizeBytes) }}</template>
+          </el-table-column>
+          <el-table-column label="时间" prop="createTime" align="center" width="170" show-overflow-tooltip />
+        </el-table>
+        <p v-if="!loadingAssetPage && assetPage.length === 0" class="asset-empty">
+          {{ assetPageEmptyHint(assetPageTotal, assetPageQuery.domain) }}
+        </p>
+        <pagination
+          v-show="assetPageTotal > 0"
+          v-model:page="assetPageQuery.pageNum"
+          v-model:limit="assetPageQuery.pageSize"
+          :total="assetPageTotal"
+          @pagination="getAssetPage"
+        />
+      </section>
     </el-card>
 
     <LaunchFormDrawer
@@ -331,6 +384,8 @@ import {
   listMyRoles,
   listMyTasks,
   listRecentAssets,
+  pageMyAssets,
+  refreshMyAssets,
   setDefaultRole,
   suggestIntents,
   toggleFavorite
@@ -341,6 +396,7 @@ import type {
   AigPortalArtifactQuery,
   AigPortalArtifactVO,
   AigPortalAssetGroupVO,
+  AigPortalMyAssetQuery,
   AigPortalMyAssetVO,
   AigPortalRoleHomeVO,
   AigPortalRoleVO,
@@ -354,6 +410,8 @@ import modal from '@/plugins/modal';
 import LaunchFormDrawer from './LaunchFormDrawer.vue';
 import {
   assetDomainLabel,
+  assetPageEmptyHint,
+  assetRefreshMessage,
   formatBytes,
   groupPortalActions,
   isFavorite,
@@ -412,6 +470,17 @@ const assetGroups = ref<AigPortalAssetGroupVO[]>([]);
 // "最近资产"：有界合并视图（不是分页——没有 total、翻不到第二页）
 const recentAssets = ref<AigPortalMyAssetVO[]>([]);
 const { loading: loadingAssets, withLoading: withAssetsLoading } = useLoading(true);
+
+/**
+ * 「全部资产」全局分页（读聚合索引 `aig_asset_index`）。
+ *
+ * 它是**派生缓存**：不点「刷新索引」就一直是空页——空不等于"没有资产"，界面必须分开展示。
+ */
+const assetPage = ref<AigPortalMyAssetVO[]>([]);
+const assetPageTotal = ref(0);
+const refreshingAssets = ref(false);
+const assetPageQuery = ref<AigPortalMyAssetQuery>({ pageNum: 1, pageSize: 10 });
+const { loading: loadingAssetPage, withLoading: withAssetPageLoading } = useLoading(true);
 
 /** 任务状态选项（与后端 AigTaskStatusEnum 一致） */
 const taskStatusOptions = [
@@ -657,6 +726,57 @@ const resetTaskQuery = () => {
   getTasks();
 };
 
+/**
+ * 「全部资产」全局分页。
+ *
+ * 空页的两种含义（索引没同步 / 确实没有）由 `assetPageEmptyHint` 在界面上说清——
+ * 这里只负责取数，不把失败也显示成空。
+ */
+const getAssetPage = async () => {
+  try {
+    await withAssetPageLoading(async () => {
+      const res = await pageMyAssets(assetPageQuery.value);
+      assetPage.value = res.data?.rows || [];
+      assetPageTotal.value = res.data?.total || 0;
+    });
+  } catch (e: any) {
+    assetPage.value = [];
+    assetPageTotal.value = 0;
+    modal.alertError(e?.message || '读取资产索引失败');
+  }
+};
+
+/** 切域：回到第一页再查（留在第 5 页看另一个域会得到一个空页，看起来像"这个域没数据"） */
+const handleAssetDomainChange = () => {
+  assetPageQuery.value.pageNum = 1;
+  getAssetPage();
+};
+
+/**
+ * 刷新索引（按当前用户重建），然后重新读第一页。
+ *
+ * 重建后回到第一页：原页码对应的数据可能已经变了。
+ */
+const handleRefreshAssets = async () => {
+  refreshingAssets.value = true;
+  try {
+    await modal.confirm(
+      '按当前用户重建资产索引？它会逐域重新拉取你的资产（只读各域，不改业务数据），并覆盖旧的索引行。'
+    );
+    const res = await refreshMyAssets();
+    assetPageQuery.value.pageNum = 1;
+    await getAssetPage();
+    modal.msgSuccess(assetRefreshMessage(res.data));
+  } catch (e: any) {
+    // 取消确认也会走到这里；只对真正的失败提示
+    if (e !== 'cancel' && e !== 'close') {
+      modal.alertError(e?.message || '刷新资产索引失败');
+    }
+  } finally {
+    refreshingAssets.value = false;
+  }
+};
+
 const reload = async () => {
   // 先读偏好再读岗位：收藏决定排序、默认岗位决定先打开哪一个
   await getPref();
@@ -664,6 +784,7 @@ const reload = async () => {
   await getTasks();
   await getArtifacts();
   await getAssets();
+  await getAssetPage();
 };
 
 onMounted(() => {
@@ -801,6 +922,13 @@ onMounted(() => {
   font-size: 12px;
   font-weight: normal;
   color: var(--el-text-color-secondary);
+}
+
+.asset-page-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
 }
 
 .group-title {
