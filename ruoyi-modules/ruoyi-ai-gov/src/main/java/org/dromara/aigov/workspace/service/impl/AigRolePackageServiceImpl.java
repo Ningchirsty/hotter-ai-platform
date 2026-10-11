@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.dromara.aigov.agent.domain.AigAgentVersion;
+import org.dromara.aigov.agent.mapper.AigAgentVersionMapper;
 import org.dromara.aigov.workspace.domain.AigRoleAction;
 import org.dromara.aigov.workspace.domain.AigRolePackageDraft;
 import org.dromara.aigov.workspace.domain.AigRoleProfile;
@@ -82,6 +84,8 @@ public class AigRolePackageServiceImpl implements IAigRolePackageService {
     private final AigRoleActionMapper roleActionMapper;
     private final AigScenarioMapper scenarioMapper;
     private final AigScenarioVersionMapper scenarioVersionMapper;
+    /** Agent 版本（卡片 targetType=AGENT_VERSION 的引用校验；增量 21／STUDIO-006） */
+    private final AigAgentVersionMapper agentVersionMapper;
 
     @Override
     public PageResult<AigRoleVersionVo> queryPage(AigRolePackageQueryBo bo, PageQuery pageQuery) {
@@ -400,21 +404,34 @@ public class AigRolePackageServiceImpl implements IAigRolePackageService {
     }
 
     /**
-     * 场景版本存在性查询（校验器只问"存在吗"，由这里回答）。
+     * 引用存在性查询（校验器只问"存在吗"，由这里回答）。
+     *
+     * <p>两个问题各自一处实现：场景版本按 {@code (code, version)} 找，
+     * Agent 版本按ID找。校验器不认识 Mapper，只认识这两个问题。</p>
      *
      * @return 查询实现
      */
     private AigRolePackageLookup lookup() {
-        return (scenarioCode, scenarioVersion) -> {
-            AigScenario scenario = scenarioMapper.selectOne(Wrappers.<AigScenario>lambdaQuery()
-                .eq(AigScenario::getScenarioCode, scenarioCode)
-                .last("limit 1"));
-            if (scenario == null) {
-                return false;
+        return new AigRolePackageLookup() {
+            @Override
+            public boolean scenarioExists(String scenarioCode, String scenarioVersion) {
+                AigScenario scenario = scenarioMapper.selectOne(Wrappers.<AigScenario>lambdaQuery()
+                    .eq(AigScenario::getScenarioCode, scenarioCode)
+                    .last("limit 1"));
+                if (scenario == null) {
+                    return false;
+                }
+                return scenarioVersionMapper.exists(Wrappers.<AigScenarioVersion>lambdaQuery()
+                    .eq(AigScenarioVersion::getScenarioId, scenario.getScenarioId())
+                    .eq(AigScenarioVersion::getVersion, scenarioVersion));
             }
-            return scenarioVersionMapper.exists(Wrappers.<AigScenarioVersion>lambdaQuery()
-                .eq(AigScenarioVersion::getScenarioId, scenario.getScenarioId())
-                .eq(AigScenarioVersion::getVersion, scenarioVersion));
+
+            @Override
+            public boolean agentVersionExists(Long agentVersionId) {
+                return agentVersionId != null
+                    && agentVersionMapper.exists(Wrappers.<AigAgentVersion>lambdaQuery()
+                        .eq(AigAgentVersion::getAgentVersionId, agentVersionId));
+            }
         };
     }
 

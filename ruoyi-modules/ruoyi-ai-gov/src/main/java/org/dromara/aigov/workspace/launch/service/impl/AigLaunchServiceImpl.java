@@ -4,6 +4,11 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.aigov.service.IAigUserQuotaService;
+import org.dromara.aigov.agent.domain.AigAgent;
+import org.dromara.aigov.agent.domain.AigAgentVersion;
+import org.dromara.aigov.agent.enums.AigReleaseStatusEnum;
+import org.dromara.aigov.agent.mapper.AigAgentMapper;
+import org.dromara.aigov.agent.mapper.AigAgentVersionMapper;
 import org.dromara.aigov.task.domain.AigTask;
 import org.dromara.aigov.task.domain.bo.AigTaskCreateBo;
 import org.dromara.aigov.task.service.IAigTaskService;
@@ -93,6 +98,9 @@ public class AigLaunchServiceImpl implements IAigLaunchService {
     private final IAigUserQuotaService quotaService;
     private final AigScenarioMapper scenarioMapper;
     private final AigScenarioVersionMapper scenarioVersionMapper;
+    /** Agent 版本与它所属的 Agent（卡片 targetType=AGENT_VERSION；增量 21／STUDIO-006） */
+    private final AigAgentVersionMapper agentVersionMapper;
+    private final AigAgentMapper agentMapper;
     private final AigRoleProfileMapper roleProfileMapper;
     private final AigLaunchProjectPolicy projectPolicy;
     private final AigLaunchProperties properties;
@@ -249,9 +257,12 @@ public class AigLaunchServiceImpl implements IAigLaunchService {
      */
     private List<String> checkNow(AigLaunchRequestBo bo, AigPortalActionContext context, AigPortalActor actor) {
         boolean scenarioUsable = true;
+        boolean agentVersionUsable = true;
         AigLaunchTargetTypeEnum targetType = AigLaunchTargetTypeEnum.find(context.targetType());
         if (targetType == AigLaunchTargetTypeEnum.SCENARIO) {
             scenarioUsable = scenarioUsable(context.targetRef());
+        } else if (targetType == AigLaunchTargetTypeEnum.AGENT_VERSION) {
+            agentVersionUsable = agentVersionUsable(context.targetRef());
         }
         boolean quotaExhausted = false;
         if (requiresTask(context.launchMode())) {
@@ -267,6 +278,7 @@ public class AigLaunchServiceImpl implements IAigLaunchService {
             context.targetType(), context.targetRef(), context.studioRouteKey(), context.requiredContextKeys(),
             bo.getContext(), bo.getTaskType(), bo.getProjectType(), bo.getDataLevel(), bo.getSnapshotJson(),
             scenarioUsable,
+            agentVersionUsable,
             // 项目权：由判定口回答。当前实现是 **fail-closed**（判不了就拒绝）——
             // "没校验的放行"会让越权请求看起来一切正常，比拒绝糟得多
             bo.getProjectId() != null && !projectPolicy.allowed(bo.getProjectId(), actor),
@@ -340,6 +352,72 @@ public class AigLaunchServiceImpl implements IAigLaunchService {
     }
 
     /**
+     * Agent 卡片此刻能否被启动。
+     *
+     * <p><b>四条同时成立才算可用</b>：版本存在、发布状态是 {@code STABLE}、它所属 Agent 未停用、
+     * 且 {@code provider_capability} 非空。最后一条最容易被忽略：任务路由只认能力编码，
+     * 没有它建出来的任务会卡在"未登记能力编码"上——与其建一个跑不起来的任务，不如在启动前拒绝。</p>
+     *
+     * <p>与场景同一口径：岗位包 <b>发布</b> 时只要求"引用存在"，而员工真正点下去时必须就绪。</p>
+     *
+     * @param targetRef Agent 版本ID（十进制字符串）
+     * @return 可用返回 true
+     */
+    private boolean agentVersionUsable(String targetRef) {
+        AigAgentVersion version = agentVersionByRef(targetRef);
+        if (version == null
+            || !AigReleaseStatusEnum.STABLE.getCode().equalsIgnoreCase(
+                trim(version.getReleaseStatus()))) {
+            return false;
+        }
+        if (StringUtils.isBlank(version.getProviderCapability())) {
+            return false;
+        }
+        AigAgent agent = version.getAgentId() == null ? null : agentMapper.selectById(version.getAgentId());
+        return agent != null && STATUS_NORMAL.equals(trim(agent.getStatus()));
+    }
+
+    /**
+     * 按引用读 Agent 版本行。
+     *
+     * @param targetRef Agent 版本ID（十进制字符串）
+     * @return 版本行；引用非法或查不到返回 null
+     */
+    private AigAgentVersion agentVersionByRef(String targetRef) {
+        Long id = positiveLong(targetRef);
+        return id == null ? null : agentVersionMapper.selectById(id);
+    }
+
+    /**
+     * 解析十进制正整数ID。
+     *
+     * @param value 文本
+     * @return 正数；非法返回 null
+     */
+    private static Long positiveLong(String value) {
+        String text = trim(value);
+        if (StringUtils.isBlank(text) || !text.chars().allMatch(Character::isDigit)) {
+            return null;
+        }
+        try {
+            long parsed = Long.parseLong(text);
+            return parsed > 0 ? parsed : null;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /**
+     * null 安全 trim（空白视为没有值）。
+     *
+     * @param value 值
+     * @return 去空白后的值；null 输入返回 ""
+     */
+    private static String trim(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    /**
      * 把场景分发信息（交给谁跑 / 结果页）贴到 commit 结果上。
      *
      * @param vo      commit 结果
@@ -389,6 +467,14 @@ public class AigLaunchServiceImpl implements IAigLaunchService {
             }
         } else if (AigLaunchTargetTypeEnum.QUICK_CAPABILITY.getCode().equals(context.targetType())) {
             taskBo.setCapabilityCode(context.targetRef());
+        } else if (AigLaunchTargetTypeEnum.AGENT_VERSION.getCode().equals(context.targetType())) {
+            // Agent 卡片：任务必须把"用哪个 Agent 版本"和"按什么能力路由"都带上——
+            // execution_mode 仍由任务域按有无 scenarioCode 决定，这里不越权改。
+            AigAgentVersion version = agentVersionByRef(context.targetRef());
+            if (version != null) {
+                taskBo.setAgentVersionId(version.getAgentVersionId());
+                taskBo.setCapabilityCode(version.getProviderCapability());
+            }
         }
         taskBo.setRemark("由岗位卡片启动：" + bo.getRoleCode() + "/" + context.actionCode());
         return taskBo;

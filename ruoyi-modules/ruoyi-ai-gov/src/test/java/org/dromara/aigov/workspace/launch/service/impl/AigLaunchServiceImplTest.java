@@ -4,6 +4,10 @@ import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.dromara.aigov.service.IAigUserQuotaService;
+import org.dromara.aigov.agent.domain.AigAgent;
+import org.dromara.aigov.agent.domain.AigAgentVersion;
+import org.dromara.aigov.agent.mapper.AigAgentMapper;
+import org.dromara.aigov.agent.mapper.AigAgentVersionMapper;
 import org.dromara.aigov.task.domain.AigTask;
 import org.dromara.aigov.task.domain.bo.AigTaskCreateBo;
 import org.dromara.aigov.task.service.IAigTaskService;
@@ -83,6 +87,8 @@ class AigLaunchServiceImplTest {
     private AigRoleProfileMapper roleProfileMapper;
     private AigScenarioMapper scenarioMapper;
     private AigScenarioVersionMapper scenarioVersionMapper;
+    private AigAgentVersionMapper agentVersionMapper;
+    private AigAgentMapper agentMapper;
     private AigLaunchServiceImpl service;
     private InMemoryTicketStore ticketStore;
 
@@ -113,6 +119,8 @@ class AigLaunchServiceImplTest {
         TableInfoHelper.initTableInfo(assistant, AigLaunchRecord.class);
         TableInfoHelper.initTableInfo(assistant, AigScenario.class);
         TableInfoHelper.initTableInfo(assistant, AigScenarioVersion.class);
+        TableInfoHelper.initTableInfo(assistant, AigAgentVersion.class);
+        TableInfoHelper.initTableInfo(assistant, AigAgent.class);
     }
 
     @BeforeEach
@@ -123,11 +131,13 @@ class AigLaunchServiceImplTest {
         roleProfileMapper = mock(AigRoleProfileMapper.class);
         scenarioMapper = mock(AigScenarioMapper.class);
         scenarioVersionMapper = mock(AigScenarioVersionMapper.class);
+        agentVersionMapper = mock(AigAgentVersionMapper.class);
+        agentMapper = mock(AigAgentMapper.class);
         ticketStore = new InMemoryTicketStore();
         // 项目权判定用**真实实现**：它当前是 fail-closed，而"判不了就拒绝"正是要被钉住的行为
         service = new AigLaunchServiceImpl(portalService, ticketStore, recordMapper, taskService,
             mock(IAigUserQuotaService.class), scenarioMapper,
-            scenarioVersionMapper, roleProfileMapper,
+            scenarioVersionMapper, agentVersionMapper, agentMapper, roleProfileMapper,
             new AigLaunchProjectPolicyNotYetEnforceable(), new AigLaunchProperties());
     }
 
@@ -379,6 +389,66 @@ class AigLaunchServiceImplTest {
         assertEquals("COMMITTED", recordCaptor.getValue().getLaunchStatus());
         assertEquals(9L, recordCaptor.getValue().getUserId());
         assertNull(ticketStore.load("t-1"), "票据是一次性的");
+    }
+
+    @Test
+    @DisplayName("★ AGENT_VERSION 卡片：任务带上 agentVersionId 与版本声明的能力编码（增量 21／STUDIO-006）")
+    void agentVersionCardCarriesAgentVersionAndCapability() {
+        stubCard("QUICK", "AGENT_VERSION", "700001");
+        AigAgentVersion version = new AigAgentVersion();
+        version.setAgentVersionId(700001L);
+        version.setAgentId(700L);
+        version.setReleaseStatus("STABLE");
+        version.setProviderCapability("text_generation");
+        when(agentVersionMapper.selectById(700001L)).thenReturn(version);
+        AigAgent agent = new AigAgent();
+        agent.setAgentId(700L);
+        agent.setStatus("0");
+        when(agentMapper.selectById(700L)).thenReturn(agent);
+
+        AigLaunchRequestBo bo = request("key-agent");
+        bo.setTaskType("TEXT_GENERATION");
+        bo.setDataLevel("INTERNAL");
+        bo.setSnapshotJson("{\"a\":1}");
+        String digest = digestOf(bo, "AGENT_VERSION", "700001", "TEXT_GENERATION", "{\"a\":1}");
+        ticketStore.save(new AigLaunchTicket("t-a", 9L, 102L, "GRAPHIC_DESIGNER_AI", 7L, "A1",
+            "QUICK", "AGENT_VERSION", "700001", "creative", null, digest,
+            LocalDateTime.now().plusMinutes(5)), Duration.ofMinutes(5));
+        bo.setTicket("t-a");
+        when(recordMapper.selectOne(any())).thenReturn(null);
+        when(taskService.create(any())).thenReturn(556L);
+        AigTask task = new AigTask();
+        task.setTaskId(556L);
+        task.setTaskNo("T-556");
+        when(taskService.getTask(556L)).thenReturn(task);
+
+        AigLaunchCommitVo vo = service.commit(bo, ACTOR);
+
+        assertTrue(vo.getPassed(), "问题=" + vo.getProblems());
+        ArgumentCaptor<AigTaskCreateBo> captor = ArgumentCaptor.forClass(AigTaskCreateBo.class);
+        verify(taskService).create(captor.capture());
+        assertEquals(700001L, captor.getValue().getAgentVersionId(), "必须把 Agent 版本钉在任务上");
+        assertEquals("text_generation", captor.getValue().getCapabilityCode(),
+            "路由只认能力编码：要取 Agent 版本声明的 provider_capability");
+    }
+
+    @Test
+    @DisplayName("★ AGENT_VERSION 卡片：版本没到 STABLE / Agent 停用 / 缺能力编码时，prepare 明确拒绝")
+    void agentVersionCardRejectsNotReadyVersion() {
+        stubCard("QUICK", "AGENT_VERSION", "700001");
+        AigAgentVersion version = new AigAgentVersion();
+        version.setAgentVersionId(700001L);
+        version.setAgentId(700L);
+        version.setReleaseStatus("CANDIDATE");
+        version.setProviderCapability("text_generation");
+        when(agentVersionMapper.selectById(700001L)).thenReturn(version);
+
+        AigLaunchPrepareVo vo = service.prepare(taskReadyRequest("key-agent"), ACTOR);
+
+        assertFalse(vo.getPassed());
+        assertTrue(vo.getProblems().stream()
+                .anyMatch(p -> AigLaunchErrorEnum.ACTION_NOT_AVAILABLE.getCode().equals(p.getCode())),
+            "问题=" + vo.getProblems());
     }
 
     @Test

@@ -117,7 +117,17 @@ class AigRolePackageManifestTest {
         AigRolePackageDraft drifted = AigRolePackageManifest.fromJson(manifest,
             List.of(new AigRolePackageDraft.ActionDraft("BANNER_CREATE", "BANNER_GONE", "做横幅",
                 "QUICK", "QUICK_CAPABILITY", "banner_agent", null, null, true)));
-        List<String> problems = AigRolePackageValidator.validate(drifted, (code, version) -> true);
+        List<String> problems = AigRolePackageValidator.validate(drifted, new AigRolePackageLookup() {
+            @Override
+            public boolean scenarioExists(String scenarioCode, String version) {
+                return true;
+            }
+
+            @Override
+            public boolean agentVersionExists(Long agentVersionId) {
+                return true;
+            }
+        });
         assertTrue(problems.stream().anyMatch(p -> p.contains("不在本包分类里")),
             "分类漂移必须被报出来，否则这类错误会以『点了没反应』的形式出现在员工侧：" + problems);
     }

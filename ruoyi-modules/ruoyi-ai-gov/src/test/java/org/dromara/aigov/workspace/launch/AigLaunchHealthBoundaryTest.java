@@ -102,7 +102,7 @@ class AigLaunchHealthBoundaryTest {
      */
     private static AigLaunchChecklist.Input input(boolean runtimeUnhealthy) {
         return new AigLaunchChecklist.Input("QUICK", "QUICK_CAPABILITY", "cap/x", null, List.of(),
-            Map.of(), "TEXT_GENERATION", "creative", "INTERNAL", "{}", true, false, runtimeUnhealthy);
+            Map.of(), "TEXT_GENERATION", "creative", "INTERNAL", "{}", true, true, false, runtimeUnhealthy);
     }
 
     /**

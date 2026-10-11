@@ -23,8 +23,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Tag("prod")
 class AigRolePackageValidatorTest {
 
-    /** 场景版本都存在（除非用例自己指定） */
-    private static final AigRolePackageLookup SCENARIO_OK = (code, version) -> true;
+    /** 引用的场景版本与 Agent 版本都存在（除非用例自己指定） */
+    private static final AigRolePackageLookup SCENARIO_OK = new AigRolePackageLookup() {
+        @Override
+        public boolean scenarioExists(String scenarioCode, String version) {
+            return true;
+        }
+
+        @Override
+        public boolean agentVersionExists(Long agentVersionId) {
+            return true;
+        }
+    };
 
     private static AigRolePackageDraft.ActionDraft action(String code) {
         return new AigRolePackageDraft.ActionDraft(code, "DETAIL_PAGE", "生成产品详情页",
@@ -155,8 +165,48 @@ class AigRolePackageValidatorTest {
         List<String> missing = AigRolePackageValidator.validate(
             withActions(new AigRolePackageDraft.ActionDraft("CREATE_DETAIL_PAGE", "DETAIL_PAGE",
                 "t", "FORM", "SCENARIO", "scenario://NOPE@9.9.9", null, null, true)),
-            (code, version) -> false);
+            new AigRolePackageLookup() {
+                @Override
+                public boolean scenarioExists(String scenarioCode, String version) {
+                    return false;
+                }
+
+                @Override
+                public boolean agentVersionExists(Long agentVersionId) {
+                    return false;
+                }
+            });
         assertTrue(missing.stream().anyMatch(item -> item.contains("场景版本不存在")), "实际=" + missing);
+    }
+
+    @Test
+    @DisplayName("★ AGENT_VERSION：引用必须是版本ID且版本存在（发布时只要求引用存在）")
+    void agentVersionCardValidatesReference() {
+        // 合法：引用存在
+        assertTrue(problemsOf(withActions(new AigRolePackageDraft.ActionDraft("USE_AGENT", "DETAIL_PAGE",
+            "用这个 Agent 干活", "QUICK", "AGENT_VERSION", "700001", null, null, true))).isEmpty());
+
+        // 引用形态不对：不是数字
+        assertRejected(withActions(new AigRolePackageDraft.ActionDraft("USE_AGENT", "DETAIL_PAGE",
+            "t", "QUICK", "AGENT_VERSION", "not-an-id", null, null, true)),
+            "AGENT_VERSION 引用必须是 Agent 版本ID");
+
+        // 引用不存在
+        List<String> missing = AigRolePackageValidator.validate(
+            withActions(new AigRolePackageDraft.ActionDraft("USE_AGENT", "DETAIL_PAGE",
+                "t", "QUICK", "AGENT_VERSION", "700001", null, null, true)),
+            new AigRolePackageLookup() {
+                @Override
+                public boolean scenarioExists(String scenarioCode, String version) {
+                    return true;
+                }
+
+                @Override
+                public boolean agentVersionExists(Long agentVersionId) {
+                    return false;
+                }
+            });
+        assertTrue(missing.stream().anyMatch(item -> item.contains("Agent 版本不存在")), "实际=" + missing);
     }
 
     @Test
