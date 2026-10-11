@@ -116,7 +116,7 @@ jobs:
         with:
           name: ability-candidate-module-${{ github.sha }}
           path: candidate-module/
-          compression-level: 0
+          compression-level: 9
           if-no-files-found: error
           retention-days: 3
 
@@ -139,7 +139,7 @@ jobs:
               raise SystemExit('At least 5 GiB available RAM is required for isolated acceptance')
           PY
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
-        timeout-minutes: 10
+        timeout-minutes: 45
         with:
           name: ability-candidate-module-${{ github.sha }}
           path: ${{ runner.temp }}/hotter-ability-${{ github.run_id }}-${{ github.run_attempt }}/candidate-module
