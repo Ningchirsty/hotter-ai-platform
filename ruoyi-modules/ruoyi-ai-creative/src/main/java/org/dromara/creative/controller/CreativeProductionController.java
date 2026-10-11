@@ -11,8 +11,10 @@ import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.common.redis.annotation.RepeatSubmit;
 import org.dromara.creative.constant.CreativeConstants;
 import org.dromara.creative.domain.bo.CreativeHeroBo;
+import org.dromara.creative.domain.vo.CreativeLedgerReconciliationVo;
 import org.dromara.creative.domain.vo.DpGenerationVo;
 import org.dromara.creative.service.ICreativeGenerationService;
+import org.dromara.creative.service.ICreativeLedgerReconciliationService;
 import org.dromara.creative.service.ICreativeProductionService;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -49,6 +51,7 @@ public class CreativeProductionController {
 
     private final ICreativeGenerationService generationService;
     private final ICreativeProductionService productionService;
+    private final ICreativeLedgerReconciliationService ledgerReconciliationService;
 
     /**
      * 提交一次 HERO 主图出图。
@@ -77,6 +80,22 @@ public class CreativeProductionController {
     public R<List<DpGenerationVo>> listByProject(@NotNull(message = "项目ID不能为空")
                                                  @PathVariable("taskId") Long taskId) {
         return R.ok(generationService.listByProject(taskId));
+    }
+
+    /**
+     * 项目的「父子对账」视图：父＝场景派发出的平台任务，子＝逐候选登记的治理任务。
+     *
+     * <p>纯只读：不刷新内核状态。用于回答"治理台与创作页为什么各说各话"——
+     * 两边状态并排摆出，并对每个候选给出是否一致与漂移原因。</p>
+     *
+     * @param taskId 项目ID
+     * @return 对账视图
+     */
+    @SaCheckPermission(CreativeConstants.PERM_PRODUCTION_LIST)
+    @GetMapping("/projects/{taskId}/ledger-reconciliation")
+    public R<CreativeLedgerReconciliationVo> ledgerReconciliation(
+        @NotNull(message = "项目ID不能为空") @PathVariable("taskId") Long taskId) {
+        return R.ok(ledgerReconciliationService.reconcile(taskId));
     }
 
     /**
