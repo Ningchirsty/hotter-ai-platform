@@ -602,6 +602,8 @@ public class CreativeProjectServiceImpl implements ICreativeProjectService {
         taskBo.setOwnerName(bo.getOwnerName());
         taskBo.setDeadline(bo.getDeadline());
         taskBo.setRemark(bo.getRemark());
+        // 来源平台任务（岗位场景派发时非空）：与内容域的 cp_task 同一列、同一唯一索引
+        taskBo.setPlatformTaskId(bo.getPlatformTaskId());
         Long taskId = contentTaskService.create(taskBo);
         // 新项目进入视觉工厂的起点：资料就绪（等参考图与事实确认）
         moveStage(taskId, DpVisualStageEnum.MATERIAL_READY, "PROJECT_CREATED",

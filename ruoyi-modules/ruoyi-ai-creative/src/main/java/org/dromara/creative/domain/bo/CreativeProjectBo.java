@@ -75,4 +75,13 @@ public class CreativeProjectBo implements Serializable {
     @Size(max = 500, message = "备注长度不能超过 500", groups = {AddGroup.class, EditGroup.class})
     private String remark;
 
+    /**
+     * 来源平台任务ID（岗位场景派发时写入；页面新建的项目为 null）。
+     *
+     * <p>创作项目本体是 {@code cp_task}，所以这一列就是内容域那条
+     * {@code cp_task.platform_task_id}：既是"这条项目来自哪个平台任务"的追溯，
+     * 也靠它的唯一索引保证"同一平台任务只建一条项目"。</p>
+     */
+    private Long platformTaskId;
+
 }

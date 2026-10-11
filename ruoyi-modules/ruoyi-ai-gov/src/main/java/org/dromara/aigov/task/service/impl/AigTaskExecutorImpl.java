@@ -256,6 +256,23 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
         AigTaskExecuteVo vo = new AigTaskExecuteVo();
         vo.setTaskId(bo.getTaskId());
         vo.setSuccess(true);
+
+        if (result.isHandoffComplete()) {
+            // 域**自己声明**"受理即完成交接"（例：创作域建出创意项目即交给设计部）。
+            // 顺序不能反：先记派发事实（乐观锁用 running 的版本），再 transition（用记完事实后的新版本）；
+            // 反过来会让这次 transition 撞乐观锁，任务反被记成一次假失败。
+            AigTask done = taskService.transition(bo.getTaskId(),
+                afterFacts == null ? running.getVersion() : afterFacts.getVersion(),
+                AigTaskStatusEnum.SUCCEEDED,
+                "域受理即完成交接（" + adapter + "，externalRef=" + result.getExternalRef() + "）",
+                dispatchSnapshot(adapter, result.getExternalRef(), "HANDOFF_COMPLETE"));
+            vo.setStatus(done == null ? null : done.getStatus());
+            vo.setReason("已派发且域报告交接完成（" + adapter + "，externalRef=" + result.getExternalRef() + "）");
+            log.info("场景任务已派发且交接完成, taskId={}, adapter={}, externalRef={}",
+                bo.getTaskId(), adapter, result.getExternalRef());
+            return vo;
+        }
+
         vo.setStatus(afterFacts == null ? running.getStatus() : afterFacts.getStatus());
         vo.setReason("已派发，等待域回执（" + adapter + "，externalRef=" + result.getExternalRef() + "）");
         log.info("场景任务已派发（等待回执）, taskId={}, adapter={}, externalRef={}",
