@@ -301,13 +301,22 @@ jobs:
 
           def wait_ready(callback, budget):
               end = time.monotonic() + budget
+              started = time.monotonic()
+              last = 'no error observed yet'
+              reported = -1
               while time.monotonic() < end:
                   try:
                       if callback():
+                          if reported >= 0: print('READY_WAIT_OK_AFTER_SECONDS',round(time.monotonic()-started),flush=True)
                           return
-                  except Exception:
-                      pass
+                  except Exception as error:
+                      last = type(error).__name__ + ': ' + str(error)[:140]
+                  elapsed = round(time.monotonic() - started)
+                  if elapsed - reported >= 30:
+                      reported = elapsed
+                      print('READY_WAIT_SECONDS',elapsed,'last=',last,flush=True)
                   time.sleep(3)
+              print('READY_WAIT_TIMEOUT_LAST_ERROR',last,flush=True)
               raise TimeoutError('Isolated service readiness timed out')
 
           try:
@@ -334,6 +343,7 @@ jobs:
                   # 只打印状态，不打印容器日志（日志可能含凭据）。
                   print('MYSQL_STATE',docker('inspect',NAMES['mysql'],'--format','{{.State.Status}} exit={{.State.ExitCode}} restarts={{.RestartCount}}'),flush=True)
                   print('CANDIDATE_CONTAINERS',docker('ps','-a','--filter','name='+PREFIX,'--format','{{.Names}} {{.Status}}'),flush=True)
+                  print('DISK_FREE_ON_FAILURE',shutil.disk_usage('/').free,flush=True)
                   raise
               for file in ['ry_vue.sql', 'ry_image_task.sql', 'ry_image_workflow.sql', 'ry_video_task.sql',
                            'ry_video_workflow.sql', 'ry_video_task_migration.sql', 'ry_video_task_platform_ref.sql']:
@@ -369,7 +379,18 @@ jobs:
               FFPROBE, FFMPEG = [str(binaries / tool) for tool in ['ffprobe','ffmpeg']]
               port = docker('port', NAMES['backend'], '8080/tcp').split(':')[-1]
               BASE = 'http://127.0.0.1:' + port
-              wait_ready(lambda: api('/auth/code') is not None, 600)
+              try:
+                  wait_ready(lambda: api('/auth/code') is not None, 600)
+              except TimeoutError:
+                  # 隔离栈的密码与令牌全部已 add-mask，启动日志是定位后端未就绪的唯一证据。
+                  print('BACKEND_STATE',docker('inspect',NAMES['backend'],'--format','{{.State.Status}} exit={{.State.ExitCode}} restarts={{.RestartCount}} oom={{.State.OOMKilled}}'),flush=True)
+                  print('CANDIDATE_CONTAINERS',docker('ps','-a','--filter','name='+PREFIX,'--format','{{.Names}} {{.Status}}'),flush=True)
+                  print('DISK_FREE_ON_FAILURE',shutil.disk_usage('/').free,flush=True)
+                  boot = subprocess.run(['docker','logs','--tail','60',NAMES['backend']],capture_output=True,text=True)
+                  print('BACKEND_BOOT_LOG_BEGIN',flush=True)
+                  print((boot.stdout + boot.stderr)[-4000:],flush=True)
+                  print('BACKEND_BOOT_LOG_END',flush=True)
+                  raise
               login = api('/auth/login', {'clientId': 'e5cd7e4891bf95d1d19206ce24a7b32e', 'grantType': 'password', 'username': 'admin', 'password': LOGIN_PASSWORD})
               token = login['access_token']
               print('::add-mask::' + token, flush=True)
