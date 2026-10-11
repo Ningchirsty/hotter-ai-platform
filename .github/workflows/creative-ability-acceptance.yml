@@ -1,0 +1,346 @@
+name: Creative Ability Platform Acceptance
+
+on:
+  push:
+    branches: [codex/creative-abilities-production]
+    paths: [.github/workflows/creative-ability-acceptance.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shenzhen-production
+  cancel-in-progress: false
+
+jobs:
+  candidate-image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Verify backend before building the candidate
+        run: |
+          bash mvnw --batch-mode --no-transfer-progress -Dmaven.test.skip=false '-Dtest.groups=!exclude' verify
+          python3 script/ci/check-test-results.py
+          python3 script/ci/check-node-contract-tests.py
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: build-cache
+          key: ffmpeg-static-abda8d77ce830914-41888096
+      - name: Build exact commit image and export it
+        run: |
+          set -euo pipefail
+          bash script/ci/fetch-ffmpeg.sh build-cache
+          docker build --pull --label "org.opencontainers.image.revision=${GITHUB_SHA}" --tag "hotter-ability-candidate:${GITHUB_SHA}" -f Dockerfile .
+          mkdir -p candidate-image
+          docker save "hotter-ability-candidate:${GITHUB_SHA}" | gzip -1 > candidate-image/backend-image.tar.gz
+          cd candidate-image
+          sha256sum backend-image.tar.gz > SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ability-candidate-${{ github.sha }}
+          path: candidate-image/
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 3
+
+  platform-acceptance:
+    needs: candidate-image
+    runs-on: [shenzhen, deploy]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Check capacity before downloading the candidate
+        run: |
+          python3 - <<'PY'
+          import shutil
+          if shutil.disk_usage('/').free < 6 * 1024**3:
+              raise SystemExit('At least 6 GiB free is required for isolated acceptance')
+          available = next(int(line.split()[1]) for line in open('/proc/meminfo') if line.startswith('MemAvailable:'))
+          if available < 5 * 1024**2:
+              raise SystemExit('At least 5 GiB available RAM is required for isolated acceptance')
+          PY
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ability-candidate-${{ github.sha }}
+          path: candidate-image
+      - name: Load verified image and install isolated test dependencies
+        run: |
+          set -euo pipefail
+          cd candidate-image
+          sha256sum -c SHA256SUMS
+          gzip -dc backend-image.tar.gz | docker load
+          python3 -c "from pathlib import Path; Path('backend-image.tar.gz').unlink()"
+          cd ..
+          python3 -m venv candidate-venv
+          candidate-venv/bin/pip install --disable-pip-version-check 'requests==2.32.5' 'Pillow==11.3.0' 'bcrypt==4.3.0'
+      - name: Run every image and video purpose through the platform
+        run: |
+          candidate-venv/bin/python - <<'PY'
+          """Isolated platform acceptance; never mounts or reads production data/configuration."""
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import secrets
+          import shutil
+          import subprocess
+          import time
+
+          import bcrypt
+          from PIL import Image, ImageDraw
+          import requests
+
+          ROOT = Path.cwd()
+          OUT = ROOT / 'candidate-results'
+          OUT.mkdir(exist_ok=True)
+          RUN = os.environ['GITHUB_RUN_ID'] + '-' + os.environ['GITHUB_RUN_ATTEMPT']
+          LABEL = 'hotter.creative.acceptance=' + RUN
+          PREFIX = 'hotter-ability-test-' + RUN
+          IMAGE = 'hotter-ability-candidate:' + os.environ['GITHUB_SHA']
+          NAMES = {role: PREFIX + '-' + role for role in ['mysql', 'redis', 'backend']}
+          network_created = False
+          containers_created = []
+          report = dict(commit=os.environ['GITHUB_SHA'], scope='isolated-platform', productionModified=False, qualityReview='pending', workflows=[])
+          session = requests.Session()
+          session.trust_env = False
+
+          def docker(*args, **kwargs):
+              result = subprocess.run(['docker', *args], capture_output=True, timeout=kwargs.pop('timeout', 120), **kwargs)
+              if result.returncode:
+                  # Never expose command/environment values or container logs containing credentials.
+                  raise RuntimeError('Docker operation failed: ' + args[0])
+              return result.stdout.decode().strip()
+
+          def save_report():
+              (OUT / 'platform-acceptance.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n')
+
+          def api(path, payload=None, files=None, raw=False, extra_headers=None):
+              response = session.request('POST' if payload is not None or files else 'GET', BASE + path,
+                                         json=payload, files=files, headers=extra_headers, timeout=45)
+              if raw:
+                  response.raise_for_status()
+                  return response.content
+              data = response.json()
+              if response.status_code != 200 or data.get('code') != 200:
+                  raise RuntimeError('Platform request failed: ' + path + ' code=' + str(data.get('code')) + ' message=' + str(data.get('msg', ''))[:150])
+              return data.get('data')
+
+          def mysql(sql):
+              return docker('exec', '-i', '-e', 'MYSQL_PWD=' + DB_PASSWORD, NAMES['mysql'],
+                            'mysql', '-uroot', '--default-character-set=utf8mb4', 'candidate', input=sql)
+
+          def start(role, image, *args):
+              name = NAMES[role]
+              # Newly created named containers only; no production mounts, host networking, or privileged mode.
+              docker('run', '-d', '--name', name, '--label', LABEL, '--network', PREFIX, '--network-alias', role,
+                     *args, image, timeout=180)
+              containers_created.append(name)
+
+          def wait_ready(callback, budget):
+              end = time.monotonic() + budget
+              while time.monotonic() < end:
+                  try:
+                      if callback():
+                          return
+                  except Exception:
+                      pass
+                  time.sleep(3)
+              raise TimeoutError('Isolated service readiness timed out')
+
+          try:
+              if shutil.disk_usage('/').free < 4 * 1024**3:
+                  raise RuntimeError('At least 4 GiB free required after loading the candidate image')
+              revision = docker('image', 'inspect', IMAGE, '--format', '{{index .Config.Labels "org.opencontainers.image.revision"}}')
+              if revision != report['commit']:
+                  raise RuntimeError('Candidate image revision does not match the tested branch commit')
+              queue = session.get('http://192.168.2.223:8188/queue', timeout=20).json()
+              if queue['queue_running'] or queue['queue_pending']:
+                  raise RuntimeError('ComfyUI must be idle before isolated acceptance')
+              docker('network', 'create', '--label', LABEL, PREFIX)
+              network_created = True
+              DB_PASSWORD, REDIS_PASSWORD, LOGIN_PASSWORD = [secrets.token_urlsafe(18) for _ in range(3)]
+              for value in (DB_PASSWORD, REDIS_PASSWORD, LOGIN_PASSWORD):
+                  print('::add-mask::' + value, flush=True)
+              start('mysql', 'mysql:8.0.36', '--memory', '1g', '--cpus', '1', '-e', 'MYSQL_ROOT_PASSWORD=' + DB_PASSWORD, '-e', 'MYSQL_DATABASE=candidate')
+              docker('run', '-d', '--name', NAMES['redis'], '--label', LABEL, '--network', PREFIX,
+                     '--network-alias', 'redis', '--memory', '128m', 'redis:7.4-alpine', 'redis-server', '--requirepass', REDIS_PASSWORD)
+              containers_created.append(NAMES['redis'])
+              wait_ready(lambda: mysql(b'SELECT 1;') == '1\n1', 180)
+              for file in ['ry_vue.sql', 'ry_image_task.sql', 'ry_image_workflow.sql', 'ry_video_task.sql',
+                           'ry_video_workflow.sql', 'ry_video_task_migration.sql', 'ry_video_task_platform_ref.sql']:
+                  mysql((ROOT / 'script/sql' / file).read_bytes())
+              password_hash = bcrypt.hashpw(LOGIN_PASSWORD.encode(), bcrypt.gensalt(prefix=b'2a')).decode()
+              mysql(("UPDATE sys_user SET password='" + password_hash + "',nick_name='Isolated acceptance',email='',phone_number='' WHERE user_name='admin';").encode())
+              codes = {}
+              for media in ['image', 'video']:
+                  definitions = json.loads((ROOT / f'script/{media}/workflows/abilities.json').read_text())
+                  codes[media] = ','.join(w['workflowCode'] for a in definitions for w in a['workflows'])
+              properties = {
+                  'spring.profiles.active': 'dev', 'spring.datasource.dynamic.datasource.master.url': 'jdbc:mysql://mysql:3306/candidate?useUnicode=true&characterEncoding=utf8&allowPublicKeyRetrieval=true&serverTimezone=GMT%2B8',
+                  'spring.datasource.dynamic.datasource.master.username': 'root', 'spring.datasource.dynamic.datasource.master.password': DB_PASSWORD,
+                  'spring.data.redis.host': 'redis', 'spring.data.redis.password': REDIS_PASSWORD,
+                  'captcha.enable': 'false', 'api-decrypt.enabled': 'false', 'warm-flow.enabled': 'false',
+                  'aigov.scheduling.enabled': 'false', 'aigov.model.health-probe.enabled': 'false',
+                  'aigov.task.scheduler.enabled': 'false', 'aigov.approval.expire-scan-enabled': 'false',
+                  'snail-job.enabled': 'false', 'snail-ai.enabled': 'false', 'spring.boot.admin.client.enabled': 'false',
+                  'spring.ai.mcp.server.enabled': 'false', 'spring.ai.mcp.client.enabled': 'false',
+              }
+              for media in ['image', 'video']:
+                  properties.update({media + '.enabled': 'true', media + '.comfy-base-url': 'http://192.168.2.223:8188',
+                                     media + '.storage-root': '/candidate/' + media, media + '.require-published': 'false',
+                                     media + '.testing-workflows': codes[media], media + '.poll-budget-seconds': '1800'})
+              properties['video.comfy-free-before-submit'] = 'true'
+              java_options = '-Xms256m -Xmx1536m ' + ' '.join('-D' + k + '=' + v for k, v in properties.items())
+              start('backend', IMAGE, '-p', '127.0.0.1::8080', '-e', 'SERVER_PORT=8080', '-e', 'JAVA_OPTS=' + java_options,
+                    '--memory', '3g', '--cpus', '2')
+              binaries = ROOT / 'candidate-tools'
+              binaries.mkdir(exist_ok=True)
+              for tool in ['ffprobe','ffmpeg']:
+                  docker('cp', NAMES['backend'] + ':/usr/local/bin/' + tool, str(binaries / tool))
+              FFPROBE, FFMPEG = [str(binaries / tool) for tool in ['ffprobe','ffmpeg']]
+              port = docker('port', NAMES['backend'], '8080/tcp').split(':')[-1]
+              BASE = 'http://127.0.0.1:' + port
+              wait_ready(lambda: api('/auth/code') is not None, 240)
+              login = api('/auth/login', {'clientId': 'e5cd7e4891bf95d1d19206ce24a7b32e', 'grantType': 'password', 'username': 'admin', 'password': LOGIN_PASSWORD})
+              token = login['access_token']
+              print('::add-mask::' + token, flush=True)
+              session.headers.update({'Authorization': 'Bearer ' + token, 'clientid': 'e5cd7e4891bf95d1d19206ce24a7b32e'})
+              # Distinct deterministic, non-user fixtures exercise first/last and double-reference asset wiring.
+              fixtures = []
+              for number, color, center in [(1, '#218a8a', (360, 360)), (2, '#e6a438', (480, 290))]:
+                  image = Image.new('RGB', (768, 768), '#eee9dc')
+                  draw = ImageDraw.Draw(image)
+                  draw.rectangle((0, 500, 768, 768), fill='#b49474')
+                  x, y = center
+                  draw.ellipse((x - 120, y - 50, x + 120, y + 160), fill=color)
+                  draw.rectangle((x - 45, y - 68, x + 45, y - 45), fill=color)
+                  draw.polygon([(x+95,y+30),(x+180,y-15),(x+150,y+60),(x+105,y+90)],fill=color)
+                  draw.arc((x-190,y-10,x-70,y+115),60,290,fill=color,width=24)
+                  file = OUT / f'reference-{number}.png'
+                  image.save(file)
+                  fixtures.append(file)
+              uploaded = {}
+              for media in ['image', 'video']:
+                  # Isolation negative control: the opposite module must reject this purpose before any Comfy submission.
+                  invalid = {'abilityCode': 'SOUND_STORY' if media == 'image' else 'POSTER', 'workflowCode': 'wf-ability-invalid', 'inputs': {}, 'assets': {}, 'output': {}}
+                  rejected = session.post(BASE + '/' + media + '/tasks', json=invalid, timeout=20).json()
+                  if rejected.get('code') == 200:
+                      raise RuntimeError('Cross-media purpose unexpectedly accepted')
+                  uploaded[media] = []
+                  for file in fixtures:
+                      with file.open('rb') as stream:
+                          uploaded[media].append(api('/' + media + '/assets', files={'file': (file.name, stream, 'image/png')})['assetId'])
+                  definitions = json.loads((ROOT / f'script/{media}/workflows/abilities.json').read_text())
+                  for ability in definitions:
+                      for binding in ability['workflows']:
+                          code = binding['workflowCode']
+                          row = dict(media=media, abilityCode=ability['code'], workflowCode=code, status='RUNNING')
+                          report['workflows'].append(row)
+                          save_report()
+                          inputs = {f['key']: f.get('options', [f.get('placeholder') or '自然清晰'])[0] for f in ability['inputs']}
+                          assets = {f['key']: uploaded[media][min(index, 1)] for index, f in enumerate(ability['assets'])}
+                          output = {}
+                          for field, list_key in [('size','sizes'), ('strength','strengths')]:
+                              if field in binding['fields']:
+                                  first = binding[list_key][0]
+                                  output[field] = first['label'] if isinstance(first,dict) else first
+                          if media == 'video':
+                              output['tier'] = binding['supportedTiers'][0]
+                              output['dur'] = binding['supportedDurationsByTier'][output['tier']][0]
+                          request = dict(abilityCode=ability['code'], workflowCode=code, inputs=inputs, assets=assets, output=output, idempotencyKey=RUN+'-'+code)
+                          result = api('/' + media + '/tasks', request)
+                          task_id = result['taskId']
+                          row['taskId'] = task_id
+                          repeated = api('/' + media + '/tasks', request)
+                          if repeated['taskId'] != task_id:
+                              raise RuntimeError('Idempotent task submission created another task')
+                          api('/' + media + f'/tasks/{task_id}/execute', {})
+                          deadline = time.monotonic() + 1850
+                          while time.monotonic() < deadline:
+                              task = api('/' + media + f'/tasks/{task_id}')
+                              if task['status'] in ['SUCCEEDED','FAILED','TIMEOUT','CANCELED']:
+                                  break
+                              time.sleep(3)
+                          row['status'] = task['status']
+                          row['comfyPromptId'] = task.get('comfyPromptId')
+                          row['eventTypes'] = [e.get('eventType') for e in task.get('events',[])]
+                          if row['status'] != 'SUCCEEDED' or not row['comfyPromptId']:
+                              raise RuntimeError('Task did not succeed: ' + code + ' ' + row['status'])
+                          asset_id = task['outputAssetId']
+                          body = api('/' + media + f'/assets/{asset_id}/content', raw=True)
+                          file = OUT / (code + ('.png' if media == 'image' else '.mp4'))
+                          file.write_bytes(body)
+                          row.update(outputAssetId=asset_id, bytes=len(body), sha256=hashlib.sha256(body).hexdigest(), output=file.name, outputOptions=output)
+                          if media == 'image':
+                              with Image.open(file) as image:
+                                  row.update(width=image.width,height=image.height,mode=image.mode)
+                                  if 'size' in output:
+                                      selected = next(s for s in binding['sizes'] if s['label'] == output['size'])
+                                      if (image.width,image.height) != (selected['width'],selected['height']):
+                                          raise RuntimeError('Stored output dimensions do not match the selected image size')
+                                  if ability['code'] == 'CUTOUT' and ('A' not in image.getbands() or image.getchannel('A').histogram()[0] < image.width*image.height*0.005):
+                                      raise RuntimeError('Cutout has no useful transparent background')
+                                  if ability['code'] == 'WHITE_BACKGROUND' and image.mode not in ['RGB','RGBA']:
+                                      raise RuntimeError('White background output is not RGB')
+                          else:
+                              probe = json.loads(subprocess.check_output([FFPROBE,'-v','error','-show_streams','-show_format','-of','json',str(file)]))
+                              streams = probe['streams']
+                              video = next(s for s in streams if s['codec_type']=='video')
+                              row.update(width=video['width'],height=video['height'],durationSeconds=float(probe['format']['duration']),hasAudio=any(s['codec_type']=='audio' for s in streams))
+                              if binding.get('hasAudio') and not row['hasAudio']:
+                                  raise RuntimeError('Expected audio stream is missing')
+                              for tag, seconds in [('first',0),('middle',row['durationSeconds']/2),('last',max(0,row['durationSeconds']-0.1))]:
+                                  subprocess.run([FFMPEG,'-v','error','-y','-ss',str(seconds),'-i',str(file),'-frames:v','1',str(OUT/(code+'-'+tag+'.png'))],check=True)
+                              ranged = session.get(BASE + '/video' + f'/assets/{asset_id}/content', headers={'Range':'bytes=0-1023'},timeout=20)
+                              if ranged.status_code != 206 or ranged.content != body[:1024]:
+                                  raise RuntimeError('Video range read did not match its stored media')
+                          row['status'] = 'SUCCEEDED'
+                          save_report()
+                          print('PLATFORM_ACCEPTANCE_OK', code, flush=True)
+              report['technicalAcceptance'] = 'PASSED'
+          except Exception as error:
+              report['technicalAcceptance'] = 'FAILED'
+              report['errorType'] = type(error).__name__
+              report['error'] = str(error)[:250]
+              save_report()
+              raise
+          finally:
+              save_report()
+              # Remove only containers created by this invocation after verifying their exact ownership label.
+              for name in reversed(list(NAMES.values())):
+                  try:
+                      if docker('inspect',name,'--format','{{index .Config.Labels "hotter.creative.acceptance"}}') == RUN:
+                          docker('rm','-f','-v',name)
+                  except Exception:
+                      print('CANDIDATE_CLEANUP_REQUIRES_ATTENTION',name,flush=True)
+              if network_created:
+                  try:
+                      if docker('network','inspect',PREFIX,'--format','{{index .Labels "hotter.creative.acceptance"}}') == RUN:
+                          docker('network','rm',PREFIX)
+                  except Exception:
+                      print('CANDIDATE_NETWORK_CLEANUP_REQUIRES_ATTENTION',PREFIX,flush=True)
+              try:
+                  if docker('image','inspect',IMAGE,'--format','{{index .Config.Labels "org.opencontainers.image.revision"}}') == report['commit']:
+                      docker('image','rm',IMAGE)
+              except Exception:
+                  print('CANDIDATE_IMAGE_CLEANUP_REQUIRES_ATTENTION',flush=True)
+          PY
+      - name: Upload task evidence and generated media
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: creative-platform-acceptance-${{ github.sha }}
+          path: candidate-results/
+          if-no-files-found: warn
+          retention-days: 7

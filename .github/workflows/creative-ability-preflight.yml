@@ -43,6 +43,12 @@ jobs:
               report['releaseEntrypoint'].update(ownerUid=metadata.st_uid, mode=oct(stat.S_IMODE(metadata.st_mode)))
           except OSError as error:
               report['releaseEntrypoint']['errorType'] = type(error).__name__
+          try:
+              validation = subprocess.run(['sudo', '-n', entrypoint], capture_output=True, text=True, timeout=15)
+              report['releaseEntrypoint']['sudoValidationAvailable'] = (
+                  validation.returncode == 1 and 'operation must be backend or frontend' in validation.stderr)
+          except (OSError, subprocess.TimeoutExpired):
+              report['releaseEntrypoint']['sudoValidationAvailable'] = False
           report['productionContainers'] = command(['docker', 'ps', '--format', '{{.Names}} {{.Image}} {{.Status}}'])[1].splitlines()
           for key, url in [('comfy', 'http://192.168.2.223:8188/queue'),
                            ('localProductionBackend', 'http://127.0.0.1:18082/auth/code'),
@@ -65,7 +71,7 @@ jobs:
           report['readyForIsolatedCandidate'] = all([
               docker_ok, report['rootFreeMB'] >= 3072, report['comfy']['ok']])
           report['readyForProductionRelease'] = all([
-              report['releaseEntrypoint']['exists'], report['releaseEntrypoint']['executable'],
+              report['releaseEntrypoint']['exists'], report['releaseEntrypoint']['sudoValidationAvailable'],
               report['localProductionBackend']['ok'], report['rootFreeMB'] >= 3072])
           print(json.dumps(report, indent=2))
           # This is a prerequisite check, not task acceptance or deployment.
