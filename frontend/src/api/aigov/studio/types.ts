@@ -113,6 +113,48 @@ export interface AigStudioDraftContentForm {
   [key: string]: unknown;
 }
 
+/** 变更提案里的一处改动预览（服务端由 previewJson 解析而来，页面不自己解析 JSON） */
+export interface AigStudioProposalDiffItem {
+  /** JSON Pointer 路径，如 /objective、/promptSections/role */
+  path: string;
+  /** 改前值（展示文本；空为 null） */
+  before?: string | null;
+  /** 改后值（展示文本；空为 null） */
+  after?: string | null;
+}
+
+/**
+ * 变更提案（培训助手只提案，人工采纳才产生新修订）。
+ *
+ * `baseRevision` 是"提案基于哪一版"——采纳时必须仍是草稿的当前修订，否则已失效。
+ */
+export interface AigStudioChangeProposalVO {
+  proposalId: string | number;
+  draftId: string | number;
+  baseRevision?: number;
+  /** 来源（COPILOT=培训助手 / MANUAL=人工草拟） */
+  source?: string;
+  /** 改动预览（结构化；服务端解析） */
+  preview?: AigStudioProposalDiffItem[];
+  contentHashBefore?: string;
+  contentHashAfter?: string;
+  /** PENDING=待处理 / APPLIED=已采纳 / REJECTED=已拒绝 */
+  status?: string;
+  decidedBy?: string | number | null;
+  decidedAt?: string | null;
+  decidedReason?: string | null;
+  summary?: string | null;
+  createTime?: string;
+}
+
+/** 处理提案（采纳/拒绝共用） */
+export interface AigStudioProposalDecideForm {
+  /** 采纳必填：期望的草稿修订号（写草稿必须带 CAS，否则会覆盖别人的修改） */
+  expectedRevision?: number;
+  /** 拒绝原因（可空） */
+  reason?: string;
+}
+
 /** 测试调用入参（数据等级必填：它决定能不能外发，测错等级等于没测） */
 export interface AigStudioTestRunForm {
   dataLevel: string;

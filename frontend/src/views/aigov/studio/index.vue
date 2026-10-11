@@ -252,6 +252,14 @@
         </el-col>
       </el-row>
 
+      <!-- 变更提案：培训助手只提案，人在本面板审阅/采纳/拒绝（采纳才产生新修订） -->
+      <ProposalPanel
+        :draft-id="detail.draftId"
+        :current-revision="expectedRevision"
+        :archived="detail.status === 'ARCHIVED'"
+        @applied="handleProposalApplied"
+      />
+
       <template #footer>
         <el-button @click="editorVisible = false">关 闭</el-button>
         <el-button v-hasPermi="['aig:studio:draft:validate']" @click="handleValidate">预 检</el-button>
@@ -372,6 +380,7 @@ import { useLoading } from '@/hooks/async/useLoading';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import modal from '@/plugins/modal';
 import { PROMPT_SECTION_LABELS, diffSummary, parseDraftContent, sectionDiff } from './diff';
+import ProposalPanel from './components/ProposalPanel.vue';
 
 defineOptions({ name: 'AigStudio' });
 
@@ -607,6 +616,19 @@ const handleRollback = async () => {
   await loadRevisions();
   await getList();
   modal.msgSuccess(res.data.revisionCreated ? '已回滚（产生新修订）' : '当前内容已与所选修订一致，未产生新修订');
+};
+
+/**
+ * 采纳/拒绝变更提案后的收口：采纳会改草稿内容，必须重新取详情（修订号也变了），
+ * 否则页面上还是旧内容与旧修订号——下一次保存就会用错 CAS 版本。
+ */
+const handleProposalApplied = async () => {
+  const res = await getDraft(detail.value.draftId);
+  detail.value = res.data;
+  expectedRevision.value = res.data.latestRevision ?? 0;
+  await applyContent(res.data.contentJson);
+  await loadRevisions();
+  await getList();
 };
 
 const openSubmit = async () => {

@@ -2,6 +2,7 @@ import type { PageResult } from '@/api/types';
 import type { AxiosPromise } from '@/utils/api-types';
 import request from '@/utils/request';
 import type {
+  AigStudioChangeProposalVO,
   AigStudioDraftCreateForm,
   AigStudioDraftDetailVO,
   AigStudioDraftQuery,
@@ -10,6 +11,7 @@ import type {
   AigStudioDraftSubmitForm,
   AigStudioDraftSubmitVO,
   AigStudioDraftVO,
+  AigStudioProposalDecideForm,
   AigStudioRevisionVO,
   AigStudioTestRunForm,
   AigStudioTestRunVO,
@@ -138,5 +140,41 @@ export function getStudioTest(linkId: string | number): AxiosPromise<AigStudioTe
   return request({
     url: '/aigov/studio/test-runs/' + linkId,
     method: 'get'
+  });
+}
+
+/**
+ * 变更提案：列出某个草稿的提案（最新在前）。
+ *
+ * 培训助手（Copilot）**只提案**——创建提案绝不修改草稿；人在这里审阅并决定采纳/拒绝。
+ */
+export function listProposals(draftId: string | number): AxiosPromise<AigStudioChangeProposalVO[]> {
+  return request({
+    url: '/aigov/studio/drafts/' + draftId + '/copilot/proposals',
+    method: 'get'
+  });
+}
+
+/** 采纳提案（产生一条 source=COPILOT_ACCEPTED 的新修订；必须带 expectedRevision） */
+export function applyProposal(
+  proposalId: string | number,
+  data: AigStudioProposalDecideForm
+): AxiosPromise<AigStudioDraftDetailVO> {
+  return request({
+    url: '/aigov/studio/copilot/proposals/' + proposalId + '/apply',
+    method: 'post',
+    data
+  });
+}
+
+/** 拒绝提案（草稿内容不变；原因可空） */
+export function rejectProposal(
+  proposalId: string | number,
+  data: AigStudioProposalDecideForm
+): AxiosPromise<AigStudioChangeProposalVO> {
+  return request({
+    url: '/aigov/studio/copilot/proposals/' + proposalId + '/reject',
+    method: 'post',
+    data
   });
 }
