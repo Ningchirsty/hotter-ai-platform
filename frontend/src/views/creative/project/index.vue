@@ -264,6 +264,7 @@
             :status-label="genStatusLabel"
             :status-type="genStatusType"
             :retrying-id="retryingId"
+            :task-id="currentProjectId"
             @preview="openPreview"
             @retry="doRetry"
           />
