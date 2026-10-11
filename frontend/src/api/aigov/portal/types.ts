@@ -205,6 +205,8 @@ export interface AigRecommendResultVO {
  * 只给展示字段：**没有**存储键、没有下载直链——下载走各域自己的入口，那里的权限仍然生效。
  */
 export interface AigPortalMyAssetVO {
+  /** 所属域（IMAGE / VIDEO / CONTENT）：分组视图里在栏上，合并的"最近"视图里逐条带 */
+  domain?: string;
   assetId?: string | number;
   assetType?: string;
   sourceKind?: string;

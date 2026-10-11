@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.dromara.aigov.task.domain.bo.AigTaskQueryBo;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalArtifactVo;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalAssetGroupVo;
+import org.dromara.aigov.workspace.portal.domain.vo.AigPortalMyAssetVo;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalRoleHomeVo;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalRoleVo;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalTaskVo;
@@ -122,6 +123,21 @@ public class AigPortalController extends BaseController {
     @GetMapping("/my-assets")
     public R<List<AigPortalAssetGroupVo>> myAssets() {
         return R.ok(assetService.myAssets(requireActor()));
+    }
+
+    /**
+     * 最近资产（各域各取最近若干条后按时间倒序合并）。
+     *
+     * <p><b>它不是分页</b>：没有 total、翻不到第二页、不承诺全量；要看全量去各域自己的入口。
+     * 路径刻意是 {@code /my-assets/recent} 而不是给 {@code /my-assets} 加 page 参数——
+     * 后者会让人以为它是分页接口。</p>
+     *
+     * @return 合并后的资产（条数有上限）
+     */
+    @SaCheckLogin
+    @GetMapping("/my-assets/recent")
+    public R<List<AigPortalMyAssetVo>> recentAssets() {
+        return R.ok(assetService.recentAssets(requireActor()));
     }
 
     /**

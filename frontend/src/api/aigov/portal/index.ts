@@ -9,6 +9,7 @@ import type {
   AigPortalArtifactQuery,
   AigPortalArtifactVO,
   AigPortalAssetGroupVO,
+  AigPortalMyAssetVO,
   AigPortalPrefVO,
   AigPortalRoleHomeVO,
   AigPortalRoleVO,
@@ -159,6 +160,19 @@ export function suggestIntents(input: string): AxiosPromise<AigRecommendResultVO
 export function listMyAssets(): AxiosPromise<AigPortalAssetGroupVO[]> {
   return request({
     url: '/aigov/portal/my-assets',
+    method: 'get'
+  });
+}
+
+/**
+ * 最近资产（各域各取最近若干条后按时间倒序合并）。
+ *
+ * **它不是分页**：没有 total、翻不到第二页、不承诺全量；要看全量去各域自己的入口。
+ * 路径刻意是 `/my-assets/recent`，而不是给 `/my-assets` 加 page 参数。
+ */
+export function listRecentAssets(): AxiosPromise<AigPortalMyAssetVO[]> {
+  return request({
+    url: '/aigov/portal/my-assets/recent',
     method: 'get'
   });
 }
