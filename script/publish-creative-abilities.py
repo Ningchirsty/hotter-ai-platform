@@ -14,10 +14,25 @@ ROOT = Path(__file__).resolve().parents[1]
 def read(file):
     return json.loads(file.read_text(encoding='utf8'))
 
+def validate_video_output(probe, supported, requires_audio):
+    video = next(stream for stream in probe['streams'] if stream['codec_type']=='video')
+    numerator,denominator = map(float,video['avg_frame_rate'].split('/'))
+    fps = numerator/denominator
+    duration = float(probe['format']['duration'])
+    matched = any((video['width'],video['height']) == (spec['width'],spec['height'])
+                  and abs(fps-spec['fps']) < 0.01
+                  and abs(duration-spec['durationSeconds']) <= 1/spec['fps']+0.01
+                  for spec in supported)
+    if not matched:
+        raise ValueError('Stored video dimensions, frame rate or duration do not match its registered output')
+    if requires_audio and not any(stream['codec_type']=='audio' for stream in probe['streams']):
+        raise ValueError('Stored media is missing required audio')
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--evidence',type=Path,required=True)
     parser.add_argument('--run-id',required=True)
+    parser.add_argument('--ffprobe',type=Path,required=True,help='Verified ffprobe executable for stored video validation')
     args = parser.parse_args()
     report = read(args.evidence)
     if report.get('scope') != 'isolated-platform' or report.get('technicalAcceptance') != 'PASSED' or report.get('productionModified') is not False:
@@ -29,7 +44,10 @@ def main():
     if len(rows) != len(report['workflows']):
         raise ValueError('Duplicate acceptance rows')
     expected = {}
+    native = {}
     for media in ['image','video']:
+        contract = read(ROOT/f'script/{media}/workflows/native-workflow-contracts.json')
+        native.update({b['workflowCode']:b for cap in contract['capabilities'] for b in cap['workflows']})
         path = f'script/{media}/workflows/abilities.json'
         source = json.loads(subprocess.check_output(['git','show',tested_commit+':'+path],cwd=ROOT))
         definitions = read(ROOT/path)
@@ -61,6 +79,23 @@ def main():
             raise ValueError('API graph changed after validation: '+code)
         if binding.get('hasAudio') and not row.get('hasAudio'):
             raise ValueError('Required audio was not verified: '+code)
+        if ability['media'] == 'video':
+            probe = json.loads(subprocess.check_output([str(args.ffprobe),'-v','error','-show_streams','-show_format','-of','json',str(output)]))
+            validate_video_output(probe,native[code]['supportedOutputs'],binding.get('hasAudio',False))
+        else:
+            from PIL import Image
+            with Image.open(output) as image:
+                selected_size = row.get('outputOptions',{}).get('size')
+                if selected_size:
+                    size = next(spec for spec in binding['sizes'] if spec['label']==selected_size)
+                    if image.size != (size['width'],size['height']):
+                        raise ValueError('Stored image does not match its selected size: '+code)
+                if ability['code']=='CUTOUT' and ('A' not in image.getbands() or image.getchannel('A').histogram()[0] < image.width*image.height*0.005):
+                    raise ValueError('Stored cutout has no useful transparent area: '+code)
+                if ability['code']=='WHITE_BACKGROUND':
+                    white = sum(1 for pixel in image.convert('RGB').getdata() if pixel == (255,255,255))
+                    if image.mode != 'RGB' or white < image.width*image.height*0.005:
+                        raise ValueError('Stored white background output is not opaque with useful pure-white area: '+code)
         entries.append(dict(workflowCode=code,media=ability['media'],apiChecksum=binding['apiChecksum'],
                             schemaChecksum=schema_checksum(ability,binding),testedCommit=tested_commit,
                             technicalAcceptance='PASSED',qualityReview=report.get('qualityReview','pending'),

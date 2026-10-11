@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+import runpy
 
 from creative_publication import apply_publication, approved, schema_checksum
 
@@ -51,6 +52,19 @@ class PublicationEvidenceTest(unittest.TestCase):
             native = dict(workflowCode=self.binding['workflowCode'],status='DRAFT')
             apply_publication(Path(folder),[self.ability],{'image':[dict(workflows=[native])]})
             self.assertEqual('DRAFT',native['status'])
+
+    def test_stored_video_must_match_resolution_duration_frame_rate_and_required_audio(self):
+        validate = runpy.run_path(str(Path(__file__).with_name('publish-creative-abilities.py')))['validate_video_output']
+        supported = [dict(width=832,height=448,durationSeconds=49/24,fps=24)]
+        video = dict(codec_type='video',width=832,height=448,avg_frame_rate='24/1')
+        valid = dict(streams=[video,dict(codec_type='audio')],format=dict(duration='2.041667'))
+        validate(valid,supported,True)
+        for invalid in [dict(streams=[dict(video,width=480),dict(codec_type='audio')],format=valid['format']),
+                        dict(streams=[dict(video,avg_frame_rate='30/1'),dict(codec_type='audio')],format=valid['format']),
+                        dict(streams=valid['streams'],format=dict(duration='5.0')),
+                        dict(streams=[video],format=valid['format'])]:
+            with self.assertRaises(ValueError):
+                validate(invalid,supported,True)
 
 if __name__ == '__main__':
     unittest.main()
