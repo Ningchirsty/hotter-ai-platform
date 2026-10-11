@@ -108,15 +108,18 @@ public class ImageContractDbSync implements ApplicationRunner {
     }
 
     private Map<String, JsonNode> readContractExtras() throws Exception {
-        Path contractPath = contractRoot.resolve(ImageWorkflowContractRegistry.CONTRACT_FILE);
         Map<String, JsonNode> result = new LinkedHashMap<>();
-        if (!Files.isRegularFile(contractPath)) {
-            return result;
-        }
-        JsonNode contract = mapper.readTree(Files.readString(contractPath, StandardCharsets.UTF_8));
-        for (JsonNode capability : contract.path("capabilities")) {
-            for (JsonNode workflow : capability.path("workflows")) {
-                result.put(workflow.path("workflowCode").asText(""), workflow);
+        for (String file : java.util.List.of(ImageWorkflowContractRegistry.CONTRACT_FILE,
+                "image/workflows/native-workflow-contracts.json")) {
+            Path contractPath = contractRoot.resolve(file);
+            if (!Files.isRegularFile(contractPath)) {
+                continue;
+            }
+            JsonNode contract = mapper.readTree(Files.readString(contractPath, StandardCharsets.UTF_8));
+            for (JsonNode capability : contract.path("capabilities")) {
+                for (JsonNode workflow : capability.path("workflows")) {
+                    result.put(workflow.path("workflowCode").asText(""), workflow);
+                }
             }
         }
         return result;

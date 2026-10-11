@@ -3,6 +3,9 @@ package org.dromara.ai.image.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.dromara.ai.image.domain.ImageTaskStatus;
 import org.dromara.ai.image.domain.ImageWorkflowVersion;
+import org.dromara.ai.image.exception.ImageTaskException;
+import org.dromara.common.mybatis.utils.IdGeneratorUtil;
+import org.dromara.common.satoken.utils.LoginHelper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -16,12 +19,17 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.spy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
@@ -198,6 +206,83 @@ class ImageTaskSubmissionServiceTest {
             "输出由档位决定时不该被入图预检拦下");
         assertEquals(false, ImageTaskSubmissionService.outputFollowsInput(null, "任意"),
             "契约缺失时保守返回不判定");
+    }
+
+    @Test
+    @DisplayName("单图 FLUX 换背景可提交：控制器补齐的空素材槽位不能违反工作流白名单")
+    void editSubmissionDoesNotInjectUndeclaredImageSlots() throws Exception {
+        var submission = submissionFixture("wf-ability-image-background-replace-flux4b");
+        try (var login = mockStatic(LoginHelper.class); var ids = mockTaskIds()) {
+            ids.when(IdGeneratorUtil::nextLongId).thenReturn(7001L);
+            var result = submission.submit(new ImageTaskSubmissionService.Command(
+                "EDIT", "wf-ability-image-background-replace-flux4b", "换背景", "白色摄影背景",
+                "", null, null, Arrays.asList(123L, null, null), "single-edit", false,
+                Map.of("image1", 123L, "prompt", "白色摄影背景")));
+            assertEquals("QUEUED", result.status());
+            var captured = org.mockito.ArgumentCaptor.forClass(ImageTaskRepository.TaskRow.class);
+            verify(repository).insertTask(captured.capture());
+            var fields = MAPPER.readTree(captured.getValue().inputJson());
+            assertEquals(123L, fields.path("image1").asLong());
+            assertEquals(false, fields.has("image2"));
+            assertEquals(false, fields.has("image3"));
+            verify(repository).requireOwnedAsset(123L, "000000", 42L);
+        }
+    }
+
+    @Test
+    @DisplayName("单图 EDIT 实际多传第二张素材仍必须拒绝，不得静默丢弃")
+    void singleReferenceEditRejectsAnActualExtraAsset() throws Exception {
+        var submission = submissionFixture("wf-ability-image-background-replace-flux4b");
+        try (var login = mockStatic(LoginHelper.class)) {
+            var error = assertThrows(ImageTaskException.class, () -> submission.submit(
+                new ImageTaskSubmissionService.Command("EDIT", "wf-ability-image-background-replace-flux4b",
+                    "换背景", "背景", "", null, null, Arrays.asList(123L, 124L, null), "extra-edit", false)));
+            assertTrue(error.getMessage().contains("image2"));
+            verify(repository, never()).insertTask(any());
+        }
+    }
+
+    @Test
+    @DisplayName("Qwen 多参考图 EDIT 保留两张真实素材与声明的可选槽位")
+    void multiReferenceEditKeepsSupportedAssets() throws Exception {
+        var submission = submissionFixture("wf-ability-image-background-replace-qwen21");
+        try (var login = mockStatic(LoginHelper.class); var ids = mockTaskIds()) {
+            ids.when(IdGeneratorUtil::nextLongId).thenReturn(7001L);
+            submission.submit(new ImageTaskSubmissionService.Command("EDIT",
+                "wf-ability-image-background-replace-qwen21", "换背景", "参考背景", "",
+                null, null, Arrays.asList(123L, 124L, null), "multi-edit", false,
+                Map.of("image1", 123L, "image2", 124L, "prompt", "参考背景")));
+            var captured = org.mockito.ArgumentCaptor.forClass(ImageTaskRepository.TaskRow.class);
+            verify(repository).insertTask(captured.capture());
+            var fields = MAPPER.readTree(captured.getValue().inputJson());
+            assertEquals(123L, fields.path("image1").asLong());
+            assertEquals(124L, fields.path("image2").asLong());
+            verify(repository).requireOwnedAsset(124L, "000000", 42L);
+        }
+    }
+
+    private ImageTaskSubmissionService submissionFixture(String code) throws Exception {
+        assertTrue(registry.markTesting(code), "仅在测试实例中启用隔离联调");
+        var contracts = registry;
+        when(repository.findByIdempotencyKey(any(), anyLong(), any())).thenReturn(null);
+        var instance = spy(new ImageTaskSubmissionService(contracts, new ImageTemplatePreparer(MAPPER),
+            repository, mock(ImageAssetStore.class), dispatchService, null));
+        doReturn("000000").when(instance).currentTenantId();
+        doReturn(42L).when(instance).currentUserId();
+        var bytes = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(new java.awt.image.BufferedImage(2, 2, java.awt.image.BufferedImage.TYPE_INT_RGB), "png", bytes);
+        doReturn(bytes.toByteArray()).when(instance).readAssetBytes(anyLong(), any(), anyLong());
+        return instance;
+    }
+
+    private org.mockito.MockedStatic<IdGeneratorUtil> mockTaskIds() {
+        // ID 工具静态初始化依赖 Spring Bean；单元测试不需要启动应用上下文。
+        try (var spring = mockStatic(cn.hutool.extra.spring.SpringUtil.class)) {
+            spring.when(() -> cn.hutool.extra.spring.SpringUtil.getBean(
+                com.baomidou.mybatisplus.core.incrementer.IdentifierGenerator.class))
+                .thenReturn(new com.baomidou.mybatisplus.core.incrementer.DefaultIdentifierGenerator());
+            return mockStatic(IdGeneratorUtil.class);
+        }
     }
 
     private Map<String, Object> taskRow() {

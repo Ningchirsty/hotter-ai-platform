@@ -1,0 +1,957 @@
+name: Creative Ability Platform Acceptance
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [.github/workflows/creative-ability-acceptance.yml]
+  workflow_dispatch:
+    inputs:
+      reuse_candidate_run_id:
+        description: 'Optional prior successful candidate build; reuse only when runtime source is unchanged'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shenzhen-production
+  cancel-in-progress: false
+
+jobs:
+  select-candidate:
+    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'codex/creative-abilities-production')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      reuse: ${{ steps.select.outputs.reuse }}
+      prior_run: ${{ steps.select.outputs.prior_run }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select an unchanged tested runtime or a fresh full build
+        id: select
+        env:
+          REQUESTED_RUN: ${{ inputs.reuse_candidate_run_id }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json,os,re,subprocess,urllib.request
+          explicit=os.environ['REQUESTED_RUN']
+          prior=explicit or '38142875342'
+          reuse=False
+          try:
+              if not re.fullmatch(r'[1-9][0-9]*',prior): raise ValueError('Invalid prior run ID')
+              base=os.environ['GITHUB_API_URL']+'/repos/'+os.environ['GITHUB_REPOSITORY']
+              request=urllib.request.Request(base+'/actions/runs/'+prior+'/artifacts',headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+              with urllib.request.urlopen(request,timeout=30) as response: artifacts=json.load(response)['artifacts']
+              matches=[a for a in artifacts if re.fullmatch(r'ability-candidate-module-[0-9a-f]{40}',a['name']) and not a['expired']]
+              if len(matches)!=1: raise ValueError('No unique prior candidate artifact')
+              sha=matches[0]['name'].rsplit('-',1)[1]
+              subprocess.run(['git','fetch','origin',sha],check=True)
+              changed=subprocess.check_output(['git','diff','--name-only',sha,'HEAD'],text=True).splitlines()
+              allowed={'.github/workflows/creative-ability-acceptance.yml','.github/workflows/creative-ability-preflight.yml'}
+              reuse=not (set(changed)-allowed)
+              if explicit and not reuse: raise ValueError('Runtime changed; clear reuse_candidate_run_id for a fresh build')
+          except Exception:
+              if explicit: raise
+              print('NO_COMPATIBLE_PRIOR_RUNTIME; using a fresh full build')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as output:
+              output.write('reuse='+str(reuse).lower()+'\nprior_run='+prior+'\n')
+          print('CANDIDATE_SELECTION','reuse' if reuse else 'build')
+          PY
+
+  candidate-image:
+    needs: select-candidate
+    if: needs.select-candidate.outputs.reuse != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    env:
+      CANDIDATE_IMAGE: ghcr.io/ningchirsty/hotter-ability-candidate:sha-${{ github.sha }}
+    outputs:
+      runtime_commit: ${{ steps.provenance.outputs.runtime_commit }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Verify backend before preparing the candidate
+        run: |
+          bash mvnw --batch-mode --no-transfer-progress -Dmaven.test.skip=false '-Dtest.groups=!exclude' verify
+          python3 script/ci/check-test-results.py
+          python3 script/ci/check-node-contract-tests.py
+      # 构建候选镜像的输入与 ci.yml 保持一致：ffmpeg 归档只下一次并缓存，
+      # 不留给 Dockerfile 现场下载（该源站会限速，本仓已因此失败过两次）。
+      - name: Cache ffmpeg static archive
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: build-cache
+          key: ffmpeg-static-abda8d77ce830914-41888096
+      - name: Fetch ffmpeg static archive
+        run: bash script/ci/fetch-ffmpeg.sh build-cache
+      # 完整候选构建：不再把「已测试的 ruoyi-ai 模块」塞进某个钉住的旧基线，
+      # 而是从本次精确提交构建整个后端镜像，让验收跑的就是将要发布的那个产物。
+      # 为什么放弃钉住基线：main 迁移频繁（798e890b→…→000974c5，两小时内 11 个提交），
+      # 每次都改 ruoyi-ai-gov/src/main/，会让「基线无法代表本候选」的守卫必然报错；
+      # 且 runner 上既要拉 1.6 GiB 基线、又要本地再 build 一次，是双份 IO。
+      - name: Build candidate image from this exact commit
+        run: |
+          docker build --pull \
+            -f Dockerfile \
+            --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --tag "hotter-ability-candidate:${GITHUB_SHA}" .
+      - name: Smoke test candidate image
+        run: |
+          # 契约与模板是后端启动依赖，ffprobe/ffmpeg 是成片实测与截断的运行时依赖。
+          docker run --rm --entrypoint /bin/bash "hotter-ability-candidate:${GITHUB_SHA}" -ec \
+            'set -e
+             java -version
+             test -s /ruoyi/server/app.jar
+             test -w /ruoyi/server/logs
+             test -w /ruoyi/server/temp
+             test -s /ruoyi/server/script/video/workflows/video-workflow-contracts.json
+             test -s /ruoyi/server/script/image/workflows/image-workflow-contracts.json
+             command -v ffprobe
+             command -v ffmpeg
+             echo "candidate image smoke OK"'
+      - name: Publish candidate image for the acceptance runner
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          trap 'docker logout ghcr.io' EXIT
+          docker tag "hotter-ability-candidate:${GITHUB_SHA}" "$CANDIDATE_IMAGE"
+          docker push "$CANDIDATE_IMAGE"
+          echo "CANDIDATE_IMAGE_PUSHED $CANDIDATE_IMAGE"
+          docker image inspect "$CANDIDATE_IMAGE" --format 'CANDIDATE_REPO_DIGESTS {{json .RepoDigests}}'
+      - name: Export tested runtime sources with provenance
+        id: provenance
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os,subprocess,zipfile
+          out=Path('candidate-module');out.mkdir(exist_ok=True)
+          sql=['ry_vue.sql','ry_image_task.sql','ry_image_workflow.sql','ry_video_task.sql','ry_video_workflow.sql','ry_video_task_migration.sql','ry_video_task_platform_ref.sql']
+          with zipfile.ZipFile(out/'runtime-source.zip','w',compression=zipfile.ZIP_DEFLATED) as archive:
+              files=[f for media in ['image','video'] for f in Path('script/'+media+'/workflows').rglob('*') if f.is_file()]+[Path('script/sql')/name for name in sql]
+              for file in files: archive.write(file,file.as_posix())
+          digests=json.loads(subprocess.check_output(['docker','image','inspect',os.environ['CANDIDATE_IMAGE'],'--format','{{json .RepoDigests}}'],text=True))
+          image=next(value for value in digests if value.startswith('ghcr.io/ningchirsty/hotter-ability-candidate@sha256:'))
+          (out/'manifest.json').write_text(json.dumps(dict(commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),runtimeSha256=hashlib.sha256((out/'runtime-source.zip').read_bytes()).hexdigest(),image=image,buildStrategy='full-candidate-image-from-tested-commit')))
+          with open(os.environ['GITHUB_OUTPUT'],'a') as output: output.write('runtime_commit='+os.environ['GITHUB_SHA']+'\n')
+          (out/'SHA256SUMS').write_text(''.join(hashlib.sha256((out/name).read_bytes()).hexdigest()+'  '+name+'\n' for name in ['runtime-source.zip','manifest.json']))
+          print('RUNTIME_SOURCE_BYTES',(out/'runtime-source.zip').stat().st_size)
+          PY
+      # 验收 runner 的 python3(3.12.3) 既无 pip、也无 ensurepip，且没有免密 sudo 可装 apt 包
+      # （实测 /usr/bin/python3: No module named pip）。
+      # 因此把这三个依赖在 GH 托管 runner 上装好、随 artifact 一起带过去，
+      # 让 runner 侧完全不需要网络与 pip。
+      - name: Stage acceptance python dependencies for the runner
+        run: |
+          set -euo pipefail
+          mkdir -p candidate-module/pylibs
+          docker run --rm -v "$PWD/candidate-module/pylibs:/libs" python:3.12-slim \
+            sh -c "pip install -q --disable-pip-version-check --target /libs 'requests==2.32.5' 'Pillow==11.3.0' 'bcrypt==4.3.0'"
+          test -d candidate-module/pylibs/requests
+          test -d candidate-module/pylibs/PIL
+          test -d candidate-module/pylibs/bcrypt
+          echo "PYLIBS_STAGED"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ability-candidate-module-${{ github.sha }}
+          path: candidate-module/
+          compression-level: 9
+          if-no-files-found: error
+          retention-days: 3
+
+  reuse-candidate:
+    needs: select-candidate
+    if: needs.select-candidate.outputs.reuse == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+    outputs:
+      runtime_commit: ${{ steps.provenance.outputs.runtime_commit }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check the prior candidate build and identify its artifact
+        id: prior
+        env:
+          PRIOR_RUN: ${{ needs.select-candidate.outputs.prior_run }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json,os,re,urllib.request
+          run=os.environ['PRIOR_RUN']
+          if not re.fullmatch(r'[1-9][0-9]*',run): raise ValueError('Invalid prior run ID')
+          base=os.environ['GITHUB_API_URL']+'/repos/'+os.environ['GITHUB_REPOSITORY']
+          def get(path):
+              request=urllib.request.Request(base+path,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+              with urllib.request.urlopen(request,timeout=30) as response: return json.load(response)
+          prior=get('/actions/runs/'+run)
+          if prior['path']!='.github/workflows/creative-ability-acceptance.yml' or prior['head_repository']['full_name']!=os.environ['GITHUB_REPOSITORY']:
+              raise ValueError('Prior build must come from this repository acceptance workflow')
+          if prior['status']!='completed': raise ValueError('Wait for the prior acceptance run to finish before reuse')
+          jobs=get('/actions/runs/'+run+'/jobs')['jobs']
+          if not any(job['name']=='candidate-image' and job['conclusion']=='success' for job in jobs):
+              raise ValueError('Prior candidate build did not pass')
+          artifacts=get('/actions/runs/'+run+'/artifacts')['artifacts']
+          matches=[a for a in artifacts if re.fullmatch(r'ability-candidate-module-[0-9a-f]{40}',a['name']) and not a['expired']]
+          if len(matches)!=1: raise ValueError('Expected exactly one tested candidate artifact')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as output: output.write('artifact='+matches[0]['name']+'\n')
+          PY
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: ${{ steps.prior.outputs.artifact }}
+          run-id: ${{ needs.select-candidate.outputs.prior_run }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: candidate-module
+          digest-mismatch: error
+      - name: Require identical runtime source and pin the prior image digest
+        id: provenance
+        env:
+          GHCR_READ_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          (cd candidate-module && sha256sum -c SHA256SUMS)
+          python3 - <<'PY'
+          import hashlib,json,os,re,subprocess,tempfile
+          from pathlib import Path
+          root=Path('candidate-module')
+          manifest=json.loads((root/'manifest.json').read_text())
+          sha=manifest['commit']
+          if not re.fullmatch(r'[0-9a-f]{40}',sha): raise ValueError('Invalid prior runtime commit')
+          subprocess.run(['git','fetch','origin',sha],check=True)
+          changed=subprocess.check_output(['git','diff','--name-only',sha,'HEAD'],text=True).splitlines()
+          allowed={'.github/workflows/creative-ability-acceptance.yml','.github/workflows/creative-ability-preflight.yml'}
+          if set(changed)-allowed: raise ValueError('Runtime source changed; a fresh full candidate build is required')
+          if hashlib.sha256((root/'runtime-source.zip').read_bytes()).hexdigest()!=manifest['runtimeSha256']:
+              raise ValueError('Prior source checksum mismatch')
+          image=manifest['image']
+          repository='ghcr.io/ningchirsty/hotter-ability-candidate'
+          if image!=repository+':sha-'+sha and not re.fullmatch(re.escape(repository)+r'@sha256:[0-9a-f]{64}',image):
+              raise ValueError('Unexpected prior candidate image')
+          if '@sha256:' not in image:
+              with tempfile.TemporaryDirectory() as auth:
+                  env=dict(os.environ,DOCKER_CONFIG=auth)
+                  subprocess.run(['docker','login','ghcr.io','--username',os.environ['GITHUB_ACTOR'],'--password-stdin'],input=os.environ['GHCR_READ_TOKEN'].encode(),env=env,check=True,stdout=subprocess.DEVNULL)
+                  digest=subprocess.check_output(['docker','buildx','imagetools','inspect',image,'--format','{{.Manifest.Digest}}'],env=env,text=True).strip()
+                  if not re.fullmatch(r'sha256:[0-9a-f]{64}',digest): raise ValueError('Invalid candidate digest')
+                  manifest['image']=repository+'@'+digest
+          (root/'manifest.json').write_text(json.dumps(manifest))
+          (root/'SHA256SUMS').write_text(''.join(hashlib.sha256((root/name).read_bytes()).hexdigest()+'  '+name+'\n' for name in ['runtime-source.zip','manifest.json']))
+          with open(os.environ['GITHUB_OUTPUT'],'a') as output: output.write('runtime_commit='+sha+'\n')
+          print('REUSED_EXACT_TESTED_RUNTIME',sha,'script-only changes',changed)
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ability-candidate-module-${{ github.sha }}
+          path: candidate-module/
+          compression-level: 9
+          if-no-files-found: error
+          retention-days: 3
+
+  platform-acceptance:
+    needs: [candidate-image, reuse-candidate]
+    if: ${{ !cancelled() && (needs.candidate-image.result == 'success' || needs.reuse-candidate.result == 'success') }}
+    runs-on: [shenzhen, deploy]
+    timeout-minutes: 150
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Check capacity before isolated acceptance
+        env:
+          RUNTIME_COMMIT: ${{ needs.candidate-image.outputs.runtime_commit || needs.reuse-candidate.outputs.runtime_commit }}
+        run: |
+          python3 - <<'PY'
+          import json,os,re,shutil,subprocess
+          from pathlib import Path
+          def command(*args):
+              result=subprocess.run(['docker',*args],capture_output=True,text=True,timeout=120)
+              if result.returncode: raise RuntimeError('Candidate cleanup operation failed: '+args[0])
+              return result.stdout.strip()
+          keep=os.environ['RUNTIME_COMMIT']
+          current=os.environ['GITHUB_RUN_ID']+'-'+os.environ['GITHUB_RUN_ATTEMPT']
+          # Only expired acceptance containers with matching names AND ownership labels.
+          for identifier in command('ps','-aq','--filter','label=hotter.creative.acceptance').splitlines():
+              state=json.loads(command('inspect',identifier))[0]
+              owner=state['Config'].get('Labels',{}).get('hotter.creative.acceptance','')
+              name=state['Name'].lstrip('/')
+              if re.fullmatch(r'[0-9]+-[0-9]+',owner) and owner!=current and name in ['hotter-ability-test-'+owner+'-'+role for role in ['mysql','redis','backend']]:
+                  command('rm','-f',identifier)
+          # Keep the reusable runtime image; remove tags only in the two candidate repositories.
+          for repository in ['hotter-ability-candidate','ghcr.io/ningchirsty/hotter-ability-candidate']:
+              for tag in command('images',repository,'--format','{{.Repository}}:{{.Tag}}').splitlines():
+                  suffix=tag.rsplit(':',1)[-1]
+                  if re.fullmatch(r'(?:sha-)?[0-9a-f]{40}',suffix) and suffix.removeprefix('sha-')!=keep:
+                      command('rmi',tag)
+          command('image','prune','-f','--filter','label=hotter.creative.base-commit')
+          temporary=Path(os.environ['RUNNER_TEMP']).resolve(strict=True)
+          for directory in temporary.glob('hotter-ability-*'):
+              if not directory.is_symlink() and re.fullmatch(r'hotter-ability-[0-9]+-[0-9]+',directory.name) and directory.name!='hotter-ability-'+current and directory.resolve().parent==temporary:
+                  shutil.rmtree(directory)
+          print('CANDIDATE_CAPACITY_FREE_BYTES',shutil.disk_usage('/').free,flush=True)
+          if shutil.disk_usage('/').free < 6 * 1024**3:
+              raise SystemExit('At least 6 GiB free is required for isolated acceptance')
+          available = next(int(line.split()[1]) for line in open('/proc/meminfo') if line.startswith('MemAvailable:'))
+          if available < 5 * 1024**2:
+              raise SystemExit('At least 5 GiB available RAM is required for isolated acceptance')
+          PY
+      - name: Fetch checksum-pinned public runtime through the LAN when available
+        id: lan-runtime
+        env:
+          RUNTIME_COMMIT: ${{ needs.candidate-image.outputs.runtime_commit || needs.reuse-candidate.outputs.runtime_commit }}
+        run: |
+          python3 - <<'PY'
+          import hashlib,io,json,os,urllib.request,zipfile
+          from pathlib import Path
+          def retrieve():
+              sha='c533244221ca8d1aa293d6f9361357fa3b765eb4'
+              if os.environ['RUNTIME_COMMIT']!=sha: return False
+              size=8882902
+              digest='138c4b4abac85cba7aa31adc2a87b90dd74ecc6a9670673f41e414cb06c5d030'
+              opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+              try:
+                  with opener.open('http://192.168.2.144:18791/runtime-'+sha+'.zip',timeout=10) as source:
+                      if source.status!=200 or source.headers.get('Content-Length')!=str(size):
+                          raise ValueError('Unexpected public runtime archive size')
+                      data=source.read(size+1)
+              except OSError as error:
+                  print('PUBLIC_RUNTIME_LAN_UNAVAILABLE',type(error).__name__,flush=True)
+                  return False
+              if len(data)!=size or hashlib.sha256(data).hexdigest()!=digest:
+                  raise ValueError('Pinned public runtime checksum mismatch')
+              root=Path(os.environ['RUNNER_TEMP'])/('hotter-ability-'+os.environ['GITHUB_RUN_ID']+'-'+os.environ['GITHUB_RUN_ATTEMPT'])/'candidate-module'
+              root.mkdir(parents=True,exist_ok=True)
+              with zipfile.ZipFile(io.BytesIO(data)) as archive:
+                  members=archive.infolist()
+                  if len(members)>5000 or sum(m.file_size for m in members)>128*1024**2:
+                      raise ValueError('Runtime archive extraction bound exceeded')
+                  manifest=json.loads(archive.read('manifest.json'))
+                  if manifest['commit']!=sha or hashlib.sha256(archive.read('runtime-source.zip')).hexdigest()!=manifest['runtimeSha256']:
+                      raise ValueError('Public runtime provenance mismatch')
+                  for member in members:
+                      name=member.filename;target=(root/name).resolve()
+                      allowed=name in {'runtime-source.zip','manifest.json','SHA256SUMS'} or name.startswith('pylibs/')
+                      if not allowed or not target.is_relative_to(root.resolve()) or (member.external_attr>>16)&0o170000==0o120000:
+                          raise ValueError('Unexpected public runtime archive member')
+                      if member.is_dir(): target.mkdir(parents=True,exist_ok=True)
+                      else:
+                          target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(archive.read(member))
+              print('VERIFIED_PUBLIC_RUNTIME_LAN_READY',sha,flush=True)
+              return True
+          ready=retrieve()
+          with open(os.environ['GITHUB_OUTPUT'],'a') as output: output.write('ready='+str(ready).lower()+'\n')
+          PY
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: steps.lan-runtime.outputs.ready != 'true'
+        timeout-minutes: 45
+        with:
+          name: ability-candidate-module-${{ github.sha }}
+          path: ${{ runner.temp }}/hotter-ability-${{ github.run_id }}-${{ github.run_attempt }}/candidate-module
+          digest-mismatch: error
+      - name: Fetch candidate image built from the exact tested commit
+        working-directory: ${{ runner.temp }}/hotter-ability-${{ github.run_id }}-${{ github.run_attempt }}
+        env:
+          GHCR_READ_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUNTIME_COMMIT: ${{ needs.candidate-image.outputs.runtime_commit || needs.reuse-candidate.outputs.runtime_commit }}
+        run: |
+          set -euo pipefail
+          (cd candidate-module && sha256sum -c SHA256SUMS)
+          python3 - <<'PY'
+          import hashlib,json,os,shutil,subprocess,tempfile,time,urllib.error,urllib.request,zipfile
+          from pathlib import Path
+          ROOT=Path.cwd()
+          SHA=os.environ['RUNTIME_COMMIT']
+          payload=ROOT/'candidate-module'
+          manifest=json.loads((payload/'manifest.json').read_text())
+          if manifest['commit']!=SHA: raise ValueError('Candidate provenance mismatch')
+          archive=payload/'runtime-source.zip'
+          if hashlib.sha256(archive.read_bytes()).hexdigest()!=manifest['runtimeSha256']: raise ValueError('Tested runtime source checksum mismatch')
+          sql={'ry_vue.sql','ry_image_task.sql','ry_image_workflow.sql','ry_video_task.sql','ry_video_workflow.sql','ry_video_task_migration.sql','ry_video_task_platform_ref.sql'}
+          with zipfile.ZipFile(archive) as source:
+              for info in source.infolist():
+                  name=info.filename
+                  target=(ROOT/name).resolve()
+                  allowed=name.startswith(('script/image/workflows/','script/video/workflows/')) or name in {'script/sql/'+item for item in sql}
+                  if not allowed or not target.is_relative_to(ROOT.resolve()) or (info.external_attr>>16)&0o170000==0o120000: raise ValueError('Unexpected runtime archive member')
+                  target.parent.mkdir(parents=True,exist_ok=True)
+                  target.write_bytes(source.read(info))
+          reference=manifest['image']
+          local='hotter-ability-candidate:'+SHA
+          with tempfile.TemporaryDirectory(prefix='hotter-candidate-registry-',dir=os.environ['RUNNER_TEMP']) as auth:
+              env=dict(os.environ,DOCKER_CONFIG=auth)
+              def docker(*args,input=None,timeout=1800):
+                  result=subprocess.run(['docker',*args],input=input,capture_output=True,env=env,timeout=timeout)
+                  if result.returncode:
+                      if args[:2]==('image','inspect'):
+                          print('CANDIDATE_IMAGE_INSPECT_ERROR',result.stderr.decode().strip()[:500],flush=True)
+                      raise RuntimeError('Candidate image operation failed: '+args[0])
+                  return result.stdout.decode().strip()
+              def stream_docker(*args,timeout):
+                  # 拉取进度必须留在日志里：被吞掉的慢拉取是没法诊断的。
+                  started=time.monotonic()
+                  process=subprocess.Popen(['docker',*args],env=env)
+                  try:
+                      code=process.wait(timeout=timeout)
+                  except subprocess.TimeoutExpired:
+                      process.kill();process.wait()
+                      raise RuntimeError('docker '+args[0]+' killed after '+str(round(time.monotonic()-started))+'s; live progress is logged above') from None
+                  if code: raise RuntimeError('Candidate image operation failed: '+args[0]+' exit='+str(code))
+              def verify_loaded_runtime(local, expected, expected_digest, docker):
+                  # containerd's image ID identifies a manifest, whereas classic Docker uses config.
+                  # Compare the actual runtime configuration and ordered rootfs against the verified config.
+                  import re
+                  # Optional fields differ across Docker CLI API versions; parse native JSON.
+                  image=json.loads(docker('image','inspect',local))[0]
+                  actual=dict(id=image['Id'],config=image['Config'],layers=image['RootFS']['Layers'],
+                              architecture=image['Architecture'],os=image['Os'],variant=image.get('Variant',''))
+                  def normalized(config):
+                      return {key:value for key,value in config.items() if value not in (None,False,'',[],{})}
+                  if not re.fullmatch(r'sha256:[0-9a-f]{64}',actual['id']):
+                      raise ValueError('Invalid loaded image descriptor')
+                  if actual['layers']!=expected['rootfs']['diff_ids'] or normalized(actual['config'])!=normalized(expected.get('config',{})):
+                      raise ValueError('Loaded image runtime configuration or ordered layers mismatch')
+                  for field in ['architecture','os','variant']:
+                      if (actual.get(field) or '')!=(expected.get(field) or ''):
+                          raise ValueError('Loaded image platform mismatch')
+                  print('VERIFIED_LOADED_RUNTIME_CONFIG',expected_digest,'imageDescriptor='+actual['id'],flush=True)
+              def verified_lan_load(reference, local, docker):
+                  # Temporary public-image transfer only; never relay credentials or source archives.
+                  expected='ghcr.io/ningchirsty/hotter-ability-candidate@sha256:da7308449a79bbae480098033028f8f16f30f97e101a67c379e26010571ed151'
+                  if reference!=expected: return False
+                  config='sha256:0a49ac1670c2459690f6e7a82b9a86c7f7f3ae6d1d62bee78b0bc544e6c251d1'
+                  checksum='ebcb905e89c72afda83e1a9942e1c307165a9a6fe200eb70261ae81c52a5170a'
+                  size=779376640
+                  url='http://192.168.2.144:18791/candidate-'+expected.split(':')[-1]+'.tar'
+                  with tempfile.TemporaryDirectory(prefix='verified-lan-candidate-',dir=Path.cwd()) as temporary:
+                      root=Path(temporary)
+                      if shutil.disk_usage(root).free<size*2+2*1024**3:
+                          raise RuntimeError('Insufficient capacity for verified LAN image transfer')
+                      archive=root/'image.tar'
+                      value=hashlib.sha256();received=0;deadline=time.monotonic()+600
+                      opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+                      try:
+                          with opener.open(url,timeout=10) as source, archive.open('wb') as target:
+                              if source.status!=200 or source.headers.get('Content-Length')!=str(size):
+                                  raise ValueError('Unexpected LAN archive size')
+                              while data:=source.read(1024**2):
+                                  received+=len(data)
+                                  if received>size or time.monotonic()>deadline:
+                                      raise ValueError('LAN archive transfer bound exceeded')
+                                  value.update(data);target.write(data)
+                      except OSError as error:
+                          print('CANDIDATE_LAN_UNAVAILABLE',type(error).__name__,flush=True)
+                          return False
+                      if received!=size or value.hexdigest()!=checksum:
+                          raise ValueError('Pinned LAN archive checksum mismatch; refusing Docker load')
+                      if shutil.disk_usage(root).free<size+2*1024**3:
+                          raise RuntimeError('Insufficient capacity to load the verified LAN image')
+                      import tarfile
+                      with tarfile.open(archive) as image:
+                          metadata=json.load(image.extractfile('manifest.json'))[0]
+                          raw=image.extractfile(metadata['Config']).read(1024**2)
+                          if 'sha256:'+hashlib.sha256(raw).hexdigest()!=config:
+                              raise ValueError('Pinned LAN image config checksum mismatch')
+                          expected_config=json.loads(raw)
+                      docker('load','--input',str(archive),timeout=600)
+                      verify_loaded_runtime(local,expected_config,config,docker)
+                      print('VERIFIED_CANDIDATE_LAN_READY',expected,flush=True)
+                      return True
+              def verified_registry_load(reference, local, docker):
+                  import concurrent.futures
+                  import gzip
+                  import hashlib
+                  import io
+                  import json
+                  import re
+                  import shutil
+                  import tarfile
+                  import tempfile
+                  import time
+                  import urllib.error
+                  import urllib.parse
+                  import urllib.request
+                  from pathlib import Path
+
+                  repository = 'ningchirsty/hotter-ability-candidate'
+                  prefix = 'ghcr.io/' + repository + '@'
+                  if not re.fullmatch(re.escape(prefix) + r'sha256:[0-9a-f]{64}', reference):
+                      raise ValueError('Fallback requires the immutable candidate repository digest')
+                  digest = reference[len(prefix):]
+                  deadline = time.monotonic() + 1200
+                  class NoRedirect(urllib.request.HTTPRedirectHandler):
+                      def redirect_request(self, req, fp, code, msg, headers, newurl):
+                          return None
+                  registry = urllib.request.build_opener(NoRedirect)
+                  delivery = urllib.request.build_opener()
+                  def read(url, headers=None, limit=4 * 1024**2):
+                      with registry.open(urllib.request.Request(url, headers=headers or {}), timeout=45) as response:
+                          data = response.read(limit + 1)
+                          if len(data) > limit: raise ValueError('Registry metadata exceeds its size bound')
+                          return data
+                  token_url = 'https://ghcr.io/token?' + urllib.parse.urlencode({'service':'ghcr.io','scope':'repository:' + repository + ':pull'})
+                  auth = {'Authorization':'Bearer ' + json.loads(read(token_url))['token']}
+                  base = 'https://ghcr.io/v2/' + repository
+                  raw = read(base + '/manifests/' + digest, auth | {'Accept':'application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json'})
+                  if 'sha256:' + hashlib.sha256(raw).hexdigest() != digest:
+                      raise ValueError('Pinned registry manifest checksum mismatch')
+                  manifest = json.loads(raw)
+                  if manifest.get('schemaVersion') != 2 or not 1 <= len(manifest.get('layers',[])) <= 32:
+                      raise ValueError('Expected a bounded single-platform image manifest')
+                  def location(descriptor):
+                      if not re.fullmatch(r'sha256:[0-9a-f]{64}', descriptor['digest']) or not 0 <= descriptor['size'] <= 1024**3:
+                          raise ValueError('Invalid blob descriptor')
+                      url = base + '/blobs/' + descriptor['digest']
+                      try:
+                          with registry.open(urllib.request.Request(url,headers=auth),timeout=45):
+                              return url, auth
+                      except urllib.error.HTTPError as error:
+                          if error.code not in (302,307): raise RuntimeError('Registry blob lookup HTTP '+str(error.code)) from None
+                          target = error.headers.get('Location','')
+                          parsed = urllib.parse.urlparse(target)
+                          if parsed.scheme != 'https' or parsed.hostname != 'pkg-containers.githubusercontent.com' or parsed.username or parsed.password:
+                              raise ValueError('Unexpected blob delivery destination')
+                          # CDN receives neither the repository credential nor the registry bearer token.
+                          return target, {}
+                  def checksum(path):
+                      value=hashlib.sha256()
+                      with path.open('rb') as stream:
+                          for part in iter(lambda:stream.read(1024**2),b''): value.update(part)
+                      return 'sha256:'+value.hexdigest()
+                  with tempfile.TemporaryDirectory(prefix='verified-candidate-',dir=Path.cwd()) as temporary:
+                      root=Path(temporary)
+                      descriptors=[manifest['config']]+manifest['layers']
+                      if sum(item['size'] for item in descriptors)>1024**3 or shutil.disk_usage(root).free<6*1024**3:
+                          raise RuntimeError('Insufficient capacity for verified image transport')
+                      def blob(descriptor):
+                          path=root/descriptor['digest'].split(':')[1]
+                          url,headers=location(descriptor)
+                          size=descriptor['size']
+                          with path.open('wb') as stream: stream.truncate(size)
+                          def part(start):
+                              end=min(start+4*1024**2,size)-1
+                              for attempt in range(3):
+                                  if time.monotonic()>deadline: raise RuntimeError('Verified transfer deadline exceeded')
+                                  try:
+                                      request=urllib.request.Request(url,headers=headers|{'Range':f'bytes={start}-{end}'})
+                                      with delivery.open(request,timeout=45) as response:
+                                          expected=f'bytes {start}-{end}/{size}'
+                                          if response.status!=206 or response.headers.get('Content-Range')!=expected:
+                                              raise ValueError('Server did not honor the exact bounded byte range')
+                                          data=response.read(end-start+2)
+                                          if len(data)!=end-start+1: raise ValueError('Truncated or oversized blob range')
+                                      with path.open('r+b') as stream: stream.seek(start);stream.write(data)
+                                      return
+                                  except (OSError,ValueError):
+                                      if attempt==2: raise RuntimeError('Bounded image range transfer failed') from None
+                                      time.sleep(attempt+1)
+                          with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+                              list(pool.map(part,range(0,size,4*1024**2)))
+                          if path.stat().st_size!=size or checksum(path)!=descriptor['digest']:
+                              raise ValueError('Registry blob checksum mismatch')
+                          print('VERIFIED_CANDIDATE_BLOB',descriptor['digest'][:19],size,flush=True)
+                          return path
+                      config_path=blob(manifest['config'])
+                      config=json.loads(config_path.read_bytes())
+                      diff_ids=config.get('rootfs',{}).get('diff_ids',[])
+                      if len(diff_ids)!=len(manifest['layers']): raise ValueError('Image root filesystem descriptor mismatch')
+                      archive=root/'image.tar'
+                      with tarfile.open(archive,'w') as output:
+                          output.add(config_path,arcname=config_path.name+'.json')
+                          layer_names=[]
+                          for descriptor,diff_id in zip(manifest['layers'],diff_ids):
+                              compressed=blob(descriptor)
+                              layer=root/'layer.tar'
+                              with gzip.open(compressed,'rb') as source, layer.open('wb') as target:
+                                  total=0
+                                  for data in iter(lambda:source.read(1024**2),b''):
+                                      total+=len(data)
+                                      if total>2*1024**3 or shutil.disk_usage(root).free<2*1024**3:
+                                          raise RuntimeError('Image extraction capacity bound exceeded')
+                                      target.write(data)
+                              if checksum(layer)!=diff_id: raise ValueError('Uncompressed image layer checksum mismatch')
+                              name=descriptor['digest'].split(':')[1]+'/layer.tar'
+                              output.add(layer,arcname=name);layer_names.append(name)
+                              layer.unlink();compressed.unlink()
+                          body=json.dumps([{'Config':config_path.name+'.json','RepoTags':[local],'Layers':layer_names}]).encode()
+                          info=tarfile.TarInfo('manifest.json');info.size=len(body);output.addfile(info,io.BytesIO(body))
+                      if shutil.disk_usage(root).free < archive.stat().st_size + 2*1024**3:
+                          raise RuntimeError('Insufficient capacity to load the verified image while retaining reserve')
+                      docker('load','--input',str(archive),timeout=600)
+                      verify_loaded_runtime(local,config,manifest['config']['digest'],docker)
+                      print('VERIFIED_CANDIDATE_TRANSPORT_READY',digest,flush=True)
+              try:
+                  print('GHCR_PROBE_PROXY_ENV_KEYS',[k for k in os.environ if k.lower() in ('http_proxy','https_proxy','no_proxy','all_proxy')],flush=True)
+                  probe_started=time.monotonic()
+                  try:
+                      urllib.request.urlopen('https://ghcr.io/v2/',timeout=30).read()
+                      print('GHCR_PROBE_REACHED_HTTP_200',flush=True)
+                  except urllib.error.HTTPError as probe_error:
+                      if probe_error.code!=401: raise
+                      print('GHCR_PROBE_REACHED_HTTP_401_AS_EXPECTED',flush=True)
+                  print('GHCR_PROBE_SECONDS',round(time.monotonic()-probe_started,2),flush=True)
+                  docker('login','ghcr.io','--username',os.environ['GITHUB_ACTOR'],'--password-stdin',input=os.environ['GHCR_READ_TOKEN'].encode())
+                  print('DISK_FREE_BEFORE_PULL',shutil.disk_usage('/').free,flush=True)
+                  if subprocess.run(['docker','image','inspect',reference],env=env,capture_output=True).returncode==0:
+                      print('CANDIDATE_IMAGE_CACHE_HIT',flush=True)
+                      docker('tag',reference,local)
+                  elif verified_lan_load(reference,local,docker):
+                      pass
+                  else:
+                      try:
+                          stream_docker('pull',reference,timeout=300)
+                          docker('tag',reference,local)
+                      except RuntimeError:
+                          print('CANDIDATE_PULL_STALLED; using bounded verified range transport',flush=True)
+                          verified_registry_load(reference,local,docker)
+                  print('DISK_FREE_AFTER_PULL',shutil.disk_usage('/').free,flush=True)
+                  if docker('image','inspect',local,'--format','{{index .Config.Labels "org.opencontainers.image.revision"}}')!=SHA: raise ValueError('Candidate image revision does not match the tested commit')
+                  print('CANDIDATE_IMAGE_READY',SHA,flush=True)
+              finally:
+                  docker('logout','ghcr.io')
+          PY
+          # runner 的 python3(3.12.3) 既无 pip 也无 ensurepip，且没有免密 sudo 装 apt 包。
+          # 依赖已由 candidate-image 作业预装并随 artifact 带过来，这里完全不需要网络。
+          bin='python3'; prefix='candidate-module/pylibs'
+          if ! PYTHONPATH="$prefix" python3 -c 'import requests,PIL,bcrypt' 2>/dev/null; then
+            echo "::warning::prebuilt pylibs unusable; falling back to a local install"
+            if python3 -m venv candidate-venv 2>/dev/null \
+               && candidate-venv/bin/pip install -q --disable-pip-version-check 'requests==2.32.5' 'Pillow==11.3.0' 'bcrypt==4.3.0'; then
+              bin='candidate-venv/bin/python'; prefix=''
+            elif python3 -m pip install -q --disable-pip-version-check --break-system-packages --target candidate-libs 'requests==2.32.5' 'Pillow==11.3.0' 'bcrypt==4.3.0' 2>/dev/null; then
+              bin='python3'; prefix='candidate-libs'
+            else
+              echo "::error::no usable python environment"; exit 1
+            fi
+          fi
+          printf '#!/usr/bin/env bash\nexec env PYTHONPATH=%s %s "$@"\n' "${prefix:-}" "$bin" > candidate-python.sh
+          chmod +x candidate-python.sh
+          ./candidate-python.sh -c 'import requests,PIL,bcrypt;print("CANDIDATE_PY_ENV_OK")'
+      - name: Run every image and video purpose through the platform
+        working-directory: ${{ runner.temp }}/hotter-ability-${{ github.run_id }}-${{ github.run_attempt }}
+        env:
+          RUNTIME_COMMIT: ${{ needs.candidate-image.outputs.runtime_commit || needs.reuse-candidate.outputs.runtime_commit }}
+        run: |
+          ./candidate-python.sh - <<'PY'
+          """Isolated platform acceptance; never mounts or reads production data/configuration."""
+          import hashlib
+          import json
+          import os
+          import re
+          from pathlib import Path
+          import secrets
+          import shutil
+          import subprocess
+          import time
+
+          import bcrypt
+          from PIL import Image, ImageDraw
+          import requests
+
+          ROOT = Path.cwd()
+          OUT = ROOT / 'candidate-results'
+          OUT.mkdir(exist_ok=True)
+          RUN = os.environ['GITHUB_RUN_ID'] + '-' + os.environ['GITHUB_RUN_ATTEMPT']
+          LABEL = 'hotter.creative.acceptance=' + RUN
+          PREFIX = 'hotter-ability-test-' + RUN
+          IMAGE = 'hotter-ability-candidate:' + os.environ['RUNTIME_COMMIT']
+          NAMES = {role: PREFIX + '-' + role for role in ['mysql', 'redis', 'backend']}
+          network_created = False
+          containers_created = []
+          report = dict(commit=os.environ['RUNTIME_COMMIT'], scope='isolated-platform', productionModified=False, qualityReview='pending', buildStrategy='full-candidate-image-from-tested-commit', workflows=[])
+          session = requests.Session()
+          session.trust_env = False
+
+          def docker(*args, **kwargs):
+              result = subprocess.run(['docker', *args], capture_output=True, timeout=kwargs.pop('timeout', 120), **kwargs)
+              if result.returncode:
+                  # Never expose command/environment values or container logs containing credentials.
+                  raise RuntimeError('Docker operation failed: ' + args[0])
+              return result.stdout.decode().strip()
+
+          def save_report():
+              (OUT / 'platform-acceptance.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n')
+
+          def api(path, payload=None, files=None, raw=False, extra_headers=None):
+              response = session.request('POST' if payload is not None or files else 'GET', BASE + path,
+                                         json=payload, files=files, headers=extra_headers, timeout=45)
+              if raw:
+                  response.raise_for_status()
+                  return response.content
+              data = response.json()
+              if response.status_code != 200 or data.get('code') != 200:
+                  raise RuntimeError('Platform request failed: ' + path + ' code=' + str(data.get('code')) + ' message=' + str(data.get('msg', ''))[:150])
+              return data.get('data')
+
+          def mysql(sql):
+              return docker('exec', '-i', '-e', 'MYSQL_PWD=' + DB_PASSWORD, NAMES['mysql'],
+                            'mysql', '-uroot', '--default-character-set=utf8mb4', 'candidate', input=sql)
+
+          def start(role, image, *args):
+              name = NAMES[role]
+              # Newly created named containers only; no production mounts, host networking, or privileged mode.
+              docker('run', '-d', '--name', name, '--label', LABEL, '--network', PREFIX, '--network-alias', role,
+                     *args, image, timeout=600)
+              containers_created.append(name)
+
+          def safe_diagnostic(text):
+              for key in ['DB_PASSWORD','REDIS_PASSWORD','LOGIN_PASSWORD','password_hash','token']:
+                  value=globals().get(key)
+                  if value: text=text.replace(value,'[REDACTED]')
+              return re.sub(r'(?i)((?:password|secret|token|access.?key)\s*[=:]\s*)[^\s,;]+',r'\1[REDACTED]',text)
+
+          def service_diagnostics(role):
+              name=NAMES[role]
+              if docker('inspect',name,'--format','{{index .Config.Labels "hotter.creative.acceptance"}}')!=RUN:
+                  raise ValueError('Refusing diagnostics for a container not owned by this invocation')
+              print('ISOLATED_SERVICE_STATE',role,docker('inspect',name,'--format','status={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} restarts={{.RestartCount}}'),flush=True)
+              print('DISK_FREE_ON_FAILURE',shutil.disk_usage('/').free,flush=True)
+              logs=subprocess.run(['docker','logs','--tail','200',name],capture_output=True,text=True,timeout=20)
+              lines=(logs.stdout+'\n'+logs.stderr).splitlines()
+              # Candidate containers only; expose diagnostic lines, never environment dumps or production logs.
+              selected=[line for line in lines if any(marker in line for marker in ['ERROR','Exception','Caused by:','APPLICATION FAILED','Description:','Action:','Port ','required a bean','Could not','Failed to'])]
+              print('ISOLATED_SERVICE_ERRORS',role,safe_diagnostic('\n'.join(selected[-60:])),flush=True)
+
+          def wait_ready(callback, budget, role):
+              started = time.monotonic()
+              end = time.monotonic() + budget
+              last_error=None
+              reported=-30
+              while time.monotonic() < end:
+                  try:
+                      if callback():
+                          print('ISOLATED_SERVICE_READY',role,flush=True)
+                          return
+                  except Exception as error:
+                      last_error=type(error).__name__+': '+str(error)[:350]
+                  elapsed=round(time.monotonic()-started)
+                  if elapsed-reported>=30:
+                      reported=elapsed
+                      print('READY_WAIT_SECONDS',role,elapsed,'last=',safe_diagnostic(last_error or 'service not ready'),flush=True)
+                  state=docker('inspect',NAMES[role],'--format','{{.State.Status}}')
+                  if state in ['exited','dead']:
+                      service_diagnostics(role)
+                      raise RuntimeError('Isolated '+role+' exited before readiness')
+                  time.sleep(3)
+              if last_error: print('ISOLATED_READINESS_LAST_ERROR',role,safe_diagnostic(last_error),flush=True)
+              service_diagnostics(role)
+              raise TimeoutError('Isolated '+role+' readiness timed out')
+
+          try:
+              if shutil.disk_usage('/').free < 4 * 1024**3:
+                  raise RuntimeError('At least 4 GiB free required after loading the candidate image')
+              revision = docker('image', 'inspect', IMAGE, '--format', '{{index .Config.Labels "org.opencontainers.image.revision"}}')
+              if revision != report['commit']:
+                  raise RuntimeError('Candidate image revision does not match the tested branch commit')
+              queue = session.get('http://192.168.2.223:8188/queue', timeout=20).json()
+              if queue['queue_running'] or queue['queue_pending']:
+                  raise RuntimeError('ComfyUI must be idle before isolated acceptance')
+              docker('network', 'create', '--label', LABEL, PREFIX)
+              network_created = True
+              DB_PASSWORD, REDIS_PASSWORD, LOGIN_PASSWORD = [secrets.token_urlsafe(18) for _ in range(3)]
+              # AES 密钥须为 16/24/32 字节；隔离栈一次性随机，与生产 HR_ENCRYPT_KEY 无关。
+              ENCRYPT_KEY = secrets.token_hex(8)
+              for value in (DB_PASSWORD, REDIS_PASSWORD, LOGIN_PASSWORD, ENCRYPT_KEY):
+                  print('::add-mask::' + value, flush=True)
+              start('mysql', 'mysql:8.0.36', '--memory', '1g', '--cpus', '1', '-e', 'MYSQL_ROOT_PASSWORD=' + DB_PASSWORD, '-e', 'MYSQL_DATABASE=candidate')
+              docker('run', '-d', '--name', NAMES['redis'], '--label', LABEL, '--network', PREFIX,
+                     '--network-alias', 'redis', '--memory', '128m', 'redis:7.4-alpine', 'redis-server', '--requirepass', REDIS_PASSWORD)
+              containers_created.append(NAMES['redis'])
+              try:
+                  wait_ready(lambda: mysql(b'SELECT 1;') == '1\n1', 600, 'mysql')
+              except TimeoutError:
+                  # 只打印状态，不打印容器日志（日志可能含凭据）。
+                  print('MYSQL_STATE',docker('inspect',NAMES['mysql'],'--format','{{.State.Status}} exit={{.State.ExitCode}} restarts={{.RestartCount}}'),flush=True)
+                  print('CANDIDATE_CONTAINERS',docker('ps','-a','--filter','name='+PREFIX,'--format','{{.Names}} {{.Status}}'),flush=True)
+                  raise
+              for file in ['ry_vue.sql', 'ry_image_task.sql', 'ry_image_workflow.sql', 'ry_video_task.sql',
+                           'ry_video_workflow.sql', 'ry_video_task_migration.sql', 'ry_video_task_platform_ref.sql']:
+                  mysql((ROOT / 'script/sql' / file).read_bytes())
+              password_hash = bcrypt.hashpw(LOGIN_PASSWORD.encode(), bcrypt.gensalt(prefix=b'2a')).decode()
+              mysql(("UPDATE sys_user SET password='" + password_hash + "',nick_name='Isolated acceptance',email='',phone_number='' WHERE user_name='admin';").encode())
+              codes = {}
+              for media in ['image', 'video']:
+                  definitions = json.loads((ROOT / f'script/{media}/workflows/abilities.json').read_text())
+                  codes[media] = ','.join(w['workflowCode'] for a in definitions for w in a['workflows'])
+              properties = {
+                  'spring.profiles.active': 'dev', 'spring.datasource.dynamic.datasource.master.url': 'jdbc:mysql://mysql:3306/candidate?useUnicode=true&characterEncoding=utf8&allowPublicKeyRetrieval=true&serverTimezone=GMT%2B8',
+                  'spring.datasource.dynamic.datasource.master.username': 'root', 'spring.datasource.dynamic.datasource.master.password': DB_PASSWORD,
+                  'spring.data.redis.host': 'redis', 'spring.data.redis.password': REDIS_PASSWORD,
+                  'captcha.enable': 'false', 'api-decrypt.enabled': 'false', 'warm-flow.enabled': 'false',
+                  'mybatis-encryptor.password': ENCRYPT_KEY,
+                  'aigov.scheduling.enabled': 'false', 'aigov.model.health-probe.enabled': 'false',
+                  'aigov.task.scheduler.enabled': 'false', 'aigov.approval.expire-scan-enabled': 'false',
+                  'snail-job.enabled': 'false', 'snail-ai.enabled': 'false', 'spring.boot.admin.client.enabled': 'false',
+                  'spring.ai.mcp.server.enabled': 'false', 'spring.ai.mcp.client.enabled': 'false',
+              }
+              for media in ['image', 'video']:
+                  properties.update({media + '.enabled': 'true', media + '.comfy-base-url': 'http://192.168.2.223:8188',
+                                     media + '.storage-root': '/candidate/' + media, media + '.require-published': 'false',
+                                     media + '.testing-workflows': codes[media], media + '.poll-budget-seconds': '1800'})
+              properties['video.comfy-free-before-submit'] = 'true'
+              java_options = '-Xms256m -Xmx1536m ' + ' '.join('-D' + k + '=' + v for k, v in properties.items())
+              start('backend', IMAGE, '-p', '127.0.0.1::8080', '-e', 'SERVER_PORT=8080', '-e', 'JAVA_OPTS=' + java_options,
+                    '--memory', '3g', '--cpus', '2')
+              binaries = ROOT / 'candidate-tools'
+              binaries.mkdir(exist_ok=True)
+              for tool in ['ffprobe','ffmpeg']:
+                  docker('cp', NAMES['backend'] + ':/usr/local/bin/' + tool, str(binaries / tool))
+              FFPROBE, FFMPEG = [str(binaries / tool) for tool in ['ffprobe','ffmpeg']]
+              port = docker('port', NAMES['backend'], '8080/tcp').split(':')[-1]
+              BASE = 'http://127.0.0.1:' + port
+              wait_ready(lambda: api('/auth/code') is not None, 600, 'backend')
+              login = api('/auth/login', {'clientId': 'e5cd7e4891bf95d1d19206ce24a7b32e', 'grantType': 'password', 'username': 'admin', 'password': LOGIN_PASSWORD})
+              token = login['access_token']
+              print('::add-mask::' + token, flush=True)
+              session.headers.update({'Authorization': 'Bearer ' + token, 'clientid': 'e5cd7e4891bf95d1d19206ce24a7b32e'})
+              # Distinct deterministic, non-user fixtures exercise first/last and double-reference asset wiring.
+              fixtures = []
+              for number, color, center in [(1, '#218a8a', (360, 360)), (2, '#e6a438', (480, 290))]:
+                  image = Image.new('RGB', (768, 768), '#eee9dc')
+                  draw = ImageDraw.Draw(image)
+                  draw.rectangle((0, 500, 768, 768), fill='#b49474')
+                  x, y = center
+                  draw.ellipse((x - 120, y - 50, x + 120, y + 160), fill=color)
+                  draw.rectangle((x - 45, y - 68, x + 45, y - 45), fill=color)
+                  draw.polygon([(x+95,y+30),(x+180,y-15),(x+150,y+60),(x+105,y+90)],fill=color)
+                  draw.arc((x-190,y-10,x-70,y+115),60,290,fill=color,width=24)
+                  file = OUT / f'reference-{number}.png'
+                  image.save(file)
+                  fixtures.append(file)
+              uploaded = {}
+              for media in ['image', 'video']:
+                  # Isolation negative control: the opposite module must reject this purpose before any Comfy submission.
+                  invalid = {'abilityCode': 'SOUND_STORY' if media == 'image' else 'POSTER', 'workflowCode': 'wf-ability-invalid', 'inputs': {}, 'assets': {}, 'output': {}}
+                  rejected = session.post(BASE + '/' + media + '/tasks', json=invalid, timeout=20).json()
+                  if rejected.get('code') == 200:
+                      raise RuntimeError('Cross-media purpose unexpectedly accepted')
+                  uploaded[media] = []
+                  for file in fixtures:
+                      with file.open('rb') as stream:
+                          uploaded[media].append(api('/' + media + '/assets', files={'file': (file.name, stream, 'image/png')})['assetId'])
+                  definitions = json.loads((ROOT / f'script/{media}/workflows/abilities.json').read_text())
+                  for ability in definitions:
+                      for binding in ability['workflows']:
+                          code = binding['workflowCode']
+                          row = dict(media=media, abilityCode=ability['code'], workflowCode=code, status='RUNNING')
+                          report['workflows'].append(row)
+                          save_report()
+                          inputs = {f['key']: f.get('options', [f.get('placeholder') or '自然清晰'])[0] for f in ability['inputs']}
+                          assets = {f['key']: uploaded[media][min(index, 1)] for index, f in enumerate(ability['assets'])}
+                          output = {}
+                          for field, list_key in [('size','sizes'), ('strength','strengths')]:
+                              if field in binding['fields']:
+                                  first = binding[list_key][0]
+                                  output[field] = first['label'] if isinstance(first,dict) else first
+                          if media == 'video':
+                              output['tier'] = binding['supportedTiers'][0]
+                              output['dur'] = binding['supportedDurationsByTier'][output['tier']][0]
+                          request = dict(abilityCode=ability['code'], workflowCode=code, inputs=inputs, assets=assets, output=output, idempotencyKey=RUN+'-'+code)
+                          result = api('/' + media + '/tasks', request)
+                          task_id = result['taskId']
+                          row['taskId'] = task_id
+                          repeated = api('/' + media + '/tasks', request)
+                          if repeated['taskId'] != task_id:
+                              raise RuntimeError('Idempotent task submission created another task')
+                          api('/' + media + f'/tasks/{task_id}/execute', {})
+                          deadline = time.monotonic() + 1850
+                          while time.monotonic() < deadline:
+                              task = api('/' + media + f'/tasks/{task_id}')
+                              if task['status'] in ['SUCCEEDED','FAILED','TIMEOUT','CANCELED']:
+                                  break
+                              time.sleep(3)
+                          row['status'] = task['status']
+                          row['comfyPromptId'] = task.get('comfyPromptId')
+                          row['eventTypes'] = [e.get('eventType') for e in task.get('events',[])]
+                          if row['status'] != 'SUCCEEDED' or not row['comfyPromptId']:
+                              raise RuntimeError('Task did not succeed: ' + code + ' ' + row['status'])
+                          asset_id = task['outputAssetId']
+                          body = api('/' + media + f'/assets/{asset_id}/content', raw=True)
+                          file = OUT / (code + ('.png' if media == 'image' else '.mp4'))
+                          file.write_bytes(body)
+                          row.update(outputAssetId=asset_id, bytes=len(body), sha256=hashlib.sha256(body).hexdigest(), output=file.name, outputOptions=output)
+                          if media == 'image':
+                              with Image.open(file) as image:
+                                  row.update(width=image.width,height=image.height,mode=image.mode)
+                                  if 'size' in output:
+                                      selected = next(s for s in binding['sizes'] if s['label'] == output['size'])
+                                      if (image.width,image.height) != (selected['width'],selected['height']):
+                                          raise RuntimeError('Stored output dimensions do not match the selected image size')
+                                  if ability['code'] == 'CUTOUT' and ('A' not in image.getbands() or image.getchannel('A').histogram()[0] < image.width*image.height*0.005):
+                                      raise RuntimeError('Cutout has no useful transparent background')
+                                  if ability['code'] == 'WHITE_BACKGROUND' and image.mode not in ['RGB','RGBA']:
+                                      raise RuntimeError('White background output is not RGB')
+                          else:
+                              probe = json.loads(subprocess.check_output([FFPROBE,'-v','error','-show_streams','-show_format','-of','json',str(file)]))
+                              streams = probe['streams']
+                              video = next(s for s in streams if s['codec_type']=='video')
+                              row.update(width=video['width'],height=video['height'],durationSeconds=float(probe['format']['duration']),hasAudio=any(s['codec_type']=='audio' for s in streams))
+                              if binding.get('hasAudio') and not row['hasAudio']:
+                                  raise RuntimeError('Expected audio stream is missing')
+                              for tag, seconds in [('first',0),('middle',row['durationSeconds']/2),('last',max(0,row['durationSeconds']-0.1))]:
+                                  subprocess.run([FFMPEG,'-v','error','-y','-ss',str(seconds),'-i',str(file),'-frames:v','1',str(OUT/(code+'-'+tag+'.png'))],check=True)
+                              ranged = session.get(BASE + '/video' + f'/assets/{asset_id}/content', headers={'Range':'bytes=0-1023'},timeout=20)
+                              if ranged.status_code != 206 or ranged.content != body[:1024]:
+                                  raise RuntimeError('Video range read did not match its stored media')
+                          row['status'] = 'SUCCEEDED'
+                          save_report()
+                          print('PLATFORM_ACCEPTANCE_OK', code, flush=True)
+              report['technicalAcceptance'] = 'PASSED'
+          except Exception as error:
+              report['technicalAcceptance'] = 'FAILED'
+              report['errorType'] = type(error).__name__
+              report['error'] = str(error)[:250]
+              save_report()
+              raise
+          finally:
+              save_report()
+              # Remove only containers created by this invocation after verifying their exact ownership label.
+              for name in reversed(list(NAMES.values())):
+                  try:
+                      if docker('inspect',name,'--format','{{index .Config.Labels "hotter.creative.acceptance"}}') == RUN:
+                          docker('rm','-f','-v',name)
+                  except Exception:
+                      print('CANDIDATE_CLEANUP_REQUIRES_ATTENTION',name,flush=True)
+              if network_created:
+                  try:
+                      if docker('network','inspect',PREFIX,'--format','{{index .Labels "hotter.creative.acceptance"}}') == RUN:
+                          docker('network','rm',PREFIX)
+                  except Exception:
+                      print('CANDIDATE_NETWORK_CLEANUP_REQUIRES_ATTENTION',PREFIX,flush=True)
+              try:
+                  if docker('image','inspect',IMAGE,'--format','{{index .Config.Labels "org.opencontainers.image.revision"}}') == report['commit']:
+                      docker('image','rm',IMAGE)
+              except Exception:
+                  print('CANDIDATE_IMAGE_CLEANUP_REQUIRES_ATTENTION',flush=True)
+          PY
+      - name: Upload task evidence and generated media
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: creative-platform-evidence-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/hotter-ability-${{ github.run_id }}-${{ github.run_attempt }}/candidate-results/
+          if-no-files-found: warn
+          retention-days: 7

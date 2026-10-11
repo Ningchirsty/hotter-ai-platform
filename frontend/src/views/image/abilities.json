@@ -61,7 +61,7 @@
       "构图与所选版式一致",
       "没有多余文字或水印"
     ],
-    "status": "DRAFT",
+    "status": "PUBLISHED",
     "workflows": [
       {
         "workflowCode": "wf-ability-image-poster-qwen2512",
@@ -75,7 +75,7 @@
           "prompt",
           "size"
         ],
-        "verifiedAt": null,
+        "verifiedAt": "2026-10-11T16:15:20.914725+00:00",
         "hasAudio": false,
         "sizes": [
           {
@@ -90,7 +90,12 @@
         "requireAlpha": false,
         "apiChecksum": "eda12335c220428e45c0bc77ae06f1e68053744bc15552545d82e19089cda523",
         "sourceWorkflowCode": "wf-local-image-qwen-image-2512",
-        "abilityCode": "POSTER"
+        "abilityCode": "POSTER",
+        "publicationEvidence": {
+          "pipelineUrl": "https://github.com/Ningchirsty/hotter-ai-platform/actions/runs/38152932194",
+          "testedCommit": "c533244221ca8d1aa293d6f9361357fa3b765eb4",
+          "taskId": "2109311312779022338"
+        }
       },
       {
         "workflowCode": "wf-ability-image-poster-qwen21",
@@ -104,7 +109,7 @@
           "prompt",
           "size"
         ],
-        "verifiedAt": null,
+        "verifiedAt": "2026-10-11T16:15:20.914725+00:00",
         "hasAudio": false,
         "sizes": [
           {
@@ -119,7 +124,12 @@
         "requireAlpha": false,
         "apiChecksum": "21e677fe6c393398b433713352f0868180b4c28f5f6a8fb262e5619d38217e87",
         "sourceWorkflowCode": "wf-local-ready-qwen-image-2-1-t2i",
-        "abilityCode": "POSTER"
+        "abilityCode": "POSTER",
+        "publicationEvidence": {
+          "pipelineUrl": "https://github.com/Ningchirsty/hotter-ai-platform/actions/runs/38152932194",
+          "testedCommit": "c533244221ca8d1aa293d6f9361357fa3b765eb4",
+          "taskId": "2109311679742873601"
+        }
       },
       {
         "workflowCode": "wf-ability-image-poster-ideogram",
@@ -133,7 +143,7 @@
           "prompt",
           "size"
         ],
-        "verifiedAt": null,
+        "verifiedAt": "2026-10-11T16:15:20.914725+00:00",
         "hasAudio": false,
         "sizes": [
           {
@@ -148,7 +158,12 @@
         "requireAlpha": false,
         "apiChecksum": "88849d1eeea1203eb72dd446cda41483225ecc9900f4e1f6383e74574adc1d2a",
         "sourceWorkflowCode": "wf-local-image-ideogram4-t2i",
-        "abilityCode": "POSTER"
+        "abilityCode": "POSTER",
+        "publicationEvidence": {
+          "pipelineUrl": "https://github.com/Ningchirsty/hotter-ai-platform/actions/runs/38152932194",
+          "testedCommit": "c533244221ca8d1aa293d6f9361357fa3b765eb4",
+          "taskId": "2109311730607198209"
+        }
       }
     ],
     "recommendedWorkflowCode": "wf-ability-image-poster-qwen2512"
@@ -200,7 +215,7 @@
       "主题符合输入",
       "画面清晰、没有水印"
     ],
-    "status": "DRAFT",
+    "status": "PUBLISHED",
     "workflows": [
       {
         "workflowCode": "wf-ability-image-quick-image-zimage",
@@ -214,7 +229,7 @@
           "prompt",
           "size"
         ],
-        "verifiedAt": null,
+        "verifiedAt": "2026-10-11T16:15:20.914725+00:00",
         "hasAudio": false,
         "sizes": [
           {
@@ -229,7 +244,12 @@
         "requireAlpha": false,
         "apiChecksum": "834af4ca6235cb601b3aed4e1814a3f9a07681917033c42cf40e3c3642a77e70",
         "sourceWorkflowCode": "wf-local-image-z-image-turbo",
-        "abilityCode": "QUICK_IMAGE"
+        "abilityCode": "QUICK_IMAGE",
+        "publicationEvidence": {
+          "pipelineUrl": "https://github.com/Ningchirsty/hotter-ai-platform/actions/runs/38152932194",
+          "testedCommit": "c533244221ca8d1aa293d6f9361357fa3b765eb4",
+          "taskId": "2109311844532883457"
+        }
       },
       {
         "workflowCode": "wf-ability-image-quick-image-flux4b",
@@ -243,7 +263,7 @@
           "prompt",
           "size"
         ],
-        "verifiedAt": null,
+        "verifiedAt": "2026-10-11T16:15:20.914725+00:00",
         "hasAudio": false,
         "sizes": [
           {
@@ -258,7 +278,12 @@
         "requireAlpha": false,
         "apiChecksum": "ed059207cce4282c973c459f5a9af98f19fb8ba7c0fb2c06ccffceb4e6eaf787",
         "sourceWorkflowCode": "wf-local-image-flux2-klein-4b-fast-t2i",
-        "abilityCode": "QUICK_IMAGE"
+        "abilityCode": "QUICK_IMAGE",
+        "publicationEvidence": {
+          "pipelineUrl": "https://github.com/Ningchirsty/hotter-ai-platform/actions/runs/38152932194",
+          "testedCommit": "c533244221ca8d1aa293d6f9361357fa3b765eb4",
+          "taskId": "2109311882717827074"
+        }
       }
     ],
     "recommendedWorkflowCode": "wf-ability-image-quick-image-zimage"
@@ -304,7 +329,7 @@
       "商品描述与画面相符",
       "光线与场景一致"
     ],
-    "status": "DRAFT",
+    "status": "PUBLISHED",
     "workflows": [
       {
         "workflowCode": "wf-ability-image-product-shot-krea",
@@ -318,7 +343,7 @@
           "prompt",
           "size"
         ],
-        "verifiedAt": null,
+        "verifiedAt": "2026-10-11T16:15:20.914725+00:00",
         "hasAudio": false,
         "sizes": [
           {
@@ -333,7 +358,12 @@
         "requireAlpha": false,
         "apiChecksum": "d893f351cf615faa2451cabcced7cea98fc24f76345ebe61c14672da0bf8aad2",
         "sourceWorkflowCode": "wf-local-image-krea2-turbo-t2i",
-        "abilityCode": "PRODUCT_SHOT"
+        "abilityCode": "PRODUCT_SHOT",
+        "publicationEvidence": {
+          "pipelineUrl": "https://github.com/Ningchirsty/hotter-ai-platform/actions/runs/38152932194",
+          "testedCommit": "c533244221ca8d1aa293d6f9361357fa3b765eb4",
+          "taskId": "2109311908340830209"
+        }
       },
       {
         "workflowCode": "wf-ability-image-product-shot-qwen2512",
@@ -347,7 +377,7 @@
           "prompt",
           "size"
         ],
-        "verifiedAt": null,
+        "verifiedAt": "2026-10-11T16:15:20.914725+00:00",
         "hasAudio": false,
         "sizes": [
           {
@@ -362,7 +392,12 @@
         "requireAlpha": false,
         "apiChecksum": "4d626e2c16229be2d2429862156dc680ee42618bc3b40d5d906015815563bc8d",
         "sourceWorkflowCode": "wf-local-image-qwen-image-2512",
-        "abilityCode": "PRODUCT_SHOT"
+        "abilityCode": "PRODUCT_SHOT",
+        "publicationEvidence": {
+          "pipelineUrl": "https://github.com/Ningchirsty/hotter-ai-platform/actions/runs/38152932194",
+          "testedCommit": "c533244221ca8d1aa293d6f9361357fa3b765eb4",
+          "taskId": "2109311959121268737"
+        }
       }
     ],
     "recommendedWorkflowCode": "wf-ability-image-product-shot-krea"
@@ -408,7 +443,7 @@
       "背景符合要求",
       "边缘和阴影自然"
     ],
-    "status": "DRAFT",
+    "status": "PUBLISHED",
     "workflows": [
       {
         "workflowCode": "wf-ability-image-background-replace-flux4b",
@@ -422,7 +457,7 @@
           "image1",
           "prompt"
         ],
-        "verifiedAt": null,
+        "verifiedAt": "2026-10-11T16:15:20.914725+00:00",
         "hasAudio": false,
         "sizes": [
           {
@@ -437,7 +472,12 @@
         "requireAlpha": false,
         "apiChecksum": "06d9843b7337a95c51ab51fb9f6aae299ebbc442cbe9d894bc70e4bfa644a0ce",
         "sourceWorkflowCode": "wf-local-image-flux2-klein-image-edit-4b-distilled",
-        "abilityCode": "BACKGROUND_REPLACE"
+        "abilityCode": "BACKGROUND_REPLACE",
+        "publicationEvidence": {
+          "pipelineUrl": "https://github.com/Ningchirsty/hotter-ai-platform/actions/runs/38152932194",
+          "testedCommit": "c533244221ca8d1aa293d6f9361357fa3b765eb4",
+          "taskId": "2109312325393059841"
+        }
       },
       {
         "workflowCode": "wf-ability-image-background-replace-qwen21",
@@ -459,7 +499,13 @@
         "defaultSize": null,
         "strengths": [],
         "sourceWorkflowCode": "wf-edit-qwen21",
-        "abilityCode": "BACKGROUND_REPLACE"
+        "abilityCode": "BACKGROUND_REPLACE",
+        "verifiedAt": "2026-10-11T16:15:20.914725+00:00",
+        "publicationEvidence": {
+          "pipelineUrl": "https://github.com/Ningchirsty/hotter-ai-platform/actions/runs/38152932194",
+          "testedCommit": "c533244221ca8d1aa293d6f9361357fa3b765eb4",
+          "taskId": "2109312350969925634"
+        }
       }
     ],
     "recommendedWorkflowCode": "wf-ability-image-background-replace-flux4b"
@@ -505,7 +551,7 @@
       "目标风格明显",
       "主体与构图仍可辨认"
     ],
-    "status": "DRAFT",
+    "status": "PUBLISHED",
     "workflows": [
       {
         "workflowCode": "wf-ability-image-style-redraw-qwen21",
@@ -530,7 +576,13 @@
           "强烈重绘 · 0.9"
         ],
         "sourceWorkflowCode": "wf-i2i-qwen21",
-        "abilityCode": "STYLE_REDRAW"
+        "abilityCode": "STYLE_REDRAW",
+        "verifiedAt": "2026-10-11T16:15:20.914725+00:00",
+        "publicationEvidence": {
+          "pipelineUrl": "https://github.com/Ningchirsty/hotter-ai-platform/actions/runs/38152932194",
+          "testedCommit": "c533244221ca8d1aa293d6f9361357fa3b765eb4",
+          "taskId": "2109312540573437954"
+        }
       }
     ],
     "recommendedWorkflowCode": "wf-ability-image-style-redraw-qwen21"
@@ -555,7 +607,7 @@
       "PNG 含透明通道",
       "主体边缘完整"
     ],
-    "status": "DRAFT",
+    "status": "PUBLISHED",
     "workflows": [
       {
         "workflowCode": "wf-ability-image-cutout-qwen21",
@@ -573,7 +625,13 @@
         "defaultSize": null,
         "strengths": [],
         "sourceWorkflowCode": "wf-bgremove-qwen21",
-        "abilityCode": "CUTOUT"
+        "abilityCode": "CUTOUT",
+        "verifiedAt": "2026-10-11T16:15:20.914725+00:00",
+        "publicationEvidence": {
+          "pipelineUrl": "https://github.com/Ningchirsty/hotter-ai-platform/actions/runs/38152932194",
+          "testedCommit": "c533244221ca8d1aa293d6f9361357fa3b765eb4",
+          "taskId": "2109312578716438530"
+        }
       }
     ],
     "recommendedWorkflowCode": "wf-ability-image-cutout-qwen21"
@@ -599,7 +657,7 @@
       "商品边缘完整",
       "白底合成不改写前景颜色"
     ],
-    "status": "DRAFT",
+    "status": "PUBLISHED",
     "workflows": [
       {
         "workflowCode": "wf-ability-image-white-background-qwen21",
@@ -617,7 +675,13 @@
         "defaultSize": null,
         "strengths": [],
         "sourceWorkflowCode": "wf-whitebg-qwen21",
-        "abilityCode": "WHITE_BACKGROUND"
+        "abilityCode": "WHITE_BACKGROUND",
+        "verifiedAt": "2026-10-11T16:15:20.914725+00:00",
+        "publicationEvidence": {
+          "pipelineUrl": "https://github.com/Ningchirsty/hotter-ai-platform/actions/runs/38152932194",
+          "testedCommit": "c533244221ca8d1aa293d6f9361357fa3b765eb4",
+          "taskId": "2109312755778981890"
+        }
       }
     ],
     "recommendedWorkflowCode": "wf-ability-image-white-background-qwen21"
@@ -663,7 +727,7 @@
       "轮廓与参考结构一致",
       "内容与风格符合要求"
     ],
-    "status": "DRAFT",
+    "status": "PUBLISHED",
     "workflows": [
       {
         "workflowCode": "wf-ability-image-structure-guided-zimage",
@@ -677,7 +741,7 @@
           "img",
           "prompt"
         ],
-        "verifiedAt": null,
+        "verifiedAt": "2026-10-11T16:15:20.914725+00:00",
         "hasAudio": false,
         "sizes": [
           {
@@ -692,7 +756,12 @@
         "requireAlpha": false,
         "apiChecksum": "78acde19a52f404e3ed2c32c1b9ef34e321bc1cccb2cc167b76f301d9f4b7825",
         "sourceWorkflowCode": "wf-local-image-z-image-turbo-fun-union-controlnet",
-        "abilityCode": "STRUCTURE_GUIDED"
+        "abilityCode": "STRUCTURE_GUIDED",
+        "publicationEvidence": {
+          "pipelineUrl": "https://github.com/Ningchirsty/hotter-ai-platform/actions/runs/38152932194",
+          "testedCommit": "c533244221ca8d1aa293d6f9361357fa3b765eb4",
+          "taskId": "2109312932686336001"
+        }
       }
     ],
     "recommendedWorkflowCode": "wf-ability-image-structure-guided-zimage"

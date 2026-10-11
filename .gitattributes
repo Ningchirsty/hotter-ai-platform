@@ -9,6 +9,11 @@ script/image/workflows/local-verified/*.json text eol=lf
 # 契约 JSON 也要参与规范化比对，因此在 core.autocrlf=true 的 Windows 检出下必须固定 LF。
 script/image/workflows/api/*.json text eol=lf
 script/image/workflows/*.json text eol=lf
+# Purpose graphs are hashed as bytes on both Windows and Linux.
+script/image/workflows/abilities-api/*.json text eol=lf
+script/video/workflows/abilities-api/*.json text eol=lf
+script/video/workflows/*.json text eol=lf
+/.github/workflows/*.yml text eol=lf
 /script/deploy/hotter-release text eol=lf
 /script/deploy/gh-deploy-hotter.sudoers text eol=lf
 # 2026-10-08 补：health-check.sh 是这个目录里的**第 3 个 shell 脚本**，当初漏了它。

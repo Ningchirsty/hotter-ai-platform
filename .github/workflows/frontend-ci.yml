@@ -153,3 +153,13 @@ jobs:
           docker push "$IMAGE"
           digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE")
           printf '### Published image\n\n`%s`\n\nDigest: `%s`\n' "$IMAGE" "$digest" >> "$GITHUB_STEP_SUMMARY"
+          python3 script/ci/registry-image-archive.py export "$digest" "$GITHUB_SHA" --destination artifacts/published-image
+
+      - name: Upload the exact immutable published frontend image for reviewed transfer
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: published-frontend-image-${{ github.sha }}
+          path: artifacts/published-image/
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 3

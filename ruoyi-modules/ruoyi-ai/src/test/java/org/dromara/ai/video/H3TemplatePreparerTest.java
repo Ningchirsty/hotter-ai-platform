@@ -80,13 +80,39 @@ class H3TemplatePreparerTest {
         assertTrue(registry.hasPublished(VideoCapability.T2V), "T2V 应存在已发布版本");
         assertTrue(registry.hasPublished(VideoCapability.I2V), "I2V 应存在已发布版本");
         assertTrue(registry.hasPublished(VideoCapability.FL2V), "FL2V 应存在已发布版本");
-        // 注册表登记了 24 个条目（含未交付占位），但已发布的必须恰好只有这 3 个。
-        // 注意 VideoCapability 枚举只有 T2V/I2V/FL2V，MFRAME 等只存在于契约里，
-        // 不能用枚举逐个断言。
+        // 本测试检查旧版三个 H3；新增用途的发布状态由独立的证据一致性测试检查。
+        List<String> legacyH3 = List.of("wf-t2v-h3", "wf-i2v-h3", "wf-fl2v-h3");
         long publishedCount = registry.registeredVersions().stream()
+            .filter(version -> legacyH3.contains(version.workflowCode()))
             .filter(WorkflowVersion::isPublished)
             .count();
-        assertEquals(3, publishedCount, "已发布版本应恰好 3 个（三个 H3）");
+        assertEquals(3, publishedCount, "旧版三个 H3 必须保持已发布");
+    }
+
+    @Test
+    @DisplayName("已发布视频集合必须等于旧版 H3 与真实用途发布证据，不得漏发或额外放行")
+    void publishedVideoTemplatesMatchPublicationEvidence() throws Exception {
+        var expected = new java.util.TreeSet<>(List.of("wf-t2v-h3", "wf-i2v-h3", "wf-fl2v-h3"));
+        Path publication = contractRoot.resolve("creative-ability-publication.json");
+        if (Files.isRegularFile(publication)) {
+            for (JsonNode evidence : MAPPER.readTree(Files.readString(publication)).path("workflows")) {
+                if (!"video".equals(evidence.path("media").asText())) {
+                    continue;
+                }
+                String code = evidence.path("workflowCode").asText();
+                assertTrue(code.startsWith("wf-ability-video-"), "证据必须属于视频用途");
+                assertTrue(expected.add(code), "不允许重复发布证据：" + code);
+                assertEquals("PASSED", evidence.path("technicalAcceptance").asText());
+                WorkflowVersion version = registry.require(code, true);
+                assertEquals(version.checksum(), evidence.path("apiChecksum").asText(),
+                    "发布证据必须绑定当前模板的准确哈希：" + code);
+            }
+        }
+        var actual = registry.registeredVersions().stream()
+            .filter(WorkflowVersion::isPublished)
+            .map(WorkflowVersion::workflowCode)
+            .collect(java.util.stream.Collectors.toCollection(java.util.TreeSet::new));
+        assertEquals(expected, actual, "只有旧版 H3 和具备真实通过证据的视频用途可发布");
     }
 
     @Test

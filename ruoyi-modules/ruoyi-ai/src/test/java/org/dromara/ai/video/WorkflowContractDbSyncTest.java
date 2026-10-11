@@ -103,6 +103,16 @@ class WorkflowContractDbSyncTest {
     }
 
     @Test
+    void syncIncludesBusinessWorkflowExtras() {
+        sync.sync();
+        String code = "wf-ability-video-product-motion-wan";
+        assertNotNull(repo.rows.get(code));
+        assertNotNull(repo.extras.get(code + "|outputRule"));
+        assertTrue(repo.extras.get(code + "|outputRule").contains("maxDurationSeconds"));
+        assertNotNull(repo.extras.get(code + "|perf"));
+    }
+
+    @Test
     @DisplayName("同步：重复执行是幂等的（第二次为更新而非新增）")
     void syncIsIdempotent() {
         int first = sync.sync();

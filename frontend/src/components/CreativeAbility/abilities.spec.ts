@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import image from '../../views/image/abilities.json';
 import video from '../../views/video/abilities.json';
@@ -14,6 +14,10 @@ import { VIDEO_MODULES } from '../../views/video/modules';
 describe('业务用途与后端 ComfyUI 契约', () => {
   it('前后端用途契约一致，8 个图像 / 6 个视频，28 个专用模板均有有效映射与哈希', () => {
     expect(image).toHaveLength(8); expect(video).toHaveLength(6);
+    const publicationUrl = new URL('../../../../script/creative-ability-publication.json', import.meta.url);
+    const entries = existsSync(publicationUrl) ? JSON.parse(readFileSync(publicationUrl, 'utf8')).workflows : [];
+    const publication = new Map<string, any>(entries.map((entry: any) => [entry.workflowCode, entry]));
+    expect(publication.size).toBe(entries.length);
     let count = 0;
     for (const [media, abilities] of [['image', image], ['video', video]] as const) {
       const server = JSON.parse(readFileSync(new URL(`../../../../script/${media}/workflows/abilities.json`, import.meta.url), 'utf8'));
@@ -24,7 +28,27 @@ describe('业务用途与后端 ComfyUI 契约', () => {
         expect(ability.media).toBe(media); expect(workflow.media).toBe(media);
         expect(workflow.capabilityCode).toBe(ability.capabilityCode);
         const version = contract.capabilities.flatMap((c: any) => c.workflows).find((w: any) => w.workflowCode === workflow.workflowCode);
-        expect(version.status).toBe('DRAFT');
+        const evidence = publication.get(workflow.workflowCode);
+        if (evidence) {
+          expect(version.status).toBe('PUBLISHED');
+          expect(ability.status).toBe('PUBLISHED');
+          expect(evidence.technicalAcceptance).toBe('PASSED');
+          expect(evidence.media).toBe(media);
+          expect(evidence.apiChecksum).toBe(version.checksum);
+          expect(evidence.testedCommit).toMatch(/^[0-9a-f]{40}$/);
+          expect(evidence.outputSha256).toMatch(/^[0-9a-f]{64}$/);
+          expect(evidence.comfyPromptId).toMatch(/^[0-9a-f-]{36}$/);
+          expect(evidence.pipelineUrl).toMatch(/^https:\/\/github\.com\/Ningchirsty\/hotter-ai-platform\/actions\/runs\/[1-9][0-9]*$/);
+          expect(Number(evidence.taskId)).toBeGreaterThan(0);
+          expect((workflow as any).verifiedAt).toBe(evidence.verifiedAt);
+          expect((workflow as any).publicationEvidence).toEqual({
+            pipelineUrl: evidence.pipelineUrl, testedCommit: evidence.testedCommit, taskId: evidence.taskId
+          });
+        } else {
+          expect(version.status).toBe('DRAFT');
+          expect((workflow as any).verifiedAt ?? null).toBeNull();
+          expect((workflow as any).publicationEvidence).toBeUndefined();
+        }
         const bytes = readFileSync(new URL(`../../../../script/${version.apiJsonFile}`, import.meta.url));
         expect(createHash('sha256').update(bytes).digest('hex')).toBe(version.checksum);
         const graph = JSON.parse(bytes.toString());

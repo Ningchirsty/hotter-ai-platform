@@ -1475,7 +1475,7 @@
           "workflowCode": "wf-ability-video-product-motion-wan",
           "modelCode": "WAN",
           "version": "v1.0.0-ability",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/abilities-api/wf-ability-video-product-motion-wan.json",
           "checksum": "39768892ff6b3de51574a8fb5f51ff902e98f8b718bb8d0845309db49b8d4a40",
           "mapping": [
@@ -1552,7 +1552,7 @@
           "workflowCode": "wf-ability-video-product-motion-hun",
           "modelCode": "HUN",
           "version": "v1.0.0-ability",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/abilities-api/wf-ability-video-product-motion-hun.json",
           "checksum": "3f4c70c287bcb0cdfb55dbcef4536635c97605cfdfecb1ac10b3f1922857aadb",
           "mapping": [
@@ -1624,7 +1624,7 @@
           "workflowCode": "wf-ability-video-product-motion-kand",
           "modelCode": "KAND",
           "version": "v1.0.0-ability",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/abilities-api/wf-ability-video-product-motion-kand.json",
           "checksum": "7c570d3c71352277dc865a55fd0e0eb1b5a91c100c31e5df0bb32eeb17107e41",
           "mapping": [
@@ -1693,7 +1693,7 @@
           "workflowCode": "wf-ability-video-sound-story-ltx",
           "modelCode": "LTX",
           "version": "v1.0.0-ability",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/abilities-api/wf-ability-video-sound-story-ltx.json",
           "checksum": "571c87a4403e89531e1fab5b7d319ade508f46e4bc2107556e384dd64dac1a3d",
           "mapping": [
@@ -1762,7 +1762,7 @@
           "workflowCode": "wf-ability-video-sound-story-h3",
           "modelCode": "H3",
           "version": "v1.0.0-ability",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/abilities-api/wf-ability-video-sound-story-h3.json",
           "checksum": "624d3ea9aacd684ade9ddad6401199c9609de36a69c1eb7813cba37268631b5d",
           "mapping": [
@@ -1829,7 +1829,7 @@
           "workflowCode": "wf-ability-video-photo-animation-wan",
           "modelCode": "WAN",
           "version": "v1.0.0-ability",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/abilities-api/wf-ability-video-photo-animation-wan.json",
           "checksum": "8cb946ce69d4e596c2e79dbc9e93c57a5bdd4c38c419f848c954d6536d25c73d",
           "mapping": [
@@ -1901,7 +1901,7 @@
           "workflowCode": "wf-ability-video-photo-animation-kand",
           "modelCode": "KAND",
           "version": "v1.0.0-ability",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/abilities-api/wf-ability-video-photo-animation-kand.json",
           "checksum": "b382f66063637385a519f40ec2e110419ca164deb2511bee99b1e151586cdd7e",
           "mapping": [
@@ -1973,7 +1973,7 @@
           "workflowCode": "wf-ability-video-photo-animation-ltx",
           "modelCode": "LTX",
           "version": "v1.0.0-ability",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/abilities-api/wf-ability-video-photo-animation-ltx.json",
           "checksum": "5fb6a47032dd0ef493b589578ce8dd7efcf2c693f6a23bd4d246d1a8ed6cbc28",
           "mapping": [
@@ -2047,7 +2047,7 @@
           "workflowCode": "wf-ability-video-scene-clip-wan",
           "modelCode": "WAN",
           "version": "v1.0.0-ability",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/abilities-api/wf-ability-video-scene-clip-wan.json",
           "checksum": "a6b50a1cd7a910a1291ca9f89ef6460d134a6ed45ebc8b8e2b3dcc6c3a863c49",
           "mapping": [
@@ -2111,7 +2111,7 @@
           "workflowCode": "wf-ability-video-scene-clip-hun",
           "modelCode": "HUN",
           "version": "v1.0.0-ability",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/abilities-api/wf-ability-video-scene-clip-hun.json",
           "checksum": "9bdef7d43a5cbec2db9208325985e5332fba83df0521f95598146fae618852f3",
           "mapping": [
@@ -2175,7 +2175,7 @@
           "workflowCode": "wf-ability-video-scene-clip-kand",
           "modelCode": "KAND",
           "version": "v1.0.0-ability",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/abilities-api/wf-ability-video-scene-clip-kand.json",
           "checksum": "c51cba03a4215dd96b14aacc6cc525d28cbc822600df87e64ab4b50db0438e96",
           "mapping": [
@@ -2245,7 +2245,7 @@
           "workflowCode": "wf-ability-video-keyframe-transition-wan",
           "modelCode": "WAN",
           "version": "v1.0.0-ability",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/abilities-api/wf-ability-video-keyframe-transition-wan.json",
           "checksum": "d3c2f4f0e57d212fa3e4c208f6b0c23c131a47c56f7d0c555fb25b82f66c5abb",
           "mapping": [
@@ -2330,7 +2330,7 @@
           "workflowCode": "wf-ability-video-keyframe-transition-ltx",
           "modelCode": "LTX",
           "version": "v1.0.0-ability",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/abilities-api/wf-ability-video-keyframe-transition-ltx.json",
           "checksum": "cb054f8babe8332abaf634725eb128548ac98a38189922f720e1cc4eef486d23",
           "mapping": [
@@ -2410,7 +2410,7 @@
           "workflowCode": "wf-ability-video-keyframe-transition-h3",
           "modelCode": "H3",
           "version": "v1.0.0-ability",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/abilities-api/wf-ability-video-keyframe-transition-h3.json",
           "checksum": "97e3f089948a2517bac60555dd47b6dcea8e030a6f02b8e3a8e1554ba0486f98",
           "mapping": [
@@ -2490,7 +2490,7 @@
           "workflowCode": "wf-ability-video-reference-story-h3",
           "modelCode": "H3",
           "version": "v1.0.0-ability",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/abilities-api/wf-ability-video-reference-story-h3.json",
           "checksum": "d11e2390bba213a3a7350b8b0e9c4dd233b4d7826da79dd462cb0fe111498052",
           "mapping": [

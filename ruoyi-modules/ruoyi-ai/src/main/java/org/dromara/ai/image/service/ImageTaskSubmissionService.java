@@ -313,9 +313,15 @@ public class ImageTaskSubmissionService {
 
         List<Long> inputAssetIds = command.inputAssetIds() == null ? List.of() : command.inputAssetIds();
         if (capability == ImageCapability.EDIT) {
+            List<String> declared = version.capabilityFields() == null ? List.of() : version.capabilityFields();
             for (int i = 0; i < 3; i++) {
                 Long assetId = i < inputAssetIds.size() ? inputAssetIds.get(i) : null;
-                fields.put("image" + (i + 1), assetId);
+                String slot = "image" + (i + 1);
+                // 只保留契约声明或实际提供的槽位：无条件注入的空槽会被下面的白名单当成
+                // 未声明字段拒绝（换背景 flux4b 只声明 image1，曾因此 400「不支持的字段：image2」）。
+                if (assetId != null || declared.contains(slot)) {
+                    fields.put(slot, assetId);
+                }
             }
         } else if (capability.requiresImage()) {
             Long assetId = inputAssetIds.isEmpty() ? null : inputAssetIds.get(0);
