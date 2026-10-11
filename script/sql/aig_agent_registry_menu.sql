@@ -134,6 +134,16 @@ select 1768000000000000023, 'Manifest扫描', 1763000000000000001, 99, '', '', '
     and not exists (select 1 from (select perms from sys_menu) p
                      where p.perms = 'aig:package:scan');
 
+insert into sys_menu (menu_id, menu_name, parent_id, order_num, path, component, is_frame, is_cache,
+                      menu_type, visible, status, perms, icon, create_dept, create_by, create_time, remark)
+select 1768000000000000024, '工具/知识绑定管理', 1763000000000000001, 101, '', '', 'N', 'Y', 'F', '0', '0',
+       'aig:agent:resource-binding', '#', 1761000000000000103, 1761100000000000001, sysdate(),
+       '附件 07 §5：把版本声明的 allowed_tools/knowledge_scope_json 收窄到范围（仅登记，无执行语义）'
+  where not exists (select 1 from (select menu_id from sys_menu) t
+                     where t.menu_id = 1768000000000000024)
+    and not exists (select 1 from (select perms from sys_menu) p
+                     where p.perms = 'aig:agent:resource-binding');
+
 -- ----------------------------
 -- 三、评测权限（详情 / 定义 / 跑 / 复核）
 -- ----------------------------
@@ -235,6 +245,7 @@ select 1768000000000000026, 'Package停用', 1763000000000000001, 106, '', '', '
 insert ignore into sys_role_menu (role_id, menu_id)
 select 1763100000000000001, menu_id from sys_menu
  where perms in ('aig:agent:list', 'aig:agent:query', 'aig:agent:release', 'aig:agent:binding',
+                 'aig:agent:resource-binding',
                  'aig:skill:list', 'aig:skill:query',
                  'aig:package:list', 'aig:package:query', 'aig:package:scan',
                  'aig:package:upload', 'aig:package:install', 'aig:package:disable',

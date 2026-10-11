@@ -1,6 +1,7 @@
 package org.dromara.aigov.agent.service;
 
 import org.dromara.aigov.agent.domain.bo.AigAgentBindingBo;
+import org.dromara.aigov.agent.domain.bo.AigAgentResourceBindingBo;
 import org.dromara.aigov.agent.domain.bo.AigReleaseAdvanceBo;
 import org.dromara.aigov.agent.enums.AigReleaseGateEnum;
 import org.dromara.aigov.agent.enums.AigReleaseStatusEnum;
@@ -93,5 +94,20 @@ public interface IAigAgentRegistryService {
      * @return 绑定ID
      */
     Long addBinding(AigAgentBindingBo bo);
+
+    /**
+     * 新增一条工具/知识绑定（附件 07 §5）。
+     *
+     * <p>会校验：版本存在；资源类型合法；<b>资源编码命中该版本已声明的项</b>
+     * （TOOL 看 {@code allowed_tools} 并拒 {@code forbidden_tools}，KNOWLEDGE 看
+     * {@code knowledge_scope_json}）；同一范围下不重复绑定。</p>
+     *
+     * <p><b>它只登记、不执行</b>：附件 07 §10 明确不建 Tool Gateway / Knowledge 引擎，
+     * 本表没有任何执行语义。</p>
+     *
+     * @param bo 绑定入参
+     * @return 绑定ID
+     */
+    Long addResourceBinding(AigAgentResourceBindingBo bo);
 
 }

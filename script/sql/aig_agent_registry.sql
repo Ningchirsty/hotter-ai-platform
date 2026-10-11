@@ -358,6 +358,42 @@ create table if not exists aig_release_event (
 ) engine=innodb comment = 'AI 版本发布事件账本（审计 + 曾 STABLE 过的证据）';
 
 -- ----------------------------
+-- 7b、工具/知识绑定（附件 07 §5：只有声明字段、无绑定表 → 补绑定表）
+--
+-- 声明（aig_agent_version.allowed_tools / knowledge_scope_json）是逗号分隔文本：
+-- 无法索引、无法按公司/品牌/场景/角色收窄、无法逐条停用。本表一行一条绑定解决这三件事。
+--
+-- ⚠️ 它只登记与收窄，**没有执行语义**：附件 07 §10 明确不建 Tool Gateway / Knowledge 引擎；
+--    仓库里没有任何调用代码读它（外发策略必须在网关执行点强制，ADR-006）。
+--
+-- ⚠️ 刻意**不建唯一索引**：范围列允许 NULL 表示"不限"，而唯一索引不约束 NULL，
+--    两行范围全为 NULL 的"重复"绑定照样能插进去——一个不生效的唯一索引只会给人虚假的安全感。
+--    重复检查由服务层显式做（逐列 isNull 比对），与 aig_agent_binding 同一处理。
+-- ----------------------------
+create table if not exists aig_agent_resource_binding (
+    binding_id         bigint(20)      not null                   comment '绑定ID',
+    agent_version_id   bigint(20)      not null                   comment '绑定的 Agent 版本ID',
+    resource_type      varchar(16)     not null                   comment '资源类型（TOOL 工具 / KNOWLEDGE 知识范围）',
+    resource_code      varchar(128)    not null                   comment '资源编码（必须命中该版本已声明的项）',
+    company_id         bigint(20)      default null               comment '限定公司（空=不限）',
+    brand_id           bigint(20)      default null               comment '限定品牌（空=不限）',
+    scenario_code      varchar(32)     default null               comment '限定业务场景（空=不限）',
+    role_scope         varchar(200)    default null               comment '限定角色（逗号分隔的 role_key，空=不限）',
+    enabled            char(1)         not null default 'Y'       comment '是否启用（Y/N）',
+    del_flag           char(1)         default '0'                comment '删除标志（0代表存在 1代表删除）',
+    create_dept        bigint(20)      default null               comment '创建部门',
+    create_by          bigint(20)      default null               comment '创建者',
+    create_time        datetime                                   comment '创建时间',
+    update_by          bigint(20)      default null               comment '更新者',
+    update_time        datetime                                   comment '更新时间',
+    remark             varchar(500)    default null               comment '备注',
+    primary key (binding_id),
+    key idx_aig_agent_res_bind_ver (agent_version_id, resource_type, enabled, del_flag),
+    key idx_aig_agent_res_bind_code (resource_type, resource_code),
+    key idx_aig_agent_res_bind_scope (company_id, brand_id, scenario_code)
+) engine=innodb comment = 'AI Agent 工具/知识绑定（声明的收窄；仅登记，无执行语义）';
+
+-- ----------------------------
 -- 12、核对
 -- ----------------------------
 select table_name, table_comment
@@ -365,6 +401,7 @@ select table_name, table_comment
  where table_schema = database()
    and table_name in ('aig_package', 'aig_package_version', 'aig_agent', 'aig_agent_version',
                       'aig_skill', 'aig_skill_version', 'aig_agent_binding',
+                      'aig_agent_resource_binding',
                       'aig_package_install_log', 'aig_evaluation_case', 'aig_evaluation_run',
                       'aig_release_event')
  order by table_name;

@@ -6,12 +6,14 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.dromara.aigov.agent.domain.AigAgentBinding;
+import org.dromara.aigov.agent.domain.AigAgentResourceBinding;
 import org.dromara.aigov.agent.domain.AigAgentVersion;
 import org.dromara.aigov.agent.domain.AigPackage;
 import org.dromara.aigov.agent.domain.AigPackageVersion;
 import org.dromara.aigov.agent.domain.AigReleaseEvent;
 import org.dromara.aigov.agent.domain.AigSandboxRun;
 import org.dromara.aigov.agent.domain.bo.AigAgentBindingBo;
+import org.dromara.aigov.agent.domain.bo.AigAgentResourceBindingBo;
 import org.dromara.aigov.agent.domain.bo.AigReleaseAdvanceBo;
 import org.dromara.aigov.agent.enums.AigPackageRejectRuleEnum;
 import org.dromara.aigov.agent.enums.AigReleaseGateEnum;
@@ -23,6 +25,7 @@ import org.dromara.aigov.agent.evaluation.AigSandboxRunEvidence;
 import org.dromara.aigov.agent.manifest.AigManifestScanResult;
 import org.dromara.aigov.agent.manifest.AigPackageManifestValidator;
 import org.dromara.aigov.agent.mapper.AigAgentBindingMapper;
+import org.dromara.aigov.agent.mapper.AigAgentResourceBindingMapper;
 import org.dromara.aigov.agent.mapper.AigAgentVersionMapper;
 import org.dromara.aigov.agent.mapper.AigPackageMapper;
 import org.dromara.aigov.agent.mapper.AigPackageVersionMapper;
@@ -108,6 +111,7 @@ class AigAgentRegistryServiceImplTest {
     private AigPackageVersionMapper packageVersionMapper;
     private AigReleaseEventMapper releaseEventMapper;
     private AigAgentBindingMapper bindingMapper;
+    private AigAgentResourceBindingMapper resourceBindingMapper;
     private AigPackageMapper packageMapper;
     private IAigEvaluationService evaluationService;
     private IAigCanaryEvidenceService canaryEvidenceService;
@@ -121,6 +125,7 @@ class AigAgentRegistryServiceImplTest {
         TableInfoHelper.initTableInfo(assistant, AigAgentVersion.class);
         TableInfoHelper.initTableInfo(assistant, AigReleaseEvent.class);
         TableInfoHelper.initTableInfo(assistant, AigAgentBinding.class);
+        TableInfoHelper.initTableInfo(assistant, AigAgentResourceBinding.class);
         TableInfoHelper.initTableInfo(assistant, AigPackageVersion.class);
         TableInfoHelper.initTableInfo(assistant, AigPackage.class);
     }
@@ -132,14 +137,15 @@ class AigAgentRegistryServiceImplTest {
         packageVersionMapper = mock(AigPackageVersionMapper.class);
         releaseEventMapper = mock(AigReleaseEventMapper.class);
         bindingMapper = mock(AigAgentBindingMapper.class);
+        resourceBindingMapper = mock(AigAgentResourceBindingMapper.class);
         packageMapper = mock(AigPackageMapper.class);
         evaluationService = mock(IAigEvaluationService.class);
         canaryEvidenceService = mock(IAigCanaryEvidenceService.class);
         sandboxRunService = mock(IAigSandboxRunService.class);
         service = new AigAgentRegistryServiceImpl(agentVersionMapper, skillVersionMapper,
-            packageVersionMapper, releaseEventMapper, bindingMapper, packageMapper,
-            new AigPackageManifestValidator(JsonMapper.builder().build()), evaluationService,
-            canaryEvidenceService, sandboxRunService);
+            packageVersionMapper, releaseEventMapper, bindingMapper, resourceBindingMapper,
+            packageMapper, new AigPackageManifestValidator(JsonMapper.builder().build()),
+            evaluationService, canaryEvidenceService, sandboxRunService);
         // 默认：黄金用例证据「已满足」（需要它的用例各自再覆盖）
         when(evaluationService.goldenCaseEvidence(any(), any()))
             .thenReturn(AigGoldenCaseEvidence.satisfied(List.of(), Map.of()));
@@ -725,6 +731,147 @@ class AigAgentRegistryServiceImplTest {
         assertTrue(error.getMessage().contains("没有证据"), error.getMessage());
         assertTrue(error.getMessage().contains("case-a"), "要说清是哪条用例挡住了：" + error.getMessage());
         verify(agentVersionMapper, never()).update(isNull(), any());
+    }
+
+    // ------------------------------------------------------------------ 工具/知识绑定（附件 07 §5）
+
+    /**
+     * 造一个带声明（工具/知识）的版本桩。
+     *
+     * @param allowedTools   声明的允许工具（逗号分隔，可空）
+     * @param forbiddenTools 声明禁止的工具（逗号分隔，可空）
+     * @param knowledgeScope 声明的知识范围（逗号分隔，可空）
+     */
+    private void stubVersionWithResources(String allowedTools, String forbiddenTools,
+                                          String knowledgeScope) {
+        AigAgentVersion version = new AigAgentVersion();
+        version.setAgentVersionId(VERSION_ID);
+        version.setReleaseStatus("STABLE");
+        version.setReleaseChannel("GENERAL");
+        version.setAllowedTools(allowedTools);
+        version.setForbiddenTools(forbiddenTools);
+        version.setKnowledgeScopeJson(knowledgeScope);
+        when(agentVersionMapper.selectById(VERSION_ID)).thenReturn(version);
+    }
+
+    private static AigAgentResourceBindingBo resourceBo(String type, String code) {
+        AigAgentResourceBindingBo bo = new AigAgentResourceBindingBo();
+        bo.setAgentVersionId(VERSION_ID);
+        bo.setResourceType(type);
+        bo.setResourceCode(code);
+        return bo;
+    }
+
+    @Test
+    @DisplayName("★ 新增工具绑定：命中版本已声明的工具才放行，落库为规范化编码 + 默认启用")
+    void addResourceBindingAcceptsDeclaredTool() {
+        stubVersionWithResources(" brand_brief , image_search ", "shell", "brand-kb");
+        when(resourceBindingMapper.selectCount(any())).thenReturn(0L);
+        when(resourceBindingMapper.insert(any(AigAgentResourceBinding.class))).thenAnswer(invocation -> {
+            invocation.<AigAgentResourceBinding>getArgument(0).setBindingId(7901L);
+            return 1;
+        });
+
+        AigAgentResourceBindingBo bo = resourceBo("tool", "brand_brief");
+        bo.setResourceCode("  brand_brief  ");
+        assertEquals(7901L, service.addResourceBinding(bo));
+
+        ArgumentCaptor<AigAgentResourceBinding> captor =
+            ArgumentCaptor.forClass(AigAgentResourceBinding.class);
+        verify(resourceBindingMapper).insert(captor.capture());
+        AigAgentResourceBinding saved = captor.getValue();
+        assertEquals("TOOL", saved.getResourceType(), "类型要规范化成枚举 code（大小写不敏感）");
+        assertEquals("brand_brief", saved.getResourceCode(), "编码要 trim 后入库");
+        assertEquals("Y", saved.getEnabled(), "留空默认启用");
+    }
+
+    @Test
+    @DisplayName("★ 新增绑定：未声明的资源编码一律拒绝（绑定表不是第二条声明通道）")
+    void addResourceBindingRejectsUndeclaredCode() {
+        stubVersionWithResources("brand_brief", "shell", "brand-kb");
+        when(resourceBindingMapper.selectCount(any())).thenReturn(0L);
+
+        // 既不在 allowed 也不在 forbidden：报错要列出"声明里有什么"（否则只能靠猜）
+        ServiceException unknown = assertThrows(ServiceException.class,
+            () -> service.addResourceBinding(resourceBo("TOOL", "ssh")));
+        assertTrue(unknown.getMessage().contains("没有声明"), unknown.getMessage());
+        assertTrue(unknown.getMessage().contains("brand_brief"), unknown.getMessage());
+
+        // 在 forbidden 里：即使调用方以为可以，也明确拒绝
+        ServiceException forbidden = assertThrows(ServiceException.class,
+            () -> service.addResourceBinding(resourceBo("TOOL", "shell")));
+        assertTrue(forbidden.getMessage().contains("明确禁止"), forbidden.getMessage());
+
+        verify(resourceBindingMapper, never()).insert(any(AigAgentResourceBinding.class));
+    }
+
+    @Test
+    @DisplayName("新增绑定：版本没声明任何东西时，提示「先去声明」而不是只说不匹配")
+    void addResourceBindingTellsWhenNothingDeclared() {
+        stubVersionWithResources(null, null, null);
+        when(resourceBindingMapper.selectCount(any())).thenReturn(0L);
+
+        ServiceException error = assertThrows(ServiceException.class,
+            () -> service.addResourceBinding(resourceBo("TOOL", "brand_brief")));
+
+        assertTrue(error.getMessage().contains("没有声明任何"), error.getMessage());
+        assertTrue(error.getMessage().contains("allowed_tools"), error.getMessage());
+    }
+
+    @Test
+    @DisplayName("新增知识范围绑定：命中 knowledge_scope_json 才放行")
+    void addResourceBindingAcceptsDeclaredKnowledge() {
+        stubVersionWithResources("brand_brief", "shell", " brand-kb , product-facts ");
+        when(resourceBindingMapper.selectCount(any())).thenReturn(0L);
+        when(resourceBindingMapper.insert(any(AigAgentResourceBinding.class))).thenAnswer(invocation -> {
+            invocation.<AigAgentResourceBinding>getArgument(0).setBindingId(7902L);
+            return 1;
+        });
+
+        assertEquals(7902L, service.addResourceBinding(resourceBo("KNOWLEDGE", "product-facts")));
+
+        ServiceException undeclared = assertThrows(ServiceException.class,
+            () -> service.addResourceBinding(resourceBo("KNOWLEDGE", "nope")));
+        assertTrue(undeclared.getMessage().contains("knowledge_scope_json"), undeclared.getMessage());
+    }
+
+    @Test
+    @DisplayName("★ 新增绑定：同一范围下重复绑定要拒绝（唯一索引不约束 NULL，只能服务层挡）")
+    void addResourceBindingRejectsDuplicate() {
+        stubVersionWithResources("brand_brief", "shell", null);
+        when(resourceBindingMapper.selectCount(any())).thenReturn(1L);
+
+        ServiceException error = assertThrows(ServiceException.class,
+            () -> service.addResourceBinding(resourceBo("TOOL", "brand_brief")));
+
+        assertTrue(error.getMessage().contains("已存在"), error.getMessage());
+        verify(resourceBindingMapper, never()).insert(any(AigAgentResourceBinding.class));
+    }
+
+    @Test
+    @DisplayName("新增绑定：类型/编码/版本非法时给出可读错误，且列出可选的资源类型")
+    void addResourceBindingRejectsBadInput() {
+        assertThrows(ServiceException.class, () -> service.addResourceBinding(null));
+
+        AigAgentResourceBindingBo noVersion = resourceBo("TOOL", "brand_brief");
+        noVersion.setAgentVersionId(null);
+        assertThrows(ServiceException.class, () -> service.addResourceBinding(noVersion));
+
+        ServiceException badType = assertThrows(ServiceException.class,
+            () -> service.addResourceBinding(resourceBo("NOPE", "brand_brief")));
+        assertTrue(badType.getMessage().contains("可选"), badType.getMessage());
+        assertTrue(badType.getMessage().contains("KNOWLEDGE"), badType.getMessage());
+
+        ServiceException blankCode = assertThrows(ServiceException.class,
+            () -> service.addResourceBinding(resourceBo("TOOL", "   ")));
+        assertTrue(blankCode.getMessage().contains("资源编码"), blankCode.getMessage());
+
+        when(agentVersionMapper.selectById(VERSION_ID)).thenReturn(null);
+        ServiceException noSuchVersion = assertThrows(ServiceException.class,
+            () -> service.addResourceBinding(resourceBo("TOOL", "brand_brief")));
+        assertTrue(noSuchVersion.getMessage().contains("不存在"), noSuchVersion.getMessage());
+
+        verify(resourceBindingMapper, never()).insert(any(AigAgentResourceBinding.class));
     }
 
 }

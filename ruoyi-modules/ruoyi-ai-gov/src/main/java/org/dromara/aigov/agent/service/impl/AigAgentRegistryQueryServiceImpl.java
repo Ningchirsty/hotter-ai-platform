@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.aigov.agent.domain.AigAgent;
 import org.dromara.aigov.agent.domain.AigAgentBinding;
+import org.dromara.aigov.agent.domain.AigAgentResourceBinding;
 import org.dromara.aigov.agent.domain.AigAgentVersion;
 import org.dromara.aigov.agent.domain.AigPackage;
 import org.dromara.aigov.agent.domain.AigPackageVersion;
@@ -13,20 +14,25 @@ import org.dromara.aigov.agent.domain.AigSkill;
 import org.dromara.aigov.agent.domain.AigSkillVersion;
 import org.dromara.aigov.agent.domain.bo.AigAgentBindingQueryBo;
 import org.dromara.aigov.agent.domain.bo.AigAgentQueryBo;
+import org.dromara.aigov.agent.domain.bo.AigAgentResourceBindingQueryBo;
 import org.dromara.aigov.agent.domain.bo.AigAgentVersionQueryBo;
 import org.dromara.aigov.agent.domain.bo.AigPackageQueryBo;
 import org.dromara.aigov.agent.domain.bo.AigPackageVersionQueryBo;
 import org.dromara.aigov.agent.domain.bo.AigSkillQueryBo;
 import org.dromara.aigov.agent.domain.bo.AigSkillVersionQueryBo;
 import org.dromara.aigov.agent.domain.vo.AigAgentBindingVo;
+import org.dromara.aigov.agent.domain.vo.AigAgentDeclaredResourceVo;
+import org.dromara.aigov.agent.domain.vo.AigAgentResourceBindingVo;
 import org.dromara.aigov.agent.domain.vo.AigAgentVersionVo;
 import org.dromara.aigov.agent.domain.vo.AigAgentVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageVersionVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageVo;
 import org.dromara.aigov.agent.domain.vo.AigSkillVersionVo;
 import org.dromara.aigov.agent.domain.vo.AigSkillVo;
+import org.dromara.aigov.agent.enums.AigAgentResourceTypeEnum;
 import org.dromara.aigov.agent.mapper.AigAgentBindingMapper;
 import org.dromara.aigov.agent.mapper.AigAgentMapper;
+import org.dromara.aigov.agent.mapper.AigAgentResourceBindingMapper;
 import org.dromara.aigov.agent.mapper.AigAgentVersionMapper;
 import org.dromara.aigov.agent.mapper.AigPackageMapper;
 import org.dromara.aigov.agent.mapper.AigPackageVersionMapper;
@@ -38,6 +44,11 @@ import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.mybatis.core.page.PageQuery;
 import org.springframework.stereotype.Service;
+
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 
 /**
  * 注册中心只读查询实现（设计 §5、§6、§10.2）。
@@ -65,6 +76,8 @@ public class AigAgentRegistryQueryServiceImpl implements IAigAgentRegistryQueryS
     private final AigPackageVersionMapper packageVersionMapper;
 
     private final AigAgentBindingMapper bindingMapper;
+
+    private final AigAgentResourceBindingMapper resourceBindingMapper;
 
     @Override
     public PageResult<AigAgentVo> queryAgentPage(AigAgentQueryBo bo, PageQuery pageQuery) {
@@ -254,6 +267,108 @@ public class AigAgentRegistryQueryServiceImpl implements IAigAgentRegistryQueryS
      */
     private static <T> Page<T> pageOf(PageQuery pageQuery) {
         return (pageQuery == null ? new PageQuery() : pageQuery).build();
+    }
+
+    @Override
+    public PageResult<AigAgentResourceBindingVo> queryResourceBindingPage(
+        AigAgentResourceBindingQueryBo bo, PageQuery pageQuery) {
+        AigAgentResourceBindingQueryBo query =
+            bo == null ? new AigAgentResourceBindingQueryBo() : bo;
+        LambdaQueryWrapper<AigAgentResourceBinding> wrapper =
+            new LambdaQueryWrapper<AigAgentResourceBinding>()
+                .eq(query.getAgentVersionId() != null, AigAgentResourceBinding::getAgentVersionId,
+                    query.getAgentVersionId())
+                .eq(StringUtils.isNotBlank(query.getResourceType()),
+                    AigAgentResourceBinding::getResourceType, query.getResourceType())
+                .eq(StringUtils.isNotBlank(query.getResourceCode()),
+                    AigAgentResourceBinding::getResourceCode, query.getResourceCode())
+                .eq(query.getCompanyId() != null, AigAgentResourceBinding::getCompanyId,
+                    query.getCompanyId())
+                .eq(query.getBrandId() != null, AigAgentResourceBinding::getBrandId, query.getBrandId())
+                .eq(StringUtils.isNotBlank(query.getEnabled()), AigAgentResourceBinding::getEnabled,
+                    query.getEnabled())
+                .orderByDesc(AigAgentResourceBinding::getCreateTime);
+        Page<AigAgentResourceBindingVo> voPage = resourceBindingMapper.selectVoPage(pageOf(pageQuery),
+            wrapper);
+        return PageResult.build(voPage.getRecords(), voPage.getTotal());
+    }
+
+    @Override
+    public AigAgentDeclaredResourceVo declaredResources(Long agentVersionId) {
+        if (agentVersionId == null) {
+            throw new ServiceException("Agent 版本ID不能为空");
+        }
+        AigAgentVersion version = agentVersionMapper.selectById(agentVersionId);
+        if (version == null) {
+            throw new ServiceException("Agent 版本不存在：" + agentVersionId);
+        }
+        // 已启用的绑定编码：只算 enabled=Y 的（停用的绑定不该把声明项标成"已绑"，
+        // 否则页面会劝人不要重建一条其实已经不生效的绑定）
+        Set<String> boundTools = boundCodes(agentVersionId, AigAgentResourceTypeEnum.TOOL);
+        Set<String> boundKnowledges = boundCodes(agentVersionId, AigAgentResourceTypeEnum.KNOWLEDGE);
+
+        AigAgentDeclaredResourceVo vo = new AigAgentDeclaredResourceVo();
+        vo.setAgentVersionId(agentVersionId);
+        vo.setVersion(version.getVersion());
+        vo.setAllowedTools(items(splitCodes(version.getAllowedTools()), boundTools));
+        vo.setForbiddenTools(splitCodes(version.getForbiddenTools()));
+        vo.setKnowledgeScopes(items(splitCodes(version.getKnowledgeScopeJson()), boundKnowledges));
+        return vo;
+    }
+
+    /**
+     * 取某版本某类型「启用中」的绑定编码集合。
+     *
+     * @param agentVersionId 版本ID
+     * @param type           资源类型
+     * @return 编码集合
+     */
+    private Set<String> boundCodes(Long agentVersionId, AigAgentResourceTypeEnum type) {
+        List<AigAgentResourceBinding> rows = resourceBindingMapper.selectList(
+            new LambdaQueryWrapper<AigAgentResourceBinding>()
+                .eq(AigAgentResourceBinding::getAgentVersionId, agentVersionId)
+                .eq(AigAgentResourceBinding::getResourceType, type.getCode())
+                .eq(AigAgentResourceBinding::getEnabled, "Y"));
+        Set<String> codes = new LinkedHashSet<>();
+        for (AigAgentResourceBinding row : rows) {
+            codes.add(row.getResourceCode());
+        }
+        return codes;
+    }
+
+    /**
+     * 声明编码 → 带"是否已绑定"标记的项。
+     *
+     * @param codes 声明编码
+     * @param bound 已绑定编码
+     * @return 项清单
+     */
+    private static List<AigAgentDeclaredResourceVo.Item> items(List<String> codes, Set<String> bound) {
+        List<AigAgentDeclaredResourceVo.Item> items = new ArrayList<>(codes.size());
+        for (String code : codes) {
+            items.add(new AigAgentDeclaredResourceVo.Item(code, bound.contains(code)));
+        }
+        return items;
+    }
+
+    /**
+     * 把逗号分隔的编码串拆成清单（去空白、丢空项）。
+     *
+     * @param csv 逗号分隔串
+     * @return 编码清单
+     */
+    private static List<String> splitCodes(String csv) {
+        if (StringUtils.isBlank(csv)) {
+            return List.of();
+        }
+        List<String> codes = new ArrayList<>();
+        for (String part : csv.split(",")) {
+            String trimmed = part.trim();
+            if (!trimmed.isEmpty()) {
+                codes.add(trimmed);
+            }
+        }
+        return codes;
     }
 
 }

@@ -2,12 +2,15 @@ package org.dromara.aigov.agent.service;
 
 import org.dromara.aigov.agent.domain.bo.AigAgentBindingQueryBo;
 import org.dromara.aigov.agent.domain.bo.AigAgentQueryBo;
+import org.dromara.aigov.agent.domain.bo.AigAgentResourceBindingQueryBo;
 import org.dromara.aigov.agent.domain.bo.AigAgentVersionQueryBo;
 import org.dromara.aigov.agent.domain.bo.AigPackageQueryBo;
 import org.dromara.aigov.agent.domain.bo.AigPackageVersionQueryBo;
 import org.dromara.aigov.agent.domain.bo.AigSkillQueryBo;
 import org.dromara.aigov.agent.domain.bo.AigSkillVersionQueryBo;
 import org.dromara.aigov.agent.domain.vo.AigAgentBindingVo;
+import org.dromara.aigov.agent.domain.vo.AigAgentDeclaredResourceVo;
+import org.dromara.aigov.agent.domain.vo.AigAgentResourceBindingVo;
 import org.dromara.aigov.agent.domain.vo.AigAgentVersionVo;
 import org.dromara.aigov.agent.domain.vo.AigAgentVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageVersionVo;
@@ -127,5 +130,25 @@ public interface IAigAgentRegistryQueryService {
      * @return 分页结果
      */
     PageResult<AigAgentBindingVo> queryBindingPage(AigAgentBindingQueryBo bo, PageQuery pageQuery);
+
+    /**
+     * 分页查询工具/知识绑定清单（附件 07 §5）。
+     *
+     * @param bo        查询条件
+     * @param pageQuery 分页
+     * @return 分页结果
+     */
+    PageResult<AigAgentResourceBindingVo> queryResourceBindingPage(
+        AigAgentResourceBindingQueryBo bo, PageQuery pageQuery);
+
+    /**
+     * 取某个 Agent 版本「声明了什么」：允许工具 / 禁止工具 / 知识范围，并标出各自是否已有启用中的绑定。
+     *
+     * <p>页面据此让人从<b>声明里挑</b>一项去绑定，而不是手打一个编码再看服务端拒绝。</p>
+     *
+     * @param agentVersionId Agent 版本ID
+     * @return 声明视图
+     */
+    AigAgentDeclaredResourceVo declaredResources(Long agentVersionId);
 
 }

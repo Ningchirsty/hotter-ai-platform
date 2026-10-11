@@ -1,7 +1,9 @@
 package org.dromara.aigov.agent;
 
+import org.dromara.aigov.agent.domain.bo.AigAgentResourceBindingQueryBo;
 import org.dromara.aigov.agent.domain.bo.AigEvaluationManualRunBo;
 import org.dromara.aigov.agent.domain.bo.AigPackageQueryBo;
+import org.dromara.aigov.agent.domain.vo.AigAgentDeclaredResourceVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageVo;
 import org.dromara.aigov.agent.enums.AigReleaseStatusEnum;
 import org.dromara.aigov.agent.evaluation.AigEvaluationSubjectRegistry;
@@ -13,6 +15,7 @@ import org.dromara.aigov.agent.helper.IAigPackageBodyStore;
 import org.dromara.aigov.agent.manifest.AigPackageManifestValidator;
 import org.dromara.aigov.agent.mapper.AigAgentBindingMapper;
 import org.dromara.aigov.agent.mapper.AigAgentMapper;
+import org.dromara.aigov.agent.mapper.AigAgentResourceBindingMapper;
 import org.dromara.aigov.agent.mapper.AigPackageRejectionMapper;
 import org.dromara.aigov.agent.mapper.AigAgentVersionMapper;
 import org.dromara.aigov.agent.mapper.AigEvaluationCaseMapper;
@@ -152,6 +155,15 @@ class AigWp3WiringAndRoutesTest {
         packageVo.setPackageId(7L);
         when(queryService.getPackage(7L)).thenReturn(packageVo);
         when(registryService.advanceRelease(any())).thenReturn(AigReleaseStatusEnum.VALIDATED);
+        when(queryService.queryResourceBindingPage(any(), any()))
+            .thenReturn(PageResult.build(List.of(), 0L));
+        when(registryService.addResourceBinding(any())).thenReturn(7901L);
+        AigAgentDeclaredResourceVo declared = new AigAgentDeclaredResourceVo();
+        declared.setAgentVersionId(1L);
+        declared.setAllowedTools(List.of());
+        declared.setForbiddenTools(List.of());
+        declared.setKnowledgeScopes(List.of());
+        when(queryService.declaredResources(1L)).thenReturn(declared);
         when(evaluationService.listCaseVos(any(), any())).thenReturn(List.of());
 
         MockMvc mockMvc = MockMvcBuilders
@@ -177,6 +189,18 @@ class AigWp3WiringAndRoutesTest {
         mockMvc.perform(get("/aigov/agent/binding/list")).andExpect(status().isOk());
         mockMvc.perform(get("/aigov/agent/package/version/list")).andExpect(status().isOk());
         mockMvc.perform(get("/aigov/evaluation/case/list")).andExpect(status().isOk());
+
+        // 工具/知识绑定（附件 07 §5）：清单 / 版本声明 / 新增
+        mockMvc.perform(get("/aigov/agent/resource-binding/list")).andExpect(status().isOk());
+        verify(queryService).queryResourceBindingPage(any(AigAgentResourceBindingQueryBo.class), any());
+        mockMvc.perform(get("/aigov/agent/version/1/declared-resources")).andExpect(status().isOk());
+        verify(queryService).declaredResources(1L);
+        mockMvc.perform(post("/aigov/agent/resource-binding")
+                .contentType("application/json")
+                .content("{\"agentVersionId\":1,\"resourceType\":\"TOOL\",\"resourceCode\":\"brand_brief\"}"))
+            .andExpect(status().isOk())
+            .andExpect(content().string(containsString("7901")));
+        verify(registryService).addResourceBinding(any());
 
         // 页面靠这个接口拿到「版本声明的用例集合」（声明在 config_json/Manifest 里，页面读不到）
         mockMvc.perform(get("/aigov/evaluation/declared-cases")
@@ -314,6 +338,11 @@ class AigWp3WiringAndRoutesTest {
         }
 
         @Bean
+        AigAgentResourceBindingMapper resourceBindingMapper() {
+            return mock(AigAgentResourceBindingMapper.class);
+        }
+
+        @Bean
         AigEvaluationCaseMapper evaluationCaseMapper() {
             return mock(AigEvaluationCaseMapper.class);
         }
@@ -371,14 +400,15 @@ class AigWp3WiringAndRoutesTest {
                                                  AigPackageVersionMapper packageVersionMapper,
                                                  AigReleaseEventMapper releaseEventMapper,
                                                  AigAgentBindingMapper bindingMapper,
+                                                 AigAgentResourceBindingMapper resourceBindingMapper,
                                                  AigPackageMapper packageMapper,
                                                  AigPackageManifestValidator manifestValidator,
                                                  IAigEvaluationService evaluationService,
                                                  IAigCanaryEvidenceService canaryEvidenceService,
                                                  IAigSandboxRunService sandboxRunService) {
             return new AigAgentRegistryServiceImpl(agentVersionMapper, skillVersionMapper,
-                packageVersionMapper, releaseEventMapper, bindingMapper, packageMapper,
-                manifestValidator, evaluationService, canaryEvidenceService, sandboxRunService);
+                packageVersionMapper, releaseEventMapper, bindingMapper, resourceBindingMapper,
+                packageMapper, manifestValidator, evaluationService, canaryEvidenceService, sandboxRunService);
         }
 
         @Bean
@@ -388,9 +418,10 @@ class AigWp3WiringAndRoutesTest {
                                                            AigSkillVersionMapper skillVersionMapper,
                                                            AigPackageMapper packageMapper,
                                                            AigPackageVersionMapper packageVersionMapper,
-                                                           AigAgentBindingMapper bindingMapper) {
+                                                           AigAgentBindingMapper bindingMapper,
+                                                           AigAgentResourceBindingMapper resourceBindingMapper) {
             return new AigAgentRegistryQueryServiceImpl(agentMapper, agentVersionMapper, skillMapper,
-                skillVersionMapper, packageMapper, packageVersionMapper, bindingMapper);
+                skillVersionMapper, packageMapper, packageVersionMapper, bindingMapper, resourceBindingMapper);
         }
 
         @Bean

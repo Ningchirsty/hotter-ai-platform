@@ -150,6 +150,15 @@ public interface AigConstants {
     String PERM_AGENT_BINDING = "aig:agent:binding";
 
     /**
+     * 工具/知识绑定管理（附件 07 §5：把版本声明的 allowed_tools / knowledge_scope_json 收窄到范围）。
+     *
+     * <p><b>为什么与 {@link #PERM_AGENT_BINDING} 分开</b>：那个决定"版本对谁能看见"（可见性），
+     * 这个决定"版本能用哪些已声明的工具/知识"（能力边界）。两者的风险不同——把能力边界放开
+     * 等于多给了一条不被治理台看见的通道，因此单独授权、单独审计。</p>
+     */
+    String PERM_AGENT_RESOURCE_BINDING = "aig:agent:resource-binding";
+
+    /**
      * Skill 清单（读）
      */
     String PERM_SKILL_LIST = "aig:skill:list";

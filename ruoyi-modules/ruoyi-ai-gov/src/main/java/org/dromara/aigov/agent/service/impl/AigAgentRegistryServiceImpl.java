@@ -5,13 +5,16 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.aigov.agent.domain.AigAgentBinding;
+import org.dromara.aigov.agent.domain.AigAgentResourceBinding;
 import org.dromara.aigov.agent.domain.AigAgentVersion;
 import org.dromara.aigov.agent.domain.AigPackage;
 import org.dromara.aigov.agent.domain.AigPackageVersion;
 import org.dromara.aigov.agent.domain.AigReleaseEvent;
 import org.dromara.aigov.agent.domain.AigSkillVersion;
 import org.dromara.aigov.agent.domain.bo.AigAgentBindingBo;
+import org.dromara.aigov.agent.domain.bo.AigAgentResourceBindingBo;
 import org.dromara.aigov.agent.domain.bo.AigReleaseAdvanceBo;
+import org.dromara.aigov.agent.enums.AigAgentResourceTypeEnum;
 import org.dromara.aigov.agent.enums.AigReleaseChannelEnum;
 import org.dromara.aigov.agent.enums.AigReleaseGateEnum;
 import org.dromara.aigov.agent.enums.AigReleaseStatusEnum;
@@ -23,6 +26,7 @@ import org.dromara.aigov.agent.manifest.AigManifestScanResult;
 import org.dromara.aigov.agent.manifest.AigPackageIdentity;
 import org.dromara.aigov.agent.manifest.AigPackageManifestValidator;
 import org.dromara.aigov.agent.mapper.AigAgentBindingMapper;
+import org.dromara.aigov.agent.mapper.AigAgentResourceBindingMapper;
 import org.dromara.aigov.agent.mapper.AigAgentVersionMapper;
 import org.dromara.aigov.agent.mapper.AigPackageMapper;
 import org.dromara.aigov.agent.mapper.AigPackageVersionMapper;
@@ -39,6 +43,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -82,6 +87,8 @@ public class AigAgentRegistryServiceImpl implements IAigAgentRegistryService {
     private final AigReleaseEventMapper releaseEventMapper;
 
     private final AigAgentBindingMapper bindingMapper;
+
+    private final AigAgentResourceBindingMapper resourceBindingMapper;
 
     private final AigPackageMapper packageMapper;
 
@@ -294,6 +301,121 @@ public class AigAgentRegistryServiceImpl implements IAigAgentRegistryService {
         log.info("新增 Agent 版本绑定, bindingId={}, agentVersionId={}, brandId={}, channel={}",
             binding.getBindingId(), bo.getAgentVersionId(), bo.getBrandId(), channel);
         return binding.getBindingId();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Long addResourceBinding(AigAgentResourceBindingBo bo) {
+        if (bo == null || bo.getAgentVersionId() == null) {
+            throw new ServiceException("Agent 版本ID不能为空");
+        }
+        AigAgentResourceTypeEnum type = AigAgentResourceTypeEnum.find(bo.getResourceType());
+        if (type == null) {
+            throw new ServiceException("未知的资源类型：" + bo.getResourceType()
+                + "；可选：" + AigAgentResourceTypeEnum.describe());
+        }
+        String code = bo.getResourceCode() == null ? null : bo.getResourceCode().trim();
+        if (StringUtils.isBlank(code)) {
+            throw new ServiceException("资源编码不能为空");
+        }
+        AigAgentVersion version = agentVersionMapper.selectById(bo.getAgentVersionId());
+        if (version == null) {
+            throw new ServiceException("Agent 版本不存在：" + bo.getAgentVersionId());
+        }
+        // ★ 绑定表是"声明的收窄"，不是第二条声明通道：编码必须命中该版本已声明的项
+        assertResourceDeclared(version, type, code);
+
+        String scenarioCode = bo.getScenarioCode() == null ? null : bo.getScenarioCode().trim();
+        String roleScope = bo.getRoleScope() == null ? null : bo.getRoleScope().trim();
+        // 重复检查必须显式做：范围列允许 NULL 表示"不限"，而唯一索引不约束 NULL
+        //（两行范围全为 NULL 的"重复"绑定照样能插进去），所以不能指望数据库挡住
+        Long duplicated = resourceBindingMapper.selectCount(
+            new LambdaQueryWrapper<AigAgentResourceBinding>()
+                .eq(AigAgentResourceBinding::getAgentVersionId, bo.getAgentVersionId())
+                .eq(AigAgentResourceBinding::getResourceType, type.getCode())
+                .eq(AigAgentResourceBinding::getResourceCode, code)
+                .eq(bo.getCompanyId() != null, AigAgentResourceBinding::getCompanyId, bo.getCompanyId())
+                .isNull(bo.getCompanyId() == null, AigAgentResourceBinding::getCompanyId)
+                .eq(bo.getBrandId() != null, AigAgentResourceBinding::getBrandId, bo.getBrandId())
+                .isNull(bo.getBrandId() == null, AigAgentResourceBinding::getBrandId)
+                .eq(scenarioCode != null, AigAgentResourceBinding::getScenarioCode, scenarioCode)
+                .isNull(scenarioCode == null, AigAgentResourceBinding::getScenarioCode)
+                .eq(roleScope != null, AigAgentResourceBinding::getRoleScope, roleScope)
+                .isNull(roleScope == null, AigAgentResourceBinding::getRoleScope));
+        if (duplicated != null && duplicated > 0) {
+            throw new ServiceException("同一条绑定已存在：版本 " + bo.getAgentVersionId() + " 的 "
+                + type.getCode() + "「" + code + "」在相同范围下只能绑一次"
+                + "（要改范围请删掉旧的那条再建，避免两条边界不同的绑定同时生效）");
+        }
+
+        AigAgentResourceBinding binding = new AigAgentResourceBinding();
+        binding.setAgentVersionId(bo.getAgentVersionId());
+        binding.setResourceType(type.getCode());
+        binding.setResourceCode(code);
+        binding.setCompanyId(bo.getCompanyId());
+        binding.setBrandId(bo.getBrandId());
+        binding.setScenarioCode(scenarioCode);
+        binding.setRoleScope(roleScope);
+        binding.setEnabled(StringUtils.isBlank(bo.getEnabled()) ? YES : bo.getEnabled().trim());
+        binding.setDelFlag("0");
+        binding.setRemark(bo.getRemark());
+        resourceBindingMapper.insert(binding);
+        log.info("新增工具/知识绑定, bindingId={}, agentVersionId={}, type={}, code={}, enabled={}",
+            binding.getBindingId(), bo.getAgentVersionId(), type.getCode(), code, binding.getEnabled());
+        return binding.getBindingId();
+    }
+
+    /**
+     * 校验"要绑的资源编码确实被这个版本声明过"。
+     *
+     * <p>两条口径：</p>
+     * <ul>
+     *     <li>TOOL 明确拒绝 {@code forbidden_tools} 里的项——声明里"允许"与"禁止"同时命中时，
+     *         以禁止为准（发布记录里那句"这个版本不能用 shell"不能被一次绑定悄悄推翻）；</li>
+     *     <li>声明为空时给出可操作的提示（先去声明），而不是只说"没声明"。</li>
+     * </ul>
+     *
+     * @param version 版本
+     * @param type    资源类型
+     * @param code    资源编码
+     */
+    private void assertResourceDeclared(AigAgentVersion version, AigAgentResourceTypeEnum type, String code) {
+        String field = type == AigAgentResourceTypeEnum.TOOL ? "allowed_tools" : "knowledge_scope_json";
+        List<String> declared = type == AigAgentResourceTypeEnum.TOOL
+            ? splitCodes(version.getAllowedTools())
+            : splitCodes(version.getKnowledgeScopeJson());
+        if (type == AigAgentResourceTypeEnum.TOOL && splitCodes(version.getForbiddenTools()).contains(code)) {
+            throw new ServiceException("该版本明确禁止了工具「" + code + "」（forbidden_tools），不能绑定它");
+        }
+        if (declared.contains(code)) {
+            return;
+        }
+        if (declared.isEmpty()) {
+            throw new ServiceException("该版本没有声明任何" + type.getDesc() + "（" + field
+                + " 为空）：绑定表是声明的收窄，请先在版本内容里声明后再绑定");
+        }
+        throw new ServiceException("该版本没有声明" + type.getDesc() + "「" + code + "」：只能绑定版本已声明的项（"
+            + field + "=" + String.join("，", declared) + "）");
+    }
+
+    /**
+     * 把逗号分隔的编码串拆成清单（去空白、丢空项）。
+     *
+     * @param csv 逗号分隔串
+     * @return 编码清单
+     */
+    private static List<String> splitCodes(String csv) {
+        if (StringUtils.isBlank(csv)) {
+            return List.of();
+        }
+        ArrayList<String> codes = new ArrayList<>();
+        for (String part : csv.split(",")) {
+            String trimmed = part.trim();
+            if (!trimmed.isEmpty()) {
+                codes.add(trimmed);
+            }
+        }
+        return codes;
     }
 
     /**

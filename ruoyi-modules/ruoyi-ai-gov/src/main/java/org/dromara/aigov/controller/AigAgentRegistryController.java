@@ -8,6 +8,8 @@ import lombok.RequiredArgsConstructor;
 import org.dromara.aigov.agent.domain.bo.AigAgentBindingBo;
 import org.dromara.aigov.agent.domain.bo.AigAgentBindingQueryBo;
 import org.dromara.aigov.agent.domain.bo.AigAgentQueryBo;
+import org.dromara.aigov.agent.domain.bo.AigAgentResourceBindingBo;
+import org.dromara.aigov.agent.domain.bo.AigAgentResourceBindingQueryBo;
 import org.dromara.aigov.agent.domain.bo.AigAgentVersionQueryBo;
 import org.dromara.aigov.agent.domain.bo.AigPackageQueryBo;
 import org.dromara.aigov.agent.domain.bo.AigPackageUploadBo;
@@ -16,6 +18,8 @@ import org.dromara.aigov.agent.domain.bo.AigReleaseAdvanceBo;
 import org.dromara.aigov.agent.domain.bo.AigSkillQueryBo;
 import org.dromara.aigov.agent.domain.bo.AigSkillVersionQueryBo;
 import org.dromara.aigov.agent.domain.vo.AigAgentBindingVo;
+import org.dromara.aigov.agent.domain.vo.AigAgentDeclaredResourceVo;
+import org.dromara.aigov.agent.domain.vo.AigAgentResourceBindingVo;
 import org.dromara.aigov.agent.domain.vo.AigAgentVersionVo;
 import org.dromara.aigov.agent.domain.vo.AigAgentVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageDisableVo;
@@ -210,6 +214,49 @@ public class AigAgentRegistryController {
     public R<PageResult<AigAgentBindingVo>> bindingList(
         @Validated({Default.class, QueryGroup.class}) AigAgentBindingQueryBo bo, PageQuery pageQuery) {
         return R.ok(queryService.queryBindingPage(bo, pageQuery));
+    }
+
+    /**
+     * 新增工具/知识绑定（附件 07 §5：绑定是声明的收窄，不是第二条声明通道）。
+     *
+     * @param bo 绑定入参
+     * @return 绑定ID
+     */
+    @SaCheckPermission(AigConstants.PERM_AGENT_RESOURCE_BINDING)
+    @RepeatSubmit
+    @PostMapping("/resource-binding")
+    public R<Long> addResourceBinding(@RequestBody @Validated AigAgentResourceBindingBo bo) {
+        return R.ok(registryService.addResourceBinding(bo));
+    }
+
+    /**
+     * 分页查询工具/知识绑定清单。
+     *
+     * @param bo        查询条件
+     * @param pageQuery 分页参数
+     * @return 分页结果
+     */
+    @SaCheckPermission(AigConstants.PERM_AGENT_LIST)
+    @GetMapping("/resource-binding/list")
+    public R<PageResult<AigAgentResourceBindingVo>> resourceBindingList(
+        @Validated({Default.class, QueryGroup.class}) AigAgentResourceBindingQueryBo bo,
+        PageQuery pageQuery) {
+        return R.ok(queryService.queryResourceBindingPage(bo, pageQuery));
+    }
+
+    /**
+     * 取某个 Agent 版本「声明了什么」（允许工具 / 禁止工具 / 知识范围 + 是否已绑定）。
+     *
+     * <p>页面据此让人从声明里挑一项去绑定，而不是手打编码再看服务端拒绝。</p>
+     *
+     * @param agentVersionId Agent 版本ID
+     * @return 声明视图
+     */
+    @SaCheckPermission(AigConstants.PERM_AGENT_LIST)
+    @GetMapping("/version/{agentVersionId:\\d+}/declared-resources")
+    public R<AigAgentDeclaredResourceVo> declaredResources(
+        @PathVariable @NotNull(message = "Agent 版本ID不能为空") Long agentVersionId) {
+        return R.ok(queryService.declaredResources(agentVersionId));
     }
 
     /**

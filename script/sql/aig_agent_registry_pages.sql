@@ -76,24 +76,33 @@ select 1768000000000000045, '黄金用例与评测', 1763000000000000001, 110, '
   where not exists (select 1 from (select menu_id from sys_menu) t
                      where t.menu_id = 1768000000000000045);
 
+insert into sys_menu (menu_id, menu_name, parent_id, order_num, path, component, is_frame, is_cache,
+                      menu_type, visible, status, perms, icon, create_dept, create_by, create_time, remark)
+select 1768000000000000046, '工具/知识绑定', 1763000000000000001, 112, 'resource-binding',
+       'aigov/resourceBinding/index', 'N', 'Y', 'C', '0', '0', 'aig:agent:list', 'connection',
+       1761000000000000103, 1761100000000000001, sysdate(),
+       '附件 07 §5：把版本声明的 allowed_tools/knowledge_scope_json 收窄到范围；仅登记，无执行语义'
+  where not exists (select 1 from (select menu_id from sys_menu) t
+                     where t.menu_id = 1768000000000000046);
+
 -- ----------------------------
 -- 二、授权：三个角色都给（页面权限 = 列表权限，读语义）
---   按钮级写权限（推进/扫描/上传/安装/跑/复核）不在这里给，见 aig_agent_registry_menu.sql
+--   按钮级写权限（推进/扫描/上传/安装/跑/复核/工具绑定）不在这里给，见 aig_agent_registry_menu.sql
 -- ----------------------------
 insert ignore into sys_role_menu (role_id, menu_id)
 select 1763100000000000001, menu_id from sys_menu
  where menu_id in (1768000000000000041, 1768000000000000042, 1768000000000000043,
-                   1768000000000000044, 1768000000000000045);
+                   1768000000000000044, 1768000000000000045, 1768000000000000046);
 
 insert ignore into sys_role_menu (role_id, menu_id)
 select 1763100000000000002, menu_id from sys_menu
  where menu_id in (1768000000000000041, 1768000000000000042, 1768000000000000043,
-                   1768000000000000044, 1768000000000000045);
+                   1768000000000000044, 1768000000000000045, 1768000000000000046);
 
 insert ignore into sys_role_menu (role_id, menu_id)
 select 1763100000000000003, menu_id from sys_menu
  where menu_id in (1768000000000000041, 1768000000000000042, 1768000000000000043,
-                   1768000000000000044, 1768000000000000045);
+                   1768000000000000044, 1768000000000000045, 1768000000000000046);
 
 -- ⚠️ 父菜单（AI平台治理）也必须对这三个角色授权，否则子页面在菜单树里挂不上（看不见）
 insert ignore into sys_role_menu (role_id, menu_id)
