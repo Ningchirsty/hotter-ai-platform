@@ -6,10 +6,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.sql.SQLException;
 
 /** 与原视频入口共用默认租户约定，仅兼容已确认的单租户数据库结构。 */
-final class VideoCloudTenantResolver {
+public final class VideoCloudTenantResolver {
     private VideoCloudTenantResolver() { }
 
-    static String resolve(JdbcTemplate jdbc, Long user) {
+    public static String resolve(JdbcTemplate jdbc, Long user) {
         if (user == null) throw new VideoTaskException("UNAUTHENTICATED", "当前未登录");
         try {
             var tenants = jdbc.queryForList("SELECT tenant_id FROM sys_user WHERE user_id = ?", String.class, user);

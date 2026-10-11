@@ -241,6 +241,54 @@
       />
     </el-card>
 
+    <el-card shadow="never" class="mt-3">
+      <template #header>
+        <div class="toolbar-shell">
+          <div class="table-heading">
+            <h3>我的资产</h3>
+            <p>
+              跨域只读：图片/视频/内容附件各按<b>各域自己的口径</b>过滤（图片视频看归属用户，内容附件看任务负责人）。
+              只给展示字段，下载请到对应专业台——那里的权限仍然生效；不承诺跨域排序/分页。
+            </p>
+          </div>
+          <div class="toolbar-actions">
+            <el-button icon="Refresh" @click="getAssets">刷新</el-button>
+          </div>
+        </div>
+      </template>
+
+      <el-alert
+        v-if="!loadingAssets && assetGroups.length === 0"
+        type="info"
+        :closable="false"
+        title="当前没有接入任何资产域"
+        description="各域上线后这里会出现对应分栏（图片/视频/内容附件）。"
+      />
+
+      <section v-for="group in assetGroups" :key="group.domain" class="asset-group">
+        <h4 class="group-title">
+          {{ assetDomainLabel(group.domain) }}（{{ (group.items || []).length }}）
+          <span v-if="(group.items || []).length === 0" class="asset-empty">这个域暂时没有你的资产</span>
+        </h4>
+        <el-table :data="group.items || []" border class="data-table" size="small">
+          <el-table-column label="名称" min-width="200" show-overflow-tooltip>
+            <template #default="scope">{{ scope.row.name || '—' }}</template>
+          </el-table-column>
+          <el-table-column label="类型" prop="assetType" align="center" width="120" />
+          <el-table-column label="MIME" align="center" min-width="130" show-overflow-tooltip>
+            <template #default="scope">{{ scope.row.mimeType || '—' }}</template>
+          </el-table-column>
+          <el-table-column label="大小" align="center" width="100">
+            <template #default="scope">{{ formatBytes(scope.row.sizeBytes) }}</template>
+          </el-table-column>
+          <el-table-column label="来源任务" align="center" width="150" show-overflow-tooltip>
+            <template #default="scope">{{ scope.row.taskId || '—' }}</template>
+          </el-table-column>
+          <el-table-column label="时间" prop="createTime" align="center" width="170" show-overflow-tooltip />
+        </el-table>
+      </section>
+    </el-card>
+
     <LaunchFormDrawer
       v-model="launchVisible"
       :role-code="selectedRoleCode"
@@ -255,6 +303,7 @@ import {
   getRoleHome,
   getWorkspacePref,
   listMyArtifacts,
+  listMyAssets,
   listMyRoles,
   listMyTasks,
   setDefaultRole,
@@ -266,6 +315,7 @@ import type {
   AigPortalActionVO,
   AigPortalArtifactQuery,
   AigPortalArtifactVO,
+  AigPortalAssetGroupVO,
   AigPortalRoleHomeVO,
   AigPortalRoleVO,
   AigPortalTaskQuery,
@@ -277,6 +327,7 @@ import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import modal from '@/plugins/modal';
 import LaunchFormDrawer from './LaunchFormDrawer.vue';
 import {
+  assetDomainLabel,
   formatBytes,
   groupPortalActions,
   isFavorite,
@@ -324,6 +375,15 @@ const intentInput = ref('');
 const suggestions = ref<AigRecommendSuggestionVO[]>([]);
 const suggestReason = ref('');
 const loadingSuggest = ref(false);
+
+/**
+ * 我的资产（增量 8）：按域分组。
+ *
+ * 某域没接入时该组不出现；接入但没数据时该组出现且为空——界面要把这两者分开表达，
+ * 不能都显示成"空"。
+ */
+const assetGroups = ref<AigPortalAssetGroupVO[]>([]);
+const { loading: loadingAssets, withLoading: withAssetsLoading } = useLoading(true);
 
 /** 任务状态选项（与后端 AigTaskStatusEnum 一致） */
 const taskStatusOptions = [
@@ -495,6 +555,24 @@ const getArtifacts = async () => {
 };
 
 /**
+ * 我的资产（跨域、按域分组）。
+ *
+ * 某个域的查询失败会让整个接口报错（不静默把那一栏显示成空）——所以这里也要 catch，
+ * 否则一个域的故障会把整页的刷新变成未捕获异常。
+ */
+const getAssets = async () => {
+  try {
+    await withAssetsLoading(async () => {
+      const res = await listMyAssets();
+      assetGroups.value = res.data || [];
+    });
+  } catch (e: any) {
+    assetGroups.value = [];
+    modal.alertError(e?.message || '读取我的资产失败');
+  }
+};
+
+/**
  * 打开启动表单（非导航类卡片）。
  *
  * 页面类卡片不在这里：它们直接打开页面（`openPage`），不需要启动凭证。
@@ -543,6 +621,7 @@ const reload = async () => {
   await getRoles();
   await getTasks();
   await getArtifacts();
+  await getAssets();
 };
 
 onMounted(() => {
@@ -669,6 +748,17 @@ onMounted(() => {
 
 .action-group {
   margin-bottom: 14px;
+}
+
+.asset-group {
+  margin-bottom: 14px;
+}
+
+.asset-empty {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: normal;
+  color: var(--el-text-color-secondary);
 }
 
 .group-title {

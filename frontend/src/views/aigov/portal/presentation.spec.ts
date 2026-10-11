@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   START_PENDING_HINT,
   TASK_TYPE_OPTIONS,
+  assetDomainLabel,
   buildIdempotencyKey,
   formatBytes,
   groupPortalActions,
@@ -140,5 +141,13 @@ describe('员工 AI 工作台展示层', () => {
     );
     // 缺字段不抛错（界面容错，但不会因此把两条不同推荐合成一条）
     expect(suggestionKey({})).toBe('#');
+  });
+
+  it('资产域文案：已知域给中文，未知域原样显示（不并到「其他」里藏起来）', () => {
+    expect(assetDomainLabel('IMAGE')).toBe('图片素材');
+    expect(assetDomainLabel('VIDEO')).toBe('视频素材');
+    expect(assetDomainLabel('CONTENT')).toBe('内容附件');
+    expect(assetDomainLabel('NEW_DOMAIN')).toBe('NEW_DOMAIN');
+    expect(assetDomainLabel(undefined)).toBe('资产');
   });
 });
