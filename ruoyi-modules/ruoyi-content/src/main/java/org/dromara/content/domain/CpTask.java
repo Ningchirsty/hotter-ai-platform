@@ -54,6 +54,13 @@ public class CpTask extends BaseEntity implements Serializable {
     private Long productId;
 
     /**
+     * 来源平台任务ID（岗位场景派发时写入；唯一，NULL=非派发创建）
+     *
+     * <p>既用于追溯，也用于幂等：平台任务被重新入队再次派发时，靠唯一索引避免建出第二条内容任务。</p>
+     */
+    private Long platformTaskId;
+
+    /**
      * SKU编码
      */
     private String skuCode;

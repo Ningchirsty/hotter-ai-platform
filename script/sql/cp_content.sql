@@ -54,6 +54,7 @@ create table cp_task (
     task_name       varchar(255)    not null                   comment '任务名称',
     deliverable_type varchar(32)    not null                   comment '交付类型（ECOM_DETAIL/MAIN_IMAGE/EXHIBITION/MANUAL/PACKAGE/VIDEO）',
     product_id      bigint(20)      default null               comment '产品ID',
+    platform_task_id bigint(20)     default null               comment '来源平台任务ID（岗位场景派发时写入；唯一，NULL=非派发创建）',
     sku_code        varchar(64)     default null               comment 'SKU编码',
     deadline        datetime        default null               comment '截止时间',
     owner_id        bigint(20)      default null               comment '任务负责人（互动卡默认指派人）',
@@ -72,6 +73,7 @@ create table cp_task (
     update_time     datetime                                   comment '更新时间',
     primary key (task_id),
     unique key uk_cp_task_no (task_no),
+    unique key uk_cp_task_platform (platform_task_id),
     key idx_cp_task_status (status, del_flag),
     key idx_cp_task_owner (owner_id, status),
     key idx_cp_task_product (product_id)
