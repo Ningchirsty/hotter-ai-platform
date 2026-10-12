@@ -183,7 +183,7 @@ public class ImageCreationController extends BaseController {
     @SaCheckPermission("image:creation:view")
     public R<List<Map<String, Object>>> abilities() {
         // Spring's Jackson 3 HTTP mapper must receive plain values, not a Jackson 2 tree.
-        return R.ok(mapper.convertValue(registry.abilities(),
+        return R.ok(MAPPER.convertValue(registry.abilities(),
             new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() {}));
     }
 
