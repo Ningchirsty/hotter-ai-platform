@@ -52,6 +52,31 @@ jobs:
           java-version: '21'
           cache: maven
 
+      # ffmpeg 归档只下载一次并缓存，之后所有构建走缓存。
+      #
+      # 为什么不留给 Dockerfile 下载：该源站会对单个连接限速（实测每次请求 20 秒只能
+      # 收到 0.8–7 MB，而归档共 41.9 MB），且 curl 的 --retry 不会对「传输太慢」重试。
+      # 已因此让本流水线失败过两次。放在这里可以：只下一次、失败可重试整步、
+      # 并通过缓存让后续构建完全不再访问该源。
+      - name: Cache ffmpeg static archive
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: build-cache
+          key: ffmpeg-static-abda8d77ce830914-41888096
+
+      - name: Fetch ffmpeg static archive
+        run: bash script/ci/fetch-ffmpeg.sh build-cache
+
+      - name: Make verified media probe available to backend tests
+        run: |
+          set -euo pipefail
+          media_tools="$RUNNER_TEMP/verified-media-tools"
+          mkdir -p "$media_tools"
+          tar -xJf build-cache/ffmpeg-release-amd64-static.tar.xz -C "$media_tools" --strip-components=1
+          test -x "$media_tools/ffprobe"
+          "$media_tools/ffprobe" -version
+          echo "$media_tools" >> "$GITHUB_PATH"
+
       - name: Compile and run tests
         run: bash mvnw --batch-mode --no-transfer-progress -Dmaven.test.skip=false '-Dtest.groups=!exclude' verify
 
@@ -139,21 +164,6 @@ jobs:
           path: artifacts/jar/
           if-no-files-found: error
           retention-days: 7
-
-      # ffmpeg 归档只下载一次并缓存，之后所有构建走缓存。
-      #
-      # 为什么不留给 Dockerfile 下载：该源站会对单个连接限速（实测每次请求 20 秒只能
-      # 收到 0.8–7 MB，而归档共 41.9 MB），且 curl 的 --retry 不会对「传输太慢」重试。
-      # 已因此让本流水线失败过两次。放在这里可以：只下一次、失败可重试整步、
-      # 并通过缓存让后续构建完全不再访问该源。
-      - name: Cache ffmpeg static archive
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: build-cache
-          key: ffmpeg-static-abda8d77ce830914-41888096
-
-      - name: Fetch ffmpeg static archive
-        run: bash script/ci/fetch-ffmpeg.sh build-cache
 
       - name: Build backend image
         run: |

@@ -46,7 +46,7 @@ export function generatedRoutes(work: ImageInspirationWork, status: CloudImageMo
   for (const flow of workflows.filter(flow => flow.capabilityCode === 'T2I')) {
     const route: InspirationRoute = { source: 'local', media: 'image', model: flow.modelCode || flow.workflowCode,
       capability: 'T2I', workflowCode: flow.workflowCode, prompt: item.prompt,
-      reason: '已发布的本地文生图工作流，可参考相同主题、构图和风格。', referenceHint: '带入描述后仍通过现有本地工作流执行。' };
+      reason: '已发布的本地文生图创作能力，可参考相同主题、构图和风格。', referenceHint: '带入描述后仍通过现有本地创作能力执行。' };
     if (isRouteAvailable(route, workflows)) routes.push(route);
   }
   return routes;

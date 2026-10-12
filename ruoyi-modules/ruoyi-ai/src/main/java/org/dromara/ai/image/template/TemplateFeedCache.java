@@ -128,7 +128,7 @@ public class TemplateFeedCache {
         validateProfiles(profiles,manifest.path("profiles"));
         if(templates.size()!=manifest.path("template_count").asInt(-1)) throw new TemplateFeedException(503,"FEED_COUNT_INVALID");
         for(var t:templates.values()) {
-            if(t.path("schema_version").asInt()!=2 || !"image".equals(t.path("type").asText())) throw new TemplateFeedException(503,"FEED_TEMPLATE_INVALID");
+            if(t.path("schema_version").asInt()!=2 || !Set.of("image","video").contains(t.path("type").asText())) throw new TemplateFeedException(503,"FEED_TEMPLATE_INVALID");
             String cover=t.path("cover").path("url").asText(); resourceName(cover);
             String hash=t.path("cover").path("sha256").asText();
             if(!hash.matches("[a-f0-9]{64}") || !manifest.path("files").path(cover).asText().equals(hash)) throw new TemplateFeedException(503,"FEED_COVER_HASH_INVALID");
@@ -136,7 +136,7 @@ public class TemplateFeedCache {
             if(bytes==null || !sha(bytes).equals(hash)) {
                 Resource c=fetcher.get(cover,""); if(c.status()!=200) throw new TemplateFeedException(503,"FEED_COVER_HTTP_"+c.status());
                 checkFile(manifest,cover,c.bytes(),true); bytes=c.bytes();
-                var image=org.dromara.ai.image.service.ImageAssetProbe.probeBytes(bytes);
+                var image=probeCover(bytes,cover);
                 if(!image.measured() || image.width() < 1 || image.height() < 1 || image.exceedsPixels(32 * 1024 * 1024)) throw new TemplateFeedException(503,"FEED_COVER_IMAGE_INVALID");
                 // Feed 封面尺寸是展示元数据；生成尺寸只能来自已校验的 profile。
                 // 内容哈希与实际可读图片均有效时，采用图片本身的尺寸，不因供应商元数据失准阻断全库。
@@ -145,6 +145,18 @@ public class TemplateFeedCache {
             }
         }
         commit(new Snapshot(target,Map.copyOf(templates),Map.copyOf(tombstones),Map.copyOf(profiles),now,res.etag()));
+    }
+    /** WebP is supported by the deployed ffprobe; Java ImageIO has no built-in WebP reader. */
+    static org.dromara.ai.image.service.ImageAssetProbe.Probe probeCover(byte[] bytes,String name) throws Exception {
+        var image=org.dromara.ai.image.service.ImageAssetProbe.probeBytes(bytes);
+        if(image.measured() || !name.endsWith(".webp")) return image;
+        Path temporary=Files.createTempFile("template-cover-",".webp");
+        try {
+            Files.write(temporary,bytes);
+            var measured=new org.dromara.ai.video.service.MediaProbe("ffprobe","ffmpeg",10).probe(temporary);
+            if(!measured.measured() || measured.width()==null || measured.height()==null) return image;
+            return new org.dromara.ai.image.service.ImageAssetProbe.Probe(measured.width(),measured.height(),"webp",false,bytes.length,true);
+        } finally { Files.deleteIfExists(temporary); }
     }
     static void apply(JsonNode delta, Map<String,JsonNode> templates, Map<String,Integer> tombstones) {
         for(var t:delta.path("upserts")) upsert(t,templates,tombstones);
@@ -196,15 +208,17 @@ public class TemplateFeedCache {
         JsonNode t=snapshot.templates().get(id); if(t==null) throw new TemplateFeedException(404,"模板不存在"); return t;
     }
     public boolean published(JsonNode t) {
-        try { return online() && TemplateRequestBuilder.bindingAllowed(t,snapshot.profiles()) && "published".equals(t.path("status").asText()) && clock.instant().isBefore(Instant.parse(t.path("binding").path("last_verified_at").asText()).plus(Duration.ofDays(14))); }
+        try { return "image".equals(t.path("type").asText()) && online() && TemplateRequestBuilder.bindingAllowed(t,snapshot.profiles()) && "published".equals(t.path("status").asText()) && bindingFresh(t); }
         catch(Exception e) { return false; }
     }
+    boolean bindingFresh(JsonNode template) { return clock.instant().isBefore(Instant.parse(template.path("binding").path("last_verified_at").asText()).plus(Duration.ofDays(14))); }
     public boolean browsable() { return clock.instant().isBefore(snapshot.checkedAt().plus(Duration.ofDays(7))); }
     public Map<String,Object> project(JsonNode t) {
         String id=t.path("id").asText(); var out=new LinkedHashMap<String,Object>();
         for(String field:List.of("id","revision","category","tags","title","variables")) out.put(field,JSON.convertValue(t.path(field),Object.class));
         out.put("cover",properties.getPublicBaseUrl()+"/"+id+"/cover?revision="+t.path("revision").asInt());
         out.put("status",published(t)?"published":"maintenance");
+        out.put("model",t.path("binding").path("model").asText());
         JsonNode profile=snapshot.profiles().get(t.path("binding").path("params_profile").asText());
         out.put("outputSize",profile==null?"":profile.path("definition").path("fixed").path("size").asText());
         out.put("canGenerate",properties.isGenerationEnabled() && properties.getVerifiedProfiles().contains(t.path("binding").path("params_profile").asText()) && published(t)); return out;

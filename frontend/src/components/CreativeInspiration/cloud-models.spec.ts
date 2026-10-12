@@ -41,7 +41,7 @@ describe('云端候选能力与提交边界', () => {
   });
   it('未联调的蓝章鱼型号不继承其他图像模型的尺寸与编辑参数', () => {
     for (const model of cloudModelsFor('image')) {
-      expect(model.provider).toBe('蓝章鱼 BluOcto');
+      expect(model.provider).toBe('云端生成');
       expect(model.parametersVerified).toBe(false);
       expect(model.capabilities).toEqual(['T2I']);
       expect(cloudOutputOptions(model, 'T2I')).toEqual([]);

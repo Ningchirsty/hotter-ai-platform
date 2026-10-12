@@ -5,7 +5,7 @@
         <span>创建任务 · 云端视频</span>
         <h2>{{ selected.group }}</h2>
       </div>
-      <b>蓝章鱼</b>
+      <b>云端视频</b>
     </div>
     <div class="cloud-field">
       <label>视频生成模型</label>
@@ -233,11 +233,11 @@
       <p v-if="costQuote?.channelPriceMayVary" class="fee-note">该型号存在不同通道价格，当前显示公开模型报价。</p>
       <p v-if="!costQuote" class="fee-note">当前参数没有可用的公开报价。</p>
       <div class="fee-source">
-        <a :href="VIDEO_PRICING.source" target="_blank" rel="noopener noreferrer">蓝章鱼公开价格 ↗</a>
+        <span>模型价格说明</span>
         <time>{{ pricingDate }} 核对</time>
       </div>
       <p class="fee-note">
-        人民币按蓝章鱼公开汇率快照换算：1 美元 = {{ VIDEO_PRICING.displayCurrency.usdToCny }} 元 （{{
+        人民币按当前价格汇率快照换算：1 美元 = {{ VIDEO_PRICING.displayCurrency.usdToCny }} 元 （{{
           exchangeRateDate
         }}
         更新）。
@@ -264,7 +264,7 @@
         {{ selected.family }} · {{ selected.mode }} · {{ draft.resolution.toUpperCase() }} · {{ draft.seconds }} 秒
       </span>
       <p>
-        {{ status?.configured ? '服务端已配置蓝章鱼' : '服务端尚未启用云端视频' }} ·
+        {{ status?.configured ? '云端视频已接入' : '服务端尚未启用云端视频' }} ·
         {{
           videoCloudAccess(draft, status) === 'verified'
             ? '当前参数组合已完成真实验收'

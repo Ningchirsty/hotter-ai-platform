@@ -14,12 +14,12 @@
     <details class="plan-review">
       <summary>查看创作方案</summary>
       <p><b>用途：</b>{{ ability.name }} · {{ workflow?.modelName }}</p>
-      <p class="workflow-code">{{ workflow?.workflowCode }}</p>
+      
       <p v-if="plan.errors.length" class="missing">{{ plan.errors.join('；') }}</p>
-      <pre v-else>{{ plan.prompt || '固定抠图提示词；白底用途还包含后端合成步骤。' }}</pre>
+      <pre v-else>{{ plan.prompt || '自动处理主体和背景。' }}</pre>
       <b class="check-title">成品检查</b>
       <ul><li v-for="check in ability.acceptance" :key="check">{{ check }}</li></ul>
-      <small>用途表单由后端校验并编译；生成效果需要对应场景实测。</small>
+      <small>请确认创作内容、输出设置和成品要求。</small>
     </details>
   </div>
 </template>

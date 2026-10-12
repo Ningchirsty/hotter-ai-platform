@@ -1,0 +1,196 @@
+{
+  "schema_version": 2,
+  "feed_version": 18,
+  "profiles": {
+    "img-landscape-169": {
+      "definition": {
+        "endpoint": "/v1/images/generations",
+        "fixed": {
+          "quality": "high",
+          "size": "1536x1024"
+        },
+        "model": "gpt-image-2.5-sunburst",
+        "overridable": {
+          "n": {
+            "default": 1,
+            "maximum": 4,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "profile_id": "img-landscape-169"
+      },
+      "sha256": "4452a30ff5acc7398ff7f814f3793f457b509c3e4fff082c507ce2ffc2b6b5fd"
+    },
+    "img-portrait-916": {
+      "definition": {
+        "endpoint": "/v1/images/generations",
+        "fixed": {
+          "quality": "high",
+          "size": "1024x1536"
+        },
+        "model": "gpt-image-2.5-sunburst",
+        "overridable": {
+          "n": {
+            "default": 1,
+            "maximum": 4,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "profile_id": "img-portrait-916"
+      },
+      "sha256": "da7281f19c7158d939fee7a7fd18f568d3313295abe652b03f1793b07476be50"
+    },
+    "img-square-hd": {
+      "definition": {
+        "endpoint": "/v1/images/generations",
+        "fixed": {
+          "quality": "high",
+          "size": "1024x1024"
+        },
+        "model": "gpt-image-2.5-sunburst",
+        "overridable": {
+          "n": {
+            "default": 1,
+            "maximum": 4,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "profile_id": "img-square-hd"
+      },
+      "sha256": "95cf6f71e0b3b4e6bf7a4682a807fe314bb766e6ab6196948c983f7a598f00a3"
+    },
+    "vid-10s-landscape": {
+      "definition": {
+        "endpoint": "/v1/video/generations",
+        "fixed": {
+          "duration": 10,
+          "fps": 30,
+          "height": 1080,
+          "response_format": "url",
+          "width": 1920
+        },
+        "model": "doubao-seedance-2-5-260628",
+        "overridable": {},
+        "profile_id": "vid-10s-landscape"
+      },
+      "sha256": "04f76f6a67f6844470cee01d6bb8e1f14ad38b345291f947f2582c0024a2b9de"
+    },
+    "vid-10s-portrait": {
+      "definition": {
+        "endpoint": "/v1/video/generations",
+        "fixed": {
+          "duration": 10,
+          "fps": 30,
+          "height": 1920,
+          "response_format": "url",
+          "width": 1080
+        },
+        "model": "doubao-seedance-2-5-260628",
+        "overridable": {},
+        "profile_id": "vid-10s-portrait"
+      },
+      "sha256": "c1a6f44578a0364c8430f925db0754179705b87ccf63b8dbafc892570147a4f2"
+    },
+    "vid-5s-landscape": {
+      "definition": {
+        "endpoint": "/v1/video/generations",
+        "fixed": {
+          "duration": 5,
+          "fps": 30,
+          "height": 1080,
+          "response_format": "url",
+          "width": 1920
+        },
+        "model": "doubao-seedance-2-5-260628",
+        "overridable": {},
+        "profile_id": "vid-5s-landscape"
+      },
+      "sha256": "160473f54051ae94e6dc66243094113adf0af5a15991181b1dd73c576d3d069f"
+    },
+    "vid-5s-portrait": {
+      "definition": {
+        "endpoint": "/v1/video/generations",
+        "fixed": {
+          "duration": 5,
+          "fps": 30,
+          "height": 1920,
+          "response_format": "url",
+          "width": 1080
+        },
+        "model": "doubao-seedance-2-5-260628",
+        "overridable": {},
+        "profile_id": "vid-5s-portrait"
+      },
+      "sha256": "afd1ab7837119abe8b193671147733e2a1c643196c96c732b466f00a5964eff9"
+    }
+  },
+  "templates": [
+    {
+      "schema_version": 2,
+      "id": "image-example",
+      "revision": 1,
+      "type": "image",
+      "status": "published",
+      "title": {
+        "zh": "茶壶创作",
+        "en": "Teapot"
+      },
+      "category": "Product",
+      "tags": [
+        "teapot"
+      ],
+      "updated_at": "2026-10-09T12:00:00Z",
+      "variables": [],
+      "prompt": {
+        "en": "A blue ceramic teapot on a garden table."
+      },
+      "binding": {
+        "endpoint": "/v1/images/generations",
+        "last_verified_at": "2026-10-10T02:31:36Z",
+        "model": "gpt-image-2.5-sunburst",
+        "params_profile": "img-square-hd"
+      },
+      "cover": {
+        "url": "covers/2dfbe397f055.webp",
+        "sha256": "2dfbe397f0553ec0bcc605cca7cda7c34b785b9bc5906543b1d9c8bbcb0b267a",
+        "width": 3,
+        "height": 5
+      }
+    },
+    {
+      "schema_version": 2,
+      "id": "video-example",
+      "revision": 1,
+      "type": "video",
+      "status": "published",
+      "title": {
+        "zh": "茶壶创作",
+        "en": "Teapot"
+      },
+      "category": "Product",
+      "tags": [
+        "teapot"
+      ],
+      "updated_at": "2026-10-09T12:00:00Z",
+      "variables": [],
+      "prompt": {
+        "en": "A blue ceramic teapot on a garden table."
+      },
+      "binding": {
+        "endpoint": "/v1/video/generations",
+        "last_verified_at": "2026-10-10T16:07:05Z",
+        "model": "doubao-seedance-2-5-260628",
+        "params_profile": "vid-10s-portrait"
+      },
+      "cover": {
+        "url": "covers/2dfbe397f055.webp",
+        "sha256": "2dfbe397f0553ec0bcc605cca7cda7c34b785b9bc5906543b1d9c8bbcb0b267a",
+        "width": 3,
+        "height": 5
+      }
+    }
+  ]
+}

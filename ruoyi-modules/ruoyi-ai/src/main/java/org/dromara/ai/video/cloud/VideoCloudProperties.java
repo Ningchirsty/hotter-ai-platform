@@ -7,7 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-/** 蓝章鱼视频独立配置；密钥不进入任务、前端或日志。 */
+/** 云端服务视频独立配置；密钥不进入任务、前端或日志。 */
 @Getter
 @Setter
 @ConfigurationProperties(prefix = "video.cloud")

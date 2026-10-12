@@ -16,6 +16,12 @@ class CloudVideoServiceTest {
  CloudVideoRequest request(){return new CloudVideoRequest("wan2.7-t2v","T2V","scene",5,"720p","16:9",List.of(),true,null,null,"idem");}
  @BeforeEach void setup(){when(props.configured()).thenReturn(true);when(props.getVerifiedVariants()).thenReturn(List.of("wan2.7-t2v|T2V|5|720p|16:9|true"));service=new VideoCloudService(props,repo,storage,probe,client);}
  @AfterEach void cleanup(){service.shutdown();verifyNoInteractions(client);}
+ @Test void modelProfilesRemainOrdinaryArraysForJacksonThreeHttpSerialization(){
+  var result=service.models(7);assertInstanceOf(List.class,result.get("profiles"));
+  var json=new tools.jackson.databind.json.JsonMapper().valueToTree(result);
+  assertTrue(json.path("profiles").isArray());assertEquals(16,json.path("profiles").size());
+  assertTrue(json.path("profiles").get(0).path("id").isString());
+ }
  @Test void unverifiedModelNeverInsertsOrSubmits(){when(props.getVerifiedVariants()).thenReturn(List.of());assertThrows(VideoTaskException.class,()->service.create(request(),"tenant",7,1L));verify(repo,never()).insertTask(any());}
  @Test void noKeyNeverInsertsOrSubmits(){when(props.configured()).thenReturn(false);assertThrows(VideoTaskException.class,()->service.create(request(),"tenant",7,1L));verify(repo,never()).insertTask(any());}
  @Test void requestUnknownCannotBeRetried()throws Exception{

@@ -220,7 +220,7 @@
                     : '暂不可提交'
             }}
           </button>
-          <span>{{ submitBlockReason || (generationSource === 'cloud' ? '提交后由平台后端调用蓝章鱼，成片归档至我的任务' : '提交后将经服务端填充模板并交由 ComfyUI 执行') }}</span>
+          <span>{{ submitBlockReason || (generationSource === 'cloud' ? '确认创作内容与输出设置后提交生成' : '确认创作内容与输出设置后提交生成') }}</span>
         </div>
       </section>
 
@@ -294,7 +294,7 @@
               v-if="coverFor(task)"
               class="task-cover-img"
               :src="coverFor(task)"
-              :alt="task.taskName || task.taskNo"
+              :alt="creationTitle(task.taskName) || task.taskNo"
             />
             <template v-else>
               <el-icon><VideoCamera /></el-icon>
@@ -303,7 +303,7 @@
           </div>
           <div class="task-main">
             <div class="task-title-row">
-              <b>{{ task.taskName || task.taskNo }}</b>
+              <b>{{ creationTitle(task.taskName) || task.taskNo }}</b>
               <span :class="['task-status', taskStatusClass(task.status)]">{{ taskStatusText(task.status) }}</span>
             </div>
             <p>
@@ -312,9 +312,9 @@
             <small>
               {{ task.taskNo }} · {{ task.createTime || '—' }}
               <!-- 多卡后同一个 prompt 只在提交它的那台 ComfyUI 上可查，排障时要知道去问哪台实例。 -->
-              <span v-if="task.comfyWorker" class="task-worker">GPU {{ task.comfyWorker }}</span>
+              
             </small>
-            <small v-if="task.errorMessage" class="task-error">{{ task.errorMessage }}</small>
+            <small v-if="task.errorMessage" class="task-error">{{ creationMessage(task.errorMessage) }}</small>
           </div>
           <div class="task-actions">
             <button
@@ -424,7 +424,7 @@
     <el-dialog
       class="creative-dialog"
       v-model="previewVisible"
-      :title="previewTarget?.taskName || previewTarget?.taskNo || '成片预览'"
+      :title="creationTitle(previewTarget?.taskName) || previewTarget?.taskNo || '成片预览'"
       width="min(920px, 92vw)"
       top="6vh"
       destroy-on-close
@@ -531,6 +531,7 @@ import {
   type InspirationRoute
 } from '@/components/CreativeInspiration/types';
 import { extractErrorMessage } from '@/utils/request';
+import { creationMessage, creationTitle } from '@/components/CreativeInspiration/template-reuse';
 import { createTaskPoller } from '@/utils/task-polling';
 import {
   COMPLETED_VIDEOS,
@@ -719,7 +720,7 @@ const localCatalog = videoCatalog as unknown as Array<LocalWorkflowOption & Vide
 const localCreationCatalog = computed<LocalWorkflowOption[]>(() => [
   ...VIDEO_MODULES.filter(item => item.code !== 'R2V').map(item => ({ media: 'video' as const,
     workflowCode: resolveWorkflowCode(item, 'H3'), capabilityCode: item.code, modelCode: 'H3', modelName: 'MiniMax H3',
-    name: '平台现有导演工作流', version: '', fields: item.fields })), ...localCatalog
+    name: '平台创作能力', version: '', fields: item.fields })), ...localCatalog
 ]);
 const businessCatalog = computed(() => abilities.value.flatMap(item => item.workflows) as unknown as Array<LocalWorkflowOption & VideoWorkflowVO>);
 const executableCatalog = computed(() => [...localCatalog, ...businessCatalog.value]);
@@ -731,7 +732,7 @@ const workflowOptions = computed<LocalWorkflowOption[]>(() => {
   const native = localCatalog.filter(item => item.media === 'video' && item.capabilityCode === base.code);
   const legacy: LocalWorkflowOption[] = base.code === 'R2V' ? [] : [{
     media: 'video', workflowCode: resolveWorkflowCode(base, 'H3'), capabilityCode: base.code,
-    modelCode: 'H3', modelName: 'MiniMax H3', name: '平台现有导演工作流', version: '', fields: base.fields
+    modelCode: 'H3', modelName: 'MiniMax H3', name: '平台创作能力', version: '', fields: base.fields
   }];
   return [...native, ...legacy];
 });
@@ -918,13 +919,13 @@ watch(
 
 const submitBlockReason = computed(() => {
   if (generationSource.value === 'cloud') return cloudBlockReason.value;
-  if (localWorkflowPreview) return '本地界面预览：用途已绑定后端工作流，生成需完成部署与发布验收';
-  if (!registeredWorkflow.value) return '本地 ComfyUI 已验证，平台工作流尚未注册，暂不可提交';
+  if (localWorkflowPreview) return '本地界面预览：创作能力正在准备开放';
+  if (!registeredWorkflow.value) return '当前创作能力尚未开放';
   const workflow = currentWorkflow.value;
   if (!workflow) return `${currentWorkflowCode.value} 尚未在服务端注册`;
-  if (workflow.status === 'DRAFT') return '工作流为 DRAFT，完成实机验收并发布后方可提交';
-  if (workflow.status === 'TESTING') return '工作流处于 TESTING，仅隔离联调环境可提交';
-  if (workflow.status === 'RETIRED') return '工作流已停用';
+  if (workflow.status === 'DRAFT') return '当前创作能力正在准备，暂不可提交';
+  if (workflow.status === 'TESTING') return '当前创作能力正在测试，暂不可提交';
+  if (workflow.status === 'RETIRED') return '当前创作能力已停用';
   return '';
 });
 
@@ -959,7 +960,7 @@ async function loadWorkflows() {
     const res = await listVideoWorkflows();
     workflows.value = res.data ?? [];
   } catch (error) {
-    ElMessage.error((await extractErrorMessage(error)) ?? '读取工作流状态失败');
+    ElMessage.error(creationMessage(await extractErrorMessage(error)) ?? '读取创作能力失败');
   }
 }
 
@@ -981,7 +982,7 @@ async function loadTasks(silent = false) {
       if (!TERMINAL_STATUSES.includes(task.status)) startTaskPolling(task.id);
     }
   } catch (error) {
-    if (!silent) ElMessage.error((await extractErrorMessage(error)) ?? '读取任务列表失败');
+    if (!silent) ElMessage.error(creationMessage(await extractErrorMessage(error)) ?? '读取任务列表失败');
   } finally {
     if (sequence === taskRequestSequence) loadingTasks.value = false;
   }
@@ -998,7 +999,7 @@ async function loadAssets() {
     const lastPage = Math.max(1, Math.ceil(assetTotal.value / assetPage.pageSize));
     if (assetPage.pageNum > lastPage) { assetPage.pageNum = lastPage; await loadAssets(); return; }
   } catch (error) {
-    ElMessage.error((await extractErrorMessage(error)) ?? '读取素材库失败');
+    ElMessage.error(creationMessage(await extractErrorMessage(error)) ?? '读取素材库失败');
   } finally {
     if (sequence === assetRequestSequence) loadingAssets.value = false;
   }
@@ -1158,7 +1159,7 @@ async function handleFiles(field: FieldKey, event: Event) {
   } catch (error) {
     // 失败时必须给出可定位的信息：带上文件名与网络层面的原因，
     // 避免出现「点了没反应」而无法排查的情况。
-    const detail = (await extractErrorMessage(error)) ?? '素材上传失败';
+    const detail = creationMessage(await extractErrorMessage(error)) ?? '素材上传失败';
     const name = files.map(f => f.name).join('、');
     ElMessage.error(`${detail}（文件：${name}）`);
     releaseUploadPreviews(field);
@@ -1206,7 +1207,7 @@ async function submitCloudTask(){
     if(executed.data?.outcome==='QUEUE_FULL')ElMessage.warning('云端执行队列已满，任务已保留；稍后点击再次执行');
     else ElMessage.success('云端任务已提交，完成后可在我的任务播放');
     await loadTasks();
-  }catch(error){ElMessage.error((await extractErrorMessage(error))??'云端视频提交失败');await loadTasks();}
+  }catch(error){ElMessage.error(creationMessage(await extractErrorMessage(error))??'云端视频提交失败');await loadTasks();}
   finally{submitting.value=false;await loadCloudStatus();}
 }
 
@@ -1288,7 +1289,7 @@ async function submitTask() {
       ElMessage.success('已提交生成，完成后会自动显示，可以离开这个页面');
       startTaskPolling(taskId);
     } else if (exec?.status === 'FAILED') {
-      ElMessage.warning(exec.errorMessage ?? '任务未完成，请查看任务详情');
+      ElMessage.warning(creationMessage(exec.errorMessage) || '任务未完成，请查看任务详情');
       await loadTasks();
       await loadAssets();
     } else {
@@ -1298,7 +1299,7 @@ async function submitTask() {
       await loadAssets();
     }
   } catch (error) {
-    ElMessage.error((await extractErrorMessage(error)) ?? '任务提交失败');
+    ElMessage.error(creationMessage(await extractErrorMessage(error)) ?? '任务提交失败');
     await loadTasks();
   } finally {
     submitting.value = false;
@@ -1334,7 +1335,7 @@ const taskPoller = createTaskPoller<VideoTaskDetailVO>({
   },
   onTerminal: (_id, task) => {
     if (task.status === 'SUCCEEDED') ElMessage.success('任务 ' + task.taskNo + ' 已完成');
-    else ElMessage.warning(task.errorMessage || '任务已' + taskStatusText(task.status));
+    else ElMessage.warning(creationMessage(task.errorMessage) || '任务已' + taskStatusText(task.status));
   },
   onCycle: async finished => {
     await loadTasks(true);
@@ -1362,7 +1363,7 @@ async function recoverTask(task: VideoTaskVO) {
     }
     startTaskPolling(task.id);
   } catch (error) {
-    ElMessage.error((await extractErrorMessage(error)) ?? '执行请求失败；任务已保留，请刷新后重试');
+    ElMessage.error(creationMessage(await extractErrorMessage(error)) ?? '执行请求失败；任务已保留，请刷新后重试');
   } finally {
     recoveringIds.delete(id);
     await loadTasks();
@@ -1524,7 +1525,7 @@ async function previewTask(task: VideoTaskVO) {
       return;
     }
     if (detail.status !== 'SUCCEEDED') {
-      ElMessage.info(detail.errorMessage ?? `任务状态：${taskStatusText(detail.status)}`);
+      ElMessage.info(creationMessage(detail.errorMessage) || `任务状态：${taskStatusText(detail.status)}`);
       return;
     }
 
@@ -1557,13 +1558,13 @@ async function previewTask(task: VideoTaskVO) {
         await new Promise(resolve => setTimeout(resolve, 600));
         previewUrl.value = await fetchVideoAssetBlobUrl(detail.outputAssetId);
       } catch {
-        previewError.value = (await extractErrorMessage(error)) ?? '成片加载失败';
+        previewError.value = creationMessage(await extractErrorMessage(error)) ?? '成片加载失败';
       }
     } finally {
       previewLoading.value = false;
     }
   } catch (error) {
-    ElMessage.error((await extractErrorMessage(error)) ?? '读取任务详情失败');
+    ElMessage.error(creationMessage(await extractErrorMessage(error)) ?? '读取任务详情失败');
   }
 }
 
@@ -1585,7 +1586,7 @@ async function cancelTask(task: VideoTaskVO) {
     ElMessage.success('已取消排队任务');
     await loadTasks();
   } catch (error) {
-    ElMessage.error((await extractErrorMessage(error)) ?? '取消失败');
+    ElMessage.error(creationMessage(await extractErrorMessage(error)) ?? '取消失败');
   }
 }
 
@@ -1597,7 +1598,7 @@ async function recreateTask(task: VideoTaskVO) {
       if(!snapshot?.request)throw new Error('云端任务参数快照缺失');
       generationSource.value='cloud';cloudForm.value?.applyDraft(snapshot.request);
       cloudIdempotencyKey='';activeView.value='create';window.scrollTo({top:0,behavior:'smooth'});
-    }catch(error){ElMessage.error((await extractErrorMessage(error))??'读取云端任务参数失败');}
+    }catch(error){ElMessage.error(creationMessage(await extractErrorMessage(error))??'读取云端任务参数失败');}
     return;
   }
   if (uploading.value || submitting.value) return;
@@ -1615,7 +1616,7 @@ async function recreateTask(task: VideoTaskVO) {
   if (!module || uploading.value || submitting.value) return;
   selectModule(module);
   if (!workflowOptions.value.some(item => item.workflowCode === task.workflowCode)) {
-    ElMessage.warning('此任务的工作流不在当前目录中，请重新选择模型与版本');
+    ElMessage.warning('此任务的创作能力暂不可用，请重新选择模型');
     return;
   }
   selectWorkflow(task.workflowCode);
@@ -1625,6 +1626,12 @@ async function recreateTask(task: VideoTaskVO) {
 }
 
 function applyCreativeInspiration(route: InspirationRoute, title: string) {
+  if (route.media === 'video' && route.source === 'cloud' && route.videoDraft && !uploading.value && !submitting.value) {
+    generationSource.value = 'cloud';
+    cloudForm.value?.applyDraft(route.videoDraft);
+    cloudIdempotencyKey = ''; appliedInspirationTitle.value = title; activeView.value = 'create';
+    ElMessage.success('视频模板已带入，请确认描述与输出设置'); return;
+  }
   if (route.media !== 'video' || uploading.value || submitting.value || !isRouteAvailable(route, workflows.value))
     return;
   const module = VIDEO_MODULES.find(
@@ -1660,7 +1667,7 @@ async function handleAssetFiles(event: Event) {
     ElMessage.success(`已上传 ${uploaded} 个素材`);
     await loadAssets();
   } catch (error) {
-    ElMessage.error((await extractErrorMessage(error)) ?? '素材上传失败');
+    ElMessage.error(creationMessage(await extractErrorMessage(error)) ?? '素材上传失败');
   } finally {
     uploading.value = false;
   }
@@ -1672,7 +1679,7 @@ async function removeAsset(assetId: number | string) {
     ElMessage.success('素材已删除');
     await loadAssets();
   } catch (error) {
-    ElMessage.error((await extractErrorMessage(error)) ?? '删除失败');
+    ElMessage.error(creationMessage(await extractErrorMessage(error)) ?? '删除失败');
   }
 }
 

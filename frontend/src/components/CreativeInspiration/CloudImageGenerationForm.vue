@@ -132,7 +132,7 @@
       </div>
       <p>使用云端模型生成会产生费用，结果归入「我的任务」和「素材库」。</p>
     </section>
-    <p class="field-help inspiration-hint">右侧作品可匹配已验收的云端模型与本地工作流；带入后请确认素材和参数。</p>
+    <p class="field-help inspiration-hint">选择右侧模板可创建同款，也可带入表单调整内容。</p>
   </div>
 </template>
 
