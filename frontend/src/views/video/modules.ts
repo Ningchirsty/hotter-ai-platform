@@ -111,7 +111,7 @@ export const VIDEO_MODELS: StudioModel[] = [
   {
     code: 'H3',
     name: 'MiniMax H3',
-    desc: '工作流模板已导入',
+    desc: '创作能力已接入',
     version: '8-step BF16',
     license: 'closed',
     recommended: true

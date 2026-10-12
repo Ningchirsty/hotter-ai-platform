@@ -51,7 +51,7 @@ export const IMAGE_MODULES: ImageCapabilityModule[] = [
   {
     code: 'T2I',
     name: '文生图',
-    desc: '根据文字描述生成图片，尺寸随工作流选择',
+    desc: '根据文字描述生成图片，输出尺寸随模型选择',
     workflowCode: 'wf-t2i-qwen21',
     fields: ['prompt', 'negative_prompt', 'size'],
     promptLabel: '画面描述',
@@ -77,7 +77,7 @@ export const IMAGE_MODULES: ImageCapabilityModule[] = [
   {
     code: 'EDIT',
     name: '指令改图',
-    desc: '用指令修改原图，参考图数量随工作流选择',
+    desc: '用指令修改原图，参考图数量随模型能力选择',
     workflowCode: 'wf-edit-qwen21',
     fields: ['image1', 'image2', 'image3', 'prompt', 'negative_prompt'],
     imageFields: ['image1', 'image2', 'image3'],
