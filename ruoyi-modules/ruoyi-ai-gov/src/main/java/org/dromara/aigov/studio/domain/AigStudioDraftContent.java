@@ -1,5 +1,6 @@
 package org.dromara.aigov.studio.domain;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Data;
 
 import java.io.Serial;
@@ -24,9 +25,19 @@ import java.util.Map;
  * 所以这里存的是声明引用（{@code allowedTools} 等），页面上如实标注"仅声明"，
  * 不假装已经生效。</p>
  *
+ * <p><b>为什么 {@code @JsonInclude(NON_NULL)} 是必需的、不是顺手加的</b>：内容哈希有两条路径——
+ * ①写入草稿时对**调用方提交的那串 JSON** 规范化后算（{@code AigStudioDraftServiceImpl#createDraft}）；
+ * ②提案/生成等改动路径把 {@code contentJson} 解析成对象、再序列化后算（{@code AigStudioProposalServiceImpl#hashOf}）。
+ * 两条路径必须给出**同一个哈希**，否则「内容没变」的判断会静默失效：
+ * 生产实测（2026-10-12）把 {@code /objective} 改成与草稿**完全相同**的值，提案仍被接受、并落了库。
+ * 根因就是调用方省略了可选字段（如 {@code pageCustomizationJson}），解析后再序列化时被补成 {@code null}
+ * ⇒ 规范化结果多了一个键 ⇒ 哈希不等。加上 NON_NULL 后，"不传"与"传 null"在内容语义上等价，
+ * 两条路径重新一致（{@code AigStudioContentHasherTest#submittedJsonAndRoundTrippedObjectAgreeOnHash} 钉住）。</p>
+ *
  * @author ai-gov
  */
 @Data
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class AigStudioDraftContent implements Serializable {
 
     @Serial

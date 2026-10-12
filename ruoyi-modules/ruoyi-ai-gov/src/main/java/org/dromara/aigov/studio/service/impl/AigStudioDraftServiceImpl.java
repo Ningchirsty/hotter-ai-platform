@@ -664,6 +664,20 @@ public class AigStudioDraftServiceImpl implements IAigStudioDraftService {
     /**
      * 规范化内容；不是合法 JSON 时报错。
      *
+     * <p><b>为什么必须先解析成内容对象、再序列化后规范化</b>（不能直接规范化调用方给的那串）：
+     * 内容的哈希有两条路径，必须给出同一个结果——
+     * ①<b>写入</b>：本方法算 {@code contentHash} 并落库；
+     * ②<b>改动</b>：{@code AigStudioProposalServiceImpl#hashOf} 把 {@code contentJson} 解析成对象、
+     * 改完再序列化后算哈希。</p>
+     *
+     * <p>如果这里只规范化"原串"，两条路径就会分叉：内容模型里带非 null 默认值的字段
+     * （如 {@code promptSections = new LinkedHashMap<>()}）在 ② 里一定会被序列化出来
+     * （{@code "promptSections":{}}），而调用方**省略**该字段时 ① 的串里没有它
+     * ⇒ 哈希不等 ⇒ 「提案没有产生任何内容变化」这道守卫**永远不会触发**。
+     * 生产实测（2026-10-12）：把 {@code /objective} 改成与草稿**完全相同**的值，提案仍被接受并落库。
+     * 走同一条路径后，"存什么"与"算什么"才是一回事
+     * （由 {@code AigStudioContentHasherTest#pojoRoundTripCanonicalFormIsIdempotent} 钉住）。</p>
+     *
      * @param contentJson 原始内容
      * @return 规范化后的 JSON（也是真正入库的那串字节）
      */
@@ -672,8 +686,10 @@ public class AigStudioDraftServiceImpl implements IAigStudioDraftService {
             throw new ServiceException("草稿内容不能为空");
         }
         try {
-            return AigStudioContentHasher.canonicalize(contentJson);
-        } catch (IllegalArgumentException e) {
+            return AigStudioContentHasher.canonicalize(
+                jsonMapper.writeValueAsString(jsonMapper.readValue(contentJson, AigStudioDraftContent.class)));
+        } catch (Exception e) {
+            // 覆盖两类：不是合法 JSON / 不是内容对象（形状问题），以及规范化时的非法输入
             throw new ServiceException("草稿内容格式不正确：" + e.getMessage());
         }
     }

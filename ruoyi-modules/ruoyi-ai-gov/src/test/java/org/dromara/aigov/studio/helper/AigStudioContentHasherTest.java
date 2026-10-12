@@ -164,6 +164,34 @@ class AigStudioContentHasherTest {
             "tools_and_skills", "constraints", "output_contract", "uncertainty_policy")));
     }
 
+    @Test
+    @DisplayName("★ 内容对象的「往返规范化」必须是不动点——否则写入路径与改动路径会算出两个哈希")
+    void pojoRoundTripCanonicalFormIsIdempotent() {
+        // 生产实测（2026-10-12，pm.hottter.cn）暴露的缺陷：
+        //   内容哈希有两条路径，必须给出同一个结果——
+        //   ① 写入草稿：对**调用方提交的那串 JSON** 规范化后哈希（AigStudioDraftServiceImpl#createDraft）
+        //   ② 改动草稿：把 contentJson 解析成对象、改完再序列化后哈希（AigStudioProposalServiceImpl#hashOf）
+        //   而内容模型里带**非 null 默认值**的字段（promptSections = new LinkedHashMap<>()）在 ② 中
+        //   一定会被序列化出来（"promptSections":{}），调用方**省略**它时 ① 的串里却没有
+        //   ⇒ 哈希不等 ⇒ 「提案没有产生任何内容变化」这道守卫永远不会触发
+        //   （实测把 /objective 改成与草稿完全相同的值，提案仍被接受并落库）。
+        //
+        // 修法是让写入路径也走「对象往返」（两条路径收敛成一条）。本测试钉住这条路径的**不动点性质**：
+        // 存进去的串再读回来往返一次，必须还是它自己——否则下一次"没改"仍会被算成"改了"。
+        String omittingOptionals = "{\"agentName\":\"A\",\"agentCategory\":\"PLANNING\",\"objective\":\"出脚本\"}";
+
+        AigStudioDraftContent content = MAPPER.readValue(omittingOptionals, AigStudioDraftContent.class);
+        String stored = AigStudioContentHasher.canonicalize(MAPPER.writeValueAsString(content));
+        assertTrue(stored.contains("\"promptSections\":{}"),
+            "带默认值的字段必须被显式落到存下来的串里，否则两条哈希路径会分叉：" + stored);
+
+        AigStudioDraftContent again = MAPPER.readValue(stored, AigStudioDraftContent.class);
+        String roundTripped = AigStudioContentHasher.canonicalize(MAPPER.writeValueAsString(again));
+        assertEquals(stored, roundTripped, "对象往返后的规范化结果必须是不动点（存什么=算什么）");
+        assertEquals(AigStudioContentHasher.hash(stored), AigStudioContentHasher.hash(roundTripped),
+            "两边哈希必须一致：不一致时「内容没变」的判断会静默失效（无变化提案会被放行）");
+    }
+
     /**
      * 造一份有代表性的草稿内容。
      *
