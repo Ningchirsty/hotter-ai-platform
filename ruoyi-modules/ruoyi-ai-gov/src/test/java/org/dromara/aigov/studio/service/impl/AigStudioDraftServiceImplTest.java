@@ -239,6 +239,36 @@ class AigStudioDraftServiceImplTest {
     }
 
     @Test
+    @DisplayName("★ 省略可选字段的内容也必须按「对象往返」规范化后入库——否则与改动路径的哈希会分叉")
+    void createNormalizesThroughContentObjectEvenWhenOptionalFieldsOmitted() {
+        // 生产实测（2026-10-12，pm.hottter.cn）：调用方提交的内容省略了带**非 null 默认值**的字段
+        // （promptSections = new LinkedHashMap<>()）时，如果入库串只做"字符串规范化"，
+        // 而改动路径（AigStudioProposalServiceImpl#hashOf）把 contentJson 解析成对象后再序列化，
+        // 两条路径的规范化结果就会多/少一个键 ⇒ 哈希不等 ⇒「内容没变」的判断静默失效
+        // （实测：把 /objective 改成与草稿完全相同的值，提案仍被接受并落库）。
+        //
+        // 所以这条断言钉的是**服务的行为**，不是仅 hasher 的性质：
+        // 只钉 hasher（pojoRoundTripCanonicalFormIsIdempotent）的话，有人把服务改回"字符串路径"，
+        // 那条测试照样绿，而缺陷会悄悄回来。
+        AigStudioDraftCreateBo bo = new AigStudioDraftCreateBo();
+        bo.setAgentCode("DETAIL_COPYWRITER");
+        bo.setContentJson("{\"agentName\":\"A\",\"objective\":\"出脚本\"}");   // 故意省略 promptSections
+
+        service.createDraft(bo, OWNER);
+
+        String stored = row[0].getContentJson();
+        assertTrue(stored.contains("\"promptSections\":{}"),
+            "带默认值的字段必须被显式落到入库串里（说明走了对象路径）：" + stored);
+
+        // 入库串必须是"对象往返"的**不动点**：改动路径再往返一次得到同一串 ⇒ 同一哈希
+        JsonMapper mapper = JsonMapper.builder().build();
+        AigStudioDraftContent again = mapper.readValue(stored, AigStudioDraftContent.class);
+        String roundTripped = AigStudioContentHasher.canonicalize(mapper.writeValueAsString(again));
+        assertEquals(stored, roundTripped, "入库串必须是不动点，否则「内容没变」会被判成「变了」");
+        assertEquals(AigStudioContentHasher.hash(stored), row[0].getContentHash());
+    }
+
+    @Test
     @DisplayName("创建：缺编码/缺操作人/内容不是合法 JSON 都要报错，且不落库")
     void createRejectsBadInput() {
         AigStudioDraftCreateBo noCode = new AigStudioDraftCreateBo();
