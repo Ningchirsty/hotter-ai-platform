@@ -464,3 +464,35 @@ aigov:
     #   见 docs/platform-v2/05-F08-VibePoster接口草案（待对方确认）.md 的 Q6）。
     #   所以这次打开的效果是"通道就绪、随时可发令牌"，而不是"某个调用方已经在用"。
     enabled: true
+
+  studio:
+    copilot:
+      # 训练台「与培训助手对话」（对话式 Copilot）：**2026-10-12 用户裁定：生产打开**
+      # （此前交付时按"会花真钱"的口径默认关闭，见 docs/aigov/10-岗位工作台-实施说明.md §二十五）。
+      #
+      # 【打开的是什么】训练台上点「与培训助手对话」时，允许它发起**一次真实计费的模型调用**：
+      #   模型读当前草稿内容 → 产出**待审的变更提案**。关着时该入口直接报"当前是关闭的"。
+      #
+      # 【它不是什么——别误读】
+      #   1. **不是"绕过策略"的开关**：调用仍走网关 `IAigInvokeService` 的策略校验、配额与审计
+      #      （ADR-006：所有模型/工具外发都在网关执行点强制校验）。关=不给发；开=允许发一次**仍受治理**的调用。
+      #   2. **不会改草稿内容**：对话只产**提案**；采纳（产生一条新修订）是由人显式发起的另一个动作。
+      #   3. **刻意不传 agentVersionId**：所以不会把该版本的 CANARY 调用计数抬上去——不伪造灰度证据。
+      #
+      # 【谁能触发——两重限制，不是对所有人开放】
+      #   1. 需要权限点 `aig:studio:copilot:chat`（当前只授给 `aig_admin`；与"看/处理提案"的
+      #      `aig:studio:copilot:use` 分开授权，口径同 test:run vs test:view）；
+      #   2. 还必须是**该草稿的责任人**（服务层 `requireOwner`）。
+      #
+      # 【打开后必须知道的三件事】
+      #   1. **每一次对话都是一次真实计费调用**——"连着说几句"最容易不知不觉花钱；
+      #   2. 每一轮都落账本 `aig_studio_copilot_turn`（**含被拒绝 REJECTED / 失败 FAILED 的轮次**，
+      #      模型原文按 `outputPreviewChars` 截断，完整原文按 `traceId` 去网关审计查）；
+      #   3. `dataLevel` 由调用方每次指定（PUBLIC/INTERNAL/RESTRICTED/STRICT），网关按它判外发许可——
+      #      **不要把等级调低来"让它能跑"**。
+      #
+      # 【回滚】改回 `false` 并重启即可（一行、无需清数据）；也可用容器环境变量
+      #   `AIGOV_STUDIO_COPILOT_ENABLED=false` 临时覆盖（Spring relaxed binding）。
+      #   其余四个旋钮（maxMessageChars/maxOutputChars/outputPreviewChars/turnHistorySize）保持默认：
+      #   2000 / 20000 / 4000 / 50，见 `AigStudioCopilotProperties`。
+      enabled: true
