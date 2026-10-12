@@ -4,10 +4,14 @@ on:
   workflow_dispatch:
     inputs:
       image:
-        description: Immutable GHCR backend image reference
+        # ⚠️ 刻意**不设默认值**（2026-10-12 移除）。这里原先写着一个具体 digest 作默认值，
+        #   于是"直接点 Run workflow"会**重新部署那个旧镜像**：部署成功、容器健康、版本号也对，
+        #   但本次要上线的改动一个都没生效——排查时第一反应会怀疑代码而不是输入框。
+        #   发布通道本来就要求"逐次填写经审核的不可变 digest"（见 script/deploy/README.md），
+        #   留空后 GitHub 会强制填写；前端发布工作流 deploy-frontend-poc.yml 也一直是这么做的。
+        description: 'Immutable GHCR backend image reference, e.g. ghcr.io/ningchirsty/hotter-ai-platform-backend@sha256:<64 hex>'
         required: true
         type: string
-        default: ghcr.io/ningchirsty/hotter-ai-platform-backend@sha256:72cc11ba16103a1cd18dee4f8b6c47a46b310cf9f9e6f67532f29fc06232b07a
       allow_unknown_disk:
         description: 'Emergency override: proceed even if root free space cannot be read (default false; the pre-flight refuses instead)'
         required: false
@@ -110,6 +114,15 @@ jobs:
 
       # Latest main adds mapper fields and tables since the deployed version.
       # Replay only additive incremental/schema scripts; never baseline DROP/seed/menu SQL.
+      #
+      # ⚠️ 两类脚本都必须在清单里，漏了会**部署成功但接口 500**（2026-10-12 补）：
+      #   * 建表类：CREATE TABLE IF NOT EXISTS，可重复执行；
+      #   * 补列类：MySQL 8.0 没有 ADD COLUMN IF NOT EXISTS，这些脚本改用
+      #     information_schema 判断 + PREPARE 动态执行 DDL，同样是幂等的、可重复执行。
+      #     早先只收了建表类，11 份补列迁移一直没被重放 ⇒ 线上库缺列，而 RuoYi 把 SQL 异常
+      #     掩成「发生未知异常，请联系管理员」，响应体和日志都看不出缺的是哪一列。
+      #     这份清单由构建期守卫 AigDeploySchemaReplayCoverageTest 把关（新增补列脚本
+      #     忘了加进来、或加进来但不幂等，CI 直接红）。
       - name: Prepare additive runtime schema before switching backend
         run: |
           set -euo pipefail
@@ -118,7 +131,13 @@ jobs:
             aig_role_workspace.sql aig_sandbox_artifact_download.sql \
             aig_studio_artifact_draft.sql aig_studio_change_proposal.sql aig_studio_copilot_turn.sql \
             aig_user_brand.sql aig_user_workspace_pref.sql \
-            cp_task_platform_ref.sql ry_video_task_platform_ref.sql; do
+            cp_task_platform_ref.sql ry_video_task_platform_ref.sql \
+            aig_audit_provider_usage.sql aig_evaluation_run_executed_by.sql \
+            aig_invoke_agent_version.sql aig_invoke_error_class.sql \
+            aig_model_capability_tags.sql aig_model_cost_limit_amount.sql \
+            aig_package_version_body_ref.sql aig_route_scenario_binding.sql \
+            aig_sandbox_run_attestation.sql aig_skill_version_package_ref.sql \
+            aig_task_execution_mode.sql; do
             test -s "script/sql/$migration"
             echo "Preparing additive runtime schema: $migration"
             docker exec -i ai-video-poc-mysql-1 sh -c \
