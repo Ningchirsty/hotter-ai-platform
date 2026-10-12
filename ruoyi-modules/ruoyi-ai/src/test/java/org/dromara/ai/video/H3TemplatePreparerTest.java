@@ -108,11 +108,30 @@ class H3TemplatePreparerTest {
                     "发布证据必须绑定当前模板的准确哈希：" + code);
             }
         }
+        JsonNode nativePublication = MAPPER.readTree(Files.readString(contractRoot.resolve("native-workflow-publication.json")));
+        assertEquals("PASSED", nativePublication.path("technicalAcceptance").asText());
+        assertEquals(31, nativePublication.path("workflows").size());
+        int nativeVideos = 0;
+        for (JsonNode evidence : nativePublication.path("workflows")) {
+            if (!"video".equals(evidence.path("media").asText())) continue;
+            String code = evidence.path("workflowCode").asText();
+            assertTrue(code.startsWith("wf-local-"));
+            assertTrue(expected.add(code), "不允许重复发布证据：" + code);
+            assertEquals("SUCCEEDED", evidence.path("status").asText());
+            assertFalse(evidence.path("taskId").asText().isBlank());
+            assertFalse(evidence.path("comfyPromptId").asText().isBlank());
+            assertTrue(evidence.path("sha256").asText().matches("[0-9a-f]{64}"));
+            WorkflowVersion version = registry.require(code, true);
+            assertEquals(version.checksum(), evidence.path("checksum").asText());
+            assertEquals(version.version(), evidence.path("version").asText());
+            nativeVideos++;
+        }
+        assertEquals(20, nativeVideos);
         var actual = registry.registeredVersions().stream()
             .filter(WorkflowVersion::isPublished)
             .map(WorkflowVersion::workflowCode)
             .collect(java.util.stream.Collectors.toCollection(java.util.TreeSet::new));
-        assertEquals(expected, actual, "只有旧版 H3 和具备真实通过证据的视频用途可发布");
+        assertEquals(expected, actual, "只有旧版 H3 和具备真实通过证据的视频用途及本地模型可发布");
     }
 
     @Test
