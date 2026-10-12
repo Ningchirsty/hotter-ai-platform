@@ -134,13 +134,18 @@ select 1768000000000000023, 'Manifest扫描', 1763000000000000001, 99, '', '', '
     and not exists (select 1 from (select perms from sys_menu) p
                      where p.perms = 'aig:package:scan');
 
+-- ⚠️ ID 必须是没被占用的：这一行最初写成 1768000000000000024，而该 ID 在**本文件下面**
+--    （「Package上传」，aig:package:upload）已经被用掉；于是 `where not exists (menu_id = …)`
+--    这个守卫**静默跳过**了本行——权限行没建出来，后面的授权（按 perms 反查）自然什么都授不上，
+--    表现为「工具/知识绑定」页面的按钮**永远是 403**，而脚本自己返回 exit=0、看起来一切正常。
+--    生产实测（2026-10-12）复现了这个现象，故改用空号 0027。
 insert into sys_menu (menu_id, menu_name, parent_id, order_num, path, component, is_frame, is_cache,
                       menu_type, visible, status, perms, icon, create_dept, create_by, create_time, remark)
-select 1768000000000000024, '工具/知识绑定管理', 1763000000000000001, 101, '', '', 'N', 'Y', 'F', '0', '0',
+select 1768000000000000027, '工具/知识绑定管理', 1763000000000000001, 101, '', '', 'N', 'Y', 'F', '0', '0',
        'aig:agent:resource-binding', '#', 1761000000000000103, 1761100000000000001, sysdate(),
        '附件 07 §5：把版本声明的 allowed_tools/knowledge_scope_json 收窄到范围（仅登记，无执行语义）'
   where not exists (select 1 from (select menu_id from sys_menu) t
-                     where t.menu_id = 1768000000000000024)
+                     where t.menu_id = 1768000000000000027)
     and not exists (select 1 from (select perms from sys_menu) p
                      where p.perms = 'aig:agent:resource-binding');
 
