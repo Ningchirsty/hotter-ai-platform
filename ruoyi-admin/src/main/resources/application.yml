@@ -424,6 +424,7 @@ video:
     api-key-file: ${BLUOCTO_VIDEO_API_KEY_FILE:}
     public-asset-base-url: ${BLUOCTO_VIDEO_PUBLIC_ASSET_BASE_URL:}
     verification-file: ${BLUOCTO_VIDEO_VERIFICATION_FILE:}
+    verified-variants: ${BLUOCTO_VIDEO_VERIFIED_VARIANTS:}
     validation-limit: ${BLUOCTO_VIDEO_VALIDATION_LIMIT:0}
     validation-user-ids: ${BLUOCTO_VIDEO_VALIDATION_USER_IDS:}
     validation-variants: ${BLUOCTO_VIDEO_VALIDATION_VARIANTS:}

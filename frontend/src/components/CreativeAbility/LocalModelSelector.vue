@@ -78,7 +78,7 @@ function choiceStatus(choice: LocalCreationChoice) {
   const versions = selected ? [selected] : choice.workflows;
   if (versions.some(item => publishedCodes.value.includes(item.workflowCode))) return '已发布';
   if (choice.kind === 'purpose') return '用途已接入 · 待发布';
-  return versions.some(item => item.verifiedAt) ? 'ComfyUI 已验证 · 待发布' : '待发布';
+  return versions.some(item => item.verifiedAt) ? '已验证 · 待发布' : '待发布';
 }
 </script>
 <style scoped>

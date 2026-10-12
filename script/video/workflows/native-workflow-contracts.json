@@ -21,7 +21,7 @@
           "workflowCode": "wf-local-ready-minimaxh3-turbo-i2v-av",
           "modelCode": "H3",
           "version": "v1.0.0-local",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/local-verified/wf-local-ready-minimaxh3-turbo-i2v-av.json",
           "checksum": "1210c9e89c8d9920c9564784bd978f38818dcf35a4ca7be5d9afba3bc1f1f54d",
           "mapping": [
@@ -68,6 +68,14 @@
             "supportedTiers": [
               "验证档位 · 768×448"
             ]
+          },
+          "publicationEvidence": {
+            "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
+            "taskId": "2109503148999520257",
+            "comfyPromptId": "77e3ce54-d452-4c38-925d-5bd832c1e2aa",
+            "outputSha256": "4e2e988b395f2e424f56a5def0506003618ff66769003ffa32b2964d53969e7c",
+            "technicalAcceptance": "PASSED",
+            "qualityReview": "pending"
           }
         }
       ]
@@ -90,7 +98,7 @@
           "workflowCode": "wf-local-ready-minimaxh3-turbo-t2v-av",
           "modelCode": "H3",
           "version": "v1.0.0-local",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/local-verified/wf-local-ready-minimaxh3-turbo-t2v-av.json",
           "checksum": "e8fd0e12158cbf6be1205b7e58969373ddc69285f47188c9e9a72755d9a46a64",
           "mapping": [
@@ -132,6 +140,14 @@
             "supportedTiers": [
               "验证档位 · 768×448"
             ]
+          },
+          "publicationEvidence": {
+            "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
+            "taskId": "2109503262916816897",
+            "comfyPromptId": "ab62e4ca-d1e6-41cb-ba0b-85f573cb61b8",
+            "outputSha256": "cb688c9c530451db776cfa7de09e1a11a8f3fa506642a1a1342ed3096c360c0a",
+            "technicalAcceptance": "PASSED",
+            "qualityReview": "pending"
           }
         }
       ]
@@ -157,7 +173,7 @@
           "workflowCode": "wf-local-ready-wan22-5b-i2v",
           "modelCode": "WAN",
           "version": "v1.0.0-local",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/local-verified/wf-local-ready-wan22-5b-i2v.json",
           "checksum": "fe795e3382076415ede9f31780da8b92729ea3dcafd3c8732d745b81c381c9c2",
           "mapping": [
@@ -204,6 +220,14 @@
             "supportedTiers": [
               "验证档位 · 832×480"
             ]
+          },
+          "publicationEvidence": {
+            "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
+            "taskId": "2109503351580209153",
+            "comfyPromptId": "1490acdc-f1eb-4eb6-851d-9d80a1e8701f",
+            "outputSha256": "070618203c51bb06b4f7225c4e72ca598c4a5f555239b5a11e8599037c77dfea",
+            "technicalAcceptance": "PASSED",
+            "qualityReview": "pending"
           }
         }
       ]
@@ -226,7 +250,7 @@
           "workflowCode": "wf-local-ready-wan22-5b-t2v",
           "modelCode": "WAN",
           "version": "v1.0.0-local",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/local-verified/wf-local-ready-wan22-5b-t2v.json",
           "checksum": "a435a261a061f160950531723b933699d614473a66d75a1b7e22dd2ae7da8b5d",
           "mapping": [
@@ -268,6 +292,14 @@
             "supportedTiers": [
               "验证档位 · 832×480"
             ]
+          },
+          "publicationEvidence": {
+            "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
+            "taskId": "2109503490638163969",
+            "comfyPromptId": "1b4f17bd-4059-4ee6-98c2-34d13a8b48b8",
+            "outputSha256": "e41bf8f67f9bb8daf352b171bf2fb1347103f04b8dd2466c503abbfdf43aa323",
+            "technicalAcceptance": "PASSED",
+            "qualityReview": "pending"
           }
         }
       ]
@@ -293,7 +325,7 @@
           "workflowCode": "wf-local-ready-wan22-a14b-4steps-i2v",
           "modelCode": "WAN",
           "version": "v1.0.0-local",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/local-verified/wf-local-ready-wan22-a14b-4steps-i2v.json",
           "checksum": "c46e6116676de6a7d3ffe3544d1a8f43cc7b96b0f6a861053e8c1ecbd31593ed",
           "mapping": [
@@ -345,6 +377,14 @@
             "supportedTiers": [
               "验证档位 · 832×480"
             ]
+          },
+          "publicationEvidence": {
+            "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
+            "taskId": "2109503604458991618",
+            "comfyPromptId": "85a90920-07ec-4e11-b5a0-31808ecc079d",
+            "outputSha256": "272193ee5a429d54e645f2a2f4fd7d3f085f8eeb26900dcc1909564c9566143b",
+            "technicalAcceptance": "PASSED",
+            "qualityReview": "pending"
           }
         }
       ]
@@ -373,7 +413,7 @@
           "workflowCode": "wf-local-ready-wan22-a14b-4steps-flf2v",
           "modelCode": "WAN",
           "version": "v1.0.0-local",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/local-verified/wf-local-ready-wan22-a14b-4steps-flf2v.json",
           "checksum": "ce9f55a75a28c7cebfd9dee32bc2f8d6665db97f83ab6051354490234dfd0740",
           "mapping": [
@@ -430,6 +470,14 @@
             "supportedTiers": [
               "验证档位 · 832×480"
             ]
+          },
+          "publicationEvidence": {
+            "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
+            "taskId": "2109503781349568514",
+            "comfyPromptId": "66b7604b-1182-4606-a005-ccccc23db84d",
+            "outputSha256": "a735ff2397c731309f3c2a72d8563992be22850703ae04623efeab9817f5773b",
+            "technicalAcceptance": "PASSED",
+            "qualityReview": "pending"
           }
         }
       ]
@@ -458,7 +506,7 @@
           "workflowCode": "wf-local-ready-minimaxh3-turbo-flf2v-av",
           "modelCode": "H3",
           "version": "v1.0.0-local",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/local-verified/wf-local-ready-minimaxh3-turbo-flf2v-av.json",
           "checksum": "bc8582e6edcc42200eadb4d9dcad2e0bdeb8884bb4519cfdb9a0061fcbc26da5",
           "mapping": [
@@ -510,6 +558,14 @@
             "supportedTiers": [
               "验证档位 · 768×448"
             ]
+          },
+          "publicationEvidence": {
+            "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
+            "taskId": "2109503932998823938",
+            "comfyPromptId": "7733e349-9cb6-46c8-bfe4-372461b5c13b",
+            "outputSha256": "880a99c1c51dcbe5e656da2556b2f6b304a39fa96321542aabbd20c3e21e15a0",
+            "technicalAcceptance": "PASSED",
+            "qualityReview": "pending"
           }
         }
       ]
@@ -535,7 +591,7 @@
           "workflowCode": "wf-local-video-wan2-2-14b-i2v",
           "modelCode": "WAN",
           "version": "v1.0.0-local",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/local-verified/wf-local-video-wan2-2-14b-i2v.json",
           "checksum": "1a2479b3e05700e98dcf7a46dea05944d2144266cf2fc6d4aec070b50c814922",
           "mapping": [
@@ -587,6 +643,14 @@
             "supportedTiers": [
               "验证档位 · 832×480"
             ]
+          },
+          "publicationEvidence": {
+            "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
+            "taskId": "2109504072010641410",
+            "comfyPromptId": "8d6c2bd3-5d86-4bbd-9c4e-774a882a6cda",
+            "outputSha256": "1e03c6bc0d15c65e71e8541c87a51ae6eb7f88e84d117a0785a174e225fcd9de",
+            "technicalAcceptance": "PASSED",
+            "qualityReview": "pending"
           }
         }
       ]
@@ -615,7 +679,7 @@
           "workflowCode": "wf-local-video-wan2-2-14b-flf2v",
           "modelCode": "WAN",
           "version": "v1.0.0-local",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/local-verified/wf-local-video-wan2-2-14b-flf2v.json",
           "checksum": "7b83225a29dc91674e1e5193db6fee0e2ebf0b79415f414673a24f83a802c366",
           "mapping": [
@@ -672,6 +736,14 @@
             "supportedTiers": [
               "验证档位 · 832×480"
             ]
+          },
+          "publicationEvidence": {
+            "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
+            "taskId": "2109506014703202306",
+            "comfyPromptId": "7a50eee4-9d52-488c-a272-d09794cc25e3",
+            "outputSha256": "20096be9a2213e47a0781ccd8fe810c03b233d29af04724aefed1209956f875c",
+            "technicalAcceptance": "PASSED",
+            "qualityReview": "pending"
           }
         }
       ]
@@ -694,7 +766,7 @@
           "workflowCode": "wf-local-video-wan2-2-5b-ti2v",
           "modelCode": "WAN",
           "version": "v1.0.0-local",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/local-verified/wf-local-video-wan2-2-5b-ti2v.json",
           "checksum": "ecb2eb9c6b13f9592746a2c6fe928c506712d1cb62311048d516d1ba5cf2bd72",
           "mapping": [
@@ -736,6 +808,14 @@
             "supportedTiers": [
               "验证档位 · 832×480"
             ]
+          },
+          "publicationEvidence": {
+            "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
+            "taskId": "2109507011290804226",
+            "comfyPromptId": "8ddf9d69-04c1-4399-9324-39a530fb99b7",
+            "outputSha256": "9a3fcfc20d6cdec4e556e33ede8b0e5dad1d446d2a105fa566fabe38849b93c6",
+            "technicalAcceptance": "PASSED",
+            "qualityReview": "pending"
           }
         }
       ]
@@ -758,7 +838,7 @@
           "workflowCode": "wf-local-video-minimax-h3-t2v",
           "modelCode": "H3",
           "version": "v1.0.0-local",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/local-verified/wf-local-video-minimax-h3-t2v.json",
           "checksum": "3a943075bd8dfa3a325a9f934422db0ba81f925887a91d6b5e74bd8c3a4a8525",
           "mapping": [
@@ -800,6 +880,14 @@
             "supportedTiers": [
               "验证档位 · 864×480"
             ]
+          },
+          "publicationEvidence": {
+            "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
+            "taskId": "2109507125036134401",
+            "comfyPromptId": "2531d760-63a2-4b86-8af4-3330efd8d412",
+            "outputSha256": "d89e5fdc77a89764c59e75f975b5781b6f6c4b2443756b6eb11a3e6c2cfc8153",
+            "technicalAcceptance": "PASSED",
+            "qualityReview": "pending"
           }
         }
       ]
@@ -825,7 +913,7 @@
           "workflowCode": "wf-local-video-minimax-h3-i2v",
           "modelCode": "H3",
           "version": "v1.0.0-local",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/local-verified/wf-local-video-minimax-h3-i2v.json",
           "checksum": "d800575a3708833caf4b2256690258f26f73f2ac9f41525a872ffe091c1f8e4b",
           "mapping": [
@@ -872,6 +960,14 @@
             "supportedTiers": [
               "验证档位 · 640×640"
             ]
+          },
+          "publicationEvidence": {
+            "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
+            "taskId": "2109507238777270273",
+            "comfyPromptId": "085aba84-00e7-43d2-811f-993d7d7b28a3",
+            "outputSha256": "f854f325be1869ff2feb4f86a54ca5e9edb88b3d209e4c20589e35e5c1fa2f7d",
+            "technicalAcceptance": "PASSED",
+            "qualityReview": "pending"
           }
         }
       ]
@@ -900,7 +996,7 @@
           "workflowCode": "wf-local-video-minimax-h3-r2v",
           "modelCode": "H3",
           "version": "v1.0.0-local",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/local-verified/wf-local-video-minimax-h3-r2v.json",
           "checksum": "ce7e365d80f66738dafa627fdf1e7a42ddd1a6d4ac679ff311da338246d20a46",
           "mapping": [
@@ -952,6 +1048,14 @@
             "supportedTiers": [
               "验证档位 · 864×480"
             ]
+          },
+          "publicationEvidence": {
+            "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
+            "taskId": "2109507352501628929",
+            "comfyPromptId": "26404e80-3431-4c52-b1d1-fe3ab43c0b70",
+            "outputSha256": "692f0a4a9fefa0c87bf905c73983fa55f0be667bda465de51e38507f617e03f0",
+            "technicalAcceptance": "PASSED",
+            "qualityReview": "pending"
           }
         }
       ]
@@ -974,7 +1078,7 @@
           "workflowCode": "wf-local-video-kandinsky5-t2v",
           "modelCode": "KAND",
           "version": "v1.0.0-local",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/local-verified/wf-local-video-kandinsky5-t2v.json",
           "checksum": "135c352f4fe4464fcbcf48fdd4da3efcc2d66ee3ad95edccecacefb5ac095bfb",
           "mapping": [
@@ -1016,6 +1120,14 @@
             "supportedTiers": [
               "验证档位 · 832×480"
             ]
+          },
+          "publicationEvidence": {
+            "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
+            "taskId": "2109507466242764802",
+            "comfyPromptId": "35121e27-8606-4d1a-9d0b-40044820b35d",
+            "outputSha256": "6089f324a6b92392c2b732b5d8797ff216d6bc7f8feba0d370faddada773548d",
+            "technicalAcceptance": "PASSED",
+            "qualityReview": "pending"
           }
         }
       ]
@@ -1041,7 +1153,7 @@
           "workflowCode": "wf-local-video-kandinsky5-i2v",
           "modelCode": "KAND",
           "version": "v1.0.0-local",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/local-verified/wf-local-video-kandinsky5-i2v.json",
           "checksum": "0c9f5a5c1d947fe987a1c09118d7e0015d5401dee10094ec1f225f8364fdd4fb",
           "mapping": [
@@ -1088,6 +1200,14 @@
             "supportedTiers": [
               "验证档位 · 768×512"
             ]
+          },
+          "publicationEvidence": {
+            "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
+            "taskId": "2109507996117577729",
+            "comfyPromptId": "3cdf7a30-ce89-4196-94d4-c49a9ac92971",
+            "outputSha256": "83e69f7bc4f82ea35d40b29365e5002335e092835187776dfc29d358c512a854",
+            "technicalAcceptance": "PASSED",
+            "qualityReview": "pending"
           }
         }
       ]
@@ -1110,7 +1230,7 @@
           "workflowCode": "wf-local-video-hunyuan-video-1.5-720p-t2v",
           "modelCode": "HUN",
           "version": "v1.0.0-local",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/local-verified/wf-local-video-hunyuan-video-1.5-720p-t2v.json",
           "checksum": "63811ec74e733075b89c8bccf6f4b3090af56d650fcad24ee77104b7f4bfe579",
           "mapping": [
@@ -1152,6 +1272,14 @@
             "supportedTiers": [
               "验证档位 · 832×480"
             ]
+          },
+          "publicationEvidence": {
+            "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
+            "taskId": "2109508500788817921",
+            "comfyPromptId": "9a3d9c50-f459-4202-a888-99c43789c233",
+            "outputSha256": "ec17282ec2b3d71778b7ab6e75975acbddbebab0a2f91234ecd5a2a84eb04ff7",
+            "technicalAcceptance": "PASSED",
+            "qualityReview": "pending"
           }
         }
       ]
@@ -1177,7 +1305,7 @@
           "workflowCode": "wf-local-video-hunyuan-video-1.5-720p-i2v",
           "modelCode": "HUN",
           "version": "v1.0.0-local",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/local-verified/wf-local-video-hunyuan-video-1.5-720p-i2v.json",
           "checksum": "9c0c2659e1a841f012b6043a8578163d99736f46b968aa1a95b6bc1e75905d9f",
           "mapping": [
@@ -1224,6 +1352,14 @@
             "supportedTiers": [
               "验证档位 · 832×480"
             ]
+          },
+          "publicationEvidence": {
+            "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
+            "taskId": "2109508929744482305",
+            "comfyPromptId": "bc87e861-73f3-4768-acf4-f3f7488b2fb4",
+            "outputSha256": "1d61e6461df5feeba28c1a64e3862c7a349a3bdb609e7b3748d958791cc96aaf",
+            "technicalAcceptance": "PASSED",
+            "qualityReview": "pending"
           }
         }
       ]
@@ -1246,7 +1382,7 @@
           "workflowCode": "wf-local-video-ltx2-5-t2v",
           "modelCode": "LTX",
           "version": "v1.0.0-local",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/local-verified/wf-local-video-ltx2-5-t2v.json",
           "checksum": "224f2022b6112177d26cb2b568076e41de5addd27ae25afc0e62847516033ca0",
           "mapping": [
@@ -1293,6 +1429,14 @@
             "supportedTiers": [
               "验证档位 · 832×448"
             ]
+          },
+          "publicationEvidence": {
+            "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
+            "taskId": "2109509396490825729",
+            "comfyPromptId": "6673c1f0-a1f4-454e-ba9f-b3298c9abe62",
+            "outputSha256": "75c3c1b264d25baeef5d7f56e58d97a3a10cb5e06b6fd28e28b481aa357b53b9",
+            "technicalAcceptance": "PASSED",
+            "qualityReview": "pending"
           }
         }
       ]
@@ -1318,7 +1462,7 @@
           "workflowCode": "wf-local-video-ltx2-5-i2v",
           "modelCode": "LTX",
           "version": "v1.0.0-local",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/local-verified/wf-local-video-ltx2-5-i2v.json",
           "checksum": "9492d8156e42acb9ec9fd35d8f0b425c32c3dc2da8d91e4f98e746314d44f959",
           "mapping": [
@@ -1370,6 +1514,14 @@
             "supportedTiers": [
               "验证档位 · 832×448"
             ]
+          },
+          "publicationEvidence": {
+            "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
+            "taskId": "2109509484994834434",
+            "comfyPromptId": "7accd8af-ece9-4c77-acd4-4c4bcd621bf1",
+            "outputSha256": "7f0c54e4aa2c9626b127f0ec29249ecbcd5ec1c3ae9258a84ac353f15c20ef42",
+            "technicalAcceptance": "PASSED",
+            "qualityReview": "pending"
           }
         }
       ]
@@ -1398,7 +1550,7 @@
           "workflowCode": "wf-local-video-ltx2-5-flf2v",
           "modelCode": "LTX",
           "version": "v1.0.0-local",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "video/workflows/local-verified/wf-local-video-ltx2-5-flf2v.json",
           "checksum": "27f8c9c899f18fe91b28ca8f6cbc26305f028485d513b30f91745f994291e613",
           "mapping": [
@@ -1450,6 +1602,14 @@
             "supportedTiers": [
               "验证档位 · 832×480"
             ]
+          },
+          "publicationEvidence": {
+            "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
+            "taskId": "2109509623905988610",
+            "comfyPromptId": "a753108f-939e-4298-97db-eacc25d51fce",
+            "outputSha256": "d262020ccc7cacf8fda682016c6b0b80a47213839dd3c6e5a782534adab1286c",
+            "technicalAcceptance": "PASSED",
+            "qualityReview": "pending"
           }
         }
       ]

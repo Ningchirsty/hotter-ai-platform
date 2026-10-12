@@ -16,7 +16,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 
-/** 蓝章鱼图像生成适配器：一次付费请求，无自动重试；兼容 URL 和 base64 输出。 */
+/** 云端服务图像生成适配器：一次付费请求，无自动重试；兼容 URL 和 base64 输出。 */
 public class BluOctoImageClient {
     public static final List<String> MODELS = List.of("flux-2-pro", "gpt-image-2.5-flare",
         "gpt-image-2.5-sunburst", "qwen-image-3.0", "qwen-image-3.0-pro", "wan2.7-image", "wan2.7-image-pro");

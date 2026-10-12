@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
-/** 固定蓝章鱼主机；提交不自动重试，查询和下载不跟随重定向。 */
+/** 固定云端服务主机；提交不自动重试，查询和下载不跟随重定向。 */
 public class BluOctoVideoClient {
     public record RemoteTask(String id, String protocol) { }
     private final VideoCloudProperties properties;
@@ -78,7 +78,8 @@ public class BluOctoVideoClient {
         if(protocol.equals("doubao")) {
             path="/doubao/api/v3/contents/generations/tasks";
             var metadata=(Map<?,?>)body.get("metadata");
-            body=new LinkedHashMap<>(Map.of("model",request.model(),"content",metadata.get("content"),"duration",request.seconds(),"resolution",request.resolution(),"ratio",request.ratio(),"generate_audio",Boolean.TRUE.equals(request.generateAudio())));
+            body=new LinkedHashMap<>(Map.of("model",request.model(),"content",metadata.get("content"),"duration",request.seconds(),"resolution",request.resolution(),"ratio",request.ratio()));
+            if(profile.path("hasAudioOutput").asBoolean()) body.put("generate_audio",Boolean.TRUE.equals(request.generateAudio()));
             if(request.seed()!=null)body.put("seed",request.seed());
         } else if(protocol.equals("alibaba")) {
             path="/ali/api/v1/services/aigc/video-generation/video-synthesis";
@@ -150,18 +151,18 @@ public class BluOctoVideoClient {
         } catch(Exception ignored) { /* 非 JSON 错误仍保留 HTTP 状态。 */ }
         String suffix="（HTTP "+status+"）";
         if(method.equals("POST") && status==400 && message.contains("is not served by this plugin"))
-            return error("CLOUD_PLUGIN_UNSUPPORTED","蓝章鱼当前插件未声明支持该型号，请核对实例插件版本和模型路由；未自动切换接口重新生成"+suffix);
+            return error("CLOUD_PLUGIN_UNSUPPORTED","云端服务当前插件未声明支持该型号，请核对实例插件版本和模型路由；未自动切换接口重新生成"+suffix);
         if(path.endsWith("/content")) {
             if(code.equals("artifact_upstream_auth_failed"))
-                return error("CLOUD_ARTIFACT_AUTH_FAILED","视频已生成，但蓝章鱼读取上游成片的鉴权失败；保留原任务等待恢复，无需重新生成"+suffix);
+                return error("CLOUD_ARTIFACT_AUTH_FAILED","视频已生成，但云端服务读取上游成片的鉴权失败；保留原任务等待恢复，无需重新生成"+suffix);
             if(code.equals("artifact_plugin_error"))
-                return error("CLOUD_ARTIFACT_PLUGIN_FAILED","视频已生成，但蓝章鱼插件无法读取产物；请修复网关插件后恢复原任务"+suffix);
+                return error("CLOUD_ARTIFACT_PLUGIN_FAILED","视频已生成，但云端服务插件无法读取产物；请修复网关插件后恢复原任务"+suffix);
             if(status==410 || code.equals("artifact_gone"))
-                return error("CLOUD_ARTIFACT_EXPIRED","蓝章鱼成片内容接口失效，请恢复原任务产物"+suffix);
+                return error("CLOUD_ARTIFACT_EXPIRED","云端服务成片内容接口失效，请恢复原任务产物"+suffix);
             if(status==404 || code.equals("artifact_not_found"))
-                return error("CLOUD_ARTIFACT_MISSING","蓝章鱼未找到该任务的视频产物，请核对原任务"+suffix);
+                return error("CLOUD_ARTIFACT_MISSING","云端服务未找到该任务的视频产物，请核对原任务"+suffix);
         }
-        return error(method.equals("POST")?"CLOUD_RESULT_UNKNOWN":"CLOUD_QUERY_FAILED","蓝章鱼视频接口返回 HTTP "+status);
+        return error(method.equals("POST")?"CLOUD_RESULT_UNKNOWN":"CLOUD_QUERY_FAILED","云端服务视频接口返回 HTTP "+status);
     }
     private static VideoTaskException error(String code,String message){return new VideoTaskException(code,message);}
 }

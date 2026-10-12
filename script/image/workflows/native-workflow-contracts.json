@@ -15,7 +15,7 @@
           "workflowCode": "wf-local-ready-qwen-image-2-1-t2i",
           "modelCode": "QWEN21",
           "version": "v1.0.0-local",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "image/workflows/local-verified/wf-local-ready-qwen-image-2-1-t2i.json",
           "checksum": "24fd9f3e9c4233efd6365be24fc2b0f47bbdde3bfc705ccd9220772e69f65480",
           "mapping": [
@@ -54,6 +54,14 @@
             "supportedSizes": [
               "验证尺寸 · 1024×1024"
             ]
+          },
+          "publicationEvidence": {
+            "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
+            "taskId": "2109501709009870850",
+            "comfyPromptId": "2ea50b70-7a3d-4b72-acc6-a4c1bde2903a",
+            "outputSha256": "d821d12fdbac5d5811353385b7ad441167c6abc3975a48b33e72061ad415c738",
+            "technicalAcceptance": "PASSED",
+            "qualityReview": "pending"
           }
         }
       ]
@@ -73,7 +81,7 @@
           "workflowCode": "wf-local-official-qwen-image-2-1-t2i",
           "modelCode": "QWEN21",
           "version": "v1.0.0-local",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "image/workflows/local-verified/wf-local-official-qwen-image-2-1-t2i.json",
           "checksum": "d02412ad1a2e98a67fc1f25ce9cdef3190b6d21fec6e19c65a35d9b6333bf170",
           "mapping": [
@@ -112,6 +120,14 @@
             "supportedSizes": [
               "验证尺寸 · 1024×1024"
             ]
+          },
+          "publicationEvidence": {
+            "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
+            "taskId": "2109501760234905602",
+            "comfyPromptId": "e8d40d82-77f8-4304-92fa-28c26d6de704",
+            "outputSha256": "82c350cbd81c2a2e9f6a4d663081046cc7a14c3a5326874a825c34a381f37f9e",
+            "technicalAcceptance": "PASSED",
+            "qualityReview": "pending"
           }
         }
       ]
@@ -131,7 +147,7 @@
           "workflowCode": "wf-local-image-qwen-image-2-1-t2i",
           "modelCode": "QWEN21",
           "version": "v1.0.0-local",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "image/workflows/local-verified/wf-local-image-qwen-image-2-1-t2i.json",
           "checksum": "01b6e29f65c36e2a16c250c2ba7b65e93ac1fdec9071887e96e69c924b77ac24",
           "mapping": [
@@ -170,6 +186,14 @@
             "supportedSizes": [
               "验证尺寸 · 1024×1024"
             ]
+          },
+          "publicationEvidence": {
+            "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
+            "taskId": "2109501811204087809",
+            "comfyPromptId": "2c6f5ec6-a1ce-479a-bf2f-4da3aa00614f",
+            "outputSha256": "93267b629941b21f1db8341160b151fb36e3712bb5e86552da3cb2d80b03bc3f",
+            "technicalAcceptance": "PASSED",
+            "qualityReview": "pending"
           }
         }
       ]
@@ -189,7 +213,7 @@
           "workflowCode": "wf-local-image-flux2-klein-image-edit-4b-distilled",
           "modelCode": "FLUX4B",
           "version": "v1.0.0-local",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "image/workflows/local-verified/wf-local-image-flux2-klein-image-edit-4b-distilled.json",
           "checksum": "f18f7bfc3d6c3f9f415d062f58b71f44bbb393444a5c6c4e15ec0f8aa961097b",
           "mapping": [
@@ -228,7 +252,15 @@
           "perf": {
             "timeoutSeconds": 1800
           },
-          "fixedFieldValidation": {}
+          "fixedFieldValidation": {},
+          "publicationEvidence": {
+            "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
+            "taskId": "2109501862131326977",
+            "comfyPromptId": "782e0dad-3743-4ac8-ae02-f4967601d3bf",
+            "outputSha256": "165eeb6e431fb73507205b4e0bdc1c32b358ab506315e4a22e7a76f04024cf61",
+            "technicalAcceptance": "PASSED",
+            "qualityReview": "pending"
+          }
         }
       ]
     },
@@ -247,7 +279,7 @@
           "workflowCode": "wf-local-image-flux2-klein-4b-fast-t2i",
           "modelCode": "FLUX4B",
           "version": "v1.0.0-local",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "image/workflows/local-verified/wf-local-image-flux2-klein-4b-fast-t2i.json",
           "checksum": "d838be9e00f2f71b71529a150226cc8093c2a3619f95690f560b3f2d1b76e49e",
           "mapping": [
@@ -286,6 +318,14 @@
             "supportedSizes": [
               "验证尺寸 · 1024×1024"
             ]
+          },
+          "publicationEvidence": {
+            "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
+            "taskId": "2109501887792078849",
+            "comfyPromptId": "c43535d9-7ef0-4d3f-a688-76e15fc01c26",
+            "outputSha256": "42694f28bad9421582bf520873dbd25d5ab76e944697fa988cef1e43f1a80017",
+            "technicalAcceptance": "PASSED",
+            "qualityReview": "pending"
           }
         }
       ]
@@ -305,7 +345,7 @@
           "workflowCode": "wf-local-image-flux2-klein-text-to-image",
           "modelCode": "FLUX4B",
           "version": "v1.0.0-local",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "image/workflows/local-verified/wf-local-image-flux2-klein-text-to-image.json",
           "checksum": "15feb71ceb78fe75beab3a72b5c99f49aa0efa710662cc040330a472c8ec2d52",
           "mapping": [
@@ -344,6 +384,14 @@
             "supportedSizes": [
               "验证尺寸 · 1024×1024"
             ]
+          },
+          "publicationEvidence": {
+            "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
+            "taskId": "2109501913440247809",
+            "comfyPromptId": "6833f1de-e89f-4f86-a29b-f7f9d4ce196c",
+            "outputSha256": "01d19424c021f6c6ea136e5f642afbcc578b087010410822c31cd9de42390cc0",
+            "technicalAcceptance": "PASSED",
+            "qualityReview": "pending"
           }
         }
       ]
@@ -363,7 +411,7 @@
           "workflowCode": "wf-local-image-z-image-turbo",
           "modelCode": "ZIMAGE",
           "version": "v1.0.0-local",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "image/workflows/local-verified/wf-local-image-z-image-turbo.json",
           "checksum": "055a66435df3c08d301e9709133884c74dfd0e7f20379b2af06f2daba76b7ef7",
           "mapping": [
@@ -402,6 +450,14 @@
             "supportedSizes": [
               "验证尺寸 · 1024×1024"
             ]
+          },
+          "publicationEvidence": {
+            "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
+            "taskId": "2109501976975564802",
+            "comfyPromptId": "017afd84-1e0b-47d4-a813-d9dc305c23b0",
+            "outputSha256": "b7a254f7b2ba54b32fd40748b212d6c8804c1bae4b86a2aa1ca1ad5c4d24d3fc",
+            "technicalAcceptance": "PASSED",
+            "qualityReview": "pending"
           }
         }
       ]
@@ -421,7 +477,7 @@
           "workflowCode": "wf-local-image-z-image-turbo-fun-union-controlnet",
           "modelCode": "ZIMAGE",
           "version": "v1.0.0-local",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "image/workflows/local-verified/wf-local-image-z-image-turbo-fun-union-controlnet.json",
           "checksum": "2e12f1cb4bdd7c4d98d48e482074afe6031cbfab75fd98534f933c34d3953570",
           "mapping": [
@@ -460,7 +516,15 @@
           "perf": {
             "timeoutSeconds": 1800
           },
-          "fixedFieldValidation": {}
+          "fixedFieldValidation": {},
+          "publicationEvidence": {
+            "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
+            "taskId": "2109502015286337537",
+            "comfyPromptId": "2ab793c4-5724-4359-a20d-de0eceb83127",
+            "outputSha256": "b989c6d196a93305674fc90d1d5f4df095730fe0e2ec07c09c2972b53413ae71",
+            "technicalAcceptance": "PASSED",
+            "qualityReview": "pending"
+          }
         }
       ]
     },
@@ -479,7 +543,7 @@
           "workflowCode": "wf-local-image-qwen-image-2512",
           "modelCode": "QWEN2512",
           "version": "v1.0.0-local",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "image/workflows/local-verified/wf-local-image-qwen-image-2512.json",
           "checksum": "18119e4a42c70bdc69142b508299a6f8db91b2bf2dd6373aff4103154e9bcdcc",
           "mapping": [
@@ -518,6 +582,14 @@
             "supportedSizes": [
               "验证尺寸 · 1328×1328"
             ]
+          },
+          "publicationEvidence": {
+            "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
+            "taskId": "2109502566523940866",
+            "comfyPromptId": "8cdd5890-27a9-40ee-a0a2-0deb6fbb5de3",
+            "outputSha256": "36bee2889cea0c6a8a77b7f99a9dcabd001f3c4ea0502e4fa57600481d419399",
+            "technicalAcceptance": "PASSED",
+            "qualityReview": "pending"
           }
         }
       ]
@@ -537,7 +609,7 @@
           "workflowCode": "wf-local-image-ideogram4-t2i",
           "modelCode": "IDEOGRAM",
           "version": "v1.0.0-local",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "image/workflows/local-verified/wf-local-image-ideogram4-t2i.json",
           "checksum": "d76fc0cb3077ea5198e9a9f117c946c99812d1afa8e486c231deb17d056b98e1",
           "mapping": [
@@ -576,6 +648,14 @@
             "supportedSizes": [
               "验证尺寸 · 768×1376"
             ]
+          },
+          "publicationEvidence": {
+            "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
+            "taskId": "2109502958636838914",
+            "comfyPromptId": "efc5dae2-22a0-4b39-a1f8-289195a17b47",
+            "outputSha256": "63d3d962d0c8b253a4e0dce6b280c210c8ace211d2acb36efe2bb751a8a55095",
+            "technicalAcceptance": "PASSED",
+            "qualityReview": "pending"
           }
         }
       ]
@@ -595,7 +675,7 @@
           "workflowCode": "wf-local-image-krea2-turbo-t2i",
           "modelCode": "KREA",
           "version": "v1.0.0-local",
-          "status": "DRAFT",
+          "status": "PUBLISHED",
           "apiJsonFile": "image/workflows/local-verified/wf-local-image-krea2-turbo-t2i.json",
           "checksum": "6bb0cc8204bf52550bbeb02de46833c0fbc1488c9f8bb85cb923bc55cff2c45c",
           "mapping": [
@@ -639,6 +719,14 @@
             "supportedSizes": [
               "验证尺寸 · 1024×1024"
             ]
+          },
+          "publicationEvidence": {
+            "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
+            "taskId": "2109503085250293761",
+            "comfyPromptId": "43ba2db4-9d50-4054-b732-cea7deeafbb3",
+            "outputSha256": "3c26ce2fcbb8a95355fe9af63f0116998d48cc9814ac1d2526d5cc98e8a1cdb4",
+            "technicalAcceptance": "PASSED",
+            "qualityReview": "pending"
           }
         }
       ]

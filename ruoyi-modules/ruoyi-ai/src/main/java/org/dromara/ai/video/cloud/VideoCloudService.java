@@ -42,13 +42,13 @@ public class VideoCloudService {
         pool=new ThreadPoolExecutor(Math.max(1,properties.getConcurrency()),Math.max(1,properties.getConcurrency()),0,TimeUnit.MILLISECONDS,new ArrayBlockingQueue<>(Math.max(1,properties.getQueueCapacity())),r->{Thread t=new Thread(r,"video-cloud");t.setDaemon(true);return t;});
     }
     public Map<String,Object> models(){return models(-1);}
-    public Map<String,Object> models(long user){return Map.of("configured",properties.configured(),"referenceDeliveryConfigured",properties.configured()&&deliveryConfigured(),"profiles",catalog.path("profiles"),"verifiedVariants",verification.verifiedVariants(),"validationVariants",verification.candidates(user),"validationRemaining",verification.candidates(user).isEmpty()?0:verification.remaining());}
+    public Map<String,Object> models(long user){return Map.of("configured",properties.configured(),"referenceDeliveryConfigured",properties.configured()&&deliveryConfigured(),"profiles",mapper.convertValue(catalog.path("profiles"),java.util.List.class),"verifiedVariants",verification.verifiedVariants(),"validationVariants",verification.candidates(user),"validationRemaining",verification.candidates(user).isEmpty()?0:verification.remaining());}
     public JsonNode profile(String model){for(JsonNode p:catalog.path("profiles"))if(p.path("id").asText().equals(model))return p;return null;}
     public static boolean isCloud(Map<String,Object> task){return WORKFLOW.equals(task.get("workflow_code"));}
     private boolean deliveryConfigured(){try{var u=java.net.URI.create(properties.getPublicAssetBaseUrl());return "https".equals(u.getScheme())&&u.getHost()!=null&&u.getRawUserInfo()==null&&u.getQuery()==null&&u.getFragment()==null;}catch(Exception e){return false;}}
     private void verify(CloudVideoRequest request,long user) {
         JsonNode p=profile(request.model());request.validate(p);
-        if(!properties.configured())throw new VideoTaskException("CLOUD_NOT_CONFIGURED","服务端尚未启用蓝章鱼视频");
+        if(!properties.configured())throw new VideoTaskException("CLOUD_NOT_CONFIGURED","服务端尚未启用云端服务视频");
         if(p.path("protocol").asText().equals("unconfirmed"))throw new VideoTaskException("CLOUD_PROTOCOL_UNCONFIRMED","该型号的供应商视频协议待确认");
         verification.requireAllowed(request,user);
         if(!request.references().isEmpty()&&!deliveryConfigured())throw new VideoTaskException("CLOUD_REFERENCE_NOT_CONFIGURED","参考素材外部读取地址尚未配置");

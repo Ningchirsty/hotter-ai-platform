@@ -1,0 +1,794 @@
+{
+  "commit": "240268b8626ced26fef67159a11636674ae10915",
+  "scope": "isolated-platform",
+  "productionModified": false,
+  "qualityReview": "pending",
+  "buildStrategy": "isolated-instance-of-verified-production-runtime",
+  "workflows": [
+    {
+      "media": "image",
+      "capabilityCode": "T2I",
+      "workflowCode": "wf-local-ready-qwen-image-2-1-t2i",
+      "version": "v1.0.0-local",
+      "checksum": "24fd9f3e9c4233efd6365be24fc2b0f47bbdde3bfc705ccd9220772e69f65480",
+      "status": "SUCCEEDED",
+      "taskId": "2109501709009870850",
+      "comfyPromptId": "2ea50b70-7a3d-4b72-acc6-a4c1bde2903a",
+      "eventTypes": [
+        "CREATED",
+        "SUCCEEDED"
+      ],
+      "outputAssetId": "2109501749182914562",
+      "bytes": 1783788,
+      "sha256": "d821d12fdbac5d5811353385b7ad441167c6abc3975a48b33e72061ad415c738",
+      "output": "wf-local-ready-qwen-image-2-1-t2i.png",
+      "outputOptions": {
+        "size": "验证尺寸 · 1024×1024"
+      },
+      "width": 1024,
+      "height": 1024,
+      "hasAudio": false
+    },
+    {
+      "media": "image",
+      "capabilityCode": "T2I",
+      "workflowCode": "wf-local-official-qwen-image-2-1-t2i",
+      "version": "v1.0.0-local",
+      "checksum": "d02412ad1a2e98a67fc1f25ce9cdef3190b6d21fec6e19c65a35d9b6333bf170",
+      "status": "SUCCEEDED",
+      "taskId": "2109501760234905602",
+      "comfyPromptId": "e8d40d82-77f8-4304-92fa-28c26d6de704",
+      "eventTypes": [
+        "CREATED",
+        "SUCCEEDED"
+      ],
+      "outputAssetId": "2109501798608592898",
+      "bytes": 1744674,
+      "sha256": "82c350cbd81c2a2e9f6a4d663081046cc7a14c3a5326874a825c34a381f37f9e",
+      "output": "wf-local-official-qwen-image-2-1-t2i.png",
+      "outputOptions": {
+        "size": "验证尺寸 · 1024×1024"
+      },
+      "width": 1024,
+      "height": 1024,
+      "hasAudio": false
+    },
+    {
+      "media": "image",
+      "capabilityCode": "T2I",
+      "workflowCode": "wf-local-image-qwen-image-2-1-t2i",
+      "version": "v1.0.0-local",
+      "checksum": "01b6e29f65c36e2a16c250c2ba7b65e93ac1fdec9071887e96e69c924b77ac24",
+      "status": "SUCCEEDED",
+      "taskId": "2109501811204087809",
+      "comfyPromptId": "2c6f5ec6-a1ce-479a-bf2f-4da3aa00614f",
+      "eventTypes": [
+        "CREATED",
+        "SUCCEEDED"
+      ],
+      "outputAssetId": "2109501849581969410",
+      "bytes": 1713198,
+      "sha256": "93267b629941b21f1db8341160b151fb36e3712bb5e86552da3cb2d80b03bc3f",
+      "output": "wf-local-image-qwen-image-2-1-t2i.png",
+      "outputOptions": {
+        "size": "验证尺寸 · 1024×1024"
+      },
+      "width": 1024,
+      "height": 1024,
+      "hasAudio": false
+    },
+    {
+      "media": "image",
+      "capabilityCode": "EDIT",
+      "workflowCode": "wf-local-image-flux2-klein-image-edit-4b-distilled",
+      "version": "v1.0.0-local",
+      "checksum": "f18f7bfc3d6c3f9f415d062f58b71f44bbb393444a5c6c4e15ec0f8aa961097b",
+      "status": "SUCCEEDED",
+      "taskId": "2109501862131326977",
+      "comfyPromptId": "782e0dad-3743-4ac8-ae02-f4967601d3bf",
+      "eventTypes": [
+        "CREATED",
+        "SUCCEEDED"
+      ],
+      "outputAssetId": "2109501875376939010",
+      "bytes": 1541264,
+      "sha256": "165eeb6e431fb73507205b4e0bdc1c32b358ab506315e4a22e7a76f04024cf61",
+      "output": "wf-local-image-flux2-klein-image-edit-4b-distilled.png",
+      "outputOptions": {},
+      "width": 1024,
+      "height": 1024,
+      "hasAudio": false
+    },
+    {
+      "media": "image",
+      "capabilityCode": "T2I",
+      "workflowCode": "wf-local-image-flux2-klein-4b-fast-t2i",
+      "version": "v1.0.0-local",
+      "checksum": "d838be9e00f2f71b71529a150226cc8093c2a3619f95690f560b3f2d1b76e49e",
+      "status": "SUCCEEDED",
+      "taskId": "2109501887792078849",
+      "comfyPromptId": "c43535d9-7ef0-4d3f-a688-76e15fc01c26",
+      "eventTypes": [
+        "CREATED",
+        "SUCCEEDED"
+      ],
+      "outputAssetId": "2109501901050273793",
+      "bytes": 1541951,
+      "sha256": "42694f28bad9421582bf520873dbd25d5ab76e944697fa988cef1e43f1a80017",
+      "output": "wf-local-image-flux2-klein-4b-fast-t2i.png",
+      "outputOptions": {
+        "size": "验证尺寸 · 1024×1024"
+      },
+      "width": 1024,
+      "height": 1024,
+      "hasAudio": false
+    },
+    {
+      "media": "image",
+      "capabilityCode": "T2I",
+      "workflowCode": "wf-local-image-flux2-klein-text-to-image",
+      "version": "v1.0.0-local",
+      "checksum": "15feb71ceb78fe75beab3a72b5c99f49aa0efa710662cc040330a472c8ec2d52",
+      "status": "SUCCEEDED",
+      "taskId": "2109501913440247809",
+      "comfyPromptId": "6833f1de-e89f-4f86-a29b-f7f9d4ce196c",
+      "eventTypes": [
+        "CREATED",
+        "SUCCEEDED"
+      ],
+      "outputAssetId": "2109501966078763009",
+      "bytes": 1196870,
+      "sha256": "01d19424c021f6c6ea136e5f642afbcc578b087010410822c31cd9de42390cc0",
+      "output": "wf-local-image-flux2-klein-text-to-image.png",
+      "outputOptions": {
+        "size": "验证尺寸 · 1024×1024"
+      },
+      "width": 1024,
+      "height": 1024,
+      "hasAudio": false
+    },
+    {
+      "media": "image",
+      "capabilityCode": "T2I",
+      "workflowCode": "wf-local-image-z-image-turbo",
+      "version": "v1.0.0-local",
+      "checksum": "055a66435df3c08d301e9709133884c74dfd0e7f20379b2af06f2daba76b7ef7",
+      "status": "SUCCEEDED",
+      "taskId": "2109501976975564802",
+      "comfyPromptId": "017afd84-1e0b-47d4-a813-d9dc305c23b0",
+      "eventTypes": [
+        "CREATED",
+        "SUCCEEDED"
+      ],
+      "outputAssetId": "2109502002674065409",
+      "bytes": 1061095,
+      "sha256": "b7a254f7b2ba54b32fd40748b212d6c8804c1bae4b86a2aa1ca1ad5c4d24d3fc",
+      "output": "wf-local-image-z-image-turbo.png",
+      "outputOptions": {
+        "size": "验证尺寸 · 1024×1024"
+      },
+      "width": 1024,
+      "height": 1024,
+      "hasAudio": false
+    },
+    {
+      "media": "image",
+      "capabilityCode": "CONTROL",
+      "workflowCode": "wf-local-image-z-image-turbo-fun-union-controlnet",
+      "version": "v1.0.0-local",
+      "checksum": "2e12f1cb4bdd7c4d98d48e482074afe6031cbfab75fd98534f933c34d3953570",
+      "status": "SUCCEEDED",
+      "taskId": "2109502015286337537",
+      "comfyPromptId": "2ab793c4-5724-4359-a20d-de0eceb83127",
+      "eventTypes": [
+        "CREATED",
+        "SUCCEEDED"
+      ],
+      "outputAssetId": "2109502041010003969",
+      "bytes": 512197,
+      "sha256": "b989c6d196a93305674fc90d1d5f4df095730fe0e2ec07c09c2972b53413ae71",
+      "output": "wf-local-image-z-image-turbo-fun-union-controlnet.png",
+      "outputOptions": {},
+      "width": 768,
+      "height": 768,
+      "hasAudio": false,
+      "outputPolicy": "uploaded-image-dimensions",
+      "technicalAcceptance": "PASSED"
+    },
+    {
+      "media": "image",
+      "capabilityCode": "T2I",
+      "workflowCode": "wf-local-image-qwen-image-2512",
+      "version": "v1.0.0-local",
+      "checksum": "18119e4a42c70bdc69142b508299a6f8db91b2bf2dd6373aff4103154e9bcdcc",
+      "status": "SUCCEEDED",
+      "taskId": "2109502566523940866",
+      "comfyPromptId": "8cdd5890-27a9-40ee-a0a2-0deb6fbb5de3",
+      "eventTypes": [
+        "CREATED",
+        "SUCCEEDED"
+      ],
+      "outputAssetId": "2109502945760325633",
+      "bytes": 2168968,
+      "sha256": "36bee2889cea0c6a8a77b7f99a9dcabd001f3c4ea0502e4fa57600481d419399",
+      "output": "wf-local-image-qwen-image-2512.png",
+      "outputOptions": {
+        "size": "验证尺寸 · 1328×1328"
+      },
+      "width": 1328,
+      "height": 1328,
+      "hasAudio": false
+    },
+    {
+      "media": "image",
+      "capabilityCode": "T2I",
+      "workflowCode": "wf-local-image-ideogram4-t2i",
+      "version": "v1.0.0-local",
+      "checksum": "d76fc0cb3077ea5198e9a9f117c946c99812d1afa8e486c231deb17d056b98e1",
+      "status": "SUCCEEDED",
+      "taskId": "2109502958636838914",
+      "comfyPromptId": "efc5dae2-22a0-4b39-a1f8-289195a17b47",
+      "eventTypes": [
+        "CREATED",
+        "SUCCEEDED"
+      ],
+      "outputAssetId": "2109503072558329858",
+      "bytes": 1283395,
+      "sha256": "63d3d962d0c8b253a4e0dce6b280c210c8ace211d2acb36efe2bb751a8a55095",
+      "output": "wf-local-image-ideogram4-t2i.png",
+      "outputOptions": {
+        "size": "验证尺寸 · 768×1376"
+      },
+      "width": 768,
+      "height": 1376,
+      "hasAudio": false
+    },
+    {
+      "media": "image",
+      "capabilityCode": "T2I",
+      "workflowCode": "wf-local-image-krea2-turbo-t2i",
+      "version": "v1.0.0-local",
+      "checksum": "6bb0cc8204bf52550bbeb02de46833c0fbc1488c9f8bb85cb923bc55cff2c45c",
+      "status": "SUCCEEDED",
+      "taskId": "2109503085250293761",
+      "comfyPromptId": "43ba2db4-9d50-4054-b732-cea7deeafbb3",
+      "eventTypes": [
+        "CREATED",
+        "SUCCEEDED"
+      ],
+      "outputAssetId": "2109503136479522817",
+      "bytes": 1113517,
+      "sha256": "3c26ce2fcbb8a95355fe9af63f0116998d48cc9814ac1d2526d5cc98e8a1cdb4",
+      "output": "wf-local-image-krea2-turbo-t2i.png",
+      "outputOptions": {
+        "size": "验证尺寸 · 1024×1024"
+      },
+      "width": 1024,
+      "height": 1024,
+      "hasAudio": false
+    },
+    {
+      "media": "video",
+      "capabilityCode": "I2V",
+      "workflowCode": "wf-local-ready-minimaxh3-turbo-i2v-av",
+      "version": "v1.0.0-local",
+      "checksum": "1210c9e89c8d9920c9564784bd978f38818dcf35a4ca7be5d9afba3bc1f1f54d",
+      "status": "SUCCEEDED",
+      "taskId": "2109503148999520257",
+      "comfyPromptId": "77e3ce54-d452-4c38-925d-5bd832c1e2aa",
+      "eventTypes": [
+        "SUBMITTED",
+        "SUCCEEDED"
+      ],
+      "outputAssetId": "2109503258701541377",
+      "bytes": 218439,
+      "sha256": "4e2e988b395f2e424f56a5def0506003618ff66769003ffa32b2964d53969e7c",
+      "output": "wf-local-ready-minimaxh3-turbo-i2v-av.mp4",
+      "outputOptions": {
+        "tier": "验证档位 · 768×448",
+        "dur": "2.33 秒"
+      },
+      "width": 768,
+      "height": 448,
+      "hasAudio": true,
+      "durationSeconds": 2.333333
+    },
+    {
+      "media": "video",
+      "capabilityCode": "T2V",
+      "workflowCode": "wf-local-ready-minimaxh3-turbo-t2v-av",
+      "version": "v1.0.0-local",
+      "checksum": "e8fd0e12158cbf6be1205b7e58969373ddc69285f47188c9e9a72755d9a46a64",
+      "status": "SUCCEEDED",
+      "taskId": "2109503262916816897",
+      "comfyPromptId": "ab62e4ca-d1e6-41cb-ba0b-85f573cb61b8",
+      "eventTypes": [
+        "SUBMITTED",
+        "SUCCEEDED"
+      ],
+      "outputAssetId": "2109503348539338754",
+      "bytes": 263211,
+      "sha256": "cb688c9c530451db776cfa7de09e1a11a8f3fa506642a1a1342ed3096c360c0a",
+      "output": "wf-local-ready-minimaxh3-turbo-t2v-av.mp4",
+      "outputOptions": {
+        "tier": "验证档位 · 768×448",
+        "dur": "2.33 秒"
+      },
+      "width": 768,
+      "height": 448,
+      "hasAudio": true,
+      "durationSeconds": 2.333333
+    },
+    {
+      "media": "video",
+      "capabilityCode": "I2V",
+      "workflowCode": "wf-local-ready-wan22-5b-i2v",
+      "version": "v1.0.0-local",
+      "checksum": "fe795e3382076415ede9f31780da8b92729ea3dcafd3c8732d745b81c381c9c2",
+      "status": "SUCCEEDED",
+      "taskId": "2109503351580209153",
+      "comfyPromptId": "1490acdc-f1eb-4eb6-851d-9d80a1e8701f",
+      "eventTypes": [
+        "SUBMITTED",
+        "SUCCEEDED"
+      ],
+      "outputAssetId": "2109503482136309762",
+      "bytes": 220979,
+      "sha256": "070618203c51bb06b4f7225c4e72ca598c4a5f555239b5a11e8599037c77dfea",
+      "output": "wf-local-ready-wan22-5b-i2v.mp4",
+      "outputOptions": {
+        "tier": "验证档位 · 832×480",
+        "dur": "2.04 秒"
+      },
+      "width": 832,
+      "height": 480,
+      "hasAudio": false,
+      "durationSeconds": 2.041667
+    },
+    {
+      "media": "video",
+      "capabilityCode": "T2V",
+      "workflowCode": "wf-local-ready-wan22-5b-t2v",
+      "version": "v1.0.0-local",
+      "checksum": "a435a261a061f160950531723b933699d614473a66d75a1b7e22dd2ae7da8b5d",
+      "status": "SUCCEEDED",
+      "taskId": "2109503490638163969",
+      "comfyPromptId": "1b4f17bd-4059-4ee6-98c2-34d13a8b48b8",
+      "eventTypes": [
+        "SUBMITTED",
+        "SUCCEEDED"
+      ],
+      "outputAssetId": "2109503597081210882",
+      "bytes": 98925,
+      "sha256": "e41bf8f67f9bb8daf352b171bf2fb1347103f04b8dd2466c503abbfdf43aa323",
+      "output": "wf-local-ready-wan22-5b-t2v.mp4",
+      "outputOptions": {
+        "tier": "验证档位 · 832×480",
+        "dur": "2.04 秒"
+      },
+      "width": 832,
+      "height": 480,
+      "hasAudio": false,
+      "durationSeconds": 2.041667
+    },
+    {
+      "media": "video",
+      "capabilityCode": "I2V",
+      "workflowCode": "wf-local-ready-wan22-a14b-4steps-i2v",
+      "version": "v1.0.0-local",
+      "checksum": "c46e6116676de6a7d3ffe3544d1a8f43cc7b96b0f6a861053e8c1ecbd31593ed",
+      "status": "SUCCEEDED",
+      "taskId": "2109503604458991618",
+      "comfyPromptId": "85a90920-07ec-4e11-b5a0-31808ecc079d",
+      "eventTypes": [
+        "SUBMITTED",
+        "SUCCEEDED"
+      ],
+      "outputAssetId": "2109503777016852482",
+      "bytes": 284215,
+      "sha256": "272193ee5a429d54e645f2a2f4fd7d3f085f8eeb26900dcc1909564c9566143b",
+      "output": "wf-local-ready-wan22-a14b-4steps-i2v.mp4",
+      "outputOptions": {
+        "tier": "验证档位 · 832×480",
+        "dur": "2.04 秒"
+      },
+      "width": 832,
+      "height": 480,
+      "hasAudio": false,
+      "durationSeconds": 2.041667
+    },
+    {
+      "media": "video",
+      "capabilityCode": "FL2V",
+      "workflowCode": "wf-local-ready-wan22-a14b-4steps-flf2v",
+      "version": "v1.0.0-local",
+      "checksum": "ce9f55a75a28c7cebfd9dee32bc2f8d6665db97f83ab6051354490234dfd0740",
+      "status": "SUCCEEDED",
+      "taskId": "2109503781349568514",
+      "comfyPromptId": "66b7604b-1182-4606-a005-ccccc23db84d",
+      "eventTypes": [
+        "SUBMITTED",
+        "SUCCEEDED"
+      ],
+      "outputAssetId": "2109503930025062401",
+      "bytes": 112603,
+      "sha256": "a735ff2397c731309f3c2a72d8563992be22850703ae04623efeab9817f5773b",
+      "output": "wf-local-ready-wan22-a14b-4steps-flf2v.mp4",
+      "outputOptions": {
+        "tier": "验证档位 · 832×480",
+        "dur": "2.04 秒"
+      },
+      "width": 832,
+      "height": 480,
+      "hasAudio": false,
+      "durationSeconds": 2.041667
+    },
+    {
+      "media": "video",
+      "capabilityCode": "FL2V",
+      "workflowCode": "wf-local-ready-minimaxh3-turbo-flf2v-av",
+      "version": "v1.0.0-local",
+      "checksum": "bc8582e6edcc42200eadb4d9dcad2e0bdeb8884bb4519cfdb9a0061fcbc26da5",
+      "status": "SUCCEEDED",
+      "taskId": "2109503932998823938",
+      "comfyPromptId": "7733e349-9cb6-46c8-bfe4-372461b5c13b",
+      "eventTypes": [
+        "SUBMITTED",
+        "SUCCEEDED"
+      ],
+      "outputAssetId": "2109504063613644801",
+      "bytes": 238899,
+      "sha256": "880a99c1c51dcbe5e656da2556b2f6b304a39fa96321542aabbd20c3e21e15a0",
+      "output": "wf-local-ready-minimaxh3-turbo-flf2v-av.mp4",
+      "outputOptions": {
+        "tier": "验证档位 · 768×448",
+        "dur": "2.33 秒"
+      },
+      "width": 768,
+      "height": 448,
+      "hasAudio": true,
+      "durationSeconds": 2.333333
+    },
+    {
+      "media": "video",
+      "capabilityCode": "I2V",
+      "workflowCode": "wf-local-video-wan2-2-14b-i2v",
+      "version": "v1.0.0-local",
+      "checksum": "1a2479b3e05700e98dcf7a46dea05944d2144266cf2fc6d4aec070b50c814922",
+      "status": "SUCCEEDED",
+      "taskId": "2109504072010641410",
+      "comfyPromptId": "8d6c2bd3-5d86-4bbd-9c4e-774a882a6cda",
+      "eventTypes": [
+        "SUBMITTED",
+        "SUCCEEDED"
+      ],
+      "outputAssetId": "2109506013302304770",
+      "bytes": 272931,
+      "sha256": "1e03c6bc0d15c65e71e8541c87a51ae6eb7f88e84d117a0785a174e225fcd9de",
+      "output": "wf-local-video-wan2-2-14b-i2v.mp4",
+      "outputOptions": {
+        "tier": "验证档位 · 832×480",
+        "dur": "5.06 秒"
+      },
+      "width": 832,
+      "height": 480,
+      "hasAudio": false,
+      "durationSeconds": 5.0625
+    },
+    {
+      "media": "video",
+      "capabilityCode": "FL2V",
+      "workflowCode": "wf-local-video-wan2-2-14b-flf2v",
+      "version": "v1.0.0-local",
+      "checksum": "7b83225a29dc91674e1e5193db6fee0e2ebf0b79415f414673a24f83a802c366",
+      "status": "SUCCEEDED",
+      "taskId": "2109506014703202306",
+      "comfyPromptId": "7a50eee4-9d52-488c-a272-d09794cc25e3",
+      "eventTypes": [
+        "SUBMITTED",
+        "SUCCEEDED"
+      ],
+      "outputAssetId": "2109507007041974274",
+      "bytes": 289421,
+      "sha256": "20096be9a2213e47a0781ccd8fe810c03b233d29af04724aefed1209956f875c",
+      "output": "wf-local-video-wan2-2-14b-flf2v.mp4",
+      "outputOptions": {
+        "tier": "验证档位 · 832×480",
+        "dur": "3.06 秒"
+      },
+      "width": 832,
+      "height": 480,
+      "hasAudio": false,
+      "durationSeconds": 3.0625
+    },
+    {
+      "media": "video",
+      "capabilityCode": "T2V",
+      "workflowCode": "wf-local-video-wan2-2-5b-ti2v",
+      "version": "v1.0.0-local",
+      "checksum": "ecb2eb9c6b13f9592746a2c6fe928c506712d1cb62311048d516d1ba5cf2bd72",
+      "status": "SUCCEEDED",
+      "taskId": "2109507011290804226",
+      "comfyPromptId": "8ddf9d69-04c1-4399-9324-39a530fb99b7",
+      "eventTypes": [
+        "SUBMITTED",
+        "SUCCEEDED"
+      ],
+      "outputAssetId": "2109507117754822658",
+      "bytes": 83831,
+      "sha256": "9a3fcfc20d6cdec4e556e33ede8b0e5dad1d446d2a105fa566fabe38849b93c6",
+      "output": "wf-local-video-wan2-2-5b-ti2v.mp4",
+      "outputOptions": {
+        "tier": "验证档位 · 832×480",
+        "dur": "2.04 秒"
+      },
+      "width": 832,
+      "height": 480,
+      "hasAudio": false,
+      "durationSeconds": 2.041667
+    },
+    {
+      "media": "video",
+      "capabilityCode": "T2V",
+      "workflowCode": "wf-local-video-minimax-h3-t2v",
+      "version": "v1.0.0-local",
+      "checksum": "3a943075bd8dfa3a325a9f934422db0ba81f925887a91d6b5e74bd8c3a4a8525",
+      "status": "SUCCEEDED",
+      "taskId": "2109507125036134401",
+      "comfyPromptId": "2531d760-63a2-4b86-8af4-3330efd8d412",
+      "eventTypes": [
+        "SUBMITTED",
+        "SUCCEEDED"
+      ],
+      "outputAssetId": "2109507234721378306",
+      "bytes": 448015,
+      "sha256": "d89e5fdc77a89764c59e75f975b5781b6f6c4b2443756b6eb11a3e6c2cfc8153",
+      "output": "wf-local-video-minimax-h3-t2v.mp4",
+      "outputOptions": {
+        "tier": "验证档位 · 864×480",
+        "dur": "2.33 秒"
+      },
+      "width": 864,
+      "height": 480,
+      "hasAudio": true,
+      "durationSeconds": 2.333333
+    },
+    {
+      "media": "video",
+      "capabilityCode": "I2V",
+      "workflowCode": "wf-local-video-minimax-h3-i2v",
+      "version": "v1.0.0-local",
+      "checksum": "d800575a3708833caf4b2256690258f26f73f2ac9f41525a872ffe091c1f8e4b",
+      "status": "SUCCEEDED",
+      "taskId": "2109507238777270273",
+      "comfyPromptId": "085aba84-00e7-43d2-811f-993d7d7b28a3",
+      "eventTypes": [
+        "SUBMITTED",
+        "SUCCEEDED"
+      ],
+      "outputAssetId": "2109507345316786177",
+      "bytes": 283145,
+      "sha256": "f854f325be1869ff2feb4f86a54ca5e9edb88b3d209e4c20589e35e5c1fa2f7d",
+      "output": "wf-local-video-minimax-h3-i2v.mp4",
+      "outputOptions": {
+        "tier": "验证档位 · 640×640",
+        "dur": "2.33 秒"
+      },
+      "width": 640,
+      "height": 640,
+      "hasAudio": true,
+      "durationSeconds": 2.333333
+    },
+    {
+      "media": "video",
+      "capabilityCode": "R2V",
+      "workflowCode": "wf-local-video-minimax-h3-r2v",
+      "version": "v1.0.0-local",
+      "checksum": "ce7e365d80f66738dafa627fdf1e7a42ddd1a6d4ac679ff311da338246d20a46",
+      "status": "SUCCEEDED",
+      "taskId": "2109507352501628929",
+      "comfyPromptId": "26404e80-3431-4c52-b1d1-fe3ab43c0b70",
+      "eventTypes": [
+        "SUBMITTED",
+        "SUCCEEDED"
+      ],
+      "outputAssetId": "2109507462245593089",
+      "bytes": 272462,
+      "sha256": "692f0a4a9fefa0c87bf905c73983fa55f0be667bda465de51e38507f617e03f0",
+      "output": "wf-local-video-minimax-h3-r2v.mp4",
+      "outputOptions": {
+        "tier": "验证档位 · 864×480",
+        "dur": "2.33 秒"
+      },
+      "width": 864,
+      "height": 480,
+      "hasAudio": true,
+      "durationSeconds": 2.333333
+    },
+    {
+      "media": "video",
+      "capabilityCode": "T2V",
+      "workflowCode": "wf-local-video-kandinsky5-t2v",
+      "version": "v1.0.0-local",
+      "checksum": "135c352f4fe4464fcbcf48fdd4da3efcc2d66ee3ad95edccecacefb5ac095bfb",
+      "status": "SUCCEEDED",
+      "taskId": "2109507466242764802",
+      "comfyPromptId": "35121e27-8606-4d1a-9d0b-40044820b35d",
+      "eventTypes": [
+        "SUBMITTED",
+        "SUCCEEDED"
+      ],
+      "outputAssetId": "2109507992434978818",
+      "bytes": 131557,
+      "sha256": "6089f324a6b92392c2b732b5d8797ff216d6bc7f8feba0d370faddada773548d",
+      "output": "wf-local-video-kandinsky5-t2v.mp4",
+      "outputOptions": {
+        "tier": "验证档位 · 832×480",
+        "dur": "2.04 秒"
+      },
+      "width": 832,
+      "height": 480,
+      "hasAudio": false,
+      "durationSeconds": 2.041667
+    },
+    {
+      "media": "video",
+      "capabilityCode": "I2V",
+      "workflowCode": "wf-local-video-kandinsky5-i2v",
+      "version": "v1.0.0-local",
+      "checksum": "0c9f5a5c1d947fe987a1c09118d7e0015d5401dee10094ec1f225f8364fdd4fb",
+      "status": "SUCCEEDED",
+      "taskId": "2109507996117577729",
+      "comfyPromptId": "3cdf7a30-ce89-4196-94d4-c49a9ac92971",
+      "eventTypes": [
+        "SUBMITTED",
+        "SUCCEEDED"
+      ],
+      "outputAssetId": "2109508500285501442",
+      "bytes": 183550,
+      "sha256": "83e69f7bc4f82ea35d40b29365e5002335e092835187776dfc29d358c512a854",
+      "output": "wf-local-video-kandinsky5-i2v.mp4",
+      "outputOptions": {
+        "tier": "验证档位 · 768×512",
+        "dur": "2.04 秒"
+      },
+      "width": 768,
+      "height": 512,
+      "hasAudio": false,
+      "durationSeconds": 2.041667
+    },
+    {
+      "media": "video",
+      "capabilityCode": "T2V",
+      "workflowCode": "wf-local-video-hunyuan-video-1.5-720p-t2v",
+      "version": "v1.0.0-local",
+      "checksum": "63811ec74e733075b89c8bccf6f4b3090af56d650fcad24ee77104b7f4bfe579",
+      "status": "SUCCEEDED",
+      "taskId": "2109508500788817921",
+      "comfyPromptId": "9a3d9c50-f459-4202-a888-99c43789c233",
+      "eventTypes": [
+        "SUBMITTED",
+        "SUCCEEDED"
+      ],
+      "outputAssetId": "2109508920844169218",
+      "bytes": 140998,
+      "sha256": "ec17282ec2b3d71778b7ab6e75975acbddbebab0a2f91234ecd5a2a84eb04ff7",
+      "output": "wf-local-video-hunyuan-video-1.5-720p-t2v.mp4",
+      "outputOptions": {
+        "tier": "验证档位 · 832×480",
+        "dur": "2.04 秒"
+      },
+      "width": 832,
+      "height": 480,
+      "hasAudio": false,
+      "durationSeconds": 2.041667
+    },
+    {
+      "media": "video",
+      "capabilityCode": "I2V",
+      "workflowCode": "wf-local-video-hunyuan-video-1.5-720p-i2v",
+      "version": "v1.0.0-local",
+      "checksum": "9c0c2659e1a841f012b6043a8578163d99736f46b968aa1a95b6bc1e75905d9f",
+      "status": "SUCCEEDED",
+      "taskId": "2109508929744482305",
+      "comfyPromptId": "bc87e861-73f3-4768-acf4-f3f7488b2fb4",
+      "eventTypes": [
+        "SUBMITTED",
+        "SUCCEEDED"
+      ],
+      "outputAssetId": "2109509396104949761",
+      "bytes": 160579,
+      "sha256": "1d61e6461df5feeba28c1a64e3862c7a349a3bdb609e7b3748d958791cc96aaf",
+      "output": "wf-local-video-hunyuan-video-1.5-720p-i2v.mp4",
+      "outputOptions": {
+        "tier": "验证档位 · 832×480",
+        "dur": "2.04 秒"
+      },
+      "width": 832,
+      "height": 480,
+      "hasAudio": false,
+      "durationSeconds": 2.041667
+    },
+    {
+      "media": "video",
+      "capabilityCode": "T2V",
+      "workflowCode": "wf-local-video-ltx2-5-t2v",
+      "version": "v1.0.0-local",
+      "checksum": "224f2022b6112177d26cb2b568076e41de5addd27ae25afc0e62847516033ca0",
+      "status": "SUCCEEDED",
+      "taskId": "2109509396490825729",
+      "comfyPromptId": "6673c1f0-a1f4-454e-ba9f-b3298c9abe62",
+      "eventTypes": [
+        "SUBMITTED",
+        "SUCCEEDED"
+      ],
+      "outputAssetId": "2109509483665240066",
+      "bytes": 392825,
+      "sha256": "75c3c1b264d25baeef5d7f56e58d97a3a10cb5e06b6fd28e28b481aa357b53b9",
+      "output": "wf-local-video-ltx2-5-t2v.mp4",
+      "outputOptions": {
+        "tier": "验证档位 · 832×448",
+        "dur": "2.04 秒"
+      },
+      "width": 832,
+      "height": 448,
+      "hasAudio": true,
+      "durationSeconds": 2.041667
+    },
+    {
+      "media": "video",
+      "capabilityCode": "I2V",
+      "workflowCode": "wf-local-video-ltx2-5-i2v",
+      "version": "v1.0.0-local",
+      "checksum": "9492d8156e42acb9ec9fd35d8f0b425c32c3dc2da8d91e4f98e746314d44f959",
+      "status": "SUCCEEDED",
+      "taskId": "2109509484994834434",
+      "comfyPromptId": "7accd8af-ece9-4c77-acd4-4c4bcd621bf1",
+      "eventTypes": [
+        "SUBMITTED",
+        "SUCCEEDED"
+      ],
+      "outputAssetId": "2109509615727095810",
+      "bytes": 445944,
+      "sha256": "7f0c54e4aa2c9626b127f0ec29249ecbcd5ec1c3ae9258a84ac353f15c20ef42",
+      "output": "wf-local-video-ltx2-5-i2v.mp4",
+      "outputOptions": {
+        "tier": "验证档位 · 832×448",
+        "dur": "2.04 秒"
+      },
+      "width": 832,
+      "height": 448,
+      "hasAudio": true,
+      "durationSeconds": 2.041667
+    },
+    {
+      "media": "video",
+      "capabilityCode": "FL2V",
+      "workflowCode": "wf-local-video-ltx2-5-flf2v",
+      "version": "v1.0.0-local",
+      "checksum": "27f8c9c899f18fe91b28ca8f6cbc26305f028485d513b30f91745f994291e613",
+      "status": "SUCCEEDED",
+      "taskId": "2109509623905988610",
+      "comfyPromptId": "a753108f-939e-4298-97db-eacc25d51fce",
+      "eventTypes": [
+        "SUBMITTED",
+        "SUCCEEDED"
+      ],
+      "outputAssetId": "2109509709729837057",
+      "bytes": 77705,
+      "sha256": "d262020ccc7cacf8fda682016c6b0b80a47213839dd3c6e5a782534adab1286c",
+      "output": "wf-local-video-ltx2-5-flf2v.mp4",
+      "outputOptions": {
+        "tier": "验证档位 · 832×480",
+        "dur": "2.04 秒"
+      },
+      "width": 832,
+      "height": 480,
+      "hasAudio": true,
+      "durationSeconds": 2.041667
+    }
+  ],
+  "technicalAcceptance": "PASSED",
+  "runtimeImage": "ghcr.io/ningchirsty/hotter-ai-platform-backend@sha256:cec93f9168647da79457ee8115f1cab93ebdf97be5c33c90a9adcbf40fa8eeeb",
+  "scopeNote": "Exact production runtime, isolated MySQL/Redis and owned assets; native review statuses TESTING in isolated registry only. Workflow graphs unchanged. ControlNet output follows uploaded reference dimensions."
+}

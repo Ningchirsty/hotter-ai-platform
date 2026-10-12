@@ -42,9 +42,8 @@
         <CloudGenerationForm v-show="generationSource === 'cloud'" media="image" :busy="uploading || submitting" :cloud-status="cloudStatus" :inspiration="cloudInspiration" @change="cloudDraft = $event" />
         <div v-show="generationSource === 'local'" class="editor-body">
           <LocalModelSelector media="image" :abilities="abilities" :catalog="localCreationCatalog" :general="IMAGE_MODULES"
-            :registry="workflows" :model-value="selectedWorkflowCode" :busy="uploading || submitting" @choose="selectLocalCreation" />
-          <LocalWorkflowPicker media="image" :items="workflowOptions" :catalog="localCatalog" :model-value="selectedWorkflowCode"
-            :total="localCatalog.length" browser-only :busy="uploading || submitting" :registered="registeredWorkflow" @choose="selectLocalCreation" />
+            :registry="workflows" :model-value="selectedWorkflowCode" :busy="uploading || submitting" hide-workflow-settings @choose="selectLocalCreation" />
+
           <div class="form-divider" />
           <!--
           先上传、后写文字：参考图决定输出画布（image1 定尺寸）与主体，
@@ -188,7 +187,7 @@
                     : '暂不可提交'
             }}
           </button>
-          <span v-if="submitBlockReason !== '此能力暂不可提交'">{{ submitBlockReason || (generationSource === 'cloud' ? '确认创作内容与输出设置后提交生成' : '提交后将交由 ComfyUI 执行') }}</span>
+          <span v-if="submitBlockReason !== '此能力暂不可提交'">{{ submitBlockReason || (generationSource === 'cloud' ? '确认创作内容与输出设置后提交生成' : '确认创作内容与输出设置后提交生成') }}</span>
         </div>
       </section>
 
@@ -199,7 +198,7 @@
         :workflows="workflows"
         :busy="uploading || submitting"
         :applied-title="appliedInspirationTitle"
-        @apply="applyCreativeInspiration"
+        @apply="applyCreativeInspiration" @create="createFromTemplate"
         @task-created="loadTasks()"
       />
     </div>
@@ -252,7 +251,7 @@
               v-if="coverFor(task)"
               class="task-cover-img"
               :src="coverFor(task)"
-              :alt="task.taskName || task.taskNo"
+              :alt="creationTitle(task.taskName) || task.taskNo"
             />
             <template v-else>
               <el-icon><component :is="moduleIcon(task.capabilityCode)" /></el-icon>
@@ -264,11 +263,11 @@
           </div>
           <div class="task-main">
             <div class="task-title-row">
-              <b>{{ task.taskName || task.taskNo }}</b>
+              <b>{{ creationTitle(task.taskName) || task.taskNo }}</b>
               <span :class="['task-status', toneOf(task.status)]">{{ statusText(task.status) }}</span>
             </div>
             <p>
-              {{ moduleOf(task.capabilityCode)?.name || task.capabilityCode }} · {{ task.workflowCode === 'cloud-bluocto-t2i' ? '云端 · ' + task.modelCode : task.workflowCode }}
+              {{ moduleOf(task.capabilityCode)?.name || task.capabilityCode }} · {{ taskModelName(task.workflowCode, task.modelCode) }}
               <template v-if="task.outputWidth">· {{ task.outputWidth }}×{{ task.outputHeight }}</template>
             </p>
             <small>{{ task.taskNo }} · {{ task.createTime || '—' }}</small>
@@ -400,9 +399,9 @@
           <el-descriptions-item label="能力">
             {{ moduleOf(detail.capabilityCode)?.name || detail.capabilityCode }}
           </el-descriptions-item>
-          <el-descriptions-item label="生成来源">{{ detail.workflowCode === 'cloud-bluocto-t2i' ? '云端生成' : '本地 · ComfyUI' }}</el-descriptions-item>
+          <el-descriptions-item label="生成来源">{{ detail.workflowCode === 'cloud-bluocto-t2i' ? '云端生成' : '本地生成' }}</el-descriptions-item>
           <el-descriptions-item label="模型">{{ detail.modelCode || '—' }}</el-descriptions-item>
-          <el-descriptions-item label="工作流">{{ detail.workflowCode === 'cloud-bluocto-t2i' ? '云端图像创作' : detail.workflowCode }}</el-descriptions-item>
+          
           <el-descriptions-item label="输出尺寸">
             <span v-if="detail.outputWidth">{{ detail.outputWidth }}×{{ detail.outputHeight }}</span>
             <span v-else>—</span>
@@ -446,7 +445,7 @@
     <el-dialog
       class="creative-dialog"
       v-model="taskPreviewVisible"
-      :title="taskPreviewTask?.taskName || taskPreviewTask?.taskNo || '产出预览'"
+      :title="creationTitle(taskPreviewTask?.taskName) || taskPreviewTask?.taskNo || '产出预览'"
       width="min(920px, 92vw)"
       top="6vh"
       destroy-on-close
@@ -490,6 +489,7 @@
 </template>
 
 <script setup lang="ts">
+import { nextTick } from 'vue';
 import { cloudImageCapabilityName } from '@/components/CreativeInspiration/cloud-image-capabilities';
 import type { Component } from 'vue';
 import {
@@ -549,7 +549,7 @@ import {
   type InspirationRoute
 } from '@/components/CreativeInspiration/types';
 import { extractErrorMessage as readErrorMessage } from '@/utils/request';
-import { creationMessage } from '@/components/CreativeInspiration/template-reuse';
+import { creationMessage, taskModelLabel, creationTitle } from '@/components/CreativeInspiration/template-reuse';
 async function extractErrorMessage(error: unknown) { return creationMessage(await readErrorMessage(error)) || undefined; }
 import { createTaskPoller } from '@/utils/task-polling';
 import { IMAGE_MODULES, moduleOf, type ImageCapabilityModule, type ImageFieldKey } from './modules';
@@ -611,7 +611,7 @@ const localCatalog = imageCatalog as unknown as Array<LocalWorkflowOption & Imag
 const localCreationCatalog = computed<LocalWorkflowOption[]>(() => [
   ...IMAGE_MODULES.filter(item => item.code !== 'CONTROL').map(item => ({ media: 'image' as const,
     workflowCode: item.workflowCode, capabilityCode: item.code, modelCode: 'QWEN21', modelName: 'Qwen-Image 2.1',
-    name: '平台现有工作流', version: '', fields: item.fields })), ...localCatalog
+    name: '平台创作能力', version: '', fields: item.fields })), ...localCatalog
 ]);
 const businessCatalog = computed(() => abilities.value.flatMap(item => item.workflows) as unknown as Array<LocalWorkflowOption & ImageWorkflowVO>);
 const executableCatalog = computed(() => [...localCatalog, ...businessCatalog.value]);
@@ -621,7 +621,7 @@ const workflowOptions = computed<LocalWorkflowOption[]>(() => {
   const native = localCatalog.filter(item => item.media === 'image' && item.capabilityCode === base.code);
   const legacy: LocalWorkflowOption[] = base.code === 'CONTROL' ? [] : [{
     media: 'image', workflowCode: base.workflowCode, capabilityCode: base.code,
-    modelCode: 'QWEN21', modelName: 'Qwen-Image 2.1', name: '平台现有工作流', version: '', fields: base.fields
+    modelCode: 'QWEN21', modelName: 'Qwen-Image 2.1', name: '平台创作能力', version: '', fields: base.fields
   }];
   return [...native, ...legacy];
 });
@@ -735,15 +735,15 @@ const submitBlockReason = computed(() => {
     if (!cloudDraft.value.prompt.trim()) return '请填写创作描述';
     return '云端生成会产生费用，结果自动保存到任务和素材库';
   }
-  if (localWorkflowPreview) return '本地界面预览：用途已绑定后端工作流，生成需完成部署与发布验收';
-  if (localCloudLive) return '本机联调仅开放云端真实生成，本地 ComfyUI 为样例展示';
-  if (!workflows.value.length) return '正在读取工作流状态…';
+  if (localWorkflowPreview) return '本地界面预览：创作能力正在准备开放';
+  if (localCloudLive) return '本机联调已开放云端生成，本地生成正在准备开放';
+  if (!workflows.value.length) return '正在读取创作能力…';
   const workflow = currentWorkflow.value;
-  if (!workflow) return activeModule.value.workflowCode + ' 尚未在服务端注册';
-  if (!registeredWorkflow.value) return '本地 ComfyUI 已验证，平台工作流尚未注册，暂不可提交';
-  if (workflow.status === 'DRAFT') return '工作流为 DRAFT，完成实机验收并发布后方可提交';
-  if (workflow.status === 'TESTING') return '工作流处于 TESTING，仅隔离联调环境可提交';
-  if (workflow.status === 'RETIRED') return '工作流已停用';
+  if (!workflow) return '当前创作能力暂不可用';
+  if (!registeredWorkflow.value) return '当前创作能力尚未开放';
+  if (workflow.status === 'DRAFT') return '当前创作能力正在准备，暂不可提交';
+  if (workflow.status === 'TESTING') return '当前创作能力正在测试，暂不可提交';
+  if (workflow.status === 'RETIRED') return '当前创作能力已停用';
   return '';
 });
 
@@ -821,6 +821,14 @@ function applyDefaults() {
   }
 }
 
+function taskModelName(code: string, model?: string) { return taskModelLabel(code, model, localCreationCatalog.value); }
+async function createFromTemplate(route: InspirationRoute, title: string) {
+  if (uploading.value || submitting.value) return;
+  applyCreativeInspiration(route, title);
+  await nextTick(); await nextTick();
+  if (generationSource.value !== 'cloud' || cloudDraft.value.prompt !== route.prompt || !cloudDraft.value.ready) { ElMessage.warning('此模板的生成配置暂不可用，请检查创作设置'); return; }
+  await submitCloudTask();
+}
 function applyCreativeInspiration(route: InspirationRoute, title: string) {
   if (route.media !== 'image' || uploading.value || submitting.value) return;
   if (!isRouteAvailable(route, workflows.value, cloudStatus.value)) { ElMessage.warning('此模板的模型暂不可用，请选择其它模板'); return; }
@@ -902,7 +910,7 @@ async function handleFiles(event: Event) {
       previewUrls.value.push(URL.createObjectURL(file));
     }
   } catch (error) {
-    ElMessage.error((await extractErrorMessage(error)) ?? '上传失败');
+    ElMessage.error(creationMessage(await extractErrorMessage(error)) ?? '上传失败');
   } finally {
     uploading.value = false;
     uploadPercent.value = 0;
@@ -944,7 +952,7 @@ async function submitCloudTask() {
     // 创建与执行均已确认后，下次明确提交是一个新任务。
     cloudSubmission = undefined;
   } catch (error) {
-    ElMessage.error((await extractErrorMessage(error)) ?? '提交结果未确认，请先刷新任务列表');
+    ElMessage.error(creationMessage(await extractErrorMessage(error)) ?? '提交结果未确认，请先刷新任务列表');
     await loadTasks();
   } finally { submitting.value = false; }
 }
@@ -993,7 +1001,7 @@ async function submitTask() {
       : await createImageTask({
       capabilityCode: module.code as ImageCapabilityCode,
       workflowCode,
-      taskName: module.name + ' · ' + workflowCode,
+      taskName: module.name + ' · ' + taskModelName(workflowCode, selectedOption.value?.modelCode),
       fields: workflowFields(selectedOption.value!, fields),
       idempotencyKey: workflowCode + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8)
     });
@@ -1017,7 +1025,7 @@ async function submitTask() {
     }
     activeView.value = 'tasks';
   } catch (error) {
-    ElMessage.error((await extractErrorMessage(error)) ?? '提交失败');
+    ElMessage.error(creationMessage(await extractErrorMessage(error)) ?? '提交失败');
     await loadTasks();
   } finally {
     submitting.value = false;
@@ -1036,7 +1044,7 @@ async function loadWorkflows() {
     workflows.value = res.data || [];
     applyDefaults();
   } catch (error) {
-    ElMessage.error((await extractErrorMessage(error)) ?? '读取工作流状态失败');
+    ElMessage.error(creationMessage(await extractErrorMessage(error)) ?? '读取创作能力失败');
   }
 }
 
@@ -1058,7 +1066,7 @@ async function loadTasks(silent = false) {
       if (!TERMINAL_STATUSES.includes(task.status)) startTaskPolling(task.id);
     }
   } catch (error) {
-    if (!silent) ElMessage.error((await extractErrorMessage(error)) ?? '读取任务列表失败');
+    if (!silent) ElMessage.error(creationMessage(await extractErrorMessage(error)) ?? '读取任务列表失败');
   } finally {
     if (sequence === taskRequestSequence) loadingTasks.value = false;
   }
@@ -1102,7 +1110,7 @@ async function recoverTask(task: ImageTaskVO) {
     }
     startTaskPolling(task.id);
   } catch (error) {
-    ElMessage.error((await extractErrorMessage(error)) ?? '执行请求失败；任务已保留，请刷新后重试');
+    ElMessage.error(creationMessage(await extractErrorMessage(error)) ?? '执行请求失败；任务已保留，请刷新后重试');
   } finally {
     recoveringIds.delete(id);
     await loadTasks();
@@ -1123,7 +1131,7 @@ async function openDetail(taskId: number | string) {
       detailPreviewUrl.value = await fetchImageAssetBlobUrl(outputAssetId);
     }
   } catch (error) {
-    ElMessage.error((await extractErrorMessage(error)) ?? '读取任务详情失败');
+    ElMessage.error(creationMessage(await extractErrorMessage(error)) ?? '读取任务详情失败');
   }
 }
 
@@ -1141,7 +1149,7 @@ async function cancelTask(taskId: number | string) {
     ElMessage.success('已取消');
     await loadTasks();
   } catch (error) {
-    ElMessage.error((await extractErrorMessage(error)) ?? '取消失败');
+    ElMessage.error(creationMessage(await extractErrorMessage(error)) ?? '取消失败');
   }
 }
 
@@ -1157,7 +1165,7 @@ async function loadAssets() {
     if (assetPage.pageNum > lastPage) { assetPage.pageNum = lastPage; await loadAssets(); return; }
     await loadAssetThumbs();
   } catch (error) {
-    ElMessage.error((await extractErrorMessage(error)) ?? '读取素材失败');
+    ElMessage.error(creationMessage(await extractErrorMessage(error)) ?? '读取素材失败');
   } finally {
     if (sequence === assetRequestSequence) loadingAssets.value = false;
   }
@@ -1197,7 +1205,7 @@ async function handleAssetFiles(event: Event) {
     ElMessage.success('上传完成');
     await loadAssets();
   } catch (error) {
-    ElMessage.error((await extractErrorMessage(error)) ?? '上传失败');
+    ElMessage.error(creationMessage(await extractErrorMessage(error)) ?? '上传失败');
   } finally {
     uploading.value = false;
   }
@@ -1221,7 +1229,7 @@ async function removeAsset(assetId: number | string) {
     }
     await loadAssets();
   } catch (error) {
-    ElMessage.error((await extractErrorMessage(error)) ?? '删除失败');
+    ElMessage.error(creationMessage(await extractErrorMessage(error)) ?? '删除失败');
   }
 }
 
@@ -1231,7 +1239,7 @@ async function openPreview(assetId: number | string) {
     previewUrl.value = await fetchImageAssetBlobUrl(assetId);
     previewVisible.value = true;
   } catch (error) {
-    ElMessage.error((await extractErrorMessage(error)) ?? '读取素材失败');
+    ElMessage.error(creationMessage(await extractErrorMessage(error)) ?? '读取素材失败');
   }
 }
 
@@ -1282,7 +1290,7 @@ async function selectTaskOutput(index:number) {
   taskPreviewLoading.value=true;taskPreviewError.value='';
   if(taskPreviewUrl.value) { URL.revokeObjectURL(taskPreviewUrl.value);taskPreviewUrl.value=''; }
   try { taskPreviewUrl.value=await fetchImageAssetBlobUrl(asset.id);taskPreviewOutputIndex.value=index; }
-  catch(error) { taskPreviewError.value=(await extractErrorMessage(error)) ?? '读取产出失败'; }
+  catch(error) { taskPreviewError.value=creationMessage(await extractErrorMessage(error)) ?? '读取产出失败'; }
   finally { taskPreviewLoading.value=false; }
 }
 async function previewTask(task: ImageTaskVO) {
@@ -1311,7 +1319,7 @@ async function previewTask(task: ImageTaskVO) {
     taskPreviewOutputs.value=response.data.outputAssets ?? [];
     taskPreviewUrl.value = await fetchImageAssetBlobUrl(taskPreviewOutputs.value[0]?.id ?? task.outputAssetId as number | string);
   } catch (error) {
-    taskPreviewError.value = (await extractErrorMessage(error)) ?? '读取产出失败';
+    taskPreviewError.value = creationMessage(await extractErrorMessage(error)) ?? '读取产出失败';
   } finally {
     taskPreviewLoading.value = false;
   }
