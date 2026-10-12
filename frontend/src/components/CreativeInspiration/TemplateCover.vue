@@ -4,14 +4,14 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue';
 import { templateCover } from '@/api/image/templates';
-const props = defineProps<{ id: string; revision: number; title: string }>();
+const props = defineProps<{ id: string; revision: number; title: string; media?: 'image' | 'video' }>();
 const url = ref(''), failed = ref(false);
 let sequence = 0;
-watch(() => [props.id, props.revision], async () => {
+watch(() => [props.id, props.revision, props.media], async () => {
   const current = ++sequence;
   if (url.value) URL.revokeObjectURL(url.value);
   url.value = ''; failed.value = false;
-  try { const next = await templateCover(props.id, props.revision); if (sequence !== current) URL.revokeObjectURL(next); else url.value = next; }
+  try { const next = await templateCover(props.id, props.revision, props.media); if (sequence !== current) URL.revokeObjectURL(next); else url.value = next; }
   catch { if (sequence === current) failed.value = true; }
 }, { immediate: true });
 onBeforeUnmount(() => { sequence++; if (url.value) URL.revokeObjectURL(url.value); });

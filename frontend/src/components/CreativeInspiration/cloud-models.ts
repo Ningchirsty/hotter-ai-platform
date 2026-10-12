@@ -41,7 +41,7 @@ export const CLOUD_MODELS: CloudModel[] = [
   {
     id: 'gpt-image-2.5-flare',
     name: 'gpt-image-2.5-flare',
-    provider: '蓝章鱼 BluOcto',
+    provider: '云端生成',
     media: 'image',
     family: 'GPT Image',
     description: '图像生成 · Media 分组',
@@ -55,7 +55,7 @@ export const CLOUD_MODELS: CloudModel[] = [
   {
     id: 'gpt-image-2.5-sunburst',
     name: 'gpt-image-2.5-sunburst',
-    provider: '蓝章鱼 BluOcto',
+    provider: '云端生成',
     media: 'image',
     family: 'GPT Image',
     description: '图像生成 · Media 分组',
@@ -69,7 +69,7 @@ export const CLOUD_MODELS: CloudModel[] = [
   {
     id: 'qwen-image-3.0',
     name: 'qwen-image-3.0',
-    provider: '蓝章鱼 BluOcto',
+    provider: '云端生成',
     media: 'image',
     family: 'Qwen',
     description: '图像生成 · Media 分组',
@@ -82,7 +82,7 @@ export const CLOUD_MODELS: CloudModel[] = [
   {
     id: 'qwen-image-3.0-pro',
     name: 'qwen-image-3.0-pro',
-    provider: '蓝章鱼 BluOcto',
+    provider: '云端生成',
     media: 'image',
     family: 'Qwen',
     description: '图像生成 · Media 分组',
@@ -95,7 +95,7 @@ export const CLOUD_MODELS: CloudModel[] = [
   {
     id: 'wan2.7-image',
     name: 'wan2.7-image',
-    provider: '蓝章鱼 BluOcto',
+    provider: '云端生成',
     media: 'image',
     family: 'Wan',
     description: '图像生成 · Media 分组',
@@ -108,7 +108,7 @@ export const CLOUD_MODELS: CloudModel[] = [
   {
     id: 'wan2.7-image-pro',
     name: 'wan2.7-image-pro',
-    provider: '蓝章鱼 BluOcto',
+    provider: '云端生成',
     media: 'image',
     family: 'Wan',
     description: '图像生成 · Media 分组',

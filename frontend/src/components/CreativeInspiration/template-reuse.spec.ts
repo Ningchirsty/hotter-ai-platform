@@ -1,10 +1,23 @@
 import { describe, it, expect } from 'vitest';
-import { adaptTemplateOutput, creationMessage } from './template-reuse';
+import { adaptTemplateOutput, creationMessage, creationTitle, taskModelLabel, templateCreatePlan } from './template-reuse';
 import { outputVerified } from './cloud-image-output';
 import type { CloudImageModelsVO } from '@/api/image/types';
 const model = 'gpt-image-2.5-sunburst';
 const status: CloudImageModelsVO = {configured:true, models:[model], capabilities:['T2I'], verified:true, profiles:[{model,testedAt:'2026-10-10',capabilities:[{code:'T2I',verified:true,status:'PASSED'}],outputProfiles:[{model,capability:'T2I',label:'tested',output:{size:'1024x1536',n:1,outputFormat:'png'},verifiedFields:['size','n','outputFormat']}]}]};
 describe('editable template output', () => {
+  it('shows the exact measured output before one-click creation and keeps unverified models unavailable', () => {
+    const plan = templateCreatePlan(status, { model, outputSize: '1024x1024' });
+    expect(plan.available).toBe(true);
+    expect(plan.label).toBe('1024x1536 · 1 张 · PNG');
+    expect(plan.output).toEqual({size:'1024x1536',n:1,outputFormat:'png'});
+    expect(templateCreatePlan(status, { model: 'gpt-image-2.5-flare', outputSize: '1024x1024' }).available).toBe(false);
+    expect(templateCreatePlan(undefined, { model, outputSize: '1024x1024' }).available).toBe(false);
+  });
+  it('hides historical provider names and workflow IDs while retaining model names', () => {
+    expect(creationTitle('中文海报 · wf-ability-image-poster-qwen2512')).toBe('中文海报');
+    expect(creationTitle('蓝章鱼 · ComfyUI')).not.toMatch(/蓝章鱼|ComfyUI/);
+    expect(taskModelLabel('wf-local-qwen', 'QWEN21', [{workflowCode:'wf-local-qwen',modelCode:'QWEN21',modelName:'Qwen-Image 2.1'}])).toBe('Qwen-Image 2.1');
+  });
   it('adapts unsupported square/high options to the tested model profile without changing the original template', () => {
     const requested = {size:'1024x1024',n:1,quality:'high'};
     const result = adaptTemplateOutput(status,model,'T2I',requested);

@@ -104,7 +104,7 @@
       <b>{{ error || (media === 'video' ? '视频灵感更新源尚未接入' : savedOnly ? '还没有匹配的收藏' : '暂无匹配的真实作品') }}</b>
       <p>
         {{
-          media === 'video' ? '蓝章鱼图像作品不会混入视频推荐。' : '成功完成的云端图像任务会自动加入当前账号的作品池；也可更换筛选条件。'
+          media === 'video' ? '云端图像作品不会混入视频推荐。' : '成功完成的云端图像任务会自动加入当前账号的作品池；也可更换筛选条件。'
         }}
       </p>
       <button type="button" @click="resetFilters">查看全部灵感</button>
@@ -148,7 +148,7 @@
         {{
           media === 'video'
             ? '视频需单独接入真实视频更新源。'
-            : '图像来自当前账号已完成的蓝章鱼任务；刷新仅更新作品池，不产生生成费用。'
+            : '图像来自当前账号已完成的云端任务；刷新仅更新作品池，不产生生成费用。'
         }}
         先选作品，再按可用模型带入创作。
       </p>
@@ -197,7 +197,7 @@
           <article v-for="route in recommendedRoutes(selected)" :key="route.model + route.capability + route.workflowCode" class="model-recommendation">
             <div class="model-heading">
               <b>{{ route.model }}</b>
-              <span>{{ route.source === 'cloud' ? '云端 · 蓝章鱼' : '本地 · ComfyUI' }}</span>
+              <span>{{ route.source === 'cloud' ? '云端 · 云端' : '本地 · 生成服务' }}</span>
             </div>
             <strong>{{ capabilityLabel(route.capability) }}</strong>
             <p>{{ route.reason }}</p>
@@ -212,7 +212,7 @@
                   ? '请等待当前操作完成'
                   : isRouteAvailable(route, workflows, cloudStatus)
                     ? '使用此模型，带入创作'
-                    : '工作流尚未开放'
+                    : '创作能力尚未开放'
               }}
               <el-icon><ArrowRight /></el-icon>
             </button>
@@ -221,7 +221,7 @@
             </small>
           </article>
           <p v-if="selected.media === 'image' && selected.provenance" class="detail-tags">
-            来源：蓝章鱼真实生成 · {{ selected.provenance.model }}<br />
+            来源：云端真实生成 · {{ selected.provenance.model }}<br />
             原任务：{{ selected.provenance.taskNo }}
           </p>
         </div>

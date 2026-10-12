@@ -9,6 +9,7 @@ export type CreativeMedia = 'image' | 'video';
 export type GenerationSource = 'local' | 'cloud';
 
 export interface InspirationRoute {
+  videoDraft?: import('@/api/video/cloud').VideoCloudDraft;
   media: CreativeMedia;
   source?: GenerationSource;
   capability: ImageCapabilityCode | VideoCapabilityCode | ImageCloudCapability;

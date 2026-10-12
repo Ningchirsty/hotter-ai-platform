@@ -12,7 +12,7 @@
         <el-icon><Cpu /></el-icon>
         <span>
           <b>本地生成</b>
-          <small>ComfyUI 工作流</small>
+          <small>精选模型创作</small>
         </span>
       </button>
       <button
