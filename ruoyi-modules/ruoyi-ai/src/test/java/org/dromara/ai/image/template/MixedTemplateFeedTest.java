@@ -61,6 +61,20 @@ class MixedTemplateFeedTest {
             }
         }
     }
+    @Test void videoShotDirectivesArePreservedWithoutRelaxingImagePlaceholders() throws Exception {
+        var cache=cache(false);
+        var template=(com.fasterxml.jackson.databind.node.ObjectNode)cache.require("video-example");
+        String prompt="[00:00-00:04] [Wide tracking] A bicycle follows the coast. [Side tracking] A smooth continuous shot.";
+        ((com.fasterxml.jackson.databind.node.ObjectNode)template.path("prompt")).put("en",prompt);
+        var body=TemplateFeedCache.JSON.readTree("{\"template_id\":\"video-example\",\"revision\":1,\"variables\":{}}");
+        assertEquals(prompt,VideoTemplateDrafts.prepare(cache,properties(),body).get("prompt"));
+        ((com.fasterxml.jackson.databind.node.ObjectNode)template.path("prompt")).put("en","A scene with {{undeclared}}");
+        assertThrows(TemplateFeedException.class,()->VideoTemplateDrafts.prepare(cache,properties(),body));
+        var image=TemplateFeedCache.JSON.readTree("{\"type\":\"image\",\"variables\":[],\"prompt\":{\"en\":\"A poster for [PRODUCT]\"}}");
+        var errors=new ArrayList<Map<String,String>>();
+        TemplateVariables.resolve(TemplateFeedCache.JSON.createObjectNode(),image,List.of(),errors);
+        assertEquals(List.of(Map.of("field","prompt","rule","unresolved_placeholder")),errors);
+    }
     @Test void videoPreparationPinsOutputAndRejectsOverridesStaleRevisionAndImageTemplates() throws Exception {
         var cache=cache(false);
         var body=TemplateFeedCache.JSON.readTree("{\"template_id\":\"video-example\",\"revision\":1,\"variables\":{}}");

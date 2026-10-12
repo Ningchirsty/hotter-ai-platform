@@ -34,7 +34,8 @@ final class TemplateVariables {
             if(blockedTerms.stream().filter(s->!s.isBlank()).anyMatch(s->normalized.contains(Normalizer.normalize(s,Normalizer.Form.NFKC).toLowerCase(Locale.ROOT)))) error(errors,key,"blocked_term");
             prompt=prompt.replace("{{"+key+"}}",text);
         }
-        if(prompt.contains("{{") || prompt.contains("}}") || Pattern.compile("\\[[^\\]\\r\\n]{1,200}\\]").matcher(prompt).find()) error(errors,"prompt","unresolved_placeholder");
+        // Video square brackets describe shots and time ranges; declared variables use double braces.
+        if(prompt.contains("{{") || prompt.contains("}}") || (!"video".equals(template.path("type").asText()) && Pattern.compile("\\[[^\\]\\r\\n]{1,200}\\]").matcher(prompt).find())) error(errors,"prompt","unresolved_placeholder");
         if(prompt.isBlank() || prompt.length()>8000) error(errors,"prompt","length");
         return prompt;
     }
