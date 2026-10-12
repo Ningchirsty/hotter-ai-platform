@@ -37,6 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -275,9 +276,13 @@ class AigStudioCopilotServiceImplTest {
     void modelOutOfBoundsIsRecordedAsRejected() {
         when(invokeService.invoke(any())).thenReturn(invokeOk(
             "{\"summary\":\"换类别\",\"operations\":[{\"path\":\"/agentCategory\",\"value\":\"QA\"}]}"));
-        when(proposalService.create(any(), any(), any())).thenThrow(new ServiceException(
+        // ★拒绝必须由"只校验不落库"的 validateForCreate 判定，**不是**靠 create 抛异常：
+        //   create 是 @Transactional，它的异常会把 chat 的共享事务标记 rollback-only ⇒
+        //   生产上表现为「发生未知异常」且整轮对话被回滚（2026-10-12 实测 3/3）。
+        doThrow(new ServiceException(
             "提案被拒绝：提案不允许改这个字段：/agentCategory（只允许改文案/清单/主 Prompt 分节；"
-                + "不开放的是：/agentCategory、/providerCapability）"));
+                + "不开放的是：/agentCategory、/providerCapability）"))
+            .when(proposalService).validateForCreate(any(), any(), any());
 
         AigStudioCopilotTurnVo result = service.chat(DRAFT_ID, chatBo("把这个 Agent 改成 QA 类"), OWNER);
 
@@ -286,6 +291,8 @@ class AigStudioCopilotServiceImplTest {
         assertTrue(result.getFailureReason().contains("/agentCategory"), result.getFailureReason());
         // 拒绝不是失败：人要看得出"模型试图越界"，而不是"系统报错"
         assertTrue(result.getFailureReason().contains("不允许改这个字段"), result.getFailureReason());
+        // ★这条断言就是把上面那个线上故障钉在构建期：判 REJECTED 时**绝不能**去调事务性的 create。
+        verify(proposalService, never()).create(any(), any(), any());
     }
 
     /* ------------------------------------------------------------------ 失败留痕 */

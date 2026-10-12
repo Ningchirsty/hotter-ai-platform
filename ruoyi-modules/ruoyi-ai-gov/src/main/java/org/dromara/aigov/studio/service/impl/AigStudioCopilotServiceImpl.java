@@ -154,10 +154,23 @@ public class AigStudioCopilotServiceImpl implements IAigStudioCopilotService {
 
         Long proposalId;
         try {
+            // ★先"只校验、不落库"地判一次：模型越界（越权路径/值类型不符/没有变化）要在这里变成 REJECTED。
+            //   ⚠️ 不能靠"catch create 抛的业务异常"来判 REJECTED：create 是 @Transactional，
+            //   它抛异常会把 chat 所在的共享事务标记为 rollback-only ⇒ 外层提交时抛
+            //   UnexpectedRollbackException，表现为「发生未知异常，请联系管理员」，
+            //   而且**整轮对话（含拒绝结论）被回滚掉**——恰好丢掉"模型越界"这个最该被看见的信号。
+            //   2026-10-12 生产实测 3/3 复现；根因与修法见 docs/aigov/13-生产核查记录…md §十八。
+            proposalService.validateForCreate(draftId, createBo, actorId);
+        } catch (ServiceException e) {
+            // 越权路径 / 值类型不符 / 没有产生变化：模型越界了，不是系统失败
+            return finish(turn, AigStudioCopilotStatusEnum.REJECTED,
+                StringUtils.substring(e.getMessage(), 0, 500), null, invoked, output);
+        }
+        try {
             AigStudioChangeProposalVo proposal = proposalService.create(draftId, createBo, actorId);
             proposalId = proposal.getProposalId();
         } catch (ServiceException e) {
-            // 越权路径 / 值类型不符 / 没有产生变化：模型越界了，不是系统失败
+            // 兜底：校验通过后 create 仍可能拒绝——只可能是校验与落库之间草稿又被改了（并发）。
             return finish(turn, AigStudioCopilotStatusEnum.REJECTED,
                 StringUtils.substring(e.getMessage(), 0, 500), null, invoked, output);
         }

@@ -57,8 +57,44 @@ public class AigStudioProposalServiceImpl implements IAigStudioProposalService {
     private final JsonMapper jsonMapper;
 
     @Override
+    public void validateForCreate(Long draftId, AigStudioProposalCreateBo bo, Long actorId) {
+        prepare(draftId, bo, actorId);
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public AigStudioChangeProposalVo create(Long draftId, AigStudioProposalCreateBo bo, Long actorId) {
+        Prepared prepared = prepare(draftId, bo, actorId);
+
+        AigStudioChangeProposal entity = new AigStudioChangeProposal();
+        entity.setDraftId(draftId);
+        entity.setBaseRevision(bo.getBaseRevision());
+        entity.setSource(prepared.source().getCode());
+        entity.setOperationsJson(writeJson(normalizedOperations(prepared.operations())));
+        entity.setPreviewJson(writeJson(prepared.diff()));
+        entity.setContentHashBefore(prepared.draft().getContentHash());
+        entity.setContentHashAfter(prepared.afterHash());
+        entity.setStatus(AigStudioProposalStatusEnum.PENDING.getCode());
+        entity.setSummary(StringUtils.substring(bo.getSummary(), 0, 200));
+        proposalMapper.insert(entity);
+        log.info("已登记变更提案, proposalId={}, draftId={}, baseRevision={}, 改动数={}",
+            entity.getProposalId(), draftId, bo.getBaseRevision(), prepared.diff().size());
+        return toVo(proposalMapper.selectById(entity.getProposalId()));
+    }
+
+    /**
+     * 创建提案前的全部校验与规划（<b>不落库</b>）。
+     *
+     * <p>被两处调用：{@link #create}（校验通过后落库）与 {@link #validateForCreate}
+     * （只校验、不落库，供对话式 Copilot 在<b>调 create 之前</b>判定"模型越界"）。
+     * 两处共用同一份实现，避免"校验过了、建的时候又说不行"的两套规则漂移。</p>
+     *
+     * @param draftId 草稿ID
+     * @param bo      入参
+     * @param actorId 操作人
+     * @return 落库所需的全部已算好的东西
+     */
+    private Prepared prepare(Long draftId, AigStudioProposalCreateBo bo, Long actorId) {
         if (bo == null) {
             throw new ServiceException("提案入参不能为空");
         }
@@ -85,21 +121,21 @@ public class AigStudioProposalServiceImpl implements IAigStudioProposalService {
         if (afterHash.equals(draft.getContentHash())) {
             throw new ServiceException("提案没有产生任何内容变化：所给的值与当前内容一致");
         }
+        return new Prepared(draft, source, operations, diff, afterHash);
+    }
 
-        AigStudioChangeProposal entity = new AigStudioChangeProposal();
-        entity.setDraftId(draftId);
-        entity.setBaseRevision(bo.getBaseRevision());
-        entity.setSource(source.getCode());
-        entity.setOperationsJson(writeJson(normalizedOperations(operations)));
-        entity.setPreviewJson(writeJson(diff));
-        entity.setContentHashBefore(draft.getContentHash());
-        entity.setContentHashAfter(afterHash);
-        entity.setStatus(AigStudioProposalStatusEnum.PENDING.getCode());
-        entity.setSummary(StringUtils.substring(bo.getSummary(), 0, 200));
-        proposalMapper.insert(entity);
-        log.info("已登记变更提案, proposalId={}, draftId={}, baseRevision={}, 改动数={}",
-            entity.getProposalId(), draftId, bo.getBaseRevision(), diff.size());
-        return toVo(proposalMapper.selectById(entity.getProposalId()));
+    /**
+     * {@link #prepare} 的产出（落库只差这一步写）。
+     *
+     * @param draft     草稿详情
+     * @param source    提案来源
+     * @param operations 规范化前的操作清单
+     * @param diff      改动预览
+     * @param afterHash 改动后的内容哈希
+     */
+    private record Prepared(AigStudioDraftDetailVo draft, AigStudioProposalSourceEnum source,
+                            List<AigStudioProposalPlanner.Operation> operations,
+                            List<AigStudioProposalPlanner.DiffItem> diff, String afterHash) {
     }
 
     @Override

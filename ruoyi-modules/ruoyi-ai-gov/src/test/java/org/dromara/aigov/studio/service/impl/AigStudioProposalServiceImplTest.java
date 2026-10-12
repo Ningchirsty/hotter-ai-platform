@@ -275,6 +275,32 @@ class AigStudioProposalServiceImplTest {
     }
 
     @Test
+    @DisplayName("★ validateForCreate 与 create 同一套规则：越权路径同样被拒，且一行都不落库")
+    void validateForCreateUsesSameRulesAndWritesNothing() {
+        existingDraft(1, content("旧目标"), AigStudioDraftStatusEnum.EDITING.getCode());
+
+        ServiceException ex = assertThrows(ServiceException.class,
+            () -> service.validateForCreate(DRAFT_ID,
+                createBo(1, "/providerCapability", "image_generation"), OWNER));
+
+        assertTrue(ex.getMessage().contains("提案被拒绝"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("不允许改这个字段"), ex.getMessage());
+        // ★这就是这个方法的全部意义：把"模型越界"判出来，但**不落库**——
+        //   落库走 create（事务性），而"抛出业务异常"不能发生在事务边界上（见 §十八）。
+        verify(proposalMapper, never()).insert(any(AigStudioChangeProposal.class));
+    }
+
+    @Test
+    @DisplayName("★ validateForCreate 通过时也不落库（它只算，不写）")
+    void validateForCreateDoesNotWriteWhenValid() {
+        existingDraft(1, content("旧目标"), AigStudioDraftStatusEnum.EDITING.getCode());
+
+        service.validateForCreate(DRAFT_ID, createBo(1, "/objective", "新目标"), OWNER);
+
+        verify(proposalMapper, never()).insert(any(AigStudioChangeProposal.class));
+    }
+
+    @Test
     @DisplayName("创建：非责任人不能提提案")
     void createRejectsNonOwner() {
         existingDraft(1, content("旧目标"), AigStudioDraftStatusEnum.EDITING.getCode());
