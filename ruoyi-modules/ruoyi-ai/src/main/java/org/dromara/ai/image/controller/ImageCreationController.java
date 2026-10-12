@@ -181,7 +181,11 @@ public class ImageCreationController extends BaseController {
      */
     @GetMapping("/abilities")
     @SaCheckPermission("image:creation:view")
-    public R<com.fasterxml.jackson.databind.JsonNode> abilities() { return R.ok(registry.abilities()); }
+    public R<List<Map<String, Object>>> abilities() {
+        // Spring's Jackson 3 HTTP mapper must receive plain values, not a Jackson 2 tree.
+        return R.ok(MAPPER.convertValue(registry.abilities(),
+            new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() {}));
+    }
 
     @PostMapping(value = "/assets", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @SaCheckPermission("image:creation:submit")

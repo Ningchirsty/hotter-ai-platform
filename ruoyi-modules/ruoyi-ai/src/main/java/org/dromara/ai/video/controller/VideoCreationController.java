@@ -637,7 +637,11 @@ public class VideoCreationController extends BaseController {
 
     @GetMapping("/abilities")
     @SaCheckPermission("video:creation:view")
-    public R<com.fasterxml.jackson.databind.JsonNode> abilities() { return R.ok(registry.abilities()); }
+    public R<List<Map<String, Object>>> abilities() {
+        // Spring's Jackson 3 HTTP mapper must receive plain values, not a Jackson 2 tree.
+        return R.ok(mapper.convertValue(registry.abilities(),
+            new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() {}));
+    }
 
     private static int offset(PageQuery pageQuery) {
         int pageNum = pageQuery.getPageNum() == null ? 1 : Math.max(1, pageQuery.getPageNum());
