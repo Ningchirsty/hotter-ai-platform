@@ -29,6 +29,7 @@ class BluOctoImageClientTest {
     @BeforeEach void setup() throws Exception {
         properties = new ImageCloudProperties();
         properties.setEnabled(true);
+        properties.setTimeoutSeconds(2);
         Path key = temp.resolve("test.key");
         Files.writeString(key, "test-only-key");
         properties.setApiKeyFile(key.toString());
@@ -55,7 +56,8 @@ class BluOctoImageClientTest {
         server.createContext("/v1/images/generations", exchange -> {
             requests.incrementAndGet();
             var payload = new ObjectMapper().readTree(exchange.getRequestBody());
-            assertEquals(2, payload.size());
+            assertEquals(3, payload.size());
+            assertEquals("b64_json", payload.path("response_format").asText());
             assertEquals("qwen-image-3.0-pro", payload.path("model").asText());
             assertEquals("white flower", payload.path("prompt").asText());
             byte[] body = "{\"data\":[{\"b64_json\":\"AQID\"}]}".getBytes(StandardCharsets.UTF_8);

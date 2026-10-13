@@ -2,7 +2,7 @@
   <div :class="classObj" class="app-wrapper" :style="{ '--current-color': theme }">
     <div v-if="device === 'mobile' && sidebar.opened" class="drawer-bg" @click="handleClickOutside" />
     <side-bar v-if="showSidebar" class="sidebar-container" />
-    <div :class="{ hasTagsView: needTagsView, sidebarHide: sidebar.hide }" class="main-container">
+    <div :class="{ hasTagsView: needTagsView, sidebarHide: sidebar.hide, 'creation-container': isCreationPage }" class="main-container">
       <div :class="{ 'fixed-header': fixedHeader }" class="layout-header">
         <navbar @set-layout="setLayout" />
         <tags-view v-if="needTagsView" />
@@ -22,6 +22,8 @@ import { AppMain, Navbar, Settings, TagsView } from './components';
 import SideBar from './components/Sidebar/index.vue';
 
 const settingsStore = useSettingsStore();
+const route = useRoute();
+const isCreationPage = computed(() => ['/ai-tools/image-creation', '/ai-tools/video-creation'].includes(route.path));
 const theme = computed(() => settingsStore.theme);
 const sidebar = computed(() => useAppStore().sidebar);
 const device = computed(() => useAppStore().device);
@@ -102,6 +104,13 @@ const setLayout = () => {
   height: 100%;
   position: absolute;
   z-index: 999;
+}
+
+.main-container.creation-container {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .layout-header {

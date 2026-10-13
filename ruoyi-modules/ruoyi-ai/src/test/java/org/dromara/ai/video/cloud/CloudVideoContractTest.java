@@ -63,6 +63,19 @@ class CloudVideoContractTest {
   assertThrows(VideoTaskException.class,()->VideoCloudService.validateOutput(d,1920,1080));
   assertThrows(VideoTaskException.class,()->VideoCloudService.validateOutput(d,720,1280));
  }
+  @Test void seedancePixelTablesAcceptActualMini480AndRejectWrongModelGeometry() {
+   var mini=new CloudVideoRequest("doubao-seedance-2-0-mini-260615","T2V","scene",4,"480p","16:9",List.of(),true,null,null,"receipt");
+   assertDoesNotThrow(()->VideoCloudService.validateOutput(mini,864,496));
+   assertThrows(VideoTaskException.class,()->VideoCloudService.validateOutput(mini,854,480));
+   assertThrows(VideoTaskException.class,()->VideoCloudService.validateOutput(mini,1280,720));
+   var square=new CloudVideoRequest(mini.model(),"T2V","scene",4,"720p","1:1",List.of(),true,null,null,"square");
+   assertDoesNotThrow(()->VideoCloudService.validateOutput(square,960,960));
+   var wide=new CloudVideoRequest(mini.model(),"T2V","scene",4,"720p","21:9",List.of(),true,null,null,"wide");
+   assertDoesNotThrow(()->VideoCloudService.validateOutput(wide,1470,630));
+   var adaptive=new CloudVideoRequest(mini.model(),"T2V","scene",4,"480p","adaptive",List.of(),true,null,null,"adaptive");
+   assertDoesNotThrow(()->VideoCloudService.validateOutput(adaptive,864,496));
+   assertThrows(VideoTaskException.class,()->VideoCloudService.validateOutput(adaptive,1920,1080));
+  }
  @Test void actualArtifactKeysAndNotStartAreRecognized()throws Exception{
   assertEquals("RUNNING",BluOctoVideoClient.state(mapper.readTree("{\"status\":\"NOT_START\"}")));
   assertEquals("result_mp4",BluOctoVideoClient.artifactKey(mapper.readTree("{\"artifacts\":[{\"key\":\"poster\",\"mime_type\":\"image/png\"},{\"key\":\"result_mp4\",\"mime_type\":\"video/mp4\"}]}")));

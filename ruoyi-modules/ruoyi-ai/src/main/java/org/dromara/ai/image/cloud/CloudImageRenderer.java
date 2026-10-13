@@ -11,7 +11,7 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 /** Archive the requested dimensions and encoding without another paid model request. */
-final class CloudImageRenderer {
+public final class CloudImageRenderer {
     record Result(byte[] content) { }
     private static final int MAX_PIXELS = 16 * 1024 * 1024, MAX_BYTES = 20 * 1024 * 1024;
     private CloudImageRenderer() { }
@@ -50,7 +50,7 @@ final class CloudImageRenderer {
             return new Result(rendered);
         } catch(IOException e) { throw invalid("成品图片无法编码"); }
     }
-    static BufferedImage decode(byte[] content) {
+    public static BufferedImage decode(byte[] content) {
         var head=probe(content);
         if (!head.measured() || head.exceedsPixels(MAX_PIXELS)) throw invalid("图片像素大小无效");
         try {
@@ -59,10 +59,11 @@ final class CloudImageRenderer {
             return image;
         } catch(IOException e) { throw invalid("云端图片无法解码"); }
     }
-    static ImageAssetProbe.Probe probe(byte[] content) {
+    public static ImageAssetProbe.Probe probe(byte[] content) {
         if(content==null || content.length==0 || content.length>MAX_BYTES)return ImageAssetProbe.Probe.unmeasured(0);
         // Read WebP's bounded RIFF canvas before invoking the installed codec.
-        if(content.length>=30 && ascii(content,0,"RIFF") && ascii(content,8,"WEBP")) {
+        if(content.length>=12 && ascii(content,0,"RIFF") && ascii(content,8,"WEBP")) {
+            if(content.length<30)return ImageAssetProbe.Probe.unmeasured(content.length);
             for(int offset=12;offset+8<=content.length;) {
                 long size=u32(content,offset+4);int data=offset+8;
                 if(size>content.length-data)break;

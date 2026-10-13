@@ -63,6 +63,18 @@ public class ImageAssetProbe {
             size = 0;
         }
         try {
+            if(size <= 20L*1024*1024) {
+                try(var header=Files.newInputStream(path)) {
+                    byte[] magic=header.readNBytes(12);
+                    if(isWebp(magic)) {
+                        byte[] content=Files.readAllBytes(path);
+                        var p=org.dromara.ai.image.cloud.CloudImageRenderer.probe(content);
+                        if(!p.measured() || p.exceedsPixels(16*1024*1024))return Probe.unmeasured(size);
+                        var image=org.dromara.ai.image.cloud.CloudImageRenderer.decode(content);
+                        return new Probe(p.width(),p.height(),"webp",image.getColorModel().hasAlpha(),size,true);
+                    }
+                }
+            }
             BufferedImage image = ImageIO.read(path.toFile());
             if (image == null) {
                 log.warn("ImageIO 无法识别该图像文件：{}", path.getFileName());
@@ -81,7 +93,7 @@ public class ImageAssetProbe {
             }
             return new Probe(image.getWidth(), image.getHeight(), format,
                 image.getColorModel().hasAlpha(), size, true);
-        } catch (IOException e) {
+        } catch (IOException | ImageTaskException e) {
             log.warn("读取图像文件失败：{}（{}）", path.getFileName(), e.getMessage());
             return Probe.unmeasured(size);
         }
@@ -101,6 +113,7 @@ public class ImageAssetProbe {
         if (content == null || content.length == 0) {
             return Probe.unmeasured(0);
         }
+        if(isWebp(content))return org.dromara.ai.image.cloud.CloudImageRenderer.probe(content);
         try (var stream = ImageIO.createImageInputStream(new ByteArrayInputStream(content))) {
             if (stream == null) {
                 return Probe.unmeasured(content.length);
@@ -124,6 +137,11 @@ public class ImageAssetProbe {
             log.warn("读取图像字节尺寸失败：{}", e.getMessage());
             return Probe.unmeasured(content.length);
         }
+    }
+
+    private static boolean isWebp(byte[] content) {
+        return content.length>=12 && content[0]=='R' && content[1]=='I' && content[2]=='F' && content[3]=='F'
+            && content[8]=='W' && content[9]=='E' && content[10]=='B' && content[11]=='P';
     }
 
     /**
