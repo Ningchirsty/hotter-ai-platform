@@ -1,10 +1,24 @@
 import { describe, it, expect } from 'vitest';
-import { adaptTemplateOutput, creationMessage, creationTitle, taskModelLabel, templateCreatePlan } from './template-reuse';
-import { outputVerified } from './cloud-image-output';
+import { adaptTemplateOutput, creationMessage, creationTitle, taskModelLabel, templateCreatePlan, templateEditorOutput } from './template-reuse';
+import { outputVerified, updateOutput } from './cloud-image-output';
 import type { CloudImageModelsVO } from '@/api/image/types';
 const model = 'gpt-image-2.5-sunburst';
 const status: CloudImageModelsVO = {configured:true, models:[model], capabilities:['T2I'], verified:true, profiles:[{model,testedAt:'2026-10-10',capabilities:[{code:'T2I',verified:true,status:'PASSED'}],outputProfiles:[{model,capability:'T2I',label:'tested',output:{size:'1024x1536',n:1,outputFormat:'png'},verifiedFields:['size','n','outputFormat']}]}]};
 describe('editable template output', () => {
+  it('prefills original template parameters even when verification requires the user to edit them', () => {
+    const original = { size: '1024x1536', n: 1, quality: 'high' };
+    const result = templateEditorOutput(status, model, 'T2I', original);
+    expect(result.output).toEqual(original); expect(result.output).not.toBe(original);
+    expect(result.note).toContain('画面质量尚未验证通过');
+    expect(outputVerified(status, model, 'T2I', result.output)).toBe(false);
+    expect(outputVerified(status, model, 'T2I', updateOutput(result.output, 'quality', ''))).toBe(true);
+    expect(original.quality).toBe('high');
+  });
+  it('does not insert default dimensions or format into a verified template recipe', () => {
+    const original = { size: '1024x1536', n: 1 };
+    expect(templateEditorOutput(status, model, 'T2I', original)).toEqual({ output: original, note: '模板参数已完整带入，可继续调整。' });
+    expect(templateEditorOutput(status, 'gpt-image-2.5-flare', 'T2I', original).note).toContain('图像尺寸尚未验证通过');
+  });
   it('shows the exact measured output before one-click creation and keeps unverified models unavailable', () => {
     const plan = templateCreatePlan(status, { model, outputSize: '1024x1024' });
     expect(plan.available).toBe(true);

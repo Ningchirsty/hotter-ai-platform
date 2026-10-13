@@ -146,7 +146,7 @@ import { cloudModelsFor } from './cloud-models';
 import { IMAGE_CLOUD_CAPABILITIES, imageCapabilityVerified, imageCapabilitiesForModel, imageCapabilityStatusLabel, type ImageCloudCapability } from './cloud-image-capabilities';
 import CloudImageMaterials from './CloudImageMaterials.vue';
 import TemplateCover from './TemplateCover.vue';
-import { adaptTemplateOutput } from './template-reuse';
+import { adaptTemplateOutput, templateEditorOutput } from './template-reuse';
 import {outputFields,outputValue,outputCandidates,outputParameterStatusLabel,outputVerified,updateOutput,outputDefaults,observedOutputFormat,type OutputKey} from './cloud-image-output';
 const props = defineProps<{ busy?: boolean; cloudStatus?: import('@/api/image/types').CloudImageModelsVO; inspiration?: { route: import('./types').InspirationRoute; stamp: number } }>();
 const emit = defineEmits<{ change: [draft: import('@/api/image/types').CloudImageDraft] }>();
@@ -227,7 +227,7 @@ watch(() => props.inspiration, value => {
   target.templateReference = route.templateReference;
   target.adaptationNote = undefined;
   if (route.output) {
-    const adapted = adaptTemplateOutput(props.cloudStatus, route.model, route.capability, route.output);
+    const adapted = route.templateReference ? templateEditorOutput(props.cloudStatus, route.model, route.capability, route.output) : adaptTemplateOutput(props.cloudStatus, route.model, route.capability, route.output);
     target.output = adapted.output; target.adaptationNote = adapted.note;
   }
 }, { immediate: true });
