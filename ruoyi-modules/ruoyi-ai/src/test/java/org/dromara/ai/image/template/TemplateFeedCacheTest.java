@@ -82,4 +82,23 @@ class TemplateFeedCacheTest {
         for(var path:List.of("https://evil.test/cover","../manifest.json","covers/abc.png?key=value","covers/%2e%2e/file.png")) assertThrows(TemplateFeedException.class,()->TemplateFeedCache.resourceName(path));
         assertDoesNotThrow(()->TemplateFeedCache.resourceName("covers/06101545ccb7.png"));
     }
+    @Test void imageDetailExposesOriginalRecipeAndPinnedParametersWithoutProviderBinding() throws Exception {
+        var full=TemplateFeedCache.JSON.readTree(getClass().getResourceAsStream("/template-feed/full-4.json"));
+        JsonNode template=full.path("templates").get(0);
+        Files.write(directory.resolve("snapshot.json"),TemplateFeedCache.JSON.writeValueAsBytes(Map.of(
+            "version",4,"templates",Map.of(template.path("id").asText(),template),"tombstones",Map.of(),
+            "profiles",full.path("profiles"),"checkedAt",NOW.toString(),"etag","")));
+        var cache=new TemplateFeedCache(properties(),(name,etag)->{throw new AssertionError("Detail must not fetch or generate");},Clock.fixed(NOW,ZoneOffset.UTC));
+        var detail=cache.imageDetail(template);
+        assertEquals(template.path("prompt").path("en").asText(),detail.get("promptTemplate"));
+        JsonNode fixed=full.path("profiles").path(template.path("binding").path("params_profile").asText()).path("definition").path("fixed");
+        assertEquals(Map.of("size",fixed.path("size").asText(),"quality",fixed.path("quality").asText(),"n",1),detail.get("output"));
+        assertFalse(detail.containsKey("binding"));assertFalse(detail.containsKey("referenceAssetIds"));
+        assertFalse(cache.project(template).containsKey("promptTemplate"));
+        assertFalse(cache.project(template).containsKey("output"));
+        var invalid=(com.fasterxml.jackson.databind.node.ObjectNode)template.deepCopy();
+        ((com.fasterxml.jackson.databind.node.ObjectNode)invalid.path("binding")).put("model","unapproved-model");
+        assertEquals(Map.of(),cache.imageDetail(invalid).get("output"));
+        assertThrows(TemplateFeedException.class,()->cache.imageDetail(node("{\"type\":\"video\"}")));
+    }
 }

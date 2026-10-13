@@ -85,6 +85,10 @@
       <CloudImageMaterials v-if="needsReference" :key="modelId + mode" :mode="mode" :busy="busy" :enabled="availableModel(modelId) && verified(mode)" :max-references="referenceLimit" :max-file-bytes="referenceBytes" @change="materials = $event; materialProcessing = $event.processing" />
     </section>
 
+    <section v-if="draft.templateReference" class="template-reference" aria-label="同款创作参考">
+      <TemplateCover media="image" :id="draft.templateReference.id" :revision="draft.templateReference.revision" :title="draft.templateReference.title" />
+      <div><h3>{{ draft.templateReference.title }}</h3><p class="field-help">参考此图的风格、排版或构图，修改下方提示词中的主体与文案，再确认参数并提交生成。</p><p class="field-help">示例图仅作展示，不会作为原图编辑素材提交。</p></div>
+    </section>
     <p v-if="draft.templateTitle" class="field-help" role="status">已带入模板：{{ draft.templateTitle }}。{{ draft.adaptationNote }}</p>
     <section class="cloud-field">
       <label for="cloud-image-prompt">
@@ -132,7 +136,7 @@
       </div>
       <p>使用云端模型生成会产生费用，结果归入「我的任务」和「素材库」。</p>
     </section>
-    <p class="field-help inspiration-hint">选择右侧模板可创建同款，也可带入表单调整内容。</p>
+    <p class="field-help inspiration-hint">选择右侧模板查看参考图、提示词和参数，带入后调整内容；确认后点击「提交生成」创作同款风格。</p>
   </div>
 </template>
 
@@ -141,6 +145,7 @@ import { computed, reactive, ref, watch } from 'vue';
 import { cloudModelsFor } from './cloud-models';
 import { IMAGE_CLOUD_CAPABILITIES, imageCapabilityVerified, imageCapabilitiesForModel, imageCapabilityStatusLabel, type ImageCloudCapability } from './cloud-image-capabilities';
 import CloudImageMaterials from './CloudImageMaterials.vue';
+import TemplateCover from './TemplateCover.vue';
 import { adaptTemplateOutput } from './template-reuse';
 import {outputFields,outputValue,outputCandidates,outputParameterStatusLabel,outputVerified,updateOutput,outputDefaults,observedOutputFormat,type OutputKey} from './cloud-image-output';
 const props = defineProps<{ busy?: boolean; cloudStatus?: import('@/api/image/types').CloudImageModelsVO; inspiration?: { route: import('./types').InspirationRoute; stamp: number } }>();
@@ -178,7 +183,7 @@ const referenceBytes = computed(() => props.cloudStatus?.profiles?.find(p => p.m
 const needsReference = computed(() => ['EDIT','MULTI','MASK','OUTPAINT'].includes(mode.value));
 const materials = ref<{ ids: (number|string)[]; maskId?: number|string; ready: boolean; processing: boolean }>({ ids: [], ready: false, processing: false });
 const materialProcessing = ref(false);
-const drafts = reactive<Record<string, {prompt:string; output?: import('@/api/image/types').CloudImageOutputParams; templateTitle?: string; adaptationNote?: string}>>(Object.fromEntries(models.flatMap(item => IMAGE_CLOUD_CAPABILITIES.map(cap => [item.id + ':' + cap.code, {prompt:''}]))));
+const drafts = reactive<Record<string, {prompt:string; output?: import('@/api/image/types').CloudImageOutputParams; templateTitle?: string; adaptationNote?: string; templateReference?: import('./types').InspirationRoute['templateReference']}>>(Object.fromEntries(models.flatMap(item => IMAGE_CLOUD_CAPABILITIES.map(cap => [item.id + ':' + cap.code, {prompt:''}]))));
 const draft = computed(() => drafts[modelId.value + ':' + mode.value]);
 watch([modelId, mode], () => { materials.value = {ids:[],ready:false,processing:false}; materialProcessing.value=false; if (!capabilities.value.some(item => item.code === mode.value)) mode.value='T2I'; });
 let initialModelSelected = false;
@@ -219,6 +224,7 @@ watch(() => props.inspiration, value => {
   const target = drafts[route.model + ':' + route.capability];
   target.prompt = route.prompt;
   target.templateTitle = route.templateTitle;
+  target.templateReference = route.templateReference;
   target.adaptationNote = undefined;
   if (route.output) {
     const adapted = adaptTemplateOutput(props.cloudStatus, route.model, route.capability, route.output);
@@ -235,6 +241,9 @@ function formatPrice(price?: number): string {
   min-width: 0;
   color: var(--t1);
 }
+.template-reference { display: grid; grid-template-columns: minmax(100px, 180px) minmax(0, 1fr); gap: 16px; align-items: start; margin: 22px 0; padding: 16px; border: 1px solid var(--line); border-radius: 12px; }
+.template-reference :deep(img) { max-height: 240px; object-fit: contain; }
+@media (max-width: 480px) { .template-reference { grid-template-columns: 1fr; } }
 .field-heading,
 .model-card-top,
 .model-card-bottom,

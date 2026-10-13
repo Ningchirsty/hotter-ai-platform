@@ -225,6 +225,22 @@ public class TemplateFeedCache {
         out.put("outputSize",profile==null?"":profile.path("definition").path("fixed").path("size").asText());
         out.put("canGenerate",properties.isGenerationEnabled() && properties.getVerifiedProfiles().contains(t.path("binding").path("params_profile").asText()) && published(t)); return out;
     }
+    /** Editable image recipe only; never expose provider bindings, credentials or asset URLs. */
+    public Map<String,Object> imageDetail(JsonNode template) {
+        if(!"image".equals(template.path("type").asText())) throw new TemplateFeedException(404,"图像模板不存在");
+        var out=project(template);
+        out.put("promptTemplate",template.path("prompt").path("en").asText());
+        JsonNode profile=snapshot.profiles().get(template.path("binding").path("params_profile").asText());
+        var output=new LinkedHashMap<String,Object>();
+        if(profile!=null && TemplateRequestBuilder.bindingAllowed(template,snapshot.profiles())) {
+            var fixed=profile.path("definition").path("fixed");
+            output.put("size",fixed.path("size").asText());
+            output.put("quality",fixed.path("quality").asText());
+            output.put("n",1);
+        }
+        out.put("output",output);
+        return out;
+    }
     public byte[] cover(String id) {
         JsonNode t=require(id); if(!browsable()) throw new TemplateFeedException(503,"模板缓存已过期");
         String name=t.path("cover").path("url").asText(); resourceName(name);

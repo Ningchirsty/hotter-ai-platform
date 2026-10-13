@@ -36,7 +36,7 @@ public class TemplateFeedController {
         return R.ok(Map.of("items",all.stream().skip((long)(page-1)*size).limit(size).map(t->project(t,validation)).toList(),"total",all.size(),"categories",categories,"feed",cache.state()));
     }
     @GetMapping("/{id}") @SaCheckPermission("image:creation:view")
-    public R<Map<String,Object>> detail(@PathVariable String id) { long user=user(); String tenant=tenant(user); cache.refresh(); if(!cache.browsable()) throw new TemplateFeedException(503,"模板缓存已过期"); return R.ok(project(requireImage(id),generation.canValidate(tenant,user))); }
+    public R<Map<String,Object>> detail(@PathVariable String id) { long user=user(); String tenant=tenant(user); cache.refresh(); if(!cache.browsable()) throw new TemplateFeedException(503,"模板缓存已过期"); JsonNode template=requireImage(id); var data=cache.imageDetail(template); if(generation.canValidate(tenant,user) && cache.published(template)) data.put("canGenerate",true); return R.ok(data); }
     private JsonNode requireImage(String id) { JsonNode template=cache.require(id); if(!"image".equals(template.path("type").asText())) throw new TemplateFeedException(404,"图像模板不存在"); return template; }
     private Map<String,Object> project(JsonNode t,boolean validation) { var data=cache.project(t); if(validation && cache.published(t)) data.put("canGenerate",true); return data; }
     @GetMapping("/{id}/cover") @SaCheckPermission("image:creation:view")
