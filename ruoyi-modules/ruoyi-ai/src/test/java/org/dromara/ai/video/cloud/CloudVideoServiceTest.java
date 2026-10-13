@@ -22,7 +22,7 @@ class CloudVideoServiceTest {
   assertTrue(json.path("profiles").isArray());assertEquals(16,json.path("profiles").size());
   assertTrue(json.path("profiles").get(0).path("id").isString());
  }
- @Test void unverifiedModelNeverInsertsOrSubmits(){when(props.getVerifiedVariants()).thenReturn(List.of());assertThrows(VideoTaskException.class,()->service.create(request(),"tenant",7,1L));verify(repo,never()).insertTask(any());}
+ @Test void supportedParametersCanCreateDraftWithoutHistoricalVerificationOrPaidSubmission(){when(props.getVerifiedVariants()).thenReturn(List.of());when(repo.findByIdempotencyKey(anyString(),anyLong(),anyString())).thenReturn(null);assertDoesNotThrow(()->service.create(request(),"tenant",7,1L));verify(repo).insertTask(any());verifyNoInteractions(client);assertEquals("supported",service.models(7).get("submissionPolicy"));}
  @Test void noKeyNeverInsertsOrSubmits(){when(props.configured()).thenReturn(false);assertThrows(VideoTaskException.class,()->service.create(request(),"tenant",7,1L));verify(repo,never()).insertTask(any());}
  @Test void requestUnknownCannotBeRetried()throws Exception{
   var task=new HashMap<String,Object>();task.put("workflow_code",VideoCloudService.WORKFLOW);task.put("status","FAILED");task.put("error_code","CLOUD_RESULT_UNKNOWN");task.put("input_json",new ObjectMapper().writeValueAsString(Map.of("request",request())));

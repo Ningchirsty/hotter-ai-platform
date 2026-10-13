@@ -42,7 +42,7 @@ public class VideoCloudService {
         pool=new ThreadPoolExecutor(Math.max(1,properties.getConcurrency()),Math.max(1,properties.getConcurrency()),0,TimeUnit.MILLISECONDS,new ArrayBlockingQueue<>(Math.max(1,properties.getQueueCapacity())),r->{Thread t=new Thread(r,"video-cloud");t.setDaemon(true);return t;});
     }
     public Map<String,Object> models(){return models(-1);}
-    public Map<String,Object> models(long user){return Map.of("configured",properties.configured(),"referenceDeliveryConfigured",properties.configured()&&deliveryConfigured(),"profiles",mapper.convertValue(catalog.path("profiles"),java.util.List.class),"verifiedVariants",verification.verifiedVariants(),"validationVariants",verification.candidates(user),"validationRemaining",verification.candidates(user).isEmpty()?0:verification.remaining());}
+    public Map<String,Object> models(long user){return Map.of("configured",properties.configured(),"referenceDeliveryConfigured",properties.configured()&&deliveryConfigured(),"profiles",mapper.convertValue(catalog.path("profiles"),java.util.List.class),"verifiedVariants",verification.verifiedVariants(),"validationVariants",verification.candidates(user),"validationRemaining",verification.candidates(user).isEmpty()?0:verification.remaining(),"submissionPolicy","supported");}
     public JsonNode profile(String model){for(JsonNode p:catalog.path("profiles"))if(p.path("id").asText().equals(model))return p;return null;}
     public static boolean isCloud(Map<String,Object> task){return WORKFLOW.equals(task.get("workflow_code"));}
     private boolean deliveryConfigured(){try{var u=java.net.URI.create(properties.getPublicAssetBaseUrl());return "https".equals(u.getScheme())&&u.getHost()!=null&&u.getRawUserInfo()==null&&u.getQuery()==null&&u.getFragment()==null;}catch(Exception e){return false;}}
@@ -50,7 +50,7 @@ public class VideoCloudService {
         JsonNode p=profile(request.model());request.validate(p);
         if(!properties.configured())throw new VideoTaskException("CLOUD_NOT_CONFIGURED","服务端尚未启用云端服务视频");
         if(p.path("protocol").asText().equals("unconfirmed"))throw new VideoTaskException("CLOUD_PROTOCOL_UNCONFIRMED","该型号的供应商视频协议待确认");
-        verification.requireAllowed(request,user);
+        // Supported production requests are independent of historical acceptance receipts.
         if(!request.references().isEmpty()&&!deliveryConfigured())throw new VideoTaskException("CLOUD_REFERENCE_NOT_CONFIGURED","参考素材外部读取地址尚未配置");
     }
     public Map<String,Object> create(CloudVideoRequest request,String tenant,long user,Long dept) {
@@ -91,7 +91,7 @@ public class VideoCloudService {
         if(recover){
             request.validate(profile(request.model()));
             if(!properties.configured()||!remoteId.matches("[A-Za-z0-9_-]{1,160}"))throw VideoTaskException.invalidContract("已提交任务暂无法恢复");
-            verification.requireRecovery(request,user,id);
+            // Ownership, stored request and remote task ID were checked above; recovery never submits again.
             repository.reopen(id,status);status=VideoTaskStatus.QUEUED;
         }else verify(request,user);
         if(!recover&&retry&&status.isTerminal()&&status!=VideoTaskStatus.SUCCEEDED){
@@ -109,7 +109,7 @@ public class VideoCloudService {
         try {
             BluOctoVideoClient.RemoteTask remote=existingRemote;
             if(remote==null){
-                verification.reserve(request,user,id);
+                if (verification.candidates(user).contains(VideoCloudVerification.variant(request))) verification.reserve(request,user,id);
                 remote=client.submit(request,profile(request.model()),ref->referenceUrl(ref,tenant,user));
                 repository.markSubmitted(id,remote.id(),1,"BluOcto");event(id,tenant,"SUBMITTED","供应商已接受视频任务，不自动重试付费提交");
             }else event(id,tenant,"RECOVERING","仅查询并归档已有供应商任务，未重新生成或消耗验收额度");

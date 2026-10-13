@@ -25,6 +25,7 @@ export interface VideoCloudStatus {
   verifiedVariants: string[];
   validationVariants: string[];
   validationRemaining: number;
+  submissionPolicy?: 'supported';
 }
 export function normalizeVideoCloudDraft(draft: VideoCloudDraft, profile: VideoCloudProfile): VideoCloudDraft {
   return {
@@ -58,7 +59,12 @@ export function videoCloudVariant(draft: VideoCloudDraft): string {
 export function videoCloudAccess(
   draft: VideoCloudDraft,
   status?: VideoCloudStatus | null
-): 'verified' | 'validation' | 'pending' {
+): 'verified' | 'validation' | 'available' | 'pending' {
+  if (status?.configured && status.submissionPolicy === 'supported') {
+    const profile = status.profiles.find(p=>p.id===draft.model);
+    if (!profile || profile.protocol === 'unconfirmed' || !profile.capabilities.includes(draft.capability) || !profile.durations.includes(draft.seconds) || !profile.resolutions.includes(draft.resolution) || !profile.ratios.includes(draft.ratio) || (draft.seed !== undefined && (!profile.hasSeed || draft.seed < 0 || draft.seed > 2147483647 || !Number.isInteger(draft.seed))) || (draft.negativePrompt?.trim() && profile.family !== 'Wan') || (draft.generateAudio && !profile.hasAudioOutput) || (profile.family === 'MiniMax' && draft.capability === 'T2V' && draft.ratio === 'adaptive')) return 'pending';
+    return 'available';
+  }
   if (!status?.configured || draft.seed !== undefined || draft.negativePrompt?.trim()) return 'pending';
   const key = videoCloudVariant(draft);
   if (status.verifiedVariants?.includes(key)) return 'verified';

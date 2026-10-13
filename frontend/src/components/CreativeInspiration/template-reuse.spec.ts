@@ -16,7 +16,7 @@ describe('editable template output', () => {
   });
   it('does not insert default dimensions or format into a verified template recipe', () => {
     const original = { size: '1024x1536', n: 1 };
-    expect(templateEditorOutput(status, model, 'T2I', original)).toEqual({ output: original, note: '模板参数已完整带入，可继续调整。' });
+    expect(templateEditorOutput(status, model, 'T2I', original)).toEqual({ output: original, note: '模板参数已完整带入，可继续调整并提交生成。' });
     expect(templateEditorOutput(status, 'gpt-image-2.5-flare', 'T2I', original).note).toContain('图像尺寸尚未验证通过');
   });
   it('shows the exact measured output before one-click creation and keeps unverified models unavailable', () => {

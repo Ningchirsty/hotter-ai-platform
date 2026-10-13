@@ -50,11 +50,18 @@ public class BluOctoVideoClient {
         } else if (family.equals("Wan")) {
             Map<String,Object> input = new LinkedHashMap<>(); input.put("prompt",request.prompt());
             List<Map<String,Object>> media=new ArrayList<>();
+            var voices=request.references().stream().filter(r->r.role().equals("reference_audio")).map(source).toList();
+            int voiceIndex=0;
             for(var ref:request.references()) {
+                if("wan2.7-r2v".equals(request.model()) && ref.role().equals("reference_audio"))continue;
                 String url=source.apply(ref);
                 if (ref.role().equals("first_frame")) { media.add(Map.of("type","first_frame","url",url)); }
                 else if(ref.role().equals("last_frame")) media.add(Map.of("type","last_frame","url",url));
-                else media.add(Map.of("type",ref.role(),"url",url));
+                else {
+                    var item=new LinkedHashMap<String,Object>();item.put("type",ref.role());item.put("url",url);
+                    if("wan2.7-r2v".equals(request.model()) && voiceIndex<voices.size())item.put("reference_voice",voices.get(voiceIndex++));
+                    media.add(item);
+                }
             }
             if(!media.isEmpty()) input.put("media",media);
             if(request.negativePrompt()!=null && !request.negativePrompt().isBlank()) input.put("negative_prompt",request.negativePrompt());
@@ -132,6 +139,7 @@ public class BluOctoVideoClient {
         String key=properties.readKey();if(key.isEmpty())throw error("CLOUD_NOT_CONFIGURED","云端视频服务尚未配置");
         try {
             HttpRequest.Builder b=HttpRequest.newBuilder(URI.create("https://bluocto.com"+path)).timeout(Duration.ofSeconds(60)).header("Authorization","Bearer "+key);
+            if(method.equals("POST")&&path.startsWith("/ali/"))b.header("X-DashScope-Async","enable");
             if(body!=null)b.header("Content-Type","application/json").POST(HttpRequest.BodyPublishers.ofString(body));else b.GET();
             HttpResponse<java.io.InputStream> r=http.send(b.build(),HttpResponse.BodyHandlers.ofInputStream());
             try(var in=r.body()) {

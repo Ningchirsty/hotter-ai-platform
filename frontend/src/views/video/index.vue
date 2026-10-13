@@ -197,7 +197,7 @@
 
           <p class="workflow-note">
             输出尺寸、时长与音频能力随所选模型和创作能力变化。
-            当前展示已验证的输出规格；平台开放后可提交生成。
+            选择创作内容与输出规格后即可提交生成。
           </p>
         </div>
         <div class="submit-row">
@@ -575,10 +575,16 @@ const cloudBlockReason = computed(() => {
   if(!draft||!profile)return '请选择云端视频型号';
   if(profile.protocol==='unconfirmed')return '该型号的供应商协议待确认，暂不可提交';
   if(!cloudStatus.value?.configured)return '云端视频尚未启用，本轮可选择参数进行预览';
-  if(videoCloudAccess(draft,cloudStatus.value)==='pending')return '当前创作能力与输出参数组合尚未通过成片验收';
+  if(videoCloudAccess(draft,cloudStatus.value)==='pending')return '所选参数不适用于当前视频模型，请重新选择';
   if(!draft.prompt.trim())return '请填写视频描述';
   if(draft.capability!=='T2V'&&!cloudStatus.value.referenceDeliveryConfigured)return '参考素材读取地址尚未配置';
   const roles=draft.references.map(r=>r.role);
+  if(draft.model==='wan2.7-r2v') {
+    const visual=roles.filter(r=>r==='reference_image'||r==='reference_video').length;
+    if(visual>5)return '参考图片与视频合计最多 5 个';
+    if(roles.filter(r=>r==='reference_audio').length>visual)return '每份参考音频需对应一份参考图片或视频';
+    if(draft.prompt.length>5000)return '参考生视频描述最多 5000 字';
+  }
   if(draft.capability==='I2V'&&(roles.length!==1||roles[0]!=='first_frame'))return '请上传首帧图片';
   if(draft.capability==='FL2V'&&(roles.length!==2||!roles.includes('first_frame')||!roles.includes('last_frame')))return '请上传首帧与尾帧图片';
   if(draft.capability==='R2V'&&!roles.length)return '请添加参考素材';
