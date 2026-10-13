@@ -22,6 +22,13 @@ export function adaptTemplateOutput(status: CloudImageModelsVO | undefined, mode
   return { output, note: adapted.length ? `${adapted.join('、')}已适配为当前模型的可用配置，请确认输出设置。` : '' };
 }
 
+/** Template editing keeps the original recipe; existing verification still gates submission. */
+export function templateEditorOutput(status: CloudImageModelsVO | undefined, model: string, capability: string, requested: CloudImageOutputParams) {
+  const output = { ...requested };
+  const pending = outputFields.filter(field => !outputParameterVerified(status, model, capability, field.key, outputValue(output, field.key)));
+  return { output, note: pending.length ? `${pending.map(field => field.label).join('、')}尚未验证通过，请调整参数后提交。` : '模板参数已完整带入，可继续调整。' };
+}
+
 export function creationMessage(value?: string | null) {
   return (value || '').replace(/https?:\/\/[^\s]*bluocto[^\s]*/gi, '云端服务')
     .replace(/蓝章鱼|BluOcto|供应商/gi, '云端服务')
