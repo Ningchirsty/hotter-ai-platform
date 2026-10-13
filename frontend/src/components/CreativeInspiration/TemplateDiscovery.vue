@@ -43,8 +43,7 @@
           <p v-if="!selected.variables.length">模板已包含完整创作描述，带入表单后可继续编辑。</p>
           <p v-if="formError" class="error" role="alert">{{ formError }}</p>
           <p>{{ media === 'image' ? '带入参考图、提示词和原参数后可继续编辑。尚未验证的参数会在编辑区提示，调整后再提交生成。' : '复用视频模板的镜头与叙事，带入后可调整描述与输出设置。' }}</p>
-          <el-button v-hasPermi="[media + ':creation:submit']" :loading="preparing" :disabled="busy || preparing || selected.status === 'maintenance'" @click="applyTemplate">{{ selected.status === 'maintenance' ? '暂不可用' : '带入编辑' }}</el-button>
-          <el-button v-if="media === 'image'" v-hasPermi="['image:creation:submit']" type="primary" :loading="preparing" :disabled="busy || preparing || selected.status === 'maintenance'" @click="applyTemplate">创作同款</el-button>
+          <el-button v-hasPermi="[media + ':creation:submit']" :type="media === 'image' ? 'primary' : undefined" :loading="preparing" :disabled="busy || preparing || selected.status === 'maintenance'" @click="applyTemplate">{{ media === 'image' ? '使用模版' : selected.status === 'maintenance' ? '暂不可用' : '带入编辑' }}</el-button>
         </div>
       </div>
     </el-dialog>
