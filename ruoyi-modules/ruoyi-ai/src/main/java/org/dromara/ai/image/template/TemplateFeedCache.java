@@ -26,6 +26,7 @@ public class TemplateFeedCache {
     private final TemplateFeedProperties properties;
     private final Fetcher fetcher;
     private final java.time.Clock clock;
+    private final TemplateVideoPreviewCache videoPreviews;
     private volatile Snapshot snapshot = new Snapshot(0, Map.of(), Map.of(), Map.of(), Instant.EPOCH, "");
     private volatile boolean online;
     private volatile Instant attemptedAt = Instant.EPOCH;
@@ -39,6 +40,7 @@ public class TemplateFeedCache {
     }
     TemplateFeedCache(TemplateFeedProperties properties, Fetcher fetcher, java.time.Clock clock) {
         this.properties=properties; this.fetcher=fetcher; this.clock=clock;
+        this.videoPreviews = new TemplateVideoPreviewCache(root());
         try {
             JsonNode saved=JSON.readTree(Files.readAllBytes(root().resolve("snapshot.json")));
             snapshot=new Snapshot(saved.path("version").asInt(), nodes(saved.path("templates")),
@@ -228,5 +230,12 @@ public class TemplateFeedCache {
         String name=t.path("cover").path("url").asText(); resourceName(name);
         try { byte[] bytes=Files.readAllBytes(root().resolve(name)); if(!sha(bytes).equals(t.path("cover").path("sha256").asText())) throw new Exception(); return bytes; }
         catch(Exception e) { throw new TemplateFeedException(503,"封面暂不可用"); }
+    }
+    public Path videoPreview(String id, int revision) {
+        JsonNode template = require(id);
+        if (!"video".equals(template.path("type").asText())) throw new TemplateFeedException(404,"视频模板不存在");
+        if (!browsable()) throw new TemplateFeedException(503,"模板缓存已过期");
+        if (template.path("revision").asInt() != revision) throw new TemplateFeedException(409,"模板已更新，请刷新后重试");
+        return videoPreviews.get(template);
     }
 }

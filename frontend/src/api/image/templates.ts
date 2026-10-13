@@ -2,7 +2,7 @@ import request from '@/utils/request';
 import type { AxiosPromise } from '@/utils/api-types';
 
 export interface FeedVariable { key: string; label: { zh: string; en: string }; type: 'text' | 'select'; required: boolean; max_len?: number; options?: string[] }
-export interface FeedTemplate { id: string; revision: number; title: { zh: string; en: string }; category: string; tags: string[]; variables: FeedVariable[]; cover: string; status: 'published' | 'maintenance'; canGenerate: boolean; outputSize: string; model?: string; durationSeconds?: number }
+export interface FeedTemplate { id: string; revision: number; title: { zh: string; en: string }; category: string; tags: string[]; variables: FeedVariable[]; cover: string; status: 'published' | 'maintenance'; canGenerate: boolean; outputSize: string; model?: string; durationSeconds?: number; hasVideoPreview?: boolean }
 export interface FeedPage { items: FeedTemplate[]; total: number; categories: { id: string; zh: string; en: string }[]; feed: { version: number; online: boolean; checkedAt: string; syncCode: string } }
 export interface TemplateSubmission { template_id: string; revision: number; client_request_id: string; variables: Record<string, string> }
 export interface TemplateGeneration { request_id: string; status: 'pending' | 'submitted' | 'succeeded' | 'failed' | 'unknown' | 'archived'; summary_status?: string; task_id?: string; result_urls?: string[]; error?: { code: string; message: string } }
@@ -15,6 +15,12 @@ export const templateCover = async (id: string, revision: number, media: 'image'
   const r = await request({ url: '/' + media + '/templates/' + encodeURIComponent(id) + '/cover', params: { revision }, responseType: 'blob' });
   const blob = r.data as Blob;
   if (!blob?.size || !blob.type.startsWith('image/')) throw new Error('模板封面暂不可用');
+  return URL.createObjectURL(blob);
+};
+export const templateVideoPreview = async (id: string, revision: number): Promise<string> => {
+  const response = await request({ url: '/video/templates/' + encodeURIComponent(id) + '/preview', params: { revision }, responseType: 'blob', timeout: 300000 });
+  const blob = response.data as Blob;
+  if (!blob?.size || blob.size > 16 * 1024 * 1024 || blob.type.split(';')[0] !== 'video/mp4') throw new Error('示例视频暂不可用');
   return URL.createObjectURL(blob);
 };
 
