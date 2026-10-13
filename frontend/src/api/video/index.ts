@@ -213,6 +213,8 @@ export const fetchVideoAssetBlobUrl = async (assetId: number | string): Promise<
   const res = await request({
     url: '/video/assets/' + assetId + '/content',
     method: 'get',
+    // Full video downloads can exceed the ordinary API deadline on slower links.
+    timeout: 300000,
     responseType: 'blob'
   });
   // request 拦截器对 blob 响应原样透传，因此这里拿到的就是 Blob。
