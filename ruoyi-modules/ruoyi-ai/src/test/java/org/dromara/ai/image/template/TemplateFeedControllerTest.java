@@ -12,9 +12,26 @@ import java.util.Map;
 import static org.mockito.Mockito.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 
 class TemplateFeedControllerTest {
+    @Test void detailReturnsEditableRecipeForAuthenticatedTenantWithoutCreatingTask() throws Exception {
+        var cache=mock(TemplateFeedCache.class);var generation=mock(TemplateGenerationService.class);var tenants=mock(ImageInspirationTenantResolver.class);
+        var template=TemplateFeedCache.JSON.readTree("{\"type\":\"image\",\"id\":\"poster\"}");
+        when(tenants.resolve(7L)).thenReturn("tenant-a");when(cache.browsable()).thenReturn(true);when(cache.require("poster")).thenReturn(template);
+        when(cache.imageDetail(template)).thenReturn(new java.util.LinkedHashMap<>(Map.of("promptTemplate","A minimalist poster of {{subject}}","output",Map.of("size","1024x1536","quality","high","n",1))));
+        var mvc=MockMvcBuilders.standaloneSetup(new TemplateFeedController(cache,generation,tenants)).setMessageConverters(new JacksonJsonHttpMessageConverter()).build();
+        try(var login=mockStatic(LoginHelper.class)) {
+            login.when(LoginHelper::getUserId).thenReturn(7L);
+            mvc.perform(get("/image/templates/poster")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.promptTemplate").value("A minimalist poster of {{subject}}"))
+                .andExpect(jsonPath("$.data.output.size").value("1024x1536"))
+                .andExpect(jsonPath("$.data.binding").doesNotExist());
+            verify(tenants).resolve(7L);verify(generation).canValidate("tenant-a",7L);verifyNoMoreInteractions(generation);
+        }
+    }
     @Test void jacksonThreeHttpBodyReachesExistingTreeValidationWithoutLosingVariables() throws Exception {
         var generation=mock(TemplateGenerationService.class);
         var tenants=mock(ImageInspirationTenantResolver.class);

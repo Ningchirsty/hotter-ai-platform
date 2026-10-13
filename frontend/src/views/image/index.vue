@@ -198,7 +198,7 @@
         :workflows="workflows"
         :busy="uploading || submitting"
         :applied-title="appliedInspirationTitle"
-        @apply="applyCreativeInspiration" @create="createFromTemplate"
+        @apply="applyCreativeInspiration"
         @task-created="loadTasks()"
       />
     </div>
@@ -489,7 +489,6 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick } from 'vue';
 import { cloudImageCapabilityName } from '@/components/CreativeInspiration/cloud-image-capabilities';
 import type { Component } from 'vue';
 import {
@@ -822,13 +821,6 @@ function applyDefaults() {
 }
 
 function taskModelName(code: string, model?: string) { return taskModelLabel(code, model, localCreationCatalog.value); }
-async function createFromTemplate(route: InspirationRoute, title: string) {
-  if (uploading.value || submitting.value) return;
-  applyCreativeInspiration(route, title);
-  await nextTick(); await nextTick();
-  if (generationSource.value !== 'cloud' || cloudDraft.value.prompt !== route.prompt || !cloudDraft.value.ready) { ElMessage.warning('此模板的生成配置暂不可用，请检查创作设置'); return; }
-  await submitCloudTask();
-}
 function applyCreativeInspiration(route: InspirationRoute, title: string) {
   if (route.media !== 'image' || uploading.value || submitting.value) return;
   if (!isRouteAvailable(route, workflows.value, cloudStatus.value)) { ElMessage.warning('此模板的模型暂不可用，请选择其它模板'); return; }

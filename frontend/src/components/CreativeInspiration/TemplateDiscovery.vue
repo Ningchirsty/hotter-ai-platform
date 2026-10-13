@@ -29,17 +29,22 @@
       <div v-if="selected" class="detail">
         <TemplateVideoPreview v-if="media === 'video'" :id="selected.id" :revision="selected.revision" :title="selected.title.zh" :available="selected.hasVideoPreview === true" detail />
         <TemplateCover v-else :media="media" :id="selected.id" :revision="selected.revision" :title="selected.title.zh" />
-        <div><span class="tag">{{ selected.category }}</span><h3>复用此模板</h3><p>{{ media === 'image' ? '图像创作' : '视频创作' }} · {{ selected.outputSize.replace('x', ' × ') }} · {{ media === 'image' ? '1 张' : selected.durationSeconds + ' 秒' }}</p>
+        <div><span class="tag">{{ selected.category }}</span><h3>{{ media === 'image' ? '参考模板，创作同款风格' : '复用此模板' }}</h3><p>{{ media === 'image' ? '图像创作' : '视频创作' }} · {{ selected.outputSize.replace('x', ' × ') }} · {{ media === 'image' ? '1 张' : selected.durationSeconds + ' 秒' }}</p>
+          <section v-if="media === 'image'" class="template-recipe" aria-label="模板提示词和参数">
+            <label for="template-image-prompt">模板提示词</label>
+            <textarea id="template-image-prompt" :value="imagePromptPreview" rows="7" readonly aria-label="模板提示词" />
+            <dl><dt>模型</dt><dd>{{ selected.model || '暂不可用' }}</dd><dt>尺寸</dt><dd>{{ selected.output?.size?.replace('x', ' × ') || selected.outputSize.replace('x', ' × ') }}</dd><dt>画质</dt><dd>{{ selected.output?.quality || '模型默认' }}</dd><dt>数量</dt><dd>{{ selected.output?.n || 1 }} 张</dd></dl>
+            <p>参考图用于查看风格、排版和构图。修改主体或文案后再生成；不会直接复制示例图。</p>
+          </section>
           <el-form label-position="top"><el-form-item v-for="v in selected.variables" :key="v.key" :label="v.key === 'subject' ? '画面主体' : v.label.zh || v.label.en" :required="v.required">
             <el-select v-if="v.type === 'select'" v-model="variables[v.key]"><el-option v-for="option in v.options" :key="option" :label="option" :value="option" /></el-select>
             <el-input v-else v-model="variables[v.key]" :maxlength="v.max_len || 200" show-word-limit />
           </el-form-item></el-form>
           <p v-if="!selected.variables.length">模板已包含完整创作描述，带入表单后可继续编辑。</p>
           <p v-if="formError" class="error" role="alert">{{ formError }}</p>
-          <p>{{ media === 'image' ? '文生图模板，无需参考素材。输出设置会适配为当前模型已验证的配置。' : '复用视频模板的镜头与叙事，带入后可调整描述与输出设置。' }}</p>
-          <el-button v-hasPermi="[media + ':creation:submit']" type="primary" :loading="preparing" :disabled="busy || preparing || selected.status === 'maintenance'" @click="applyTemplate(false)">{{ selected.status === 'maintenance' ? '暂不可用' : '带入编辑' }}</el-button>
-          <p v-if="media === 'image'">本次生成：{{ createPlan.label }}。{{ createPlan.available ? '点击即提交一次生成，可在我的任务查看。' : '当前模板模型暂不可生成，可先带入编辑。' }}</p>
-          <el-button v-if="media === 'image'" v-hasPermi="['image:creation:submit']" type="primary" :loading="preparing" :disabled="busy || preparing || selected.status === 'maintenance' || !createPlan.available" @click="applyTemplate(true)">一键创建同款</el-button>
+          <p>{{ media === 'image' ? '带入参考图、提示词和参数后可继续编辑。输出设置如需适配，会在编辑区说明。只有点击「提交生成」才会创建任务。' : '复用视频模板的镜头与叙事，带入后可调整描述与输出设置。' }}</p>
+          <el-button v-hasPermi="[media + ':creation:submit']" :loading="preparing" :disabled="busy || preparing || selected.status === 'maintenance'" @click="applyTemplate">{{ selected.status === 'maintenance' ? '暂不可用' : '带入编辑' }}</el-button>
+          <el-button v-if="media === 'image'" v-hasPermi="['image:creation:submit']" type="primary" :loading="preparing" :disabled="busy || preparing || selected.status === 'maintenance'" @click="applyTemplate">创作同款</el-button>
         </div>
       </div>
     </el-dialog>
@@ -52,11 +57,11 @@ import { prepareVideoTemplate, listTemplates, getTemplate, prepareTemplate, gene
 import TemplateCover from './TemplateCover.vue';
 import TemplateVideoPreview from './TemplateVideoPreview.vue';
 import type { InspirationRoute } from './types';
-import { creationMessage, templateCreatePlan } from './template-reuse';
+import { creationMessage } from './template-reuse';
 import type { CloudImageModelsVO } from '@/api/image/types';
 const props = withDefaults(defineProps<{ busy?: boolean; media?: 'image' | 'video'; cloudStatus?: CloudImageModelsVO }>(), { media: 'image' });
 const busy = computed(() => props.busy === true);
-const emit = defineEmits<{ 'task-created': []; apply: [route: InspirationRoute, title: string]; create: [route: InspirationRoute, title: string] }>();
+const emit = defineEmits<{ 'task-created': []; apply: [route: InspirationRoute, title: string] }>();
 const preparing = ref(false);
 const userStore = useUserStore();
 const storageKey = computed(() => 'hotter-template-action-v2-' + String(userStore.userId));
@@ -66,7 +71,7 @@ const pageSize = 6, pages = computed(() => Math.max(1, Math.ceil(total.value / p
 const selected = ref<FeedTemplate>(), dialog = ref(false), variables = ref<Record<string, string>>({}), sending = ref(false), formError = ref('');
 const pending = ref<TemplateGeneration>(), savedAction = ref<{ body: TemplateSubmission; requestId?: string }>();
 const deferred = ref<{ body: TemplateSubmission; requestId: string; result: TemplateGeneration }[]>([]);
-const createPlan = computed(() => templateCreatePlan(props.cloudStatus, selected.value));
+const imagePromptPreview = computed(() => (selected.value?.promptTemplate || '').replace(/\{\{([^{}]+)\}\}/g, (placeholder, key: string) => variables.value[key]?.trim() || placeholder));
 let sequence = 0, debounce: ReturnType<typeof setTimeout> | undefined, interval: ReturnType<typeof setInterval> | undefined;
 async function load() {
   const current = ++sequence; loading.value = true; error.value = '';
@@ -103,8 +108,8 @@ async function queryDeferred(record: (typeof deferred.value)[number]) {
     persist();
   } finally { sending.value = false; }
 }
-async function applyTemplate(create = false) {
-  if (!selected.value || busy.value || preparing.value || selected.value.status === 'maintenance' || (create && !createPlan.value.available)) return;
+async function applyTemplate() {
+  if (!selected.value || busy.value || preparing.value || selected.value.status === 'maintenance') return;
   const template = selected.value;
   const title = template.title.zh || template.title.en;
   preparing.value = true; formError.value = '';
@@ -118,7 +123,7 @@ async function applyTemplate(create = false) {
     }
     const r = await prepareTemplate(body);
     if (busy.value || !dialog.value || selected.value !== template) return;
-    emit(create ? 'create' : 'apply', { media: 'image', source: 'cloud', capability: r.data.capability, workflowCode: 'cloud-bluocto-t2i', model: r.data.model, prompt: r.data.prompt, output: create ? templateCreatePlan(props.cloudStatus, { model: r.data.model, outputSize: r.data.output.size || '' }).output : r.data.output, templateTitle: title, reason: '', referenceHint: '' }, title);
+    emit('apply', { media: 'image', source: 'cloud', capability: r.data.capability, workflowCode: 'cloud-bluocto-t2i', model: r.data.model, prompt: r.data.prompt, output: r.data.output, templateReference: { id: template.id, revision: template.revision, title }, templateTitle: title, reason: '', referenceHint: '' }, title);
     dialog.value = false;
   } catch (e: unknown) {
     const response = (e as { response?: { data?: { msg?: string; data?: { errors?: { field: string; rule: string }[] } } } }).response?.data;
@@ -172,6 +177,10 @@ button { cursor: pointer; color: #687b9b; border: 1px solid #e1e5f2; background:
 .masonry { columns: 2; column-gap: 14px; } article { break-inside: avoid; padding-bottom: 18px; } .open { display: block; width: 100%; padding: 0; border: 0; border-radius: 10px; } .title { border: 0; padding: 12px 0 0; background: transparent; color: #304161; text-align: left; line-height: 1.6; } article p { margin: 6px 0; } .tag { padding: 4px 7px; font-size: 10px; color: #7956cc; background: #f2edfb; border-radius: 5px; }
 .empty { padding: 70px 15px; text-align: center; color: #8692a8; } footer { margin-top: auto; padding-top: 20px; } footer :deep(.el-pagination) { justify-content: center; }
 .detail { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; } .detail :deep(.el-select) { width: 100%; } .error { color: #ba5561 !important; }
+.template-recipe label { display: block; margin: 12px 0 8px; font-size: 13px; font-weight: 600; }
+.template-recipe textarea { box-sizing: border-box; width: 100%; padding: 10px; border: 1px solid #e1e5f2; border-radius: 8px; color: #304161; background: #f8f9fc; font: inherit; font-size: 12px; line-height: 1.6; resize: vertical; }
+.template-recipe dl { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 8px; font-size: 12px; }
+.template-recipe dt { color: #8391ab; } .template-recipe dd { margin: 0; overflow-wrap: anywhere; }
 .request-status { margin-top: 16px; border-radius: 10px; padding: 14px; background: #f7f4fc; font-size: 12px; } .request-status span { display: block; margin-top: 10px; }
 @media (max-width: 640px) { .detail { grid-template-columns: 1fr; } .discovery { padding: 16px; } }
 </style>
