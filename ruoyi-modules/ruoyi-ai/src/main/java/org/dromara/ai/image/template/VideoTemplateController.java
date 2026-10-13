@@ -40,6 +40,17 @@ public class VideoTemplateController {
     public ResponseEntity<byte[]> cover(@PathVariable String id) { authorize();var t=requireVideo(id);String name=t.path("cover").path("url").asText();String type=name.endsWith(".webp")?"image/webp":name.endsWith(".jpg")?"image/jpeg":"image/png";return ResponseEntity.ok().header("Cache-Control","private, max-age=600").header("X-Content-Type-Options","nosniff").header("Content-Type",type).body(cache.cover(id)); }
     @PostMapping("/prepare") @SaCheckPermission("video:creation:view")
     public R<Map<String,Object>> prepare(@RequestBody Map<String,Object> body) { authorize();return R.ok(VideoTemplateDrafts.prepare(cache,properties,TemplateFeedCache.JSON.valueToTree(body))); }
+    @GetMapping("/{id}/preview") @SaCheckPermission("video:creation:view")
+    public ResponseEntity<byte[]> preview(@PathVariable String id, @RequestParam int revision) {
+        authorize(); requireVideo(id);
+        try {
+            byte[] bytes = java.nio.file.Files.readAllBytes(cache.videoPreview(id,revision));
+            return ResponseEntity.ok().header("Content-Type","video/mp4")
+                .header("Cache-Control","private, max-age=600").header("Vary","Authorization")
+                .header("X-Content-Type-Options","nosniff").contentLength(bytes.length).body(bytes);
+        } catch (TemplateFeedException exception) { throw exception; }
+        catch (Exception exception) { throw new TemplateFeedException(503,"示例视频暂不可用"); }
+    }
     @ExceptionHandler(TemplateFeedException.class)
     public ResponseEntity<R<Map<String,Object>>> invalid(TemplateFeedException exception) { var result=R.fail(exception.getMessage(),Map.<String,Object>of("errors",exception.errors));result.setCode(exception.status);return ResponseEntity.status(exception.status).body(result); }
 }

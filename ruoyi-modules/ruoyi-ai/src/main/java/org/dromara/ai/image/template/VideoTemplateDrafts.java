@@ -28,6 +28,7 @@ public final class VideoTemplateDrafts {
         var out=new LinkedHashMap<String,Object>();
         for(String field:List.of("id","revision","category","tags","title","variables")) out.put(field,TemplateFeedCache.JSON.convertValue(template.path(field),Object.class));
         out.put("media","video");
+        out.put("hasVideoPreview",TemplateVideoPreviewCache.available(template));
         out.put("cover","/video/templates/"+template.path("id").asText()+"/cover");
         out.put("status",published(cache,template)?"published":"maintenance");
         var profile=cache.current().profiles().get(template.path("binding").path("params_profile").asText());

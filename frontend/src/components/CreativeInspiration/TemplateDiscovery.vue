@@ -6,7 +6,7 @@
     <nav class="categories" aria-label="模板分类"><button :class="{ active: !category }" @click="category = ''">全部</button><button v-for="c in categories" :key="c.id" :class="{ active: category === c.id }" @click="category = c.id">{{ c.zh }}</button></nav>
     <div v-if="items.length" class="masonry">
       <article v-for="item in items" :key="item.id + ':' + item.revision">
-        <button class="open" :aria-label="'查看模板 ' + item.title.zh" @click="open(item)"><TemplateCover :media="media" :id="item.id" :revision="item.revision" :title="item.title.zh" /></button>
+        <button class="open" :aria-label="'查看模板 ' + item.title.zh" @click="open(item)"><TemplateVideoPreview v-if="media === 'video'" :id="item.id" :revision="item.revision" :title="item.title.zh" :available="item.hasVideoPreview === true" /><TemplateCover v-else :media="media" :id="item.id" :revision="item.revision" :title="item.title.zh" /></button>
         <button class="title" @click="open(item)">{{ item.title.zh || item.title.en }}</button>
         <p>{{ item.category }} · {{ item.outputSize.replace('x', ' × ') }}</p><span class="tag">{{ item.status === 'maintenance' ? '维护中' : '可复用模板' }}</span>
       </article>
@@ -27,7 +27,8 @@
     </section>
     <el-dialog v-model="dialog" :title="selected?.title.zh || selected?.title.en" width="760px" style="max-width: calc(100vw - 32px)" align-center destroy-on-close>
       <div v-if="selected" class="detail">
-        <TemplateCover :media="media" :id="selected.id" :revision="selected.revision" :title="selected.title.zh" />
+        <TemplateVideoPreview v-if="media === 'video'" :id="selected.id" :revision="selected.revision" :title="selected.title.zh" :available="selected.hasVideoPreview === true" detail />
+        <TemplateCover v-else :media="media" :id="selected.id" :revision="selected.revision" :title="selected.title.zh" />
         <div><span class="tag">{{ selected.category }}</span><h3>复用此模板</h3><p>{{ media === 'image' ? '图像创作' : '视频创作' }} · {{ selected.outputSize.replace('x', ' × ') }} · {{ media === 'image' ? '1 张' : selected.durationSeconds + ' 秒' }}</p>
           <el-form label-position="top"><el-form-item v-for="v in selected.variables" :key="v.key" :label="v.key === 'subject' ? '画面主体' : v.label.zh || v.label.en" :required="v.required">
             <el-select v-if="v.type === 'select'" v-model="variables[v.key]"><el-option v-for="option in v.options" :key="option" :label="option" :value="option" /></el-select>
@@ -49,6 +50,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useUserStore } from '@/store/modules/user';
 import { prepareVideoTemplate, listTemplates, getTemplate, prepareTemplate, generateTemplate, getTemplateGeneration, retryTemplateGeneration, type FeedTemplate, type FeedPage, type TemplateSubmission, type TemplateGeneration } from '@/api/image/templates';
 import TemplateCover from './TemplateCover.vue';
+import TemplateVideoPreview from './TemplateVideoPreview.vue';
 import type { InspirationRoute } from './types';
 import { creationMessage, templateCreatePlan } from './template-reuse';
 import type { CloudImageModelsVO } from '@/api/image/types';
