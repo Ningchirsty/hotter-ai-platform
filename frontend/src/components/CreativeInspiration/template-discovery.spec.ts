@@ -66,19 +66,21 @@ describe('image template preview and editable reuse', () => {
     expect(nodes().find(n => n.type === 'textarea')?.props.value).toBe(fixture.promptTemplate);
     expect(text(root)).toContain(fixture.model); expect(text(root)).toContain('1024 × 1536'); expect(text(root)).toContain('high');
     expect(api.prepareTemplate).not.toHaveBeenCalled(); expect(api.generateTemplate).not.toHaveBeenCalled(); expect(applied).toEqual([]);
+    expect(nodes().filter(n => n.type === 'button' && text(n) === '使用模版')).toHaveLength(1);
+    expect(nodes().some(n => n.type === 'button' && ['带入编辑', '创作同款'].includes(text(n)))).toBe(false);
   });
-  it.each(['带入编辑', '创作同款'])('%s applies the resolved prompt, exact parameters and display reference without submitting', async label => {
+  it('使用模版 applies the resolved prompt, exact parameters and display reference without submitting', async () => {
     await mount();
     const input = nodes().find(n => n.type === 'input' && n.props.value === undefined)!;
     input.props.onInput('陶瓷花瓶'); await vue.nextTick();
     expect(nodes().find(n => n.type === 'textarea')?.props.value).toContain('陶瓷花瓶');
-    await click(label);
+    await click('使用模版');
     expect(api.prepareTemplate).toHaveBeenCalledWith({ template_id: fixture.id, revision: 3, variables: { subject: '陶瓷花瓶' } });
     expect(applied).toHaveLength(1); expect(applied[0][0]).toMatchObject({ media: 'image', capability: 'T2I', model: fixture.model, prompt: expect.stringContaining('陶瓷花瓶'), output: fixture.output, templateReference: { id: fixture.id, revision: 3, title: fixture.title.zh } });
     expect(applied[0][0].referenceAssetIds).toBeUndefined(); expect(api.generateTemplate).not.toHaveBeenCalled(); expect(api.prepareVideoTemplate).not.toHaveBeenCalled();
   });
   it('does not emit or submit when required template content fails validation', async () => {
     api.prepareTemplate.mockRejectedValue({ response: { data: { data: { errors: [{ field: 'subject', rule: 'required' }] } } } });
-    await mount(); await click('创作同款'); expect(text(root)).toContain('请填写必填内容'); expect(applied).toEqual([]); expect(api.generateTemplate).not.toHaveBeenCalled();
+    await mount(); await click('使用模版'); expect(text(root)).toContain('请填写必填内容'); expect(applied).toEqual([]); expect(api.generateTemplate).not.toHaveBeenCalled();
   });
 });
