@@ -45,6 +45,7 @@ import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.common.redis.annotation.RepeatSubmit;
 import org.dromara.common.satoken.utils.LoginHelper;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -242,6 +243,28 @@ public class AigAgentRegistryController {
         @Validated({Default.class, QueryGroup.class}) AigAgentResourceBindingQueryBo bo,
         PageQuery pageQuery) {
         return R.ok(queryService.queryResourceBindingPage(bo, pageQuery));
+    }
+
+    /**
+     * 删除工具/知识绑定（附件 07 §5）。
+     *
+     * <p><b>为什么需要它</b>：范围列不可改，而"同一范围只能绑一次"是服务层显式做的，
+     * 所以绑错范围时没有出路——重复检查的拒绝文案自己写着「要改范围请删掉旧的那条再建」，
+     * 这个入口就是那句文案的前提。逻辑删除，删完同范围可以立刻重建。</p>
+     *
+     * <p><b>刻意不加 {@code @RepeatSubmit}</b>：按 id 删除本身幂等（重复点第二次得到
+     * "不存在或已删除"），而且加了防重反而会把"删掉之后马上重建"挡在 5 秒窗口外——
+     * 那正是本入口要支撑的操作。</p>
+     *
+     * @param bindingId 绑定ID
+     * @return 操作结果
+     */
+    @SaCheckPermission(AigConstants.PERM_AGENT_RESOURCE_BINDING)
+    @DeleteMapping("/resource-binding/{bindingId:\\d+}")
+    public R<Void> removeResourceBinding(
+        @NotNull(message = "绑定ID不能为空") @PathVariable Long bindingId) {
+        registryService.removeResourceBinding(bindingId);
+        return R.ok();
     }
 
     /**

@@ -101,7 +101,11 @@ class AigRepeatSubmitCoverageTest {
         Map.entry("AigPortalController#refreshMyAssets",
             "幂等重建当前用户的资产索引，重复执行等价"),
         Map.entry("AigPortalController#suggest",
-            "只读式建议，无副作用")
+            "只读式建议，无副作用"),
+        Map.entry("AigAgentRegistryController#removeResourceBinding",
+            "按 id 的逻辑删除本身幂等（重复点第二次得到「不存在或已删除」，不会多删任何行）；"
+                + "★而加 @RepeatSubmit 会有实际害处：本入口存在的理由就是支撑"
+                + "「把绑错范围的那条删掉、马上重建一条正确的」，5 秒防重窗正好会把这个操作挡掉")
     );
 
     @Test

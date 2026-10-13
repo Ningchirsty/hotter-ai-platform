@@ -110,3 +110,61 @@ export function scopeLabel(value?: string | number | null): string {
   if (value === null || value === undefined || value === '') return '不限';
   return String(value);
 }
+
+/**
+ * 一行绑定的范围摘要（四列拼一起，给人"这条到底限定在哪"的一句话）。
+ *
+ * @param row 绑定行
+ * @returns 形如 `不限 / 不限 / 不限 / 不限`
+ */
+export function scopeSummary(row?: {
+  companyId?: string | number | null;
+  brandId?: string | number | null;
+  scenarioCode?: string | null;
+  roleScope?: string | null;
+} | null): string {
+  if (!row) return '不限 / 不限 / 不限 / 不限';
+  return [scopeLabel(row.companyId), scopeLabel(row.brandId),
+    scopeLabel(row.scenarioCode), scopeLabel(row.roleScope)].join(' / ');
+}
+
+/**
+ * 删除确认文案。
+ *
+ * <p><b>为什么值得单独一个函数并单测</b>：删除是不可撤销的动作，而这句文案要同时说清三件事——
+ * 删的是哪一条（类型+编码）、它的范围是什么（否则按编码看一眼就点了，其实可能删错范围）、
+ * 以及"删完还能不能重绑"。少说最后一句，人就不敢点，于是绑错的范围永远卡在那里；
+ * 少说范围，就会删错那一条。</p>
+ *
+ * @param row 绑定行
+ * @returns 确认文案
+ */
+export function bindingDeleteConfirmText(row?: {
+  bindingId?: string | number | null;
+  resourceType?: string | null;
+  resourceCode?: string | null;
+  companyId?: string | number | null;
+  brandId?: string | number | null;
+  scenarioCode?: string | null;
+  roleScope?: string | null;
+} | null): string {
+  const code = row?.resourceCode || '（无编码）';
+  return `确认删除这条绑定吗？${resourceTypeLabel(row?.resourceType)}「${code}」，`
+    + `范围：${scopeSummary(row)}。删除后同范围可以重新绑定。`;
+}
+
+/**
+ * 绑定行的绑定ID是否可用于删除。
+ *
+ * <p>服务端返回的是雪花 ID（本仓以字符串下发），但列表数据异常时可能为空——
+ * 空 ID 拼进 URL 会打到一个不存在的地址上，得到一个与"删对了"无法区分的错误。
+ * 所以在发请求之前先挡住。</p>
+ *
+ * @param row 绑定行
+ * @returns 可用则 true
+ */
+export function hasDeletableId(row?: { bindingId?: string | number | null } | null): boolean {
+  const id = row?.bindingId;
+  if (id === null || id === undefined || id === '') return false;
+  return String(id).trim() !== '' && String(id).trim() !== 'null' && String(id).trim() !== 'undefined';
+}

@@ -41,3 +41,17 @@ export function addResourceBinding(data: AigAgentResourceBindingForm) {
     data
   });
 }
+
+/**
+ * 删除绑定（逻辑删除）。
+ *
+ * 存在的理由：范围列不可改、同一范围又只能绑一次，绑错了没有出路；
+ * 服务端的重复检查文案自己写着「要改范围请删掉旧的那条再建」，这个接口就是那句话的前提。
+ * 删掉之后同范围可以立刻重建（已删除的行由 @TableLogic 从查询里过滤掉）。
+ */
+export function delResourceBinding(bindingId: string | number) {
+  return request({
+    url: '/aigov/agent/resource-binding/' + bindingId,
+    method: 'delete'
+  });
+}

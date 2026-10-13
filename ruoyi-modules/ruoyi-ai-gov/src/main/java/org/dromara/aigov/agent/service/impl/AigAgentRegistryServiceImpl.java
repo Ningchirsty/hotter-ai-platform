@@ -366,6 +366,35 @@ public class AigAgentRegistryServiceImpl implements IAigAgentRegistryService {
     }
 
     /**
+     * 删除一条工具/知识绑定（逻辑删除，附件 07 §5）。
+     *
+     * <p><b>它让"删掉旧的那条再建"从文案变成真的能做的事</b>：重复检查不看 {@code enabled}、
+     * 范围列又没有更新入口，所以在加这个入口之前，一条范围填错的绑定是<b>永久</b>的
+     * （唯一出路是改库）。</p>
+     *
+     * <p>删除是逻辑删除（{@code del_flag} 上是 {@code @TableLogic}）：行留着可追溯，
+     * 而所有查询由框架自动追加 {@code del_flag='0'} ⇒ <b>删完立刻可以重建同范围的绑定</b>。</p>
+     *
+     * @param bindingId 绑定ID
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void removeResourceBinding(Long bindingId) {
+        if (bindingId == null) {
+            throw new ServiceException("绑定ID不能为空");
+        }
+        AigAgentResourceBinding binding = resourceBindingMapper.selectById(bindingId);
+        if (binding == null) {
+            // 已被删掉的行也走这里（@TableLogic 让 selectById 看不见它）⇒
+            // "删一个已经删过的"与"删一个不存在的"对调用方是同一个结果，重复点不会报出第二种错
+            throw new ServiceException("工具/知识绑定不存在或已删除：" + bindingId);
+        }
+        resourceBindingMapper.deleteById(bindingId);
+        log.info("删除工具/知识绑定, bindingId={}, agentVersionId={}, type={}, code={}",
+            bindingId, binding.getAgentVersionId(), binding.getResourceType(), binding.getResourceCode());
+    }
+
+    /**
      * 校验"要绑的资源编码确实被这个版本声明过"。
      *
      * <p>两条口径：</p>

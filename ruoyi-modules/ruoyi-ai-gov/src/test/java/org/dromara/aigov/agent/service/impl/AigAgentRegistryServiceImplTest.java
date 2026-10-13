@@ -903,4 +903,41 @@ class AigAgentRegistryServiceImplTest {
         verify(resourceBindingMapper, never()).insert(any(AigAgentResourceBinding.class));
     }
 
+    @Test
+    @DisplayName("★ 删除绑定：走 deleteById（逻辑删除由 @TableLogic 改写），让「删掉旧的那条再建」真的能做")
+    void removeResourceBindingSoftDeletesById() {
+        AigAgentResourceBinding existing = new AigAgentResourceBinding();
+        existing.setBindingId(8801L);
+        existing.setAgentVersionId(VERSION_ID);
+        existing.setResourceType("TOOL");
+        existing.setResourceCode("brand_brief");
+        existing.setDelFlag("0");
+        when(resourceBindingMapper.selectById(8801L)).thenReturn(existing);
+
+        service.removeResourceBinding(8801L);
+
+        // ★断言的是"按 id 删"而不是"按 wrapper 删一条别的什么"：deleteById 才会被 @TableLogic
+        //   改写成 UPDATE ... SET del_flag='1'；换成自定义 SQL 就会变成物理删除（行没了、不可追溯）
+        verify(resourceBindingMapper).deleteById(8801L);
+        verify(resourceBindingMapper, never()).insert(any(AigAgentResourceBinding.class));
+    }
+
+    @Test
+    @DisplayName("删除绑定：id 为空 / 行不存在或已删，都给同一类可读错误（重复点不会报出第二种错）")
+    void removeResourceBindingValidatesInput() {
+        ServiceException nullId = assertThrows(ServiceException.class,
+            () -> service.removeResourceBinding(null));
+        assertTrue(nullId.getMessage().contains("绑定ID"), nullId.getMessage());
+
+        // selectById 返回 null：既覆盖"从来没存在过"，也覆盖"已经被删过"
+        //（@TableLogic 让这条查询看不见已删除的行 ⇒ 两种情况在这里合流）
+        when(resourceBindingMapper.selectById(8802L)).thenReturn(null);
+        ServiceException gone = assertThrows(ServiceException.class,
+            () -> service.removeResourceBinding(8802L));
+        assertTrue(gone.getMessage().contains("不存在或已删除"), gone.getMessage());
+        assertTrue(gone.getMessage().contains("8802"), gone.getMessage());
+
+        verify(resourceBindingMapper, never()).deleteById(8802L);
+    }
+
 }

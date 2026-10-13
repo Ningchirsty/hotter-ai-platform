@@ -64,6 +64,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -201,6 +202,16 @@ class AigWp3WiringAndRoutesTest {
             .andExpect(status().isOk())
             .andExpect(content().string(containsString("7901")));
         verify(registryService).addResourceBinding(any());
+
+        // ★删除绑定（附件 07 §5）：这里必须真的走一遍路由，因为它带的是**正则路径变量**
+        //   `/resource-binding/{bindingId:\d+}` —— 只查注解的测试看不出正则写错、或参数转换失败。
+        //   路由或转换坏了的表现是 404/400，而"绑错了删不掉"正是这个入口要解决的问题。
+        mockMvc.perform(delete("/aigov/agent/resource-binding/8801"))
+            .andExpect(status().isOk());
+        verify(registryService).removeResourceBinding(8801L);
+        // 非数字 id 不该命中该方法（由正则决定），命中不到就是 404
+        mockMvc.perform(delete("/aigov/agent/resource-binding/abc"))
+            .andExpect(status().isNotFound());
 
         // 页面靠这个接口拿到「版本声明的用例集合」（声明在 config_json/Manifest 里，页面读不到）
         mockMvc.perform(get("/aigov/evaluation/declared-cases")

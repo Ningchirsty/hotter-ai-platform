@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  bindingDeleteConfirmText,
   declaredHint,
   declaredItems,
   declaredOptionLabel,
   forbiddenNote,
+  hasDeletableId,
   resourceTypeLabel,
-  scopeLabel
+  scopeLabel,
+  scopeSummary
 } from './presentation';
 import type { AigAgentDeclaredResourceVO } from '@/api/aigov/resourceBinding/types';
 
@@ -74,5 +77,44 @@ describe('工具/知识绑定展示助手', () => {
     expect(scopeLabel('')).toBe('不限');
     expect(scopeLabel(88)).toBe('88');
     expect(scopeLabel('PLANNING')).toBe('PLANNING');
+  });
+
+  it('范围摘要：四列一起给，空列显式写成「不限」', () => {
+    expect(scopeSummary(null)).toBe('不限 / 不限 / 不限 / 不限');
+    expect(scopeSummary({})).toBe('不限 / 不限 / 不限 / 不限');
+    expect(scopeSummary({ companyId: 88, scenarioCode: 'PLANNING' })).toBe('88 / 不限 / PLANNING / 不限');
+  });
+
+  it('★ 删除确认文案必须同时说清三件事：删哪一条、什么范围、删完能否重绑', () => {
+    const text = bindingDeleteConfirmText({
+      bindingId: '123',
+      resourceType: 'TOOL',
+      resourceCode: 'mt_verify_tool',
+      companyId: 88
+    });
+    // ① 删哪一条（类型 + 编码）
+    expect(text).toContain('工具');
+    expect(text).toContain('mt_verify_tool');
+    // ② 什么范围（否则按编码看一眼就点了，可能删错范围）
+    expect(text).toContain('范围：88 / 不限 / 不限 / 不限');
+    // ③ 删完能否重绑（少这句，人就不敢点，绑错的范围会永远卡在那里）
+    expect(text).toContain('删除后同范围可以重新绑定');
+
+    // 缺字段也不炸：编码缺失时明确写出来，而不是拼出「工具「undefined」」
+    const bare = bindingDeleteConfirmText({});
+    expect(bare).toContain('（无编码）');
+    expect(bare).not.toContain('undefined');
+  });
+
+  it('★ 没有可用绑定ID时不许发删除请求（空 ID 会打到一个不存在的地址上）', () => {
+    expect(hasDeletableId({ bindingId: '2109546394996940802' })).toBe(true);
+    expect(hasDeletableId({ bindingId: 88 })).toBe(true);
+    expect(hasDeletableId({})).toBe(false);
+    expect(hasDeletableId(null)).toBe(false);
+    expect(hasDeletableId({ bindingId: '' })).toBe(false);
+    expect(hasDeletableId({ bindingId: null })).toBe(false);
+    // 服务端真发过这种"字符串化的空值"：它不是空，但也不能拿去拼 URL
+    expect(hasDeletableId({ bindingId: 'undefined' })).toBe(false);
+    expect(hasDeletableId({ bindingId: '   ' })).toBe(false);
   });
 });

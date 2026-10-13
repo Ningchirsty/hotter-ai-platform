@@ -101,6 +101,19 @@
           </template>
         </el-table-column>
         <el-table-column label="创建时间" align="center" prop="createTime" width="160" show-overflow-tooltip />
+        <el-table-column label="操作" align="center" width="100" fixed="right">
+          <template #default="{ row }">
+            <el-button
+              v-hasPermi="['aig:agent:resource-binding']"
+              link
+              type="danger"
+              icon="Delete"
+              @click="handleDelete(row)"
+            >
+              删除
+            </el-button>
+          </template>
+        </el-table-column>
       </el-table>
 
       <pagination
@@ -205,7 +218,7 @@
 </template>
 
 <script setup lang="ts">
-import { addResourceBinding, getDeclaredResources, listResourceBinding } from '@/api/aigov/resourceBinding';
+import { addResourceBinding, delResourceBinding, getDeclaredResources, listResourceBinding } from '@/api/aigov/resourceBinding';
 import type {
   AigAgentDeclaredResourceVO,
   AigAgentResourceBindingForm,
@@ -217,10 +230,12 @@ import { useSearchReset } from '@/hooks/form/useSearchReset';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import modal from '@/plugins/modal';
 import {
+  bindingDeleteConfirmText,
   declaredHint,
   declaredItems,
   declaredOptionLabel,
   forbiddenNote,
+  hasDeletableId,
   RESOURCE_TYPE_OPTIONS,
   resourceTypeLabel,
   scopeLabel
@@ -332,6 +347,30 @@ const submitForm = async () => {
   await addResourceBinding(form.value);
   modal.msgSuccess('新增成功');
   dialogVisible.value = false;
+  getList();
+};
+
+/**
+ * 删除一条绑定。
+ *
+ * 为什么要有这个按钮：范围列不可改、同一范围又只能绑一次——绑错范围时没有出路，
+ * 而服务端的重复检查文案自己写着「要改范围请删掉旧的那条再建」。
+ * 逻辑删除，删掉之后同范围可以立刻重建（不必等 5 秒防重窗：这个接口刻意没加 @RepeatSubmit）。
+ */
+const handleDelete = async (row: AigAgentResourceBindingVO) => {
+  // 先挡"没有可用ID"：空 ID 拼进 URL 会打到一个不存在的地址上，错误看着像"删除失败"而不是"列表数据异常"
+  if (!hasDeletableId(row)) {
+    modal.msgError('这条绑定没有可用的绑定ID，无法删除（列表数据异常，请刷新后重试）');
+    return;
+  }
+  try {
+    await modal.confirm(bindingDeleteConfirmText(row));
+  } catch {
+    // 用户取消：不是错误，静默返回（不要把「取消」弹成错误提示）
+    return;
+  }
+  await delResourceBinding(row.bindingId as string | number);
+  modal.msgSuccess('删除成功');
   getList();
 };
 
