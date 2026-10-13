@@ -62,6 +62,9 @@ public class ImageThumbnailService {
         }
         try {
             BufferedImage original = ImageIO.read(source.toFile());
+            if(original==null && "image/webp".equalsIgnoreCase(contentType) && Files.size(source)<=20L*1024*1024) {
+                original=org.dromara.ai.image.cloud.CloudImageRenderer.decode(Files.readAllBytes(source));
+            }
             if (original == null) {
                 return null;
             }
@@ -72,7 +75,7 @@ public class ImageThumbnailService {
             byte[] bytes = out.toByteArray();
             Files.write(target, bytes);
             return bytes;
-        } catch (IOException e) {
+        } catch (IOException | org.dromara.ai.image.exception.ImageTaskException e) {
             log.warn("生成缩略图失败：{}", e.getMessage());
             return null;
         }

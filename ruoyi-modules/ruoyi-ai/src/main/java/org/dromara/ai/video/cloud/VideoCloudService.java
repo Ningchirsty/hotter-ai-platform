@@ -142,6 +142,7 @@ public class VideoCloudService {
         if(Math.abs((double)width/height-ratio)>ratio*.02)throw VideoTaskException.invalidContract("Wan 图生视频沿用首帧比例，请选择与图片一致的画面比例");
     }
     static void validateOutput(CloudVideoRequest request,int width,int height) {
+        if(SeedanceOutputGeometry.applies(request.model())) { SeedanceOutputGeometry.validate(request,width,height);return; }
         int expected=switch(request.resolution()){case "480p"->480;case "720p"->720;case "768p"->768;case "1080p"->1080;case "4k"->2160;default->0;};
         if(expected>0&&Math.min(width,height)!=expected)throw VideoTaskException.outputInvalid("视频分辨率与请求不符");
         if(!request.ratio().equals("adaptive")){String[] r=request.ratio().split(":");double ratio=Double.parseDouble(r[0])/Double.parseDouble(r[1]);if(Math.abs((double)width/height-ratio)>ratio*.02)throw VideoTaskException.outputInvalid("视频比例与请求不符");}

@@ -62,6 +62,7 @@ public class BluOctoImageClient {
         try {
             var fields = new java.util.LinkedHashMap<String, Object>();
             fields.put("model", model); fields.put("prompt", input.prompt());
+            fields.put("response_format", "b64_json");
             if ("TRANSPARENT".equals(input.capability())) {
                 fields.put("background", "transparent"); fields.put("output_format", "png");
                 fields.put("size", "1024x1024"); fields.put("quality", "low");
@@ -144,7 +145,7 @@ public class BluOctoImageClient {
     private byte[] fetchImage(URI uri) {
         assertOutputUrl(uri);
         // 输出下载永不带 API Key，并禁止跳转到未核准域名。
-        return send(HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(60)).GET().build(), MAX_IMAGE_BYTES);
+        return send(HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(300)).GET().build(), MAX_IMAGE_BYTES);
     }
 
     void assertOutputUrl(URI uri) {
