@@ -181,7 +181,7 @@
               submitting
                 ? '提交中…'
                 : generationSource === 'cloud'
-                  ? (cloudDraft.ready ? '提交云端生成' : cloudDraft.blockReason?.includes('输出参数') ? '所选参数待验证' : cloudDraft.blockReason?.includes('验证') ? '此能力暂不可提交' : '请完成配置与素材')
+                  ? (cloudDraft.ready ? '提交云端生成' : cloudDraft.blockReason?.includes('输出参数') ? '请调整输出参数' : cloudDraft.blockReason?.includes('验证') ? '此能力暂不可提交' : '请完成配置与素材')
                   : canSubmit
                     ? '提交生成'
                     : '暂不可提交'

@@ -41,14 +41,14 @@ public class ImageCloudService {
 
     ImageCloudService(ImageCloudProperties properties, BluOctoImageClient client,
                       ImageTaskRepository repository, ImageAssetStore assets, java.util.function.LongSupplier ids) {
-        this(properties, client, repository, assets, ids, CloudImageRequest::verified);
+        this(properties, client, repository, assets, ids, CloudImageRequest::supported);
     }
 
     // 离线回放只可在包内显式注入历史验收结果；生产控制器不接受此开关。
     ImageCloudService(ImageCloudProperties properties, BluOctoImageClient client,
                       ImageTaskRepository repository, ImageAssetStore assets, java.util.function.LongSupplier ids,
                       java.util.function.BiPredicate<String, String> verification) {
-        this(properties,client,repository,assets,ids,verification,CloudImageOutputValidation::requireVerified);
+        this(properties,client,repository,assets,ids,verification,CloudImageOutputValidation::requireSupported);
     }
 
     // 包内离线测试的参数验收替身，不接受配置或浏览器开关。
@@ -174,10 +174,11 @@ public class ImageCloudService {
             List<byte[]> outputs = request.output().custom() ? client.generateBatch(request, request.inputs(repository, assets, context.tenantId(), context.userId()))
                 : List.of("T2I".equals(request.capability()) ? client.generate(request.model(),request.prompt())
                     : client.generate(request,request.inputs(repository,assets,context.tenantId(),context.userId())));
+            outputs = outputs.stream().map(content -> CloudImageRenderer.render(content, request.output(), request.capability()).content()).toList();
             if(outputs.size() != request.output().n()) throw invalid("输出数量与任务快照不一致");
             // 先核对全部输出，不能把供应商忽略参数的结果当作验收成功。
             for(byte[] output : outputs) {
-                var probe=ImageAssetProbe.probeBytes(output);
+                var probe=CloudImageRenderer.probe(output);
                 if(!probe.measured() || probe.exceedsPixels(16*1024*1024)) throw invalid("输出图像无效或超过像素上限");
                 if(request.output().size() != null && !(probe.width()+"x"+probe.height()).equals(request.output().size())) throw invalid("供应商返回尺寸与请求尺寸不一致");
                 if(request.output().outputFormat() != null && !probe.format().equalsIgnoreCase(request.output().outputFormat())) throw invalid("供应商返回格式与请求格式不一致");
@@ -185,18 +186,18 @@ public class ImageCloudService {
             ImageTaskOrchestrator.ExecutionResult primary=null;
             int index=0;long primarySize=0;
             for(byte[] content : outputs) {
-                ImageAssetProbe.Probe head = ImageAssetProbe.probeBytes(content);
+                ImageAssetProbe.Probe head = CloudImageRenderer.probe(content);
                 if (!head.measured() || head.width() <= 0 || head.height() <= 0 || head.exceedsPixels(16 * 1024 * 1024)) {
                     throw invalid("云端返回的图片无法识别或超过 16MP 像素上限");
                 }
                 String format = head.format().toLowerCase(java.util.Locale.ROOT);
                 if (!List.of("png", "jpeg", "jpg", "webp").contains(format)) throw invalid("云端输出不是支持的图片格式");
-                var image = ImageIO.read(new ByteArrayInputStream(content));
+                var image = CloudImageRenderer.decode(content);
                 if (image == null) throw invalid("云端图片无法解码");
                 boolean alpha = image.getColorModel().hasAlpha();
                 if ("TRANSPARENT".equals(request.capability())) {
                     boolean transparent = false;
-                    if ("png".equals(format) && alpha) {
+                    if (List.of("png", "webp").contains(format) && alpha) {
                         scan: for (int y=0; y<image.getHeight(); y++) for (int x=0; x<image.getWidth(); x++) {
                             if ((image.getRGB(x,y) >>> 24) == 0) { transparent = true; break scan; }
                         }

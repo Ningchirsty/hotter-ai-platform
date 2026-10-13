@@ -268,6 +268,7 @@
         {{
           videoCloudAccess(draft, status) === 'verified'
             ? '当前参数组合已完成真实验收'
+            : videoCloudAccess(draft, status) === 'available' ? '当前模型与参数可提交生成'
             : videoCloudAccess(draft, status) === 'validation'
               ? '本批次一次性验收，可真实提交'
               : '当前参数组合待成片验收'

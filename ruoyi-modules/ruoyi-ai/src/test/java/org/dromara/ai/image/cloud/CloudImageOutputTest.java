@@ -33,7 +33,7 @@ class CloudImageOutputTest {
         server.createContext("/v1/images/generations",ex->{
             calls.incrementAndGet();var json=new ObjectMapper().readTree(ex.getRequestBody());
             assertEquals("1536x1024",json.path("size").asText());assertEquals(2,json.path("n").asInt());
-            assertEquals("medium",json.path("quality").asText());assertEquals("jpeg",json.path("output_format").asText());
+            assertEquals("medium",json.path("quality").asText());assertFalse(json.has("output_format"),"encoding belongs to archive conversion, never another vendor generation");
             byte[] response="{\"data\":[{\"b64_json\":\"AQID\"},{\"b64_json\":\"BAUG\"}]}".getBytes();ex.sendResponseHeaders(200,response.length);ex.getResponseBody().write(response);ex.close();
         });server.start();
         try {

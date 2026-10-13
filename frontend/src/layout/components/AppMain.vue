@@ -1,5 +1,5 @@
 <template>
-  <section class="app-main">
+  <section class="app-main" :class="{ 'creation-page': isCreationPage }">
     <router-view v-slot="{ Component, route }">
       <transition :enter-active-class="animate" mode="out-in">
         <keep-alive :include="tagsViewStore.cachedViews">
@@ -24,6 +24,7 @@ import { useTagsViewStore } from '@/store/modules/tagsView';
 import IframeToggle from './IframeToggle/index.vue';
 
 const route = useRoute();
+const isCreationPage = computed(() => ['/ai-tools/image-creation', '/ai-tools/video-creation'].includes(route.path));
 const tagsViewStore = useTagsViewStore();
 useFullHeightTable();
 
@@ -88,6 +89,18 @@ function addIframe() {
 .app-main.with-fixed-header.with-tags-view {
   min-height: calc(100vh - 111px);
   padding-top: 111px;
+}
+
+// Keep creation scrolling inside the content viewport, below the navigation frame.
+.app-main.creation-page {
+  box-sizing: border-box;
+  min-height: 0;
+  height: calc(100dvh - 64px);
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  &.with-tags-view { height: calc(100dvh - 105px); }
+  &.with-fixed-header { margin-top: 64px; padding-top: 12px; }
+  &.with-fixed-header.with-tags-view { margin-top: 105px; padding-top: 12px; }
 }
 
 .app-main-footer {

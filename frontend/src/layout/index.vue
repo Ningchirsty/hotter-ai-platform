@@ -111,7 +111,7 @@ const setLayout = () => {
   flex-direction: column;
   gap: 3px;
   padding: 12px 12px 0;
-  background: transparent;
+  background: var(--app-shell-bg);
 }
 
 .fixed-header {

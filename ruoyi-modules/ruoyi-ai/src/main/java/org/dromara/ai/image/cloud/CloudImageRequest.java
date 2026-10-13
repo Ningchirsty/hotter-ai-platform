@@ -25,11 +25,14 @@ public record CloudImageRequest(String model, String prompt, String capability,
     public static boolean testedModel(String model) {
         return model != null && List.of("gpt-image-2.5-flare", "gpt-image-2.5-sunburst").contains(model);
     }
+    public static boolean supported(String model, String capability) {
+        return model != null && !"flux-2-pro".equals(model) && CloudImageValidation.capabilities(model).contains(capability);
+    }
     public static boolean verified(String model, String capability) { return CloudImageValidation.verified(model, capability); }
     public static List<Map<String, Object>> profiles() {
         return BluOctoImageClient.MODELS.stream().map(model -> Map.<String, Object>of(
             "model", model, "testedAt", CloudImageValidation.testedAt(model),
-            "outputProfiles", CloudImageOutputValidation.profiles(model),
+            "outputProfiles", CloudImageOutputValidation.profiles(model), "submissionPolicy", "supported",
             "maxReferenceImages", CloudImageValidation.maxReferences(model), "maxReferenceBytes", CloudImageValidation.maxReferenceBytes(model),
             "capabilities", CloudImageValidation.capabilities(model).stream().map(cap -> Map.of(
                 "code", cap, "verified", verified(model, cap), "historicallyVerified", testedModel(model) && "T2I".equals(cap),

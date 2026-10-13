@@ -29,6 +29,7 @@ public record CloudVideoRequest(String model, String capability, String prompt, 
         }
         if (references.size() > profile.path("maxImages").asInt() + profile.path("maxVideos").asInt() + profile.path("maxAudios").asInt()) reject("参考素材数量超过上限");
         long first=count("first_frame"), last=count("last_frame"), images=count("reference_image"), videos=count("reference_video"), audios=count("reference_audio");
+        if("wan2.7-r2v".equals(model) && (prompt.length()>5000 || images+videos>5 || audios>images+videos)) reject("参考生视频描述最多 5000 字，图片与视频合计最多 5 个；每份音频需对应一个参考主体");
         if (first>1 || last>1 || images>profile.path("maxImages").asInt() || videos>profile.path("maxVideos").asInt() || audios>profile.path("maxAudios").asInt()) reject("参考素材数量超过型号上限");
         if("MiniMax".equals(profile.path("family").asText()) && "T2V".equals(capability) && "adaptive".equals(ratio))reject("文生视频需要具体画面比例");
         switch (capability) {

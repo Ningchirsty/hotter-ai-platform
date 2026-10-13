@@ -161,5 +161,5 @@ export interface CloudImageModelsVO {
   models: string[];
   capabilities: string[];
   verified: boolean;
-  profiles?: { model: string; testedAt: string; maxReferenceImages?: number; maxReferenceBytes?: number; outputProfiles?: CloudImageOutputProfile[]; capabilities: {code: string; verified: boolean; historicallyVerified?: boolean; status: string}[] }[];
+  profiles?: { submissionPolicy?: 'supported'; model: string; testedAt: string; maxReferenceImages?: number; maxReferenceBytes?: number; outputProfiles?: CloudImageOutputProfile[]; capabilities: {code: string; verified: boolean; historicallyVerified?: boolean; status: string}[] }[];
 }

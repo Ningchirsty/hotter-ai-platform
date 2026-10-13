@@ -6,13 +6,18 @@ export function outputCandidates(model:string,capability:string,key:OutputKey):s
   const gpt=model.startsWith('gpt-');
   if(key === 'n') return ['1','2'];
   if(key === 'size') return ['', '1024x1024','1536x1024','1024x1536',...(!gpt ? ['2048x2048'] : [])];
-  if(!gpt) return [''];
+  if(!gpt && key === 'quality') return [''];
   if(key === 'quality') return ['','low','medium','high'];
   return capability === 'TRANSPARENT' ? ['','png','webp'] : ['','png','jpeg','webp'];
 }
 export function outputParameterVerified(status:CloudImageModelsVO|undefined,model:string,capability:string,key:OutputKey,value:string):boolean {
   if(!value || (key === 'n' && value === '1')) return true;
   return Boolean(status?.profiles?.find(p=>p.model === model)?.outputProfiles?.some(p=>p.capability === capability && p.verifiedFields?.includes(key) && outputValue(p.output,key) === value));
+}
+/** Supported admission and historical measurement are intentionally separate. */
+export function outputAvailable(status:CloudImageModelsVO|undefined,model:string,capability:string,output:CloudImageOutputParams):boolean {
+  if(status?.profiles?.find(p=>p.model===model)?.submissionPolicy !== 'supported') return outputVerified(status,model,capability,output);
+  return outputFields.every(f=>outputCandidates(model,capability,f.key).includes(outputValue(output,f.key)));
 }
 export function outputVerified(status:CloudImageModelsVO|undefined,model:string,capability:string,output:CloudImageOutputParams):boolean {
   return outputFields.every(f=>outputParameterVerified(status,model,capability,f.key,outputValue(output,f.key)));
@@ -39,6 +44,7 @@ export function observedOutputFormat(status:CloudImageModelsVO|undefined,model:s
 
 /** Keep measured failures separate from options that have never been tested. */
 export function outputParameterStatusLabel(status:CloudImageModelsVO|undefined,model:string,capability:string,key:OutputKey,value:string):string {
+  if(status?.profiles?.find(p=>p.model===model)?.submissionPolicy === 'supported' && outputCandidates(model,capability,key).includes(value)) return '';
   if(outputParameterVerified(status,model,capability,key,value)) return '';
   const checks=status?.profiles?.find(p=>p.model === model)?.outputProfiles?.filter(p=>p.capability === capability && outputValue(p.output,key) === value && p.parameterResults?.[key]);
   const result=checks?.at(-1)?.parameterResults?.[key];

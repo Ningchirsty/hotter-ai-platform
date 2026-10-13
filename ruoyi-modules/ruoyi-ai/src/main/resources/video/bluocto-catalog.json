@@ -560,12 +560,7 @@
         7,
         8,
         9,
-        10,
-        11,
-        12,
-        13,
-        14,
-        15
+        10
       ],
       "resolutions": [
         "720p",
@@ -578,15 +573,15 @@
         "4:3",
         "3:4"
       ],
-      "protocol": "unconfirmed",
-      "maxImages": 9,
-      "hasVideoReference": false,
-      "hasAudioReference": false,
+      "protocol": "alibaba",
+      "maxImages": 5,
+      "hasVideoReference": true,
+      "hasAudioReference": true,
       "hasAudioOutput": true,
       "billingExpression": "u(\"resolution\") == \"1080p\" ? tier(\"1080p\", u(\"seconds\") * 0.153) : tier(\"720p\", u(\"seconds\") * 0.0816)",
       "verified": false,
-      "maxVideos": 3,
-      "maxAudios": 3,
+      "maxVideos": 5,
+      "maxAudios": 5,
       "maxVideoSeconds": 15,
       "hasSeed": true
     },

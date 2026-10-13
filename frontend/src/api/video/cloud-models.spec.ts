@@ -1,5 +1,22 @@
 import { describe, it, expect } from 'vitest';
-import { VIDEO_CLOUD_PROFILES as models, normalizeVideoCloudDraft, type VideoCloudDraft } from './cloud-models';
+import { VIDEO_CLOUD_PROFILES as models, normalizeVideoCloudDraft, videoCloudAccess, type VideoCloudDraft } from './cloud-models';
+
+describe('supported production video admission', () => {
+  const status={configured:true,referenceDeliveryConfigured:true,profiles:models,verifiedVariants:[],validationVariants:[],validationRemaining:0,submissionPolicy:'supported' as const};
+  it('allows every supported model/capability/specification independently of expired test quota',()=>{
+    for(const profile of models.filter(p=>p.protocol !== 'unconfirmed')) for(const capability of profile.capabilities) for(const seconds of profile.durations) for(const resolution of profile.resolutions) for(const ratio of profile.ratios) {
+      if(profile.family==='MiniMax' && capability==='T2V' && ratio==='adaptive')continue;
+      expect(videoCloudAccess({model:profile.id,capability,seconds,resolution,ratio,prompt:'scene',references:[],generateAudio:profile.hasAudioOutput},status)).toBe('available');
+    }
+  });
+  it('retains schema restrictions instead of treating any parameters as usable',()=>{
+    const draft={model:models[0].id,capability:'T2V',seconds:3,resolution:'720p',ratio:'16:9',prompt:'scene',references:[]};
+    expect(videoCloudAccess({...draft,seconds:999},status)).toBe('pending');
+    expect(videoCloudAccess({...draft,generateAudio:true},status)).toBe('pending');
+    expect(videoCloudAccess({...draft,seed:123},status)).toBe('pending');
+    expect(videoCloudAccess(draft,{...status,configured:false})).toBe('pending');
+  });
+});
 describe('Cloud video selection', () => {
   it('all model modes have Chinese display labels without changing API model IDs', () => {
     expect(models.every(m => /^[\u4e00-\u9fff]+$/.test(m.mode))).toBe(true);

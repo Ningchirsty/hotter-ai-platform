@@ -1,5 +1,5 @@
 import type { CloudImageModelsVO, CloudImageOutputParams } from '@/api/image/types';
-import { outputDefaults, outputFields, outputParameterVerified, outputValue } from './cloud-image-output';
+import { outputAvailable, outputDefaults, outputFields, outputParameterVerified, outputValue } from './cloud-image-output';
 import { imageCapabilityVerified } from './cloud-image-capabilities';
 
 export function templateCreatePlan(status: CloudImageModelsVO | undefined, template?: { model?: string; outputSize: string }) {
@@ -25,6 +25,7 @@ export function adaptTemplateOutput(status: CloudImageModelsVO | undefined, mode
 /** Template editing keeps the original recipe; existing verification still gates submission. */
 export function templateEditorOutput(status: CloudImageModelsVO | undefined, model: string, capability: string, requested: CloudImageOutputParams) {
   const output = { ...requested };
+  if (outputAvailable(status, model, capability, output)) return { output, note: '模板参数已完整带入，可继续调整并提交生成。' };
   const pending = outputFields.filter(field => !outputParameterVerified(status, model, capability, field.key, outputValue(output, field.key)));
   return { output, note: pending.length ? `${pending.map(field => field.label).join('、')}尚未验证通过，请调整参数后提交。` : '模板参数已完整带入，可继续调整。' };
 }

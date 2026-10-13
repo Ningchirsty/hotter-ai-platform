@@ -22,6 +22,8 @@ public final class CloudImageOutputValidation {
     private static Object value(CloudImageOutput output,String key) {
         return switch(key) { case "size" -> output.size();case "n" -> output.n();case "quality" -> output.quality();case "outputFormat" -> output.outputFormat();default -> null; };
     }
+    /** Admission uses the supported request schema; evidence remains unchanged. */
+    public static void requireSupported(CloudImageRequest input) { input.output().validate(input.model(), input.capability()); }
     public static void requireVerified(CloudImageRequest input) {
         requireVerified(input, profiles(input.model()));
     }
