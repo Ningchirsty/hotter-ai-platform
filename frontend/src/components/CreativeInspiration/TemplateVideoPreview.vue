@@ -1,5 +1,5 @@
 <template>
-  <div ref="element" class="template-video-preview" :class="{ detail }">
+  <div ref="element" class="template-video-preview" :class="{ 'is-detail': detail }">
     <TemplateCover v-if="!url || failed" :id="id" :revision="revision" :title="title" media="video" />
     <video v-if="url && !failed" ref="player" :src="url" :aria-label="title + '示例视频'" muted playsinline :loop="!detail" :controls="detail" preload="metadata" @loadeddata="syncPlayback" @error="failed = true" />
     <span v-if="!detail || !url || failed" class="preview-label">{{ failed ? '视频暂不可用' : !available ? '暂无示例视频' : !url ? '视频加载中…' : '动态预览' }}</span>
@@ -47,7 +47,7 @@ onBeforeUnmount(() => { sequence++; observer?.disconnect(); document.removeEvent
 <style scoped>
 .template-video-preview { position: relative; min-height: 120px; overflow: hidden; border-radius: 10px; background: #edf0f7; }
 video { display: block; width: 100%; max-height: 300px; object-fit: contain; background: #172035; }
-.detail video { max-height: 520px; }
+.is-detail video { max-height: 520px; }
 .preview-label { position: absolute; bottom: 9px; left: 9px; padding: 5px 8px; border-radius: 6px; background: rgba(25, 34, 51, .76); color: #fff; font-size: 11px; }
 .retry { position: absolute; right: 9px; bottom: 9px; padding: 5px 8px; border: 0; border-radius: 6px; background: #fff; color: #6846bc; cursor: pointer; }
 </style>
