@@ -294,7 +294,8 @@
     `settle` 的成功/失败映射；
   - `AigTaskExecutorImplTest`（+5）：人工确认闸门拦在模型调用之前、
     条件无结论同样拦下、流程受阻转人工、放行的 `STEP` 节点按成功/失败收尾。
-- 后端 `ruoyi-ai-gov` 全量：**1239 tests / 0 failures / 0 errors**。
+- 后端 `ruoyi-ai-gov` 全量：D 阶段落地后为 **1239 tests / 0 failures / 0 errors**；
+  加上随后资产索引同步的 6 条测试（`AigAssetIndexServiceImplTest` 2+4），**当前 1245**。
 
 ---
 
