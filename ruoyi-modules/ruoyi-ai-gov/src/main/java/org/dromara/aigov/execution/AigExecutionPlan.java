@@ -105,6 +105,11 @@ public class AigExecutionPlan implements Serializable {
     private final List<String> toolRefs;
 
     /**
+     * 冻结的子 Agent 版本调用顺序（已展开、已校验；空表示无子 Agent）
+     */
+    private final List<Long> subAgentVersionIds;
+
+    /**
      * 本次运行采用的知识资料节（已渲染；可为空表示没有检索资料节）。
      *
      * <p>在解析阶段（{@code AgentExecutionResolver}）由 {@code KnowledgePort} 检索并渲染，
@@ -126,6 +131,7 @@ public class AigExecutionPlan implements Serializable {
                             String inputHash, String capabilityCode, String dataLevel,
                             Boolean allowExternal, BigDecimal maxCost, Integer maxToolCalls,
                             Integer maxDepth, List<String> knowledgeRefs, List<String> toolRefs,
+                            List<Long> subAgentVersionIds,
                             String retrievedKnowledgeBlock, List<AigExecutionCitation> knowledgeCitations) {
         this.planId = planId;
         this.taskId = taskId;
@@ -142,6 +148,7 @@ public class AigExecutionPlan implements Serializable {
         this.maxDepth = maxDepth;
         this.knowledgeRefs = knowledgeRefs == null ? List.of() : List.copyOf(knowledgeRefs);
         this.toolRefs = toolRefs == null ? List.of() : List.copyOf(toolRefs);
+        this.subAgentVersionIds = subAgentVersionIds == null ? List.of() : List.copyOf(subAgentVersionIds);
         this.retrievedKnowledgeBlock = retrievedKnowledgeBlock;
         this.knowledgeCitations = knowledgeCitations == null
             ? List.of() : List.copyOf(knowledgeCitations);

@@ -71,6 +71,11 @@ public class AigExecutionConfig implements Serializable {
     private final List<String> toolRefs;
 
     /**
+     * 子 Agent 版本引用（{@code subAgentRefs[].agentVersionId}，按声明顺序）
+     */
+    private final List<Long> subAgentVersionIds;
+
+    /**
      * 一次运行最大工具调用次数（可空）
      */
     private final Integer maxToolCalls;
@@ -99,6 +104,7 @@ public class AigExecutionConfig implements Serializable {
         this.outputPresentation = str(root.get("outputPresentation"));
         this.knowledgeRefs = codes(root.get("knowledgeRefs"), "collectionCode");
         this.toolRefs = codes(root.get("toolRefs"), "toolCode");
+        this.subAgentVersionIds = longIds(root.get("subAgentRefs"), "agentVersionId");
         Map<String, Object> limits = root.get("limits") instanceof Map<?, ?> m
             ? (Map<String, Object>) m : Map.of();
         this.maxToolCalls = intOrNull(limits.get("maxToolCalls"));
@@ -160,6 +166,31 @@ public class AigExecutionConfig implements Serializable {
 
     private static String str(Object value) {
         return value == null ? null : String.valueOf(value);
+    }
+
+    /**
+     * 从任意对象里提取 {@code List<Map>} 的某个数值键（用于 {@code subAgentRefs[].agentVersionId}）。
+     */
+    @SuppressWarnings("unchecked")
+    private static List<Long> longIds(Object value, String key) {
+        List<Long> out = new ArrayList<>();
+        if (value instanceof List<?> list) {
+            for (Object item : list) {
+                if (item instanceof Map<?, ?> m) {
+                    Object raw = ((Map<String, Object>) m).get(key);
+                    if (raw instanceof Number n) {
+                        out.add(n.longValue());
+                    } else if (raw instanceof String s && !s.isBlank()) {
+                        try {
+                            out.add(Long.parseLong(s.trim()));
+                        } catch (NumberFormatException ignored) {
+                            // 不是数字就跳过：声明写错不该让整个配置解析失败
+                        }
+                    }
+                }
+            }
+        }
+        return out;
     }
 
     private static int intValue(Object value, int fallback) {

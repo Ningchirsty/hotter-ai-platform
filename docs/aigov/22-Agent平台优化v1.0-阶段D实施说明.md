@@ -62,13 +62,30 @@
 
 ---
 
+### 1.7 子 Agent 顺序编排（D-3）
+
+- `AigSubAgentOrchestration`（纯函数）：按声明顺序展开子 Agent，每一步带 `depth` 与
+  `parentVersionId`（父任务据此记录子任务、输入摘要与结果引用）；
+  **循环引用与超深在展开时拒绝**——循环会让编排在运行时无限展开，超深要拒绝而不是截断
+  （截断会静默少跑一段，看起来像成功）；
+- `ISubAgentGraphResolver` / `AigSubAgentGraphResolver`：从版本 `config_json` 的
+  `subAgentRefs[].agentVersionId` 取直接子版本；
+- `AigExecutionConfig` 解析 `subAgentRefs`，`AigExecutionPlan` 新增
+  `subAgentVersionIds`（已展开、已校验、可空）；
+- 解析器在声明了子 Agent 时执行展开与校验，被拒即抛错（不产出计划）。
+
+---
+
 ## 2 本轮**不做**的事（明确的边界）
 
 1. **HTTP 接口与权限点（已在 D-2 补齐）**：`GET /aigov/tools`（可绑定工具清单）、
    `POST /aigov/tools/definitions`、`POST /aigov/tools/versions`，权限点 `aig:tool:list` /
    `aig:tool:manage`，种子脚本 `script/sql/aig_tool_menu.sql`。
-2. **子 Agent 编排与顺序流程**：设计 §6.5 的顺序步骤/条件/人工节点、子 Agent 最大深度与
-   超时预算尚未实现。
+2. **子 Agent 编排与顺序流程（D-3 已落地顺序编排）**：`AigSubAgentOrchestration`（纯函数）
+   按声明顺序展开子 Agent，**展开时**拒绝循环引用与超深（不截断、不等运行时超时）；
+   `ISubAgentGraphResolver` 从版本 `config_json` 的 `subAgentRefs` 取子版本；
+   解析器把展开结果冻结进 `AigExecutionPlan.subAgentVersionIds`。
+   **尚未做**：顺序流程节点（条件/人工确认/输出节点）与 LiteFlow/WarmFlow 适配器。
 3. **工具接入执行计划**：`AigExecutionPlan.toolRefs` 已冻结，但执行路径尚未把
    `toolCall` 交给本服务（下一增量：解析 toolRefs → 权限与确认检查 → 调用 → 结果回填）。
 4. **真实业务工具执行器**：本仓尚无业务域执行器实现；`ToolExecutor` 只是端口，
@@ -84,7 +101,7 @@
   - `AigToolRegistryServiceImplTest`（8）：只读执行并落账本、未接入不落账本、
     写操作批准缺失/过期不执行、有效批准执行、幂等回放、RUNNING→结果未知、
     执行异常→结果未知不重试、非法操作类型拒绝。
-- 后端 `ruoyi-ai-gov` 全量：**1125 tests / 0 failures / 0 errors**（D-1 后 1124 + D-2 的清单用例）。
+- 后端 `ruoyi-ai-gov` 全量：**1144 tests / 0 failures / 0 errors**。
 
 ---
 

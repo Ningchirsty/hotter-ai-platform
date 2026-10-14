@@ -47,6 +47,7 @@ class AigAgentExecutionResolverTest {
     private AigAgentVersionMapper agentVersionMapper;
     private IAigAgentRegistryService registryService;
     private KnowledgePort knowledgePort;
+    private ISubAgentGraphResolver subAgentGraphResolver;
     private AigAgentExecutionResolver resolver;
 
     @BeforeEach
@@ -54,10 +55,13 @@ class AigAgentExecutionResolverTest {
         agentVersionMapper = mock(AigAgentVersionMapper.class);
         registryService = mock(IAigAgentRegistryService.class);
         knowledgePort = mock(KnowledgePort.class);
+        subAgentGraphResolver = mock(ISubAgentGraphResolver.class);
         // 默认：授权范围内没有命中任何片段（noSupport），既有用例行为不变
         when(knowledgePort.retrieve(any())).thenReturn(KnowledgePort.RetrievalResult.of(java.util.List.of()));
+        // 默认：没有子 Agent
+        when(subAgentGraphResolver.childrenOf(any())).thenReturn(java.util.List.of());
         resolver = new AigAgentExecutionResolver(agentVersionMapper, registryService, knowledgePort,
-            JsonMapper.builder().build());
+            subAgentGraphResolver, JsonMapper.builder().build());
     }
 
     private static AigAgentVersion version(String configJson, String allowExternal, String promptTemplate) {
@@ -170,6 +174,33 @@ class AigAgentExecutionResolverTest {
         String prompt = plan.composePrompt("业务输入");
         assertTrue(prompt.contains("未检索到授权范围内的可用资料"), prompt);
         assertTrue(prompt.contains("不要编造事实"), prompt);
+    }
+
+    @Test
+    @DisplayName("★ D05：声明了子 Agent 时展开并校验，顺序冻结进计划")
+    void subAgentOrchestrationIsFrozen() {
+        String config = "{\"schemaVersion\":2,\"subAgentRefs\":[{\"agentVersionId\":501}],"
+            + "\"limits\":{\"maxDepth\":1}}";
+        when(agentVersionMapper.selectById(VERSION_ID)).thenReturn(version(config, "Y", "SYS"));
+        when(subAgentGraphResolver.childrenOf(VERSION_ID)).thenReturn(java.util.List.of(501L));
+        when(subAgentGraphResolver.childrenOf(501L)).thenReturn(java.util.List.of());
+
+        AigExecutionPlan plan = resolve();
+
+        assertEquals(java.util.List.of(501L), plan.getSubAgentVersionIds());
+    }
+
+    @Test
+    @DisplayName("★ D05：子 Agent 循环引用在解析阶段就被拒绝（不等运行时展开）")
+    void subAgentCycleIsRejected() {
+        String config = "{\"schemaVersion\":2,\"subAgentRefs\":[{\"agentVersionId\":501}],"
+            + "\"limits\":{\"maxDepth\":3}}";
+        when(agentVersionMapper.selectById(VERSION_ID)).thenReturn(version(config, "Y", "SYS"));
+        when(subAgentGraphResolver.childrenOf(VERSION_ID)).thenReturn(java.util.List.of(501L));
+        when(subAgentGraphResolver.childrenOf(501L)).thenReturn(java.util.List.of(VERSION_ID));
+
+        ServiceException ex = assertThrows(ServiceException.class, this::resolve);
+        assertTrue(ex.getMessage().contains("循环引用"), ex.getMessage());
     }
 
     @Test

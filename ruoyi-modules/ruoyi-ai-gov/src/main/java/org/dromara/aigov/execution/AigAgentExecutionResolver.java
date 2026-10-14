@@ -50,6 +50,7 @@ public class AigAgentExecutionResolver implements IAigAgentExecutionResolver {
     private final AigAgentVersionMapper agentVersionMapper;
     private final IAigAgentRegistryService registryService;
     private final KnowledgePort knowledgePort;
+    private final ISubAgentGraphResolver subAgentGraphResolver;
     private final JsonMapper jsonMapper;
 
     @Override
@@ -109,6 +110,21 @@ public class AigAgentExecutionResolver implements IAigAgentExecutionResolver {
                 retrieval.reason());
         }
 
+        // ★ D05：子 Agent 顺序编排——展开并校验（最大深度、禁止循环），结果冻结进计划。
+        //   超限/循环一律拒绝，而不是截断或等运行时超时。
+        List<Long> subAgentVersionIds = List.of();
+        if (!config.getSubAgentVersionIds().isEmpty()) {
+            int maxDepth = config.getMaxDepth() == null ? 1 : config.getMaxDepth();
+            AigSubAgentOrchestration.Result orchestration = AigSubAgentOrchestration.plan(
+                version.getAgentVersionId(), subAgentGraphResolver::childrenOf, maxDepth);
+            if (!orchestration.accepted()) {
+                throw new ServiceException("子 Agent 编排被拒绝：" + orchestration.rejectionReason());
+            }
+            subAgentVersionIds = orchestration.steps().stream()
+                .map(AigSubAgentOrchestration.Step::versionId)
+                .toList();
+        }
+
         AigExecutionPlan plan = AigExecutionPlan.builder()
             .planId(planId)
             .taskId(taskId)
@@ -125,6 +141,7 @@ public class AigAgentExecutionResolver implements IAigAgentExecutionResolver {
             .maxDepth(config.getMaxDepth())
             .knowledgeRefs(config.getKnowledgeRefs())
             .toolRefs(config.getToolRefs())
+            .subAgentVersionIds(subAgentVersionIds)
             .retrievedKnowledgeBlock(knowledgeBlock)
             .knowledgeCitations(citations)
             .build();
