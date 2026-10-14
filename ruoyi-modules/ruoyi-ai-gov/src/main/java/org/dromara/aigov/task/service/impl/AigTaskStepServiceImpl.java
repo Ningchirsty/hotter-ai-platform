@@ -1,6 +1,7 @@
 package org.dromara.aigov.task.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.aigov.execution.AigExecutionPlan;
@@ -9,7 +10,10 @@ import org.dromara.aigov.task.domain.AigTaskStep;
 import org.dromara.aigov.task.enums.AigTaskStepKindEnum;
 import org.dromara.aigov.task.enums.AigTaskStepStatusEnum;
 import org.dromara.aigov.task.mapper.AigTaskStepMapper;
+import org.dromara.aigov.task.service.AigTaskStepTransition;
 import org.dromara.aigov.task.service.IAigTaskStepService;
+import org.dromara.common.core.exception.ServiceException;
+import org.dromara.common.core.utils.StringUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -79,8 +83,76 @@ public class AigTaskStepServiceImpl implements IAigTaskStepService {
             .orderByAsc(AigTaskStep::getSequence));
     }
 
-    private static AigTaskStep newStep(Long taskId, int sequence, AigTaskStepKindEnum kind,
-                                       Long resourceVersionId, String inputHash) {
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public AigTaskStep startStep(Long stepId) {
+        AigTaskStep step = requireStep(stepId);
+        AigTaskStepStatusEnum from = AigTaskStepStatusEnum.find(step.getStatus());
+        if (from == AigTaskStepStatusEnum.RUNNING) {
+            // 幂等：重复"开始"不报错，也不改状态
+            return step;
+        }
+        if (!AigTaskStepTransition.canMove(from, AigTaskStepStatusEnum.RUNNING)) {
+            throw new ServiceException("步骤状态不允许开始：" + step.getStatus()
+                + "（stepId=" + stepId + "）");
+        }
+        return casTransition(step, from, AigTaskStepStatusEnum.RUNNING, null, null, null, null);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public AigTaskStep finishStep(Long stepId, AigTaskStepStatusEnum status, String outputRef,
+                                  String approvalRef, String errorCode, String errorMessage) {
+        AigTaskStep step = requireStep(stepId);
+        AigTaskStepStatusEnum from = AigTaskStepStatusEnum.find(step.getStatus());
+        if (from != null && from.isTerminal()) {
+            // 幂等：不覆盖"它曾经失败过/成功过"的事实
+            return step;
+        }
+        if (!AigTaskStepTransition.canMove(from, status)) {
+            throw new ServiceException("步骤状态不允许从 " + step.getStatus() + " 迁移到 "
+                + (status == null ? null : status.getCode()) + "（stepId=" + stepId + "）");
+        }
+        return casTransition(step, from, status, outputRef, approvalRef, errorCode, errorMessage);
+    }
+
+    private AigTaskStep requireStep(Long stepId) {
+        if (stepId == null) {
+            throw new ServiceException("步骤ID不能为空");
+        }
+        AigTaskStep step = stepMapper.selectById(stepId);
+        if (step == null) {
+            throw new ServiceException("任务步骤不存在或已删除：" + stepId);
+        }
+        return step;
+    }
+
+    private AigTaskStep casTransition(AigTaskStep step, AigTaskStepStatusEnum from,
+                                      AigTaskStepStatusEnum to, String outputRef, String approvalRef,
+                                      String errorCode, String errorMessage) {
+        AigTaskStep update = new AigTaskStep();
+        update.setStepId(step.getStepId());
+        update.setStatus(to.getCode());
+        update.setOutputRef(outputRef);
+        update.setApprovalRef(approvalRef);
+        update.setErrorCode(errorCode);
+        update.setErrorMessage(StringUtils.substring(errorMessage, 0, 500));
+        int rows = stepMapper.update(update, Wrappers.<AigTaskStep>lambdaUpdate()
+            .eq(AigTaskStep::getStepId, step.getStepId())
+            .eq(AigTaskStep::getStatus, from.getCode()));
+        if (rows == 0) {
+            throw new ServiceException("步骤状态已被其它操作改变，请刷新后重试：stepId=" + step.getStepId());
+        }
+        step.setStatus(to.getCode());
+        step.setOutputRef(outputRef);
+        step.setApprovalRef(approvalRef);
+        step.setErrorCode(errorCode);
+        step.setErrorMessage(StringUtils.substring(errorMessage, 0, 500));
+        log.info("任务步骤状态迁移, stepId={}, {} -> {}", step.getStepId(), from.getCode(), to.getCode());
+        return step;
+    }
+
+    private static AigTaskStep newStep(Long taskId, int sequence, AigTaskStepKindEnum kind,                                       Long resourceVersionId, String inputHash) {
         AigTaskStep step = new AigTaskStep();
         step.setTaskId(taskId);
         step.setSequence(sequence);

@@ -2,6 +2,7 @@ package org.dromara.aigov.task.service;
 
 import org.dromara.aigov.execution.AigExecutionPlan;
 import org.dromara.aigov.task.domain.AigTaskStep;
+import org.dromara.aigov.task.enums.AigTaskStepStatusEnum;
 
 import java.util.List;
 
@@ -31,5 +32,31 @@ public interface IAigTaskStepService {
      * @return 步骤清单
      */
     List<AigTaskStep> listSteps(Long taskId);
+
+    /**
+     * 把步骤置为执行中（{@code PLANNED → RUNNING}，CAS）。
+     *
+     * <p>已经是 {@code RUNNING} 时幂等返回（重试不报错）。</p>
+     *
+     * @param stepId 步骤ID
+     * @return 迁移后的步骤
+     */
+    AigTaskStep startStep(Long stepId);
+
+    /**
+     * 收尾一个步骤（{@code RUNNING → SUCCEEDED/FAILED/SKIPPED}，CAS）。
+     *
+     * <p>已是终态时幂等返回（不覆盖"它曾经失败过"的事实）。</p>
+     *
+     * @param stepId        步骤ID
+     * @param status        目标状态
+     * @param outputRef     结果引用（可空）
+     * @param approvalRef   批准引用（可空）
+     * @param errorCode     失败分类（可空）
+     * @param errorMessage  失败原因（可空）
+     * @return 迁移后的步骤
+     */
+    AigTaskStep finishStep(Long stepId, AigTaskStepStatusEnum status, String outputRef,
+                           String approvalRef, String errorCode, String errorMessage);
 
 }

@@ -35,6 +35,15 @@ public enum AigTaskStepStatusEnum {
     private final String desc;
 
     /**
+     * 是否终态（不再迁移）。
+     *
+     * @return 终态返回 true
+     */
+    public boolean isTerminal() {
+        return this == SUCCEEDED || this == FAILED || this == SKIPPED;
+    }
+
+    /**
      * 按 code 查找。
      *
      * @param code 编码

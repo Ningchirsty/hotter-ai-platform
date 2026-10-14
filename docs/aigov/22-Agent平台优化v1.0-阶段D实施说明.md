@@ -114,6 +114,12 @@
 - 任务执行器在解析出计划后**尽力**登记（写失败记日志、不让执行失败）——
   它是可追溯性记录，不该反过来把一次执行变成失败。
 
+**状态迁移（D-8）**：`AigTaskStepTransition`（纯函数）定义合法边——
+`PLANNED → RUNNING`、`PLANNED → SKIPPED`、`RUNNING → SUCCEEDED/FAILED/SKIPPED`，
+**终态不出边**（不能把失败改成成功，也不能把成功改回执行中）；
+`startStep` / `finishStep` 走 CAS（影响 0 行即报冲突），且**幂等**
+（重复"开始"不改、终态不再覆盖）。
+
 ---
 
 ## 2 本轮**不做**的事（明确的边界）
@@ -144,7 +150,7 @@
   - `AigToolRegistryServiceImplTest`（8）：只读执行并落账本、未接入不落账本、
     写操作批准缺失/过期不执行、有效批准执行、幂等回放、RUNNING→结果未知、
     执行异常→结果未知不重试、非法操作类型拒绝。
-- 后端 `ruoyi-ai-gov` 全量：**1171 tests / 0 failures / 0 errors**。
+- 后端 `ruoyi-ai-gov` 全量：**1182 tests / 0 failures / 0 errors**。
 
 ---
 

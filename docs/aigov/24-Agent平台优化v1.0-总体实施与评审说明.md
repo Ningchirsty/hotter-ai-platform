@@ -47,7 +47,7 @@
 | D02 | 草稿 `allowExternal` 不是网关硬约束 | ✅ | `AigInvokeBo`/`AigRouteHint`/`AigRouteServiceImpl`；`AigRouteServiceExternalConstraintTest` |
 | D03 | 绑定只看 enabled、缺撤销入口 | ✅ | `countActiveBindings` 统一有效期口径；`assertExecutionAuthorized`；`POST /aigov/agent/binding/{id}/revoke`；`AigAgentBindingLifecycleTest` |
 | D04 | 执行态内异常直接抛出、等超时清扫 | ✅ | `AigTaskExecutorImpl#settleFailure` 单一收口；`AigTaskExecutorImplTest`（缺能力编码、ServiceException） |
-| D05 | 工具/知识可绑定但无执行引擎 | 🔶 | 工具注册+执行+确认、子 Agent 顺序编排、顺序流程节点校验、**任务步骤账本**（`aig_task_step`）已完成；**节点/子 Agent 在运行时真正驱动执行、WarmFlow/LiteFlow 适配器未做** |
+| D05 | 工具/知识可绑定但无执行引擎 | 🔶 | 工具注册+执行+确认、子 Agent 顺序编排、顺序流程节点校验、任务步骤账本（含**状态迁移与 CAS**）已完成；**节点/子 Agent 在运行时逐步真正执行、WarmFlow/LiteFlow 适配器未做** |
 | D06 | 采纳提案/关闭编辑器丢未保存内容 | ✅ | `dirtyGuard.ts` + `dirtyGuard.spec.ts`；`index.vue`/`ProposalPanel.vue` |
 | D07 | 预检只查结构、类别在提交阶段查 | ✅ | `AigStudioPrecheck` 分级（blockers/warnings + fieldPath）；`AigStudioDraftServiceImplTest` |
 | D08 | 网络调用包在长事务里 | ✅ | `runTest`/`chat` 去掉方法级 `@Transactional`；`AigStudioShortTransactionGuardTest` + 更新的 `AigStudioProposalTransactionBoundaryTest` |
@@ -72,7 +72,7 @@
 
 ## 4 验证汇总
 
-- 后端 `ruoyi-ai-gov`：**1171 tests / 0 failures / 0 errors**（基线 1053 → 新增 118）。
+- 后端 `ruoyi-ai-gov`：**1182 tests / 0 failures / 0 errors**（基线 1053 → 新增 129）。
 - 前端 `frontend`：**49 files / 466 tests** 全过；`oxlint src` 543 files 0/0。
 - 关键守卫全部通过：`AigPermissionSeedCoverageTest`（权限串已种子 + menu_id 不撞）、
   `AigRepeatSubmitCoverageTest`（写接口防重或显式豁免）、`AigWp3WiringAndRoutesTest`。

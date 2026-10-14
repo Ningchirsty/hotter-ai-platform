@@ -6,6 +6,7 @@ import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.dromara.aigov.execution.AigExecutionPlan;
 import org.dromara.aigov.execution.AigFlowNode;
 import org.dromara.aigov.task.domain.AigTaskStep;
+import org.dromara.aigov.task.enums.AigTaskStepStatusEnum;
 import org.dromara.aigov.task.mapper.AigTaskStepMapper;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,6 +18,7 @@ import org.mockito.ArgumentCaptor;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -108,6 +110,84 @@ class AigTaskStepServiceImplTest {
         when(stepMapper.selectCount(any())).thenReturn(0L);
         assertEquals(0, service.recordPlannedSteps(TASK_ID, AigExecutionPlan.builder().taskId(TASK_ID).build()));
         verify(stepMapper, never()).insert(any(AigTaskStep.class));
+    }
+
+    private AigTaskStep step(String status) {
+        AigTaskStep step = new AigTaskStep();
+        step.setStepId(7001L);
+        step.setTaskId(TASK_ID);
+        step.setSequence(1);
+        step.setStatus(status);
+        return step;
+    }
+
+    @Test
+    @DisplayName("★ 开始步骤：已编排 → 执行中（CAS）")
+    void startStepMovesToRunning() {
+        when(stepMapper.selectById(7001L)).thenReturn(step("PLANNED"));
+        when(stepMapper.update(any(), any())).thenReturn(1);
+
+        AigTaskStep result = service.startStep(7001L);
+
+        assertEquals("RUNNING", result.getStatus());
+        verify(stepMapper).update(any(AigTaskStep.class), any());
+    }
+
+    @Test
+    @DisplayName("开始步骤幂等：已是执行中则不报错也不改")
+    void startStepIsIdempotentOnRunning() {
+        when(stepMapper.selectById(7001L)).thenReturn(step("RUNNING"));
+
+        assertEquals("RUNNING", service.startStep(7001L).getStatus());
+        verify(stepMapper, never()).update(any(AigTaskStep.class), any());
+    }
+
+    @Test
+    @DisplayName("★ 终态不允许开始（不能把失败/成功改回执行中）")
+    void startStepRejectsTerminal() {
+        when(stepMapper.selectById(7001L)).thenReturn(step("SUCCEEDED"));
+        assertThrows(RuntimeException.class, () -> service.startStep(7001L));
+    }
+
+    @Test
+    @DisplayName("★ 收尾步骤：执行中 → 成功，落结果引用")
+    void finishStepMovesToSucceeded() {
+        when(stepMapper.selectById(7001L)).thenReturn(step("RUNNING"));
+        when(stepMapper.update(any(), any())).thenReturn(1);
+
+        AigTaskStep result = service.finishStep(7001L, AigTaskStepStatusEnum.SUCCEEDED,
+            "oss://out", "approval-1", null, null);
+
+        assertEquals("SUCCEEDED", result.getStatus());
+        assertEquals("oss://out", result.getOutputRef());
+        assertEquals("approval-1", result.getApprovalRef());
+    }
+
+    @Test
+    @DisplayName("收尾幂等：已是终态时不覆盖（保留「它曾经失败过」的事实）")
+    void finishStepIsIdempotentOnTerminal() {
+        when(stepMapper.selectById(7001L)).thenReturn(step("FAILED"));
+
+        assertEquals("FAILED", service.finishStep(7001L, AigTaskStepStatusEnum.SUCCEEDED,
+            null, null, null, null).getStatus());
+        verify(stepMapper, never()).update(any(AigTaskStep.class), any());
+    }
+
+    @Test
+    @DisplayName("★ CAS 冲突：状态被并发改过时报可读冲突")
+    void finishStepCasConflictThrows() {
+        when(stepMapper.selectById(7001L)).thenReturn(step("RUNNING"));
+        when(stepMapper.update(any(), any())).thenReturn(0);
+
+        assertThrows(RuntimeException.class, () -> service.finishStep(7001L,
+            AigTaskStepStatusEnum.SUCCEEDED, null, null, null, null));
+    }
+
+    @Test
+    @DisplayName("步骤不存在：可读拒绝")
+    void missingStepThrows() {
+        when(stepMapper.selectById(7001L)).thenReturn(null);
+        assertThrows(RuntimeException.class, () -> service.startStep(7001L));
     }
 
 }
