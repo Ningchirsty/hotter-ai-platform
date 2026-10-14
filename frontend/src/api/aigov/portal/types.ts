@@ -55,6 +55,10 @@ export interface AigPortalTaskVO {
   projectId?: string | number;
   status?: string;
   statusLabel?: string;
+  /** 业务状态码（设计 §6.8：待检查/排队中/生成中/等待确认/完成/失败…）；服务端算好下发 */
+  businessStatus?: string;
+  /** 业务状态文案（如「草稿已生成 待复核」）；认不出的内部状态为空，回落到 statusLabel */
+  businessStatusLabel?: string;
   progress?: number;
   dataLevel?: string;
   startedAt?: string;

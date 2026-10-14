@@ -138,6 +138,10 @@ class AigPortalServiceImplTest {
         assertEquals(9L, bo.getCreateBy(), "提交人必须被覆盖成登录用户");
         assertEquals(1, page.getRows().size());
         assertEquals(1L, page.getRows().iterator().next().getTaskId());
+        // ★ 业务状态随视图一起下发：员工看到的应是"草稿已生成 待复核"这类措辞，
+        //   前端不再自己拿内部状态码拼一份映射（设计 §6.8）
+        assertEquals("草稿已生成 待复核", page.getRows().iterator().next().getBusinessStatusLabel(),
+            "执行成功但未复核时，业务状态必须明确写着「待复核」");
     }
 
     @Test

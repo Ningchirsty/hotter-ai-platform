@@ -46,7 +46,10 @@ class AigPortalVoBoundaryTest {
      */
     private static final Set<String> REQUIRED_ON_TASK = Set.of(
         "taskId", "taskNo", "taskType", "status", "statusLabel", "progress", "dataLevel",
-        "scenarioCode", "projectType", "projectId", "startedAt", "finishedAt");
+        "scenarioCode", "projectType", "projectId", "startedAt", "finishedAt",
+        // 设计 §6.8：员工看到的是业务状态（"草稿已生成 待复核"这类），
+        // 它是"内部状态不等于业务通过"这条规矩在对外契约上的落点
+        "businessStatus", "businessStatusLabel");
 
     /**
      * 产物的边界：要带"这是什么、多大、属于哪个任务"，**不要**带下载直链与存储键
