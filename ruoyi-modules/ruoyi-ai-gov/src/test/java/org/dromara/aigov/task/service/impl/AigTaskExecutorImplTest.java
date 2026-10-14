@@ -38,6 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
@@ -112,6 +113,18 @@ class AigTaskExecutorImplTest {
      * @return 详情
      */
     private static AigTaskDetailVo detail(String status, String hashOverride) {
+        return detail(status, hashOverride, SNAPSHOT_JSON);
+    }
+
+    /**
+     * 造一个指定快照内容的详情（用于条件结论/路由快照这类"看快照里有什么"的用例）。
+     *
+     * @param status       任务状态
+     * @param hashOverride 强制哈希（null=按实际内容算）
+     * @param snapshotJson 快照 JSON
+     * @return 详情
+     */
+    private static AigTaskDetailVo detail(String status, String hashOverride, String snapshotJson) {
         AigTaskVo task = new AigTaskVo();
         task.setTaskId(TASK_ID);
         task.setStatus(status);
@@ -124,8 +137,8 @@ class AigTaskExecutorImplTest {
 
         AigTaskSnapshotVo snapshot = new AigTaskSnapshotVo();
         snapshot.setSnapshotId(77L);
-        snapshot.setSnapshotJson(SNAPSHOT_JSON);
-        snapshot.setSnapshotHash(hashOverride != null ? hashOverride : DigestUtil.sha256Hex(SNAPSHOT_JSON));
+        snapshot.setSnapshotJson(snapshotJson);
+        snapshot.setSnapshotHash(hashOverride != null ? hashOverride : DigestUtil.sha256Hex(snapshotJson));
         snapshot.setBudgetAmount(new BigDecimal("0.80"));
 
         AigTaskDetailVo detail = new AigTaskDetailVo();
@@ -438,6 +451,43 @@ class AigTaskExecutorImplTest {
         executor.execute(executedBo());
 
         verify(flowDriver).settle(eq(555L), eq(false), eq("trace-1"), eq("TIMEOUT"), eq("调用超时"));
+    }
+
+    @Test
+    @DisplayName("★ 条件结论取自冻结输入快照的布尔字段：为真则放行（不再一律停在待人工处理）")
+    void conditionResultIsReadFromFrozenSnapshot() {
+        stubHappyPath(invoked("{\"image\":\"x\"}", null, null));
+        when(taskService.getDetail(TASK_ID))
+            .thenReturn(detail("QUEUED", null, "{\"facts\":\"v1\",\"needVideo\":true}"));
+        stubPlanWithFlow(flowNode("CONDITION", "needVideo"), flowNode("OUTPUT", "out"));
+        when(flowDriver.advance(any(), any(), any())).thenReturn(
+            drive(AigFlowRuntime.Action.START, "needVideo", "CONDITION", null, "条件已满足"));
+
+        AigTaskExecuteVo vo = executor.execute(executedBo());
+
+        assertTrue(vo.isSuccess());
+        verify(flowDriver).advance(eq(TASK_ID), any(),
+            argThat(conditions -> Boolean.TRUE.equals(conditions.get("needVideo"))));
+        verify(invokeService).invoke(any());
+    }
+
+    @Test
+    @DisplayName("★ 快照里是字符串 \"true\" 时不给结论：照旧停下，绝不猜一个真假")
+    void conditionStringValueIsNotTreatedAsBoolean() {
+        stubHappyPath(invoked("{}", null, null));
+        when(taskService.getDetail(TASK_ID))
+            .thenReturn(detail("QUEUED", null, "{\"facts\":\"v1\",\"needVideo\":\"true\"}"));
+        stubPlanWithFlow(flowNode("CONDITION", "needVideo"));
+        when(flowDriver.advance(any(), any(), any())).thenReturn(
+            drive(AigFlowRuntime.Action.WAIT_CONDITION, "needVideo", "CONDITION", null, "还没有结论"));
+        when(taskService.recordFailure(eq(TASK_ID), eq(3), eq(AigErrorClassEnum.INVALID_REQUEST), any()))
+            .thenReturn(AigTaskStatusEnum.NEED_HUMAN);
+
+        AigTaskExecuteVo vo = executor.execute(executedBo());
+
+        assertEquals("NEED_HUMAN", vo.getStatus());
+        verify(flowDriver).advance(eq(TASK_ID), any(), argThat(Map::isEmpty));
+        verify(invokeService, never()).invoke(any());
     }
 
     @Test

@@ -10,6 +10,15 @@
       :title="`有 ${awaiting.length} 个节点在等待人工确认：确认只是「批准了这个节点」，不会自动重跑任务。`"
     />
 
+    <el-alert
+      v-if="conditionHint"
+      type="info"
+      :closable="false"
+      class="mb-2"
+      show-icon
+      :title="conditionHint"
+    />
+
     <el-table v-loading="loading" border size="small" :data="nodes">
       <el-table-column label="#" align="center" width="55">
         <template #default="scope">{{ scope.row.nodeIndex }}</template>
@@ -82,6 +91,7 @@ import type { AigTaskFlowNodeVO } from '@/api/aigov/task/types';
 import modal from '@/plugins/modal';
 import {
   awaitingNodes,
+  conditionSourceHint,
   confirmValidation,
   flowNodeStatusText,
   flowNodeTagType,
@@ -101,6 +111,7 @@ const approvalRef = ref('');
 
 const awaiting = computed(() => awaitingNodes(nodes.value));
 const summary = computed(() => flowSummary(nodes.value));
+const conditionHint = computed(() => conditionSourceHint(nodes.value));
 
 const load = async () => {
   if (taskId.value === undefined || taskId.value === null) {

@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 流程节点运行时判据测试（设计 §6.5）。
@@ -103,7 +104,7 @@ class AigFlowRuntimeTest {
     }
 
     @Test
-    @DisplayName("★ 条件判断：没有结论就等（不默认取真或假）")
+    @DisplayName("★ 条件判断：没有结论就等（不默认取真或假），且原因里说明结论从哪来")
     void conditionWithoutResultWaits() {
         AigFlowRuntime.Decision decision = AigFlowRuntime.decide(
             List.of(node("CONDITION", "needVideo")),
@@ -111,6 +112,8 @@ class AigFlowRuntimeTest {
             Map.of());
         assertEquals(AigFlowRuntime.Action.WAIT_CONDITION, decision.action());
         assertEquals("needVideo", decision.nodeRef());
+        assertTrue(decision.reason().contains("冻结输入快照"),
+            "拒绝原因必须说清结论从哪来，否则操作者不知道该找谁：" + decision.reason());
     }
 
     @Test

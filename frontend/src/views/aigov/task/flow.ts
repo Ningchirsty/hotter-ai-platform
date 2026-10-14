@@ -93,6 +93,26 @@ export function awaitingNodes(nodes?: AigTaskFlowNodeVO[]): AigTaskFlowNodeVO[] 
 }
 
 /**
+ * 未决条件判断的说明（没有未决条件时返回空串，不啰嗦）。
+ *
+ * 条件结论**不是**在界面上勾的，而是取自任务冻结输入快照里的同名布尔字段——
+ * 把这条规则显式说出来，操作者才知道该去找建任务方补快照，而不是在这里反复刷新。
+ */
+export function conditionSourceHint(nodes?: AigTaskFlowNodeVO[]): string {
+  const pending = (nodes ?? []).filter(
+    (item) =>
+      item.nodeType === 'CONDITION' &&
+      (item.status === 'PLANNED' || item.status === 'RUNNING') &&
+      !item.awaitingConfirmation
+  );
+  if (!pending.length) {
+    return '';
+  }
+  const keys = pending.map((item) => item.nodeRef || '(未声明键)').join('、');
+  return `有 ${pending.length} 个条件判断还没有结论（${keys}）：结论取自任务冻结输入快照里的同名布尔字段，需由建任务方在快照里提供；缺失或不是布尔时流程会停在「待人工处理」。`;
+}
+
+/**
  * 记录人工确认前的校验（与后端同口径，先把话说清楚再发请求）。
  *
  * @returns 通过返回 null；否则返回可显示的拒绝原因

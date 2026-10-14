@@ -23,6 +23,7 @@ import org.dromara.aigov.task.enums.AigTaskStatusEnum;
 import org.dromara.aigov.task.service.IAigTaskExecutor;
 import org.dromara.aigov.task.service.IAigSubAgentRunner;
 import org.dromara.aigov.task.service.IAigFlowDriverService;
+import org.dromara.aigov.task.service.AigFlowConditions;
 import org.dromara.aigov.task.service.AigFlowDriveResult;
 import org.dromara.aigov.task.service.AigFlowRuntime;
 import org.dromara.aigov.task.service.IAigTaskService;
@@ -170,7 +171,7 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
             //   顺序不能反——闸门没通过（等人工确认 / 等条件结论 / 受阻）时先把子 Agent 派出去，
             //   等于用一次"尚未获准"的编排去动外部世界；而先把模型调了再记 NEED_HUMAN，
             //   等于人工确认只挂了个牌子、什么都没拦住（假闸门比没有闸门更坏）。
-            FlowGate gate = checkFlowGate(bo, plan, running);
+            FlowGate gate = checkFlowGate(bo, plan, running, snapshot);
             if (gate.stopped() != null) {
                 return gate.stopped();
             }
@@ -283,15 +284,23 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
      * <p><b>条件结论目前恒为空</b>：本模块不含表达式引擎，结论要由业务域/人工给出；
      * 缺结论时流程停在 NEED_HUMAN，这是可见的"待接"而不是默认放行。</p>
      *
-     * @param bo      执行入参
-     * @param plan    冻结的执行计划
-     * @param running 已置为 RUNNING 的任务（提供乐观锁版本）
+     * <p><b>条件结论取自冻结输入快照</b>（{@link AigFlowConditions}）：节点 ref 就是快照里
+     * 顶层的布尔字段名。取不到结论（字段缺失/不是布尔/快照不可解析）时不猜真假，
+     * 流程停在 NEED_HUMAN——猜错的方向恰好是"跳过了一个本该跑的节点"。</p>
+     *
+     * @param bo       执行入参
+     * @param plan     冻结的执行计划
+     * @param running  已置为 RUNNING 的任务（提供乐观锁版本）
+     * @param snapshot 输入快照（条件结论的来源）
      * @return 闸门结论
      */
-    private FlowGate checkFlowGate(AigTaskExecuteBo bo, AigExecutionPlan plan, AigTask running) {
+    private FlowGate checkFlowGate(AigTaskExecuteBo bo, AigExecutionPlan plan, AigTask running,
+                                   AigTaskSnapshotVo snapshot) {
         AigFlowDriveResult drive;
         try {
-            drive = flowDriver.advance(bo.getTaskId(), plan, Map.of());
+            Map<String, Boolean> conditionResults = AigFlowConditions.fromSnapshotJson(
+                snapshot.getSnapshotJson(), plan.getFlowNodes(), jsonMapper);
+            drive = flowDriver.advance(bo.getTaskId(), plan, conditionResults);
         } catch (Exception e) {
             log.error("流程推进失败（按受阻处理，不放行）, taskId={}", bo.getTaskId(), e);
             return new FlowGate(stopForFlow(bo.getTaskId(), running.getVersion(),

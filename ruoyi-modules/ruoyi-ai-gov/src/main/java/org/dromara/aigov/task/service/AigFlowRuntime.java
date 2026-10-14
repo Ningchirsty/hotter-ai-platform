@@ -186,8 +186,12 @@ public final class AigFlowRuntime {
                 case CONDITION -> {
                     Boolean result = conditionResults == null ? null : conditionResults.get(node.ref());
                     if (result == null) {
+                        // 把"结论从哪来"写在拒绝原因里：这条消息就是操作者看到的全部，
+                        // 只说"没有结论"不足以让人知道下一步该找谁
                         return new Decision(Action.WAIT_CONDITION, i, node.ref(),
-                            "第 " + (i + 1) + " 个节点是条件判断，但还没有结论（不默认取真或假）");
+                            "第 " + (i + 1) + " 个节点是条件判断（键 " + node.ref()
+                                + "），但还没有结论：条件结论取自冻结输入快照里的同名布尔字段，"
+                                + "请由建任务方在快照里提供它（缺失/非布尔都按没有结论处理，不默认取真或假）");
                     }
                     if (!result) {
                         return new Decision(Action.SKIP_REST, i, node.ref(),

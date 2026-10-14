@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { AigTaskFlowNodeVO } from '@/api/aigov/task/types';
 import {
   awaitingNodes,
+  conditionSourceHint,
   confirmValidation,
   flowNodeStatusText,
   flowNodeTagType,
@@ -76,6 +77,20 @@ describe('task flow presentation', () => {
     ];
     expect(awaitingNodes(list).map((item) => item.nodeIndex)).toEqual([1]);
     expect(awaitingNodes(undefined)).toEqual([]);
+  });
+
+  it('★ 未决条件判断要说清结论从哪来（否则人只会在这里反复刷新）', () => {
+    expect(conditionSourceHint([])).toBe('');
+    expect(
+      conditionSourceHint([
+        { nodeType: 'CONDITION', nodeRef: 'needVideo', status: 'RUNNING' },
+        { nodeType: 'CONDITION', nodeRef: 'needVoice', status: 'SUCCEEDED' },
+        { nodeType: 'STEP', nodeRef: 'a', status: 'PLANNED' }
+      ])
+    ).toBe(
+      '有 1 个条件判断还没有结论（needVideo）：结论取自任务冻结输入快照里的同名布尔字段，需由建任务方在快照里提供；缺失或不是布尔时流程会停在「待人工处理」。'
+    );
+    expect(conditionSourceHint([{ nodeType: 'CONDITION', status: 'PLANNED' }])).toContain('(未声明键)');
   });
 
   it('★ 确认前校验：节点必选、必须真的在等待、批准引用必填', () => {
