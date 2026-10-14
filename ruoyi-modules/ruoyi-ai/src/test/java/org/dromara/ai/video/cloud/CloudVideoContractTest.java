@@ -51,7 +51,7 @@ class CloudVideoContractTest {
   var client=new BluOctoVideoClient(new VideoCloudProperties()) {
    @Override protected JsonNode json(String method,String path,Map<String,Object> body) {
     calls.add(method+" "+path);bodies.add(CloudVideoContractTest.this.mapper.valueToTree(body));
-    return CloudVideoContractTest.this.mapper.createObjectNode().put("id","same-task").put("status","completed");
+    return CloudVideoContractTest.this.mapper.createObjectNode().put(path.equals("/v1/video/generations")?"task_id":"id","same-task").put("status","completed");
    }
   };
   var r2v=draft(profile("wan2.7-r2v"),List.of(new CloudVideoRequest.Reference(7,"reference_image")),"R2V");

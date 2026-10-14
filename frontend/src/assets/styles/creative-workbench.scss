@@ -121,6 +121,7 @@
 
 /** 创建页继续沿用已确认的双栏框架。 */
 .studio.creation-workbench {
+    flex-shrink: 0;
     .workbench-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
         align-items: stretch;

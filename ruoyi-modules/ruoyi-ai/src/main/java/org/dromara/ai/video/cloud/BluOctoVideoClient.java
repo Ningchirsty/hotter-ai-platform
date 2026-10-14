@@ -102,7 +102,7 @@ public class BluOctoVideoClient {
             var metadata=(Map<?,?>)body.get("metadata");body=new LinkedHashMap<>(Map.of("model",request.model(),"input",metadata.get("input"),"parameters",metadata.get("parameters")));
         }
         JsonNode result=json("POST",path,body);
-        String id=result.path("id").asText(result.path("output").path("task_id").asText());
+        String id=result.path("id").asText(result.path("task_id").asText(result.path("output").path("task_id").asText()));
         if (!id.matches("[A-Za-z0-9_-]{1,160}")) throw error("CLOUD_RESULT_UNKNOWN","供应商未返回合法视频任务 ID，请核对记录后再操作");
         return new RemoteTask(id,protocol);
     }
