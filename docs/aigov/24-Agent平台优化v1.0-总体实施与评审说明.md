@@ -53,6 +53,7 @@
 | `886f00cc` | C/前端 | **分段预览**（只给受限预览 + 正文/索引状态；复用检索测试权限）+ `views/aigov` 全量 **SFC 编译守卫** |
 | `eee74bd4` | C | **谁在引用这个集合**（退役前的影响面：`listResourceReferences` + 界面「看引用」；无新权限点） |
 | `87d2946a` | D | **工具契约详情**（§6.5 工具卡片字段：用途/输入输出/数据范围/责任人/接入状态；与清单分开，无新权限点） |
+| `b27301fc` | E | **问题队列按后续动作/原因过滤** + 版本与处理人可见（动作不再只躺在行上，负责用例的人能挑出自己那份） |
 
 ---
 
@@ -85,16 +86,16 @@
 | B 训练体验 | ✅（三栏布局已落地，右栏页签与组件拆分未做） | D06/D07/D09/D10/D11 + 元数据；**三栏布局**（左步骤 / 中编辑 / 右差异）已落地并有结构守卫；**右栏页签切换（助手/测试）与按步骤拆分表单/组件未做** |
 | C 知识试点 | 🔶 | 数据模型/处理管道/检索端口/接口/接入执行计划、**知识中心页面（含分段预览、引用影响面）**完成；**解析器与嵌入未接入** |
 | D 工具与流程 | 🔶 | 工具注册/执行/确认/接口、**工具许可（版本声明 + 有效绑定 + 调用人权限）与契约详情**、子 Agent 编排/派发/对账、顺序流程节点的校验与**运行时驱动**完成；**多 STEP 节点的调度循环与 WarmFlow/LiteFlow 适配器未做** |
-| E 持续运营 | ✅ | 反馈账本/队列/接口 + 指标口径与聚合（含故障分类）+ **资产索引全量/增量同步** |
+| E 持续运营 | ✅ | 反馈账本/队列/接口 + **队列按动作/原因过滤** + 指标口径与聚合（含故障分类）+ **资产索引全量/增量同步** |
 
 ---
 
 ## 4 验证汇总
 
-- 后端 `ruoyi-ai-gov`：**1280 tests / 0 failures / 0 errors**（基线 1053 → 新增 227）。
+- 后端 `ruoyi-ai-gov`：**1283 tests / 0 failures / 0 errors**（基线 1053 → 新增 230）。
   > 各阶段文档（`19`–`23`）里的测试数**是各自增量当时的数**，会随迭代前移；
   > **以本节（总体说明 §4）为准**——避免为了追数字反复改四五份文档，也避免"哪个数才是真的"。
-- 前端 `frontend`：**52 files / 515 tests** 全过；`oxlint src` 548 files 0/0。
+- 前端 `frontend`：**52 files / 517 tests** 全过；`oxlint src` 548 files 0/0。
   其中 `views/aigov/sfcCompile.spec.ts` 真编译全部 27 个治理层 SFC
   （无 DOM 环境下的最低保证：模板/`<script setup>` 写错会在这里红）。
 - 关键守卫全部通过：`AigPermissionSeedCoverageTest`（权限串已种子 + menu_id 不撞）、
@@ -230,6 +231,7 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
 | 分段预览会不会顺手把原文吐出来 | `AigKnowledgeChunkVo`（无正文字段）+ `AigKnowledgeServiceImpl#listChunks`（只取 `text_excerpt`） |
 | 退役一个知识版本会影响谁 | `AigKnowledgeController#references` → `AigAgentRegistryQueryServiceImpl#listResourceReferences`（解析 Agent 身份；停用中的也返回） |
 | 一个工具收什么、回什么、超时多久 | `AigToolController#versionDetail` → `AigToolDetailVo`（定义 + 版本两处来源；未接入也显示执行器引用名） |
+| 某个动作（如"加入用例"）的问题挑不挑得出来 | `AigResultFeedbackController#queue`（verdict/actionCode/reasonCode 三个独立过滤；拼错编码报错不回空队列） |
 | 指标口径是否可复核 | `feedback/metrics/AigOperationsMetrics`（累计成果=经确认结果；分母 0 → 0） |
 
 ### 7.4 部署前必做（5 分钟）
