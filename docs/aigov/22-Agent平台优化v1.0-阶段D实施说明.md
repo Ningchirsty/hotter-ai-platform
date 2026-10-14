@@ -89,6 +89,18 @@
 
 ---
 
+### 1.9 工具注册页面（前端，D-6）
+
+- `frontend/src/api/aigov/tool/`：清单 / 新建定义 / 新增版本；
+- `frontend/src/views/aigov/tool/presentation.ts`（+ spec 6 条）：操作类型词表、码→文案、
+  **未接入一律显示「已登记 待接入」（不能显示为可用）**、写操作提示、
+  定义/版本校验与后端同口径；
+- `frontend/src/views/aigov/tool/index.vue`：工具清单表（操作类型 / 需人工确认 / 接入状态 /
+  所需权限点 / 等级上限）+ 新建定义 + 新增版本；
+- 页面菜单行 `script/sql/aig_tool_pages.sql`（`component=aigov/tool/index`，只授 `aig_admin`）。
+
+---
+
 ## 2 本轮**不做**的事（明确的边界）
 
 1. **HTTP 接口与权限点（已在 D-2 补齐）**：`GET /aigov/tools`（可绑定工具清单）、
