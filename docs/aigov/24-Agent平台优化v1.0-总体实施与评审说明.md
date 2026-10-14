@@ -34,6 +34,7 @@
 | `32f22098` | D/前端 | 工具注册页面（`aigov/tool/index` + 纯函数与单测） |
 | `d14c7eb4` | D | 任务步骤账本（`aig_task_step`，编排步骤可追溯） |
 | `17123281` | B/前端 | 训练台步骤/辅助区口径 + 页头状态条（`studio/layout.ts`） |
+| `120c74a5` | D | 任务步骤状态迁移与 CAS（`AigTaskStepTransition`） |
 
 ---
 
