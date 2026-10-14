@@ -40,7 +40,9 @@
             <el-tag :type="executableTagType(row.executable)">{{ executableText(row.executable) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="所需权限点" prop="permissionPoint" width="200" />
+        <el-table-column label="所需权限点" width="200">
+          <template #default="{ row }">{{ permissionPointText(row.permissionPoint) }}</template>
+        </el-table-column>
         <el-table-column label="等级上限" prop="dataLevelMax" width="120" />
       </el-table>
     </el-card>
@@ -98,7 +100,7 @@
           <el-input-number v-model="versionForm.maxAttempts" :min="1" :max="5" />
         </el-form-item>
         <el-form-item label="所需权限点">
-          <el-input v-model="versionForm.permissionPoint" placeholder="可空" />
+          <el-input v-model="versionForm.permissionPoint" placeholder="可空=不额外要求权限" />
         </el-form-item>
         <el-form-item label="等级上限">
           <el-input v-model="versionForm.dataLevelMax" placeholder="可空=不限" />
@@ -124,6 +126,8 @@ import {
   executableTagType,
   executableText,
   operationTypeLabel,
+  permissionPointHint,
+  permissionPointText,
   versionValidation
 } from './presentation';
 
@@ -146,7 +150,11 @@ const toolCodes = computed(() => {
   return Array.from(set);
 });
 
-const versionHint = computed(() => confirmationHint(versionForm.value.operationType));
+const versionHint = computed(() =>
+  [confirmationHint(versionForm.value.operationType), permissionPointHint(versionForm.value.permissionPoint)]
+    .filter(Boolean)
+    .join(' ')
+);
 
 const load = async () => {
   const res = await listTools();

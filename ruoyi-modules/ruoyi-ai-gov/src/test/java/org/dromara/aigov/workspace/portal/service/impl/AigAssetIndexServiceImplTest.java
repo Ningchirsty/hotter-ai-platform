@@ -38,7 +38,8 @@ import static org.mockito.Mockito.when;
  * 资产聚合索引测试（增量 11）。
  *
  * <p>钉住重建的四件事：①**先删该用户该域**（否则各域删掉的资产会在索引里变成幽灵行）；
- * ②**分页拉取**到短页为止（页大小 200），offset 正确推进；③**同域 assetId 去重**
+ * ②**分页拉取**直到空页（页大小 200）——<b>不靠"短页"判结束</b>
+ * （真实端口自设单次上限 50，短页会被误判成到底，把一个域只同步前 50 条）；③**同域 assetId 去重**
  * （唯一键是 user+domain+assetId，重复行会撞键）；④非法入参不落库。
  * 读取侧钉住：映射字段正确、userId 非法时拒绝。</p>
  *
@@ -93,6 +94,73 @@ class AigAssetIndexServiceImplTest {
         assertEquals("IMAGE", first.getDomain());
         assertEquals(0L, first.getAssetId());
         assertEquals("a0", first.getName());
+    }
+
+    @Test
+    @DisplayName("★ 端口自设单次上限（50 < 同步页大小 200）时不能把短页当成到底：全量仍要拉完")
+    void rebuildFollowsPortCapInsteadOfTreatingShortPageAsEnd() {
+        List<MyAssetDTO> many = new ArrayList<>();
+        for (int i = 0; i < 120; i++) {
+            MyAssetDTO dto = new MyAssetDTO();
+            dto.setAssetId((long) i);
+            dto.setName("a" + i);
+            many.add(dto);
+        }
+        List<Integer> offsets = new ArrayList<>();
+        MyAssetPort capped = new MyAssetPort() {
+            @Override
+            public String domain() {
+                return "CONTENT";
+            }
+
+            @Override
+            public List<MyAssetDTO> listMyAssets(long userId, int offset, int limit) {
+                offsets.add(offset);
+                // 真实端口（内容/视频）自设单次上限 50，调用方请求 200 也只能拿到 50
+                int cappedLimit = Math.min(limit, 50);
+                if (offset >= many.size()) {
+                    return List.of();
+                }
+                return many.subList(offset, Math.min(many.size(), offset + cappedLimit));
+            }
+        };
+
+        AigAssetIndexServiceImpl service = new AigAssetIndexServiceImpl(List.of(capped), indexMapper);
+
+        int written = service.rebuildForUser(9L);
+
+        assertEquals(120, written, "被截断成 50 条就是「少同步」缺陷");
+        verify(indexMapper, times(120)).insert(any(AigAssetIndex.class));
+        assertEquals(List.of(0, 50, 100, 120), offsets, "offset 必须按实际返回条数推进，直到空页");
+    }
+
+    @Test
+    @DisplayName("★ 实现忽略 offset（每页都是同一批）时必须停：不空转到页数上限")
+    void rebuildStopsWhenPortIgnoresOffset() {
+        MyAssetDTO a = new MyAssetDTO();
+        a.setAssetId(1L);
+        MyAssetDTO b = new MyAssetDTO();
+        b.setAssetId(2L);
+        List<Integer> calls = new ArrayList<>();
+        MyAssetPort broken = new MyAssetPort() {
+            @Override
+            public String domain() {
+                return "VIDEO";
+            }
+
+            @Override
+            public List<MyAssetDTO> listMyAssets(long userId, int offset, int limit) {
+                calls.add(offset);
+                return List.of(a, b);
+            }
+        };
+
+        AigAssetIndexServiceImpl service = new AigAssetIndexServiceImpl(List.of(broken), indexMapper);
+
+        int written = service.rebuildForUser(9L);
+
+        assertEquals(2, written, "同一批资产只写一次");
+        assertEquals(2, calls.size(), "第一页有新增、第二页无新增即停，不空转到 500 页");
     }
 
     @Test

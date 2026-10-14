@@ -6,6 +6,8 @@ import {
   executableTagType,
   executableText,
   operationTypeLabel,
+  permissionPointHint,
+  permissionPointText,
   requiresConfirmation,
   versionValidation
 } from './presentation';
@@ -47,6 +49,19 @@ describe('tool presentation', () => {
     expect(requiresConfirmation('GENERATE_DRAFT')).toBe(false);
     expect(confirmationHint('EXTERNAL_SEND')).toContain('人工确认');
     expect(confirmationHint('READ_ONLY_QUERY')).toBe('');
+  });
+
+  it('★ 所需权限点：留空显示成「无需额外权限」，不显示成空白', () => {
+    expect(permissionPointText('aig:tool:x')).toBe('aig:tool:x');
+    expect(permissionPointText('  ')).toBe('无需额外权限');
+    expect(permissionPointText(undefined)).toBe('无需额外权限');
+  });
+
+  it('★ 权限点提示说清后果：填了必须持有，否则拒绝', () => {
+    expect(permissionPointHint('aig:tool:x')).toContain('TOOL_PERMISSION_DENIED');
+    expect(permissionPointHint('aig:tool:x')).toContain('aig:tool:x');
+    expect(permissionPointHint('')).toContain('不额外要求');
+    expect(permissionPointHint('')).toContain('人工确认');
   });
 
   it('★ 定义校验：编码与名称必填', () => {

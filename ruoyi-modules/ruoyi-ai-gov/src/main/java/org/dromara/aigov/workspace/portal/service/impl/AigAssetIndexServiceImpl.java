@@ -34,6 +34,12 @@ import java.util.Set;
  *         而不是中间的空档。</li>
  *     <li><b>页式拉取有上限</b>：既防实现方"永远返回满页"造成死循环，也防一次重建把内存吃穿；
  *         到上限会 WARN 留痕（而不是静默少同步）。</li>
+ *     <li><b>不靠"短页"判结束</b>：各域实现会<b>自设单次上限</b>（内容/视频端口是 50，而这里的
+ *         同步页大小是 200），"返回条数少于请求条数"会被误判成"已经到底"——那会把一个用户某个域
+ *         只同步前 50 条，而且<b>一声不响</b>。结束条件改为两条：①空页；
+ *         ②本页没有带来任何新资产（实现忽略了 offset 的信号，也是防死循环的兜底）。
+ *         "少同步"是索引类缺陷里最难发现的一种：界面只是"少了几个资产"，
+ *         没人会怀疑是同步逻辑，所以宁可多请求一页空页。</li>
  *     <li><b>同一域内按 assetId 去重</b>：唯一键是 {@code (user_id, domain, asset_id)}，
  *         实现方若返回重复行，重复插入会撞唯一键——去重比捕获异常更清楚。</li>
  * </ol>
@@ -46,7 +52,7 @@ import java.util.Set;
 public class AigAssetIndexServiceImpl implements IAigAssetIndexService {
 
     /**
-     * 同步时每页拉多少条
+     * 同步时每页拉多少条（<b>只是"我希望一次拉多少"</b>：实现可自行下调）
      */
     private static final int SYNC_PAGE_SIZE = 200;
 
@@ -85,6 +91,7 @@ public class AigAssetIndexServiceImpl implements IAigAssetIndexService {
                 if (batch == null || batch.isEmpty()) {
                     break;
                 }
+                int addedOnThisPage = 0;
                 for (MyAssetDTO dto : batch) {
                     if (dto == null || dto.getAssetId() == null) {
                         continue;
@@ -94,10 +101,15 @@ public class AigAssetIndexServiceImpl implements IAigAssetIndexService {
                     }
                     indexMapper.insert(toEntity(userId, domain, dto));
                     total++;
+                    addedOnThisPage++;
                 }
                 offset += batch.size();
                 pages++;
-                if (batch.size() < SYNC_PAGE_SIZE) {
+                if (addedOnThisPage == 0) {
+                    // 本页全是已见过的资产：实现要么忽略了 offset（再翻也是同一页），
+                    // 要么返回了重复数据。两种情况下继续翻都不会有新数据，停。
+                    log.warn("资产索引同步本页无新增，停止翻页（实现可能忽略 offset）：userId={}, domain={}, offset={}",
+                        userId, domain, offset);
                     break;
                 }
             }

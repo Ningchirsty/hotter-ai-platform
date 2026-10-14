@@ -51,6 +51,24 @@ export function confirmationHint(operationType?: string): string {
 }
 
 /**
+ * 所需权限点文案（留空 = 不额外要求，与后端 `permissionPermit` 同口径）。
+ *
+ * <p>空白显示成空白，读表的人分不清"没声明"和"数据没带回来"，所以空值要给一句明确的话。</p>
+ */
+export function permissionPointText(point?: string): string {
+  const text = point?.trim();
+  return text ? text : '无需额外权限';
+}
+
+/** 权限点提示：填了会发生什么（这段话是"配置不生效"那类误解的解药） */
+export function permissionPointHint(point?: string): string {
+  const text = point?.trim();
+  return text
+    ? `调用人必须持有权限点「${text}」，否则调用会被拒绝（TOOL_PERMISSION_DENIED）。`
+    : '留空 = 不额外要求权限点；调用人仍须通过有效绑定判定，写操作仍须人工确认。';
+}
+
+/**
  * 新建工具定义校验。
  *
  * @returns 通过返回 null；否则返回可显示的拒绝原因
