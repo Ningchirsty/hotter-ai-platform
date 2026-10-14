@@ -43,6 +43,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -488,6 +489,44 @@ class AigTaskExecutorImplTest {
         assertEquals("NEED_HUMAN", vo.getStatus());
         verify(flowDriver).advance(eq(TASK_ID), any(), argThat(Map::isEmpty));
         verify(invokeService, never()).invoke(any());
+    }
+
+    @Test
+    @DisplayName("★ D05：尾部可自行收尾的节点（输出节点）会在本轮推到完成，不留「没跑完」的假象")
+    void settleableFlowTailIsDrainedToDone() {
+        stubHappyPath(invoked("{\"image\":\"x\"}", null, null));
+        stubPlanWithFlow(flowNode("STEP", "a"), flowNode("OUTPUT", "out"));
+        // 闸门：第一个 STEP 交给调用方执行
+        when(flowDriver.advance(any(), any(), any())).thenReturn(
+            drive(AigFlowRuntime.Action.START, "a", "STEP", 555L, "启动第 1 个节点"),
+            drive(AigFlowRuntime.Action.START, "out", "OUTPUT", 556L, "收尾第 2 个输出节点"));
+        // 尾部推进用 peek 探路：先给出"输出节点可自行收尾"，收尾后再给"已完成"
+        when(flowDriver.peek(any(), any(), any())).thenReturn(
+            drive(AigFlowRuntime.Action.START, "out", "OUTPUT", 556L, "收尾第 2 个输出节点"),
+            drive(AigFlowRuntime.Action.DONE, null, null, null, "全部流程节点已到终态"));
+
+        AigTaskExecuteVo vo = executor.execute(executedBo());
+
+        assertTrue(vo.isSuccess());
+        verify(flowDriver, times(2)).advance(any(), any(), any());
+        verify(flowDriver, times(2)).peek(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("★ D05：尾部是要人工确认的节点时「只探不写」——不挂起、任务照旧记成功")
+    void flowTailWithHumanConfirmIsNotParked() {
+        stubHappyPath(invoked("{\"image\":\"x\"}", null, null));
+        stubPlanWithFlow(flowNode("STEP", "a"), flowNode("HUMAN_CONFIRM", "approve"));
+        when(flowDriver.advance(any(), any(), any())).thenReturn(
+            drive(AigFlowRuntime.Action.START, "a", "STEP", 555L, "启动第 1 个节点"));
+        when(flowDriver.peek(any(), any(), any())).thenReturn(
+            drive(AigFlowRuntime.Action.WAIT_HUMAN, "approve", "HUMAN_CONFIRM", 556L, "待人工确认"));
+
+        AigTaskExecuteVo vo = executor.execute(executedBo());
+
+        assertTrue(vo.isSuccess(), "模型调用已成功，不能因为「尾部有人工确认节点」就改判");
+        verify(flowDriver, times(1)).advance(any(), any(), any());
+        verify(taskService, never()).recordFailure(eq(TASK_ID), any(), any(), any());
     }
 
     @Test

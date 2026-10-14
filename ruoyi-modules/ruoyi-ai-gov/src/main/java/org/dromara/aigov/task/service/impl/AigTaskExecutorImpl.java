@@ -221,6 +221,14 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
                 log.error("收尾流程步骤失败, taskId={}, stepId={}", bo.getTaskId(), flowStepId, e);
             }
         }
+        // ★ D05：把"不需要人、也不需要再执行"的尾部节点推进掉（典型是收尾的输出节点）。
+        //   少了这一步，{STEP, OUTPUT} 这类流程永远停在"输出节点待执行"——账本看起来是"没跑完"，
+        //   而实际上该做的都做完了。见 drainSettleableFlowTail 的边界说明。
+        if (plan != null) {
+            drainSettleableFlowTail(bo.getTaskId(), plan,
+                AigFlowConditions.fromSnapshotJson(snapshot.getSnapshotJson(), plan.getFlowNodes(),
+                    jsonMapper));
+        }
 
         AigTaskExecuteVo vo = new AigTaskExecuteVo();
         vo.setTaskId(bo.getTaskId());
@@ -260,6 +268,46 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
         log.warn("任务执行失败, taskId={}, traceId={}, errorCode={}, 落点={}",
             bo.getTaskId(), invoked.getTraceId(), vo.getErrorCode(), vo.getStatus());
         return vo;
+    }
+
+    /**
+     * 把尾部"可自行收尾"的流程节点推进掉（不需要人、也不需要再发起执行）。
+     *
+     * <p><b>为什么只推这几类</b>：一次任务执行只发起一次模型调用（既有语义，改它要动调度与计费口径），
+     * 所以本次能推的只有：条件判断（已有结论 → 通过或跳过其后）与输出节点（直接收尾）。
+     * 遇到需要执行的 `STEP`、需要人工确认的节点、缺结论的条件或受阻状态，一律<b>停下来</b>并留痕——
+     * 尤其不能在这里"顺手挂起"人工确认节点：任务紧接着就会被记成成功，
+     * 而一个没有相应任务态支撑的挂起节点，读起来就是"有东西在跑"，其实什么都没跑
+     * （这正是先 {@code peek} 再 {@code advance} 的原因）。</p>
+     *
+     * @param taskId           任务ID
+     * @param plan             执行计划
+     * @param conditionResults 条件结论（与闸门同一份：都取自冻结输入快照）
+     */
+    private void drainSettleableFlowTail(Long taskId, AigExecutionPlan plan,
+                                        Map<String, Boolean> conditionResults) {
+        int budget = plan.getFlowNodes().size() + 1;
+        for (int i = 0; i < budget; i++) {
+            AigFlowDriveResult peek;
+            try {
+                peek = flowDriver.peek(taskId, plan, conditionResults);
+            } catch (Exception e) {
+                log.error("读取流程下一步失败（尾部推进停止）, taskId={}", taskId, e);
+                return;
+            }
+            if (peek == null || peek.ended()) {
+                return;
+            }
+            boolean settleable = peek.action() == AigFlowRuntime.Action.SKIP_REST
+                || (peek.action() == AigFlowRuntime.Action.START && !peek.needsExecution());
+            if (!settleable) {
+                log.info("流程尾部本轮不能自行推进（需人确认/需执行/缺条件结论），留给下一次推进："
+                    + "taskId={}, action={}, nodeType={}", taskId,
+                    peek.action().getCode(), peek.nodeType());
+                return;
+            }
+            flowDriver.advance(taskId, plan, conditionResults);
+        }
     }
 
     /**

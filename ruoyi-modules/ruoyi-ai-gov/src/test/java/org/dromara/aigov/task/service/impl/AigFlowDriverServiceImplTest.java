@@ -206,6 +206,50 @@ class AigFlowDriverServiceImplTest {
     }
 
     @Test
+    @DisplayName("★ peek 只看不写：人工确认节点不会被挂起（假挂起比不挂起更坏）")
+    void peekDoesNotParkHumanConfirmNode() {
+        stub(List.of(flowStep(SEQ_FLOW_START, AigTaskStepStatusEnum.PLANNED,
+            "HUMAN_CONFIRM", "approve")));
+
+        AigFlowDriveResult peek = driver.peek(TASK_ID, plan(node("HUMAN_CONFIRM", "approve")), Map.of());
+
+        assertEquals(AigFlowRuntime.Action.WAIT_HUMAN, peek.action());
+        assertTrue(peek.transitions().isEmpty());
+        verify(stepService, never()).startStep(anyLong());
+        verify(stepService, never()).finishStep(anyLong(), any(), any(), any(), any(), any());
+
+        // 对照：同一个状态下 advance 会把它挂起（这就是 peek 存在的理由）
+        AigFlowDriveResult advanced = driver.advance(TASK_ID,
+            plan(node("HUMAN_CONFIRM", "approve")), Map.of());
+        assertEquals(AigFlowRuntime.Action.WAIT_HUMAN, advanced.action());
+        assertEquals(1, advanced.transitions().size());
+        verify(stepService).startStep(SEQ_FLOW_START);
+    }
+
+    @Test
+    @DisplayName("★ peek 与 advance 对「谁该上」的判定一致（否则尾部推进的探路会误导）")
+    void peekAgreesWithAdvanceOnNextAction() {
+        stub(List.of(flowStep(SEQ_FLOW_START, AigTaskStepStatusEnum.PLANNED, "OUTPUT", "out")));
+
+        AigFlowDriveResult peek = driver.peek(TASK_ID, plan(node("OUTPUT", "out")), Map.of());
+
+        assertEquals(AigFlowRuntime.Action.START, peek.action());
+        assertEquals("OUTPUT", peek.nodeType());
+        assertEquals(SEQ_FLOW_START, peek.stepId());
+        assertFalse(peek.needsExecution(), "输出节点由驱动收尾，不需要调用方执行");
+        verify(stepService, never()).startStep(anyLong());
+    }
+
+    @Test
+    @DisplayName("没有流程节点：peek 与 advance 一样直接给已完成")
+    void peekWithoutFlowNodesIsDone() {
+        AigFlowDriveResult peek = driver.peek(TASK_ID, plan(), Map.of());
+
+        assertEquals(AigFlowRuntime.Action.DONE, peek.action());
+        verify(stepService, never()).listFlowNodes(anyLong());
+    }
+
+    @Test
     @DisplayName("★ 恢复：confirm 先置执行中再收尾成功，并写入批准引用（校验靠账本里的节点身份）")
     void confirmStartsThenSettles() {
         stub(List.of(flowStep(SEQ_FLOW_START, AigTaskStepStatusEnum.PLANNED,

@@ -47,37 +47,101 @@ public class AigFlowDriverServiceImpl implements IAigFlowDriverService {
     @Override
     public AigFlowDriveResult advance(Long taskId, AigExecutionPlan plan,
                                       Map<String, Boolean> conditionResults) {
+        Prepared prepared = prepare(taskId, plan, conditionResults);
+        if (prepared.early() != null) {
+            return prepared.early();
+        }
+        List<String> transitions = new ArrayList<>();
+        apply(prepared, transitions);
+        if (!transitions.isEmpty()) {
+            log.info("流程推进, taskId={}, action={}, nodeIndex={}, transitions={}",
+                taskId, prepared.decision().action().getCode(), prepared.decision().nodeIndex(),
+                transitions);
+        }
+        return toResult(prepared, transitions);
+    }
+
+    @Override
+    public AigFlowDriveResult peek(Long taskId, AigExecutionPlan plan,
+                                   Map<String, Boolean> conditionResults) {
+        Prepared prepared = prepare(taskId, plan, conditionResults);
+        if (prepared.early() != null) {
+            return prepared.early();
+        }
+        // 只看不写：调用方据此决定"要不要真的推进"，避免"只想看看"却把节点挂起了
+        return toResult(prepared, List.of());
+    }
+
+    /**
+     * 校验入参、对齐账本、判定下一步（<b>不写任何状态</b>）。
+     *
+     * @param taskId           任务ID
+     * @param plan             执行计划
+     * @param conditionResults 条件结论
+     * @return 准备结果；{@code early} 非空表示"没什么可推进的"（直接返回它）
+     */
+    private Prepared prepare(Long taskId, AigExecutionPlan plan,
+                             Map<String, Boolean> conditionResults) {
         if (taskId == null || plan == null) {
-            return new AigFlowDriveResult(AigFlowRuntime.Action.DONE, AigFlowRuntime.NO_NODE, null,
-                null, null, "没有执行计划，无需推进流程", List.of());
+            return new Prepared(null, null, null, doneResult("没有执行计划，无需推进流程"));
         }
         List<AigFlowNode> declared = plan.getFlowNodes();
         if (declared == null || declared.isEmpty()) {
-            return new AigFlowDriveResult(AigFlowRuntime.Action.DONE, AigFlowRuntime.NO_NODE, null,
-                null, null, "执行计划没有流程节点", List.of());
+            return new Prepared(null, null, null, doneResult("执行计划没有流程节点"));
         }
         List<AigTaskStep> steps = stepService.listFlowNodes(taskId);
+        // 账本里记下的节点身份优先于执行计划：计划不落库，账本才是"当时到底声明了哪些节点"的证据
         List<AigFlowNode> nodes = alignWithLedger(declared, steps, taskId);
         AigFlowRuntime.Decision decision = AigFlowRuntime.decide(nodes, steps, conditionResults);
-        int index = decision.nodeIndex();
-        List<String> transitions = new ArrayList<>();
-        AigFlowNode node = nodeAt(nodes, index);
-        AigTaskStep step = stepAt(steps, index);
-        switch (decision.action()) {
+        return new Prepared(nodes, steps, decision, null);
+    }
+
+    /**
+     * 按判定结果写状态。
+     *
+     * @param prepared    准备结果
+     * @param transitions 迁移记录累加器
+     */
+    private void apply(Prepared prepared, List<String> transitions) {
+        int index = prepared.decision().nodeIndex();
+        AigFlowNode node = nodeAt(prepared.nodes(), index);
+        AigTaskStep step = stepAt(prepared.steps(), index);
+        switch (prepared.decision().action()) {
             case DONE, BLOCKED, WAIT_CONDITION, WAIT_EXECUTION -> {
                 // 无状态可写：完成/受阻/等条件/等收尾都不是"驱动能推进"的状态
             }
             case WAIT_HUMAN -> park(step, transitions);
             case START -> start(node, step, transitions);
-            case SKIP_REST -> skipRest(steps, index, transitions);
+            case SKIP_REST -> skipRest(prepared.steps(), index, transitions);
         }
-        if (!transitions.isEmpty()) {
-            log.info("流程推进, taskId={}, action={}, nodeIndex={}, transitions={}",
-                taskId, decision.action().getCode(), index, transitions);
-        }
+    }
+
+    private static AigFlowDriveResult doneResult(String reason) {
+        return new AigFlowDriveResult(AigFlowRuntime.Action.DONE, AigFlowRuntime.NO_NODE, null,
+            null, null, reason, List.of());
+    }
+
+    private static AigFlowDriveResult toResult(Prepared prepared, List<String> transitions) {
+        AigFlowRuntime.Decision decision = prepared.decision();
+        int index = decision.nodeIndex();
+        AigFlowNode node = nodeAt(prepared.nodes(), index);
+        AigTaskStep step = stepAt(prepared.steps(), index);
         return new AigFlowDriveResult(decision.action(), index, decision.nodeRef(),
             node == null ? null : node.type(), step == null ? null : step.getStepId(),
             decision.reason(), List.copyOf(transitions));
+    }
+
+    /**
+     * 一次推进所需的中间态。
+     *
+     * @param nodes    对齐后的节点清单
+     * @param steps    账本里的流程节点步骤
+     * @param decision 判定结果
+     * @param early    提前返回的结果（非空表示无需推进）
+     * @author ai-gov
+     */
+    private record Prepared(List<AigFlowNode> nodes, List<AigTaskStep> steps,
+                            AigFlowRuntime.Decision decision, AigFlowDriveResult early) {
     }
 
     @Override

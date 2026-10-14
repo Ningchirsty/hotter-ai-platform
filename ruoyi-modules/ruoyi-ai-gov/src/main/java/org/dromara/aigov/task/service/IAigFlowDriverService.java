@@ -36,6 +36,23 @@ public interface IAigFlowDriverService {
     AigFlowDriveResult advance(Long taskId, AigExecutionPlan plan, Map<String, Boolean> conditionResults);
 
     /**
+     * 只看不写地判定下一步（{@link #advance} 的只读版本）。
+     *
+     * <p><b>为什么需要它</b>：调用方有时只是想知道"现在轮到谁"，而 {@code advance} 是<b>会写状态</b>的——
+     * 遇到人工确认节点就会把它挂起成 {@code RUNNING}。若在"只想看看"的场合误用 {@code advance}，
+     * 就会把节点挂起却不落任务状态：一个**没有任务态支撑的假挂起**，
+     * 后续读取的人只能看到"这一步在跑"，而没有任何东西在跑。</p>
+     *
+     * <p>返回结构与 {@code advance} 一致，但 {@code transitions} 恒为空。</p>
+     *
+     * @param taskId           任务ID
+     * @param plan             执行计划
+     * @param conditionResults 条件结论
+     * @return 判定结论（不写任何状态）
+     */
+    AigFlowDriveResult peek(Long taskId, AigExecutionPlan plan, Map<String, Boolean> conditionResults);
+
+    /**
      * 记录一次人工确认（挂起后的恢复入口）。
      *
      * <p>先置执行中再收尾成功并写入 {@code approval_ref}：步骤状态机里
