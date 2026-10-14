@@ -252,9 +252,14 @@
   必填）——校验靠**账本里的身份**，不重新解析版本配置（重解析可能得到一份与当时不同的计划，
   把批准落到另一个节点上）；没有身份的存量步骤**拒绝盲批**并说明原因；重复确认返回既有凭据，
   **不覆盖"谁批的"**。
+- **界面侧**：任务列表每行加「流程」按钮（`v-hasPermi=['aig:task:query']`），打开
+  `TaskFlowPanel.vue`——节点清单（下标 / 类型 / 引用 / 状态 / 批准引用 / 失败原因）+
+  「记录确认」表单；口径收在 `flow.ts` 纯函数里（`flowNodeStatusText` 用后端下发的
+  `awaitingConfirmation` 判定"等人工确认"，`confirmValidation` 与后端同口径先拦一道），
+  共 7 条单测。
 - **刻意不自动重新入队**：确认只回答"这个节点批准了"，是否继续跑由人再点一次
   `POST /{taskId}/requeue` 决定——自动重跑会在一次"点确认"里夹带一次可能计费的执行。
-  完整操作序列：读 flow-nodes → 确认 → requeue。
+  完整操作序列：读 flow-nodes（界面上的「流程」按钮）→ 确认 → requeue。
 - 驱动侧同步收敛：节点对齐的过滤（只取 `FLOW_NODE`、只取首次 attempt）收进
   `IAigTaskStepService#listFlowNodes` 一处；`advance` 以**账本身份优先**于执行计划
   （不一致时 WARN 并写明以账本为准）。

@@ -46,6 +46,7 @@
 | `44ed5e2f` | D12 | **资产索引同步被「短页」误判为到底**（每域只同步前 50 条）修复 + 工具页权限点口径 |
 | `4c4f88dd` | D12/E | **资产索引水位线增量同步**（`syncNewForUser` + `?mode=incremental`） |
 | `cc3420f2` | D | **人工确认的恢复入口**：节点身份落账本（`node_type`/`node_ref`）+ `GET /task/{id}/flow-nodes` + `POST /task/{id}/flow/confirm`；发布工作流的重放清单补入本分支新增的建表/补列脚本 |
+| `dd2708dc` | D/前端 | 任务页**流程节点面板与人工确认**（`TaskFlowPanel.vue` + `flow.ts`/`flow.spec.ts`） |
 
 ---
 
@@ -85,7 +86,7 @@
 ## 4 验证汇总
 
 - 后端 `ruoyi-ai-gov`：**1255 tests / 0 failures / 0 errors**（基线 1053 → 新增 202）。
-- 前端 `frontend`：**49 files / 468 tests** 全过；`oxlint src` 543 files 0/0。
+- 前端 `frontend`：**50 files / 475 tests** 全过；`oxlint src` 546 files 0/0。
 - 关键守卫全部通过：`AigPermissionSeedCoverageTest`（权限串已种子 + menu_id 不撞）、
   `AigRepeatSubmitCoverageTest`（写接口防重或显式豁免）、`AigWp3WiringAndRoutesTest`。
 
@@ -152,7 +153,8 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
    `IAigSubAgentReconcileService`）。
 2. **D12 已完成**：资产索引**增量同步**（水位线 `syncNewForUser`，`?mode=incremental`）已落地，
    口径边界写在 `23` 与 `10`：**只补新增**，删除/更新靠定期全量重建（三个业务域都没有变更事件）。
-3. **界面**：反馈与运营页、知识中心页、工具注册页已交付；训练台已加**页头状态条 + 七步骤导航**
+3. **界面**：反馈与运营页、知识中心页、工具注册页、**任务页的流程节点与人工确认面板**
+   （`TaskFlowPanel.vue`）已交付；训练台已加**页头状态条 + 七步骤导航**
    （含 `studio/layout.ts` 口径与单测）；**完整三栏组件化重构仍待做**。
 4. **执行入口收窄**：§7.2 已落地 **有效知识范围 = 版本声明 ∩ 启用的 KNOWLEDGE 绑定**、
    **有效数据等级 = 各来源最高值**、**有效外发 = 各方取与**（`AigEffectivePolicy`）；
