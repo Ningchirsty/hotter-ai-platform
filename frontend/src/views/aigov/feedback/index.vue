@@ -30,9 +30,25 @@
         <div class="header">
           <span class="title">反馈问题队列</span>
           <div>
-            <el-select v-model="verdict" style="width: 180px" @change="loadQueue">
+            <el-select v-model="verdict" style="width: 160px" @change="loadQueue">
               <el-option
                 v-for="item in QUEUE_FILTERS"
+                :key="item.code"
+                :label="item.label"
+                :value="item.code"
+              />
+            </el-select>
+            <el-select v-model="actionCode" clearable style="width: 150px" class="ml-2" @change="loadQueue">
+              <el-option
+                v-for="item in QUEUE_ACTION_FILTERS"
+                :key="item.code"
+                :label="item.label"
+                :value="item.code"
+              />
+            </el-select>
+            <el-select v-model="reasonCode" clearable style="width: 150px" class="ml-2" @change="loadQueue">
+              <el-option
+                v-for="item in QUEUE_REASON_FILTERS"
                 :key="item.code"
                 :label="item.label"
                 :value="item.code"
@@ -42,10 +58,13 @@
           </div>
         </div>
       </template>
+      <el-alert type="info" :closable="false" show-icon class="mb-2" :title="queueActionHint(actionCode)" />
       <el-table :data="rows" border>
         <el-table-column label="反馈ID" prop="feedbackId" width="180" />
         <el-table-column label="任务" prop="taskId" width="180" />
         <el-table-column label="结果" prop="resultId" width="180" />
+        <el-table-column label="Agent 版本" prop="agentVersionId" width="180" show-overflow-tooltip />
+        <el-table-column label="知识版本" prop="knowledgeVersionId" width="180" show-overflow-tooltip />
         <el-table-column label="原因" width="120">
           <template #default="{ row }">{{ reasonLabel(row.reasonCode) }}</template>
         </el-table-column>
@@ -57,6 +76,8 @@
         <el-table-column label="动作" width="120">
           <template #default="{ row }">{{ row.actionCode ? actionLabel(row.actionCode) : '—' }}</template>
         </el-table-column>
+        <el-table-column label="处理人" prop="handledBy" width="160" show-overflow-tooltip />
+        <el-table-column label="处理时间" prop="handledAt" width="180" />
         <el-table-column label="提交时间" prop="createTime" width="180" />
         <el-table-column label="操作" width="120">
           <template #default="{ row }">
@@ -120,9 +141,12 @@ import type {
 import modal from '@/plugins/modal';
 import {
   ACTION_OPTIONS,
+  QUEUE_ACTION_FILTERS,
   QUEUE_FILTERS,
+  QUEUE_REASON_FILTERS,
   actionLabel,
   handleValidation,
+  queueActionHint,
   rateText,
   reasonLabel,
   verdictLabel,
@@ -134,6 +158,8 @@ defineOptions({ name: 'AigFeedback' });
 const metrics = ref<AigOperationsMetricsVO>({});
 const rows = ref<AigFeedbackVO[]>([]);
 const verdict = ref('');
+const actionCode = ref('');
+const reasonCode = ref('');
 const handleVisible = ref(false);
 const saving = ref(false);
 const handling = ref<AigFeedbackVO>();
@@ -145,7 +171,7 @@ const loadMetrics = async () => {
 };
 
 const loadQueue = async () => {
-  const res = await listFeedbackQueue(verdict.value);
+  const res = await listFeedbackQueue(verdict.value, actionCode.value, reasonCode.value);
   rows.value = res.data || [];
 };
 

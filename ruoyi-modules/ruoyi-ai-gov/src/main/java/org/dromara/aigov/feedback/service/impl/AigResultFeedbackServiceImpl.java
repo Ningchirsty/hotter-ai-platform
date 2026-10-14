@@ -67,13 +67,39 @@ public class AigResultFeedbackServiceImpl implements IAigResultFeedbackService {
 
     @Override
     public List<AigResultFeedback> listQueue(String verdict) {
+        return listQueue(verdict, null, null);
+    }
+
+    @Override
+    public List<AigResultFeedback> listQueue(String verdict, String actionCode, String reasonCode) {
         String wanted = StringUtils.isBlank(verdict)
             ? AigFeedbackVerdictEnum.PENDING.getCode() : verdict.trim();
         if (AigFeedbackVerdictEnum.find(wanted) == null) {
             throw new ServiceException("非法的处理结论过滤：" + verdict);
         }
+        // 过滤条件一律走枚举校验：拼错的编码若被当成"没有匹配"，页面会显示成"队列是空的"——
+        // 那是"没有问题要处理"的意思，与"你筛错了"完全不同
+        AigFeedbackActionEnum action = null;
+        if (StringUtils.isNotBlank(actionCode)) {
+            action = AigFeedbackActionEnum.find(actionCode);
+            if (action == null) {
+                throw new ServiceException("非法的处理动作过滤：" + actionCode
+                    + "（只能是 ADD_KNOWLEDGE/CHANGE_RULE/ADD_CASE/CLOSE）");
+            }
+        }
+        AigFeedbackReasonEnum reason = null;
+        if (StringUtils.isNotBlank(reasonCode)) {
+            reason = AigFeedbackReasonEnum.find(reasonCode);
+            if (reason == null) {
+                throw new ServiceException("非法的反馈原因过滤：" + reasonCode);
+            }
+        }
         return feedbackMapper.selectList(new LambdaQueryWrapper<AigResultFeedback>()
             .eq(AigResultFeedback::getVerdict, wanted)
+            .eq(action != null, AigResultFeedback::getActionCode,
+                action == null ? null : action.getCode())
+            .eq(reason != null, AigResultFeedback::getReasonCode,
+                reason == null ? null : reason.getCode())
             .eq(AigResultFeedback::getStatus, STATUS_NORMAL)
             .orderByDesc(AigResultFeedback::getCreateTime));
     }

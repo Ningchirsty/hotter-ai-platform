@@ -17,8 +17,10 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -55,6 +57,48 @@ class AigResultFeedbackServiceImplTest {
             return 1;
         });
         when(feedbackMapper.updateById(any(AigResultFeedback.class))).thenReturn(1);
+    }
+
+    @Test
+    @DisplayName("★ 队列按动作过滤：负责用例的人要能问出「哪些是要我加入用例的」")
+    void queueFiltersByAction() {
+        when(feedbackMapper.selectList(any())).thenReturn(java.util.List.of());
+
+        service.listQueue("CONFIRMED", "ADD_CASE", null);
+
+        ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.Wrapper<AigResultFeedback>> captor =
+            ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.Wrapper.class);
+        verify(feedbackMapper).selectList(captor.capture());
+        String sql = captor.getValue().getSqlSegment();
+        assertTrue(sql.contains("action_code"), "必须真的按动作收窄：" + sql);
+        assertTrue(sql.contains("verdict"), "结论过滤不能丢：" + sql);
+    }
+
+    @Test
+    @DisplayName("★ 队列：结论/动作/原因三个过滤互相独立（空=不限，不是「等于空」）")
+    void queueFiltersAreOptional() {
+        when(feedbackMapper.selectList(any())).thenReturn(java.util.List.of());
+
+        service.listQueue(null, null, "MISSING_SOURCE");
+        service.listQueue("CONFIRMED", null, null);
+
+        ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.Wrapper<AigResultFeedback>> captor =
+            ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.Wrapper.class);
+        verify(feedbackMapper, org.mockito.Mockito.times(2)).selectList(captor.capture());
+        String withReason = captor.getAllValues().get(0).getSqlSegment();
+        String onlyVerdict = captor.getAllValues().get(1).getSqlSegment();
+        assertTrue(withReason.contains("reason_code"), "按原因过滤应生效：" + withReason);
+        assertFalse(withReason.contains("action_code"), "没给动作就不该收窄动作：" + withReason);
+        assertFalse(onlyVerdict.contains("reason_code"), "没给原因就不该收窄原因：" + onlyVerdict);
+    }
+
+    @Test
+    @DisplayName("★ 队列：拼错的动作/原因要报错（当成「没匹配」会被读成「队列是空的」）")
+    void queueRejectsUnknownFilters() {
+        assertThrows(ServiceException.class, () -> service.listQueue("CONFIRMED", "ADD_CASE_X", null));
+        assertThrows(ServiceException.class, () -> service.listQueue("CONFIRMED", null, "NO_SUCH"));
+        assertThrows(ServiceException.class, () -> service.listQueue("NO_SUCH_VERDICT", null, null));
+        verify(feedbackMapper, org.mockito.Mockito.never()).selectList(any());
     }
 
     private static AigResultFeedbackBo bo(String reason) {

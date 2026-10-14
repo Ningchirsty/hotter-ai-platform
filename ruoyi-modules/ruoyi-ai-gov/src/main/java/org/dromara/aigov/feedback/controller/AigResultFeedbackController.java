@@ -62,15 +62,22 @@ public class AigResultFeedbackController extends BaseController {
     }
 
     /**
-     * 问题队列。
+     * 问题队列（可按结论 / 后续动作 / 反馈原因过滤）。
      *
-     * @param verdict 处理结论过滤（可空=默认 PENDING）
+     * <p>按动作过滤是给"接着处理的人"用的：负责用例的人要能问出"哪些问题是要我加入用例的"，
+     * 而不是把整条队列从头翻一遍。</p>
+     *
+     * @param verdict    处理结论过滤（可空=默认 PENDING）
+     * @param actionCode 后续动作过滤（可空=不限；PENDING 行没有动作）
+     * @param reasonCode 反馈原因过滤（可空=不限）
      * @return 反馈清单
      */
     @SaCheckPermission(AigConstants.PERM_FEEDBACK_QUEUE)
     @GetMapping("/queue")
-    public R<List<AigResultFeedback>> queue(@RequestParam(required = false) String verdict) {
-        return R.ok(feedbackService.listQueue(verdict));
+    public R<List<AigResultFeedback>> queue(@RequestParam(required = false) String verdict,
+                                            @RequestParam(required = false) String actionCode,
+                                            @RequestParam(required = false) String reasonCode) {
+        return R.ok(feedbackService.listQueue(verdict, actionCode, reasonCode));
     }
 
     /**

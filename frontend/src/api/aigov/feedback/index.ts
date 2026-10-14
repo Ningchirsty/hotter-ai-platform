@@ -22,12 +22,21 @@ export function submitFeedback(data: AigFeedbackSubmitForm): AxiosPromise<number
   });
 }
 
-/** 问题队列（verdict 可空=默认 PENDING） */
-export function listFeedbackQueue(verdict?: string): AxiosPromise<AigFeedbackVO[]> {
+/**
+ * 问题队列（结论/后续动作/反馈原因三个过滤都可空）。
+ *
+ * 按动作过滤是给"接着处理的人"用的：负责用例的人要能问出"哪些是要我加入用例的"，
+ * 而不是把整条队列从头翻一遍。
+ */
+export function listFeedbackQueue(
+  verdict?: string,
+  actionCode?: string,
+  reasonCode?: string
+): AxiosPromise<AigFeedbackVO[]> {
   return request({
     url: '/aigov/feedback/queue',
     method: 'get',
-    params: { verdict }
+    params: { verdict, actionCode, reasonCode }
   });
 }
 

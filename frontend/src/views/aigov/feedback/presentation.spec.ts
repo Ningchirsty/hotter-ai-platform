@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   ACTION_OPTIONS,
+  QUEUE_ACTION_FILTERS,
+  QUEUE_REASON_FILTERS,
   REASON_OPTIONS,
   VERDICT_OPTIONS,
   actionLabel,
   faultClassRows,
   handleValidation,
+  queueActionHint,
   rateText,
   reasonLabel,
   verdictLabel,
@@ -64,5 +67,25 @@ describe('feedback presentation', () => {
       { code: 'TIMEOUT', count: 2 }
     ]);
     expect(faultClassRows(undefined)).toEqual([]);
+  });
+
+  it('★ 队列过滤词表：动作/原因首项是"全部"（空=不限，不是"等于空"）', () => {
+    expect(QUEUE_ACTION_FILTERS[0].code).toBe('');
+    expect(QUEUE_ACTION_FILTERS.map(item => item.code).slice(1)).toEqual(
+      ACTION_OPTIONS.map(item => item.code)
+    );
+    expect(QUEUE_REASON_FILTERS[0].code).toBe('');
+    expect(QUEUE_REASON_FILTERS.map(item => item.code).slice(1)).toEqual(
+      REASON_OPTIONS.map(item => item.code)
+    );
+  });
+
+  it('★ 按动作过滤要给出去向：动作只送进改进流程，不直接改线上版本', () => {
+    expect(queueActionHint('ADD_CASE')).toContain('golden_cases');
+    expect(queueActionHint('ADD_CASE')).toContain('不直接进通用黄金数据集');
+    expect(queueActionHint('ADD_KNOWLEDGE')).toContain('知识中心');
+    expect(queueActionHint('CHANGE_RULE')).toContain('训练台');
+    expect(queueActionHint('CLOSE')).toContain('无需动作');
+    expect(queueActionHint('')).toContain('按动作过滤');
   });
 });

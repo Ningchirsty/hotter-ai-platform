@@ -44,6 +44,47 @@ export const QUEUE_FILTERS: readonly CodeOption[] = [
   { code: 'REJECTED', label: '已驳回' }
 ] as const;
 
+/** 队列的动作过滤（含"全部动作"） */
+export const QUEUE_ACTION_FILTERS: readonly CodeOption[] = [
+  { code: '', label: '全部动作' },
+  { code: 'ADD_KNOWLEDGE', label: '补知识' },
+  { code: 'CHANGE_RULE', label: '改规则' },
+  { code: 'ADD_CASE', label: '加入用例' },
+  { code: 'CLOSE', label: '关闭' }
+] as const;
+
+/** 队列的原因过滤（含"全部原因"） */
+export const QUEUE_REASON_FILTERS: readonly CodeOption[] = [
+  { code: '', label: '全部原因' },
+  { code: 'USEFUL', label: '有用' },
+  { code: 'FACT_ERROR', label: '事实有误' },
+  { code: 'CITATION_MISMATCH', label: '引用不符' },
+  { code: 'MISSING_SOURCE', label: '资料缺失' },
+  { code: 'FORMAT_MISMATCH', label: '格式不符' },
+  { code: 'FLOW_INTERRUPTED', label: '流程中断' }
+] as const;
+
+/**
+ * 按动作过滤时给一句"接下来做什么"。
+ *
+ * <p>筛选结果本身不说明去向：把一批问题挑出来之后，人要知道它落到哪个模块才算闭环。
+ * 这段话是"动作只是送进改进流程、不直接改线上版本"这条规矩的落地说明。</p>
+ */
+export function queueActionHint(actionCode?: string): string {
+  switch (actionCode) {
+    case 'ADD_KNOWLEDGE':
+      return '这些是要补知识的问题：到知识中心登记/补版本，处理到「已就绪」才会被检索。';
+    case 'CHANGE_RULE':
+      return '这些是要改规则的问题：到训练台改草稿并提交 DRAFT 版本，仍走既有发布门槛。';
+    case 'ADD_CASE':
+      return '这些是要加入用例的问题：用例定义按版本的 golden_cases 声明，本页只负责把问题标给用例负责人；问题原文留在 detailRef 指向的受控出处，不直接进通用黄金数据集。';
+    case 'CLOSE':
+      return '这些是已判定无需动作的问题（重复反馈或已修）。';
+    default:
+      return '按动作过滤可以只挑出"要我处理的那一份"，而不是把整条队列从头翻一遍。';
+  }
+}
+
 /**
  * 按码取文案；认不出的码原样展示（而不是显示空白——空白会让人以为没值）。
  */
