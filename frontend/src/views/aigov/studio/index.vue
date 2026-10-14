@@ -156,24 +156,13 @@
         </ul>
       </el-alert>
 
-      <!-- ★ 三栏（设计 §6.3、§5.4 图一）：左=步骤导航，中=编辑区，右=修订差异 -->
+      <!-- ★ 三栏（设计 §6.3、§5.4 图一）：左=步骤导航，中=编辑区，右=修订差异。
+           左右两栏已拆成子组件（StudioStepsColumn / StudioRevisionColumn）；
+           中间编辑区仍在本文件：它与八个 Prompt 分节共享一个 content 对象，
+           抽成子组件需要 v-model 穿透整份内容，收益（少几十行）远小于绑定出错的风险。 -->
       <el-row :gutter="16">
         <el-col :span="4">
-          <el-card shadow="never" class="step-card">
-            <template #header><b>步骤</b></template>
-            <ul class="step-list">
-              <li
-                v-for="(step, index) in STUDIO_STEPS"
-                :key="step.key"
-                :class="['step-item', index === activeStep ? 'step-item-active' : '']"
-                @click="activeStep = index"
-              >
-                <span class="step-no">{{ index + 1 }}</span>
-                <span class="step-label">{{ step.label }}</span>
-              </li>
-            </ul>
-            <p class="step-hint">顺序即编辑顺序；表单暂未按步骤拆分，这里用于定位当前在填哪一段。</p>
-          </el-card>
+          <StudioStepsColumn />
         </el-col>
 
         <el-col :span="13">
@@ -225,60 +214,17 @@
         </el-col>
 
         <el-col :span="7">
-          <el-card shadow="never">
-            <template #header>
-              <div style="display: flex; justify-content: space-between; align-items: center">
-                <b>修订历史与差异</b>
-                <span class="text-gray-500">当前修订 #{{ expectedRevision }}</span>
-              </div>
-            </template>
-            <el-table
-              :data="revisions"
-              size="small"
-              border
-              highlight-current-row
-              @current-change="selectRevision"
-              style="max-height: 240px; overflow: auto"
-            >
-              <el-table-column label="修订" prop="revisionNo" width="70" />
-              <el-table-column label="来源" prop="source" width="140" show-overflow-tooltip />
-              <el-table-column label="说明" prop="summary" show-overflow-tooltip />
-              <el-table-column label="时间" prop="createTime" width="160" show-overflow-tooltip />
-            </el-table>
-
-            <div class="mt-2">
-              <el-button
-                v-hasPermi="['aig:studio:draft:edit']"
-                size="small"
-                :disabled="selectedRevisionNo === undefined"
-                @click="handleRollback"
-              >
-                回滚到所选修订
-              </el-button>
-              <el-button size="small" :disabled="selectedRevisionNo === undefined" @click="clearSelection">清除选择</el-button>
-            </div>
-
-            <el-divider content-position="left">差异（当前 ↔ 所选修订）</el-divider>
-            <p v-if="selectedRevisionNo === undefined" class="text-gray-500">
-              从上面点一条修订，这里会逐节显示与当前内容的差异（改动过的节会标出来）。
-            </p>
-            <template v-else>
-              <p :class="selectedDiffChanged.length ? 'text-orange-500' : 'text-gray-500'">
-                {{ selectedSummary }}
-              </p>
-              <div v-for="item in selectedDiff" :key="item.key" class="diff-block">
-                <div class="diff-head">
-                  <el-tag v-if="item.changed" type="warning" size="small">改动</el-tag>
-                  <el-tag v-else type="info" size="small">一致</el-tag>
-                  <span class="diff-label">{{ item.label }}</span>
-                </div>
-                <template v-if="item.changed">
-                  <div class="diff-side"><b>修订 #{{ selectedRevisionNo }}：</b>{{ item.revision || '（空）' }}</div>
-                  <div class="diff-side"><b>当前：</b>{{ item.current || '（空）' }}</div>
-                </template>
-              </div>
-            </template>
-          </el-card>
+          <StudioRevisionColumn
+            :current-revision="expectedRevision"
+            :revisions="revisions"
+            :selected-revision-no="selectedRevisionNo"
+            :selected-diff="selectedDiff"
+            :selected-diff-changed="selectedDiffChanged"
+            :selected-summary="selectedSummary"
+            @select="selectRevision"
+            @rollback="handleRollback"
+            @clear="clearSelection"
+          />
         </el-col>
       </el-row>
 
@@ -432,8 +378,10 @@ import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import modal from '@/plugins/modal';
 import { PROMPT_SECTION_LABELS, diffSummary, parseDraftContent, sectionDiff } from './diff';
 import { DIRTY_CHOICES, beforeUnloadShouldWarn, needsGuard, unsavedMessage, type DirtyChoice } from './dirtyGuard';
-import { STUDIO_STEPS, revisionText, saveStateLabel, saveStateTagType } from './layout';
+import { revisionText, saveStateLabel, saveStateTagType } from './layout';
 import ProposalPanel from './components/ProposalPanel.vue';
+import StudioRevisionColumn from './components/StudioRevisionColumn.vue';
+import StudioStepsColumn from './components/StudioStepsColumn.vue';
 
 defineOptions({ name: 'AigStudio' });
 
@@ -468,14 +416,6 @@ const content = ref<AigStudioDraftContentForm>({ promptSections: {} });
 const expectedRevision = ref(0);
 const localDirty = ref(false);
 const problems = ref<string[]>([]);
-
-/**
- * 左栏当前高亮的步骤（设计 §6.3 的七步导航）。
- *
- * 只做定位与高亮，**不按步骤过滤中间的表单**：表单目前是一整块（八个 Prompt 分节共享一个内容对象），
- * 过滤会让人以为"别的步骤的内容丢了"。等表单真按步骤拆开后再让它联动。
- */
-const activeStep = ref(0);
 
 const revisions = ref<AigStudioRevisionVO[]>([]);
 const selectedRevisionNo = ref<number | undefined>(undefined);
@@ -824,67 +764,6 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.step-card {
-  height: 100%;
-}
-
-.step-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.step-item {
-  display: flex;
-  gap: 6px;
-  align-items: flex-start;
-  padding: 6px 8px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 13px;
-  line-height: 1.4;
-  color: var(--app-text-color-regular, #606266);
-}
-
-.step-item:hover {
-  background: var(--app-hover-bg, #f5f7fa);
-}
-
-.step-item-active {
-  background: var(--el-color-primary-light-9, #ecf5ff);
-  color: var(--el-color-primary, #409eff);
-  font-weight: 600;
-}
-
-.step-no {
-  flex: 0 0 auto;
-  width: 16px;
-  height: 16px;
-  margin-top: 1px;
-  border-radius: 50%;
-  background: var(--el-color-info-light-8, #ebeef5);
-  color: #606266;
-  font-size: 11px;
-  line-height: 16px;
-  text-align: center;
-}
-
-.step-item-active .step-no {
-  background: var(--el-color-primary, #409eff);
-  color: #fff;
-}
-
-.step-label {
-  word-break: break-all;
-}
-
-.step-hint {
-  margin: 8px 0 0;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--app-text-color-secondary, #909399);
-}
-
 .editor-strip {
   display: flex;
   align-items: center;
