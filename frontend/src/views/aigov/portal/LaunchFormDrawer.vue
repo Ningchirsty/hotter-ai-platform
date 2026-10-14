@@ -19,13 +19,22 @@
         <span v-if="prepared?.willCreateTask === false" class="hint">这次启动只记录审计，不会创建任务</span>
       </el-form-item>
 
-      <el-form-item v-if="needsTask" label="任务类型" required>
+      <!-- D11：配置了任务模板时，执行字段由服务端推导，员工只填业务字段 -->
+      <el-form-item v-if="templateApplied" label="任务模板">
+        <span class="card-title">{{ template?.title || template?.templateCode }}</span>
+        <div class="hint" style="margin-left: 0">
+          按模板推导：任务类型 {{ template?.taskType || '—' }} · 业务域 {{ template?.projectType || '—' }} ·
+          处理范围 {{ template?.dataLevel || '—' }}（服务端结论，不可放宽）
+        </div>
+      </el-form-item>
+
+      <el-form-item v-if="needsTask && !templateApplied" label="任务类型" required>
         <el-select v-model="form.taskType" style="width: 100%">
           <el-option v-for="item in TASK_TYPE_OPTIONS" :key="item.code" :label="item.label" :value="item.code" />
         </el-select>
       </el-form-item>
 
-      <el-form-item v-if="needsTask" label="业务域" required>
+      <el-form-item v-if="needsTask && !templateApplied" label="业务域" required>
         <el-input v-model="form.projectType" placeholder="如 creative / content / video" />
       </el-form-item>
 
@@ -40,7 +49,7 @@
         <span class="hint">项目权判定要接业务域的项目归属，尚未接入；为避免越权，带项目的启动一律被拒绝（fail-closed）</span>
       </el-form-item>
 
-      <el-form-item v-if="needsTask" label="数据等级" required>
+      <el-form-item v-if="needsTask && !templateApplied" label="数据等级" required>
         <el-select v-model="form.dataLevel" style="width: 100%">
           <el-option label="PUBLIC（公开）" value="PUBLIC" />
           <el-option label="INTERNAL（内部）" value="INTERNAL" />
@@ -49,11 +58,11 @@
         </el-select>
       </el-form-item>
 
-      <el-form-item v-for="key in requiredContextKeys" :key="key" :label="key" required>
-        <el-input v-model="form.context[key]" :placeholder="'卡片要求这个上下文键（' + key + '）'" />
+      <el-form-item v-for="key in inputKeys" :key="key" :label="key" required>
+        <el-input v-model="form.context[key]" :placeholder="'请填写 ' + key" />
       </el-form-item>
 
-      <el-form-item v-if="needsTask" label="输入内容" required>
+      <el-form-item v-if="needsTask && !templateApplied" label="输入内容" required>
         <el-input
           v-model="form.snapshotJson"
           type="textarea"
@@ -105,8 +114,8 @@
 </template>
 
 <script setup lang="ts">
-import { commitLaunch, prepareLaunch } from '@/api/aigov/portal';
-import type { AigLaunchCommitVO, AigLaunchRequestForm, AigLaunchPrepareVO, AigPortalActionVO } from '@/api/aigov/portal/types';
+import { commitLaunch, getLaunchTemplate, prepareLaunch } from '@/api/aigov/portal';
+import type { AigLaunchCommitVO, AigLaunchRequestForm, AigLaunchPrepareVO, AigLaunchTemplateVO, AigPortalActionVO } from '@/api/aigov/portal/types';
 import modal from '@/plugins/modal';
 import { START_PENDING_HINT, TASK_TYPE_OPTIONS, buildIdempotencyKey, launchModeLabel, problemTexts } from './presentation';
 
@@ -138,6 +147,30 @@ const requiredContextKeys = computed(() => {
 /** 页面类卡片不建任务；其余都要把任务描述清楚（与后端同一判据） */
 const needsTask = computed(() => props.action?.launchMode !== 'NAVIGATION');
 
+/**
+ * 启动任务模板（D11）。为空表示未配置模板，按旧表单处理（执行字段由员工填）。
+ */
+const template = ref<AigLaunchTemplateVO>();
+
+const templateApplied = computed(() => !!template.value);
+
+/**
+ * 员工要填的字段：模板声明的业务字段 ∪ 卡片要求的上下文键。
+ *
+ * 取并集是为了"不漏"：模板给的是业务视角，而卡片声明的 requiredContext 是服务端硬要求，
+ * 少渲染一个就会在提交时被拒（"填了却提示还缺"）。
+ */
+const inputKeys = computed(() => {
+  const merged = new Set<string>();
+  for (const key of requiredContextKeys.value) {
+    merged.add(key);
+  }
+  for (const key of template.value?.businessFields || []) {
+    merged.add(key);
+  }
+  return Array.from(merged);
+});
+
 const preparing = ref(false);
 const committing = ref(false);
 const problems = ref<string[]>([]);
@@ -146,7 +179,7 @@ const form = ref<AigLaunchRequestForm>({ roleCode: '', actionCode: '', idempoten
 
 const emptyContext = () => {
   const map: Record<string, string> = {};
-  for (const key of requiredContextKeys.value) {
+  for (const key of inputKeys.value) {
     map[key] = '';
   }
   return map;
@@ -157,29 +190,48 @@ const emptyContext = () => {
  *
  * 幂等键**在这里生成一次**：整轮（预检 + 重试）都用它，服务端据此判"同一次启动"。
  * 每次点击都换新键等于关掉了幂等。
+ *
+ * D11：先取模板再建表单——有模板时只让员工填业务字段，执行字段用模板值预填
+ * （服务端仍会以模板为准覆盖，这里预填只为让确认界面显示的就是最终会用的值）。
  */
-const reset = () => {
+const reset = (applied?: AigLaunchTemplateVO) => {
+  template.value = applied;
   problems.value = [];
   prepared.value = undefined;
   form.value = {
     roleCode: props.roleCode,
     actionCode: props.action?.actionCode || '',
     idempotencyKey: buildIdempotencyKey(),
-    taskType: 'TEXT_GENERATION',
-    projectType: '',
+    taskType: applied?.taskType || 'TEXT_GENERATION',
+    projectType: applied?.projectType || '',
     projectId: undefined,
-    dataLevel: 'INTERNAL',
+    dataLevel: applied?.dataLevel || 'INTERNAL',
     snapshotJson: '',
     context: emptyContext(),
     remark: ''
   };
 };
 
+const openForm = async () => {
+  let applied: AigLaunchTemplateVO | undefined;
+  const actionCode = props.action?.actionCode;
+  if (actionCode) {
+    try {
+      const res = await getLaunchTemplate(props.roleCode, actionCode);
+      applied = res.data || undefined;
+    } catch {
+      // 模板取不到不阻断启动：回退旧表单（服务端仍会按模板推导，只是界面不简化）
+      applied = undefined;
+    }
+  }
+  reset(applied);
+};
+
 watch(
   () => props.modelValue,
   visible => {
     if (visible) {
-      reset();
+      void openForm();
     }
   }
 );
