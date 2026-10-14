@@ -17,6 +17,9 @@
  *   node script/ci/verify-aigov-v1.mjs --skip-backend  # 只跑前端与静态检查
  *   node script/ci/verify-aigov-v1.mjs --keep-reports  # 保留 vitest JSON 报告
  *
+ * 它顺带跑 `check-aigov-docs.mjs`：核对文档里写的类名/脚本清单/测试数是否还和代码一致
+ * （放在最后一步，因为它要吃前两步刚产出的报告）。
+ *
  * 后端两种口径的差别：v1.0 的改动集中在 `ruoyi-ai-gov` 与前端，默认只跑那个模块（几十秒）；
  * `--full-reactor`（先 clean 再按 CI 的 `-Dtest.groups=!exclude` 跑整棵反应堆）会额外启用
  * "每个有测试的模块都必须产出 Surefire 报告"的台账守卫。
@@ -265,10 +268,17 @@ if (SKIP_FRONTEND) {
   }
 }
 
+// ── 3) 文档口径：文档里写的类/脚本/测试数是否与代码和刚跑出来的报告一致 ────────
+//   放在最后一步，因为它的"数字"检查要吃前两步刚产出的报告（surefire XML 与 vitest JSON）
+if (!run('文档口径检查（check-aigov-docs）',
+  '文档里的类名/脚本清单/测试数会静默漂移：代码改名或测试数前移都不会让任何测试变红',
+  process.execPath, [join('script', 'ci', 'check-aigov-docs.mjs')])) {
+  failed = true;
+}
+
 if (!KEEP_REPORTS) {
   rmSync(VITEST_JSON, { force: true });
 }
-
 // ── 结论 ───────────────────────────────────────────────────────────────────
 console.log(`\n${'='.repeat(78)}\n验收结论\n`);
 console.log('| 步骤 | 结论 | 耗时(s) | 说明 |');

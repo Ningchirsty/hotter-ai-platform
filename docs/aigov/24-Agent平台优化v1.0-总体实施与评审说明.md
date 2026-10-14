@@ -57,6 +57,7 @@
 | `032d704e` | B/前端 | **训练台左右两栏拆成子组件**（`StudioStepsColumn` / `StudioRevisionColumn`，右栏只收 props 回抛事件）+ 结构守卫随拆分调整 |
 | `aefde3d5` | B/前端 | **员工业务状态**（设计 §6.8：服务端算好下发；执行成功未复核显示「草稿已生成 待复核」） |
 | `fad26a64` | —/CI | **验收脚本 `script/ci/verify-aigov-v1.mjs`**（编排既有守卫，一条命令出逐项结论）+ `check-script-setup.mjs` 支持 `--files-from`（Windows 命令行长度上限） |
+| 见本轮提交 | —/CI | **文档口径检查 `script/ci/check-aigov-docs.mjs`**（类名 / SQL 清单 / 测试数三类漂移，接入验收脚本最后一步） |
 
 ---
 
@@ -215,6 +216,11 @@ node script/ci/verify-aigov-v1.mjs --full-reactor   # 与 CI 同口径跑整棵�
 `check-script-setup.mjs` 必须拿到**全部** `.vue`（少传就是假通过）。
 守卫脚本本身是仓里既有的两个（`check-test-results.py` / `check-frontend-tests.mjs`），
 本脚本只做编排、不另写判定。
+
+最后一步是 **`check-aigov-docs.mjs`（文档口径检查）**：核对文档里写的
+①类名（46 个 `Aig*` 名字都能在源码里找到）、②SQL 脚本清单（含 `ALTER` 的都在发布工作流的
+重放清单里）、③**测试数**（与本轮刚跑出来的 Surefire 报告 / vitest JSON 一致）。
+它防的是"文档漂移"——代码改名、脚本漏清单、测试数前移，都不会让任何测试变红。
 
 手动等价命令（想单跑某一步时用）：
 
