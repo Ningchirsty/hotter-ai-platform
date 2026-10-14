@@ -36,6 +36,14 @@ public interface IAigKnowledgeService {
     List<AigKnowledgeCollection> listCollections();
 
     /**
+     * 列出知识文档（可按集合过滤）。
+     *
+     * @param collectionId 集合ID（可空=全部）
+     * @return 文档清单
+     */
+    List<org.dromara.aigov.knowledge.domain.AigKnowledgeDocument> listDocuments(Long collectionId);
+
+    /**
      * 登记文档与其一个新版本（处理管道从 {@code UPLOADED} 开始）。
      *
      * <p>命中同哈希的既有版本时只给"重复文件提示"，仍照常建版本——不同业务范围不共享授权。</p>

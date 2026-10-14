@@ -430,6 +430,36 @@ public interface AigConstants {
     String PERM_ROLE_PACKAGE_DISABLE = "aig:role:disable";
 
     /**
+     * 知识集合清单（读）：有哪些集合、责任人、数据等级
+     */
+    String PERM_KNOWLEDGE_COLLECTION_LIST = "aig:knowledge:collection:list";
+
+    /**
+     * 新建知识集合（写）：集合是授权与责任的最小单位，因此与"看清单"分开授权
+     */
+    String PERM_KNOWLEDGE_COLLECTION_CREATE = "aig:knowledge:collection:create";
+
+    /**
+     * 知识文档与版本清单/详情（读）
+     */
+    String PERM_KNOWLEDGE_DOCUMENT_LIST = "aig:knowledge:document:list";
+
+    /**
+     * 登记知识文档与版本（写）
+     */
+    String PERM_KNOWLEDGE_DOCUMENT_UPLOAD = "aig:knowledge:document:upload";
+
+    /**
+     * 知识处理推进/失败/退役（写）：改变"这份资料能不能被检索"，因此独立授权
+     */
+    String PERM_KNOWLEDGE_DOCUMENT_MANAGE = "aig:knowledge:document:manage";
+
+    /**
+     * 知识检索测试（只检索、不生成）：区分"知识问题"与"模型问题"的入口
+     */
+    String PERM_KNOWLEDGE_RETRIEVAL_TEST = "aig:knowledge:retrieval:test";
+
+    /**
      * 服务令牌管理权限码的公共前缀。
      *
      * <p><b>它同时是一条安全边界</b>：签发令牌时，凡以此前缀开头的 scope 一律拒绝

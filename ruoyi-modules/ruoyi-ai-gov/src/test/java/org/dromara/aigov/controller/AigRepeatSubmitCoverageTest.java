@@ -109,7 +109,16 @@ class AigRepeatSubmitCoverageTest {
         Map.entry("AigAgentRegistryController#revokeBinding",
             "D03：按 id 的逻辑删除本身幂等（重复点第二次得到「不存在或已撤销」，不会多删任何行）；"
                 + "与 removeResourceBinding 同理，撤销后往往要立刻重建同范围绑定，"
-                + "5 秒防重窗会挡住「撤销 + 重建」，因此刻意不加 @RepeatSubmit")
+                + "5 秒防重窗会挡住「撤销 + 重建」，因此刻意不加 @RepeatSubmit"),
+        Map.entry("AigKnowledgeController#advance",
+            "幂等由入参 idempotencyKey 承担（同一键只推进一次）；加 @RepeatSubmit 反而会挡住"
+                + "「换新键重试上一阶段」这种合法重试"),
+        Map.entry("AigKnowledgeController#fail",
+            "失败上报可能合法重复（同一阶段多次失败）；写库由幂等键去重，时间窗防重只会丢记录"),
+        Map.entry("AigKnowledgeController#retire",
+            "目标态幂等：退役是状态收敛（RETIRED 再退役仍是 RETIRED）"),
+        Map.entry("AigKnowledgeController#retrievalTest",
+            "只检索不生成（不写任何表、不调模型），重复执行等价")
     );
 
     @Test

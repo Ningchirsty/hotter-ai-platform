@@ -46,14 +46,36 @@
 
 ## 2 本轮**不做**的事（明确的边界）
 
-1. **HTTP 接口与权限点**：本轮不新增控制器。原因：本仓有 `AigPermissionSeedCoverageTest`
-   强制"每个 `@SaCheckPermission` 权限串必须在菜单种子 SQL 里存在"，因此接口必须与
-   菜单/角色授权种子一起交付。这部分随下一增量一并给出（集合/文档/版本/检索测试四组端点）。
+1. **知识中心的页面组件**：本轮交付接口与权限点，但集合/文档/版本/检索测试的 Vue 页面尚未做。
+   权限点必须现在种（否则接口对所有人 403），页面行留到页面交付时再补（做法与 `aig_studio_pages.sql` 一致）。
 2. **解析器 / OCR / 表格解析**：仓储层不实现解析算法，只承载"处理阶段"与结论；
    真实 PDF/DOCX 解析需接入解析引擎并按实际资料评估（设计 §6.4 明确"效果需评估"）。
 3. **嵌入与向量存储**：未选型、未接入。
 4. **接入执行计划**：`AigExecutionPlan.knowledgeRefs` 已在阶段 A 冻结，但执行路径尚未调用
    `KnowledgePort`（下一增量接线：授权集合 → 检索 → 引用进 Prompt，并做引用 ID 合法集合核验）。
+
+---
+
+## 2.2 接口与权限（C-2）
+
+新增 `AigKnowledgeController`（`/aigov/knowledge`）与 6 个权限点，种子脚本 `script/sql/aig_knowledge_menu.sql`：
+
+| 方法与路径 | 权限 | 说明 |
+| --- | --- | --- |
+| `GET /collections` | `aig:knowledge:collection:list` | 集合清单 |
+| `POST /collections` | `aig:knowledge:collection:create` | 新建集合（`@RepeatSubmit`） |
+| `GET /documents` | `aig:knowledge:document:list` | 文档清单（可按集合过滤） |
+| `POST /documents` | `aig:knowledge:document:upload` | 登记文档与版本（`@RepeatSubmit`） |
+| `GET /document-versions/{id}` | `aig:knowledge:document:list` | 版本详情（来源/状态/失败阶段） |
+| `POST /document-versions/{id}/advance` | `aig:knowledge:document:manage` | 推进一阶段（幂等键） |
+| `POST /document-versions/{id}/fail` | `aig:knowledge:document:manage` | 记录失败阶段 |
+| `POST /document-versions/{id}/retire` | `aig:knowledge:document:manage` | 退役版本 |
+| `POST /retrieval-tests` | `aig:knowledge:retrieval:test` | 只检索不生成 |
+
+授权沿用既有口径：**只授 `aig_admin`**；设计 §4.3 的「知识维护人」是业务角色，应由运维按需新建并单独授权。
+
+`AigRepeatSubmitCoverageTest` 的豁免清单新增 4 条（advance/fail/retire/retrievalTest），
+理由写在清单里（幂等由幂等键承担、失败可合法重复、退役目标态幂等、检索只读）。
 
 ---
 

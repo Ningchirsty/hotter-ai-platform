@@ -86,6 +86,14 @@ public class AigKnowledgeServiceImpl implements IAigKnowledgeService {
     }
 
     @Override
+    public List<AigKnowledgeDocument> listDocuments(Long collectionId) {
+        return documentMapper.selectList(new LambdaQueryWrapper<AigKnowledgeDocument>()
+            .eq(AigKnowledgeDocument::getStatus, STATUS_NORMAL)
+            .eq(collectionId != null, AigKnowledgeDocument::getCollectionId, collectionId)
+            .orderByDesc(AigKnowledgeDocument::getDocumentId));
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public AigKnowledgeDocumentRegisterVo registerDocument(AigKnowledgeDocumentBo bo, Long actorId) {
         if (bo == null || bo.getCollectionId() == null) {
