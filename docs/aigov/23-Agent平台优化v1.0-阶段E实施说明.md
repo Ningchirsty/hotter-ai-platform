@@ -124,7 +124,8 @@
   - `AigResultFeedbackServiceImplTest`（6）：非法原因/无关联拒绝、进入队列、
     确认必须给动作、确认记录动作与处理人、驳回清空动作且 PENDING 不可提交、反馈不存在可读拒绝。
 - 后端 `ruoyi-ai-gov` 全量：E-4 时为 **1156 tests / 0 failures / 0 errors**；
-  加入资产索引同步（12 条新增测试）与流程/工具接线后，**当前 1245 tests / 0 failures / 0 errors**。
+  加入资产索引同步（12 条新增测试）与流程/工具接线后，**当前 1271 tests / 0 failures / 0 errors**
+  （数字随迭代前移，以 `24-总体说明` §4 为准）。
 - 前端 `frontend`：**46 files / 448 tests** 全过（新增 `feedback/presentation.spec.ts` 6 条）；
   `oxlint src` 531 files 0/0；`check-script-setup` 对新增 `.vue` OK。
 

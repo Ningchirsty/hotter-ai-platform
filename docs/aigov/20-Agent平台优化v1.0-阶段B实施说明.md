@@ -114,7 +114,7 @@
 ## 3 验证
 
 - 后端 `ruoyi-ai-gov` 全量：阶段 B 落地时为 **1085 tests / 0 failures**（阶段 A 后 1077 →
-  D07/D09 +2 → D11 +6）；加入 C/D/E 与流程/工具接线后，**当前 1266 tests / 0 failures**
+  D07/D09 +2 → D11 +6）；加入 C/D/E 与流程/工具接线后，**当前 1271 tests / 0 failures**
   （本轮三栏布局纯前端，不影响后端）。
 - 前端（阶段 B 时）：**45 files / 442 tests 全过**（新增 `dirtyGuard.spec.ts` 5 条）；
   加入 C/D/E 页面、任务流程面板与三栏结构守卫后，**当前 51 files / 482 tests 全过**。
