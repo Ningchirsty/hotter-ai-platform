@@ -257,11 +257,13 @@
         :draft-id="detail.draftId"
         :current-revision="expectedRevision"
         :archived="detail.status === 'ARCHIVED'"
+        :dirty="localDirty"
+        :save="handleSave"
         @applied="handleProposalApplied"
       />
 
       <template #footer>
-        <el-button @click="editorVisible = false">关 闭</el-button>
+        <el-button @click="guardOrRun(() => (editorVisible = false), '关闭编辑器')">关 闭</el-button>
         <el-button v-hasPermi="['aig:studio:draft:validate']" @click="handleValidate">预 检</el-button>
         <el-button v-hasPermi="['aig:studio:draft:edit']" type="primary" :loading="saving" @click="handleSave">保 存</el-button>
         <el-button v-hasPermi="['aig:studio:test:run']" type="warning" @click="openTest">
@@ -360,6 +362,21 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- D06：未保存改动的三选一。刻意没有"直接继续"——那会让本地改动静默丢失 -->
+    <el-dialog v-model="dirtyDialogVisible" title="有未保存的改动" width="480px" append-to-body>
+      <div class="dirty-tip">{{ unsavedMessage(dirtyActionLabel) }}</div>
+      <template #footer>
+        <el-button
+          v-for="choice in DIRTY_CHOICES"
+          :key="choice.key"
+          :type="choice.type"
+          @click="chooseDirty(choice.key)"
+        >
+          {{ choice.label }}
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -380,6 +397,7 @@ import { useLoading } from '@/hooks/async/useLoading';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import modal from '@/plugins/modal';
 import { PROMPT_SECTION_LABELS, diffSummary, parseDraftContent, sectionDiff } from './diff';
+import { DIRTY_CHOICES, beforeUnloadShouldWarn, needsGuard, unsavedMessage, type DirtyChoice } from './dirtyGuard';
 import ProposalPanel from './components/ProposalPanel.vue';
 
 defineOptions({ name: 'AigStudio' });
@@ -569,7 +587,7 @@ const handleValidate = async (): Promise<boolean> => {
   return false;
 };
 
-const handleSave = async () => {
+const handleSave = async (): Promise<boolean> => {
   saving.value = true;
   try {
     const res = await saveDraft(detail.value.draftId, {
@@ -587,11 +605,55 @@ const handleSave = async () => {
     }
     await loadRevisions();
     await getList();
+    return true;
   } catch (e: any) {
     // 冲突消息里给出了"你手上的修订号 / 库中当前"，原样展示，人才能决定刷新还是重改
     modal.alertError(e?.message || '保存失败');
+    return false;
   } finally {
     saving.value = false;
+  }
+};
+
+/* ------------------------------------------------------------------ 未保存保护（D06） */
+
+/**
+ * 关闭编辑器 / 采纳提案前的三选一。
+ *
+ * <p>没有"直接继续"：那条路径会让本地改动静默丢失——D06 要求任何选项都不静默丢内容。</p>
+ */
+const dirtyDialogVisible = ref(false);
+const dirtyActionLabel = ref('');
+let pendingDirtyAction: null | (() => void | Promise<void>) = null;
+
+const guardOrRun = (action: () => void | Promise<void>, actionLabel: string) => {
+  if (!needsGuard(localDirty.value)) {
+    void action();
+    return;
+  }
+  pendingDirtyAction = action;
+  dirtyActionLabel.value = actionLabel;
+  dirtyDialogVisible.value = true;
+};
+
+const chooseDirty = async (choice: DirtyChoice) => {
+  dirtyDialogVisible.value = false;
+  const action = pendingDirtyAction;
+  pendingDirtyAction = null;
+  if (choice === 'CANCEL') return;
+  if (choice === 'SAVE') {
+    // 保存失败就不继续：内容仍在编辑器里，让人先处理冲突/原因
+    const saved = await handleSave();
+    if (!saved) return;
+  }
+  if (action) await action();
+};
+
+/** 浏览器关闭/刷新只能给通用提示（自定义按钮不可用），因此只决定是否拦截 */
+const onBeforeUnload = (event: BeforeUnloadEvent) => {
+  if (beforeUnloadShouldWarn(localDirty.value)) {
+    event.preventDefault();
+    event.returnValue = '';
   }
 };
 
@@ -708,7 +770,13 @@ const doTest = async () => {
 };
 
 onMounted(() => {
+  // D06：关闭/刷新页面时若仍有未保存改动，浏览器给出通用离开确认
+  window.addEventListener('beforeunload', onBeforeUnload);
   getList();
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('beforeunload', onBeforeUnload);
 });
 </script>
 
