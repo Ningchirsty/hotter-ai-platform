@@ -1,0 +1,66 @@
+# 23 - Agent 平台优化 v1.0 · 阶段 E 实施说明（反馈队列与运营指标）
+
+> 依据：附件《Agent 平台优化详细设计 v1.0》§6.9（反馈与运营）、§8.2（aig_result_feedback）、
+> §12.1 E（反馈队列 指标 资产索引增量同步）
+> 分支：`feature/aigov-optimization-v1`
+
+---
+
+## 1 本轮落地（D12）
+
+### 1.1 反馈账本（`script/sql/aig_result_feedback.sql`）
+
+一条反馈必须关联 `taskId/resultId` 至少其一，并记录 `agentVersionId`/`knowledgeVersionId`：
+**缺一条就无法回答"这是哪次运行、哪个版本产出的哪条结果"**——反馈的价值正在于能定位到具体运行，
+否则只是一条无法处理的感受。
+
+- 反馈原因（`AigFeedbackReasonEnum`）：`USEFUL / FACT_ERROR / CITATION_MISMATCH /
+  MISSING_SOURCE / FORMAT_MISMATCH / FLOW_INTERRUPTED`。用封闭枚举而不是自由文本：
+  自由文本会让问题队列退化成收件箱。
+- 处理结论（`AigFeedbackVerdictEnum`）：`PENDING / CONFIRMED / REJECTED`。
+- 处理动作（`AigFeedbackActionEnum`）：`ADD_KNOWLEDGE / CHANGE_RULE / ADD_CASE / CLOSE`
+  ——**都是"进入改进流程"，没有一个是"直接改线上版本"**（设计 §6.9：采纳反馈不直接改线上版本）。
+
+### 1.2 问题队列规则
+
+- 提交即进入 `PENDING`；
+- **确认问题必须给出动作**：否则"问题被确认了却没人接着处理"——这正是反馈闭环最常断的一环；
+- 驳回清空动作；
+- `PENDING` 不是可提交的处理结论（它是未处理态）。
+
+### 1.3 运营指标口径（`AigOperationsMetrics`，纯函数）
+
+设计 §6.9 要求以完成任务数、结果采纳率、首次通过率、返工率、引用有效率、策略阻断、模型成本
+为主。两条口径纪律写在代码里：
+
+- **累计成果 = 经确认的结果记录**，不是"模型输出条数"——把所有输出都算成果，指标好看但无业务含义；
+- **分母为 0 一律返回 0**（空周期是常态，不能让报表出现 NaN 或异常）；
+- 比率保留 4 位小数。
+
+---
+
+## 2 本轮**不做**的事（明确的边界）
+
+1. **HTTP 接口与权限点**：反馈提交/问题队列/处理接口与 `aig:feedback:*` 权限点、
+   以及运营指标的聚合查询（从任务/审计/评测表取数）尚未交付；
+   本轮只交付**账本 + 处理规则 + 指标口径**（可逐条单测的部分）。
+2. **资产索引增量同步**（§12.1 E）：现有资产索引是全量刷新（`AigAssetIndexService`）；
+   增量同步需要变更订阅/水位，属独立增量。
+3. **故障分类指标**：设计 §6.9 提到的"故障分类"依赖审计错误分类的聚合，随①一起做。
+
+---
+
+## 3 验证
+
+- 新增测试：
+  - `AigOperationsMetricsTest`（4）：采纳率以确认为分子、零分母返回 0、null 安全、四舍五入；
+  - `AigResultFeedbackServiceImplTest`（6）：非法原因/无关联拒绝、进入队列、
+    确认必须给动作、确认记录动作与处理人、驳回清空动作且 PENDING 不可提交、反馈不存在可读拒绝。
+- 后端 `ruoyi-ai-gov` 全量：**1135 tests / 0 failures / 0 errors**（阶段 D 后 1125 + 本轮 10）。
+
+---
+
+## 4 部署注意
+
+- 需执行 `script/sql/aig_result_feedback.sql`（一张新表）。
+- 本轮**不新增接口、不新增权限点**，对既有生产行为零影响。
