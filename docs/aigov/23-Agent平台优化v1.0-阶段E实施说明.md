@@ -103,8 +103,14 @@
    ——完成任务数 / 累计成果（= 经确认结果）/ 首次通过率 / 返工率 / 策略阻断。
    **引用有效率**与**模型成本**暂无可聚合数据源（引用明细在 `route_snapshot` JSON、成本需审计金额聚合），
    如实置 0 而不是用别的数字顶替。
-3. **资产索引增量同步**（§12.1 E）：现有资产索引是全量刷新（`AigAssetIndexService`）；
-   增量同步需要变更订阅/水位，属独立增量。
+3. **资产索引增量同步（已在 D12 续补齐）**：原先是全量刷新（`AigAssetIndexService#rebuildForUser`）。
+   现在新增 **`syncNewForUser(userId)`（水位线增量）**：取索引里该域最大的 `asset_id` 作水位线，
+   只补比它大的资产；**该域没有水位线时退回全量**；翻到"不大于水位线"的资产即停（各域端口都
+   `ORDER BY id DESC`，三个实现均已核实）。入口是既有的
+   `POST /aigov/portal/my-assets/refresh?mode=incremental`（不传 mode 仍是全量）。
+   **两条明确的口径边界**：①**不删**——各域删掉的资产仍留在索引里，回收要走全量重建；
+   ②**不更新**——源头改名/换大小不会被发现。因此完整用法是"定时增量 + 定期全量"。
+   没有变更订阅（三个业务域都不对外发变更事件，加订阅要动它们的写路径，属独立变更）。
 4. **故障分类指标（已在 E-4 补齐）**：`GET /aigov/operations/fault-classes` 按任务错误分类编码计数，
    次数降序、编码升序（输出稳定才谈得上比对）；空/null 编码统一记 `UNKNOWN`
    （把"没分类"混进具体分类会掩盖分类本身的问题）。
@@ -117,7 +123,8 @@
   - `AigOperationsMetricsTest`（4）：采纳率以确认为分子、零分母返回 0、null 安全、四舍五入；
   - `AigResultFeedbackServiceImplTest`（6）：非法原因/无关联拒绝、进入队列、
     确认必须给动作、确认记录动作与处理人、驳回清空动作且 PENDING 不可提交、反馈不存在可读拒绝。
-- 后端 `ruoyi-ai-gov` 全量：**1156 tests / 0 failures / 0 errors**。
+- 后端 `ruoyi-ai-gov` 全量：E-4 时为 **1156 tests / 0 failures / 0 errors**；
+  加入资产索引同步（12 条新增测试）与流程/工具接线后，**当前 1245 tests / 0 failures / 0 errors**。
 - 前端 `frontend`：**46 files / 448 tests** 全过（新增 `feedback/presentation.spec.ts` 6 条）；
   `oxlint src` 531 files 0/0；`check-script-setup` 对新增 `.vue` OK。
 
