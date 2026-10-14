@@ -37,6 +37,7 @@
 | `120c74a5` | D | 任务步骤状态迁移与 CAS（`AigTaskStepTransition`） |
 | `95317aba` | D/文档 | 子 Agent 派发规格（`AigSubAgentDispatch`）+ §7 评审指引 |
 | `7040fa31` | D | 子 Agent 运行时驱动（创建子任务 + 对账收尾） |
+| `5ca6b6ca` | D | 子 Agent 对账作业与定时触发 |
 
 ---
 
