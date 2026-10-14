@@ -2,6 +2,7 @@ package org.dromara.aigov.execution;
 
 import lombok.Builder;
 import lombok.Getter;
+import org.dromara.common.core.utils.StringUtils;
 
 import java.io.Serial;
 import java.io.Serializable;
@@ -104,6 +105,19 @@ public class AigExecutionPlan implements Serializable {
     private final List<String> toolRefs;
 
     /**
+     * 本次运行采用的知识资料节（已渲染；可为空表示没有检索资料节）。
+     *
+     * <p>在解析阶段（{@code AgentExecutionResolver}）由 {@code KnowledgePort} 检索并渲染，
+     * 因此它同样是"冻结"的：执行中不再重新检索，避免"审计看到的资料"与"模型实际看到的资料"不一致。</p>
+     */
+    private final String retrievedKnowledgeBlock;
+
+    /**
+     * 被采用的引用（可核验的来源）
+     */
+    private final List<AigExecutionCitation> knowledgeCitations;
+
+    /**
      * 全参构造（由解析器调用；外部请用解析器而非直接 new）。
      */
     @Builder
@@ -111,7 +125,8 @@ public class AigExecutionPlan implements Serializable {
                             AigExecutionPurposeEnum purpose, String configHash, String systemPrompt,
                             String inputHash, String capabilityCode, String dataLevel,
                             Boolean allowExternal, BigDecimal maxCost, Integer maxToolCalls,
-                            Integer maxDepth, List<String> knowledgeRefs, List<String> toolRefs) {
+                            Integer maxDepth, List<String> knowledgeRefs, List<String> toolRefs,
+                            String retrievedKnowledgeBlock, List<AigExecutionCitation> knowledgeCitations) {
         this.planId = planId;
         this.taskId = taskId;
         this.agentVersionId = agentVersionId;
@@ -127,23 +142,30 @@ public class AigExecutionPlan implements Serializable {
         this.maxDepth = maxDepth;
         this.knowledgeRefs = knowledgeRefs == null ? List.of() : List.copyOf(knowledgeRefs);
         this.toolRefs = toolRefs == null ? List.of() : List.copyOf(toolRefs);
+        this.retrievedKnowledgeBlock = retrievedKnowledgeBlock;
+        this.knowledgeCitations = knowledgeCitations == null
+            ? List.of() : List.copyOf(knowledgeCitations);
     }
 
     /**
-     * 把冻结的系统 Prompt 与本次业务输入组装成真正发出去的 prompt。
+     * 把冻结的系统 Prompt、检索资料与本次业务输入组装成真正发出去的 prompt。
      *
-     * <p>业务输入始终处在<b>系统指令之后</b>的独立分节里：外部资料不能覆盖系统指令
-     * （设计 §7.3）。系统部分来自 {@link #systemPrompt}（版本冻结内容），调用方无法替换。</p>
+     * <p>资料永远处在系统指令<b>之后</b>的独立分节里：外部资料不能覆盖系统指令（设计 §7.3）；
+     * 业务输入再排在最后。</p>
      *
      * @param businessInput 业务输入（可空）
      * @return 组装后的 prompt
      */
     public String composePrompt(String businessInput) {
         String system = systemPrompt == null ? "" : systemPrompt;
-        if (businessInput == null || businessInput.isBlank()) {
-            return system;
+        StringBuilder text = new StringBuilder(system);
+        if (StringUtils.isNotBlank(retrievedKnowledgeBlock)) {
+            text.append("\n\n").append(retrievedKnowledgeBlock);
         }
-        return system + "\n\n## 业务输入\n" + businessInput;
+        if (businessInput != null && !businessInput.isBlank()) {
+            text.append("\n\n## 业务输入\n").append(businessInput);
+        }
+        return text.toString();
     }
 
 }

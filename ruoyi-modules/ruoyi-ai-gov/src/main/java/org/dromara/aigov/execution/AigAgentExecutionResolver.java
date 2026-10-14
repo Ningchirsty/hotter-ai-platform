@@ -6,12 +6,16 @@ import lombok.extern.slf4j.Slf4j;
 import org.dromara.aigov.agent.domain.AigAgentVersion;
 import org.dromara.aigov.agent.mapper.AigAgentVersionMapper;
 import org.dromara.aigov.agent.service.IAigAgentRegistryService;
+import org.dromara.aigov.knowledge.retrieval.KnowledgePort;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
 
 /**
  * 执行计划解析实现（设计 D01）。
@@ -38,8 +42,14 @@ import java.math.BigDecimal;
 @RequiredArgsConstructor
 public class AigAgentExecutionResolver implements IAigAgentExecutionResolver {
 
+    /**
+     * 一次运行最多采用的检索片段数（设计 §7.4 的"最大片段数"由解析器给定）
+     */
+    private static final int DEFAULT_MAX_CITATIONS = 5;
+
     private final AigAgentVersionMapper agentVersionMapper;
     private final IAigAgentRegistryService registryService;
+    private final KnowledgePort knowledgePort;
     private final JsonMapper jsonMapper;
 
     @Override
@@ -82,6 +92,23 @@ public class AigAgentExecutionResolver implements IAigAgentExecutionResolver {
         String planId = sha256(configHash + ":" + (purpose == null ? "-" : purpose.getCode())
             + ":" + inputHash);
 
+        // ★ C-3：知识检索在**解析阶段**完成并冻结进计划（设计 §7.1/§7.4）。
+        //   检索带入授权范围（本版本的 knowledgeRefs）；只检索不生成；
+        //   返回的引用来自服务端合法集合，因此可作为可核验来源。
+        String knowledgeBlock = null;
+        List<AigExecutionCitation> citations = new ArrayList<>();
+        if (!config.getKnowledgeRefs().isEmpty() && StringUtils.isNotBlank(businessInput)) {
+            KnowledgePort.RetrievalResult retrieval = knowledgePort.retrieve(new KnowledgePort.RetrievalQuery(
+                businessInput, Set.of(), Set.copyOf(config.getKnowledgeRefs()), DEFAULT_MAX_CITATIONS));
+            for (KnowledgePort.Citation citation : retrieval.citations()) {
+                citations.add(new AigExecutionCitation(citation.chunkId(), citation.versionId(),
+                    citation.documentId(), citation.sourceName(), citation.locator(),
+                    citation.excerptRef(), citation.dataLevel()));
+            }
+            knowledgeBlock = AigKnowledgePromptBlock.render(citations, retrieval.noSupport(),
+                retrieval.reason());
+        }
+
         AigExecutionPlan plan = AigExecutionPlan.builder()
             .planId(planId)
             .taskId(taskId)
@@ -98,6 +125,8 @@ public class AigAgentExecutionResolver implements IAigAgentExecutionResolver {
             .maxDepth(config.getMaxDepth())
             .knowledgeRefs(config.getKnowledgeRefs())
             .toolRefs(config.getToolRefs())
+            .retrievedKnowledgeBlock(knowledgeBlock)
+            .knowledgeCitations(citations)
             .build();
         log.info("解析 Agent 执行计划, taskId={}, agentVersionId={}, purpose={}, planId={}, configHash={}",
             taskId, agentVersionId, purpose == null ? null : purpose.getCode(),

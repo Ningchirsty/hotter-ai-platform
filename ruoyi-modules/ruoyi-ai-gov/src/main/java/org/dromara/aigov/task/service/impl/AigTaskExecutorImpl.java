@@ -7,6 +7,7 @@ import org.dromara.aigov.domain.bo.AigInvokeBo;
 import org.dromara.aigov.domain.vo.AigInvokeVo;
 import org.dromara.aigov.enums.AigErrorClassEnum;
 import org.dromara.aigov.enums.AigRouteDecisionEnum;
+import org.dromara.aigov.execution.AigExecutionCitation;
 import org.dromara.aigov.execution.AigExecutionPlan;
 import org.dromara.aigov.execution.AigExecutionPurposeEnum;
 import org.dromara.aigov.execution.IAigAgentExecutionResolver;
@@ -464,6 +465,14 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
             execution.put("configHash", plan.getConfigHash());
             execution.put("inputHash", plan.getInputHash());
             snapshot.put("executionPlan", execution);
+            // C-3：把这次采用的知识引用一并冻结——事后能回答"回答依据了哪几段资料"
+            if (!plan.getKnowledgeCitations().isEmpty()) {
+                java.util.List<Long> chunkIds = new java.util.ArrayList<>();
+                for (AigExecutionCitation citation : plan.getKnowledgeCitations()) {
+                    chunkIds.add(citation.chunkId());
+                }
+                snapshot.put("knowledgeCitations", chunkIds);
+            }
         }
         try {
             return jsonMapper.writeValueAsString(snapshot);

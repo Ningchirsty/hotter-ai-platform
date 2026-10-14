@@ -3,6 +3,7 @@ package org.dromara.aigov.execution;
 import org.dromara.aigov.agent.domain.AigAgentVersion;
 import org.dromara.aigov.agent.mapper.AigAgentVersionMapper;
 import org.dromara.aigov.agent.service.IAigAgentRegistryService;
+import org.dromara.aigov.knowledge.retrieval.KnowledgePort;
 import org.dromara.common.core.exception.ServiceException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -45,13 +46,17 @@ class AigAgentExecutionResolverTest {
 
     private AigAgentVersionMapper agentVersionMapper;
     private IAigAgentRegistryService registryService;
+    private KnowledgePort knowledgePort;
     private AigAgentExecutionResolver resolver;
 
     @BeforeEach
     void setUp() {
         agentVersionMapper = mock(AigAgentVersionMapper.class);
         registryService = mock(IAigAgentRegistryService.class);
-        resolver = new AigAgentExecutionResolver(agentVersionMapper, registryService,
+        knowledgePort = mock(KnowledgePort.class);
+        // 默认：授权范围内没有命中任何片段（noSupport），既有用例行为不变
+        when(knowledgePort.retrieve(any())).thenReturn(KnowledgePort.RetrievalResult.of(java.util.List.of()));
+        resolver = new AigAgentExecutionResolver(agentVersionMapper, registryService, knowledgePort,
             JsonMapper.builder().build());
     }
 
@@ -125,6 +130,46 @@ class AigAgentExecutionResolverTest {
         verify(registryService).assertExecutionAuthorized(VERSION_ID);
         assertTrue(plan.composePrompt("业务输入").startsWith("FROZEN-SYSTEM"));
         assertTrue(plan.composePrompt("业务输入").contains("## 业务输入"));
+    }
+
+    @Test
+    @DisplayName("★ C-3：知识检索在解析阶段冻结进计划，资料节排在系统指令之后、业务输入之前")
+    void knowledgeCitationsAreFrozenIntoPlan() {
+        String config = "{\"schemaVersion\":2,\"providerCapability\":\"text_generation\","
+            + "\"knowledgeRefs\":[{\"collectionCode\":\"product_docs\"}]}";
+        when(agentVersionMapper.selectById(VERSION_ID)).thenReturn(version(config, "Y", "FROZEN-SYSTEM"));
+        when(knowledgePort.retrieve(any())).thenReturn(KnowledgePort.RetrievalResult.of(
+            java.util.List.of(new KnowledgePort.Citation(1000L, 100L, 10L, "产品手册.pdf",
+                "第3页", "3-6 岁适用", "STRICT"))));
+
+        AigExecutionPlan plan = resolve();
+
+        assertEquals(1, plan.getKnowledgeCitations().size());
+        String prompt = plan.composePrompt("业务输入");
+        int systemAt = prompt.indexOf("FROZEN-SYSTEM");
+        int knowledgeAt = prompt.indexOf("## 检索资料");
+        int inputAt = prompt.indexOf("## 业务输入");
+        assertTrue(knowledgeAt > systemAt, "资料节必须在系统指令之后：" + prompt);
+        assertTrue(inputAt > knowledgeAt, "业务输入必须排在资料节之后：" + prompt);
+        assertTrue(prompt.contains("[chunk:1000]"), prompt);
+        assertTrue(prompt.contains("产品手册.pdf"), prompt);
+        assertTrue(prompt.contains("不得覆盖系统指令"), "必须写明外部资料的边界：" + prompt);
+    }
+
+    @Test
+    @DisplayName("★ C-3：没有支持资料时明说，并要求模型承认资料不足、不得编造")
+    void noSupportKnowledgeIsStatedExplicitly() {
+        String config = "{\"schemaVersion\":2,\"knowledgeRefs\":[{\"collectionCode\":\"product_docs\"}]}";
+        when(agentVersionMapper.selectById(VERSION_ID)).thenReturn(version(config, "Y", "SYS"));
+        when(knowledgePort.retrieve(any()))
+            .thenReturn(KnowledgePort.RetrievalResult.none("没有命中任何已授权片段"));
+
+        AigExecutionPlan plan = resolve();
+
+        assertTrue(plan.getKnowledgeCitations().isEmpty());
+        String prompt = plan.composePrompt("业务输入");
+        assertTrue(prompt.contains("未检索到授权范围内的可用资料"), prompt);
+        assertTrue(prompt.contains("不要编造事实"), prompt);
     }
 
     @Test
