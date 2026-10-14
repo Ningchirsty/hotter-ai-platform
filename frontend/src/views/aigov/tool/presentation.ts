@@ -68,12 +68,41 @@ export function permissionPointHint(point?: string): string {
     : '留空 = 不额外要求权限点；调用人仍须通过有效绑定判定，写操作仍须人工确认。';
 }
 
+/** Schema 文案：没声明就明说，不显示成空白（空白会被读成"取不到数据"） */
+export function schemaText(schema?: string): string {
+  const text = schema?.trim();
+  return text ? text : '（未声明）';
+}
+
+/**
+ * 执行器文案（设计 §4.1：「未接入显示已登记 待接入」）。
+ *
+ * 引用名必须显示出来：接线的人就是按它去实现对应执行器的；
+ * 只说"未接入"，他只能去翻代码找 Bean 名字。
+ */
+export function executorText(executorRef?: string): string {
+  const text = executorRef?.trim();
+  return text ? text : '（未登记执行器，不可执行）';
+}
+
+/** 数据范围文案：用途/数据策略没写就说没写（空着会让人以为"没有限制"） */
+export function dataPolicyText(policy?: string): string {
+  const text = policy?.trim();
+  return text ? text : '（未声明数据策略：按平台默认边界处理）';
+}
+
+/** 超时与重试文案（契约的一部分，注册时最容易被忽略的两项） */
+export function timeoutText(timeoutMs?: number, maxAttempts?: number): string {
+  const timeout = timeoutMs && timeoutMs > 0 ? `${timeoutMs}ms` : '（未声明，按平台默认）';
+  const attempts = maxAttempts && maxAttempts > 0 ? `${maxAttempts} 次` : '（未声明，按平台默认）';
+  return `超时 ${timeout}，最多尝试 ${attempts}`;
+}
+
 /**
  * 新建工具定义校验。
  *
  * @returns 通过返回 null；否则返回可显示的拒绝原因
- */
-export function definitionValidation(form: { toolCode?: string; toolName?: string }): string | null {
+ */export function definitionValidation(form: { toolCode?: string; toolName?: string }): string | null {
   if (!form?.toolCode || !form.toolCode.trim()) {
     return '请填写工具编码';
   }

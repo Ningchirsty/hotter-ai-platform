@@ -4,6 +4,7 @@ import org.dromara.aigov.tool.domain.AigToolDefinitionVersion;
 import org.dromara.aigov.tool.domain.bo.AigToolDefinitionBo;
 import org.dromara.aigov.tool.domain.bo.AigToolDefinitionVersionBo;
 import org.dromara.aigov.tool.domain.vo.AigToolDefinitionVersionVo;
+import org.dromara.aigov.tool.domain.vo.AigToolDetailVo;
 import org.dromara.aigov.tool.exec.AigToolCallRequest;
 import org.dromara.aigov.tool.exec.AigToolCallResult;
 
@@ -51,6 +52,18 @@ public interface IAigToolRegistryService {
      * @return 工具版本清单
      */
     List<AigToolDefinitionVersionVo> listVersions();
+
+    /**
+     * 取工具契约详情（设计 §6.5：用途、输入输出、数据范围、责任人、接入状态）。
+     *
+     * <p>列表视图刻意不带契约长文本（{@code inputSchema/outputSchema}），
+     * "看一眼有哪些工具"不该等于把每个版本的契约全文都拉一遍。</p>
+     *
+     * @param toolCode 工具编码
+     * @param version  版本号
+     * @return 契约详情；工具或版本不存在/已停用时抛错
+     */
+    AigToolDetailVo getVersionDetail(String toolCode, String version);
 
     /**
      * 执行一次工具调用（幂等；写操作需人工确认）。

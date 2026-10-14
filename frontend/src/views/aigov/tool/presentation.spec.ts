@@ -2,13 +2,17 @@ import { describe, expect, it } from 'vitest';
 import {
   OPERATION_TYPE_OPTIONS,
   confirmationHint,
+  dataPolicyText,
   definitionValidation,
   executableTagType,
   executableText,
+  executorText,
   operationTypeLabel,
   permissionPointHint,
   permissionPointText,
   requiresConfirmation,
+  schemaText,
+  timeoutText,
   versionValidation
 } from './presentation';
 
@@ -62,6 +66,20 @@ describe('tool presentation', () => {
     expect(permissionPointHint('aig:tool:x')).toContain('aig:tool:x');
     expect(permissionPointHint('')).toContain('不额外要求');
     expect(permissionPointHint('')).toContain('人工确认');
+  });
+
+  it('★ 契约详情文案：没声明的项要明说，不能显示成空白', () => {
+    expect(schemaText('{"fields":[]}')).toBe('{"fields":[]}');
+    expect(schemaText('  ')).toBe('（未声明）');
+    expect(schemaText(undefined)).toBe('（未声明）');
+
+    expect(executorText('brandDbTool')).toBe('brandDbTool');
+    expect(executorText(' ')).toContain('未登记执行器');
+    expect(dataPolicyText('只读产品主数据')).toBe('只读产品主数据');
+    expect(dataPolicyText(undefined)).toContain('未声明数据策略');
+
+    expect(timeoutText(15000, 2)).toBe('超时 15000ms，最多尝试 2 次');
+    expect(timeoutText(undefined, undefined)).toContain('按平台默认');
   });
 
   it('★ 定义校验：编码与名称必填', () => {

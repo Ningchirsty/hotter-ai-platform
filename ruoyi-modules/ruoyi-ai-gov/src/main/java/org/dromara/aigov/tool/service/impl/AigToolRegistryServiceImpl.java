@@ -12,6 +12,7 @@ import org.dromara.aigov.tool.domain.AigToolDefinitionVersion;
 import org.dromara.aigov.tool.domain.bo.AigToolDefinitionBo;
 import org.dromara.aigov.tool.domain.bo.AigToolDefinitionVersionBo;
 import org.dromara.aigov.tool.domain.vo.AigToolDefinitionVersionVo;
+import org.dromara.aigov.tool.domain.vo.AigToolDetailVo;
 import org.dromara.aigov.tool.enums.AigToolCallStatusEnum;
 import org.dromara.aigov.tool.enums.AigToolOperationTypeEnum;
 import org.dromara.aigov.tool.exec.AigToolCallRequest;
@@ -195,6 +196,36 @@ public class AigToolRegistryServiceImpl implements IAigToolRegistryService {
             result.add(vo);
         }
         return result;
+    }
+
+    @Override
+    public AigToolDetailVo getVersionDetail(String toolCode, String version) {
+        // 复用 getVersion：它已经统一了"工具不存在/已停用""版本不存在/已停用"的拒绝口径，
+        // 详情接口再自己查一遍，迟早会和执行路径对同一份数据给出不同结论
+        AigToolDefinitionVersion row = getVersion(toolCode, version);
+        AigToolDefinition definition = definitionMapper.selectById(row.getToolId());
+        AigToolDetailVo vo = new AigToolDetailVo();
+        vo.setToolCode(toolCode.trim());
+        vo.setToolName(definition == null ? null : definition.getToolName());
+        vo.setDescription(definition == null ? null : definition.getDescription());
+        vo.setOwnerId(definition == null ? null : definition.getOwnerId());
+        vo.setDataPolicy(definition == null ? null : definition.getDataPolicy());
+        vo.setVersion(row.getVersion());
+        vo.setExecutorRef(row.getExecutorRef());
+        AigToolOperationTypeEnum op = AigToolOperationTypeEnum.find(row.getOperationType());
+        vo.setOperationType(row.getOperationType());
+        vo.setOperationTypeDesc(op == null ? null : op.getDesc());
+        vo.setRequiresConfirmation(op != null && op.isRequiresConfirmation());
+        // 与列表同口径：可执行由"当前是否注册了该执行器"决定，而不是 executor_ref 非空
+        vo.setExecutable(executorFor(row.getExecutorRef()) != null);
+        vo.setPermissionPoint(row.getPermissionPoint());
+        vo.setDataLevelMax(row.getDataLevelMax());
+        vo.setInputSchema(row.getInputSchema());
+        vo.setOutputSchema(row.getOutputSchema());
+        vo.setTimeoutMs(row.getTimeoutMs());
+        vo.setMaxAttempts(row.getMaxAttempts());
+        vo.setRemark(row.getRemark());
+        return vo;
     }
 
     @Override

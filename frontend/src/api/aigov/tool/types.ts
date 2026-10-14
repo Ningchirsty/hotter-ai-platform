@@ -20,6 +20,33 @@ export interface AigToolVersionVO {
   dataLevelMax?: string;
 }
 
+/**
+ * 工具契约详情（设计 §6.5 工具卡片：用途、输入输出、数据范围、责任人、接入状态）。
+ *
+ * 列表刻意不带契约长文本，详情接口单独给。
+ */
+export interface AigToolDetailVO {
+  toolCode?: string;
+  toolName?: string;
+  description?: string;
+  ownerId?: string | number;
+  dataPolicy?: string;
+  version?: string;
+  /** 登记的执行器引用（接线的人按它去实现对应的 Bean） */
+  executorRef?: string;
+  operationType?: string;
+  operationTypeDesc?: string;
+  requiresConfirmation?: boolean;
+  executable?: boolean;
+  permissionPoint?: string;
+  dataLevelMax?: string;
+  inputSchema?: string;
+  outputSchema?: string;
+  timeoutMs?: number;
+  maxAttempts?: number;
+  remark?: string;
+}
+
 /** 新建工具定义 */
 export interface AigToolDefinitionForm {
   toolCode?: string;

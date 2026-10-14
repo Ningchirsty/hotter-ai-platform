@@ -313,6 +313,87 @@ class AigToolRegistryServiceImplTest {
     }
 
     @Test
+    @DisplayName("★ 契约详情：用途/数据范围/责任人来自定义，输入输出与超时来自版本（列表不带这些）")
+    void versionDetailAssemblesDefinitionAndVersion() {
+        AigToolDefinition definition = definition();
+        definition.setToolName("产品事实查询");
+        definition.setDescription("按 SKU 查批准过的产品事实");
+        definition.setOwnerId(31L);
+        definition.setDataPolicy("不含密钥；只读产品主数据");
+        when(definitionMapper.selectOne(any())).thenReturn(definition);
+        AigToolDefinitionVersion version = new AigToolDefinitionVersion();
+        version.setToolVersionId(VERSION_ID);
+        version.setToolId(TOOL_ID);
+        version.setVersion("1.0.0");
+        version.setOperationType("MUTATE_BUSINESS_DATA");
+        version.setExecutorRef("ref-1");
+        version.setPermissionPoint("aig:tool:product-fact-query");
+        version.setDataLevelMax("INTERNAL");
+        version.setInputSchema("{\"fields\":[{\"name\":\"sku\"}]}");
+        version.setOutputSchema("{\"fields\":[{\"name\":\"spec\"}]}");
+        version.setTimeoutMs(15000);
+        version.setMaxAttempts(2);
+        version.setRemark("首版");
+        version.setStatus("0");
+        when(versionMapper.selectOne(any())).thenReturn(version);
+        when(definitionMapper.selectById(TOOL_ID)).thenReturn(definition);
+
+        org.dromara.aigov.tool.domain.vo.AigToolDetailVo detail =
+            service.getVersionDetail("product_fact_query", "1.0.0");
+
+        assertEquals("product_fact_query", detail.getToolCode());
+        assertEquals("产品事实查询", detail.getToolName());
+        assertEquals("按 SKU 查批准过的产品事实", detail.getDescription());
+        assertEquals(31L, detail.getOwnerId());
+        assertEquals("不含密钥；只读产品主数据", detail.getDataPolicy());
+        assertEquals("1.0.0", detail.getVersion());
+        assertEquals("ref-1", detail.getExecutorRef());
+        assertEquals("MUTATE_BUSINESS_DATA", detail.getOperationType());
+        assertTrue(detail.getRequiresConfirmation(), "变更业务数据必须人工确认");
+        assertTrue(detail.getExecutable(), "已注册执行器 → 可执行");
+        assertEquals("aig:tool:product-fact-query", detail.getPermissionPoint());
+        assertEquals("INTERNAL", detail.getDataLevelMax());
+        assertEquals("{\"fields\":[{\"name\":\"sku\"}]}", detail.getInputSchema());
+        assertEquals("{\"fields\":[{\"name\":\"spec\"}]}", detail.getOutputSchema());
+        assertEquals(15000, detail.getTimeoutMs());
+        assertEquals(2, detail.getMaxAttempts());
+    }
+
+    @Test
+    @DisplayName("★ 契约详情：未接入执行器时 executable=false（与列表同口径，都由已注册执行器决定）")
+    void versionDetailMarksUnwiredExecutor() {
+        when(definitionMapper.selectOne(any())).thenReturn(definition());
+        AigToolDefinitionVersion version = new AigToolDefinitionVersion();
+        version.setToolVersionId(VERSION_ID);
+        version.setToolId(TOOL_ID);
+        version.setVersion("1.0.0");
+        version.setOperationType("READ_ONLY_QUERY");
+        version.setExecutorRef("ref-missing");
+        version.setStatus("0");
+        when(versionMapper.selectOne(any())).thenReturn(version);
+        when(definitionMapper.selectById(TOOL_ID)).thenReturn(definition());
+
+        org.dromara.aigov.tool.domain.vo.AigToolDetailVo detail =
+            service.getVersionDetail("product_fact_query", "1.0.0");
+
+        assertFalse(detail.getExecutable(), "登记了引用但没有实现 → 仍是「已登记 待接入」");
+        assertEquals("ref-missing", detail.getExecutorRef(), "接线的人要知道该实现哪个引用名");
+    }
+
+    @Test
+    @DisplayName("★ 契约详情：工具或版本不存在时用与执行路径同一口径拒绝")
+    void versionDetailRejectsUnknownToolOrVersion() {
+        when(definitionMapper.selectOne(any())).thenReturn(null);
+        assertThrows(ServiceException.class,
+            () -> service.getVersionDetail("no_such_tool", "1.0.0"));
+
+        when(definitionMapper.selectOne(any())).thenReturn(definition());
+        when(versionMapper.selectOne(any())).thenReturn(null);
+        assertThrows(ServiceException.class,
+            () -> service.getVersionDetail("product_fact_query", "9.9.9"));
+    }
+
+    @Test
     @DisplayName("★ §7.5：声明了权限点而调用人不持有 → 拒绝，不执行、不落账本")
     void declaredPermissionNotHeldIsRejected() {
         stubVersion("READ_ONLY_QUERY", "ref-1", "aig:tool:product-fact-query");

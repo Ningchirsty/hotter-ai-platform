@@ -44,8 +44,48 @@
           <template #default="{ row }">{{ permissionPointText(row.permissionPoint) }}</template>
         </el-table-column>
         <el-table-column label="等级上限" prop="dataLevelMax" width="120" />
+        <el-table-column label="操作" width="100" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="openDetail(row)">详情</el-button>
+          </template>
+        </el-table-column>
       </el-table>
     </el-card>
+
+    <!-- 工具契约详情（设计 §6.5 工具卡片：用途 / 输入输出 / 数据范围 / 责任人 / 接入状态） -->
+    <el-dialog v-model="detailVisible" title="工具契约详情" width="720px" append-to-body>
+      <el-descriptions v-if="detail" :column="2" border size="small">
+        <el-descriptions-item label="工具">{{ detail.toolName || '—' }}（{{ detail.toolCode }}）</el-descriptions-item>
+        <el-descriptions-item label="版本">{{ detail.version }}</el-descriptions-item>
+        <el-descriptions-item label="操作类型">
+          {{ operationTypeLabel(detail.operationType) }}
+          <el-tag v-if="detail.requiresConfirmation" type="warning" size="small">需人工确认</el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="接入状态">
+          <el-tag :type="executableTagType(detail.executable)">{{ executableText(detail.executable) }}</el-tag>
+          <span class="text-gray-500"> 执行器：{{ executorText(detail.executorRef) }}</span>
+        </el-descriptions-item>
+        <el-descriptions-item label="用途" :span="2">{{ detail.description || '（未声明用途）' }}</el-descriptions-item>
+        <el-descriptions-item label="数据范围" :span="2">{{ dataPolicyText(detail.dataPolicy) }}</el-descriptions-item>
+        <el-descriptions-item label="责任人">{{ detail.ownerId || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="等级上限">{{ detail.dataLevelMax || '不限' }}</el-descriptions-item>
+        <el-descriptions-item label="所需权限点">
+          {{ permissionPointText(detail.permissionPoint) }}
+        </el-descriptions-item>
+        <el-descriptions-item label="超时/重试">
+          {{ timeoutText(detail.timeoutMs, detail.maxAttempts) }}
+        </el-descriptions-item>
+        <el-descriptions-item label="输入 Schema" :span="2">
+          <pre class="schema-block">{{ schemaText(detail.inputSchema) }}</pre>
+        </el-descriptions-item>
+        <el-descriptions-item label="输出 Schema" :span="2">
+          <pre class="schema-block">{{ schemaText(detail.outputSchema) }}</pre>
+        </el-descriptions-item>
+      </el-descriptions>
+      <template #footer>
+        <el-button @click="detailVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 新建工具定义 -->
     <el-dialog v-model="definitionVisible" title="新建工具定义" width="520px" append-to-body>
@@ -116,18 +156,22 @@
 </template>
 
 <script setup lang="ts">
-import { addToolVersion, createToolDefinition, listTools } from '@/api/aigov/tool';
-import type { AigToolDefinitionForm, AigToolVersionForm, AigToolVersionVO } from '@/api/aigov/tool/types';
+import { addToolVersion, createToolDefinition, getToolVersionDetail, listTools } from '@/api/aigov/tool';
+import type { AigToolDefinitionForm, AigToolDetailVO, AigToolVersionForm, AigToolVersionVO } from '@/api/aigov/tool/types';
 import modal from '@/plugins/modal';
 import {
   OPERATION_TYPE_OPTIONS,
   confirmationHint,
+  dataPolicyText,
   definitionValidation,
   executableTagType,
   executableText,
+  executorText,
   operationTypeLabel,
   permissionPointHint,
   permissionPointText,
+  schemaText,
+  timeoutText,
   versionValidation
 } from './presentation';
 
@@ -159,6 +203,24 @@ const versionHint = computed(() =>
 const load = async () => {
   const res = await listTools();
   tools.value = res.data || [];
+};
+
+/** 契约详情：列表不带 Schema 全文，点开才取（否则"看清单"等于把每份契约都拉一遍） */
+const detailVisible = ref(false);
+const detail = ref<AigToolDetailVO>();
+
+const openDetail = async (row: AigToolVersionVO) => {
+  if (!row.toolCode || !row.version) {
+    modal.msgWarning('这一行缺少工具编码或版本，无法取详情');
+    return;
+  }
+  try {
+    const res = await getToolVersionDetail(row.toolCode, row.version);
+    detail.value = res.data;
+    detailVisible.value = true;
+  } catch (e: any) {
+    modal.alertError(e?.message || '读取工具契约详情失败');
+  }
 };
 
 const openDefinition = () => {
@@ -231,5 +293,13 @@ onMounted(() => {
 
 .ml-2 {
   margin-left: 8px;
+}
+
+.schema-block {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: inherit;
+  font-size: 12px;
 }
 </style>
