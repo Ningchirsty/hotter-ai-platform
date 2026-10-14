@@ -118,7 +118,12 @@ class AigRepeatSubmitCoverageTest {
         Map.entry("AigKnowledgeController#retire",
             "目标态幂等：退役是状态收敛（RETIRED 再退役仍是 RETIRED）"),
         Map.entry("AigKnowledgeController#retrievalTest",
-            "只检索不生成（不写任何表、不调模型），重复执行等价")
+            "只检索不生成（不写任何表、不调模型），重复执行等价"),
+        Map.entry("AigTaskController#confirmFlowNode",
+            "按 (taskId, nodeIndex) 幂等：同一节点重复确认得到同一个终态，且既有 approval_ref 不被覆盖"
+                + "（终态由步骤状态机挡住，第二次会原样返回既有凭据）；"
+                + "★而加 @RepeatSubmit 会有实际害处：一个流程里连着确认多个节点是合法且正常的操作序列，"
+                + "5 秒防重窗会把「确认第一个节点后马上确认第二个」挡掉")
     );
 
     @Test

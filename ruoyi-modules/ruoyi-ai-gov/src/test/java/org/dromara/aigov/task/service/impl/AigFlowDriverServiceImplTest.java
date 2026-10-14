@@ -26,6 +26,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -65,35 +66,47 @@ class AigFlowDriverServiceImplTest {
     }
 
     private static AigTaskStep step(long id, String kind, AigTaskStepStatusEnum status) {
+        return step(id, kind, status, null, null);
+    }
+
+    private static AigTaskStep step(long id, String kind, AigTaskStepStatusEnum status,
+                                    String nodeType, String nodeRef) {
         AigTaskStep step = new AigTaskStep();
         step.setStepId(id);
+        step.setTaskId(TASK_ID);
         step.setKind(kind);
         step.setStatus(status.getCode());
         step.setAttempt(1);
+        step.setNodeType(nodeType);
+        step.setNodeRef(nodeRef);
         return step;
     }
 
+    private static AigTaskStep flowStep(long id, AigTaskStepStatusEnum status, String nodeType,
+                                        String nodeRef) {
+        return step(id, AigTaskStepKindEnum.FLOW_NODE.getCode(), status, nodeType, nodeRef);
+    }
+
     /**
-     * 打桩：listSteps 返回给定步骤；startStep/finishStep 返回按目标状态改写后的步骤。
+     * 打桩：listFlowNodes 返回给定步骤；startStep/finishStep 返回按目标状态改写后的步骤。
      */
     private void stub(List<AigTaskStep> steps) {
-        when(stepService.listSteps(TASK_ID)).thenReturn(new ArrayList<>(steps));
-        when(stepService.startStep(anyLong())).thenAnswer(invocation -> {
-            AigTaskStep updated = step(invocation.getArgument(0), AigTaskStepKindEnum.FLOW_NODE.getCode(),
-                AigTaskStepStatusEnum.RUNNING);
+        when(stepService.listFlowNodes(TASK_ID)).thenReturn(new ArrayList<>(steps));
+        // ★ 用 doAnswer/when 而不是 when(...).thenAnswer(...)：后者在"同一个测试里重复打桩"时
+        //   会先执行上一版 answer（占位参数是 null），把一次干净的打桩变成 NullPointerException。
+        doAnswer(invocation -> step(invocation.getArgument(0),
+            AigTaskStepKindEnum.FLOW_NODE.getCode(), AigTaskStepStatusEnum.RUNNING))
+            .when(stepService).startStep(anyLong());
+        doAnswer(invocation -> {
+            Long id = invocation.getArgument(0);
+            AigTaskStepStatusEnum status = invocation.getArgument(1);
+            String outputRef = invocation.getArgument(2);
+            String approvalRef = invocation.getArgument(3);
+            AigTaskStep updated = step(id, AigTaskStepKindEnum.FLOW_NODE.getCode(), status);
+            updated.setOutputRef(outputRef);
+            updated.setApprovalRef(approvalRef);
             return updated;
-        });
-        when(stepService.finishStep(anyLong(), any(), any(), any(), any(), any()))
-            .thenAnswer(invocation -> {
-                Long id = invocation.getArgument(0);
-                AigTaskStepStatusEnum status = invocation.getArgument(1);
-                String outputRef = invocation.getArgument(2);
-                String approvalRef = invocation.getArgument(3);
-                AigTaskStep updated = step(id, AigTaskStepKindEnum.FLOW_NODE.getCode(), status);
-                updated.setOutputRef(outputRef);
-                updated.setApprovalRef(approvalRef);
-                return updated;
-            });
+        }).when(stepService).finishStep(anyLong(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -104,7 +117,7 @@ class AigFlowDriverServiceImplTest {
         assertEquals(AigFlowRuntime.Action.DONE, result.action());
         assertTrue(result.ended());
         verify(stepService, never()).startStep(anyLong());
-        verify(stepService, never()).listSteps(anyLong());
+        verify(stepService, never()).listFlowNodes(anyLong());
     }
 
     @Test
@@ -193,13 +206,12 @@ class AigFlowDriverServiceImplTest {
     }
 
     @Test
-    @DisplayName("★ 恢复：confirm 先置执行中再收尾成功，并写入批准引用")
+    @DisplayName("★ 恢复：confirm 先置执行中再收尾成功，并写入批准引用（校验靠账本里的节点身份）")
     void confirmStartsThenSettles() {
-        stub(List.of(step(SEQ_FLOW_START, AigTaskStepKindEnum.FLOW_NODE.getCode(),
-            AigTaskStepStatusEnum.PLANNED)));
+        stub(List.of(flowStep(SEQ_FLOW_START, AigTaskStepStatusEnum.PLANNED,
+            "HUMAN_CONFIRM", "approve")));
 
-        AigTaskStep done = driver.confirm(TASK_ID, plan(node("HUMAN_CONFIRM", "approve")),
-            0, "appr-1");
+        AigTaskStep done = driver.confirm(TASK_ID, 0, "appr-1");
 
         assertEquals(AigTaskStepStatusEnum.SUCCEEDED.getCode(), done.getStatus());
         assertEquals("appr-1", done.getApprovalRef());
@@ -211,57 +223,92 @@ class AigFlowDriverServiceImplTest {
     @Test
     @DisplayName("★ 人工确认必须带批准引用（没有凭据的确认不可追溯）")
     void confirmRequiresApprovalRef() {
-        assertThrows(ServiceException.class,
-            () -> driver.confirm(TASK_ID, plan(node("HUMAN_CONFIRM", "approve")), 0, "  "));
+        assertThrows(ServiceException.class, () -> driver.confirm(TASK_ID, 0, "  "));
         verify(stepService, never()).finishStep(anyLong(), any(), any(), any(), any(), any());
     }
 
     @Test
     @DisplayName("★ 非人工确认节点不接受批准（否则等于用一句确认跳过任意节点）")
     void confirmRejectsNonHumanNode() {
+        stub(List.of(flowStep(SEQ_FLOW_START, AigTaskStepStatusEnum.PLANNED, "STEP", "a")));
+
+        assertThrows(ServiceException.class, () -> driver.confirm(TASK_ID, 0, "appr-1"));
+        verify(stepService, never()).finishStep(anyLong(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("★ 步骤没有登记节点身份时拒绝盲批（存量行不能靠猜类型放行）")
+    void confirmRejectsStepWithoutIdentity() {
         stub(List.of(step(SEQ_FLOW_START, AigTaskStepKindEnum.FLOW_NODE.getCode(),
             AigTaskStepStatusEnum.PLANNED)));
 
-        assertThrows(ServiceException.class,
-            () -> driver.confirm(TASK_ID, plan(node("STEP", "a")), 0, "appr-1"));
+        assertThrows(ServiceException.class, () -> driver.confirm(TASK_ID, 0, "appr-1"));
         verify(stepService, never()).finishStep(anyLong(), any(), any(), any(), any(), any());
     }
 
     @Test
-    @DisplayName("★ confirm 遇节点与步骤数量不一致 → 拒绝（错位的批准会批错节点）")
-    void confirmRejectsMismatchedSteps() {
+    @DisplayName("★ confirm 下标越界 / 没有流程节点 → 可读拒绝，不落任何状态")
+    void confirmRejectsBadIndex() {
         stub(List.of());
 
-        assertThrows(ServiceException.class,
-            () -> driver.confirm(TASK_ID, plan(node("HUMAN_CONFIRM", "approve")), 0, "appr-1"));
+        assertThrows(ServiceException.class, () -> driver.confirm(TASK_ID, 0, "appr-1"));
+
+        stub(List.of(flowStep(SEQ_FLOW_START, AigTaskStepStatusEnum.PLANNED,
+            "HUMAN_CONFIRM", "approve")));
+        assertThrows(ServiceException.class, () -> driver.confirm(TASK_ID, 3, "appr-1"));
         verify(stepService, never()).finishStep(anyLong(), any(), any(), any(), any(), any());
     }
 
     @Test
-    @DisplayName("★ 只按 FLOW_NODE 步骤驱动：子 Agent 步骤不参与节点对齐")
-    void subAgentStepsAreNotAligned() {
-        stub(List.of(
-            step(1L, AigTaskStepKindEnum.SUB_AGENT.getCode(), AigTaskStepStatusEnum.SUCCEEDED),
-            step(2L, AigTaskStepKindEnum.FLOW_NODE.getCode(), AigTaskStepStatusEnum.PLANNED)));
+    @DisplayName("★ 重复确认同一个节点：返回既有凭据，不覆盖「谁批的」")
+    void confirmIsIdempotentOnTerminalStep() {
+        AigTaskStep approved = flowStep(SEQ_FLOW_START, AigTaskStepStatusEnum.SUCCEEDED,
+            "HUMAN_CONFIRM", "approve");
+        approved.setApprovalRef("appr-first");
+        stub(List.of(approved));
+
+        AigTaskStep again = driver.confirm(TASK_ID, 0, "appr-second");
+
+        assertEquals("appr-first", again.getApprovalRef(), "既有的批准引用不能被后来的覆盖");
+        verify(stepService, never()).finishStep(anyLong(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("★ 账本里的节点身份优先于执行计划（配置在执行后被人改过时以账本为准）")
+    void advancePrefersLedgerIdentityOverPlan() {
+        stub(List.of(flowStep(SEQ_FLOW_START, AigTaskStepStatusEnum.PLANNED,
+            "CONDITION", "fromLedger")));
+
+        // 计划里写的是另一个条件键：若实现读了计划，就会得到 WAIT_CONDITION
+        AigFlowDriveResult result = driver.advance(TASK_ID, plan(node("CONDITION", "fromPlan")),
+            Map.of("fromLedger", Boolean.TRUE));
+
+        assertEquals(AigFlowRuntime.Action.START, result.action());
+        assertEquals("fromLedger", result.nodeRef());
+    }
+
+    @Test
+    @DisplayName("★ 节点对齐只认步骤服务给出的流程节点（子 Agent 步骤由那层过滤，驱动自己不再过滤）")
+    void driverReliesOnStepServiceFlowNodeFiltering() {
+        stub(List.of(flowStep(9L, AigTaskStepStatusEnum.PLANNED, "STEP", "a")));
 
         AigFlowDriveResult result = driver.advance(TASK_ID, plan(node("STEP", "a")), Map.of());
 
         assertEquals(AigFlowRuntime.Action.START, result.action());
-        assertEquals(2L, result.stepId());
+        assertEquals(9L, result.stepId());
+        verify(stepService, never()).listSteps(anyLong());
     }
 
     @Test
-    @DisplayName("重试产生的第二个 attempt 不参与流程驱动")
-    void retryAttemptIsIgnored() {
-        AigTaskStep retry = step(9L, AigTaskStepKindEnum.FLOW_NODE.getCode(),
-            AigTaskStepStatusEnum.PLANNED);
-        retry.setAttempt(2);
-        stub(List.of(retry));
+    @DisplayName("重试产生的第二个 attempt 不参与对齐：由步骤服务过滤，驱动只按拿到的清单推进")
+    void retryAttemptFilteringBelongsToStepService() {
+        // 步骤服务只返回首次尝试的那一条（过滤逻辑见 AigTaskStepServiceImplTest）
+        stub(List.of(flowStep(SEQ_FLOW_START, AigTaskStepStatusEnum.PLANNED, "STEP", "a")));
 
         AigFlowDriveResult result = driver.advance(TASK_ID, plan(node("STEP", "a")), Map.of());
 
-        assertEquals(AigFlowRuntime.Action.BLOCKED, result.action(),
-            "只剩重试记录时应视为「首次尝试的步骤缺失」，而不是拿重试记录驱动");
+        assertEquals(AigFlowRuntime.Action.START, result.action());
+        assertEquals(SEQ_FLOW_START, result.stepId());
     }
 
     @Test

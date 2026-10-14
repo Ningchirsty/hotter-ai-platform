@@ -6,7 +6,6 @@ import org.dromara.aigov.execution.AigExecutionPlan;
 import org.dromara.aigov.execution.AigFlowNode;
 import org.dromara.aigov.execution.AigFlowNodeTypeEnum;
 import org.dromara.aigov.task.domain.AigTaskStep;
-import org.dromara.aigov.task.enums.AigTaskStepKindEnum;
 import org.dromara.aigov.task.enums.AigTaskStepStatusEnum;
 import org.dromara.aigov.task.service.AigFlowDriveResult;
 import org.dromara.aigov.task.service.AigFlowRuntime;
@@ -19,6 +18,7 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 流程节点运行时驱动实现（设计 §6.5）。
@@ -51,12 +51,13 @@ public class AigFlowDriverServiceImpl implements IAigFlowDriverService {
             return new AigFlowDriveResult(AigFlowRuntime.Action.DONE, AigFlowRuntime.NO_NODE, null,
                 null, null, "没有执行计划，无需推进流程", List.of());
         }
-        List<AigFlowNode> nodes = plan.getFlowNodes();
-        if (nodes == null || nodes.isEmpty()) {
+        List<AigFlowNode> declared = plan.getFlowNodes();
+        if (declared == null || declared.isEmpty()) {
             return new AigFlowDriveResult(AigFlowRuntime.Action.DONE, AigFlowRuntime.NO_NODE, null,
                 null, null, "执行计划没有流程节点", List.of());
         }
-        List<AigTaskStep> steps = flowNodeSteps(taskId);
+        List<AigTaskStep> steps = stepService.listFlowNodes(taskId);
+        List<AigFlowNode> nodes = alignWithLedger(declared, steps, taskId);
         AigFlowRuntime.Decision decision = AigFlowRuntime.decide(nodes, steps, conditionResults);
         int index = decision.nodeIndex();
         List<String> transitions = new ArrayList<>();
@@ -80,27 +81,40 @@ public class AigFlowDriverServiceImpl implements IAigFlowDriverService {
     }
 
     @Override
-    public AigTaskStep confirm(Long taskId, AigExecutionPlan plan, int nodeIndex, String approvalRef) {
+    public AigTaskStep confirm(Long taskId, int nodeIndex, String approvalRef) {
         if (StringUtils.isBlank(approvalRef)) {
             throw new ServiceException("人工确认必须带批准引用（没有凭据的确认不可追溯）");
         }
-        if (plan == null || plan.getFlowNodes() == null || plan.getFlowNodes().isEmpty()) {
+        if (taskId == null) {
+            throw new ServiceException("任务ID不能为空");
+        }
+        List<AigTaskStep> steps = stepService.listFlowNodes(taskId);
+        if (steps.isEmpty()) {
             throw new ServiceException("该任务没有流程节点，无法记录人工确认：taskId=" + taskId);
         }
-        AigFlowNode node = nodeAt(plan.getFlowNodes(), nodeIndex);
-        if (node == null) {
-            throw new ServiceException("流程节点下标越界：" + nodeIndex);
-        }
-        if (AigFlowNodeTypeEnum.HUMAN_CONFIRM != AigFlowNodeTypeEnum.find(node.type())) {
-            throw new ServiceException("该节点不是人工确认节点，不接受批准：" + node.type()
-                + "（nodeIndex=" + nodeIndex + "）");
-        }
-        List<AigTaskStep> steps = flowNodeSteps(taskId);
-        if (steps.size() != plan.getFlowNodes().size()) {
-            throw new ServiceException("流程节点与步骤数量不一致（节点 " + plan.getFlowNodes().size()
-                + " 个、步骤 " + steps.size() + " 个）：状态对应关系已破坏，拒绝记录确认");
+        if (nodeIndex < 0 || nodeIndex >= steps.size()) {
+            throw new ServiceException("流程节点下标越界：" + nodeIndex
+                + "（该任务共 " + steps.size() + " 个流程节点，下标从 0 开始）");
         }
         AigTaskStep step = steps.get(nodeIndex);
+        // 身份来自账本：没有它就无法回答"你批的是不是人工确认节点"，此时拒绝盲批
+        AigFlowNodeTypeEnum type = AigFlowNodeTypeEnum.find(step.getNodeType());
+        if (type == null) {
+            throw new ServiceException("该步骤没有登记流程节点身份（node_type 为空），"
+                + "无法校验批准对象是否为人工确认节点，拒绝记录：stepId=" + step.getStepId()
+                + "（存量步骤需要重新执行一次以登记身份）");
+        }
+        if (type != AigFlowNodeTypeEnum.HUMAN_CONFIRM) {
+            throw new ServiceException("该节点不是人工确认节点，不接受批准：" + type.getCode()
+                + "（nodeIndex=" + nodeIndex + "，stepId=" + step.getStepId() + "）");
+        }
+        AigTaskStepStatusEnum status = AigTaskStepStatusEnum.find(step.getStatus());
+        if (status != null && status.isTerminal()) {
+            // 幂等：已批准过就返回既有凭据，不覆盖（覆盖会让"谁批的"失真）
+            log.info("人工确认重复提交（步骤已是终态，返回既有凭据）, taskId={}, nodeIndex={}, status={}",
+                taskId, nodeIndex, step.getStatus());
+            return step;
+        }
         startIfPlanned(step);
         AigTaskStep done = stepService.finishStep(step.getStepId(), AigTaskStepStatusEnum.SUCCEEDED,
             null, approvalRef.trim(), null, null);
@@ -198,25 +212,41 @@ public class AigFlowDriverServiceImpl implements IAigFlowDriverService {
     }
 
     /**
-     * 取某任务的 FLOW_NODE 步骤（按序号升序，只取首次尝试）。
+     * 把执行计划里的节点与账本里记下的身份对齐（账本优先）。
      *
-     * @param taskId 任务ID
-     * @return 步骤清单
+     * <p>两处不一致说明"这次执行声明的节点"与"当时登记进账本的节点"对不上——可能是配置在
+     * 执行后被人改过。此时<b>以账本为准</b>（它是当时那一刻的记录），并 WARN 留痕；
+     * 数量不一致则原样返回，交给引擎报 BLOCKED（这里不做"能对上几个算几个"的妥协）。</p>
+     *
+     * @param declared 计划里声明的节点
+     * @param steps    账本里的流程节点步骤
+     * @param taskId   任务ID（日志定位）
+     * @return 对齐后的节点清单
      */
-    private List<AigTaskStep> flowNodeSteps(Long taskId) {
-        List<AigTaskStep> all = stepService.listSteps(taskId);
-        List<AigTaskStep> result = new ArrayList<>();
-        for (AigTaskStep step : all) {
-            if (step == null || !AigTaskStepKindEnum.FLOW_NODE.getCode().equals(step.getKind())) {
-                continue;
-            }
-            // 重试是新的 attempt：流程节点只按首次尝试的账本驱动，重试记录不参与
-            if (step.getAttempt() != null && step.getAttempt() != 1) {
-                continue;
-            }
-            result.add(step);
+    private List<AigFlowNode> alignWithLedger(List<AigFlowNode> declared, List<AigTaskStep> steps,
+                                             Long taskId) {
+        if (declared == null || steps == null || declared.size() != steps.size()) {
+            return declared;
         }
-        return result;
+        List<AigFlowNode> aligned = new ArrayList<>(declared.size());
+        for (int i = 0; i < declared.size(); i++) {
+            AigTaskStep step = steps.get(i);
+            AigFlowNode planned = declared.get(i);
+            if (step == null || StringUtils.isBlank(step.getNodeType())) {
+                // 存量步骤没登记身份：用计划里的节点（同一次执行内仍然可用）
+                aligned.add(planned);
+                continue;
+            }
+            if (planned == null || !step.getNodeType().equalsIgnoreCase(planned.type())
+                || !Objects.equals(step.getNodeRef(), planned.ref())) {
+                log.warn("流程节点身份与执行计划不一致（以账本为准）：taskId={}, nodeIndex={}, "
+                        + "账本={}/{}, 计划={}/{}", taskId, i, step.getNodeType(), step.getNodeRef(),
+                    planned == null ? null : planned.type(), planned == null ? null : planned.ref());
+            }
+            aligned.add(new AigFlowNode(step.getNodeType(), step.getNodeRef(),
+                planned == null ? null : planned.label()));
+        }
+        return aligned;
     }
 
     private static AigFlowNode nodeAt(List<AigFlowNode> nodes, int index) {

@@ -49,7 +49,9 @@ class AigTaskControllerCreateTest {
     void setUp() {
         taskService = mock(IAigTaskService.class);
         controller = new AigTaskController(taskService, mock(IAigTaskScheduler.class),
-            mock(IAigTaskExecutor.class));
+            mock(IAigTaskExecutor.class),
+            mock(org.dromara.aigov.task.service.IAigTaskStepService.class),
+            mock(org.dromara.aigov.task.service.IAigFlowDriverService.class));
     }
 
     @Test

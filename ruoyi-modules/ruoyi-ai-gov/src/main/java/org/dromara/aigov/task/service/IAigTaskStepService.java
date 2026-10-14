@@ -34,6 +34,18 @@ public interface IAigTaskStepService {
     List<AigTaskStep> listSteps(Long taskId);
 
     /**
+     * 列出某任务的<b>流程节点</b>步骤（只取 {@code kind=FLOW_NODE}，按序号升序，只取首次尝试）。
+     *
+     * <p>它是"第 k 个流程节点 = 第 k 个流程节点步骤"这条对应关系的**唯一**出口：
+     * 驱动按它对齐节点与状态，人工确认按它定位待批节点，界面按它展示"停在哪一步"。
+     * 三处各写一遍过滤条件，迟早会有一处忘了排除重试 attempt 或子 Agent 步骤。</p>
+     *
+     * @param taskId 任务ID
+     * @return 流程节点步骤（无则空列表）
+     */
+    List<AigTaskStep> listFlowNodes(Long taskId);
+
+    /**
      * 按 (任务, 序号) 取步骤（首次尝试）。
      *
      * @param taskId   任务ID

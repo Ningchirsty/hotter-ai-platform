@@ -60,13 +60,15 @@ class AigTaskStepServiceImplTest {
             .taskId(TASK_ID)
             .inputHash("hash-input")
             .subAgentVersionIds(List.of(501L))
-            .flowNodes(List.of(new AigFlowNode("STEP", null, null),
+            // ★ 节点身份（类型 + 引用）必须落库：否则任务因"需要人工确认"停下之后，
+            //   没人能回答"这个步骤是人工确认还是普通步骤"
+            .flowNodes(List.of(new AigFlowNode("STEP", "first", "第一步"),
                 new AigFlowNode("OUTPUT", null, null)))
             .build();
     }
 
     @Test
-    @DisplayName("★ 登记编排步骤：子 Agent 一步一版本，流程节点各占一步，序号连续")
+    @DisplayName("★ 登记编排步骤：子 Agent 一步一版本，流程节点各占一步并记下节点身份，序号连续")
     void recordsPlannedSteps() {
         when(stepMapper.selectCount(any())).thenReturn(0L);
 
@@ -82,9 +84,35 @@ class AigTaskStepServiceImplTest {
         assertEquals(501L, steps.get(0).getResourceVersionId());
         assertEquals("FLOW_NODE", steps.get(1).getKind());
         assertEquals(null, steps.get(1).getResourceVersionId(), "流程节点不是资源版本");
+        assertEquals("STEP", steps.get(1).getNodeType(), "流程节点身份必须落库");
+        assertEquals("first", steps.get(1).getNodeRef());
+        assertEquals("OUTPUT", steps.get(2).getNodeType());
+        assertEquals(null, steps.get(2).getNodeRef(), "无引用节点留空，不臆造");
+        assertEquals(null, steps.get(0).getNodeType(), "子 Agent 步骤没有流程节点身份");
         assertEquals("PLANNED", steps.get(0).getStatus());
         assertEquals("hash-input", steps.get(0).getInputHash());
         assertEquals(1, steps.get(0).getAttempt());
+    }
+
+    @Test
+    @DisplayName("★ 只列流程节点：子 Agent 步骤与重试 attempt 都不参与节点对齐")
+    void listFlowNodesFiltersKindAndAttempt() {
+        AigTaskStep subAgent = new AigTaskStep();
+        subAgent.setKind("SUB_AGENT");
+        subAgent.setAttempt(1);
+        AigTaskStep node = new AigTaskStep();
+        node.setKind("FLOW_NODE");
+        node.setAttempt(1);
+        node.setNodeType("HUMAN_CONFIRM");
+        AigTaskStep retry = new AigTaskStep();
+        retry.setKind("FLOW_NODE");
+        retry.setAttempt(2);
+        when(stepMapper.selectList(any())).thenReturn(List.of(subAgent, node, retry));
+
+        List<AigTaskStep> result = service.listFlowNodes(TASK_ID);
+
+        assertEquals(1, result.size());
+        assertEquals("HUMAN_CONFIRM", result.get(0).getNodeType());
     }
 
     @Test

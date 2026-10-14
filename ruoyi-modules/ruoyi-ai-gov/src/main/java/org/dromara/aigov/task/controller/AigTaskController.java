@@ -7,22 +7,27 @@ import jakarta.validation.groups.Default;
 import lombok.RequiredArgsConstructor;
 import org.dromara.aigov.constant.AigConstants;
 import org.dromara.aigov.task.domain.AigTask;
+import org.dromara.aigov.task.domain.AigTaskStep;
 import org.dromara.aigov.task.domain.bo.AigTaskCreateBo;
 import org.dromara.aigov.task.domain.bo.AigTaskExecuteBo;
 import org.dromara.aigov.task.domain.bo.AigTaskQueryBo;
 import org.dromara.aigov.task.domain.bo.AigTaskResultSelectBo;
 import org.dromara.aigov.task.domain.vo.AigTaskDetailVo;
 import org.dromara.aigov.task.domain.vo.AigTaskExecuteVo;
+import org.dromara.aigov.task.domain.vo.AigTaskFlowNodeVo;
 import org.dromara.aigov.task.domain.vo.AigTaskSweepVo;
 import org.dromara.aigov.task.domain.vo.AigTaskVo;
 import org.dromara.aigov.task.enums.AigTaskExecutionModeEnum;
 import org.dromara.aigov.task.enums.AigTaskStatusEnum;
 import org.dromara.aigov.task.enums.AigTaskTypeEnum;
+import org.dromara.aigov.task.service.IAigFlowDriverService;
 import org.dromara.aigov.task.service.IAigTaskExecutor;
 import org.dromara.aigov.task.service.IAigTaskScheduler;
 import org.dromara.aigov.task.service.IAigTaskService;
+import org.dromara.aigov.task.service.IAigTaskStepService;
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.core.domain.R;
+import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.core.validate.QueryGroup;
 import org.dromara.common.mybatis.core.page.PageQuery;
@@ -35,6 +40,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * AI 统一任务 控制层。
@@ -62,6 +70,10 @@ public class AigTaskController {
     private final IAigTaskScheduler taskScheduler;
 
     private final IAigTaskExecutor taskExecutor;
+
+    private final IAigTaskStepService taskStepService;
+
+    private final IAigFlowDriverService taskFlowDriver;
 
     /**
      * 登记一条<b>平台执行</b>的任务（人工/运维入口）。
@@ -206,6 +218,65 @@ public class AigTaskController {
         bo.setResultId(resultId);
         bo.setRemark(remark);
         return R.ok(taskService.selectCandidate(bo));
+    }
+
+    /**
+     * 列出某任务的流程节点（设计 §6.5；只看不改）。
+     *
+     * <p><b>它补的是哪条断链</b>：流程节点此前只在冻结的执行计划里，而计划不落库。
+     * 任务因为"需要人工确认"停在 {@code NEED_HUMAN} 时，界面上看不出"停在第几个节点、
+     * 它是不是人工确认、批准引用有没有"——于是"需要人工确认"就成了一句没法操作的话。</p>
+     *
+     * @param taskId 任务ID
+     * @return 流程节点（按下标升序）
+     */
+    @SaCheckPermission(AigConstants.PERM_TASK_QUERY)
+    @GetMapping("/{taskId}/flow-nodes")
+    public R<List<AigTaskFlowNodeVo>> flowNodes(
+        @NotNull(message = "任务ID不能为空") @PathVariable("taskId") Long taskId) {
+        List<AigTaskStep> steps = taskStepService.listFlowNodes(taskId);
+        List<AigTaskFlowNodeVo> rows = new ArrayList<>(steps.size());
+        for (int i = 0; i < steps.size(); i++) {
+            rows.add(AigTaskFlowNodeVo.of(i, steps.get(i)));
+        }
+        return R.ok(rows);
+    }
+
+    /**
+     * 记录一次人工确认（人工确认节点的"恢复"入口；批准引用必填）。
+     *
+     * <p>批准写在步骤账本上（状态 {@code SUCCEEDED} + {@code approval_ref}），
+     * 因此"挂起—批准—继续"不依赖任何内存状态：进程重启也不丢"已经批过"。
+     * 校验靠账本里登记的节点身份，不重新解析版本配置
+     * （重解析可能得到一份与当时不同的计划，把批准落到另一个节点上）。</p>
+     *
+     * <p>权限沿用 {@code aig:task:operate}：它与取消/重放/执行同属"人工推进任务"的动作；
+     * 不新开权限点，也就少一个要种子菜单行的权限码。</p>
+     *
+     * <p><b>刻意不自动重新入队</b>：确认只回答"这个节点批准了"，是否继续跑由人再点一次
+     * {@code POST /{taskId}/requeue} 决定——自动重跑会在一次"点确认"里夹带一次可能计费的执行。
+     * 完整操作序列是：①{@code GET /{taskId}/flow-nodes} 看停在第几个节点；
+     * ②{@code POST /{taskId}/flow/confirm} 记录批准；③{@code POST /{taskId}/requeue} 重新入队执行。</p>
+     *
+     * @param taskId      任务ID
+     * @param nodeIndex   待确认的节点下标（0 基，见 {@code GET /{taskId}/flow-nodes}）
+     * @param approvalRef 批准引用（业务审批单号/工单号等，必填）
+     * @return 收尾后的流程节点
+     */
+    @SaCheckPermission(AigConstants.PERM_TASK_OPERATE)
+    @PostMapping("/{taskId}/flow/confirm")
+    public R<AigTaskFlowNodeVo> confirmFlowNode(
+        @NotNull(message = "任务ID不能为空") @PathVariable("taskId") Long taskId,
+        @NotNull(message = "节点下标不能为空") @RequestParam("nodeIndex") Integer nodeIndex,
+        @RequestParam("approvalRef") String approvalRef) {
+        taskFlowDriver.confirm(taskId, nodeIndex, approvalRef);
+        // 作答时重读一遍账本：让调用方拿到的是"现在的事实"，而不是"这次写入的返回值"
+        List<AigTaskStep> steps = taskStepService.listFlowNodes(taskId);
+        if (nodeIndex < 0 || nodeIndex >= steps.size()) {
+            throw new ServiceException("流程节点下标越界：" + nodeIndex
+                + "（该任务共 " + steps.size() + " 个流程节点）");
+        }
+        return R.ok(AigTaskFlowNodeVo.of(nodeIndex, steps.get(nodeIndex)));
     }
 
     /**

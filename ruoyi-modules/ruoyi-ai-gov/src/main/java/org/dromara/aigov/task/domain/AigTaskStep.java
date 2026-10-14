@@ -15,6 +15,11 @@ import java.io.Serializable;
  *
  * <p>只记引用（{@link #outputRef}/{@link #approvalRef}），不把大结果或受限原文落进本表。</p>
  *
+ * <p><b>为什么还要记流程节点身份（{@link #nodeType}/{@link #nodeRef}）</b>：节点原本只存在于
+ * 冻结的执行计划里，而计划不落库。于是任务一旦因为"需要人工确认"停下来，
+ * 就再也认不出"这个步骤是人工确认还是普通步骤"——恢复入口无法校验"批的是不是人工确认节点"，
+ * 只能盲批。身份落在账本上，"挂起"才可能被真的"恢复"。</p>
+ *
  * @author ai-gov
  */
 @Data
@@ -37,6 +42,12 @@ public class AigTaskStep extends BaseEntity implements Serializable {
 
     /** 步骤类型 */
     private String kind;
+
+    /** 流程节点类型（{@code AigFlowNodeTypeEnum}；非 FLOW_NODE 步骤为空） */
+    private String nodeType;
+
+    /** 流程节点引用（条件判断的键/步骤标识/输出契约键；非 FLOW_NODE 步骤为空） */
+    private String nodeRef;
 
     /** 引用的资源版本（子 Agent 版本 / 工具版本；可空） */
     private Long resourceVersionId;

@@ -49,10 +49,15 @@ public class AigTaskStepServiceImpl implements IAigTaskStepService {
             planned.add(newStep(taskId, ++sequence, AigTaskStepKindEnum.SUB_AGENT, versionId,
                 plan.getInputHash()));
         }
-        // 顺序流程节点：节点本身不是"资源版本"，resource_version_id 留空
-        for (AigFlowNode ignored : plan.getFlowNodes()) {
-            planned.add(newStep(taskId, ++sequence, AigTaskStepKindEnum.FLOW_NODE, null,
-                plan.getInputHash()));
+        // 顺序流程节点：节点本身不是"资源版本"，resource_version_id 留空。
+        // ★ 但节点**身份**（类型 + 引用）必须落库：否则任务因"需要人工确认"停下之后，
+        //   没人能回答"这个步骤是人工确认还是普通步骤"，恢复入口就无法校验批准对象。
+        for (AigFlowNode node : plan.getFlowNodes()) {
+            AigTaskStep step = newStep(taskId, ++sequence, AigTaskStepKindEnum.FLOW_NODE, null,
+                plan.getInputHash());
+            step.setNodeType(node == null ? null : node.type());
+            step.setNodeRef(node == null ? null : node.ref());
+            planned.add(step);
         }
         int created = 0;
         for (AigTaskStep step : planned) {
@@ -81,6 +86,23 @@ public class AigTaskStepServiceImpl implements IAigTaskStepService {
         return stepMapper.selectList(new LambdaQueryWrapper<AigTaskStep>()
             .eq(AigTaskStep::getTaskId, taskId)
             .orderByAsc(AigTaskStep::getSequence));
+    }
+
+    @Override
+    public List<AigTaskStep> listFlowNodes(Long taskId) {
+        List<AigTaskStep> all = listSteps(taskId);
+        List<AigTaskStep> result = new ArrayList<>();
+        for (AigTaskStep step : all) {
+            if (step == null || !AigTaskStepKindEnum.FLOW_NODE.getCode().equals(step.getKind())) {
+                continue;
+            }
+            // 重试是新的 attempt：流程节点只按首次尝试的账本对齐，重试记录不参与
+            if (step.getAttempt() != null && step.getAttempt() != FIRST_ATTEMPT) {
+                continue;
+            }
+            result.add(step);
+        }
+        return result;
     }
 
     @Override

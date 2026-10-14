@@ -19,6 +19,8 @@ create table if not exists aig_task_step (
     task_id             bigint(20)   not null               comment '所属任务',
     sequence            int(11)      not null               comment '步骤序号（同任务内从 1 开始）',
     kind                varchar(16)  not null               comment '步骤类型（AigTaskStepKindEnum：SUB_AGENT/FLOW_NODE/TOOL_CALL）',
+    node_type           varchar(24)  default null            comment '流程节点类型（AigFlowNodeTypeEnum：STEP/CONDITION/HUMAN_CONFIRM/OUTPUT；非 FLOW_NODE 步骤为空）',
+    node_ref            varchar(128) default null            comment '流程节点引用（条件表达式的键/步骤标识/输出契约键；非 FLOW_NODE 步骤为空）',
     resource_version_id bigint(20)   default null            comment '引用的资源版本（子 Agent 版本 / 工具版本；可空）',
     status              varchar(16)  not null default 'PLANNED' comment '步骤状态（AigTaskStepStatusEnum）',
     input_hash          char(64)     default null            comment '输入摘要（与父任务输入快照对应）',
