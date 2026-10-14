@@ -155,6 +155,18 @@
 
 ---
 
+### 1.13 对账作业与定时触发（D-11）
+
+- `AigSubAgentReconcileProperties`（`aigov.subagent.reconcile.*`，**默认关闭**）+
+  `IAigSubAgentReconcileService#sweep()`：取"执行中的子 Agent 步骤"（限流取前 N 条）→ **按父任务去重** →
+  逐个对账；**单个父任务失败不影响其它父任务**（对账可重复，下一轮还会看到它）。
+- `AigSubAgentReconcileJob`：`@ConditionalOnProperty(aigov.subagent.reconcile.enabled=true)` +
+  `@Scheduled(fixedDelayString=…)`——与既有任务调度器**同一套部署口径**：
+  单实例用内置定时，集群保持关闭改由 SnailJob/cron 调用同一服务入口；
+  多实例同时触发不会重复收尾（步骤迁移走 CAS）。
+
+---
+
 ## 2 本轮**不做**的事（明确的边界）
 
 1. **HTTP 接口与权限点（已在 D-2 补齐）**：`GET /aigov/tools`（可绑定工具清单）、
@@ -183,7 +195,7 @@
   - `AigToolRegistryServiceImplTest`（8）：只读执行并落账本、未接入不落账本、
     写操作批准缺失/过期不执行、有效批准执行、幂等回放、RUNNING→结果未知、
     执行异常→结果未知不重试、非法操作类型拒绝。
-- 后端 `ruoyi-ai-gov` 全量：**1192 tests / 0 failures / 0 errors**。
+- 后端 `ruoyi-ai-gov` 全量：**1195 tests / 0 failures / 0 errors**。
 
 ---
 
