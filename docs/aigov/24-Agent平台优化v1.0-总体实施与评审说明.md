@@ -30,6 +30,7 @@
 | `04933736` | A/§7.1 | 执行计划冻结授权上下文（身份 + 岗位卡片） |
 | `bee7494a` | D | 顺序流程节点校验（`AigSequentialFlow`） |
 | `3a6b777c` | E/前端 | 反馈与运营页面（`aigov/feedback/index` + 纯函数与单测） |
+| `4d8bc675` | C/前端 | 知识中心页面（`aigov/knowledge/index` + 纯函数与单测） |
 
 ---
 
