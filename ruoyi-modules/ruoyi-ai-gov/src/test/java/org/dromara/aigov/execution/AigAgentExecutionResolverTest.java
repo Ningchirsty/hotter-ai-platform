@@ -1,5 +1,6 @@
 package org.dromara.aigov.execution;
 
+import org.dromara.aigov.agent.domain.AigAgentResourceBinding;
 import org.dromara.aigov.agent.domain.AigAgentVersion;
 import org.dromara.aigov.agent.mapper.AigAgentVersionMapper;
 import org.dromara.aigov.agent.service.IAigAgentRegistryService;
@@ -9,6 +10,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import tools.jackson.databind.json.JsonMapper;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -45,6 +47,7 @@ class AigAgentExecutionResolverTest {
     private static final long VERSION_ID = 8801L;
 
     private AigAgentVersionMapper agentVersionMapper;
+    private org.dromara.aigov.agent.mapper.AigAgentResourceBindingMapper resourceBindingMapper;
     private IAigAgentRegistryService registryService;
     private KnowledgePort knowledgePort;
     private ISubAgentGraphResolver subAgentGraphResolver;
@@ -53,6 +56,7 @@ class AigAgentExecutionResolverTest {
     @BeforeEach
     void setUp() {
         agentVersionMapper = mock(AigAgentVersionMapper.class);
+        resourceBindingMapper = mock(org.dromara.aigov.agent.mapper.AigAgentResourceBindingMapper.class);
         registryService = mock(IAigAgentRegistryService.class);
         knowledgePort = mock(KnowledgePort.class);
         subAgentGraphResolver = mock(ISubAgentGraphResolver.class);
@@ -60,8 +64,10 @@ class AigAgentExecutionResolverTest {
         when(knowledgePort.retrieve(any())).thenReturn(KnowledgePort.RetrievalResult.of(java.util.List.of()));
         // 默认：没有子 Agent
         when(subAgentGraphResolver.childrenOf(any())).thenReturn(java.util.List.of());
-        resolver = new AigAgentExecutionResolver(agentVersionMapper, registryService, knowledgePort,
-            subAgentGraphResolver, JsonMapper.builder().build());
+        // 默认：没有启用的知识绑定（不额外收窄）
+        when(resourceBindingMapper.selectList(any())).thenReturn(java.util.List.of());
+        resolver = new AigAgentExecutionResolver(agentVersionMapper, resourceBindingMapper, registryService,
+            knowledgePort, subAgentGraphResolver, JsonMapper.builder().build());
     }
 
     private static AigAgentVersion version(String configJson, String allowExternal, String promptTemplate) {
@@ -201,6 +207,37 @@ class AigAgentExecutionResolverTest {
 
         ServiceException ex = assertThrows(ServiceException.class, this::resolve);
         assertTrue(ex.getMessage().contains("循环引用"), ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("★ §7.2：有效数据等级取各来源最高值（版本最低等级高于任务等级时以版本为准）")
+    void effectiveDataLevelIsStrictest() {
+        String config = "{\"schemaVersion\":2,\"dataPolicy\":{\"minimumLevel\":\"RESTRICTED\"}}";
+        when(agentVersionMapper.selectById(VERSION_ID)).thenReturn(version(config, "Y", "SYS"));
+
+        AigExecutionPlan plan = resolve();
+
+        assertEquals("RESTRICTED", plan.getDataLevel(), "任务等级 INTERNAL，版本最低 RESTRICTED → 取 RESTRICTED");
+    }
+
+    @Test
+    @DisplayName("★ §7.2：启用的知识绑定把声明范围收窄（检索只带交集）")
+    void knowledgeBindingsNarrowDeclaredScope() {
+        String config = "{\"schemaVersion\":2,\"knowledgeRefs\":[{\"collectionCode\":\"a\"},"
+            + "{\"collectionCode\":\"b\"}]}";
+        when(agentVersionMapper.selectById(VERSION_ID)).thenReturn(version(config, "Y", "SYS"));
+        AigAgentResourceBinding binding = new AigAgentResourceBinding();
+        binding.setResourceCode("b");
+        binding.setEnabled("Y");
+        when(resourceBindingMapper.selectList(any())).thenReturn(java.util.List.of(binding));
+
+        resolve();
+
+        ArgumentCaptor<KnowledgePort.RetrievalQuery> captor =
+            ArgumentCaptor.forClass(KnowledgePort.RetrievalQuery.class);
+        verify(knowledgePort).retrieve(captor.capture());
+        assertEquals(java.util.Set.of("b"), captor.getValue().allowedCollectionCodes(),
+            "绑定只应做收窄：声明 a,b + 绑定 b → 只检索 b");
     }
 
     @Test

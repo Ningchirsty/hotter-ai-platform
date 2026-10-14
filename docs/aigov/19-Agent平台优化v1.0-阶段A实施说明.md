@@ -64,9 +64,23 @@
 
 ### 2.3 外发许可是「取与」
 
-`AigAgentExecutionResolver#effectiveAllowExternal`：版本 `allow_external` 与 v2
-`dataPolicy.allowExternal` **任一为否即为否**；空白一律按否处理。落地了设计 §7.2
-「有效外发许可要求企业策略、Agent 配置、资源策略、模型路由全部允许」。
+`AigAgentExecutionResolver#effectiveAllowExternal` 现在直接走 `AigEffectivePolicy.externalAllowed`：
+版本 `allow_external` 与 v2 `dataPolicy.allowExternal` **任一为否即为否**；空白一律按否处理。
+落地了设计 §7.2「有效外发许可要求企业策略、Agent 配置、资源策略、模型路由全部允许」。
+
+### 2.4 有效权限逐层相交与有效数据等级（§7.2，后续增量补齐）
+
+`AigEffectivePolicy`（纯函数，`AigEffectivePolicyTest`）：
+
+- `intersect(declared, narrowed)`：**范围相交**——绑定只做收窄；收窄为空表示"不额外收窄"
+  （空值语义是「不限」，不是「都不匹配」）。解析器据此把有效知识范围算成
+  **版本 `knowledgeRefs` ∩ 启用的 KNOWLEDGE 绑定**，检索只带交集；
+- `strictestDataLevel(...)`：**有效数据等级取各来源最高值**（任务登记等级 × 版本最低等级），
+  不可识别项忽略；全不可识别返回 null（调用方不得据此放宽）；
+- `externalAllowed(...)`：任意一方 `FALSE` 即为否，`null` 表示该方不额外限制。
+
+> 身份层与岗位卡片层的相交（§7.2 的「登录身份 ∩ 岗位卡片」）仍待执行入口接线时补齐；
+> 当前已落地"版本范围 ∩ 资源绑定"这一层。
 
 ---
 

@@ -4,6 +4,9 @@ import cn.hutool.crypto.digest.DigestUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.aigov.agent.domain.AigAgentVersion;
+import org.dromara.aigov.agent.domain.AigAgentResourceBinding;
+import org.dromara.aigov.agent.enums.AigAgentResourceTypeEnum;
+import org.dromara.aigov.agent.mapper.AigAgentResourceBindingMapper;
 import org.dromara.aigov.agent.mapper.AigAgentVersionMapper;
 import org.dromara.aigov.agent.service.IAigAgentRegistryService;
 import org.dromara.aigov.knowledge.retrieval.KnowledgePort;
@@ -48,6 +51,7 @@ public class AigAgentExecutionResolver implements IAigAgentExecutionResolver {
     private static final int DEFAULT_MAX_CITATIONS = 5;
 
     private final AigAgentVersionMapper agentVersionMapper;
+    private final AigAgentResourceBindingMapper resourceBindingMapper;
     private final IAigAgentRegistryService registryService;
     private final KnowledgePort knowledgePort;
     private final ISubAgentGraphResolver subAgentGraphResolver;
@@ -80,6 +84,11 @@ public class AigAgentExecutionResolver implements IAigAgentExecutionResolver {
 
         String capability = StringUtils.isNotBlank(config.getProviderCapability())
             ? config.getProviderCapability() : version.getProviderCapability();
+        // §7.2：有效数据等级取各来源最高值（任务等级 × 版本最低等级）
+        String effectiveDataLevel = AigEffectivePolicy.strictestDataLevel(dataLevel, config.getMinimumLevel());
+        if (effectiveDataLevel == null) {
+            effectiveDataLevel = dataLevel;
+        }
         Boolean allowExternal = effectiveAllowExternal(version, config);
         String configHash = sha256(String.join("|",
             String.valueOf(version.getAgentVersionId()),
@@ -98,9 +107,12 @@ public class AigAgentExecutionResolver implements IAigAgentExecutionResolver {
         //   返回的引用来自服务端合法集合，因此可作为可核验来源。
         String knowledgeBlock = null;
         List<AigExecutionCitation> citations = new ArrayList<>();
-        if (!config.getKnowledgeRefs().isEmpty() && StringUtils.isNotBlank(businessInput)) {
+        // §7.2：有效知识范围 = 版本声明 ∩ 启用的 KNOWLEDGE 绑定（绑定只做收窄；无绑定不额外收窄）
+        List<String> allowedCollections = AigEffectivePolicy.intersect(config.getKnowledgeRefs(),
+            knowledgeBindings(version.getAgentVersionId()));
+        if (!allowedCollections.isEmpty() && StringUtils.isNotBlank(businessInput)) {
             KnowledgePort.RetrievalResult retrieval = knowledgePort.retrieve(new KnowledgePort.RetrievalQuery(
-                businessInput, Set.of(), Set.copyOf(config.getKnowledgeRefs()), DEFAULT_MAX_CITATIONS));
+                businessInput, Set.of(), Set.copyOf(allowedCollections), DEFAULT_MAX_CITATIONS));
             for (KnowledgePort.Citation citation : retrieval.citations()) {
                 citations.add(new AigExecutionCitation(citation.chunkId(), citation.versionId(),
                     citation.documentId(), citation.sourceName(), citation.locator(),
@@ -134,7 +146,7 @@ public class AigAgentExecutionResolver implements IAigAgentExecutionResolver {
             .systemPrompt(version.getPromptTemplate())
             .inputHash(inputHash)
             .capabilityCode(capability)
-            .dataLevel(dataLevel)
+            .dataLevel(effectiveDataLevel)
             .allowExternal(allowExternal)
             .maxCost(maxCost)
             .maxToolCalls(config.getMaxToolCalls())
@@ -161,12 +173,33 @@ public class AigAgentExecutionResolver implements IAigAgentExecutionResolver {
     private Boolean effectiveAllowExternal(AigAgentVersion version, AigExecutionConfig config) {
         boolean versionAllows = "Y".equalsIgnoreCase(
             version.getAllowExternal() == null ? null : version.getAllowExternal().trim());
-        boolean configAllows = config.getAllowExternal() == null || config.getAllowExternal();
-        return versionAllows && configAllows;
+        // §7.2：任意禁止条件优先——版本声明与 v2 dataPolicy 任一方禁止即禁止
+        return AigEffectivePolicy.externalAllowed(versionAllows, config.getAllowExternal());
     }
 
     private static String sha256(String text) {
         return DigestUtil.sha256Hex(text == null ? "" : text);
+    }
+
+    /**
+     * 取某版本"启用的知识绑定编码"（用于把声明范围收窄，设计 §7.2）。
+     *
+     * @param agentVersionId 版本ID
+     * @return 绑定编码（无绑定返回空列表 = 不额外收窄）
+     */
+    private List<String> knowledgeBindings(Long agentVersionId) {
+        List<AigAgentResourceBinding> rows = resourceBindingMapper.selectList(
+            new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<AigAgentResourceBinding>()
+                .eq(AigAgentResourceBinding::getAgentVersionId, agentVersionId)
+                .eq(AigAgentResourceBinding::getResourceType, AigAgentResourceTypeEnum.KNOWLEDGE.getCode())
+                .eq(AigAgentResourceBinding::getEnabled, "Y"));
+        List<String> codes = new ArrayList<>();
+        for (AigAgentResourceBinding row : rows) {
+            if (StringUtils.isNotBlank(row.getResourceCode())) {
+                codes.add(row.getResourceCode().trim());
+            }
+        }
+        return codes;
     }
 
 }
