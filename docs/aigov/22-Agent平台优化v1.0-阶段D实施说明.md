@@ -101,6 +101,21 @@
 
 ---
 
+### 1.10 任务步骤账本（D-7，设计 §8.2 `aig_task_step`）
+
+- 新增表 `aig_task_step`（`script/sql/aig_task_step.sql`）：`(task_id, sequence, attempt)` 唯一，
+  **重试是新 attempt，不覆盖历史**；只记引用（`output_ref`/`approval_ref`），不落大结果与受限原文。
+- `AigTaskStepKindEnum`（SUB_AGENT / FLOW_NODE / TOOL_CALL）+
+  `AigTaskStepStatusEnum`（PLANNED / RUNNING / SUCCEEDED / FAILED / SKIPPED）：
+  **步骤状态独立于任务状态**——任务 SUCCEEDED 而某步 FAILED 是可能的（部分成功），
+  合成一个状态会掩盖"哪一步没成"。
+- `IAigTaskStepService#recordPlannedSteps(taskId, plan)`：子 Agent 一步一版本、流程节点各占一步，
+  按序号登记为 `PLANNED`；**幂等**（同一 `(task, sequence)` 已有记录则跳过）。
+- 任务执行器在解析出计划后**尽力**登记（写失败记日志、不让执行失败）——
+  它是可追溯性记录，不该反过来把一次执行变成失败。
+
+---
+
 ## 2 本轮**不做**的事（明确的边界）
 
 1. **HTTP 接口与权限点（已在 D-2 补齐）**：`GET /aigov/tools`（可绑定工具清单）、
@@ -129,7 +144,7 @@
   - `AigToolRegistryServiceImplTest`（8）：只读执行并落账本、未接入不落账本、
     写操作批准缺失/过期不执行、有效批准执行、幂等回放、RUNNING→结果未知、
     执行异常→结果未知不重试、非法操作类型拒绝。
-- 后端 `ruoyi-ai-gov` 全量：**1167 tests / 0 failures / 0 errors**。
+- 后端 `ruoyi-ai-gov` 全量：**1171 tests / 0 failures / 0 errors**。
 
 ---
 

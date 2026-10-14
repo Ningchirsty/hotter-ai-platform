@@ -22,6 +22,7 @@ import org.dromara.aigov.task.enums.AigTaskPolicyResultEnum;
 import org.dromara.aigov.task.enums.AigTaskStatusEnum;
 import org.dromara.aigov.task.service.IAigTaskExecutor;
 import org.dromara.aigov.task.service.IAigTaskService;
+import org.dromara.aigov.task.service.IAigTaskStepService;
 import org.dromara.aigov.workspace.domain.AigScenarioVersion;
 import org.dromara.aigov.workspace.helper.AigScenarioDispatch;
 import org.dromara.aigov.workspace.scenario.config.AigScenarioDispatchProperties;
@@ -54,6 +55,7 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
     private final IAigScenarioVersionResolver scenarioVersionResolver;
     private final IAigScenarioFlowDispatcher scenarioFlowDispatcher;
     private final IAigAgentExecutionResolver executionResolver;
+    private final IAigTaskStepService taskStepService;
     private final JsonMapper jsonMapper;
 
     @Override
@@ -148,6 +150,13 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
             invokeBo.setAllowExternal(plan.getAllowExternal());
             if (plan.getMaxCost() != null) {
                 invokeBo.setMaxCost(plan.getMaxCost());
+            }
+            // ★ D05：把"这次编排有哪些步骤"登记成任务步骤（子 Agent / 流程节点）。
+            //   可追溯性记录：写失败不应让一次执行变成失败，但必须留痕。
+            try {
+                taskStepService.recordPlannedSteps(bo.getTaskId(), plan);
+            } catch (Exception e) {
+                log.error("登记任务步骤失败（不影响本次执行）, taskId={}", bo.getTaskId(), e);
             }
         }
 

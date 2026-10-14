@@ -165,7 +165,8 @@ class AigScenarioDispatchE2ELiveTest {
         JsonMapper jsonMapper = JsonMapper.builder().build();
         executor = new AigTaskExecutorImpl(taskService, mock(IAigInvokeService.class),
             dispatchProperties, resolver, dispatcher,
-            mock(org.dromara.aigov.execution.IAigAgentExecutionResolver.class), jsonMapper);
+            mock(org.dromara.aigov.execution.IAigAgentExecutionResolver.class),
+            mock(org.dromara.aigov.task.service.IAigTaskStepService.class), jsonMapper);
         reportService = new AigScenarioReportServiceImpl(taskService, jsonMapper);
     }
 

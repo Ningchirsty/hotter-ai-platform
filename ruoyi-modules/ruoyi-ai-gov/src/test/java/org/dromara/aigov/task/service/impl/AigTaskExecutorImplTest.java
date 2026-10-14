@@ -87,7 +87,8 @@ class AigTaskExecutorImplTest {
         // 解析器默认返回 null = 非 Agent 模式：既有用例的行为完全不变（D01 用专门的用例覆盖）
         executionResolver = mock(org.dromara.aigov.execution.IAigAgentExecutionResolver.class);
         executor = new AigTaskExecutorImpl(taskService, invokeService, scenarioDispatchProperties,
-            scenarioVersionResolver, scenarioFlowDispatcher, executionResolver, JsonMapper.builder().build());
+            scenarioVersionResolver, scenarioFlowDispatcher, executionResolver,
+            mock(org.dromara.aigov.task.service.IAigTaskStepService.class), JsonMapper.builder().build());
     }
 
     /**
