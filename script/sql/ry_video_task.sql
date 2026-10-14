@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS video_task (
   status            VARCHAR(16)  NOT NULL             COMMENT 'QUEUED/RUNNING/SUCCEEDED/FAILED/CANCELED/TIMEOUT',
   tier              VARCHAR(32)  NOT NULL             COMMENT '输出档位（当前仅 高清 · 1080P）',
   duration_seconds  INT          NOT NULL             COMMENT '目标时长（秒），当前仅 5',
-  prompt            VARCHAR(1000) NULL                COMMENT '视频描述',
+  prompt            TEXT         NULL                COMMENT '视频描述（支持完整模板提示词）',
   input_json        JSON         NULL                 COMMENT '字段→素材ID 白名单，已服务端校验',
   comfy_prompt_id   VARCHAR(64)  NULL                 COMMENT 'ComfyUI prompt_id',
   comfy_worker      VARCHAR(64)  NULL                 COMMENT '承担本次生成的 ComfyUI 工作节点名（多 GPU 区分）',
