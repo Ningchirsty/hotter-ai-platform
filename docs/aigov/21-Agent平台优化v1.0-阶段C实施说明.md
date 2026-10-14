@@ -53,6 +53,29 @@
    **64 位 SHA-256 前端先校验**、登记校验与后端同口径、检索摘要、
    **分段摘要/预览/索引状态**）；页面行 `script/sql/aig_knowledge_pages.sql`。
 
+### 2.6 谁在引用这个集合（设计 §6.4「引用该版本的 Agent」）
+
+退役一个知识版本之前，维护人真正要回答的是"**停了会影响谁**"。此前只有绑定表能回答，
+而绑定表给的是 `agentVersionId`——一串 ID 看不出影响面，于是退役变成"先停掉再看谁来报错"。
+
+- `IAigAgentRegistryQueryService#listResourceReferences(resourceType, resourceCode)`（Agent 模块）：
+  按"资源类型 + 编码"取全部绑定，并**批量**解析出 Agent 编码/名称/版本/发布状态
+  （逐个查版本会变成 N+1，而这一屏本来就是要看清影响面的）。
+- `IAigKnowledgeService#listReferencingAgents(collectionId)`：按**集合编码**（跨版本稳定）委托查询。
+- `GET /aigov/knowledge/collections/{collectionId}/references`、
+  权限沿用 `aig:knowledge:document:list`（返回的是"哪个 Agent 引用了这个集合"这类元数据，
+  **不含任何资料正文**；能看文档清单的人就该能看影响面）。**无新权限点。**
+- 三条刻意口径：
+  1. **停用中的绑定也返回**（如实标注 `enabled=N`）：它们不会被采用，但仍是"这份资源曾经给过谁"
+     的记录；藏起来会让人以为没人用过。
+  2. **解析不到就留空**（版本/Agent 已删除）：留空才能看出"这条引用指着的东西不在了"，
+     编一个名字反而掩盖了它。
+  3. **空条件不查库**：`resourceType/resourceCode` 为空时返回空列表——否则会查出全库绑定，
+     被读成"这份资源被所有人引用"。
+- 界面：集合行「看引用」→ 清单（Agent / 版本状态 / 收窄范围 / 启用与否）+ 摘要
+  （**启用中与已停用分开数**，按虚高的影响面做退役决策会误判）。
+
+
 ### 2.5 分段预览（设计 §6.4「解析预览、分段」）
 
 设计 §6.4 要求"单份文档详情提供原文件信息、**解析预览、分段**、检索测试"。分段此前只在库里：
@@ -112,6 +135,7 @@
 | `POST /document-versions/{id}/retire` | `aig:knowledge:document:manage` | 退役版本 |
 | `POST /retrieval-tests` | `aig:knowledge:retrieval:test` | 只检索不生成 |
 | `GET /document-versions/{id}/chunks` | `aig:knowledge:retrieval:test` | **分段预览**（只给 `text_excerpt`，见 §2.5；无新权限点） |
+| `GET /collections/{id}/references` | `aig:knowledge:document:list` | **谁在引用这个集合**（退役前的影响面，见 §2.6；无新权限点） |
 
 授权沿用既有口径：**只授 `aig_admin`**；设计 §4.3 的「知识维护人」是业务角色，应由运维按需新建并单独授权。
 
@@ -138,13 +162,16 @@
 
 - 新增测试 22 条：
   - `AigKnowledgeAccessTest`（5）：状态/有效期闭区间/集合授权/版本限制；
-  - `AigKnowledgeServiceImplTest`（13 → 16，含分段预览 3 条）：集合唯一与默认严格级、格式识别、
-    重复提示不拒绝、版本号冲突、管道推进与幂等、终态保护、CAS 冲突；
+  - `AigKnowledgeServiceImplTest`（13 → 17，含分段预览 3 条 + 引用影响面 1 条）：集合唯一与默认严格级、
+    格式识别、重复提示不拒绝、版本号冲突、管道推进与幂等、终态保护、CAS 冲突；
     **分段预览只给预览 + 正文/索引状态如实**、条数归一化、版本不存在拒绝；
+    **按集合编码查引用、集合不存在拒绝**；
+  - `AigAgentRegistryQueryServiceImplTest`（5 → 7）：**谁在用这份资源**（解析 Agent 身份、
+    停用中的绑定也返回、解析不到留空）、空条件不查库；
   - `AigKnowledgeRetrievalServiceTest`（4）：已授权片段返回可核验引用、非就绪不返回、空授权与空查询明说。
 - 后端 `ruoyi-ai-gov` 全量：阶段 C 时为 **1198 tests / 0 failures / 0 errors**；
-  全阶段累计到本轮为 **1274 tests / 0 failures / 0 errors**（以 `24-总体说明` §4 为准）。
-- 前端：`knowledge/presentation.spec.ts` 7 → 9 条（分段摘要、预览/索引文案）。
+  全阶段累计到本轮为 **1277 tests / 0 failures / 0 errors**（以 `24-总体说明` §4 为准）。
+- 前端：`knowledge/presentation.spec.ts` 7 → 11 条（分段摘要、预览/索引文案、引用影响面、引用行文案）。
 
 ---
 
