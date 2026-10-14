@@ -3,8 +3,11 @@ package org.dromara.aigov.tool.service;
 import org.dromara.aigov.tool.domain.AigToolDefinitionVersion;
 import org.dromara.aigov.tool.domain.bo.AigToolDefinitionBo;
 import org.dromara.aigov.tool.domain.bo.AigToolDefinitionVersionBo;
+import org.dromara.aigov.tool.domain.vo.AigToolDefinitionVersionVo;
 import org.dromara.aigov.tool.exec.AigToolCallRequest;
 import org.dromara.aigov.tool.exec.AigToolCallResult;
+
+import java.util.List;
 
 /**
  * 工具注册与执行服务（设计 §6.5、§7.5）。
@@ -41,6 +44,13 @@ public interface IAigToolRegistryService {
      * @return 版本；不存在抛错
      */
     AigToolDefinitionVersion getVersion(String toolCode, String version);
+
+    /**
+     * 列出可绑定工具（含"是否已接入执行器"与"是否需人工确认"）。
+     *
+     * @return 工具版本清单
+     */
+    List<AigToolDefinitionVersionVo> listVersions();
 
     /**
      * 执行一次工具调用（幂等；写操作需人工确认）。

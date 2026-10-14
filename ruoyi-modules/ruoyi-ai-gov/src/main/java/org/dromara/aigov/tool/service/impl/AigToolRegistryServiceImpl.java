@@ -8,6 +8,7 @@ import org.dromara.aigov.tool.domain.AigToolDefinition;
 import org.dromara.aigov.tool.domain.AigToolDefinitionVersion;
 import org.dromara.aigov.tool.domain.bo.AigToolDefinitionBo;
 import org.dromara.aigov.tool.domain.bo.AigToolDefinitionVersionBo;
+import org.dromara.aigov.tool.domain.vo.AigToolDefinitionVersionVo;
 import org.dromara.aigov.tool.enums.AigToolCallStatusEnum;
 import org.dromara.aigov.tool.enums.AigToolOperationTypeEnum;
 import org.dromara.aigov.tool.exec.AigToolCallRequest;
@@ -24,7 +25,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * 工具注册与执行实现（设计 §6.5、§7.5）。
@@ -137,6 +143,52 @@ public class AigToolRegistryServiceImpl implements IAigToolRegistryService {
             throw new ServiceException("工具版本不存在或已停用：" + toolCode + "@" + version);
         }
         return row;
+    }
+
+    @Override
+    public List<AigToolDefinitionVersionVo> listVersions() {
+        List<AigToolDefinitionVersion> versions = versionMapper.selectList(
+            new LambdaQueryWrapper<AigToolDefinitionVersion>()
+                .eq(AigToolDefinitionVersion::getStatus, STATUS_NORMAL)
+                .orderByAsc(AigToolDefinitionVersion::getToolId)
+                .orderByAsc(AigToolDefinitionVersion::getVersion));
+        if (versions.isEmpty()) {
+            return List.of();
+        }
+        Set<Long> toolIds = new HashSet<>();
+        for (AigToolDefinitionVersion version : versions) {
+            toolIds.add(version.getToolId());
+        }
+        List<AigToolDefinition> definitions = definitionMapper.selectList(
+            new LambdaQueryWrapper<AigToolDefinition>()
+                .in(AigToolDefinition::getToolId, toolIds)
+                .eq(AigToolDefinition::getStatus, STATUS_NORMAL));
+        Map<Long, AigToolDefinition> definitionById = new HashMap<>();
+        for (AigToolDefinition definition : definitions) {
+            definitionById.put(definition.getToolId(), definition);
+        }
+        List<AigToolDefinitionVersionVo> result = new ArrayList<>();
+        for (AigToolDefinitionVersion version : versions) {
+            AigToolDefinition definition = definitionById.get(version.getToolId());
+            if (definition == null) {
+                // 定义已停用/删除：不展示它的版本（否则界面会出现"工具不存在"的绑定项）
+                continue;
+            }
+            AigToolOperationTypeEnum op = AigToolOperationTypeEnum.find(version.getOperationType());
+            AigToolDefinitionVersionVo vo = new AigToolDefinitionVersionVo();
+            vo.setToolCode(definition.getToolCode());
+            vo.setToolName(definition.getToolName());
+            vo.setVersion(version.getVersion());
+            vo.setOperationType(version.getOperationType());
+            vo.setOperationTypeDesc(op == null ? null : op.getDesc());
+            vo.setRequiresConfirmation(op != null && op.isRequiresConfirmation());
+            // "可执行"由服务端当前注册的执行器决定，而不是由 executor_ref 非空决定
+            vo.setExecutable(executorFor(version.getExecutorRef()) != null);
+            vo.setPermissionPoint(version.getPermissionPoint());
+            vo.setDataLevelMax(version.getDataLevelMax());
+            result.add(vo);
+        }
+        return result;
     }
 
     @Override

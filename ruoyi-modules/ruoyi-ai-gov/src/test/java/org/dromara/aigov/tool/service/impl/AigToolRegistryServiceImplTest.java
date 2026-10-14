@@ -8,6 +8,7 @@ import org.dromara.aigov.tool.domain.AigToolDefinition;
 import org.dromara.aigov.tool.domain.AigToolDefinitionVersion;
 import org.dromara.aigov.tool.domain.bo.AigToolDefinitionBo;
 import org.dromara.aigov.tool.domain.bo.AigToolDefinitionVersionBo;
+import org.dromara.aigov.tool.domain.vo.AigToolDefinitionVersionVo;
 import org.dromara.aigov.tool.enums.AigToolCallStatusEnum;
 import org.dromara.aigov.tool.exec.AigToolCallRequest;
 import org.dromara.aigov.tool.exec.AigToolCallResult;
@@ -28,6 +29,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -227,6 +229,44 @@ class AigToolRegistryServiceImplTest {
         bo.setToolCode("product_fact_query");
         bo.setToolName("产品事实查询");
         assertThrows(ServiceException.class, () -> service.createDefinition(bo, 9L));
+    }
+
+    @Test
+    @DisplayName("★ 可绑定清单：executable 由已注册执行器决定（未接入如实显示为不可用）")
+    void listVersionsMarksExecutableByRegisteredExecutor() {
+        AigToolDefinitionVersion ok = versionRow(TOOL_ID, "1.0.0", "READ_ONLY_QUERY", "ref-1");
+        AigToolDefinitionVersion missing = versionRow(2L, "2.0.0", "MUTATE_BUSINESS_DATA", "ref-missing");
+        when(versionMapper.selectList(any())).thenReturn(List.of(ok, missing));
+        AigToolDefinition other = new AigToolDefinition();
+        other.setToolId(2L);
+        other.setToolCode("other_tool");
+        other.setToolName("另一个工具");
+        other.setStatus("0");
+        when(definitionMapper.selectList(any())).thenReturn(List.of(definition(), other));
+
+        List<AigToolDefinitionVersionVo> list = service.listVersions();
+
+        assertEquals(2, list.size());
+        AigToolDefinitionVersionVo available = list.stream()
+            .filter(item -> "1.0.0".equals(item.getVersion())).findFirst().orElseThrow();
+        assertTrue(available.getExecutable());
+        assertFalse(available.getRequiresConfirmation());
+
+        AigToolDefinitionVersionVo pending = list.stream()
+            .filter(item -> "2.0.0".equals(item.getVersion())).findFirst().orElseThrow();
+        assertFalse(pending.getExecutable(), "未注册执行器必须显示为不可用");
+        assertTrue(pending.getRequiresConfirmation(), "变更业务数据需要人工确认");
+    }
+
+    private static AigToolDefinitionVersion versionRow(Long toolId, String version, String op, String ref) {
+        AigToolDefinitionVersion row = new AigToolDefinitionVersion();
+        row.setToolVersionId(version.hashCode() * 1L);
+        row.setToolId(toolId);
+        row.setVersion(version);
+        row.setOperationType(op);
+        row.setExecutorRef(ref);
+        row.setStatus("0");
+        return row;
     }
 
     /**

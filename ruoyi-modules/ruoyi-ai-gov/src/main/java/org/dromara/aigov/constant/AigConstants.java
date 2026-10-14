@@ -460,6 +460,16 @@ public interface AigConstants {
     String PERM_KNOWLEDGE_RETRIEVAL_TEST = "aig:knowledge:retrieval:test";
 
     /**
+     * 可绑定工具清单（读）：版本、操作类型、接入与权限状态
+     */
+    String PERM_TOOL_LIST = "aig:tool:list";
+
+    /**
+     * 工具登记（写）：新建工具定义、新增执行契约版本
+     */
+    String PERM_TOOL_MANAGE = "aig:tool:manage";
+
+    /**
      * 服务令牌管理权限码的公共前缀。
      *
      * <p><b>它同时是一条安全边界</b>：签发令牌时，凡以此前缀开头的 scope 一律拒绝

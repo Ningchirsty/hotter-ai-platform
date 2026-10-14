@@ -48,11 +48,25 @@
 
 ---
 
+### 1.6 工具接口与权限（D-2）
+
+| 方法与路径 | 权限 | 说明 |
+| --- | --- | --- |
+| `GET /aigov/tools` | `aig:tool:list` | 可绑定工具清单：版本 / 操作类型 / **是否已接入执行器** / 所需权限点 |
+| `POST /aigov/tools/definitions` | `aig:tool:manage` | 新建工具定义（`@RepeatSubmit`） |
+| `POST /aigov/tools/versions` | `aig:tool:manage` | 新增执行契约版本（`@RepeatSubmit`） |
+
+种子脚本 `script/sql/aig_tool_menu.sql`（ID 段 `1769100000000000001..`，只授 `aig_admin`）。
+清单里的 `executable` 由服务端按"执行器是否已注册"计算，**不由前端从 `executorRef` 是否为空去猜**
+——空串或写错的引用都会让前端猜错，后果是把不可用工具显示成可用（设计 §4.1）。
+
+---
+
 ## 2 本轮**不做**的事（明确的边界）
 
-1. **HTTP 接口与权限点**：本轮不新增控制器（与 C-1 同一原因：接口须与菜单种子一起交付，
-   且有 `AigPermissionSeedCoverageTest` 守卫）。`GET /aigov/tools`（可绑定工具清单）与
-   工具定义/版本的登记接口随下一增量交付。
+1. **HTTP 接口与权限点（已在 D-2 补齐）**：`GET /aigov/tools`（可绑定工具清单）、
+   `POST /aigov/tools/definitions`、`POST /aigov/tools/versions`，权限点 `aig:tool:list` /
+   `aig:tool:manage`，种子脚本 `script/sql/aig_tool_menu.sql`。
 2. **子 Agent 编排与顺序流程**：设计 §6.5 的顺序步骤/条件/人工节点、子 Agent 最大深度与
    超时预算尚未实现。
 3. **工具接入执行计划**：`AigExecutionPlan.toolRefs` 已冻结，但执行路径尚未把
@@ -70,7 +84,7 @@
   - `AigToolRegistryServiceImplTest`（8）：只读执行并落账本、未接入不落账本、
     写操作批准缺失/过期不执行、有效批准执行、幂等回放、RUNNING→结果未知、
     执行异常→结果未知不重试、非法操作类型拒绝。
-- 后端 `ruoyi-ai-gov` 全量：**1124 tests / 0 failures / 0 errors**（阶段 C 后 1109 + 本轮 15）。
+- 后端 `ruoyi-ai-gov` 全量：**1125 tests / 0 failures / 0 errors**（D-1 后 1124 + D-2 的清单用例）。
 
 ---
 
