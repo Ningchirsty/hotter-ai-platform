@@ -42,6 +42,8 @@
 | `19ebe830` | D/§7.5 | 工具许可命中有效绑定 |
 | `2131ed54` | D/§7.5 | 工具许可命中**调用人权限**（`ToolPermissionChecker`，fail-closed） |
 | `4a358069` | D | **流程节点运行时驱动**（`AigFlowRuntime` + `IAigFlowDriverService` + 执行器闸门接线） |
+| `873cfb8d` | — | 文档：22/24 补记上述两项与状态收敛 |
+| `44ed5e2f` | D12 | **资产索引同步被「短页」误判为到底**（每域只同步前 50 条）修复 + 工具页权限点口径 |
 
 ---
 
@@ -62,7 +64,7 @@
 | D09 | 存在两份分节拼装 | ✅ | 提交改调 `AigStudioPromptBuilder.build`，删除第二份实现 |
 | D10 | Copilot 复用被训练 Agent 的能力 | ✅ | `aigov.studio.copilot.capability`；`AigStudioCopilotServiceImplTest` |
 | D11 | 员工需填实现概念（任务类型/业务域/数据等级/原始 JSON） | ✅ | `aig_launch_template` + `AigLaunchTemplateServiceImpl`；`GET /aigov/portal/launch/template`；前端业务表单 |
-| D12 | 缺业务反馈与有效成果口径 | 🔶 | 反馈账本+队列规则+接口、运营指标（口径与聚合，含**故障分类**）已完成（`feedback/`）；**资产索引增量同步未做** |
+| D12 | 缺业务反馈与有效成果口径 | 🔶 | 反馈账本+队列规则+接口、运营指标（口径与聚合，含**故障分类**）已完成（`feedback/`）；**资产索引增量同步未做**（顺带修掉全量重建的"短页=到底"缺陷：各域端口自设单次上限 50，原先每域只同步前 50 条且不报错） |
 
 ---
 
@@ -74,14 +76,14 @@
 | B 训练体验 | ✅（界面重构除外） | D06/D07/D09/D10/D11 + 元数据；**训练台三栏线框布局未做**（属界面重构） |
 | C 知识试点 | 🔶 | 数据模型/处理管道/检索端口/接口/接入执行计划、**知识中心页面**完成；**解析器与嵌入未接入** |
 | D 工具与流程 | 🔶 | 工具注册/执行/确认/接口、**工具许可（版本声明 + 有效绑定 + 调用人权限）**、子 Agent 编排/派发/对账、顺序流程节点的校验与**运行时驱动**完成；**多 STEP 节点的调度循环与 WarmFlow/LiteFlow 适配器未做** |
-| E 持续运营 | 🔶 | 反馈账本/队列/接口 + 指标口径与**聚合查询接口**（含故障分类）完成；**资产索引增量同步未做** |
+| E 持续运营 | 🔶 | 反馈账本/队列/接口 + 指标口径与**聚合查询接口**（含故障分类）、资产索引全量重建的**截断缺陷已修**完成；**增量同步未做** |
 
 ---
 
 ## 4 验证汇总
 
-- 后端 `ruoyi-ai-gov`：**1239 tests / 0 failures / 0 errors**（基线 1053 → 新增 186）。
-- 前端 `frontend`：**49 files / 466 tests** 全过；`oxlint src` 543 files 0/0。
+- 后端 `ruoyi-ai-gov`：**1241 tests / 0 failures / 0 errors**（基线 1053 → 新增 188）。
+- 前端 `frontend`：**49 files / 468 tests** 全过；`oxlint src` 543 files 0/0。
 - 关键守卫全部通过：`AigPermissionSeedCoverageTest`（权限串已种子 + menu_id 不撞）、
   `AigRepeatSubmitCoverageTest`（写接口防重或显式豁免）、`AigWp3WiringAndRoutesTest`。
 
@@ -132,8 +134,8 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
    流程会停在 `NEED_HUMAN`（可见的"待接"，不是默认放行），接上业务判定后才真正分流。
    （子 Agent 的编排校验、派发、对账与对账定时作业均已实现并接线：`IAigSubAgentRunner` /
    `IAigSubAgentReconcileService`。）
-2. **D12 续**：**资产索引增量同步**（现为整用户重建 `rebuildForUser(userId)`；
-   `MyAssetPort` 只有 `listMyAssets(userId, offset, limit)`，做增量需要先扩端口契约）。
+2. **D12 续**：**资产索引增量同步**（现为整用户重建 `rebuildForUser(userId)`，其"短页=到底"
+   缺陷已修，全量重建现在是完整的；做增量需要"水位线"语义：只补新增、删除靠定期全量重建）。
 3. **界面**：反馈与运营页、知识中心页、工具注册页已交付；训练台已加**页头状态条 + 七步骤导航**
    （含 `studio/layout.ts` 口径与单测）；**完整三栏组件化重构仍待做**。
 4. **执行入口收窄**：§7.2 已落地 **有效知识范围 = 版本声明 ∩ 启用的 KNOWLEDGE 绑定**、
