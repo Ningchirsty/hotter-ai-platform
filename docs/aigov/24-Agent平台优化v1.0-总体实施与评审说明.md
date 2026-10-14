@@ -22,6 +22,12 @@
 | `44430c38` | D | 工具接口与权限 |
 | `d33c2d69` | E | 反馈账本/队列规则 + 运营指标口径（D12） |
 | `8ebde509` | E | 反馈接口与权限 |
+| `6f403940` | — | 《24-总体实施与评审说明》（本文件） |
+| `037f66ad` | E | 运营指标聚合与接口（含故障口径） |
+| `41dfa1ab` | D | 子 Agent 顺序编排与校验 |
+| `ea5c7fe9` | A/§7.2 | 有效权限逐层相交与有效数据等级 |
+| `e748aac9` | E | 故障分类指标 |
+| `04933736` | A/§7.1 | 执行计划冻结授权上下文（身份 + 岗位卡片） |
 
 ---
 
@@ -35,7 +41,7 @@
 | D02 | 草稿 `allowExternal` 不是网关硬约束 | ✅ | `AigInvokeBo`/`AigRouteHint`/`AigRouteServiceImpl`；`AigRouteServiceExternalConstraintTest` |
 | D03 | 绑定只看 enabled、缺撤销入口 | ✅ | `countActiveBindings` 统一有效期口径；`assertExecutionAuthorized`；`POST /aigov/agent/binding/{id}/revoke`；`AigAgentBindingLifecycleTest` |
 | D04 | 执行态内异常直接抛出、等超时清扫 | ✅ | `AigTaskExecutorImpl#settleFailure` 单一收口；`AigTaskExecutorImplTest`（缺能力编码、ServiceException） |
-| D05 | 工具/知识可绑定但无执行引擎 | 🔶 | 工具注册+执行+确认（`tool/`）+ **子 Agent 顺序编排与校验**（`AigSubAgentOrchestration`）已完成；**顺序流程节点（条件/人工确认）未做** |
+| D05 | 工具/知识可绑定但无执行引擎 | 🔶 | 工具注册+执行+确认、**子 Agent 顺序编排**、**顺序流程节点校验**（`AigFlowNode`/`AigSequentialFlow`）已完成；**节点在运行时驱动执行、WarmFlow/LiteFlow 适配器未做** |
 | D06 | 采纳提案/关闭编辑器丢未保存内容 | ✅ | `dirtyGuard.ts` + `dirtyGuard.spec.ts`；`index.vue`/`ProposalPanel.vue` |
 | D07 | 预检只查结构、类别在提交阶段查 | ✅ | `AigStudioPrecheck` 分级（blockers/warnings + fieldPath）；`AigStudioDraftServiceImplTest` |
 | D08 | 网络调用包在长事务里 | ✅ | `runTest`/`chat` 去掉方法级 `@Transactional`；`AigStudioShortTransactionGuardTest` + 更新的 `AigStudioProposalTransactionBoundaryTest` |
@@ -60,7 +66,7 @@
 
 ## 4 验证汇总
 
-- 后端 `ruoyi-ai-gov`：**1158 tests / 0 failures / 0 errors**（基线 1053 → 新增 105）。
+- 后端 `ruoyi-ai-gov`：**1167 tests / 0 failures / 0 errors**（基线 1053 → 新增 114）。
 - 前端 `frontend`：**45 files / 442 tests** 全过；`oxlint src` 526 files 0/0。
 - 关键守卫全部通过：`AigPermissionSeedCoverageTest`（权限串已种子 + menu_id 不撞）、
   `AigRepeatSubmitCoverageTest`（写接口防重或显式豁免）、`AigWp3WiringAndRoutesTest`。

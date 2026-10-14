@@ -115,6 +115,11 @@ public class AigExecutionPlan implements Serializable {
     private final AigAuthorizationContext authorizationContext;
 
     /**
+     * 冻结的顺序流程节点（已校验；空表示没有声明流程）
+     */
+    private final List<AigFlowNode> flowNodes;
+
+    /**
      * 本次运行采用的知识资料节（已渲染；可为空表示没有检索资料节）。
      *
      * <p>在解析阶段（{@code AgentExecutionResolver}）由 {@code KnowledgePort} 检索并渲染，
@@ -138,6 +143,7 @@ public class AigExecutionPlan implements Serializable {
                             Integer maxDepth, List<String> knowledgeRefs, List<String> toolRefs,
                             List<Long> subAgentVersionIds,
                             AigAuthorizationContext authorizationContext,
+                            List<AigFlowNode> flowNodes,
                             String retrievedKnowledgeBlock, List<AigExecutionCitation> knowledgeCitations) {
         this.planId = planId;
         this.taskId = taskId;
@@ -156,6 +162,7 @@ public class AigExecutionPlan implements Serializable {
         this.toolRefs = toolRefs == null ? List.of() : List.copyOf(toolRefs);
         this.subAgentVersionIds = subAgentVersionIds == null ? List.of() : List.copyOf(subAgentVersionIds);
         this.authorizationContext = authorizationContext;
+        this.flowNodes = flowNodes == null ? List.of() : List.copyOf(flowNodes);
         this.retrievedKnowledgeBlock = retrievedKnowledgeBlock;
         this.knowledgeCitations = knowledgeCitations == null
             ? List.of() : List.copyOf(knowledgeCitations);

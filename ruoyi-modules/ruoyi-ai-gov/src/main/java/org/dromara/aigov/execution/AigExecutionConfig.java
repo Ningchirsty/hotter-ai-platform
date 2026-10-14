@@ -76,6 +76,16 @@ public class AigExecutionConfig implements Serializable {
     private final List<Long> subAgentVersionIds;
 
     /**
+     * 顺序流程节点（{@code flowNodes[]}，按声明顺序）
+     */
+    private final List<AigFlowNode> flowNodes;
+
+    /**
+     * 一次运行允许的最大流程步骤数（可空）
+     */
+    private final Integer maxFlowSteps;
+
+    /**
      * 一次运行最大工具调用次数（可空）
      */
     private final Integer maxToolCalls;
@@ -105,10 +115,12 @@ public class AigExecutionConfig implements Serializable {
         this.knowledgeRefs = codes(root.get("knowledgeRefs"), "collectionCode");
         this.toolRefs = codes(root.get("toolRefs"), "toolCode");
         this.subAgentVersionIds = longIds(root.get("subAgentRefs"), "agentVersionId");
+        this.flowNodes = flowNodes(root.get("flowNodes"));
         Map<String, Object> limits = root.get("limits") instanceof Map<?, ?> m
             ? (Map<String, Object>) m : Map.of();
         this.maxToolCalls = intOrNull(limits.get("maxToolCalls"));
         this.maxDepth = intOrNull(limits.get("maxDepth"));
+        this.maxFlowSteps = intOrNull(limits.get("maxFlowSteps"));
         Map<String, Object> dataPolicy = root.get("dataPolicy") instanceof Map<?, ?> m
             ? (Map<String, Object>) m : Map.of();
         this.minimumLevel = str(dataPolicy.get("minimumLevel"));
@@ -172,8 +184,7 @@ public class AigExecutionConfig implements Serializable {
      * 从任意对象里提取 {@code List<Map>} 的某个数值键（用于 {@code subAgentRefs[].agentVersionId}）。
      */
     @SuppressWarnings("unchecked")
-    private static List<Long> longIds(Object value, String key) {
-        List<Long> out = new ArrayList<>();
+    private static List<Long> longIds(Object value, String key) {        List<Long> out = new ArrayList<>();
         if (value instanceof List<?> list) {
             for (Object item : list) {
                 if (item instanceof Map<?, ?> m) {
@@ -187,6 +198,24 @@ public class AigExecutionConfig implements Serializable {
                             // 不是数字就跳过：声明写错不该让整个配置解析失败
                         }
                     }
+                }
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 从任意对象里提取 {@code List<Map>} 的流程节点（{@code flowNodes[].type/ref/label}）。
+     */
+    @SuppressWarnings("unchecked")
+    private static List<AigFlowNode> flowNodes(Object value) {
+        List<AigFlowNode> out = new ArrayList<>();
+        if (value instanceof List<?> list) {
+            for (Object item : list) {
+                if (item instanceof Map<?, ?> m) {
+                    Map<String, Object> map = (Map<String, Object>) m;
+                    out.add(new AigFlowNode(str(map.get("type")), str(map.get("ref")),
+                        str(map.get("label"))));
                 }
             }
         }

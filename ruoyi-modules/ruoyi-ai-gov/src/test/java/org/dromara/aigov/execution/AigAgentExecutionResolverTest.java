@@ -296,6 +296,29 @@ class AigAgentExecutionResolverTest {
     }
 
     @Test
+    @DisplayName("★ D05：顺序流程校验后冻结进计划")
+    void flowNodesAreFrozen() {
+        String config = "{\"schemaVersion\":2,\"flowNodes\":[{\"type\":\"STEP\"},{\"type\":\"OUTPUT\"}]}";
+        when(agentVersionMapper.selectById(VERSION_ID)).thenReturn(version(config, "Y", "SYS"));
+
+        AigExecutionPlan plan = resolve();
+
+        assertEquals(2, plan.getFlowNodes().size());
+        assertEquals("STEP", plan.getFlowNodes().get(0).type());
+        assertEquals("OUTPUT", plan.getFlowNodes().get(1).type());
+    }
+
+    @Test
+    @DisplayName("★ D05：流程缺输出节点时拒绝（不产出计划）")
+    void flowWithoutOutputIsRejected() {
+        String config = "{\"schemaVersion\":2,\"flowNodes\":[{\"type\":\"STEP\"}]}";
+        when(agentVersionMapper.selectById(VERSION_ID)).thenReturn(version(config, "Y", "SYS"));
+
+        ServiceException ex = assertThrows(ServiceException.class, this::resolve);
+        assertTrue(ex.getMessage().contains("流程编排被拒绝"), ex.getMessage());
+    }
+
+    @Test
     @DisplayName("相同版本两次解析 configHash 一致（哈希是「依据哪份配置」的锚点）")
     void configHashIsDeterministic() {
         String config = "{\"schemaVersion\":2,\"providerCapability\":\"text_generation\"}";

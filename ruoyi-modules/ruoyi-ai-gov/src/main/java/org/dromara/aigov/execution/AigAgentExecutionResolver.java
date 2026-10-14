@@ -138,6 +138,17 @@ public class AigAgentExecutionResolver implements IAigAgentExecutionResolver {
                 .toList();
         }
 
+        // ★ D05：顺序流程——校验声明的节点序列（类型可识别、必须有输出且输出在最后、不超步数上限）
+        List<AigFlowNode> flowNodes = List.of();
+        if (!config.getFlowNodes().isEmpty()) {
+            int maxSteps = config.getMaxFlowSteps() == null ? 20 : config.getMaxFlowSteps();
+            AigSequentialFlow.Result flow = AigSequentialFlow.validate(config.getFlowNodes(), maxSteps);
+            if (!flow.accepted()) {
+                throw new ServiceException("流程编排被拒绝：" + flow.reason());
+            }
+            flowNodes = flow.nodes();
+        }
+
         AigExecutionPlan plan = AigExecutionPlan.builder()
             .planId(planId)
             .taskId(taskId)
@@ -156,6 +167,7 @@ public class AigAgentExecutionResolver implements IAigAgentExecutionResolver {
             .toolRefs(config.getToolRefs())
             .subAgentVersionIds(subAgentVersionIds)
             .authorizationContext(authorizationContext(taskId))
+            .flowNodes(flowNodes)
             .retrievedKnowledgeBlock(knowledgeBlock)
             .knowledgeCitations(citations)
             .build();
