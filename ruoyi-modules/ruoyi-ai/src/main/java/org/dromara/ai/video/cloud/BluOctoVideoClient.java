@@ -69,6 +69,13 @@ public class BluOctoVideoClient {
             params.put("resolution",request.resolution().toUpperCase(java.util.Locale.ROOT));params.put("ratio",request.ratio());params.put("duration",request.seconds());params.put("audio",Boolean.TRUE.equals(request.generateAudio()));
             if(request.seed()!=null)params.put("seed",request.seed());
             body.put("metadata",Map.of("input",input,"parameters",params));
+            if(List.of("wan3.0-video","wan3.0-video-prime","wan2.7-r2v").contains(request.model())) {
+                body.put("seconds",String.valueOf(request.seconds()));
+                body.put("resolution",request.resolution().toUpperCase(java.util.Locale.ROOT));
+                request.references().stream().filter(r->r.role().equals("first_frame")).findFirst().ifPresent(r->body.put("image",source.apply(r)));
+                var images=request.references().stream().filter(r->r.role().equals("reference_image")).map(source).toList();
+                if(!images.isEmpty())body.put("images",images);
+            }
         } else {
             Map<String,Object> metadata=new LinkedHashMap<>();metadata.put("resolution",request.resolution());metadata.put("aspect_ratio",request.ratio());
             request.references().stream().filter(r->"first_frame".equals(r.role())).findFirst().ifPresent(r->body.put("input_reference",source.apply(r)));
@@ -80,14 +87,16 @@ public class BluOctoVideoClient {
 
     public RemoteTask submit(CloudVideoRequest request, JsonNode profile, Function<CloudVideoRequest.Reference,String> source) {
         String protocol=profile.path("protocol").asText();
+        if(List.of("wan3.0-video","wan3.0-video-prime","wan2.7-r2v").contains(request.model()))protocol="openai";
         Map<String,Object> body=payload(request,profile.path("family").asText(),source);
         String path="/v1/videos";
         if(protocol.equals("doubao")) {
-            path="/doubao/api/v3/contents/generations/tasks";
+            path="/v1/video/generations";
             var metadata=(Map<?,?>)body.get("metadata");
             body=new LinkedHashMap<>(Map.of("model",request.model(),"content",metadata.get("content"),"duration",request.seconds(),"resolution",request.resolution(),"ratio",request.ratio()));
             if(profile.path("hasAudioOutput").asBoolean()) body.put("generate_audio",Boolean.TRUE.equals(request.generateAudio()));
             if(request.seed()!=null)body.put("seed",request.seed());
+            protocol="generations";
         } else if(protocol.equals("alibaba")) {
             path="/ali/api/v1/services/aigc/video-generation/video-synthesis";
             var metadata=(Map<?,?>)body.get("metadata");body=new LinkedHashMap<>(Map.of("model",request.model(),"input",metadata.get("input"),"parameters",metadata.get("parameters")));
@@ -100,7 +109,7 @@ public class BluOctoVideoClient {
     public JsonNode query(RemoteTask remote) { return json("GET",queryPath(remote),null); }
     private String queryPath(RemoteTask r) {
         if(!r.id().matches("[A-Za-z0-9_-]{1,160}"))throw error("CLOUD_RESULT_UNKNOWN","任务 ID 不合法");
-        return r.protocol().equals("doubao")?"/doubao/api/v3/contents/generations/tasks/"+r.id():r.protocol().equals("alibaba")?"/ali/api/v1/tasks/"+r.id():"/v1/videos/"+r.id();
+        return r.protocol().equals("doubao")?"/doubao/api/v3/contents/generations/tasks/"+r.id():r.protocol().equals("alibaba")?"/ali/api/v1/tasks/"+r.id():r.protocol().equals("generations")?"/v1/tasks/"+r.id():"/v1/videos/"+r.id();
     }
     public static String state(JsonNode value) {
         String state=value.path("status").asText(value.path("output").path("task_status").asText()).toLowerCase(java.util.Locale.ROOT);

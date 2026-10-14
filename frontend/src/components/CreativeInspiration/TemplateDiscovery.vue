@@ -30,11 +30,11 @@
         <TemplateVideoPreview v-if="media === 'video'" :id="selected.id" :revision="selected.revision" :title="selected.title.zh" :available="selected.hasVideoPreview === true" detail />
         <TemplateCover v-else :media="media" :id="selected.id" :revision="selected.revision" :title="selected.title.zh" />
         <div><span class="tag">{{ selected.category }}</span><h3>{{ media === 'image' ? '参考模板，创作同款风格' : '复用此模板' }}</h3><p>{{ media === 'image' ? '图像创作' : '视频创作' }} · {{ selected.outputSize.replace('x', ' × ') }} · {{ media === 'image' ? '1 张' : selected.durationSeconds + ' 秒' }}</p>
-          <section v-if="media === 'image'" class="template-recipe" aria-label="模板提示词和参数">
+          <section class="template-recipe" aria-label="模板提示词和参数">
             <label for="template-image-prompt">模板提示词</label>
-            <textarea id="template-image-prompt" :value="imagePromptPreview" rows="7" readonly aria-label="模板提示词" />
-            <dl><dt>模型</dt><dd>{{ selected.model || '暂不可用' }}</dd><dt>尺寸</dt><dd>{{ selected.output?.size?.replace('x', ' × ') || selected.outputSize.replace('x', ' × ') }}</dd><dt>画质</dt><dd>{{ selected.output?.quality || '模型默认' }}</dd><dt>数量</dt><dd>{{ selected.output?.n || 1 }} 张</dd></dl>
-            <p>参考图用于查看风格、排版和构图。修改主体或文案后再生成；不会直接复制示例图。</p>
+            <textarea id="template-image-prompt" :value="templatePromptPreview" rows="7" readonly aria-label="模板提示词" />
+            <dl><dt>模型</dt><dd>{{ selected.model || '暂不可用' }}</dd><dt>尺寸</dt><dd>{{ selected.output?.size?.replace('x', ' × ') || selected.outputSize.replace('x', ' × ') }}</dd><template v-if="media === 'image'"><dt>画质</dt><dd>{{ ({ low: '标准', medium: '精细', high: '高质量' } as Record<string, string>)[selected.output?.quality || ''] || '模型默认' }}</dd><dt>数量</dt><dd>{{ selected.output?.n || 1 }} 张</dd></template><template v-else><dt>时长</dt><dd>{{ selected.durationSeconds }} 秒</dd></template></dl>
+            <p>{{ media === 'image' ? '参考图用于查看风格、排版和构图。修改主体或文案后再生成；不会直接复制示例图。' : '示例视频用于参考镜头、动作和叙事。带入中文描述后可继续修改，不会直接复制示例视频。' }}</p>
           </section>
           <el-form label-position="top"><el-form-item v-for="v in selected.variables" :key="v.key" :label="v.key === 'subject' ? '画面主体' : v.label.zh || v.label.en" :required="v.required">
             <el-select v-if="v.type === 'select'" v-model="variables[v.key]"><el-option v-for="option in v.options" :key="option" :label="option" :value="option" /></el-select>
@@ -43,7 +43,7 @@
           <p v-if="!selected.variables.length">模板已包含完整创作描述，带入表单后可继续编辑。</p>
           <p v-if="formError" class="error" role="alert">{{ formError }}</p>
           <p>{{ media === 'image' ? '带入参考图、提示词和原参数后可继续编辑，按当前模型支持的范围调整参数，再提交生成。' : '复用视频模板的镜头与叙事，带入后可调整描述与输出设置。' }}</p>
-          <el-button v-hasPermi="[media + ':creation:submit']" :type="media === 'image' ? 'primary' : undefined" :loading="preparing" :disabled="busy || preparing || selected.status === 'maintenance'" @click="applyTemplate">{{ media === 'image' ? '使用模版' : selected.status === 'maintenance' ? '暂不可用' : '带入编辑' }}</el-button>
+          <el-button v-hasPermi="[media + ':creation:submit']" type="primary" :loading="preparing" :disabled="busy || preparing || selected.status === 'maintenance'" @click="applyTemplate">使用模版</el-button>
         </div>
       </div>
     </el-dialog>
@@ -70,7 +70,7 @@ const pageSize = 6, pages = computed(() => Math.max(1, Math.ceil(total.value / p
 const selected = ref<FeedTemplate>(), dialog = ref(false), variables = ref<Record<string, string>>({}), sending = ref(false), formError = ref('');
 const pending = ref<TemplateGeneration>(), savedAction = ref<{ body: TemplateSubmission; requestId?: string }>();
 const deferred = ref<{ body: TemplateSubmission; requestId: string; result: TemplateGeneration }[]>([]);
-const imagePromptPreview = computed(() => (selected.value?.promptTemplate || '').replace(/\{\{([^{}]+)\}\}/g, (placeholder, key: string) => variables.value[key]?.trim() || placeholder));
+const templatePromptPreview = computed(() => (selected.value?.promptTemplate || '').replace(/\{\{([^{}]+)\}\}/g, (placeholder, key: string) => variables.value[key]?.trim() || placeholder));
 let sequence = 0, debounce: ReturnType<typeof setTimeout> | undefined, interval: ReturnType<typeof setInterval> | undefined;
 async function load() {
   const current = ++sequence; loading.value = true; error.value = '';

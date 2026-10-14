@@ -12,7 +12,7 @@ final class TemplateVariables {
         var declarations=new LinkedHashMap<String,JsonNode>();
         for(var v:template.path("variables")) declarations.put(v.path("key").asText(),v);
         variables.fieldNames().forEachRemaining(k->{if(!declarations.containsKey(k)) error(errors,"variables."+k,"undeclared_variable");});
-        String prompt=template.path("prompt").path("en").asText();
+        String prompt=TemplatePrompts.chinese(template);
         for(var entry:declarations.entrySet()) {
             String key=entry.getKey(); JsonNode declaration=entry.getValue(), value=variables.path(key);
             String type=declaration.path("type").asText(); String text=value.isTextual()?value.asText().strip():"";

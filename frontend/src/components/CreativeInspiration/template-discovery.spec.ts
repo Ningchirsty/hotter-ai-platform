@@ -17,7 +17,7 @@ const renderer = vue.createRenderer<Node, Node>({
 });
 const api = Object.fromEntries(['listTemplates', 'getTemplate', 'prepareTemplate', 'prepareVideoTemplate', 'generateTemplate', 'getTemplateGeneration', 'retryTemplateGeneration'].map(key => [key, vi.fn()]));
 const fixture = { id: 'poster-one', revision: 3, title: { zh: '极简商品海报', en: 'Poster' }, category: '设计海报', outputSize: '1024x1536', model: 'gpt-image-2.5-sunburst', status: 'published', canGenerate: true,
-  variables: [{ key: 'subject', label: { zh: '商品', en: 'Subject' }, required: true, type: 'text' }], promptTemplate: 'Minimal poster of {{subject}}, generous whitespace, editorial typography.', output: { size: '1024x1536', n: 1, quality: 'high' } };
+  variables: [{ key: 'subject', label: { zh: '商品', en: 'Subject' }, required: true, type: 'text' }], promptTemplate: '为{{subject}}设计极简海报，保留充足留白，使用杂志式文字排版。', output: { size: '1024x1536', n: 1, quality: 'high' } };
 const cover = vue.defineComponent({ props: ['id', 'revision', 'title', 'media'], setup: props => () => vue.h('img', { alt: props.title, 'data-template': props.id }) });
 const { descriptor } = parse(readFileSync(new URL('./TemplateDiscovery.vue', import.meta.url), 'utf8'));
 const compiled = compileScript(descriptor, { id: 'template-discovery-test', inlineTemplate: true }).content;
@@ -53,7 +53,7 @@ beforeEach(() => {
   for (const mock of Object.values(api)) mock.mockReset();
   api.listTemplates.mockResolvedValue({ data: { items: [fixture], total: 1, categories: [], feed: { version: 18, online: true } } });
   api.getTemplate.mockResolvedValue({ data: fixture });
-  api.prepareTemplate.mockResolvedValue({ data: { model: fixture.model, capability: 'T2I', prompt: 'Minimal poster of 陶瓷花瓶, generous whitespace, editorial typography.', output: fixture.output, referenceAssetIds: [] } });
+  api.prepareTemplate.mockResolvedValue({ data: { model: fixture.model, capability: 'T2I', prompt: '为陶瓷花瓶设计极简海报，保留充足留白，使用杂志式文字排版。', output: fixture.output, referenceAssetIds: [] } });
   const storage = new Map<string, string>();
   vi.stubGlobal('localStorage', { getItem: (key: string) => storage.get(key) || null, setItem: (key: string, value: string) => storage.set(key, value), removeItem: (key: string) => storage.delete(key) });
   vi.stubGlobal('document', { hidden: false });
@@ -64,7 +64,7 @@ describe('image template preview and editable reuse', () => {
     await mount();
     expect(nodes().some(n => n.type === 'img' && n.props['data-template'] === fixture.id)).toBe(true);
     expect(nodes().find(n => n.type === 'textarea')?.props.value).toBe(fixture.promptTemplate);
-    expect(text(root)).toContain(fixture.model); expect(text(root)).toContain('1024 × 1536'); expect(text(root)).toContain('high');
+    expect(text(root)).toContain(fixture.model); expect(text(root)).toContain('1024 × 1536'); expect(text(root)).toContain('高质量');
     expect(api.prepareTemplate).not.toHaveBeenCalled(); expect(api.generateTemplate).not.toHaveBeenCalled(); expect(applied).toEqual([]);
     expect(nodes().filter(n => n.type === 'button' && text(n) === '使用模版')).toHaveLength(1);
     expect(nodes().some(n => n.type === 'button' && ['带入编辑', '创作同款'].includes(text(n)))).toBe(false);
@@ -82,5 +82,18 @@ describe('image template preview and editable reuse', () => {
   it('does not emit or submit when required template content fails validation', async () => {
     api.prepareTemplate.mockRejectedValue({ response: { data: { data: { errors: [{ field: 'subject', rule: 'required' }] } } } });
     await mount(); await click('使用模版'); expect(text(root)).toContain('请填写必填内容'); expect(applied).toEqual([]); expect(api.generateTemplate).not.toHaveBeenCalled();
+  });
+  it('shows the Chinese video recipe and applies the exact draft without generation', async () => {
+    const video = { ...fixture, model: 'doubao-seedance-2-5-260628', variables: [], outputSize: '1920x1080', durationSeconds: 5, promptTemplate: '[00:00-00:05] 缓慢跟拍海边骑行的人，保持人物与服饰一致。' };
+    api.listTemplates.mockResolvedValue({ data: { items: [video], total: 1, categories: [], feed: { version: 24, online: true } } });
+    api.getTemplate.mockResolvedValue({ data: video });
+    const draft = { model: video.model, capability: 'T2V', prompt: video.promptTemplate, seconds: 5, resolution: '1080p', ratio: '16:9', references: [] };
+    api.prepareVideoTemplate.mockResolvedValue({ data: draft });
+    await mount('video');
+    expect(nodes().find(n => n.type === 'textarea')?.props.value).toBe(video.promptTemplate);
+    expect(text(root)).toContain('5 秒');
+    await click('使用模版');
+    expect(applied[0][0]).toMatchObject({ media: 'video', prompt: video.promptTemplate, videoDraft: draft });
+    expect(api.generateTemplate).not.toHaveBeenCalled(); expect(api.prepareTemplate).not.toHaveBeenCalled();
   });
 });

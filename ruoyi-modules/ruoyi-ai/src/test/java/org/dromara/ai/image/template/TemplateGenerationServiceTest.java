@@ -29,12 +29,12 @@ class TemplateGenerationServiceTest {
         properties.setGenerationEnabled(false); properties.setVerifiedProfiles(List.of());
         body.remove("client_request_id");
         var template=(com.fasterxml.jackson.databind.node.ObjectNode)cache.require(body.path("template_id").asText()).deepCopy();
-        ((com.fasterxml.jackson.databind.node.ObjectNode)template.path("prompt")).put("en","Detailed creative scene ".repeat(90));
+        ((com.fasterxml.jackson.databind.node.ObjectNode)template.path("prompt")).put("zh","详细创作描述：陶瓷花瓶、暖色灯光与留白构图。".repeat(90));
         when(cache.require(body.path("template_id").asText())).thenReturn(template);when(cache.published(template)).thenReturn(true);
         var result=service.prepare(body);
         assertEquals(Set.of("templateId","revision","model","capability","prompt","referenceAssetIds","output"),result.keySet());
         assertEquals("gpt-image-2.5-sunburst",result.get("model"));assertEquals("T2I",result.get("capability"));
-        assertEquals(template.path("prompt").path("en").asText(),result.get("prompt"));assertTrue(((String)result.get("prompt")).length()>1000);
+        assertEquals(template.path("prompt").path("zh").asText(),result.get("prompt"));assertTrue(((String)result.get("prompt")).length()>1000);
         assertEquals(List.of(),result.get("referenceAssetIds"));assertFalse(body.has("client_request_id"));
         for(String table:List.of("ai_template_request","ai_template_validation_audit","ai_template_validation_budget")) assertEquals(0,jdbc.queryForObject("SELECT COUNT(*) FROM "+table,Integer.class));
         verifyNoInteractions(cloud,tasks);
@@ -51,12 +51,12 @@ class TemplateGenerationServiceTest {
     @Test void prepareSubstitutesOnlyDeclaredVariablesAndRejectsMissingRequiredText() {
         body.remove("client_request_id");
         var template=(com.fasterxml.jackson.databind.node.ObjectNode)cache.require(body.path("template_id").asText()).deepCopy();
-        ((com.fasterxml.jackson.databind.node.ObjectNode)template.path("prompt")).put("en","Photograph of {{subject}} in soft light");
+        ((com.fasterxml.jackson.databind.node.ObjectNode)template.path("prompt")).put("zh","柔光下{{subject}}的摄影作品");
         template.putArray("variables").addObject().put("key","subject").put("type","text").put("required",true).put("max_len",100);
         when(cache.require(body.path("template_id").asText())).thenReturn(template);when(cache.published(template)).thenReturn(true);
         assertEquals("required",assertThrows(TemplateFeedException.class,()->service.prepare(body)).errors.getFirst().get("rule"));
         ((com.fasterxml.jackson.databind.node.ObjectNode)body.path("variables")).put("subject","白色花瓶");
-        assertEquals("Photograph of 白色花瓶 in soft light",service.prepare(body).get("prompt"));verifyNoInteractions(cloud,tasks);
+        assertEquals("柔光下白色花瓶的摄影作品",service.prepare(body).get("prompt"));verifyNoInteractions(cloud,tasks);
     }
     @Test void concurrentResponseLossReplaysUseOneDurableRequestAndOneDispatch() throws Exception {
         try(var executor=Executors.newFixedThreadPool(6)) {

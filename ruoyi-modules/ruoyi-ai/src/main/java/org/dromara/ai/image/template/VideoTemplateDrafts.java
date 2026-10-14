@@ -28,6 +28,7 @@ public final class VideoTemplateDrafts {
         var out=new LinkedHashMap<String,Object>();
         for(String field:List.of("id","revision","category","tags","title","variables")) out.put(field,TemplateFeedCache.JSON.convertValue(template.path(field),Object.class));
         out.put("media","video");
+        out.put("model",template.path("binding").path("model").asText());
         out.put("hasVideoPreview",TemplateVideoPreviewCache.available(template));
         out.put("cover","/video/templates/"+template.path("id").asText()+"/cover");
         out.put("status",published(cache,template)?"published":"maintenance");
@@ -36,6 +37,9 @@ public final class VideoTemplateDrafts {
         out.put("outputSize",fixed.path("width").asText()+"x"+fixed.path("height").asText());
         out.put("durationSeconds",fixed.path("duration").asInt());out.put("canGenerate",false);
         return out;
+    }
+    static Map<String,Object> detail(TemplateFeedCache cache,JsonNode template) {
+        var out=project(cache,template);out.put("promptTemplate",TemplatePrompts.chinese(template));return out;
     }
     static Map<String,Object> prepare(TemplateFeedCache cache,TemplateFeedProperties properties,JsonNode body) {
         if(!body.isObject()) throw new TemplateFeedException(422,"模板参数须为对象");

@@ -100,7 +100,10 @@ public class VideoCloudService {
         }
         if(status!=VideoTaskStatus.QUEUED&&status!=VideoTaskStatus.RUNNING)throw VideoTaskException.invalidContract("任务当前不可执行");
         if(repository.transition(id,VideoTaskStatus.QUEUED,VideoTaskStatus.RUNNING,null,null)==0)return Map.of("taskId",id,"status",repository.requireOwnedTask(id,tenant,user).get("status"),"accepted",false,"outcome","ALREADY_CLAIMED");
-        var remote=recover?new BluOctoVideoClient.RemoteTask(remoteId,profile(request.model()).path("protocol").asText()):null;
+        String storedWorker=String.valueOf(task.get("comfy_worker"));
+        String storedProtocol=storedWorker.startsWith("BluOcto:")?storedWorker.substring("BluOcto:".length()):profile(request.model()).path("protocol").asText();
+        if(!List.of("openai","alibaba","doubao","generations").contains(storedProtocol))throw VideoTaskException.invalidContract("任务传输协议无效");
+        var remote=recover?new BluOctoVideoClient.RemoteTask(remoteId,storedProtocol):null;
         try{pool.execute(()->run(id,tenant,user,request,remote));}
         catch(RejectedExecutionException e){repository.transition(id,VideoTaskStatus.RUNNING,VideoTaskStatus.QUEUED,null,null);return Map.of("taskId",id,"status","QUEUED","accepted",false,"outcome","QUEUE_FULL");}
         return Map.of("taskId",id,"status","RUNNING","accepted",true,"outcome","ACCEPTED");
@@ -111,7 +114,7 @@ public class VideoCloudService {
             if(remote==null){
                 if (verification.candidates(user).contains(VideoCloudVerification.variant(request))) verification.reserve(request,user,id);
                 remote=client.submit(request,profile(request.model()),ref->referenceUrl(ref,tenant,user));
-                repository.markSubmitted(id,remote.id(),1,"BluOcto");event(id,tenant,"SUBMITTED","供应商已接受视频任务，不自动重试付费提交");
+                repository.markSubmitted(id,remote.id(),1,"BluOcto:"+remote.protocol());event(id,tenant,"SUBMITTED","供应商已接受视频任务，不自动重试付费提交");
             }else event(id,tenant,"RECOVERING","仅查询并归档已有供应商任务，未重新生成或消耗验收额度");
             long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(Math.max(60,properties.getTimeoutSeconds()));
             boolean completed=false;

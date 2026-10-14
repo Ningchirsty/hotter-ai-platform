@@ -90,7 +90,7 @@ class TemplateFeedCacheTest {
             "profiles",full.path("profiles"),"checkedAt",NOW.toString(),"etag","")));
         var cache=new TemplateFeedCache(properties(),(name,etag)->{throw new AssertionError("Detail must not fetch or generate");},Clock.fixed(NOW,ZoneOffset.UTC));
         var detail=cache.imageDetail(template);
-        assertEquals(template.path("prompt").path("en").asText(),detail.get("promptTemplate"));
+        assertEquals(template.path("prompt").path("zh").asText(),detail.get("promptTemplate"));
         JsonNode fixed=full.path("profiles").path(template.path("binding").path("params_profile").asText()).path("definition").path("fixed");
         assertEquals(Map.of("size",fixed.path("size").asText(),"quality",fixed.path("quality").asText(),"n",1),detail.get("output"));
         assertFalse(detail.containsKey("binding"));assertFalse(detail.containsKey("referenceAssetIds"));
