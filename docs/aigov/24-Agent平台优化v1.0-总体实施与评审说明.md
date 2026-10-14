@@ -60,7 +60,7 @@
 
 ## 4 验证汇总
 
-- 后端 `ruoyi-ai-gov`：**1135 tests / 0 failures / 0 errors**（基线 1053 → 新增 82）。
+- 后端 `ruoyi-ai-gov`：**1137 tests / 0 failures / 0 errors**（基线 1053 → 新增 84）。
 - 前端 `frontend`：**45 files / 442 tests** 全过；`oxlint src` 526 files 0/0。
 - 关键守卫全部通过：`AigPermissionSeedCoverageTest`（权限串已种子 + menu_id 不撞）、
   `AigRepeatSubmitCoverageTest`（写接口防重或显式豁免）、`AigWp3WiringAndRoutesTest`。

@@ -52,6 +52,21 @@
 
 ---
 
+### 1.5 运营指标聚合与接口（E-3）
+
+`IAigOperationsMetricsService` / `AigOperationsMetricsServiceImpl`：从 `aig_task` / `aig_task_result`
+取数，口径交 `AigOperationsMetrics`（纯函数）计算。
+
+- 完成 = 状态 ∈ {`SUCCEEDED`,`APPROVED`,`REJECTED`}（失败不计入"完成"）；
+- 首次通过 = `APPROVED` 且 `attempt_no ≤ 1`；返工 = `attempt_no > 1`；
+- 策略阻断 = `policy_result = 'REJECT'`；累计成果 = `aig_task_result.candidate_status = 'APPROVED'`；
+- **引用有效率、模型成本**暂无可聚合数据源，如实置 0（不用别的数字顶替）。
+
+接口：`GET /aigov/operations/metrics`（`aig:ops:metrics`），种子 `script/sql/aig_ops_menu.sql`
+（ID 段 `1769300000000000001..`，只授 `aig_admin`）。
+
+---
+
 ## 2 本轮**不做**的事（明确的边界）
 
 1. **反馈接口与权限点（已在 E-2 补齐）**：`POST /aigov/feedback`（员工提交，`@SaCheckLogin`）、
@@ -60,11 +75,13 @@
    种子脚本 `script/sql/aig_feedback_menu.sql`。
    提交刻意用登录门而不是权限点：反馈是员工动作，加权限点只会让"漏勾了就不能提反馈"——
    而反馈收集最怕入口太高。
-2. **运营指标的聚合查询与接口**：本轮交付的是**指标口径**（纯函数）；从任务/审计/评测表
-   取数的聚合与接口尚未交付。
+2. **运营指标的聚合查询（已在 E-3 补齐）**：`GET /aigov/operations/metrics`（`aig:ops:metrics`）
+   ——完成任务数 / 累计成果（= 经确认结果）/ 首次通过率 / 返工率 / 策略阻断。
+   **引用有效率**与**模型成本**暂无可聚合数据源（引用明细在 `route_snapshot` JSON、成本需审计金额聚合），
+   如实置 0 而不是用别的数字顶替。
 3. **资产索引增量同步**（§12.1 E）：现有资产索引是全量刷新（`AigAssetIndexService`）；
    增量同步需要变更订阅/水位，属独立增量。
-4. **故障分类指标**：设计 §6.9 提到的"故障分类"依赖审计错误分类的聚合，随②一起做。
+4. **故障分类指标**：依赖审计错误分类的聚合，随审计口径接入。
 
 ---
 
@@ -74,7 +91,7 @@
   - `AigOperationsMetricsTest`（4）：采纳率以确认为分子、零分母返回 0、null 安全、四舍五入；
   - `AigResultFeedbackServiceImplTest`（6）：非法原因/无关联拒绝、进入队列、
     确认必须给动作、确认记录动作与处理人、驳回清空动作且 PENDING 不可提交、反馈不存在可读拒绝。
-- 后端 `ruoyi-ai-gov` 全量：**1135 tests / 0 failures / 0 errors**（阶段 D 后 1125 + 本轮 10）。
+- 后端 `ruoyi-ai-gov` 全量：**1137 tests / 0 failures / 0 errors**（阶段 D 后 1125 + E 的 12）。
 
 ---
 

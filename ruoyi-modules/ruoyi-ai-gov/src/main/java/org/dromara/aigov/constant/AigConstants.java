@@ -480,6 +480,11 @@ public interface AigConstants {
     String PERM_FEEDBACK_HANDLE = "aig:feedback:handle";
 
     /**
+     * 运营指标（读）：完成任务数、结果采纳率、首次通过率、返工率、策略阻断等
+     */
+    String PERM_OPS_METRICS = "aig:ops:metrics";
+
+    /**
      * 服务令牌管理权限码的公共前缀。
      *
      * <p><b>它同时是一条安全边界</b>：签发令牌时，凡以此前缀开头的 scope 一律拒绝
