@@ -31,6 +31,7 @@
 | `bee7494a` | D | 顺序流程节点校验（`AigSequentialFlow`） |
 | `3a6b777c` | E/前端 | 反馈与运营页面（`aigov/feedback/index` + 纯函数与单测） |
 | `4d8bc675` | C/前端 | 知识中心页面（`aigov/knowledge/index` + 纯函数与单测） |
+| `32f22098` | D/前端 | 工具注册页面（`aigov/tool/index` + 纯函数与单测） |
 
 ---
 
