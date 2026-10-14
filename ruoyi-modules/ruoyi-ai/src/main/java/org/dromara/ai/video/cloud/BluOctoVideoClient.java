@@ -75,6 +75,12 @@ public class BluOctoVideoClient {
                 request.references().stream().filter(r->r.role().equals("first_frame")).findFirst().ifPresent(r->body.put("image",source.apply(r)));
                 var images=request.references().stream().filter(r->r.role().equals("reference_image")).map(source).toList();
                 if(!images.isEmpty())body.put("images",images);
+                // Simple image requests use the documented flat compatibility contract.
+                // Retain the role-aware structure for advanced inputs until that contract is confirmed.
+                boolean advanced=request.references().stream().anyMatch(r->!List.of("first_frame","reference_image").contains(r.role()))
+                    || Boolean.TRUE.equals(request.generateAudio()) || request.seed()!=null
+                    || (request.negativePrompt()!=null && !request.negativePrompt().isBlank());
+                if(!advanced)body.remove("metadata");
             }
         } else {
             Map<String,Object> metadata=new LinkedHashMap<>();metadata.put("resolution",request.resolution());metadata.put("aspect_ratio",request.ratio());
@@ -165,8 +171,12 @@ public class BluOctoVideoClient {
             JsonNode value=mapper.readTree(body), detail=value.path("error");
             code=detail.path("code").asText(value.path("code").asText());
             message=detail.path("message").asText(value.path("message").asText());
+            if(detail.isTextual())message=detail.asText();
         } catch(Exception ignored) { /* 非 JSON 错误仍保留 HTTP 状态。 */ }
         String suffix="（HTTP "+status+"）";
+        String normalized=message.toLowerCase(java.util.Locale.ROOT);
+        if(method.equals("POST") && status==400 && (normalized.contains("no available channel") || message.contains("无可用渠道")))
+            return error("CLOUD_CHANNEL_UNAVAILABLE","该视频型号没有可用服务通道，请核对型号与接口路由后再提交"+suffix);
         if(method.equals("POST") && status==400 && message.contains("is not served by this plugin"))
             return error("CLOUD_PLUGIN_UNSUPPORTED","云端服务当前插件未声明支持该型号，请核对实例插件版本和模型路由；未自动切换接口重新生成"+suffix);
         if(path.endsWith("/content")) {

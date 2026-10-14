@@ -75,6 +75,18 @@ class CloudVideoProviderRecoveryTest {
         assertThrows(VideoTaskException.class,()->new BluOctoVideoClient(new VideoCloudProperties(),http).download(new BluOctoVideoClient.RemoteTask("../other?token=x","openai")));
         verifyNoInteractions(http);
     }
+    @Test void unavailableChannelIsDistinguishedWithoutExposingCredentialsOrSwitchingRoutes()throws Exception {
+        for(String diagnostic:List.of("no available channel test-secret https://private.invalid/signed", "无可用渠道 test-secret")) {
+            var http=mock(HttpClient.class);var mapper=new ObjectMapper();
+            var body=mapper.createObjectNode();body.putObject("error").put("message",diagnostic);
+            stub(http,response(400,body.toString()));
+            var request=new CloudVideoRequest("wan3.0-video","I2V","scene",2,"480p","16:9",List.of(new CloudVideoRequest.Reference(1,"first_frame")),false,null,null,"once");
+            var profile=mapper.readTree("{\"protocol\":\"openai\",\"family\":\"Wan\"}");
+            var e=assertThrows(VideoTaskException.class,()->client(http).submit(request,profile,r->"https://example.invalid/reference"));
+            assertEquals("CLOUD_CHANNEL_UNAVAILABLE",e.getErrorCode());assertFalse(e.getMessage().contains("test-secret"));assertFalse(e.getMessage().contains("private.invalid"));
+            var captured=ArgumentCaptor.forClass(HttpRequest.class);verify(http,times(1)).send(captured.capture(),any());assertEquals("/v1/videos",captured.getValue().uri().getPath());
+        }
+    }
     @Test void invalidArtifactKeyCannotEscapeControlledEndpoint()throws Exception {
         var http=mock(HttpClient.class);
         stub(http,response(404,"{}"),response(200,"{\"artifacts\":[{\"key\":\"../escape\",\"type\":\"video\"}]}"));
