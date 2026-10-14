@@ -48,6 +48,7 @@
 | `cc3420f2` | D | **人工确认的恢复入口**：节点身份落账本（`node_type`/`node_ref`）+ `GET /task/{id}/flow-nodes` + `POST /task/{id}/flow/confirm`；发布工作流的重放清单补入本分支新增的建表/补列脚本 |
 | `dd2708dc` | D/前端 | 任务页**流程节点面板与人工确认**（`TaskFlowPanel.vue` + `flow.ts`/`flow.spec.ts`） |
 | `e4726ecb` | D | **条件结论取自冻结输入快照的同名布尔字段**（`AigFlowConditions`；取不到结论不猜真假） |
+| `71871254` | B/前端 | **训练台三栏布局**（左步骤导航 / 中编辑 / 右修订差异）+ 源码结构与 SFC 编译守卫 |
 
 ---
 
@@ -77,7 +78,7 @@
 | 阶段 | 状态 | 说明 |
 | --- | --- | --- |
 | A 基线一致性 | ✅ | D01/D02/D03/D04/D08（+D10）全部落地并有正反例测试 |
-| B 训练体验 | ✅（界面重构除外） | D06/D07/D09/D10/D11 + 元数据；**训练台三栏线框布局未做**（属界面重构） |
+| B 训练体验 | ✅（三栏布局已落地，右栏页签与组件拆分未做） | D06/D07/D09/D10/D11 + 元数据；**三栏布局**（左步骤 / 中编辑 / 右差异）已落地并有结构守卫；**右栏页签切换（助手/测试）与按步骤拆分表单/组件未做** |
 | C 知识试点 | 🔶 | 数据模型/处理管道/检索端口/接口/接入执行计划、**知识中心页面**完成；**解析器与嵌入未接入** |
 | D 工具与流程 | 🔶 | 工具注册/执行/确认/接口、**工具许可（版本声明 + 有效绑定 + 调用人权限）**、子 Agent 编排/派发/对账、顺序流程节点的校验与**运行时驱动**完成；**多 STEP 节点的调度循环与 WarmFlow/LiteFlow 适配器未做** |
 | E 持续运营 | ✅ | 反馈账本/队列/接口 + 指标口径与聚合（含故障分类）+ **资产索引全量/增量同步** |
@@ -87,7 +88,7 @@
 ## 4 验证汇总
 
 - 后端 `ruoyi-ai-gov`：**1266 tests / 0 failures / 0 errors**（基线 1053 → 新增 213）。
-- 前端 `frontend`：**50 files / 476 tests** 全过；`oxlint src` 546 files 0/0。
+- 前端 `frontend`：**51 files / 482 tests** 全过；`oxlint src` 547 files 0/0。
 - 关键守卫全部通过：`AigPermissionSeedCoverageTest`（权限串已种子 + menu_id 不撞）、
   `AigRepeatSubmitCoverageTest`（写接口防重或显式豁免）、`AigWp3WiringAndRoutesTest`。
 
@@ -156,8 +157,11 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
 2. **D12 已完成**：资产索引**增量同步**（水位线 `syncNewForUser`，`?mode=incremental`）已落地，
    口径边界写在 `23` 与 `10`：**只补新增**，删除/更新靠定期全量重建（三个业务域都没有变更事件）。
 3. **界面**：反馈与运营页、知识中心页、工具注册页、**任务页的流程节点与人工确认面板**
-   （`TaskFlowPanel.vue`）已交付；训练台已加**页头状态条 + 七步骤导航**
-   （含 `studio/layout.ts` 口径与单测）；**完整三栏组件化重构仍待做**。
+   （`TaskFlowPanel.vue`）已交付；训练台**三栏布局已落地**（左步骤导航 / 中编辑 / 右修订差异，
+   含结构守卫），页头状态条 + 七步骤口径在 `studio/layout.ts`；
+   **仍待做**：右栏在「培训助手 / 测试预览 / 修订差异」之间切换（变更提案面板刻意保留宽版在下方，
+   否则挤到没法审阅）、把八百多行的单文件组件拆成 `components/` 下三个组件
+   （前端无 DOM 测试环境，**布局观感需人眼验收**）。
 4. **执行入口收窄**：§7.2 已落地 **有效知识范围 = 版本声明 ∩ 启用的 KNOWLEDGE 绑定**、
    **有效数据等级 = 各来源最高值**、**有效外发 = 各方取与**（`AigEffectivePolicy`）；
    计划中**冻结授权上下文**并被**知识检索消费**（按 `orgScope` 身份层收窄）；
@@ -206,6 +210,7 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
 | 新增的库表/列会不会在部署时被漏掉 | `.github/workflows/deploy-poc.yml` 的重放清单 + `AigDeploySchemaReplayCoverageTest` |
 | 反馈是否会直接改线上 | `feedback/.../AigResultFeedbackServiceImpl`（动作只进改进流程） |
 | 训练台是否会静默丢内容 | `frontend/src/views/aigov/studio/dirtyGuard.ts` |
+| 训练台三栏是否还在 | `frontend/src/views/aigov/studio/threeColumnLayout.spec.ts`（源码结构 + SFC 真编译；**观感需人眼**） |
 | 指标口径是否可复核 | `feedback/metrics/AigOperationsMetrics`（累计成果=经确认结果；分母 0 → 0） |
 
 ### 7.4 部署前必做（5 分钟）
