@@ -18,6 +18,7 @@ import org.dromara.aigov.tool.exec.AigToolCallRequest;
 import org.dromara.aigov.tool.exec.AigToolCallResult;
 import org.dromara.aigov.tool.exec.AigToolExecutionPolicy;
 import org.dromara.aigov.tool.exec.ToolExecutor;
+import org.dromara.aigov.tool.exec.ToolPermissionChecker;
 import org.dromara.aigov.tool.mapper.AigToolCallMapper;
 import org.dromara.aigov.tool.mapper.AigToolDefinitionMapper;
 import org.dromara.aigov.tool.mapper.AigToolDefinitionVersionMapper;
@@ -55,6 +56,7 @@ public class AigToolRegistryServiceImpl implements IAigToolRegistryService {
     private final AigToolDefinitionVersionMapper versionMapper;
     private final AigToolCallMapper callMapper;
     private final AigAgentResourceBindingMapper resourceBindingMapper;
+    private final ToolPermissionChecker permissionChecker;
     private final List<ToolExecutor> executors;
 
     @Override
@@ -211,6 +213,13 @@ public class AigToolRegistryServiceImpl implements IAigToolRegistryService {
         if (!AigToolExecutionPolicy.bindingsPermit(request.toolCode(), toolBindings(request.agentVersionId()))) {
             return AigToolCallResult.failed("TOOL_NOT_BOUND",
                 "该工具不在当前 Agent 版本的有效绑定范围内：toolCode=" + request.toolCode());
+        }
+        // §7.5：调用人权限（未声明权限点的工具不额外要求；声明了必须持有）
+        boolean holdsPermission = StringUtils.isBlank(version.getPermissionPoint())
+            || permissionChecker.hasPermission(version.getPermissionPoint());
+        if (!AigToolExecutionPolicy.permissionPermit(version.getPermissionPoint(), holdsPermission)) {
+            return AigToolCallResult.failed("TOOL_PERMISSION_DENIED",
+                "调用人没有该工具所需的权限点：" + version.getPermissionPoint());
         }
         if (!decision.allowed()) {
             if (!decision.confirmationRequired()) {

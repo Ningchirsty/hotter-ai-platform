@@ -69,6 +69,22 @@ public final class AigToolExecutionPolicy {
     }
 
     /**
+     * 调用人权限是否满足（设计 §7.5「工具许可…也要命中调用人权限」）。
+     *
+     * <p>工具版本<b>未声明权限点</b>时不额外要求（返回 true）；声明了则调用人必须持有。</p>
+     *
+     * @param permissionPoint 版本声明的权限点（可空）
+     * @param holds           调用人是否持有（由身份判定端口给出）
+     * @return 允许返回 true
+     */
+    public static boolean permissionPermit(String permissionPoint, boolean holds) {
+        if (StringUtils.isBlank(permissionPoint)) {
+            return true;
+        }
+        return holds;
+    }
+
+    /**
      * 工具是否命中"有效绑定"（设计 §7.5：「工具许可既要命中版本声明，也要命中有效绑定」）。
      *
      * <p>绑定只做<b>收窄</b>：没有任何 TOOL 绑定时不额外收窄（返回 true）；一旦有绑定，

@@ -73,6 +73,16 @@ class AigToolExecutionPolicyTest {
     }
 
     @Test
+    @DisplayName("★ 调用人权限：未声明不额外要求；声明了必须持有（缺省即拒绝）")
+    void permissionNarrowing() {
+        assertTrue(AigToolExecutionPolicy.permissionPermit(null, false));
+        assertTrue(AigToolExecutionPolicy.permissionPermit("", false));
+        assertTrue(AigToolExecutionPolicy.permissionPermit("  ", false));
+        assertTrue(AigToolExecutionPolicy.permissionPermit("aig:tool:x", true));
+        assertFalse(AigToolExecutionPolicy.permissionPermit("aig:tool:x", false));
+    }
+
+    @Test
     @DisplayName("输入摘要随参数变化（这是「参数变则批准失效」的基础）")
     void inputDigestChangesWithInput() {
         String a = AigToolExecutionPolicy.inputDigest("t", "1", "{\"x\":1}");

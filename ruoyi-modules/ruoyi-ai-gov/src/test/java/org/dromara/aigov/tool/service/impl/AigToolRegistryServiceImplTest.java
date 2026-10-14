@@ -60,6 +60,8 @@ class AigToolRegistryServiceImplTest {
     private org.dromara.aigov.agent.mapper.AigAgentResourceBindingMapper resourceBindingMapper;
     private TestExecutor executor;
     private AigToolRegistryServiceImpl service;
+    private boolean permissionHolds = true;
+    private int permissionQueries;
 
     @BeforeAll
     static void initTableInfo() {
@@ -78,8 +80,15 @@ class AigToolRegistryServiceImplTest {
         callMapper = mock(AigToolCallMapper.class);
         resourceBindingMapper = mock(org.dromara.aigov.agent.mapper.AigAgentResourceBindingMapper.class);
         executor = new TestExecutor("ref-1");
+        permissionHolds = true;
+        permissionQueries = 0;
+        // 身份端口用桩：判据来自服务端身份，但测试只关心"结论如何被使用"
+        org.dromara.aigov.tool.exec.ToolPermissionChecker permissionChecker = point -> {
+            permissionQueries++;
+            return permissionHolds;
+        };
         service = new AigToolRegistryServiceImpl(definitionMapper, versionMapper, callMapper,
-            resourceBindingMapper, List.of(executor));
+            resourceBindingMapper, permissionChecker, List.of(executor));
         // 默认：没有启用的 TOOL 绑定（不额外收窄）
         when(resourceBindingMapper.selectList(any())).thenReturn(List.of());
         when(definitionMapper.selectOne(any())).thenReturn(definition());
@@ -99,12 +108,17 @@ class AigToolRegistryServiceImplTest {
     }
 
     private void stubVersion(String operationType, String executorRef) {
+        stubVersion(operationType, executorRef, null);
+    }
+
+    private void stubVersion(String operationType, String executorRef, String permissionPoint) {
         AigToolDefinitionVersion version = new AigToolDefinitionVersion();
         version.setToolVersionId(VERSION_ID);
         version.setToolId(TOOL_ID);
         version.setVersion("1.0.0");
         version.setOperationType(operationType);
         version.setExecutorRef(executorRef);
+        version.setPermissionPoint(permissionPoint);
         version.setStatus("0");
         when(versionMapper.selectOne(any())).thenReturn(version);
     }
@@ -296,6 +310,59 @@ class AigToolRegistryServiceImplTest {
 
         assertEquals(AigToolCallStatusEnum.SUCCEEDED, service.execute(request(4242L)).status());
         assertEquals(1, executor.calls);
+    }
+
+    @Test
+    @DisplayName("★ §7.5：声明了权限点而调用人不持有 → 拒绝，不执行、不落账本")
+    void declaredPermissionNotHeldIsRejected() {
+        stubVersion("READ_ONLY_QUERY", "ref-1", "aig:tool:product-fact-query");
+        permissionHolds = false;
+
+        AigToolCallResult result = service.execute(request(null, null));
+
+        assertEquals(AigToolCallStatusEnum.FAILED, result.status());
+        assertEquals("TOOL_PERMISSION_DENIED", result.errorCode());
+        assertEquals(0, executor.calls);
+        verify(callMapper, never()).insert(any(AigToolCall.class));
+    }
+
+    @Test
+    @DisplayName("§7.5：声明了权限点且调用人持有 → 执行")
+    void declaredPermissionHeldExecutes() {
+        stubVersion("READ_ONLY_QUERY", "ref-1", "aig:tool:product-fact-query");
+        permissionHolds = true;
+
+        assertEquals(AigToolCallStatusEnum.SUCCEEDED, service.execute(request(null, null)).status());
+        assertEquals(1, executor.calls);
+        assertEquals(1, permissionQueries);
+    }
+
+    @Test
+    @DisplayName("§7.5：未声明权限点的工具不额外要求（且不查询身份，避免误判为无权限）")
+    void blankPermissionPointDoesNotQueryIdentity() {
+        stubVersion("READ_ONLY_QUERY", "ref-1");
+        permissionHolds = false;
+
+        assertEquals(AigToolCallStatusEnum.SUCCEEDED, service.execute(request(null, null)).status());
+        assertEquals(1, executor.calls);
+        assertEquals(0, permissionQueries, "未声明权限点就不该去问身份系统");
+    }
+
+    @Test
+    @DisplayName("★ §7.5：先判绑定再判权限——越界工具报 TOOL_NOT_BOUND，不冒充权限问题")
+    void bindingGateEvaluatedBeforePermission() {
+        stubVersion("READ_ONLY_QUERY", "ref-1", "aig:tool:product-fact-query");
+        AigAgentResourceBinding binding = new AigAgentResourceBinding();
+        binding.setResourceCode("other_tool");
+        binding.setEnabled("Y");
+        when(resourceBindingMapper.selectList(any())).thenReturn(List.of(binding));
+        permissionHolds = false;
+
+        AigToolCallResult result = service.execute(request(4242L));
+
+        assertEquals("TOOL_NOT_BOUND", result.errorCode(), "绑定收窄的拒绝理由更具体，应优先报出");
+        assertEquals(0, permissionQueries);
+        assertEquals(0, executor.calls);
     }
 
     private static AigToolDefinitionVersion versionRow(Long toolId, String version, String op, String ref) {
