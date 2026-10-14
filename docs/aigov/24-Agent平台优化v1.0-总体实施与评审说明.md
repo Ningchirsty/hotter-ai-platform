@@ -40,6 +40,8 @@
 | `5ca6b6ca` | D | 子 Agent 对账作业与定时触发 |
 | `2dee4ce4` | C/§7.2 | 授权上下文进入知识检索（身份层组织收窄） |
 | `19ebe830` | D/§7.5 | 工具许可命中有效绑定 |
+| `2131ed54` | D/§7.5 | 工具许可命中**调用人权限**（`ToolPermissionChecker`，fail-closed） |
+| `4a358069` | D | **流程节点运行时驱动**（`AigFlowRuntime` + `IAigFlowDriverService` + 执行器闸门接线） |
 
 ---
 
@@ -53,7 +55,7 @@
 | D02 | 草稿 `allowExternal` 不是网关硬约束 | ✅ | `AigInvokeBo`/`AigRouteHint`/`AigRouteServiceImpl`；`AigRouteServiceExternalConstraintTest` |
 | D03 | 绑定只看 enabled、缺撤销入口 | ✅ | `countActiveBindings` 统一有效期口径；`assertExecutionAuthorized`；`POST /aigov/agent/binding/{id}/revoke`；`AigAgentBindingLifecycleTest` |
 | D04 | 执行态内异常直接抛出、等超时清扫 | ✅ | `AigTaskExecutorImpl#settleFailure` 单一收口；`AigTaskExecutorImplTest`（缺能力编码、ServiceException） |
-| D05 | 工具/知识可绑定但无执行引擎 | 🔶 | 工具注册+执行+确认、子 Agent 顺序编排 + **运行时派发/对账 + 对账定时作业**、顺序流程节点校验、任务步骤账本（含状态迁移与 CAS）已完成；**流程节点在运行时驱动、WarmFlow/LiteFlow 适配器未做** |
+| D05 | 工具/知识可绑定但无执行引擎 | 🔶 | 工具注册+执行+确认、子 Agent 顺序编排 + 运行时派发/对账 + 对账定时作业、顺序流程节点校验、任务步骤账本（含状态迁移与 CAS）、**流程节点运行时驱动（闸门接线：等人工确认/等条件结论/受阻时不调模型，任务落 NEED_HUMAN）**已完成；**一个任务只驱动第一个 STEP 节点（多节点需动调度循环）、WarmFlow/LiteFlow 适配器未做** |
 | D06 | 采纳提案/关闭编辑器丢未保存内容 | ✅ | `dirtyGuard.ts` + `dirtyGuard.spec.ts`；`index.vue`/`ProposalPanel.vue` |
 | D07 | 预检只查结构、类别在提交阶段查 | ✅ | `AigStudioPrecheck` 分级（blockers/warnings + fieldPath）；`AigStudioDraftServiceImplTest` |
 | D08 | 网络调用包在长事务里 | ✅ | `runTest`/`chat` 去掉方法级 `@Transactional`；`AigStudioShortTransactionGuardTest` + 更新的 `AigStudioProposalTransactionBoundaryTest` |
@@ -70,15 +72,15 @@
 | --- | --- | --- |
 | A 基线一致性 | ✅ | D01/D02/D03/D04/D08（+D10）全部落地并有正反例测试 |
 | B 训练体验 | ✅（界面重构除外） | D06/D07/D09/D10/D11 + 元数据；**训练台三栏线框布局未做**（属界面重构） |
-| C 知识试点 | 🔶 | 数据模型/处理管道/检索端口/接口/接入执行计划完成；**解析器与嵌入未接入、知识中心页面未做** |
-| D 工具与流程 | 🔶 | 工具注册/执行/确认/接口完成；**子 Agent 编排与顺序流程未做** |
-| E 持续运营 | 🔶 | 反馈账本/队列/接口 + 指标口径完成；**聚合查询、资产索引增量同步未做** |
+| C 知识试点 | 🔶 | 数据模型/处理管道/检索端口/接口/接入执行计划、**知识中心页面**完成；**解析器与嵌入未接入** |
+| D 工具与流程 | 🔶 | 工具注册/执行/确认/接口、**工具许可（版本声明 + 有效绑定 + 调用人权限）**、子 Agent 编排/派发/对账、顺序流程节点的校验与**运行时驱动**完成；**多 STEP 节点的调度循环与 WarmFlow/LiteFlow 适配器未做** |
+| E 持续运营 | 🔶 | 反馈账本/队列/接口 + 指标口径与**聚合查询接口**（含故障分类）完成；**资产索引增量同步未做** |
 
 ---
 
 ## 4 验证汇总
 
-- 后端 `ruoyi-ai-gov`：**1201 tests / 0 failures / 0 errors**（基线 1053 → 新增 148）。
+- 后端 `ruoyi-ai-gov`：**1239 tests / 0 failures / 0 errors**（基线 1053 → 新增 186）。
 - 前端 `frontend`：**49 files / 466 tests** 全过；`oxlint src` 543 files 0/0。
 - 关键守卫全部通过：`AigPermissionSeedCoverageTest`（权限串已种子 + menu_id 不撞）、
   `AigRepeatSubmitCoverageTest`（写接口防重或显式豁免）、`AigWp3WiringAndRoutesTest`。
@@ -122,18 +124,24 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
 
 ## 6 剩余工作（诚实的待办，不影响已交付部分可评审）
 
-1. **D05 续**：**流程节点在运行时驱动**（条件求值、人工确认挂起/恢复）+
-   WarmFlow/LiteFlow 适配器。
+1. **D05 续**：**流程节点运行时驱动的剩余部分**——
+   ①一个任务只驱动第一个 `STEP` 节点，多 `STEP` 节点的流程需把调度循环改成"按节点多次发起调用"；
+   ②WarmFlow/LiteFlow 适配器（适配点已明确：`AigFlowRuntime` 的判定输入是
+   "节点顺序 + 步骤状态 + 条件结论"）；
+   ③**条件结论的来源**——本模块不含表达式引擎，`advance(..., Map.of())` 意味着声明了条件判断的
+   流程会停在 `NEED_HUMAN`（可见的"待接"，不是默认放行），接上业务判定后才真正分流。
    （子 Agent 的编排校验、派发、对账与对账定时作业均已实现并接线：`IAigSubAgentRunner` /
    `IAigSubAgentReconcileService`。）
-2. **D12 续**：指标聚合查询与接口（从任务/审计/评测取数）、故障分类指标、资产索引增量同步。
+2. **D12 续**：**资产索引增量同步**（现为整用户重建 `rebuildForUser(userId)`；
+   `MyAssetPort` 只有 `listMyAssets(userId, offset, limit)`，做增量需要先扩端口契约）。
 3. **界面**：反馈与运营页、知识中心页、工具注册页已交付；训练台已加**页头状态条 + 七步骤导航**
    （含 `studio/layout.ts` 口径与单测）；**完整三栏组件化重构仍待做**。
 4. **执行入口收窄**：§7.2 已落地 **有效知识范围 = 版本声明 ∩ 启用的 KNOWLEDGE 绑定**、
    **有效数据等级 = 各来源最高值**、**有效外发 = 各方取与**（`AigEffectivePolicy`）；
    计划中**冻结授权上下文**并被**知识检索消费**（按 `orgScope` 身份层收窄）；
-   工具侧亦已落地 **命中有效绑定**（`AigToolExecutionPolicy.bindingsPermit`）。
-   尚未做：工具**调用人权限点**那一层（§7.5 第三项）。
+   工具侧已落地 **命中有效绑定 + 命中调用人权限**（`AigToolExecutionPolicy.bindingsPermit`
+   / `permissionPermit` + `ToolPermissionChecker`）。
+   **仍未做**：机器身份（服务令牌 scope）作为工具调用人的授权路径——当前无登录态一律按无权限处理。
 5. **解析器与嵌入**：PDF/DOCX 解析引擎、嵌入模型与向量存储选型（设计明确需按试点资料评测）。
 
 ---
@@ -144,7 +152,7 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
 
 1. 本文 §2 的 D01–D12 对照表：**哪些 ✅、哪些 🔶、🔶 的边界是什么**；
 2. §3 阶段完成情况：A/B 完整，C/D/E 各自只剩明确列出的子项；
-3. §6 剩余工作：只有 5 条，且每条都写明了缺什么。
+3. §6 剩余工作：每条都写明了缺什么（D05 的三项剩余、D12 的资产索引增量、三栏重构、解析器与嵌入）。
 
 ### 7.2 跑一遍（10 分钟）
 
@@ -169,7 +177,8 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
 | 执行是否真的按冻结版本而非调用方 Prompt | `execution/AigAgentExecutionResolver`、`task/.../AigTaskExecutorImpl#runOnceRunning` |
 | 授权是否逐层相交、等级取最高 | `execution/AigEffectivePolicy`（+ `AigEffectivePolicyTest`） |
 | 知识检索是否两道授权 | `knowledge/retrieval/AigKnowledgeRetrievalService`、`AigKnowledgeAccess` |
-| 写工具是否必须先确认、幂等 | `tool/exec/AigToolExecutionPolicy`、`tool/.../AigToolRegistryServiceImpl#execute` |
+| 写工具是否必须先确认、幂等 | `tool/exec/AigToolExecutionPolicy`（含 `permissionPermit`）、`tool/exec/impl/SaTokenToolPermissionChecker`、`tool/.../AigToolRegistryServiceImpl#execute` |
+| 条件判断/人工确认是否真拦得住 | `task/service/AigFlowRuntime`、`task/.../AigFlowDriverServiceImpl`、`AigTaskExecutorImpl#checkFlowGate` |
 | 反馈是否会直接改线上 | `feedback/.../AigResultFeedbackServiceImpl`（动作只进改进流程） |
 | 训练台是否会静默丢内容 | `frontend/src/views/aigov/studio/dirtyGuard.ts` |
 | 指标口径是否可复核 | `feedback/metrics/AigOperationsMetrics`（累计成果=经确认结果；分母 0 → 0） |
