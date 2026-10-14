@@ -66,9 +66,38 @@ class CloudVideoContractTest {
   assertFalse(bodies.getLast().has("metadata"));
   var seedance=draft(profile("doubao-seedance-2-5-260628"),List.of(),"T2V");
   remote=client.submit(seedance,profile(seedance.model()),r->"unused");
-  assertEquals("POST /v1/video/generations",calls.getLast());assertTrue(bodies.getLast().path("content").isArray());
+  assertEquals("POST /v1/video/generations",calls.getLast());assertTrue(bodies.getLast().at("/metadata/content").isArray());
   client.query(remote);assertEquals("GET /v1/tasks/same-task",calls.getLast());
   client.query(new BluOctoVideoClient.RemoteTask("legacy","doubao"));assertEquals("GET /doubao/api/v3/contents/generations/tasks/legacy",calls.getLast());
+ }
+ @Test void seedanceCompatibilitySubmissionPreservesTemplatePromptAndEveryReferenceRole()throws Exception{
+  var bodies=new ArrayList<JsonNode>();var paths=new ArrayList<String>();
+  var client=new BluOctoVideoClient(new VideoCloudProperties()) {
+   @Override protected JsonNode json(String method,String path,Map<String,Object> body) {
+    paths.add(path);bodies.add(CloudVideoContractTest.this.mapper.valueToTree(body));
+    return CloudVideoContractTest.this.mapper.createObjectNode().put("task_id","offline-seedance");
+   }
+  };
+  var refs=List.of(new CloudVideoRequest.Reference(1,"first_frame"),new CloudVideoRequest.Reference(2,"last_frame"),
+    new CloudVideoRequest.Reference(3,"reference_image"),new CloudVideoRequest.Reference(4,"reference_video"),new CloudVideoRequest.Reference(5,"reference_audio"));
+  for(var p:profiles())if(p.path("family").asText().equals("Seedance")) {
+   for(var reference:List.of(List.<CloudVideoRequest.Reference>of(),refs)) {
+    var request=new CloudVideoRequest(p.path("id").asText(),reference.isEmpty()?"T2V":"R2V","中文模板提示词".repeat(200),10,"480p","16:9",reference,true,null,42L,"offline");
+    var remote=client.submit(request,p,r->"https://example.org/"+r.assetId());var body=bodies.getLast();
+    assertEquals("/v1/video/generations",paths.getLast());assertEquals("generations",remote.protocol());
+    assertEquals(request.prompt(),body.path("prompt").asText());assertTrue(body.path("seconds").isTextual());assertEquals("10",body.path("seconds").asText());
+    assertFalse(body.has("duration"));assertFalse(body.has("content"));assertFalse(body.has("generate_audio"));
+    assertEquals("480p",body.at("/metadata/resolution").asText());assertEquals("16:9",body.at("/metadata/ratio").asText());assertEquals(42,body.at("/metadata/seed").asInt());
+    assertEquals(p.path("hasAudioOutput").asBoolean(),body.path("metadata").has("generate_audio"));
+    if(p.path("hasAudioOutput").asBoolean())assertTrue(body.at("/metadata/generate_audio").asBoolean());
+    assertEquals(reference.size()+1,body.at("/metadata/content").size());
+    for(int i=0;i<reference.size();i++) {
+     var item=body.at("/metadata/content").get(i+1);var ref=reference.get(i);assertEquals(ref.role(),item.path("role").asText());
+     String type=ref.role().equals("reference_video")?"video_url":ref.role().equals("reference_audio")?"audio_url":"image_url";
+     assertEquals("https://example.org/"+ref.assetId(),item.path(type).path("url").asText());
+    }
+   }
+  }
  }
  @Test void klingTailAndRatioAreNotLost()throws Exception{
   var d=draft(profile("kling-3.0"),List.of(new CloudVideoRequest.Reference(2,"last_frame"),new CloudVideoRequest.Reference(1,"first_frame")),"FL2V");
