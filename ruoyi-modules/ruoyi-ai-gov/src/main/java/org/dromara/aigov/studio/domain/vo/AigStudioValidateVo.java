@@ -44,7 +44,19 @@ public class AigStudioValidateVo implements Serializable {
 
     /**
      * 问题清单（人话；通过时为空）
+     *
+     * <p>保留给旧调用方；其内容恒等于 {@link #blockers} 的说明集合。</p>
      */
     private List<String> problems = new ArrayList<>();
+
+    /**
+     * 阻断项（设计 §9.3）：必须清空才能提交。
+     */
+    private List<AigStudioPrecheckItem> blockers = new ArrayList<>();
+
+    /**
+     * 提醒项（设计 §9.3）：不拦提交，但责任人应当看见。
+     */
+    private List<AigStudioPrecheckItem> warnings = new ArrayList<>();
 
 }
