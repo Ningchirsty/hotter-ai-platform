@@ -305,6 +305,68 @@ public class AigAgentRegistryServiceImpl implements IAigAgentRegistryService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public void revokeBinding(Long bindingId, String reason) {
+        if (bindingId == null) {
+            throw new ServiceException("绑定ID不能为空");
+        }
+        AigAgentBinding binding = bindingMapper.selectById(bindingId);
+        if (binding == null) {
+            throw new ServiceException("Agent 版本绑定不存在或已撤销：" + bindingId);
+        }
+        // @TableLogic：这是逻辑删除，行仍在，只是所有查询自动过滤掉它
+        bindingMapper.deleteById(bindingId);
+        log.info("撤销 Agent 版本绑定, bindingId={}, agentVersionId={}, reason={}",
+            bindingId, binding.getAgentVersionId(),
+            StringUtils.blankToDefault(StringUtils.substring(reason, 0, 200), "-"));
+    }
+
+    @Override
+    public void assertExecutionAuthorized(Long agentVersionId) {
+        if (agentVersionId == null) {
+            // 裸能力调用不属于任何 Agent 版本：版本授权这条约束不适用
+            return;
+        }
+        AigAgentVersion version = agentVersionMapper.selectById(agentVersionId);
+        if (version == null) {
+            throw new ServiceException("Agent 版本不存在或已删除：" + agentVersionId);
+        }
+        AigReleaseChannelEnum channel = AigReleaseChannelEnum.find(version.getReleaseChannel());
+        if (channel == null || !channel.isLimited()) {
+            // 不受限通道不依赖绑定
+            return;
+        }
+        Long active = countActiveBindings(agentVersionId);
+        if (active == null || active == 0L) {
+            throw new ServiceException("当前范围未授权：Agent 版本 " + agentVersionId
+                + " 的发布通道 " + channel.getCode() + "（" + channel.getDesc()
+                + "）是受限通道，但此刻没有任何启用中且在有效期内的绑定。"
+                + "绑定可能未生效、已到期或已被撤销——请核对绑定清单后再执行");
+        }
+    }
+
+    /**
+     * 统计某版本「启用中且当前在有效期内」的绑定数。
+     *
+     * <p>有效期是闭区间（设计 §8.4）：{@code effectiveFrom <= now <= effectiveTo}，
+     * 两端为空表示不设该侧限制。它与发布门槛、执行期授权共用同一口径——
+     * 三处若各写一遍，迟早会出现"门槛说有效、执行说无效"的矛盾。</p>
+     *
+     * @param agentVersionId Agent 版本ID
+     * @return 有效绑定数
+     */
+    private Long countActiveBindings(Long agentVersionId) {
+        LocalDateTime now = LocalDateTime.now();
+        return bindingMapper.selectCount(new LambdaQueryWrapper<AigAgentBinding>()
+            .eq(AigAgentBinding::getAgentVersionId, agentVersionId)
+            .eq(AigAgentBinding::getEnabled, YES)
+            .and(w -> w.isNull(AigAgentBinding::getEffectiveFrom)
+                .or().le(AigAgentBinding::getEffectiveFrom, now))
+            .and(w -> w.isNull(AigAgentBinding::getEffectiveTo)
+                .or().ge(AigAgentBinding::getEffectiveTo, now)));
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public Long addResourceBinding(AigAgentResourceBindingBo bo) {
         if (bo == null || bo.getAgentVersionId() == null) {
             throw new ServiceException("Agent 版本ID不能为空");
@@ -598,11 +660,15 @@ public class AigAgentRegistryServiceImpl implements IAigAgentRegistryService {
     }
 
     /**
-     * 受限通道发布到 CANDIDATE/STABLE 时必须有启用中的绑定。
+     * 受限通道发布到 CANDIDATE/STABLE 时必须有<b>启用中且在有效期内</b>的绑定（D03）。
      *
      * <p>只对 <b>Agent 版本</b> 校验：按设计 §10.2，绑定表是 {@code ai_agent_binding}（按 Agent
      * 版本组织）；Skill/Package 版本的可见性由「使用它们的 Agent」决定，本身没有独立可见范围，
      * 因此不对它们套用这条规则——套用只会逼出一堆无意义的绑定行。</p>
+     *
+     * <p><b>为什么要看有效期</b>：过去只查 {@code enabled='Y'}，于是一条"启用但已到期"的绑定
+     * 能让受限版本发布出去，而发布后按有效期收窄时谁都看不见——「已发布」与「谁都看不见」
+     * 同时成立。口径与执行期授权共用 {@link #countActiveBindings}。</p>
      *
      * @param type   对象类型
      * @param id     对象版本ID
@@ -618,13 +684,11 @@ public class AigAgentRegistryServiceImpl implements IAigAgentRegistryService {
         if (channel == null || !channel.isLimited() || type != AigReleaseTargetTypeEnum.AGENT_VERSION) {
             return;
         }
-        Long bindings = bindingMapper.selectCount(new LambdaQueryWrapper<AigAgentBinding>()
-            .eq(AigAgentBinding::getAgentVersionId, id)
-            .eq(AigAgentBinding::getEnabled, YES));
+        Long bindings = countActiveBindings(id);
         if (bindings == null || bindings == 0L) {
             throw new ServiceException("通道 " + channel.getCode() + "（" + channel.getDesc()
-                + "）是受限通道，但该版本当前没有任何启用中的绑定：发布出去谁都看不见，等同于没发布。"
-                + "请先为该版本添加绑定（品牌/部门/测试项目）再发布");
+                + "）是受限通道，但该版本当前没有任何「启用中且在有效期内」的绑定：发布出去谁都看不见，"
+                + "等同于没发布。请先为该版本添加（或把已到期/未生效的绑定调整为）品牌/部门/测试项目绑定再发布");
         }
     }
 

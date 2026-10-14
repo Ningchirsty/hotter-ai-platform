@@ -31,6 +31,20 @@ public class AigStudioCopilotProperties {
     private boolean enabled = false;
 
     /**
+     * 培训助手使用的<b>独立文本能力编码</b>（设计 §6.3、§7.3 的 D10）。
+     *
+     * <p><b>为什么不能复用被训练 Agent 的 {@code providerCapability}</b>：那个能力描述的是
+     * 「这个 Agent 要跑什么」（可能是 {@code image_generation} / 视觉能力），而培训助手要做的是
+     * <b>生成文本变更提案</b>。拿图像能力去路由文本提案，轻则路由不到合适模型、重则把一次
+     * 文本请求发进图像链路。助手与 Agent 是两种不同用途的调用，能力编码必须各自独立。</p>
+     *
+     * <p>默认 {@code text_generation}：它是一个<b>已登记的能力编码</b>，路由策略、
+     * 候选模型、配额与审计都与其它调用同一条链路，因此这里的"独立"只换取正确的路由语义，
+     * 不会绕过任何治理（ADR-006）。</p>
+     */
+    private String capability = "text_generation";
+
+    /**
      * 单条用户消息的最大字符数（对话式入口最容易把整篇文档塞进来）
      */
     private int maxMessageChars = 2000;

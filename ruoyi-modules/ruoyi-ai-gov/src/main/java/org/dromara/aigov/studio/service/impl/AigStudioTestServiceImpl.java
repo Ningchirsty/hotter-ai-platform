@@ -17,6 +17,7 @@ import org.dromara.aigov.studio.domain.vo.AigStudioDraftDetailVo;
 import org.dromara.aigov.studio.domain.vo.AigStudioTestRunVo;
 import org.dromara.aigov.studio.enums.AigStudioDraftStatusEnum;
 import org.dromara.aigov.studio.enums.AigStudioTestStatusEnum;
+import org.dromara.aigov.studio.helper.AigStudioDataPolicy;
 import org.dromara.aigov.studio.helper.AigStudioPromptBuilder;
 import org.dromara.aigov.studio.mapper.AigStudioExecutionLinkMapper;
 import org.dromara.aigov.studio.mapper.AigStudioRevisionMapper;
@@ -25,7 +26,6 @@ import org.dromara.aigov.studio.service.IAigStudioTestService;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
@@ -35,6 +35,12 @@ import tools.jackson.databind.json.JsonMapper;
  * 调用回来再更新成 {@code SUCCEEDED}/{@code FAILED}。这样即使进程崩在调用中间，
  * 库里也留着"这次可能真的调用了"的痕迹——比"崩了就当没调过"诚实
  * （费用是可能已经产生的）。</p>
+ *
+ * <p><b>刻意不带 {@code @Transactional}</b>（设计 D08「短事务登记 独立执行 短事务收尾」）：
+ * 登记、网络调用、收尾必须落在<b>不同</b>事务里。若把整段包在一个事务中，
+ * 网络调用期间进程崩溃会让那条 {@code RUNNING} 行<b>随事务一起回滚</b>——
+ * 于是"证据先落"这条纪律在最需要它的场景（崩溃）下恰好失效。现在每次 mapper 调用
+ * 各自提交，崩溃后 RUNNING 行仍在，可被后续核查。</p>
  *
  * @author ai-gov
  */
@@ -51,7 +57,6 @@ public class AigStudioTestServiceImpl implements IAigStudioTestService {
     private final JsonMapper jsonMapper;
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public AigStudioTestRunVo runTest(Long draftId, AigStudioTestRunBo bo, Long actorId) {
         if (!properties.isEnabled()) {
             throw new ServiceException("训练台测试调用当前是关闭的（aigov.studio.test.enabled=false）："
@@ -112,6 +117,9 @@ public class AigStudioTestServiceImpl implements IAigStudioTestService {
         invokeBo.setPrompt(buildPrompt(content, bo.getInput()));
         invokeBo.setPayload(bo.getPayload());
         invokeBo.setMaxCost(bo.getMaxCost());
+        // D02：草稿的 allowExternal 必须成为网关硬约束（Y→不禁止，其余→禁止外发）。
+        // 过去只传 dataLevel，草稿的外发许可到不了路由，"这个 Agent 禁止外发"等于没写。
+        invokeBo.setAllowExternal(AigStudioDataPolicy.externalAllowed(content.getAllowExternal()));
         // ⚠️ 刻意不设 agentVersionId：设了的话，训练台点几次测试就会把该版本的
         // CANARY 调用计数/失败率抬上去——那等于用测试伪造灰度证据。
         // 版本号只记在我们自己的证据表里（上面 link.setAgentVersionId）。

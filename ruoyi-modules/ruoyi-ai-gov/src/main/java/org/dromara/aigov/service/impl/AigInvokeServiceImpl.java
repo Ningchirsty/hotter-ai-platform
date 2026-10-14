@@ -463,7 +463,7 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
      * @return 路由提示；两者都为空时返回 null（路由按「无提示」快路径处理）
      */
     private AigRouteHint routeHint(AigInvokeBo bo) {
-        return AigRouteHint.of(bo.getScenarioCode(), bo.getMaxCost());
+        return AigRouteHint.of(bo.getScenarioCode(), bo.getMaxCost(), bo.getAllowExternal());
     }
 
     /**

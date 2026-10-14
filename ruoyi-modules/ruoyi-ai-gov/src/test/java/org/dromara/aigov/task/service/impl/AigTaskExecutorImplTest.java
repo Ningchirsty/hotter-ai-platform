@@ -4,6 +4,8 @@ import cn.hutool.crypto.digest.DigestUtil;
 import org.dromara.aigov.domain.bo.AigInvokeBo;
 import org.dromara.aigov.domain.vo.AigInvokeVo;
 import org.dromara.aigov.enums.AigErrorClassEnum;
+import org.dromara.aigov.execution.AigExecutionPlan;
+import org.dromara.aigov.execution.AigExecutionPurposeEnum;
 import org.dromara.aigov.service.IAigInvokeService;
 import org.dromara.aigov.task.domain.AigTask;
 import org.dromara.aigov.task.domain.bo.AigTaskExecuteBo;
@@ -69,6 +71,7 @@ class AigTaskExecutorImplTest {
     private org.dromara.aigov.workspace.scenario.config.AigScenarioDispatchProperties scenarioDispatchProperties;
     private org.dromara.aigov.workspace.scenario.service.IAigScenarioVersionResolver scenarioVersionResolver;
     private org.dromara.aigov.workspace.scenario.service.IAigScenarioFlowDispatcher scenarioFlowDispatcher;
+    private org.dromara.aigov.execution.IAigAgentExecutionResolver executionResolver;
     private AigTaskExecutorImpl executor;
 
     @BeforeEach
@@ -81,8 +84,10 @@ class AigTaskExecutorImplTest {
             mock(org.dromara.aigov.workspace.scenario.service.IAigScenarioVersionResolver.class);
         scenarioFlowDispatcher =
             mock(org.dromara.aigov.workspace.scenario.service.IAigScenarioFlowDispatcher.class);
+        // 解析器默认返回 null = 非 Agent 模式：既有用例的行为完全不变（D01 用专门的用例覆盖）
+        executionResolver = mock(org.dromara.aigov.execution.IAigAgentExecutionResolver.class);
         executor = new AigTaskExecutorImpl(taskService, invokeService, scenarioDispatchProperties,
-            scenarioVersionResolver, scenarioFlowDispatcher, JsonMapper.builder().build());
+            scenarioVersionResolver, scenarioFlowDispatcher, executionResolver, JsonMapper.builder().build());
     }
 
     /**
@@ -243,17 +248,73 @@ class AigTaskExecutorImplTest {
     }
 
     @Test
-    @DisplayName("业务型 ServiceException 原样上抛：不重复记账（它不是「执行崩了」）")
-    void serviceExceptionFromInvokeIsNotRecordedTwice() {
+    @DisplayName("★ D04：执行态内抛出的 ServiceException 也要收口成失败并给出落点（不再原样上抛停在 RUNNING）")
+    void serviceExceptionFromInvokeIsSettledAsFailure() {
         when(taskService.getDetail(TASK_ID)).thenReturn(detail("QUEUED", null));
         when(taskService.transition(eq(TASK_ID), eq(2), eq(AigTaskStatusEnum.RUNNING), any(), isNull()))
             .thenReturn(task("RUNNING", 3));
         when(invokeService.invoke(any())).thenThrow(new ServiceException("能力未登记"));
+        when(taskService.getTask(TASK_ID)).thenReturn(task("RUNNING", 3));
+        when(taskService.recordFailure(eq(TASK_ID), eq(3), eq(AigErrorClassEnum.UNKNOWN), any()))
+            .thenReturn(AigTaskStatusEnum.NEED_HUMAN);
 
         ServiceException ex = assertThrows(ServiceException.class, () -> executor.execute(executedBo()));
 
-        assertEquals("能力未登记", ex.getMessage());
-        verify(taskService, never()).recordFailure(any(), any(), any(), any());
+        assertTrue(ex.getMessage().contains("能力未登记"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("NEED_HUMAN"), "要告诉调用方任务落到哪：" + ex.getMessage());
+        verify(taskService).recordFailure(eq(TASK_ID), eq(3), eq(AigErrorClassEnum.UNKNOWN), any());
+    }
+
+    @Test
+    @DisplayName("★ D04：缺能力编码属执行态内异常，必须收口成失败，不能停在 RUNNING 等超时")
+    void missingCapabilityIsSettledAsFailure() {
+        AigTaskDetailVo detail = detail("QUEUED", null);
+        detail.getTask().setCapabilityCode("   ");
+        when(taskService.getDetail(TASK_ID)).thenReturn(detail);
+        when(taskService.transition(eq(TASK_ID), eq(2), eq(AigTaskStatusEnum.RUNNING), any(), isNull()))
+            .thenReturn(task("RUNNING", 3));
+        when(taskService.getTask(TASK_ID)).thenReturn(task("RUNNING", 3));
+        when(taskService.recordFailure(eq(TASK_ID), eq(3), eq(AigErrorClassEnum.UNKNOWN), any()))
+            .thenReturn(AigTaskStatusEnum.NEED_HUMAN);
+
+        ServiceException ex = assertThrows(ServiceException.class, () -> executor.execute(executedBo()));
+
+        assertTrue(ex.getMessage().contains("未登记能力编码"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("NEED_HUMAN"), ex.getMessage());
+        verify(taskService).recordFailure(eq(TASK_ID), eq(3), eq(AigErrorClassEnum.UNKNOWN), any());
+        verify(invokeService, never()).invoke(any());
+    }
+
+    @Test
+    @DisplayName("★ D01：Agent 模式下用冻结版本的 Prompt 与能力，客户端 prompt 只作业务输入；外发许可作硬约束")
+    void agentModeUsesFrozenExecutionPlan() {
+        stubHappyPath(invoked("{}", null, null));
+        AigExecutionPlan plan = AigExecutionPlan.builder()
+            .planId("plan-1")
+            .taskId(TASK_ID)
+            .agentVersionId(AGENT_VERSION_ID)
+            .purpose(AigExecutionPurposeEnum.PRODUCTION)
+            .configHash("cfg-hash")
+            .systemPrompt("SYS-INSTRUCTION")
+            .inputHash("input-hash")
+            .capabilityCode("text_generation")
+            .dataLevel("INTERNAL")
+            .allowExternal(Boolean.FALSE)
+            .build();
+        when(executionResolver.resolve(any(), any(), any(), any(), any(), any(), any()))
+            .thenReturn(plan);
+
+        executor.execute(executedBo());
+
+        ArgumentCaptor<AigInvokeBo> captor = ArgumentCaptor.forClass(AigInvokeBo.class);
+        verify(invokeService).invoke(captor.capture());
+        assertTrue(captor.getValue().getPrompt().startsWith("SYS-INSTRUCTION"),
+            "系统指令必须来自冻结版本：" + captor.getValue().getPrompt());
+        assertTrue(captor.getValue().getPrompt().contains("a cute cat"),
+            "客户端内容只能作业务输入分节：" + captor.getValue().getPrompt());
+        assertEquals("text_generation", captor.getValue().getCapabilityCode());
+        assertEquals(Boolean.FALSE, captor.getValue().getAllowExternal(),
+            "版本声明不外发时必须作为硬约束传下去");
     }
 
     @Test

@@ -45,6 +45,24 @@ public class AigInvokeBo implements Serializable {
     private String dataLevel;
 
     /**
+     * 调用方声明的「本次是否允许外发」（可空）。
+     *
+     * <p><b>它是硬约束，不是提示</b>（设计 §7.2「有效外发许可要求企业策略、Agent 配置、
+     * 资源策略、模型路由全部允许」）：{@code FALSE} 表示调用方（如 Agent 版本配置或草稿的
+     * {@code allowExternal=N}）已判定本次<b>不得</b>把数据送往外部部署，路由引擎必须据此排除
+     * 外部候选——即使路由策略那一行写着 {@code allowExternal='Y'}。</p>
+     *
+     * <p><b>为什么不能只依赖路由策略行</b>：{@code allowExternal} 是「业务侧许可」，
+     * 与路由策略是<b>取与</b>关系。过去训练台测试与 Copilot 只把 {@code dataLevel} 交给网关，
+     * 草稿里的 {@code allowExternal=N} 根本到不了路由，于是「Agent 禁止外发」在实际调用上
+     * 等于没写。这里把它显式带上，任意一方禁止即禁止。</p>
+     *
+     * <p>取值口径：{@code null}=不额外限制（沿用路由策略）；{@code FALSE}=禁止外发；
+     * {@code TRUE}=业务侧不禁止（是否外发仍由路由策略与数据等级决定）。</p>
+     */
+    private Boolean allowExternal;
+
+    /**
      * 场景编码（LONG_PAGE、POSTER、MULTI_IMAGE 等，可为空）
      *
      * <p>用于设计 §4.4 第 4 步的「场景强制绑定 Provider」：命中绑定时，候选会被收窄为

@@ -251,7 +251,8 @@ class AigStudioCopilotServiceImplTest {
         assertEquals("hash-3", inserted.getValue().getContentHash());
         verify(turnMapper).updateById(any(AigStudioCopilotTurn.class));
 
-        // 网关入参：用草稿的能力编码、带上提示词、**不传 agentVersionId**
+        // 网关入参：用**助手自己**的能力编码（D10，默认 text_generation）、带上提示词、
+        // **不传 agentVersionId**
         ArgumentCaptor<AigInvokeBo> invokeBo = ArgumentCaptor.forClass(AigInvokeBo.class);
         verify(invokeService).invoke(invokeBo.capture());
         assertEquals("text_generation", invokeBo.getValue().getCapabilityCode());
@@ -269,6 +270,25 @@ class AigStudioCopilotServiceImplTest {
         assertEquals(AigStudioProposalSourceEnum.COPILOT.getCode(), createBo.getValue().getSource());
         assertEquals("改目标", createBo.getValue().getSummary());
         assertEquals("/objective", createBo.getValue().getOperations().get(0).getPath());
+    }
+
+    @Test
+    @DisplayName("★ D10：助手用独立文本能力编码，不复用被训练 Agent 的 providerCapability（图像 Agent 也能对话）")
+    void assistantUsesIndependentCapability() {
+        stubProposalCreated();
+        properties.setCapability("copilot_text_gen");
+        // 被训练的 Agent 是图像能力：过去会拿 image_generation 去路由"生成文本提案"
+        when(draftService.getDraft(any())).thenReturn(draft(OWNER,
+            AigStudioDraftStatusEnum.EDITING.getCode(),
+            "{\"providerCapability\":\"image_generation\"}"));
+        when(invokeService.invoke(any())).thenReturn(invokeOk(OK_OUTPUT));
+
+        service.chat(DRAFT_ID, chatBo("改目标"), OWNER);
+
+        ArgumentCaptor<AigInvokeBo> captor = ArgumentCaptor.forClass(AigInvokeBo.class);
+        verify(invokeService).invoke(captor.capture());
+        assertEquals("copilot_text_gen", captor.getValue().getCapabilityCode(),
+            "助手必须用 aigov.studio.copilot.capability，而不是被训练 Agent 的图像能力");
     }
 
     @Test

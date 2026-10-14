@@ -7,6 +7,9 @@ import org.dromara.aigov.domain.bo.AigInvokeBo;
 import org.dromara.aigov.domain.vo.AigInvokeVo;
 import org.dromara.aigov.enums.AigErrorClassEnum;
 import org.dromara.aigov.enums.AigRouteDecisionEnum;
+import org.dromara.aigov.execution.AigExecutionPlan;
+import org.dromara.aigov.execution.AigExecutionPurposeEnum;
+import org.dromara.aigov.execution.IAigAgentExecutionResolver;
 import org.dromara.aigov.service.IAigInvokeService;
 import org.dromara.aigov.task.domain.AigTask;
 import org.dromara.aigov.task.domain.bo.AigTaskExecuteBo;
@@ -49,6 +52,7 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
     private final AigScenarioDispatchProperties scenarioDispatchProperties;
     private final IAigScenarioVersionResolver scenarioVersionResolver;
     private final IAigScenarioFlowDispatcher scenarioFlowDispatcher;
+    private final IAigAgentExecutionResolver executionResolver;
     private final JsonMapper jsonMapper;
 
     @Override
@@ -77,6 +81,33 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
         AigTask running = taskService.transition(bo.getTaskId(), task.getVersion(),
             AigTaskStatusEnum.RUNNING, "开始执行（走统一调用入口）", null);
 
+        // ★ D04 统一失败收口：从这一刻起任务已经被置为 RUNNING，**任何**异常都必须落成
+        //   一次可解释的失败，而不是直接冒出去让状态停在 RUNNING——那要等超时清扫
+        //   （默认 1800 秒）才被判失败，且会被记成 TIMEOUT（**假账**：明明是缺能力编码、
+        //   数据库或空指针问题）。过去的缺口有两处：①"未登记能力编码"直接抛 ServiceException；
+        //   ②调用入口抛出的 ServiceException 被原样 rethrow。现在两者都走这同一条收口。
+        try {
+            return runOnceRunning(bo, task, snapshot, running);
+        } catch (RuntimeException e) {
+            throw settleFailure(bo.getTaskId(), e);
+        }
+    }
+
+    /**
+     * 执行态内的实际工作：场景派发 / 统一调用 / 落执行事实与策略结论。
+     *
+     * <p>这里刻意<b>不</b>逐段捕获异常——由 {@link #execute} 的单一 catch 统一收口（设计 D04）。
+     * 逐段捕获的问题是"漏了某条 throw 路径"没人能发现；单一收口让"进入执行态后必然有落点"
+     * 成为结构性保证，而不是靠人工核对每个 throw 点。</p>
+     *
+     * @param bo       执行入参
+     * @param task     任务视图
+     * @param snapshot 输入快照
+     * @param running  已置为 RUNNING 的任务
+     * @return 执行结果
+     */
+    private AigTaskExecuteVo runOnceRunning(AigTaskExecuteBo bo, AigTaskVo task,
+                                            AigTaskSnapshotVo snapshot, AigTask running) {
         // 1.5) 场景任务：交给"既有链路"执行，而不是普通模型调用（增量 13）。
         //      由 aigov.scenario.dispatch.enabled 控制，默认关闭——关着时行为与以前完全一致。
         //      走到这里说明任务带 scenarioCode：场景类卡片的任务不带能力编码，
@@ -102,33 +133,34 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
         invokeBo.setInputSnapshotRef("task:" + bo.getTaskId() + "/snapshot:" + snapshot.getSnapshotId());
         invokeBo.setMaxCost(bo.getMaxCost() != null ? bo.getMaxCost() : snapshot.getBudgetAmount());
 
+        // ★ D01：Agent 执行模式——从<b>冻结版本</b>编译系统 Prompt，调用方提交的 prompt
+        //   只作为系统指令之后的业务输入。非 v2 配置 / 无目标版本时解析器返回 null，
+        //   本方法退回原来的"调用方提供 prompt"语义（不改变任何存量版本的行为）。
+        AigExecutionPlan plan = executionResolver.resolve(bo.getTaskId(), task.getAgentVersionId(),
+            task.getDataLevel(), snapshot.getSnapshotJson(), bo.getPrompt(),
+            invokeBo.getMaxCost(), AigExecutionPurposeEnum.PRODUCTION);
+        if (plan != null) {
+            // 系统 Prompt 一律以版本冻结内容为准，客户端不能提交或覆盖它（设计 §7.2）
+            invokeBo.setPrompt(plan.composePrompt(bo.getPrompt()));
+            invokeBo.setCapabilityCode(plan.getCapabilityCode());
+            // D02：有效外发许可是硬约束，必须传给路由引擎（与策略取与）
+            invokeBo.setAllowExternal(plan.getAllowExternal());
+            if (plan.getMaxCost() != null) {
+                invokeBo.setMaxCost(plan.getMaxCost());
+            }
+        }
+
         if (StringUtils.isBlank(invokeBo.getCapabilityCode())) {
             throw new ServiceException("任务未登记能力编码，无法路由：taskId=" + bo.getTaskId());
         }
 
         // 3) 统一调用入口：路由 / 有序 fallback / 退避重试 / 逐次审计都在里面。
-        //    **未预期异常必须在这里收口**：任务已经被置为 RUNNING，若异常直接冒出去，
-        //    状态就停在 RUNNING——调用方只看到一个不透明的 500，而任务要等超时清扫
-        //    （默认 1800 秒）才被判失败，且会被记成 TIMEOUT（**假账**：明明是数据库/空指针问题）。
-        //    因此这里如实记一条 UNKNOWN 失败，再抛可读异常。
-        AigInvokeVo invoked;
-        try {
-            invoked = invokeService.invoke(invokeBo);
-        } catch (ServiceException e) {
-            throw e;
-        } catch (Exception e) {
-            String reason = "执行过程中发生未预期异常：" + e.getClass().getSimpleName()
-                + StringUtils.blankToDefault(StringUtils.substring(e.getMessage(), 0, 300), "");
-            log.error("任务执行发生未预期异常, taskId={}", bo.getTaskId(), e);
-            AigTaskStatusEnum resting = recordUnexpectedFailure(bo.getTaskId(), reason);
-            throw new ServiceException(reason + "；已按未知错误记录，任务落点="
-                + (resting == null ? "未变化" : resting.getCode()), e);
-        }
+        AigInvokeVo invoked = invokeService.invoke(invokeBo);
 
         // 4) 记录执行事实（路由快照 / traceId / 是否外发 / 耗时）。
         //    路由快照是执行与排障的唯一依据：治理配置会变，只有当时那一刻的结论能解释「为什么跑的是它」
         AigTask afterFacts = taskService.recordExecutionFacts(bo.getTaskId(), running.getVersion(),
-            invoked.getTraceId(), buildRouteSnapshot(invoked),
+            invoked.getTraceId(), buildRouteSnapshot(invoked, plan),
             Boolean.TRUE.equals(invoked.getExternalCall()), invoked.getLatencyMs());
 
         // 4.5 记录策略结论（aig_task.policy_result/policy_reason + 事件 AI_TASK_POLICY_DECIDED）。
@@ -155,7 +187,7 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
         if (success) {
             AigTask succeeded = taskService.transition(bo.getTaskId(), afterPolicy.getVersion(),
                 AigTaskStatusEnum.SUCCEEDED, "调用成功，产出待复核（执行成功不等于审核通过）",
-                buildRouteSnapshot(invoked));
+                buildRouteSnapshot(invoked, plan));
             vo.setSuccess(true);
             vo.setOutput(invoked.getOutput());
             vo.setStatus(succeeded.getStatus());
@@ -324,6 +356,25 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
     }
 
     /**
+     * 把执行态内的一次异常收口成失败（设计 D04）。
+     *
+     * <p>先尝试把任务记成失败（含真实分类 UNKNOWN 与截断后的原因），再把一个可读的
+     * {@link ServiceException} 抛给调用方。这样调用方拿到的不只是"500"，而是"任务落点在哪"。</p>
+     *
+     * @param taskId 任务ID
+     * @param cause  执行态内抛出的异常
+     * @return 可读异常（已记录任务落点）
+     */
+    private ServiceException settleFailure(Long taskId, RuntimeException cause) {
+        String reason = "执行过程中发生未预期异常：" + cause.getClass().getSimpleName()
+            + StringUtils.blankToDefault(StringUtils.substring(cause.getMessage(), 0, 300), "");
+        log.error("任务执行发生未预期异常, taskId={}", taskId, cause);
+        AigTaskStatusEnum resting = recordUnexpectedFailure(taskId, reason);
+        return new ServiceException(reason + "；已按未知错误记录，任务落点="
+            + (resting == null ? "未变化" : resting.getCode()), cause);
+    }
+
+    /**
      * 记录一次「未预期异常」导致的失败。
      *
      * <p>用<b>当场重读的版本</b>而不是执行前的版本：异常可能发生在几次写入之后
@@ -389,9 +440,10 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
      * 组装路由快照：执行与排障的唯一依据。
      *
      * @param invoked 调用结果
+     * @param plan    冻结的执行计划（可为空=非 Agent 模式）
      * @return JSON 文本
      */
-    private String buildRouteSnapshot(AigInvokeVo invoked) {
+    private String buildRouteSnapshot(AigInvokeVo invoked, AigExecutionPlan plan) {
         Map<String, Object> snapshot = new LinkedHashMap<>();
         snapshot.put("decision", invoked.getDecision());
         snapshot.put("modelId", invoked.getModelId());
@@ -402,6 +454,17 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
         snapshot.put("traceId", invoked.getTraceId());
         // 策略命中明细一并冻结：只看「用了哪个模型」回答不了「当时为什么是它」
         snapshot.put("policyHits", invoked.getPolicyHits());
+        // D01：把冻结计划的身份一并写进快照——这是"这次执行依据哪份配置"的持久证据。
+        // 只记 agentVersionId 不够：同一版本的内容也可能被后续修订影响，configHash 才是锚点
+        if (plan != null) {
+            Map<String, Object> execution = new LinkedHashMap<>();
+            execution.put("planId", plan.getPlanId());
+            execution.put("purpose", plan.getPurpose() == null ? null : plan.getPurpose().getCode());
+            execution.put("agentVersionId", plan.getAgentVersionId());
+            execution.put("configHash", plan.getConfigHash());
+            execution.put("inputHash", plan.getInputHash());
+            snapshot.put("executionPlan", execution);
+        }
         try {
             return jsonMapper.writeValueAsString(snapshot);
         } catch (Exception e) {
