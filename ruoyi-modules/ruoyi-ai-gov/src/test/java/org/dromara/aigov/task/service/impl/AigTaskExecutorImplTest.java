@@ -6,6 +6,9 @@ import org.dromara.aigov.domain.vo.AigInvokeVo;
 import org.dromara.aigov.enums.AigErrorClassEnum;
 import org.dromara.aigov.execution.AigExecutionPlan;
 import org.dromara.aigov.execution.AigExecutionPurposeEnum;
+import org.dromara.aigov.execution.AigFlowNode;
+import org.dromara.aigov.task.service.AigFlowDriveResult;
+import org.dromara.aigov.task.service.AigFlowRuntime;
 import org.dromara.aigov.service.IAigInvokeService;
 import org.dromara.aigov.task.domain.AigTask;
 import org.dromara.aigov.task.domain.bo.AigTaskExecuteBo;
@@ -72,6 +75,7 @@ class AigTaskExecutorImplTest {
     private org.dromara.aigov.workspace.scenario.service.IAigScenarioVersionResolver scenarioVersionResolver;
     private org.dromara.aigov.workspace.scenario.service.IAigScenarioFlowDispatcher scenarioFlowDispatcher;
     private org.dromara.aigov.execution.IAigAgentExecutionResolver executionResolver;
+    private org.dromara.aigov.task.service.IAigFlowDriverService flowDriver;
     private AigTaskExecutorImpl executor;
 
     @BeforeEach
@@ -86,10 +90,18 @@ class AigTaskExecutorImplTest {
             mock(org.dromara.aigov.workspace.scenario.service.IAigScenarioFlowDispatcher.class);
         // 解析器默认返回 null = 非 Agent 模式：既有用例的行为完全不变（D01 用专门的用例覆盖）
         executionResolver = mock(org.dromara.aigov.execution.IAigAgentExecutionResolver.class);
+        // 流程驱动默认返回「没有流程节点 = 已完成」：既有用例（无流程）行为完全不变，
+        // D05 的闸门行为用专门的用例覆盖
+        flowDriver = mock(org.dromara.aigov.task.service.IAigFlowDriverService.class);
+        when(flowDriver.advance(any(), any(), any())).thenReturn(new org.dromara.aigov.task.service.AigFlowDriveResult(
+            org.dromara.aigov.task.service.AigFlowRuntime.Action.DONE,
+            org.dromara.aigov.task.service.AigFlowRuntime.NO_NODE, null, null, null,
+            "执行计划没有流程节点", List.of()));
         executor = new AigTaskExecutorImpl(taskService, invokeService, scenarioDispatchProperties,
             scenarioVersionResolver, scenarioFlowDispatcher, executionResolver,
             mock(org.dromara.aigov.task.service.IAigTaskStepService.class),
-            mock(org.dromara.aigov.task.service.IAigSubAgentRunner.class), JsonMapper.builder().build());
+            mock(org.dromara.aigov.task.service.IAigSubAgentRunner.class), flowDriver,
+            JsonMapper.builder().build());
     }
 
     /**
@@ -319,10 +331,118 @@ class AigTaskExecutorImplTest {
             "版本声明不外发时必须作为硬约束传下去");
     }
 
+    /**
+     * 打桩「解析出带流程节点的冻结计划」。
+     *
+     * @param nodes 流程节点
+     */
+    private void stubPlanWithFlow(AigFlowNode... nodes) {
+        when(executionResolver.resolve(any(), any(), any(), any(), any(), any(), any()))
+            .thenReturn(AigExecutionPlan.builder()
+                .planId("plan-flow")
+                .taskId(TASK_ID)
+                .agentVersionId(AGENT_VERSION_ID)
+                .capabilityCode("text_generation")
+                .flowNodes(List.of(nodes))
+                .build());
+    }
+
+    private static AigFlowNode flowNode(String type, String ref) {
+        return new AigFlowNode(type, ref, ref);
+    }
+
+    private static AigFlowDriveResult drive(AigFlowRuntime.Action action, String ref, String nodeType,
+                                            Long stepId, String reason) {
+        return new AigFlowDriveResult(action,
+            action == AigFlowRuntime.Action.DONE ? AigFlowRuntime.NO_NODE : 0,
+            ref, nodeType, stepId, reason, List.of());
+    }
+
+    @Test
+    @DisplayName("★ D05：首节点是人工确认 → 不调模型，任务落 NEED_HUMAN（假闸门比没有闸门更坏）")
+    void humanConfirmGateStopsBeforeModelCall() {
+        stubHappyPath(invoked("{}", null, null));
+        stubPlanWithFlow(flowNode("HUMAN_CONFIRM", "approve"));
+        when(flowDriver.advance(any(), any(), any())).thenReturn(
+            drive(AigFlowRuntime.Action.WAIT_HUMAN, "approve", "HUMAN_CONFIRM", null, "待人工确认"));
+        when(taskService.recordFailure(eq(TASK_ID), eq(3), eq(AigErrorClassEnum.APPROVAL_REQUIRED), any()))
+            .thenReturn(AigTaskStatusEnum.NEED_HUMAN);
+
+        AigTaskExecuteVo vo = executor.execute(executedBo());
+
+        assertFalse(vo.isSuccess());
+        assertEquals("NEED_HUMAN", vo.getStatus());
+        assertEquals("APPROVAL_REQUIRED", vo.getErrorCode());
+        verify(invokeService, never()).invoke(any());
+        verify(taskService, never()).recordExecutionFacts(any(), any(), any(), any(), anyBoolean(), any());
+    }
+
+    @Test
+    @DisplayName("★ D05：条件结论还没有来源 → 停在 NEED_HUMAN，同样一次模型都不调")
+    void conditionWithoutResultStopsBeforeModelCall() {
+        stubHappyPath(invoked("{}", null, null));
+        stubPlanWithFlow(flowNode("CONDITION", "needVideo"));
+        when(flowDriver.advance(any(), any(), any())).thenReturn(
+            drive(AigFlowRuntime.Action.WAIT_CONDITION, "needVideo", "CONDITION", null, "还没有结论"));
+        when(taskService.recordFailure(eq(TASK_ID), eq(3), eq(AigErrorClassEnum.INVALID_REQUEST), any()))
+            .thenReturn(AigTaskStatusEnum.NEED_HUMAN);
+
+        AigTaskExecuteVo vo = executor.execute(executedBo());
+
+        assertEquals("NEED_HUMAN", vo.getStatus());
+        verify(invokeService, never()).invoke(any());
+    }
+
+    @Test
+    @DisplayName("★ D05：流程受阻（节点与步骤错位等）→ 不调模型，按配置问题转人工")
+    void blockedFlowStopsBeforeModelCall() {
+        stubHappyPath(invoked("{}", null, null));
+        stubPlanWithFlow(flowNode("STEP", "a"));
+        when(flowDriver.advance(any(), any(), any())).thenReturn(
+            drive(AigFlowRuntime.Action.BLOCKED, "a", "STEP", null, "状态对应关系已破坏"));
+        when(taskService.recordFailure(eq(TASK_ID), eq(3), eq(AigErrorClassEnum.INVALID_REQUEST), any()))
+            .thenReturn(AigTaskStatusEnum.NEED_HUMAN);
+
+        AigTaskExecuteVo vo = executor.execute(executedBo());
+
+        assertEquals("NEED_HUMAN", vo.getStatus());
+        assertTrue(vo.getReason().contains("状态对应关系已破坏"));
+        verify(invokeService, never()).invoke(any());
+    }
+
+    @Test
+    @DisplayName("★ D05：放行的 STEP 节点被本次调用收尾（成功写 SUCCEEDED，带 traceId）")
+    void stepNodeIsSettledWithCallOutcome() {
+        stubHappyPath(invoked("{\"image\":\"x\"}", null, null));
+        stubPlanWithFlow(flowNode("STEP", "a"), flowNode("OUTPUT", "out"));
+        when(flowDriver.advance(any(), any(), any())).thenReturn(
+            drive(AigFlowRuntime.Action.START, "a", "STEP", 555L, "启动第 1 个节点"));
+
+        AigTaskExecuteVo vo = executor.execute(executedBo());
+
+        assertTrue(vo.isSuccess());
+        verify(flowDriver).settle(eq(555L), eq(true), eq("trace-1"), isNull(), isNull());
+    }
+
+    @Test
+    @DisplayName("调用失败时，STEP 节点也必须收尾成 FAILED（否则看起来还挂在执行中）")
+    void stepNodeIsSettledOnFailure() {
+        AigInvokeVo failed = invoked(null, "TIMEOUT", "调用超时");
+        stubHappyPath(failed);
+        when(taskService.recordFailure(eq(TASK_ID), eq(5), eq(AigErrorClassEnum.TIMEOUT), any()))
+            .thenReturn(AigTaskStatusEnum.RETRY_WAIT);
+        stubPlanWithFlow(flowNode("STEP", "a"));
+        when(flowDriver.advance(any(), any(), any())).thenReturn(
+            drive(AigFlowRuntime.Action.START, "a", "STEP", 555L, "启动第 1 个节点"));
+
+        executor.execute(executedBo());
+
+        verify(flowDriver).settle(eq(555L), eq(false), eq("trace-1"), eq("TIMEOUT"), eq("调用超时"));
+    }
+
     @Test
     @DisplayName("★ 调用入参必须带任务ID：策略决策账本靠它把「为什么」接到任务上")
-    void taskIdIsCarriedIntoInvoke() {
-        stubHappyPath(invoked("{}", null, null));
+    void taskIdIsCarriedIntoInvoke() {        stubHappyPath(invoked("{}", null, null));
 
         executor.execute(executedBo());
 

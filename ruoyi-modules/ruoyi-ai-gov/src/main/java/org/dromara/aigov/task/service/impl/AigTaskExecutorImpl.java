@@ -22,6 +22,9 @@ import org.dromara.aigov.task.enums.AigTaskPolicyResultEnum;
 import org.dromara.aigov.task.enums.AigTaskStatusEnum;
 import org.dromara.aigov.task.service.IAigTaskExecutor;
 import org.dromara.aigov.task.service.IAigSubAgentRunner;
+import org.dromara.aigov.task.service.IAigFlowDriverService;
+import org.dromara.aigov.task.service.AigFlowDriveResult;
+import org.dromara.aigov.task.service.AigFlowRuntime;
 import org.dromara.aigov.task.service.IAigTaskService;
 import org.dromara.aigov.task.service.IAigTaskStepService;
 import org.dromara.aigov.workspace.domain.AigScenarioVersion;
@@ -58,6 +61,7 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
     private final IAigAgentExecutionResolver executionResolver;
     private final IAigTaskStepService taskStepService;
     private final IAigSubAgentRunner subAgentRunner;
+    private final IAigFlowDriverService flowDriver;
     private final JsonMapper jsonMapper;
 
     @Override
@@ -141,6 +145,8 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
         // ★ D01：Agent 执行模式——从<b>冻结版本</b>编译系统 Prompt，调用方提交的 prompt
         //   只作为系统指令之后的业务输入。非 v2 配置 / 无目标版本时解析器返回 null，
         //   本方法退回原来的"调用方提供 prompt"语义（不改变任何存量版本的行为）。
+        // ★ D05：本次执行对应流程里的哪个 STEP 节点（无流程 / 首节点是控制类节点时为 null）
+        Long flowStepId = null;
         AigExecutionPlan plan = executionResolver.resolve(bo.getTaskId(), task.getAgentVersionId(),
             task.getDataLevel(), snapshot.getSnapshotJson(), bo.getPrompt(),
             invokeBo.getMaxCost(), AigExecutionPurposeEnum.PRODUCTION);
@@ -160,6 +166,15 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
             } catch (Exception e) {
                 log.error("登记任务步骤失败（不影响本次执行）, taskId={}", bo.getTaskId(), e);
             }
+            // ★ D05 运行时闸门：**先问流程能不能往下走，再派发子 Agent、再调模型**。
+            //   顺序不能反——闸门没通过（等人工确认 / 等条件结论 / 受阻）时先把子 Agent 派出去，
+            //   等于用一次"尚未获准"的编排去动外部世界；而先把模型调了再记 NEED_HUMAN，
+            //   等于人工确认只挂了个牌子、什么都没拦住（假闸门比没有闸门更坏）。
+            FlowGate gate = checkFlowGate(bo, plan, running);
+            if (gate.stopped() != null) {
+                return gate.stopped();
+            }
+            flowStepId = gate.stepId();
             // ★ D05 运行时：按派发规格创建子任务（幂等键稳定，父任务重试不会建出第二套）。
             //   子任务由平台调度执行；父步骤由对账（reconcile）按子任务终态收尾。
             try {
@@ -194,6 +209,17 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
         //    只看 errorCode 会漏掉「决策为 MANUAL 但既无输出也无错误码」这类空转；
         //    只看 output 又可能把「恰好回了一段文本的错误响应」当成功。
         boolean success = StringUtils.isNotBlank(invoked.getOutput()) && StringUtils.isBlank(invoked.getErrorCode());
+
+        // ★ D05：这次模型调用就是流程里那个 STEP 节点的执行，按结果收尾它。
+        //   写失败不影响本次结论（任务状态才是权威），但必须留痕。
+        if (flowStepId != null) {
+            try {
+                flowDriver.settle(flowStepId, success, invoked.getTraceId(), invoked.getErrorCode(),
+                    StringUtils.substring(invoked.getReason(), 0, 500));
+            } catch (Exception e) {
+                log.error("收尾流程步骤失败, taskId={}, stepId={}", bo.getTaskId(), flowStepId, e);
+            }
+        }
 
         AigTaskExecuteVo vo = new AigTaskExecuteVo();
         vo.setTaskId(bo.getTaskId());
@@ -232,6 +258,87 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
         }
         log.warn("任务执行失败, taskId={}, traceId={}, errorCode={}, 落点={}",
             bo.getTaskId(), invoked.getTraceId(), vo.getErrorCode(), vo.getStatus());
+        return vo;
+    }
+
+    /**
+     * 流程闸门结论。
+     *
+     * @param stopped 已停下的执行结果（非空=不要调模型，直接返回它）
+     * @param stepId  本次执行对应的流程 STEP 节点（可空=本次执行不对应流程节点）
+     * @author ai-gov
+     */
+    private record FlowGate(AigTaskExecuteVo stopped, Long stepId) {
+    }
+
+    /**
+     * 检查流程能不能往下走（设计 §6.5：条件判断与人工确认必须真的拦得住）。
+     *
+     * <p>三种"不放行"都落在 {@link AigTaskStatusEnum#NEED_HUMAN}（经
+     * {@code RUNNING → FAILED → NEED_HUMAN} 的既有链路）：
+     * 等人工确认用 {@link AigErrorClassEnum#APPROVAL_REQUIRED}，等条件结论或流程受阻用
+     * {@link AigErrorClassEnum#INVALID_REQUEST}——两者都是"要人来看一眼"而不是"重试就好"，
+     * 因此不会拿预算去反复重试一个配置问题。</p>
+     *
+     * <p><b>条件结论目前恒为空</b>：本模块不含表达式引擎，结论要由业务域/人工给出；
+     * 缺结论时流程停在 NEED_HUMAN，这是可见的"待接"而不是默认放行。</p>
+     *
+     * @param bo      执行入参
+     * @param plan    冻结的执行计划
+     * @param running 已置为 RUNNING 的任务（提供乐观锁版本）
+     * @return 闸门结论
+     */
+    private FlowGate checkFlowGate(AigTaskExecuteBo bo, AigExecutionPlan plan, AigTask running) {
+        AigFlowDriveResult drive;
+        try {
+            drive = flowDriver.advance(bo.getTaskId(), plan, Map.of());
+        } catch (Exception e) {
+            log.error("流程推进失败（按受阻处理，不放行）, taskId={}", bo.getTaskId(), e);
+            return new FlowGate(stopForFlow(bo.getTaskId(), running.getVersion(),
+                AigErrorClassEnum.INVALID_REQUEST, "流程推进失败：" + e.getMessage()), null);
+        }
+        if (drive == null) {
+            // 驱动没给结论就不能假装"没事发生"：流程节点是否存在都不清楚
+            return new FlowGate(stopForFlow(bo.getTaskId(), running.getVersion(),
+                AigErrorClassEnum.INVALID_REQUEST, "流程推进没有返回结论，拒绝继续执行"), null);
+        }
+        if (drive.action() == AigFlowRuntime.Action.BLOCKED) {
+            return new FlowGate(stopForFlow(bo.getTaskId(), running.getVersion(),
+                AigErrorClassEnum.INVALID_REQUEST, "流程无法继续：" + drive.reason()), null);
+        }
+        if (drive.action() == AigFlowRuntime.Action.WAIT_HUMAN
+            || drive.action() == AigFlowRuntime.Action.WAIT_CONDITION) {
+            AigErrorClassEnum errorClass = drive.action() == AigFlowRuntime.Action.WAIT_HUMAN
+                ? AigErrorClassEnum.APPROVAL_REQUIRED : AigErrorClassEnum.INVALID_REQUEST;
+            return new FlowGate(stopForFlow(bo.getTaskId(), running.getVersion(), errorClass,
+                drive.reason()), null);
+        }
+        // WAIT_EXECUTION（节点已在执行中，本次是重试）与 START 都要在本次调用后收尾该节点
+        Long stepId = "STEP".equalsIgnoreCase(drive.nodeType()) ? drive.stepId() : null;
+        return new FlowGate(null, stepId);
+    }
+
+    /**
+     * 流程闸门未通过：把任务落成 NEED_HUMAN，并返回"没有调模型"的结果。
+     *
+     * @param taskId     任务ID
+     * @param version    期望版本（乐观锁）
+     * @param errorClass 错误分类（决定落点）
+     * @param reason     可读原因
+     * @return 执行结果
+     */
+    private AigTaskExecuteVo stopForFlow(Long taskId, Integer version, AigErrorClassEnum errorClass,
+                                         String reason) {
+        String text = StringUtils.substring(reason, 0, 500);
+        AigTaskStatusEnum resting = taskService.recordFailure(taskId, version, errorClass, text);
+        log.info("流程闸门未通过，未调用模型, taskId={}, errorClass={}, 落点={}",
+            taskId, errorClass.getCode(), resting == null ? null : resting.getCode());
+        AigTaskExecuteVo vo = new AigTaskExecuteVo();
+        vo.setTaskId(taskId);
+        vo.setSuccess(false);
+        vo.setErrorCode(errorClass.getCode());
+        vo.setReason(text);
+        vo.setStatus(resting == null ? null : resting.getCode());
         return vo;
     }
 
