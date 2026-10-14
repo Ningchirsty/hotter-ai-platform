@@ -96,3 +96,19 @@ export interface AigKnowledgeRetrievalTestVO {
   noSupport?: boolean;
   reason?: string;
 }
+
+/**
+ * 知识分段预览（设计 §6.4「解析预览、分段」）。
+ *
+ * 只带受限长度的 `textExcerpt`：**正文不在这个接口里**（在受控存储引用里），
+ * 两个布尔字段如实说明"正文在哪、有没有进索引"。
+ */
+export interface AigKnowledgeChunkVO {
+  chunkId?: string | number;
+  ordinal?: number;
+  locator?: string;
+  textExcerpt?: string;
+  dataLevel?: string;
+  hasFullText?: boolean;
+  indexed?: boolean;
+}

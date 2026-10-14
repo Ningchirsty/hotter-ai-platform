@@ -10,6 +10,7 @@ import org.dromara.aigov.knowledge.domain.AigKnowledgeDocumentVersion;
 import org.dromara.aigov.knowledge.domain.bo.AigKnowledgeCollectionBo;
 import org.dromara.aigov.knowledge.domain.bo.AigKnowledgeDocumentBo;
 import org.dromara.aigov.knowledge.domain.bo.AigKnowledgeRetrievalTestBo;
+import org.dromara.aigov.knowledge.domain.vo.AigKnowledgeChunkVo;
 import org.dromara.aigov.knowledge.domain.vo.AigKnowledgeDocumentRegisterVo;
 import org.dromara.aigov.knowledge.domain.vo.AigKnowledgeRetrievalTestVo;
 import org.dromara.aigov.knowledge.retrieval.KnowledgePort;
@@ -166,6 +167,26 @@ public class AigKnowledgeController extends BaseController {
     public R<String> retire(
         @NotNull(message = "版本ID不能为空") @PathVariable Long versionId) {
         return R.ok(knowledgeService.retire(versionId).getCode());
+    }
+
+    /**
+     * 列出某版本的分段预览（设计 §6.4：「解析预览、分段」）。
+     *
+     * <p><b>权限沿用 {@code aig:knowledge:retrieval:test}</b>：本接口给的是
+     * {@code text_excerpt}（受限长度预览），与"检索测试返回的引用预览"是同一类东西——
+     * 能跑检索测试的人本来就看得到命中片段的预览。**正文仍在受控存储引用里**，不经此接口暴露；
+     * 再单独开一个"只有管理员能勾"的权限点，只会让"谁能看预览"更难回答。</p>
+     *
+     * @param versionId 版本ID
+     * @param limit     最多返回几条（可空=默认 50，最多 200）
+     * @return 分段预览（按段序升序）
+     */
+    @SaCheckPermission(AigConstants.PERM_KNOWLEDGE_RETRIEVAL_TEST)
+    @GetMapping("/document-versions/{versionId:\\d+}/chunks")
+    public R<List<AigKnowledgeChunkVo>> chunks(
+        @NotNull(message = "版本ID不能为空") @PathVariable Long versionId,
+        @RequestParam(required = false) Integer limit) {
+        return R.ok(knowledgeService.listChunks(versionId, limit));
     }
 
     /**

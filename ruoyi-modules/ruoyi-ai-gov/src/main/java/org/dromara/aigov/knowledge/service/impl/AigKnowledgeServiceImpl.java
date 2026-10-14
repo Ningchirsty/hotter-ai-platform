@@ -5,16 +5,19 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.aigov.enums.AigDataLevelEnum;
+import org.dromara.aigov.knowledge.domain.AigKnowledgeChunk;
 import org.dromara.aigov.knowledge.domain.AigKnowledgeCollection;
 import org.dromara.aigov.knowledge.domain.AigKnowledgeDocument;
 import org.dromara.aigov.knowledge.domain.AigKnowledgeDocumentVersion;
 import org.dromara.aigov.knowledge.domain.AigKnowledgeProcessingJob;
 import org.dromara.aigov.knowledge.domain.bo.AigKnowledgeCollectionBo;
 import org.dromara.aigov.knowledge.domain.bo.AigKnowledgeDocumentBo;
+import org.dromara.aigov.knowledge.domain.vo.AigKnowledgeChunkVo;
 import org.dromara.aigov.knowledge.domain.vo.AigKnowledgeDocumentRegisterVo;
 import org.dromara.aigov.knowledge.enums.AigKnowledgeJobStatusEnum;
 import org.dromara.aigov.knowledge.enums.AigKnowledgeSourceTypeEnum;
 import org.dromara.aigov.knowledge.enums.AigKnowledgeStatusEnum;
+import org.dromara.aigov.knowledge.mapper.AigKnowledgeChunkMapper;
 import org.dromara.aigov.knowledge.mapper.AigKnowledgeCollectionMapper;
 import org.dromara.aigov.knowledge.mapper.AigKnowledgeDocumentMapper;
 import org.dromara.aigov.knowledge.mapper.AigKnowledgeDocumentVersionMapper;
@@ -25,6 +28,7 @@ import org.dromara.common.core.utils.StringUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -45,6 +49,7 @@ public class AigKnowledgeServiceImpl implements IAigKnowledgeService {
     private final AigKnowledgeDocumentMapper documentMapper;
     private final AigKnowledgeDocumentVersionMapper versionMapper;
     private final AigKnowledgeProcessingJobMapper jobMapper;
+    private final AigKnowledgeChunkMapper chunkMapper;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -169,6 +174,48 @@ public class AigKnowledgeServiceImpl implements IAigKnowledgeService {
             throw new ServiceException("文档版本不存在或已删除：" + versionId);
         }
         return version;
+    }
+
+    @Override
+    public List<AigKnowledgeChunkVo> listChunks(Long versionId, Integer limit) {
+        // 先校验版本存在：不校验的话，"版本填错"会表现成"这个版本没有分段"，
+        // 而后者会被读成"解析没产出内容"——两件事完全不同
+        getVersion(versionId);
+        int capped = resolveChunkLimit(limit);
+        List<AigKnowledgeChunk> rows = chunkMapper.selectList(
+            new LambdaQueryWrapper<AigKnowledgeChunk>()
+                .eq(AigKnowledgeChunk::getDocumentVersionId, versionId)
+                .orderByAsc(AigKnowledgeChunk::getOrdinal)
+                .last("limit " + capped));
+        List<AigKnowledgeChunkVo> result = new ArrayList<>();
+        for (AigKnowledgeChunk row : rows) {
+            AigKnowledgeChunkVo vo = new AigKnowledgeChunkVo();
+            vo.setChunkId(row.getChunkId());
+            vo.setOrdinal(row.getOrdinal());
+            vo.setLocator(row.getLocator());
+            vo.setTextExcerpt(row.getTextExcerpt());
+            vo.setDataLevel(row.getDataLevel());
+            vo.setHasFullText(StringUtils.isNotBlank(row.getTextRef()));
+            vo.setIndexed(StringUtils.isNotBlank(row.getIndexRef()));
+            result.add(vo);
+        }
+        return result;
+    }
+
+    /**
+     * 归一化分段预览的条数：空/非正数 → 默认；超过上限 → 按上限。
+     *
+     * <p>单独抽出来是为了能直接单测：写成内联表达式时，"非正数该回落还是该报错"这类判断
+     * 只能靠造一个数据库场景才能验证，而它恰恰是最容易被改错的一行。</p>
+     *
+     * @param limit 调用方给的条数（可空）
+     * @return 实际查询条数
+     */
+    static int resolveChunkLimit(Integer limit) {
+        if (limit == null || limit <= 0) {
+            return IAigKnowledgeService.DEFAULT_CHUNK_LIMIT;
+        }
+        return Math.min(limit, IAigKnowledgeService.MAX_CHUNK_LIMIT);
     }
 
     @Override

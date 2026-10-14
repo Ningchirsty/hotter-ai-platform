@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -59,6 +60,7 @@ class AigKnowledgeServiceImplTest {
     private AigKnowledgeDocumentMapper documentMapper;
     private AigKnowledgeDocumentVersionMapper versionMapper;
     private AigKnowledgeProcessingJobMapper jobMapper;
+    private org.dromara.aigov.knowledge.mapper.AigKnowledgeChunkMapper chunkMapper;
     private AigKnowledgeServiceImpl service;
 
     @BeforeAll
@@ -69,6 +71,7 @@ class AigKnowledgeServiceImplTest {
         TableInfoHelper.initTableInfo(assistant, AigKnowledgeDocument.class);
         TableInfoHelper.initTableInfo(assistant, AigKnowledgeDocumentVersion.class);
         TableInfoHelper.initTableInfo(assistant, AigKnowledgeProcessingJob.class);
+        TableInfoHelper.initTableInfo(assistant, org.dromara.aigov.knowledge.domain.AigKnowledgeChunk.class);
     }
 
     @BeforeEach
@@ -77,7 +80,9 @@ class AigKnowledgeServiceImplTest {
         documentMapper = mock(AigKnowledgeDocumentMapper.class);
         versionMapper = mock(AigKnowledgeDocumentVersionMapper.class);
         jobMapper = mock(AigKnowledgeProcessingJobMapper.class);
-        service = new AigKnowledgeServiceImpl(collectionMapper, documentMapper, versionMapper, jobMapper);
+        chunkMapper = mock(org.dromara.aigov.knowledge.mapper.AigKnowledgeChunkMapper.class);
+        service = new AigKnowledgeServiceImpl(collectionMapper, documentMapper, versionMapper, jobMapper,
+            chunkMapper);
         when(collectionMapper.insert(any(AigKnowledgeCollection.class))).thenAnswer(invocation -> {
             invocation.<AigKnowledgeCollection>getArgument(0).setCollectionId(COLLECTION_ID);
             return 1;
@@ -113,6 +118,69 @@ class AigKnowledgeServiceImplTest {
         version.setVersionId(id);
         version.setStatus(status);
         return version;
+    }
+
+    private static org.dromara.aigov.knowledge.domain.AigKnowledgeChunk chunk(long id, int ordinal,
+                                                                             String excerpt,
+                                                                             String textRef,
+                                                                             String indexRef) {
+        org.dromara.aigov.knowledge.domain.AigKnowledgeChunk chunk =
+            new org.dromara.aigov.knowledge.domain.AigKnowledgeChunk();
+        chunk.setChunkId(id);
+        chunk.setDocumentVersionId(VERSION_ID);
+        chunk.setOrdinal(ordinal);
+        chunk.setLocator("p." + ordinal);
+        chunk.setTextExcerpt(excerpt);
+        chunk.setTextRef(textRef);
+        chunk.setIndexRef(indexRef);
+        chunk.setDataLevel("STRICT");
+        return chunk;
+    }
+
+    @Test
+    @DisplayName("★ 分段预览：只给受限预览 + 如实告诉正文在哪里、有没有进索引")
+    void listChunksReturnsPreviewOnly() {
+        when(versionMapper.selectById(VERSION_ID)).thenReturn(version(VERSION_ID, "READY"));
+        when(chunkMapper.selectList(any())).thenReturn(List.of(
+            chunk(1L, 1, "第一段预览", "oss://knowledge/v1/chunk-1", "idx-1"),
+            chunk(2L, 2, "第二段预览", null, null)));
+
+        List<org.dromara.aigov.knowledge.domain.vo.AigKnowledgeChunkVo> chunks =
+            service.listChunks(VERSION_ID, null);
+
+        assertEquals(2, chunks.size());
+        assertEquals(1, chunks.get(0).getOrdinal());
+        assertEquals("第一段预览", chunks.get(0).getTextExcerpt());
+        assertEquals(Boolean.TRUE, chunks.get(0).getHasFullText());
+        assertEquals(Boolean.TRUE, chunks.get(0).getIndexed());
+        assertEquals(Boolean.FALSE, chunks.get(1).getHasFullText(), "没有正文引用就如实说没有");
+        assertEquals(Boolean.FALSE, chunks.get(1).getIndexed());
+        // 不含正文字段：VO 里根本没有正文（正文在受控存储引用里，见 text_ref）
+        assertFalse(chunks.get(0).toString().contains("oss://knowledge/v1/chunk-1"));
+    }
+
+    @Test
+    @DisplayName("★ 分段预览条数归一化：空/非正数回落到默认，超过上限按上限（一行的事，最容易改错）")
+    void chunkLimitIsNormalized() {
+        int def = org.dromara.aigov.knowledge.service.IAigKnowledgeService.DEFAULT_CHUNK_LIMIT;
+        int max = org.dromara.aigov.knowledge.service.IAigKnowledgeService.MAX_CHUNK_LIMIT;
+
+        assertEquals(def, AigKnowledgeServiceImpl.resolveChunkLimit(null));
+        assertEquals(def, AigKnowledgeServiceImpl.resolveChunkLimit(0));
+        assertEquals(def, AigKnowledgeServiceImpl.resolveChunkLimit(-5));
+        assertEquals(10, AigKnowledgeServiceImpl.resolveChunkLimit(10));
+        assertEquals(max, AigKnowledgeServiceImpl.resolveChunkLimit(max + 1));
+        assertTrue(def < max, "默认值应当小于上限，否则上限形同虚设");
+    }
+
+    @Test
+    @DisplayName("★ 分段预览：版本不存在时拒绝（否则会被读成「这一版没有分段」）")
+    void listChunksRejectsMissingVersion() {
+        when(versionMapper.selectById(VERSION_ID)).thenReturn(null);
+
+        assertThrows(ServiceException.class, () -> service.listChunks(VERSION_ID, 10));
+        assertThrows(ServiceException.class, () -> service.listChunks(null, 10));
+        verify(chunkMapper, never()).selectList(any());
     }
 
     @Test

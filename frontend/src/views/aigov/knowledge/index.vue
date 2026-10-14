@@ -129,8 +129,37 @@
         <el-descriptions-item label="生效开始">{{ version.effectiveFrom || '—' }}</el-descriptions-item>
         <el-descriptions-item label="生效结束">{{ version.effectiveTo || '—' }}</el-descriptions-item>
       </el-descriptions>
+      <el-alert
+        v-if="chunksLoaded"
+        type="info"
+        :closable="false"
+        class="mb-2"
+        show-icon
+        :title="chunkSummary(chunks)"
+      />
+      <el-table v-if="chunks.length" :data="chunks" border size="small" max-height="260">
+        <el-table-column label="段序" prop="ordinal" width="70" />
+        <el-table-column label="定位" prop="locator" width="140" show-overflow-tooltip />
+        <el-table-column label="预览（受限长度）" min-width="240" show-overflow-tooltip>
+          <template #default="{ row }">{{ chunkExcerptText(row) }}</template>
+        </el-table-column>
+        <el-table-column label="等级" prop="dataLevel" width="110" />
+        <el-table-column label="索引" width="100">
+          <template #default="{ row }">
+            <el-tag :type="row.indexed ? 'success' : 'info'" size="small">{{ chunkIndexText(row) }}</el-tag>
+          </template>
+        </el-table-column>
+      </el-table>
       <template #footer>
         <el-button @click="versionVisible = false">关闭</el-button>
+        <el-button
+          v-hasPermi="['aig:knowledge:retrieval:test']"
+          :disabled="!version"
+          :loading="chunksLoading"
+          @click="loadChunks"
+        >
+          看分段（预览）
+        </el-button>
         <el-button
           v-hasPermi="['aig:knowledge:document:manage']"
           :disabled="!version || !canAdvance(version.status)"
@@ -206,11 +235,13 @@ import {
   getDocumentVersion,
   listCollections,
   listDocuments,
+  listVersionChunks,
   registerDocument,
   retrievalTest,
   retireVersion
 } from '@/api/aigov/knowledge';
 import type {
+  AigKnowledgeChunkVO,
   AigKnowledgeCollectionForm,
   AigKnowledgeCollectionVO,
   AigKnowledgeDocumentForm,
@@ -224,6 +255,9 @@ import {
   DATA_LEVEL_OPTIONS,
   canAdvance,
   canRetire,
+  chunkExcerptText,
+  chunkIndexText,
+  chunkSummary,
   registerValidation,
   retrievalSummary,
   sourceTypeLabel,
@@ -249,6 +283,28 @@ const versionId = ref<string | number>('');
 const version = ref<AigKnowledgeDocumentVersionVO>();
 const retrievalForm = ref<AigKnowledgeRetrievalTestForm>({ collectionCodes: [], maxChunks: 5 });
 const retrievalResult = ref<AigKnowledgeRetrievalTestVO>();
+
+/** 分段预览（设计 §6.4「解析预览、分段」）：按版本加载，只显示受限长度的预览 */
+const chunks = ref<AigKnowledgeChunkVO[]>([]);
+const chunksLoaded = ref(false);
+const chunksLoading = ref(false);
+
+const loadChunks = async () => {
+  if (!version.value?.versionId) {
+    modal.msgWarning('请先填一个存在的版本ID');
+    return;
+  }
+  chunksLoading.value = true;
+  try {
+    const res = await listVersionChunks(version.value.versionId);
+    chunks.value = res.data || [];
+    chunksLoaded.value = true;
+  } catch (e: any) {
+    modal.alertError(e?.message || '读取分段预览失败');
+  } finally {
+    chunksLoading.value = false;
+  }
+};
 
 const loadCollections = async () => {
   const res = await listCollections();
@@ -330,10 +386,20 @@ const doRegisterDocument = async () => {
 const openVersion = () => {
   versionId.value = '';
   version.value = undefined;
+  // 换版本必须清掉上一版的分段：留在屏幕上会让"预览"跟"当前版本ID"对不上，
+  // 而这种不一致读起来像是这一版的分段内容
+  resetChunks();
   versionVisible.value = true;
 };
 
-const loadVersion = async () => {  if (!versionId.value) {
+const resetChunks = () => {
+  chunks.value = [];
+  chunksLoaded.value = false;
+};
+
+const loadVersion = async () => {
+  resetChunks();
+  if (!versionId.value) {
     version.value = undefined;
     return;
   }

@@ -1,6 +1,7 @@
 import type { AxiosPromise } from '@/utils/api-types';
 import request from '@/utils/request';
 import type {
+  AigKnowledgeChunkVO,
   AigKnowledgeCollectionForm,
   AigKnowledgeCollectionVO,
   AigKnowledgeDocumentForm,
@@ -70,4 +71,21 @@ export function retrievalTest(
   data: AigKnowledgeRetrievalTestForm
 ): AxiosPromise<AigKnowledgeRetrievalTestVO> {
   return request({ url: '/aigov/knowledge/retrieval-tests', method: 'post', data });
+}
+
+/**
+ * 某版本的分段预览（设计 §6.4「解析预览、分段」）。
+ *
+ * 权限沿用 `aig:knowledge:retrieval:test`：给的是受限长度的预览，与检索测试返回的
+ * 引用预览是同一类东西，**不是原文**。
+ */
+export function listVersionChunks(
+  versionId: string | number,
+  limit?: number
+): AxiosPromise<AigKnowledgeChunkVO[]> {
+  return request({
+    url: `/aigov/knowledge/document-versions/${versionId}/chunks`,
+    method: 'get',
+    params: { limit }
+  });
 }

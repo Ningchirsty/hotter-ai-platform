@@ -63,6 +63,32 @@ public interface IAigKnowledgeService {
     AigKnowledgeDocumentVersion getVersion(Long versionId);
 
     /**
+     * 列出某版本的分段预览（设计 §6.4 的「解析预览、分段」）。
+     *
+     * <p><b>只给预览不给正文</b>：返回的是受限长度的 {@code text_excerpt}，
+     * 正文仍在受控存储引用里（设计 §10.2）。这条边界不是"暂时没做"，
+     * 而是"维护人看解析效果"与"读取原文"本来就是两种权限、两件事。</p>
+     *
+     * <p>条数有上限（默认 {@value #DEFAULT_CHUNK_LIMIT}，最多 {@value #MAX_CHUNK_LIMIT}）：
+     * 一次把整本资料的分段拉进界面既慢又没人看，还容易把受限预览堆在浏览器里。</p>
+     *
+     * @param versionId 版本ID（必填）
+     * @param limit     最多返回几条（可空=默认；超过上限按上限）
+     * @return 分段预览（按段序升序）
+     */
+    List<org.dromara.aigov.knowledge.domain.vo.AigKnowledgeChunkVo> listChunks(Long versionId, Integer limit);
+
+    /**
+     * 分段预览的默认条数。
+     */
+    int DEFAULT_CHUNK_LIMIT = 50;
+
+    /**
+     * 分段预览的条数上限。
+     */
+    int MAX_CHUNK_LIMIT = 200;
+
+    /**
      * 推进一个处理阶段（设计 §6.4 的管道）。
      *
      * <p><b>幂等</b>：同一 {@code idempotencyKey} 重复调用不会重复推进（重试落到同一条任务）。

@@ -125,3 +125,31 @@ export function retrievalSummary(result?: { citations?: unknown[]; noSupport?: b
   const count = result.citations?.length ?? 0;
   return '命中 ' + count + ' 段可引用资料';
 }
+
+/** 分段预览文案（没有预览就如实说，不显示成空白） */
+export function chunkExcerptText(chunk?: { textExcerpt?: string }): string {
+  const text = chunk?.textExcerpt?.trim();
+  return text ? text : '（无预览）';
+}
+
+/** 索引状态文案：这是"解析之后有没有真的进检索"的唯一可见信号 */
+export function chunkIndexText(chunk?: { indexed?: boolean }): string {
+  return chunk?.indexed ? '已进索引' : '未进索引';
+}
+
+/**
+ * 分段预览摘要。
+ *
+ * <p>空列表**不能只说"没有数据"**：维护人需要区分"还没跑到分段阶段"与"解析没产出内容"，
+ * 所以这里把两种可能都写出来，并把"正文在哪、有没有进索引"一并说明——
+ * 只显示 excerpt 会让人以为"知识就是这一小段"。</p>
+ */
+export function chunkSummary(chunks?: { hasFullText?: boolean; indexed?: boolean }[]): string {
+  const list = chunks ?? [];
+  if (!list.length) {
+    return '这一版还没有分段：要么还没跑到「分段」阶段，要么解析没产出内容。';
+  }
+  const withFullText = list.filter((item) => item.hasFullText).length;
+  const indexed = list.filter((item) => item.indexed).length;
+  return `共 ${list.length} 段（每段只显示受限长度的预览）：正文在受控存储 ${withFullText} 段、已进检索索引 ${indexed} 段。`;
+}

@@ -3,6 +3,9 @@ import {
   STATUS_OPTIONS,
   canAdvance,
   canRetire,
+  chunkExcerptText,
+  chunkIndexText,
+  chunkSummary,
   registerValidation,
   retrievalSummary,
   sha256Valid,
@@ -77,5 +80,28 @@ describe('knowledge presentation', () => {
     );
     expect(retrievalSummary({ citations: [{}, {}] })).toBe('命中 2 段可引用资料');
     expect(retrievalSummary(undefined)).toBe('');
+  });
+
+  it('★ 分段预览：空列表要区分「还没到分段阶段」与「解析没产出内容」', () => {
+    expect(chunkSummary([])).toContain('还没有分段');
+    expect(chunkSummary([])).toContain('解析没产出内容');
+    expect(chunkSummary(undefined)).toContain('还没有分段');
+  });
+
+  it('★ 分段预览：摘要说清「正文在哪、有没有进索引」，预览缺失不显示成空白', () => {
+    const summary = chunkSummary([
+      { hasFullText: true, indexed: true },
+      { hasFullText: true, indexed: false },
+      { hasFullText: false, indexed: false }
+    ]);
+    expect(summary).toContain('共 3 段');
+    expect(summary).toContain('正文在受控存储 2 段');
+    expect(summary).toContain('已进检索索引 1 段');
+
+    expect(chunkExcerptText({ textExcerpt: ' 第一段 ' })).toBe('第一段');
+    expect(chunkExcerptText({ textExcerpt: '   ' })).toBe('（无预览）');
+    expect(chunkExcerptText(undefined)).toBe('（无预览）');
+    expect(chunkIndexText({ indexed: true })).toBe('已进索引');
+    expect(chunkIndexText({})).toBe('未进索引');
   });
 });
