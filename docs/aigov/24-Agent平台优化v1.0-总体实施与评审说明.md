@@ -68,7 +68,7 @@
 ## 4 验证汇总
 
 - 后端 `ruoyi-ai-gov`：**1167 tests / 0 failures / 0 errors**（基线 1053 → 新增 114）。
-- 前端 `frontend`：**45 files / 442 tests** 全过；`oxlint src` 526 files 0/0。
+- 前端 `frontend`：**46 files / 448 tests** 全过；`oxlint src` 531 files 0/0。
 - 关键守卫全部通过：`AigPermissionSeedCoverageTest`（权限串已种子 + menu_id 不撞）、
   `AigRepeatSubmitCoverageTest`（写接口防重或显式豁免）、`AigWp3WiringAndRoutesTest`。
 
@@ -111,8 +111,8 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
 
 1. **D05 续**：子 Agent 顺序编排（版本引用、最大深度、超时与预算、禁止循环）。
 2. **D12 续**：指标聚合查询与接口（从任务/审计/评测取数）、故障分类指标、资产索引增量同步。
-3. **界面**：知识中心页面（集合/文档/版本/检索测试）、工具页面、训练台三栏线框布局、
-   反馈问题队列页面。
+3. **界面**：**反馈与运营页面已交付**（`aigov/feedback/index`，含运营指标 + 问题队列 + 处理弹窗）；
+   其余页面（知识中心集合/文档/版本/检索测试、工具清单、训练台三栏线框）仍待做。
 4. **执行入口收窄**：§7.2 已落地 **有效知识范围 = 版本声明 ∩ 启用的 KNOWLEDGE 绑定**、
    **有效数据等级 = 各来源最高值**、**有效外发 = 各方取与**（`AigEffectivePolicy`）；
    并在计划中**冻结授权上下文**（身份 + 岗位卡片，来自启动记录，`AigAuthorizationContext`）。

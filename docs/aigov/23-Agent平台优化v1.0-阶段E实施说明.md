@@ -75,6 +75,22 @@
 
 ---
 
+### 1.7 反馈与运营页面（前端，E-5）
+
+- `frontend/src/api/aigov/feedback/`：`submitFeedback` / `listFeedbackQueue` / `handleFeedback` /
+  `getOperationsMetrics` / `listFaultClasses`；
+- `frontend/src/views/aigov/feedback/presentation.ts`（纯函数 + `presentation.spec.ts`）：
+  原因/结论/动作词表、码→文案（**认不出的码原样展示，不显示空白**）、结论标签色、
+  **提交前校验与后端同口径**（确认问题必须给动作；`PENDING` 不是可提交结论）、比率百分比、
+  故障分类行；
+- `frontend/src/views/aigov/feedback/index.vue`：运营指标卡片 + 问题队列表格 + 处理弹窗；
+- 页面菜单行 `script/sql/aig_feedback_pages.sql`（`component=aigov/feedback/index`，只授 `aig_admin`）。
+
+> 页面行与权限行**分开种**：权限行必须与接口同时上线（少了就是 403）；页面行只在组件交付后才种——
+> 先种会得到"点进去空白"的入口。
+
+---
+
 ## 2 本轮**不做**的事（明确的边界）
 
 1. **反馈接口与权限点（已在 E-2 补齐）**：`POST /aigov/feedback`（员工提交，`@SaCheckLogin`）、
@@ -102,6 +118,8 @@
   - `AigResultFeedbackServiceImplTest`（6）：非法原因/无关联拒绝、进入队列、
     确认必须给动作、确认记录动作与处理人、驳回清空动作且 PENDING 不可提交、反馈不存在可读拒绝。
 - 后端 `ruoyi-ai-gov` 全量：**1156 tests / 0 failures / 0 errors**。
+- 前端 `frontend`：**46 files / 448 tests** 全过（新增 `feedback/presentation.spec.ts` 6 条）；
+  `oxlint src` 531 files 0/0；`check-script-setup` 对新增 `.vue` OK。
 
 ---
 
