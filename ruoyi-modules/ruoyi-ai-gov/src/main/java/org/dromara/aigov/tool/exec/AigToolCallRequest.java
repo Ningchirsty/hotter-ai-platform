@@ -13,8 +13,9 @@ import java.time.LocalDateTime;
  * @param approvalRef    批准引用（人工确认/业务审批凭证ID，可空）
  * @param approvalDigest 批准时绑定的输入摘要（可空）
  * @param approvalExpiresAt 批准有效期（可空）
+ * @param agentVersionId 调用归属的 Agent 版本（可空；用来判定「是否命中有效绑定」）
  */
 public record AigToolCallRequest(Long taskId, String toolCode, String toolVersion, String idempotencyKey,
                                  String inputJson, String approvalRef, String approvalDigest,
-                                 LocalDateTime approvalExpiresAt) {
+                                 LocalDateTime approvalExpiresAt, Long agentVersionId) {
 }

@@ -61,6 +61,18 @@ class AigToolExecutionPolicyTest {
     }
 
     @Test
+    @DisplayName("★ 有效绑定：无绑定不额外收窄；有绑定时请求编码必须在其中")
+    void bindingsNarrowing() {
+        assertTrue(AigToolExecutionPolicy.bindingsPermit("a", null));
+        assertTrue(AigToolExecutionPolicy.bindingsPermit("a", java.util.List.of()));
+        assertTrue(AigToolExecutionPolicy.bindingsPermit("a", java.util.List.of("a", "b")));
+        assertTrue(AigToolExecutionPolicy.bindingsPermit(" A ", java.util.List.of("a")));
+        assertFalse(AigToolExecutionPolicy.bindingsPermit("c", java.util.List.of("a", "b")));
+        assertFalse(AigToolExecutionPolicy.bindingsPermit(null, java.util.List.of("a")));
+        assertFalse(AigToolExecutionPolicy.bindingsPermit("a", java.util.List.of(" ")));
+    }
+
+    @Test
     @DisplayName("输入摘要随参数变化（这是「参数变则批准失效」的基础）")
     void inputDigestChangesWithInput() {
         String a = AigToolExecutionPolicy.inputDigest("t", "1", "{\"x\":1}");

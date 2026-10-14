@@ -167,6 +167,21 @@
 
 ---
 
+### 1.14 工具许可命中有效绑定（D-12，设计 §7.5）
+
+设计原文：「工具许可既要命中版本声明，也要命中**有效绑定**与调用人权限；禁止工具优先。」
+
+- `AigToolCallRequest` 新增 `agentVersionId`（调用归属的 Agent 版本）；
+- `AigToolExecutionPolicy.bindingsPermit(toolCode, boundToolCodes)`（纯函数）：
+  **没有任何 TOOL 绑定时不额外收窄**（返回 true）；一旦有绑定，请求的工具编码必须在其中——
+  否则就是"绕过绑定直接用版本声明之外的工具"；
+- `AigToolRegistryServiceImpl#execute` 在操作类型判据之后、执行之前做该检查，
+  不通过即 `TOOL_NOT_BOUND` 拒绝（不落账本，因为未发生调用）。
+
+> 调用人权限那一层（§7.5 的第三项）依赖人员权限点判定，属执行入口接线的后续工作。
+
+---
+
 ## 2 本轮**不做**的事（明确的边界）
 
 1. **HTTP 接口与权限点（已在 D-2 补齐）**：`GET /aigov/tools`（可绑定工具清单）、
@@ -195,7 +210,7 @@
   - `AigToolRegistryServiceImplTest`（8）：只读执行并落账本、未接入不落账本、
     写操作批准缺失/过期不执行、有效批准执行、幂等回放、RUNNING→结果未知、
     执行异常→结果未知不重试、非法操作类型拒绝。
-- 后端 `ruoyi-ai-gov` 全量：**1195 tests / 0 failures / 0 errors**。
+- 后端 `ruoyi-ai-gov` 全量：**1201 tests / 0 failures / 0 errors**。
 
 ---
 

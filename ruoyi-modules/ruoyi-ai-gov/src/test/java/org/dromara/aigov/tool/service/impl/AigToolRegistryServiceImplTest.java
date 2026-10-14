@@ -3,6 +3,7 @@ package org.dromara.aigov.tool.service.impl;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.dromara.aigov.agent.domain.AigAgentResourceBinding;
 import org.dromara.aigov.tool.domain.AigToolCall;
 import org.dromara.aigov.tool.domain.AigToolDefinition;
 import org.dromara.aigov.tool.domain.AigToolDefinitionVersion;
@@ -56,6 +57,7 @@ class AigToolRegistryServiceImplTest {
     private AigToolDefinitionMapper definitionMapper;
     private AigToolDefinitionVersionMapper versionMapper;
     private AigToolCallMapper callMapper;
+    private org.dromara.aigov.agent.mapper.AigAgentResourceBindingMapper resourceBindingMapper;
     private TestExecutor executor;
     private AigToolRegistryServiceImpl service;
 
@@ -66,6 +68,7 @@ class AigToolRegistryServiceImplTest {
         TableInfoHelper.initTableInfo(assistant, AigToolDefinition.class);
         TableInfoHelper.initTableInfo(assistant, AigToolDefinitionVersion.class);
         TableInfoHelper.initTableInfo(assistant, AigToolCall.class);
+        TableInfoHelper.initTableInfo(assistant, AigAgentResourceBinding.class);
     }
 
     @BeforeEach
@@ -73,9 +76,12 @@ class AigToolRegistryServiceImplTest {
         definitionMapper = mock(AigToolDefinitionMapper.class);
         versionMapper = mock(AigToolDefinitionVersionMapper.class);
         callMapper = mock(AigToolCallMapper.class);
+        resourceBindingMapper = mock(org.dromara.aigov.agent.mapper.AigAgentResourceBindingMapper.class);
         executor = new TestExecutor("ref-1");
         service = new AigToolRegistryServiceImpl(definitionMapper, versionMapper, callMapper,
-            List.of(executor));
+            resourceBindingMapper, List.of(executor));
+        // 默认：没有启用的 TOOL 绑定（不额外收窄）
+        when(resourceBindingMapper.selectList(any())).thenReturn(List.of());
         when(definitionMapper.selectOne(any())).thenReturn(definition());
         when(callMapper.insert(any(AigToolCall.class))).thenAnswer(invocation -> {
             invocation.<AigToolCall>getArgument(0).setCallId(CALL_ID);
@@ -105,7 +111,12 @@ class AigToolRegistryServiceImplTest {
 
     private static AigToolCallRequest request(String approvalDigest, LocalDateTime expiresAt) {
         return new AigToolCallRequest(1L, "product_fact_query", "1.0.0", "key-1", INPUT,
-            approvalDigest == null ? null : "approval-1", approvalDigest, expiresAt);
+            approvalDigest == null ? null : "approval-1", approvalDigest, expiresAt, null);
+    }
+
+    private static AigToolCallRequest request(Long agentVersionId) {
+        return new AigToolCallRequest(1L, "product_fact_query", "1.0.0", "key-1", INPUT,
+            null, null, null, agentVersionId);
     }
 
     @Test
@@ -256,6 +267,35 @@ class AigToolRegistryServiceImplTest {
             .filter(item -> "2.0.0".equals(item.getVersion())).findFirst().orElseThrow();
         assertFalse(pending.getExecutable(), "未注册执行器必须显示为不可用");
         assertTrue(pending.getRequiresConfirmation(), "变更业务数据需要人工确认");
+    }
+
+    @Test
+    @DisplayName("★ §7.5：工具不在当前版本的有效绑定范围内 → 拒绝（绑定只做收窄）")
+    void toolOutsideBindingIsRejected() {
+        stubVersion("READ_ONLY_QUERY", "ref-1");
+        AigAgentResourceBinding binding = new AigAgentResourceBinding();
+        binding.setResourceCode("other_tool");
+        binding.setEnabled("Y");
+        when(resourceBindingMapper.selectList(any())).thenReturn(List.of(binding));
+
+        AigToolCallResult result = service.execute(request(4242L));
+
+        assertEquals(AigToolCallStatusEnum.FAILED, result.status());
+        assertEquals("TOOL_NOT_BOUND", result.errorCode());
+        assertEquals(0, executor.calls);
+    }
+
+    @Test
+    @DisplayName("§7.5：工具命中有效绑定 → 执行")
+    void toolInsideBindingExecutes() {
+        stubVersion("READ_ONLY_QUERY", "ref-1");
+        AigAgentResourceBinding binding = new AigAgentResourceBinding();
+        binding.setResourceCode("product_fact_query");
+        binding.setEnabled("Y");
+        when(resourceBindingMapper.selectList(any())).thenReturn(List.of(binding));
+
+        assertEquals(AigToolCallStatusEnum.SUCCEEDED, service.execute(request(4242L)).status());
+        assertEquals(1, executor.calls);
     }
 
     private static AigToolDefinitionVersion versionRow(Long toolId, String version, String op, String ref) {

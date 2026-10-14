@@ -3,6 +3,9 @@ package org.dromara.aigov.tool.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.dromara.aigov.agent.domain.AigAgentResourceBinding;
+import org.dromara.aigov.agent.enums.AigAgentResourceTypeEnum;
+import org.dromara.aigov.agent.mapper.AigAgentResourceBindingMapper;
 import org.dromara.aigov.tool.domain.AigToolCall;
 import org.dromara.aigov.tool.domain.AigToolDefinition;
 import org.dromara.aigov.tool.domain.AigToolDefinitionVersion;
@@ -51,6 +54,7 @@ public class AigToolRegistryServiceImpl implements IAigToolRegistryService {
     private final AigToolDefinitionMapper definitionMapper;
     private final AigToolDefinitionVersionMapper versionMapper;
     private final AigToolCallMapper callMapper;
+    private final AigAgentResourceBindingMapper resourceBindingMapper;
     private final List<ToolExecutor> executors;
 
     @Override
@@ -203,6 +207,11 @@ public class AigToolRegistryServiceImpl implements IAigToolRegistryService {
             request.inputJson());
         AigToolExecutionPolicy.Decision decision = AigToolExecutionPolicy.decide(version.getOperationType(),
             executor != null);
+        // §7.5：工具许可必须命中"有效绑定"（绑定只做收窄；无绑定不额外收窄）
+        if (!AigToolExecutionPolicy.bindingsPermit(request.toolCode(), toolBindings(request.agentVersionId()))) {
+            return AigToolCallResult.failed("TOOL_NOT_BOUND",
+                "该工具不在当前 Agent 版本的有效绑定范围内：toolCode=" + request.toolCode());
+        }
         if (!decision.allowed()) {
             if (!decision.confirmationRequired()) {
                 // 未接入 / 操作类型非法：明确拒绝，不落账本（没有发生过调用）
@@ -251,6 +260,30 @@ public class AigToolRegistryServiceImpl implements IAigToolRegistryService {
         log.info("工具调用完成, toolCode={}, version={}, status={}, receipt={}, replayed=false",
             request.toolCode(), request.toolVersion(), result.status().getCode(), result.receiptRef());
         return result;
+    }
+
+    /**
+     * 取某版本"启用的 TOOL 绑定编码"（用于把工具许可收窄，设计 §7.5）。
+     *
+     * @param agentVersionId 版本ID（可空）
+     * @return 绑定编码（无绑定返回空列表 = 不额外收窄）
+     */
+    private List<String> toolBindings(Long agentVersionId) {
+        if (agentVersionId == null) {
+            return List.of();
+        }
+        List<AigAgentResourceBinding> rows = resourceBindingMapper.selectList(
+            new LambdaQueryWrapper<AigAgentResourceBinding>()
+                .eq(AigAgentResourceBinding::getAgentVersionId, agentVersionId)
+                .eq(AigAgentResourceBinding::getResourceType, AigAgentResourceTypeEnum.TOOL.getCode())
+                .eq(AigAgentResourceBinding::getEnabled, "Y"));
+        List<String> codes = new ArrayList<>();
+        for (AigAgentResourceBinding row : rows) {
+            if (StringUtils.isNotBlank(row.getResourceCode())) {
+                codes.add(row.getResourceCode().trim());
+            }
+        }
+        return codes;
     }
 
     /**

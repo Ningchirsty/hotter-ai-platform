@@ -5,6 +5,7 @@ import org.dromara.aigov.tool.enums.AigToolOperationTypeEnum;
 import org.dromara.common.core.utils.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 工具执行的前置判据（设计 §7.5）。
@@ -65,6 +66,32 @@ public final class AigToolExecutionPolicy {
                 + "」，必须先取得人工确认；且确认绑定输入摘要，参数变化会使原批准失效");
         }
         return Decision.permit();
+    }
+
+    /**
+     * 工具是否命中"有效绑定"（设计 §7.5：「工具许可既要命中版本声明，也要命中有效绑定」）。
+     *
+     * <p>绑定只做<b>收窄</b>：没有任何 TOOL 绑定时不额外收窄（返回 true）；一旦有绑定，
+     * 请求的工具编码必须在其中——否则就是"绕过绑定直接用版本声明之外的工具"。</p>
+     *
+     * @param toolCode       请求的工具编码
+     * @param boundToolCodes 该版本启用的 TOOL 绑定编码（可空/空=不额外收窄）
+     * @return 允许返回 true
+     */
+    public static boolean bindingsPermit(String toolCode, List<String> boundToolCodes) {
+        if (boundToolCodes == null || boundToolCodes.isEmpty()) {
+            return true;
+        }
+        if (StringUtils.isBlank(toolCode)) {
+            return false;
+        }
+        String wanted = toolCode.trim();
+        for (String bound : boundToolCodes) {
+            if (bound != null && wanted.equalsIgnoreCase(bound.trim())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
