@@ -59,9 +59,11 @@ class CloudVideoContractTest {
   assertEquals("POST /v1/videos",calls.getLast());assertEquals("openai",remote.protocol());
   assertTrue(bodies.getLast().path("seconds").isTextual());assertEquals("720P",bodies.getLast().path("resolution").asText());
   assertEquals("https://example.org/product.png",bodies.getLast().path("images").get(0).asText());
+  assertFalse(bodies.getLast().has("metadata"));
   var wan3=draft(profile("wan3.0-video"),List.of(new CloudVideoRequest.Reference(7,"first_frame")),"I2V");
   client.submit(wan3,profile(wan3.model()),r->"https://example.org/product.png");
   assertEquals("POST /v1/videos",calls.getLast());assertEquals("https://example.org/product.png",bodies.getLast().path("image").asText());
+  assertFalse(bodies.getLast().has("metadata"));
   var seedance=draft(profile("doubao-seedance-2-5-260628"),List.of(),"T2V");
   remote=client.submit(seedance,profile(seedance.model()),r->"unused");
   assertEquals("POST /v1/video/generations",calls.getLast());assertTrue(bodies.getLast().path("content").isArray());
