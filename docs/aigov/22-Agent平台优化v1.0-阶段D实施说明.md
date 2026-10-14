@@ -238,21 +238,39 @@
    `NEED_HUMAN`，人工确认就只挂了个牌子、什么都没拦住；因此接线顺序是
    `登记步骤 → 闸门 → 派发子 Agent → 调模型 → 收尾 STEP 节点`。
 
+**人工确认的"恢复"入口（本轮补齐，同一段 §1.16）**：
+
+- **节点身份落账本**：`aig_task_step` 新增 `node_type` / `node_ref` 两列（建表脚本已含；
+  存量库用 `script/sql/aig_task_step_node_identity.sql` 补齐，information_schema + PREPARE 幂等）。
+  **为什么必须落库**：计划不落库，任务因"需要人工确认"停下之后就没有人能回答
+  "这个步骤是人工确认还是普通步骤"——确认接口无法校验批准对象，只能盲批（等于没有闸门）。
+  存量行刻意不回填：回填一个猜出来的类型，等于把"不知道"写成"知道"。
+- **读**：`GET /aigov/task/{taskId}/flow-nodes`（`aig:task:query`）——下标 / 类型 / 引用 / 状态 /
+  批准引用；`awaitingConfirmation` 由服务端判定，界面不自己拼"RUNNING 且 approvalRef 为空"
+  （两处判据迟早不一致，且不一致的方向是"界面说已批、服务端说没有"）。
+- **确认**：`POST /aigov/task/{taskId}/flow/confirm`（`aig:task:operate`，`nodeIndex` + `approvalRef`
+  必填）——校验靠**账本里的身份**，不重新解析版本配置（重解析可能得到一份与当时不同的计划，
+  把批准落到另一个节点上）；没有身份的存量步骤**拒绝盲批**并说明原因；重复确认返回既有凭据，
+  **不覆盖"谁批的"**。
+- **刻意不自动重新入队**：确认只回答"这个节点批准了"，是否继续跑由人再点一次
+  `POST /{taskId}/requeue` 决定——自动重跑会在一次"点确认"里夹带一次可能计费的执行。
+  完整操作序列：读 flow-nodes → 确认 → requeue。
+- 驱动侧同步收敛：节点对齐的过滤（只取 `FLOW_NODE`、只取首次 attempt）收进
+  `IAigTaskStepService#listFlowNodes` 一处；`advance` 以**账本身份优先**于执行计划
+  （不一致时 WARN 并写明以账本为准）。
+
 **仍未做（D05 剩余部分，边界写清）**：
 
 - **一次任务执行只对应流程的第一个 `STEP` 节点**。调度器目前一次执行只发起一次模型调用；
   声明了多个 `STEP` 节点的流程，其余节点保持 `PLANNED`，由后续 `advance` 继续推进——
   "按节点多次发起调用"需要动调度循环，属于独立变更，不在本轮。
-- **人工确认的"恢复"还没有 HTTP 入口**（`IAigFlowDriverService#confirm` 已实现并有测试）。
-  根因是**步骤账本没有记住"这个节点是什么类型"**：确认接口要校验"你批的是不是人工确认节点"，
-  而这份信息现在只在冻结执行计划里、没有随任务落库（`aig_task_step` 只记 kind=FLOW_NODE）。
-  要开这个入口，得先把节点身份落到步骤上（加列或写进 `remark`），属独立变更；
-  **在此之前"挂起"是可用的、"恢复"只到服务层**——所以声明了人工确认的流程会停在
-  `NEED_HUMAN`（fail-closed，不会自动放行，也不会假装批过）。
+- **条件结论的来源**（同一段 §1.16 表格）：本模块不含表达式引擎，条件判断目前只会停在
+  `NEED_HUMAN`（可见的"待接"），不会默认取真或假。
 - **WarmFlow / LiteFlow 适配器**：本模块不依赖这两种工作流引擎；适配点是
   `AigFlowRuntime` 的判定输入（节点顺序 + 步骤状态 + 条件结论），
   接哪套引擎都只需把它的执行状态映射成"步骤状态"。
-- 没有流程节点的界面（节点配置目前来自版本 `config_json` 的 `flowNodes`）。
+- 没有流程节点的界面（节点配置目前来自版本 `config_json` 的 `flowNodes`；
+  两个接口已可供界面接入）。
 
 ---
 
@@ -288,18 +306,29 @@
   - `AigFlowRuntimeTest`（15）：空流程、数量错位、上游失败、状态不可识别、人工确认
     （等待/已批准）、条件（无结论/为真/为假跳过其后）、已跳过视为已过、执行中等待、
     输出节点收尾、全部终态、类型不可识别、条件按 ref 取；
-  - `AigFlowDriverServiceImplTest`（13）：无节点不写、`STEP` 交调用方执行、条件真/假、
-    人工确认挂起与批准收尾、`confirm` 的恢复路径与三条拒绝（缺批准引用/非人工确认节点/
-    节点与步骤错位）、只按 `FLOW_NODE` 对齐（子 Agent 步骤与重试 attempt 不参与）、
+  - `AigFlowDriverServiceImplTest`（16）：无节点不写、`STEP` 交调用方执行、条件真/假、
+    人工确认挂起与批准收尾、`confirm` 的恢复路径与四条拒绝（缺批准引用 / 非人工确认节点 /
+    没有登记身份 / 下标越界或没有节点）、`confirm` 幂等（不覆盖已有批准引用）、
+    只按 `FLOW_NODE` 对齐（过滤在步骤服务那层）、账本身份优先于执行计划、
     `settle` 的成功/失败映射；
   - `AigTaskExecutorImplTest`（+5）：人工确认闸门拦在模型调用之前、
-    条件无结论同样拦下、流程受阻转人工、放行的 `STEP` 节点按成功/失败收尾。
+    条件无结论同样拦下、流程受阻转人工、放行的 `STEP` 节点按成功/失败收尾；
+  - `AigTaskFlowControllerTest`（6）：流程节点清单的下标与"等确认"判定、已批准不再显示为待批、
+    确认走驱动且作答重读账本、行消失时明确报错、两个入口的权限点、确认不自己迁移状态；
+  - `AigTaskStepServiceImplTest`（12）：节点身份落库、`listFlowNodes` 的 kind/attempt 过滤，
+    以及账本本身的迁移、CAS、幂等；
+  - `AigDeploySchemaReplayCoverageTest`（4，既有守卫）：新增补列脚本必须进发布工作流的重放清单。
 - 后端 `ruoyi-ai-gov` 全量：D 阶段落地后为 **1239 tests / 0 failures / 0 errors**；
-  加上随后资产索引同步的 6 条测试（`AigAssetIndexServiceImplTest` 2+4），**当前 1245**。
+  加上随后资产索引同步与人工确认入口的测试，**当前 1255**。
 
 ---
 
 ## 4 部署注意
 
-- 需执行 `script/sql/aig_tool.sql`（三张新表）。
-- 本轮**不新增接口、不新增权限点**，对既有生产行为零影响。
+- 需执行 `script/sql/aig_tool.sql`（三张新表）、`script/sql/aig_task_step.sql`（步骤账本）。
+- **存量库**还要执行 `script/sql/aig_task_step_node_identity.sql`（给已有的步骤账本补
+  `node_type` / `node_ref` 两列）；它已加进 `.github/workflows/deploy-poc.yml` 的重放清单，
+  由 `AigDeploySchemaReplayCoverageTest` 把关——**漏了会"部署成功但确认接口 500"**。
+- 本轮**不新增权限点**（两个流程节点接口分别复用 `aig:task:query` 与 `aig:task:operate`，
+  权限行早已存在，无需种子脚本）；新增 2 个接口，对既有生产行为零影响
+  （无流程节点的任务，驱动直接返回"没有流程节点"，不写任何状态、不改任何既有路径）。
