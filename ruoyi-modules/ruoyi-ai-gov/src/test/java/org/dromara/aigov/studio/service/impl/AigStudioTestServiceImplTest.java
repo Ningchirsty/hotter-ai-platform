@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.dromara.aigov.domain.bo.AigInvokeBo;
 import org.dromara.aigov.domain.vo.AigInvokeVo;
+import org.dromara.aigov.execution.AigExecutionPlan;
 import org.dromara.aigov.service.IAigInvokeService;
 import org.dromara.aigov.studio.config.AigStudioTestProperties;
 import org.dromara.aigov.studio.domain.AigStudioDraftContent;
@@ -16,6 +17,7 @@ import org.dromara.aigov.studio.domain.vo.AigStudioDraftDetailVo;
 import org.dromara.aigov.studio.domain.vo.AigStudioTestRunVo;
 import org.dromara.aigov.studio.enums.AigStudioDraftStatusEnum;
 import org.dromara.aigov.studio.enums.AigStudioTestStatusEnum;
+import org.dromara.aigov.studio.helper.AigStudioPromptBuilder;
 import org.dromara.aigov.studio.mapper.AigStudioExecutionLinkMapper;
 import org.dromara.aigov.studio.mapper.AigStudioRevisionMapper;
 import org.dromara.aigov.studio.service.IAigStudioDraftService;
@@ -31,6 +33,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -144,6 +147,69 @@ class AigStudioTestServiceImplTest {
         vo.setDecision("MODEL");
         vo.setReasonCode("OK");
         return vo;
+    }
+
+    @Test
+    @DisplayName("★ 测试/提交/正式执行三条路径的系统指令逐字同源（设计 §11.2 #4：同一配置编译结果）")
+    void systemPromptIsIdenticalAcrossTestSubmitAndProductionPaths() {
+        stubSuccessfulInvoke();
+
+        // ① 测试路径：发给网关的 prompt = 系统指令 + 「## 测试输入」+ 输入
+        service.runTest(DRAFT_ID, bo(), OWNER);
+        ArgumentCaptor<AigInvokeBo> testCaptor = ArgumentCaptor.forClass(AigInvokeBo.class);
+        verify(invokeService).invoke(testCaptor.capture());
+        String testPrompt = testCaptor.getValue().getPrompt();
+
+        // ② 提交路径写进版本的 promptTemplate、③ 正式执行冻结进计划的 systemPrompt —— 都是同一份编译结果
+        //    （提交路径见 AigStudioDraftServiceImpl#submit：setPromptTemplate(AigStudioPromptBuilder.build(content))）
+        AigStudioDraftContent content;
+        try {
+            content = JsonMapper.builder().build().readValue(content(), AigStudioDraftContent.class);
+        } catch (Exception e) {
+            throw new AssertionError("测试内容解析失败", e);
+        }
+        String system = AigStudioPromptBuilder.build(content);
+
+        assertTrue(testPrompt.startsWith(system),
+            "测试路径的系统指令必须与提交路径写入的 promptTemplate 逐字相同");
+        assertTrue(testPrompt.contains("## 测试输入"), "测试输入要单独成节，不能混进系统指令");
+
+        AigExecutionPlan plan = AigExecutionPlan.builder()
+            .planId("plan-cross-path")
+            .systemPrompt(system)
+            .build();
+        String productionPrompt = plan.composePrompt(bo().getInput());
+        assertTrue(productionPrompt.startsWith(system),
+            "正式执行的 prompt 也必须以同一份系统指令开头");
+        assertTrue(productionPrompt.contains("## 业务输入"), "正式执行的业务输入单独成节");
+
+        // 两条路径的差异只在"业务输入/测试输入"这一节：公共前缀至少覆盖完整条系统指令
+        // （实测会比系统指令多 5 个字符——两侧都用 "\n\n## " 起分节标题，那一段也是共有的）
+        int common = 0;
+        while (common < testPrompt.length() && common < productionPrompt.length()
+            && testPrompt.charAt(common) == productionPrompt.charAt(common)) {
+            common++;
+        }
+        assertTrue(common >= system.length(),
+            "公共前缀比系统指令短，说明两条路径的系统指令已经不一致（common=" + common
+                + "，system=" + system.length() + "）");
+        assertTrue(common < testPrompt.length() && common < productionPrompt.length(),
+            "两条路径的 prompt 不该完全相同：它们的输入分节标题一个叫「测试输入」、一个叫「业务输入」");
+
+        // 反证：内容一变，两条路径的系统指令同时变（否则上面的相等可能是"都在用某个常量"）
+        AigStudioDraftContent other;
+        try {
+            other = JsonMapper.builder().build()
+                .readValue(content().replace("节-", "别-"), AigStudioDraftContent.class);
+        } catch (Exception e) {
+            throw new AssertionError("测试内容解析失败", e);
+        }
+        assertNotEquals(system, AigStudioPromptBuilder.build(other),
+            "系统指令必须由内容编译而来，不能是常量");
+    }
+
+    private void stubSuccessfulInvoke() {
+        when(invokeService.invoke(any())).thenReturn(invoked("{\"answer\":\"x\"}", null));
     }
 
     // ------------------------------------------------------------------ 开关与入参

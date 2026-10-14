@@ -122,11 +122,16 @@
 ## 3 验证
 
 - 后端 `ruoyi-ai-gov` 全量：阶段 B 落地时为 **1085 tests / 0 failures**（阶段 A 后 1077 →
-  D07/D09 +2 → D11 +6）；加入 C/D/E 与流程/工具接线后，**当前 1271 tests / 0 failures**
+  D07/D09 +2 → D11 +6）；**全阶段累计（含 C/D/E 与流程/工具接线）见 `24-总体说明` §4**
+  ——各阶段文档写"当前 N"会每轮过期，所以这里只留本轮新增的数。
   （本轮三栏布局纯前端，不影响后端）。
+  - `AigStudioTestServiceImplTest`（12 → 13）：**三条路径的系统指令逐字同源**
+    （设计 §11.2 #4：测试路径发出的 prompt、提交路径写进版本的 promptTemplate、
+    正式执行冻结进计划的 systemPrompt 都来自同一个 `AigStudioPromptBuilder.build(content)`；
+    测试与正式执行的差异只在"测试输入 / 业务输入"那一节的标题）。
 - 前端（阶段 B 时）：**45 files / 442 tests 全过**（新增 `dirtyGuard.spec.ts` 5 条）；
-  加入 C/D/E 页面、任务流程面板、三栏结构守卫与左右栏拆分后，**当前 52 files / 520 tests 全过**。
-- `oxlint src`（阶段 B 时）：526 files，0 warnings / 0 errors；**当前 550 files 0/0**。
+  加入 C/D/E 页面、任务流程面板、三栏结构守卫与左右栏拆分后：**累计见 `24` §4**。
+- `oxlint src`（阶段 B 时）：526 files，0 warnings / 0 errors；**当前值见 `24` §4**。
 - `script/ci/check-script-setup.mjs`：改动的 `.vue` 均 OK（该脚本要求传入全部 .vue 才算覆盖达标，
   CI 里由调用方传入；当前 **205 个** `.vue`）。
 - 三栏布局的守卫：`frontend/src/views/aigov/studio/threeColumnLayout.spec.ts`（7 条，

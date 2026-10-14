@@ -58,6 +58,7 @@
 | `aefde3d5` | B/前端 | **员工业务状态**（设计 §6.8：服务端算好下发；执行成功未复核显示「草稿已生成 待复核」） |
 | `fad26a64` | —/CI | **验收脚本 `script/ci/verify-aigov-v1.mjs`**（编排既有守卫，一条命令出逐项结论）+ `check-script-setup.mjs` 支持 `--files-from`（Windows 命令行长度上限） |
 | 见本轮提交 | —/CI | **文档口径检查 `script/ci/check-aigov-docs.mjs`**（类名 / SQL 清单 / 测试数三类漂移，接入验收脚本最后一步） |
+| 见本轮提交 | B | **三条路径系统指令同源的用例**（设计 §11.2 #4）+ 阶段文档去掉会过期的"当前 N"数字 |
 
 ---
 
@@ -96,9 +97,10 @@
 
 ## 4 验证汇总
 
-- 后端 `ruoyi-ai-gov`：**1287 tests / 0 failures / 0 errors**（基线 1053 → 新增 234）。
-  > 各阶段文档（`19`–`23`）里的测试数**是各自增量当时的数**，会随迭代前移；
-  > **以本节（总体说明 §4）为准**——避免为了追数字反复改四五份文档，也避免"哪个数才是真的"。
+- 后端 `ruoyi-ai-gov`：**1288 tests / 0 failures / 0 errors**（基线 1053 → 新增 235）。
+  > 各阶段文档（`19`–`23`）里的测试数**是各自增量当时的数**；
+  > **以本节为准**——阶段文档只留"本轮新增几条"，不再写会过期的"当前 N"。
+  > 另有 `script/ci/check-aigov-docs.mjs` 会**机械核对**本节这个数与磁盘上的报告是否一致。
 - 前端 `frontend`：**52 files / 520 tests** 全过；`oxlint src` 550 files 0/0。
   其中 `views/aigov/sfcCompile.spec.ts` 真编译全部 29 个治理层 SFC
   （无 DOM 环境下的最低保证：模板/`<script setup>` 写错会在这里红）。
@@ -260,6 +262,7 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
 | 反馈是否会直接改线上 | `feedback/.../AigResultFeedbackServiceImpl`（动作只进改进流程） |
 | 训练台是否会静默丢内容 | `frontend/src/views/aigov/studio/dirtyGuard.ts` |
 | 训练台三栏是否还在 | `frontend/src/views/aigov/studio/threeColumnLayout.spec.ts`（源码结构 + SFC 真编译；**观感需人眼**） |
+| 测试/提交/正式执行是否同一份系统指令 | `AigStudioTestServiceImplTest#systemPromptIsIdenticalAcrossTestSubmitAndProductionPaths`（设计 §11.2 #4） |
 | 治理层页面模板有没有被写坏 | `frontend/src/views/aigov/sfcCompile.spec.ts`（全部 27 个 SFC 真编译） |
 | 分段预览会不会顺手把原文吐出来 | `AigKnowledgeChunkVo`（无正文字段）+ `AigKnowledgeServiceImpl#listChunks`（只取 `text_excerpt`） |
 | 退役一个知识版本会影响谁 | `AigKnowledgeController#references` → `AigAgentRegistryQueryServiceImpl#listResourceReferences`（解析 Agent 身份；停用中的也返回） |

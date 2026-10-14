@@ -379,7 +379,8 @@
   - `AigDeploySchemaReplayCoverageTest`（4，既有守卫）：新增补列脚本必须进发布工作流的重放清单。
   - `AigFlowConditionsTest`（9）：布尔给结论、缺失/字符串/数字/对象不给结论、快照不可解析或
     不是对象、只查条件节点、ref 为空或两端空白、部分取到结论。
-- 后端 `ruoyi-ai-gov` 全量：**1280 tests / 0 failures / 0 errors**（基线 1053；以 `24` §4 为准）。
+- 后端 `ruoyi-ai-gov` 全量：阶段 D 落地时为 1280 tests / 0 failures；
+  **全阶段累计见 `24` §4**（阶段文档只留本轮新增的数，避免每轮都要回来改）。
 - 前端：工具页 `presentation.spec.ts` 8 → 10 条（契约详情文案：未声明项明说、执行器引用名）。
 
 ---
