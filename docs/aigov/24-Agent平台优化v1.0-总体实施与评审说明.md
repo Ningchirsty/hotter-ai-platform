@@ -73,7 +73,7 @@
 
 ## 4 验证汇总
 
-- 后端 `ruoyi-ai-gov`：**1182 tests / 0 failures / 0 errors**（基线 1053 → 新增 129）。
+- 后端 `ruoyi-ai-gov`：**1186 tests / 0 failures / 0 errors**（基线 1053 → 新增 133）。
 - 前端 `frontend`：**49 files / 466 tests** 全过；`oxlint src` 543 files 0/0。
 - 关键守卫全部通过：`AigPermissionSeedCoverageTest`（权限串已种子 + menu_id 不撞）、
   `AigRepeatSubmitCoverageTest`（写接口防重或显式豁免）、`AigWp3WiringAndRoutesTest`。
@@ -99,6 +99,7 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
 | `script/sql/aig_tool.sql` | 工具定义/版本/调用账本（3 张） |
 | `script/sql/aig_result_feedback.sql` | 结果反馈（1 张） |
 | `script/sql/aig_launch_template.sql` | 启动任务模板（1 张） |
+| `script/sql/aig_task_step.sql` | 任务步骤账本（1 张） |
 
 **权限种子**（幂等，只授 `aig_admin`）：
 
@@ -107,6 +108,7 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
 | `script/sql/aig_knowledge_menu.sql` | `aig:knowledge:*`（6） |
 | `script/sql/aig_tool_menu.sql` | `aig:tool:list` / `aig:tool:manage` |
 | `script/sql/aig_feedback_menu.sql` | `aig:feedback:queue` / `aig:feedback:handle` |
+| `script/sql/aig_ops_menu.sql` | `aig:ops:metrics` |
 
 > 设计 §4.3 的「业务训练负责人」「知识维护人」等业务角色应由运维按需新建并单独授权；
 > 本仓当前只有 `aig_admin` / `aig_security` / `aig_viewer`，因此种子只授 `aig_admin`。
@@ -125,3 +127,46 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
    并在计划中**冻结授权上下文**（身份 + 岗位卡片，来自启动记录，`AigAuthorizationContext`）。
    尚未做：让知识/工具执行**读取**该上下文做进一步相交（当前它已冻结、可核验，但下游尚未消费）。
 5. **解析器与嵌入**：PDF/DOCX 解析引擎、嵌入模型与向量存储选型（设计明确需按试点资料评测）。
+
+---
+
+## 7 如何评审（约 30 分钟）
+
+### 7.1 先看结论（5 分钟）
+
+1. 本文 §2 的 D01–D12 对照表：**哪些 ✅、哪些 🔶、🔶 的边界是什么**；
+2. §3 阶段完成情况：A/B 完整，C/D/E 各自只剩明确列出的子项；
+3. §6 剩余工作：只有 5 条，且每条都写明了缺什么。
+
+### 7.2 跑一遍（10 分钟）
+
+```bash
+# 后端（注意根 pom 默认 maven.test.skip=true，必须显式关闭）
+./mvnw -o -Plocal -pl ruoyi-modules/ruoyi-ai-gov -am test -Dmaven.test.skip=false
+# 前端
+cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
+```
+
+关键守卫（即使只跑这三条也能证明"接口不会对所有人 403 / 写接口有防重 / 路由装配正常"）：
+
+```bash
+./mvnw -o -Plocal -pl ruoyi-modules/ruoyi-ai-gov -am test -Dmaven.test.skip=false \
+  -Dtest=AigPermissionSeedCoverageTest,AigRepeatSubmitCoverageTest,AigWp3WiringAndRoutesTest
+```
+
+### 7.3 抽点看代码（10 分钟）
+
+| 想验证什么 | 看哪里 |
+| --- | --- |
+| 执行是否真的按冻结版本而非调用方 Prompt | `execution/AigAgentExecutionResolver`、`task/.../AigTaskExecutorImpl#runOnceRunning` |
+| 授权是否逐层相交、等级取最高 | `execution/AigEffectivePolicy`（+ `AigEffectivePolicyTest`） |
+| 知识检索是否两道授权 | `knowledge/retrieval/AigKnowledgeRetrievalService`、`AigKnowledgeAccess` |
+| 写工具是否必须先确认、幂等 | `tool/exec/AigToolExecutionPolicy`、`tool/.../AigToolRegistryServiceImpl#execute` |
+| 反馈是否会直接改线上 | `feedback/.../AigResultFeedbackServiceImpl`（动作只进改进流程） |
+| 训练台是否会静默丢内容 | `frontend/src/views/aigov/studio/dirtyGuard.ts` |
+| 指标口径是否可复核 | `feedback/metrics/AigOperationsMetrics`（累计成果=经确认结果；分母 0 → 0） |
+
+### 7.4 部署前必做（5 分钟）
+
+按 §5 清单依次执行：**4 个建表脚本 + 4 个权限种子 + 3 个页面行脚本**（全部幂等）。
+注意：权限种子只授 `aig_admin`；设计 §4.3 的业务角色应由运维按需新建并单独授权。
