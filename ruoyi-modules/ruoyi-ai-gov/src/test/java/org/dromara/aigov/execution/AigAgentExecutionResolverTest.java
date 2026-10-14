@@ -2,16 +2,24 @@ package org.dromara.aigov.execution;
 
 import org.dromara.aigov.agent.domain.AigAgentResourceBinding;
 import org.dromara.aigov.agent.domain.AigAgentVersion;
+import org.dromara.aigov.agent.mapper.AigAgentResourceBindingMapper;
 import org.dromara.aigov.agent.mapper.AigAgentVersionMapper;
 import org.dromara.aigov.agent.service.IAigAgentRegistryService;
 import org.dromara.aigov.knowledge.retrieval.KnowledgePort;
+import org.dromara.aigov.workspace.launch.domain.AigLaunchRecord;
+import org.dromara.aigov.workspace.launch.mapper.AigLaunchRecordMapper;
 import org.dromara.common.core.exception.ServiceException;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import tools.jackson.databind.json.JsonMapper;
+
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -47,16 +55,26 @@ class AigAgentExecutionResolverTest {
     private static final long VERSION_ID = 8801L;
 
     private AigAgentVersionMapper agentVersionMapper;
-    private org.dromara.aigov.agent.mapper.AigAgentResourceBindingMapper resourceBindingMapper;
+    private AigAgentResourceBindingMapper resourceBindingMapper;
+    private AigLaunchRecordMapper launchRecordMapper;
     private IAigAgentRegistryService registryService;
     private KnowledgePort knowledgePort;
     private ISubAgentGraphResolver subAgentGraphResolver;
     private AigAgentExecutionResolver resolver;
 
+    @BeforeAll
+    static void initTableInfo() {
+        MybatisConfiguration configuration = new MybatisConfiguration();
+        MapperBuilderAssistant assistant = new MapperBuilderAssistant(configuration, "");
+        TableInfoHelper.initTableInfo(assistant, AigAgentResourceBinding.class);
+        TableInfoHelper.initTableInfo(assistant, AigLaunchRecord.class);
+    }
+
     @BeforeEach
     void setUp() {
         agentVersionMapper = mock(AigAgentVersionMapper.class);
-        resourceBindingMapper = mock(org.dromara.aigov.agent.mapper.AigAgentResourceBindingMapper.class);
+        resourceBindingMapper = mock(AigAgentResourceBindingMapper.class);
+        launchRecordMapper = mock(AigLaunchRecordMapper.class);
         registryService = mock(IAigAgentRegistryService.class);
         knowledgePort = mock(KnowledgePort.class);
         subAgentGraphResolver = mock(ISubAgentGraphResolver.class);
@@ -66,8 +84,11 @@ class AigAgentExecutionResolverTest {
         when(subAgentGraphResolver.childrenOf(any())).thenReturn(java.util.List.of());
         // 默认：没有启用的知识绑定（不额外收窄）
         when(resourceBindingMapper.selectList(any())).thenReturn(java.util.List.of());
-        resolver = new AigAgentExecutionResolver(agentVersionMapper, resourceBindingMapper, registryService,
-            knowledgePort, subAgentGraphResolver, JsonMapper.builder().build());
+        // 默认：没有岗位启动记录（无身份/卡片上下文）
+        when(launchRecordMapper.selectOne(any())).thenReturn(null);
+        resolver = new AigAgentExecutionResolver(agentVersionMapper, resourceBindingMapper,
+            launchRecordMapper, registryService, knowledgePort, subAgentGraphResolver,
+            JsonMapper.builder().build());
     }
 
     private static AigAgentVersion version(String configJson, String allowExternal, String promptTemplate) {
@@ -238,6 +259,40 @@ class AigAgentExecutionResolverTest {
         verify(knowledgePort).retrieve(captor.capture());
         assertEquals(java.util.Set.of("b"), captor.getValue().allowedCollectionCodes(),
             "绑定只应做收窄：声明 a,b + 绑定 b → 只检索 b");
+    }
+
+    @Test
+    @DisplayName("★ §7.1/§7.2：授权上下文（身份 + 岗位卡片）冻结进计划")
+    void authorizationContextIsFrozen() {
+        when(agentVersionMapper.selectById(VERSION_ID))
+            .thenReturn(version("{\"schemaVersion\":2}", "Y", "SYS"));
+        AigLaunchRecord record = new AigLaunchRecord();
+        record.setUserId(77L);
+        record.setOrgId(5L);
+        record.setRoleCode("ROLE_A");
+        record.setRoleVersionId(900L);
+        record.setActionCode("CARD_X");
+        when(launchRecordMapper.selectOne(any())).thenReturn(record);
+
+        AigExecutionPlan plan = resolve();
+
+        assertNotNull(plan.getAuthorizationContext());
+        assertEquals(77L, plan.getAuthorizationContext().callerId());
+        assertEquals(5L, plan.getAuthorizationContext().orgId());
+        assertEquals("ROLE_A", plan.getAuthorizationContext().roleCode());
+        assertEquals(900L, plan.getAuthorizationContext().roleVersionId());
+        assertEquals("CARD_X", plan.getAuthorizationContext().actionCode());
+    }
+
+    @Test
+    @DisplayName("§7.2：没有岗位启动记录时授权上下文为空（表示没有岗位上下文，不是放宽）")
+    void missingLaunchRecordYieldsNullContext() {
+        when(agentVersionMapper.selectById(VERSION_ID))
+            .thenReturn(version("{\"schemaVersion\":2}", "Y", "SYS"));
+
+        AigExecutionPlan plan = resolve();
+
+        assertNull(plan.getAuthorizationContext());
     }
 
     @Test

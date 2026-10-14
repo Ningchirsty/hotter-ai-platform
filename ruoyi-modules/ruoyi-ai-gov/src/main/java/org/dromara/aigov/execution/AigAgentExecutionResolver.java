@@ -52,6 +52,7 @@ public class AigAgentExecutionResolver implements IAigAgentExecutionResolver {
 
     private final AigAgentVersionMapper agentVersionMapper;
     private final AigAgentResourceBindingMapper resourceBindingMapper;
+    private final org.dromara.aigov.workspace.launch.mapper.AigLaunchRecordMapper launchRecordMapper;
     private final IAigAgentRegistryService registryService;
     private final KnowledgePort knowledgePort;
     private final ISubAgentGraphResolver subAgentGraphResolver;
@@ -154,6 +155,7 @@ public class AigAgentExecutionResolver implements IAigAgentExecutionResolver {
             .knowledgeRefs(config.getKnowledgeRefs())
             .toolRefs(config.getToolRefs())
             .subAgentVersionIds(subAgentVersionIds)
+            .authorizationContext(authorizationContext(taskId))
             .retrievedKnowledgeBlock(knowledgeBlock)
             .knowledgeCitations(citations)
             .build();
@@ -182,8 +184,32 @@ public class AigAgentExecutionResolver implements IAigAgentExecutionResolver {
     }
 
     /**
-     * 取某版本"启用的知识绑定编码"（用于把声明范围收窄，设计 §7.2）。
+     * 冻结授权上下文：从启动记录读"这次运行以谁的身份、在哪个岗位卡片下发生"（设计 §7.1/§7.2）。
      *
+     * <p>取不到（任务不是由岗位卡片启动、或启动记录已不存在）时返回 null——表示"没有岗位上下文"，
+     * 而不是"身份未知可以放宽"。</p>
+     *
+     * @param taskId 任务ID（可空）
+     * @return 授权上下文；无法确定时 null
+     */
+    private AigAuthorizationContext authorizationContext(Long taskId) {
+        if (taskId == null) {
+            return null;
+        }
+        org.dromara.aigov.workspace.launch.domain.AigLaunchRecord record = launchRecordMapper.selectOne(
+            new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<
+                org.dromara.aigov.workspace.launch.domain.AigLaunchRecord>()
+                .eq(org.dromara.aigov.workspace.launch.domain.AigLaunchRecord::getTaskId, taskId)
+                .last("limit 1"));
+        if (record == null) {
+            return null;
+        }
+        return new AigAuthorizationContext(record.getUserId(), record.getOrgId(), record.getRoleCode(),
+            record.getRoleVersionId(), record.getActionCode());
+    }
+
+    /**
+     * 取某版本"启用的知识绑定编码"（用于把声明范围收窄，设计 §7.2）。
      * @param agentVersionId 版本ID
      * @return 绑定编码（无绑定返回空列表 = 不额外收窄）
      */

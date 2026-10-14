@@ -60,7 +60,7 @@
 
 ## 4 验证汇总
 
-- 后端 `ruoyi-ai-gov`：**1156 tests / 0 failures / 0 errors**（基线 1053 → 新增 103）。
+- 后端 `ruoyi-ai-gov`：**1158 tests / 0 failures / 0 errors**（基线 1053 → 新增 105）。
 - 前端 `frontend`：**45 files / 442 tests** 全过；`oxlint src` 526 files 0/0。
 - 关键守卫全部通过：`AigPermissionSeedCoverageTest`（权限串已种子 + menu_id 不撞）、
   `AigRepeatSubmitCoverageTest`（写接口防重或显式豁免）、`AigWp3WiringAndRoutesTest`。
@@ -106,7 +106,8 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
 2. **D12 续**：指标聚合查询与接口（从任务/审计/评测取数）、故障分类指标、资产索引增量同步。
 3. **界面**：知识中心页面（集合/文档/版本/检索测试）、工具页面、训练台三栏线框布局、
    反馈问题队列页面。
-4. **执行入口收窄**：设计 §7.2 的"逐层相交"已落地 **有效知识范围 = 版本声明 ∩ 启用的
-   KNOWLEDGE 绑定**、**有效数据等级 = 各来源最高值**、**有效外发 = 各方取与**（`AigEffectivePolicy`）；
-   身份层与岗位卡片层的相交仍待执行入口接线时补齐。
+4. **执行入口收窄**：§7.2 已落地 **有效知识范围 = 版本声明 ∩ 启用的 KNOWLEDGE 绑定**、
+   **有效数据等级 = 各来源最高值**、**有效外发 = 各方取与**（`AigEffectivePolicy`）；
+   并在计划中**冻结授权上下文**（身份 + 岗位卡片，来自启动记录，`AigAuthorizationContext`）。
+   尚未做：让知识/工具执行**读取**该上下文做进一步相交（当前它已冻结、可核验，但下游尚未消费）。
 5. **解析器与嵌入**：PDF/DOCX 解析引擎、嵌入模型与向量存储选型（设计明确需按试点资料评测）。
