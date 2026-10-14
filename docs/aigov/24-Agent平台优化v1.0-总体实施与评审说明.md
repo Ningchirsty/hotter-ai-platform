@@ -132,7 +132,10 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
    ②WarmFlow/LiteFlow 适配器（适配点已明确：`AigFlowRuntime` 的判定输入是
    "节点顺序 + 步骤状态 + 条件结论"）；
    ③**条件结论的来源**——本模块不含表达式引擎，`advance(..., Map.of())` 意味着声明了条件判断的
-   流程会停在 `NEED_HUMAN`（可见的"待接"，不是默认放行），接上业务判定后才真正分流。
+   流程会停在 `NEED_HUMAN`（可见的"待接"，不是默认放行），接上业务判定后才真正分流；
+   ④**人工确认的 HTTP 入口**——"挂起"已可用、"恢复"只到服务层（`IAigFlowDriverService#confirm`，
+   有测试）；因为步骤账本还没记住"这个节点是什么类型"，确认接口无法校验"批的是不是人工确认节点"，
+   要先补节点身份的持久化。
    （子 Agent 的编排校验、派发、对账与对账定时作业均已实现并接线：`IAigSubAgentRunner` /
    `IAigSubAgentReconcileService`。）
 2. **D12 已完成**：资产索引**增量同步**（水位线 `syncNewForUser`，`?mode=incremental`）已落地，
