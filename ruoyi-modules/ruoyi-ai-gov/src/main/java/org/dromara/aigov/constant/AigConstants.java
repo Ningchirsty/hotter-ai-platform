@@ -470,6 +470,16 @@ public interface AigConstants {
     String PERM_TOOL_MANAGE = "aig:tool:manage";
 
     /**
+     * 反馈问题队列（读）：训练负责人看待处理/已确认/已驳回的反馈
+     */
+    String PERM_FEEDBACK_QUEUE = "aig:feedback:queue";
+
+    /**
+     * 处理反馈（写）：确认问题（并给出补知识/改规则/加用例动作）或驳回
+     */
+    String PERM_FEEDBACK_HANDLE = "aig:feedback:handle";
+
+    /**
      * 服务令牌管理权限码的公共前缀。
      *
      * <p><b>它同时是一条安全边界</b>：签发令牌时，凡以此前缀开头的 scope 一律拒绝

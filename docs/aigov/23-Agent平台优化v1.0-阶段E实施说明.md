@@ -39,14 +39,32 @@
 
 ---
 
+### 1.4 反馈接口与权限（E-2）
+
+| 方法与路径 | 门 | 说明 |
+| --- | --- | --- |
+| `POST /aigov/feedback` | `@SaCheckLogin` | 员工提交反馈（`@RepeatSubmit`） |
+| `GET /aigov/feedback/queue` | `aig:feedback:queue` | 问题队列（可空=默认 PENDING） |
+| `POST /aigov/feedback/{id}/handle` | `aig:feedback:handle` | 处理反馈（`@RepeatSubmit`） |
+
+种子脚本 `script/sql/aig_feedback_menu.sql`（ID 段 `1769200000000000001..`，只授 `aig_admin`）。
+提交用登录门而非权限点：反馈是员工动作，抬高入口只会让反馈收集失效。
+
+---
+
 ## 2 本轮**不做**的事（明确的边界）
 
-1. **HTTP 接口与权限点**：反馈提交/问题队列/处理接口与 `aig:feedback:*` 权限点、
-   以及运营指标的聚合查询（从任务/审计/评测表取数）尚未交付；
-   本轮只交付**账本 + 处理规则 + 指标口径**（可逐条单测的部分）。
-2. **资产索引增量同步**（§12.1 E）：现有资产索引是全量刷新（`AigAssetIndexService`）；
+1. **反馈接口与权限点（已在 E-2 补齐）**：`POST /aigov/feedback`（员工提交，`@SaCheckLogin`）、
+   `GET /aigov/feedback/queue`（`aig:feedback:queue`）、
+   `POST /aigov/feedback/{id}/handle`（`aig:feedback:handle`），
+   种子脚本 `script/sql/aig_feedback_menu.sql`。
+   提交刻意用登录门而不是权限点：反馈是员工动作，加权限点只会让"漏勾了就不能提反馈"——
+   而反馈收集最怕入口太高。
+2. **运营指标的聚合查询与接口**：本轮交付的是**指标口径**（纯函数）；从任务/审计/评测表
+   取数的聚合与接口尚未交付。
+3. **资产索引增量同步**（§12.1 E）：现有资产索引是全量刷新（`AigAssetIndexService`）；
    增量同步需要变更订阅/水位，属独立增量。
-3. **故障分类指标**：设计 §6.9 提到的"故障分类"依赖审计错误分类的聚合，随①一起做。
+4. **故障分类指标**：设计 §6.9 提到的"故障分类"依赖审计错误分类的聚合，随②一起做。
 
 ---
 
