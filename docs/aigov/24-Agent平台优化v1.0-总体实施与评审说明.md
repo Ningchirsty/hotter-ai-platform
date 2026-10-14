@@ -177,6 +177,8 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
    / `permissionPermit` + `ToolPermissionChecker`）。
    **仍未做**：机器身份（服务令牌 scope）作为工具调用人的授权路径——当前无登录态一律按无权限处理。
 5. **解析器与嵌入**：PDF/DOCX 解析引擎、嵌入模型与向量存储选型（设计明确需按试点资料评测）。
+   > **分段预览已交付**（`GET /document-versions/{id}/chunks` + 界面「看分段」）：
+   > 维护人现在就能判断"解析出来的分段靠不靠谱"，不必等真引擎接入才有这个能力。
 
 ---
 
