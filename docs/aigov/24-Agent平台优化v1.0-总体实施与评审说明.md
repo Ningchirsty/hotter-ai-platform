@@ -72,7 +72,7 @@
 ## 4 验证汇总
 
 - 后端 `ruoyi-ai-gov`：**1171 tests / 0 failures / 0 errors**（基线 1053 → 新增 118）。
-- 前端 `frontend`：**48 files / 461 tests** 全过；`oxlint src` 541 files 0/0。
+- 前端 `frontend`：**49 files / 466 tests** 全过；`oxlint src` 543 files 0/0。
 - 关键守卫全部通过：`AigPermissionSeedCoverageTest`（权限串已种子 + menu_id 不撞）、
   `AigRepeatSubmitCoverageTest`（写接口防重或显式豁免）、`AigWp3WiringAndRoutesTest`。
 
@@ -116,8 +116,8 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
 1. **D05 续**：子 Agent / 流程节点在运行时**真正驱动执行**（逐步调用、超时与预算、人工确认挂起/恢复）
    与 WarmFlow/LiteFlow 适配器；步骤账本已就位（`aig_task_step`，登记为 `PLANNED`）。
 2. **D12 续**：指标聚合查询与接口（从任务/审计/评测取数）、故障分类指标、资产索引增量同步。
-3. **界面**：反馈与运营页、知识中心页、**工具注册页**已交付；其余界面
-   （训练台三栏线框重构）仍待做。
+3. **界面**：反馈与运营页、知识中心页、工具注册页已交付；训练台已加**页头状态条 + 七步骤导航**
+   （含 `studio/layout.ts` 口径与单测）；**完整三栏组件化重构仍待做**。
 4. **执行入口收窄**：§7.2 已落地 **有效知识范围 = 版本声明 ∩ 启用的 KNOWLEDGE 绑定**、
    **有效数据等级 = 各来源最高值**、**有效外发 = 各方取与**（`AigEffectivePolicy`）；
    并在计划中**冻结授权上下文**（身份 + 岗位卡片，来自启动记录，`AigAuthorizationContext`）。

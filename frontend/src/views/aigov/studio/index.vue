@@ -135,6 +135,20 @@
       top="5vh"
       append-to-body
     >
+      <!-- 页头状态条（设计 §6.3：保存状态 + 修订号 + 草稿状态必须一直可见） -->
+      <div class="editor-strip mb-2">
+        <el-tag :type="saveStateTagType(localDirty, saving)" size="small">
+          {{ saveStateLabel(localDirty, saving) }}
+        </el-tag>
+        <span class="strip-item">修订号：{{ revisionText(expectedRevision) }}</span>
+        <span class="strip-item">草稿状态：{{ detail.status || '—' }}</span>
+      </div>
+
+      <!-- 左侧步骤导航（设计 §6.3 的七个步骤；当前为只读展示，顺序即编辑顺序） -->
+      <el-steps simple class="mb-2" :active="1">
+        <el-step v-for="step in STUDIO_STEPS" :key="step.key" :title="step.label" />
+      </el-steps>
+
       <el-alert v-if="localDirty" type="warning" :closable="false" class="mb-2">
         有<b>未保存</b>的改动。预检与提交都针对「已保存的内容」——请先保存。
       </el-alert>
@@ -398,6 +412,7 @@ import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import modal from '@/plugins/modal';
 import { PROMPT_SECTION_LABELS, diffSummary, parseDraftContent, sectionDiff } from './diff';
 import { DIRTY_CHOICES, beforeUnloadShouldWarn, needsGuard, unsavedMessage, type DirtyChoice } from './dirtyGuard';
+import { STUDIO_STEPS, revisionText, saveStateLabel, saveStateTagType } from './layout';
 import ProposalPanel from './components/ProposalPanel.vue';
 
 defineOptions({ name: 'AigStudio' });
@@ -781,6 +796,17 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.editor-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.strip-item {
+  font-size: 12px;
+  color: var(--app-text-color-secondary, #606266);
+}
+
 .diff-block {
   border-bottom: 1px dashed var(--app-border-color, #e4e7ed);
   padding: 6px 0;
