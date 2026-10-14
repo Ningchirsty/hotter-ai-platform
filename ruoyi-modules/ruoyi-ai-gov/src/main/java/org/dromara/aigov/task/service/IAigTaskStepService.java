@@ -34,6 +34,15 @@ public interface IAigTaskStepService {
     List<AigTaskStep> listSteps(Long taskId);
 
     /**
+     * 按 (任务, 序号) 取步骤（首次尝试）。
+     *
+     * @param taskId   任务ID
+     * @param sequence 序号
+     * @return 步骤；不存在返回 null
+     */
+    AigTaskStep findBySequence(Long taskId, int sequence);
+
+    /**
      * 把步骤置为执行中（{@code PLANNED → RUNNING}，CAS）。
      *
      * <p>已经是 {@code RUNNING} 时幂等返回（重试不报错）。</p>
@@ -42,6 +51,15 @@ public interface IAigTaskStepService {
      * @return 迁移后的步骤
      */
     AigTaskStep startStep(Long stepId);
+
+    /**
+     * 把步骤置为执行中，并记录引用（如子任务 {@code task:{id}}）。
+     *
+     * @param stepId    步骤ID
+     * @param outputRef 引用（可空）
+     * @return 迁移后的步骤
+     */
+    AigTaskStep startStep(Long stepId, String outputRef);
 
     /**
      * 收尾一个步骤（{@code RUNNING → SUCCEEDED/FAILED/SKIPPED}，CAS）。

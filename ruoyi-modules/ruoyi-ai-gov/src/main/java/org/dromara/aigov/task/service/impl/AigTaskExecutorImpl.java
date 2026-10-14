@@ -21,6 +21,7 @@ import org.dromara.aigov.task.domain.vo.AigTaskVo;
 import org.dromara.aigov.task.enums.AigTaskPolicyResultEnum;
 import org.dromara.aigov.task.enums.AigTaskStatusEnum;
 import org.dromara.aigov.task.service.IAigTaskExecutor;
+import org.dromara.aigov.task.service.IAigSubAgentRunner;
 import org.dromara.aigov.task.service.IAigTaskService;
 import org.dromara.aigov.task.service.IAigTaskStepService;
 import org.dromara.aigov.workspace.domain.AigScenarioVersion;
@@ -56,6 +57,7 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
     private final IAigScenarioFlowDispatcher scenarioFlowDispatcher;
     private final IAigAgentExecutionResolver executionResolver;
     private final IAigTaskStepService taskStepService;
+    private final IAigSubAgentRunner subAgentRunner;
     private final JsonMapper jsonMapper;
 
     @Override
@@ -157,6 +159,15 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
                 taskStepService.recordPlannedSteps(bo.getTaskId(), plan);
             } catch (Exception e) {
                 log.error("登记任务步骤失败（不影响本次执行）, taskId={}", bo.getTaskId(), e);
+            }
+            // ★ D05 运行时：按派发规格创建子任务（幂等键稳定，父任务重试不会建出第二套）。
+            //   子任务由平台调度执行；父步骤由对账（reconcile）按子任务终态收尾。
+            try {
+                subAgentRunner.dispatchChildren(bo.getTaskId(), task.getTaskType(),
+                    task.getProjectType(), task.getDataLevel(), snapshot.getSnapshotJson(),
+                    invokeBo.getMaxCost(), plan);
+            } catch (Exception e) {
+                log.error("派发子 Agent 失败（不影响本次执行）, taskId={}", bo.getTaskId(), e);
             }
         }
 

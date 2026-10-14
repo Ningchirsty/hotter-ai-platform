@@ -166,7 +166,8 @@ class AigScenarioDispatchE2ELiveTest {
         executor = new AigTaskExecutorImpl(taskService, mock(IAigInvokeService.class),
             dispatchProperties, resolver, dispatcher,
             mock(org.dromara.aigov.execution.IAigAgentExecutionResolver.class),
-            mock(org.dromara.aigov.task.service.IAigTaskStepService.class), jsonMapper);
+            mock(org.dromara.aigov.task.service.IAigTaskStepService.class),
+            mock(org.dromara.aigov.task.service.IAigSubAgentRunner.class), jsonMapper);
         reportService = new AigScenarioReportServiceImpl(taskService, jsonMapper);
     }
 

@@ -84,8 +84,26 @@ public class AigTaskStepServiceImpl implements IAigTaskStepService {
     }
 
     @Override
+    public AigTaskStep findBySequence(Long taskId, int sequence) {
+        if (taskId == null) {
+            return null;
+        }
+        return stepMapper.selectOne(new LambdaQueryWrapper<AigTaskStep>()
+            .eq(AigTaskStep::getTaskId, taskId)
+            .eq(AigTaskStep::getSequence, sequence)
+            .eq(AigTaskStep::getAttempt, FIRST_ATTEMPT)
+            .last("limit 1"));
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public AigTaskStep startStep(Long stepId) {
+        return startStep(stepId, null);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public AigTaskStep startStep(Long stepId, String outputRef) {
         AigTaskStep step = requireStep(stepId);
         AigTaskStepStatusEnum from = AigTaskStepStatusEnum.find(step.getStatus());
         if (from == AigTaskStepStatusEnum.RUNNING) {
@@ -96,7 +114,7 @@ public class AigTaskStepServiceImpl implements IAigTaskStepService {
             throw new ServiceException("步骤状态不允许开始：" + step.getStatus()
                 + "（stepId=" + stepId + "）");
         }
-        return casTransition(step, from, AigTaskStepStatusEnum.RUNNING, null, null, null, null);
+        return casTransition(step, from, AigTaskStepStatusEnum.RUNNING, outputRef, null, null, null);
     }
 
     @Override

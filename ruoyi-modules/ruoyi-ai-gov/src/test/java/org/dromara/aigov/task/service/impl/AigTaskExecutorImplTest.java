@@ -88,7 +88,8 @@ class AigTaskExecutorImplTest {
         executionResolver = mock(org.dromara.aigov.execution.IAigAgentExecutionResolver.class);
         executor = new AigTaskExecutorImpl(taskService, invokeService, scenarioDispatchProperties,
             scenarioVersionResolver, scenarioFlowDispatcher, executionResolver,
-            mock(org.dromara.aigov.task.service.IAigTaskStepService.class), JsonMapper.builder().build());
+            mock(org.dromara.aigov.task.service.IAigTaskStepService.class),
+            mock(org.dromara.aigov.task.service.IAigSubAgentRunner.class), JsonMapper.builder().build());
     }
 
     /**
