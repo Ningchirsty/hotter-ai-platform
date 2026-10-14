@@ -56,6 +56,7 @@
 | `b27301fc` | E | **问题队列按后续动作/原因过滤** + 版本与处理人可见（动作不再只躺在行上，负责用例的人能挑出自己那份） |
 | `032d704e` | B/前端 | **训练台左右两栏拆成子组件**（`StudioStepsColumn` / `StudioRevisionColumn`，右栏只收 props 回抛事件）+ 结构守卫随拆分调整 |
 | `aefde3d5` | B/前端 | **员工业务状态**（设计 §6.8：服务端算好下发；执行成功未复核显示「草稿已生成 待复核」） |
+| `fad26a64` | —/CI | **验收脚本 `script/ci/verify-aigov-v1.mjs`**（编排既有守卫，一条命令出逐项结论）+ `check-script-setup.mjs` 支持 `--files-from`（Windows 命令行长度上限） |
 
 ---
 
@@ -200,12 +201,35 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
 
 ### 7.2 跑一遍（10 分钟）
 
+**一条命令**（推荐；它会逐项打印结论，失败时退出码为 1）：
+
+```bash
+node script/ci/verify-aigov-v1.mjs            # 后端治理模块 + 前端全量 + 4 条守卫，约 1 分钟
+node script/ci/verify-aigov-v1.mjs --offline  # 依赖已缓存时加 -o 更快
+node script/ci/verify-aigov-v1.mjs --full-reactor   # 与 CI 同口径跑整棵反应堆（约 4 分钟，需媒体工具）
+```
+
+它把下面这些命令**固化**在一起，并顺手挡住三个"看起来通过"的坑：
+根 `pom.xml` 默认 `maven.test.skip=true`（不显式关掉 = 0 测试但 BUILD SUCCESS）、
+前端必须跑 `vitest` **全量**（用 preview 配置只覆盖少数 spec）、
+`check-script-setup.mjs` 必须拿到**全部** `.vue`（少传就是假通过）。
+守卫脚本本身是仓里既有的两个（`check-test-results.py` / `check-frontend-tests.mjs`），
+本脚本只做编排、不另写判定。
+
+手动等价命令（想单跑某一步时用）：
+
 ```bash
 # 后端（注意根 pom 默认 maven.test.skip=true，必须显式关闭）
 ./mvnw -o -Plocal -pl ruoyi-modules/ruoyi-ai-gov -am test -Dmaven.test.skip=false
 # 前端
 cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
 ```
+
+> ⚠️ `--full-reactor` 的前提与 CI 相同：**ffmpeg/ffprobe 等媒体工具要在 PATH 上**
+> （CI 在跑测试前有一步 "verified-media-tools"）。缺少它们时 `ruoyi-modules/ruoyi-ai`
+> 会有 4 个媒体用例报"图片格式转换服务不可用"——那是环境前提缺失，**不是本分支的回归**；
+> 脚本开跑前会探测并提示。此外它先 `clean`：台账守卫读的是磁盘上**所有** Surefire 报告，
+> 不清干净会把上一次用别的 profile 跑出来的旧失败算进这次。
 
 关键守卫（即使只跑这三条也能证明"接口不会对所有人 403 / 写接口有防重 / 路由装配正常"）：
 
@@ -240,7 +264,8 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
 
 ### 7.4 部署前必做（5 分钟）
 
-按 §5 清单依次执行：**5 个建表脚本 + 1 个补列脚本 + 4 个权限种子 + 3 个页面行脚本**。
+先跑一遍 **`node script/ci/verify-aigov-v1.mjs`**（全绿再往下走），再按 §5 清单依次执行：
+**5 个建表脚本 + 1 个补列脚本 + 4 个权限种子 + 3 个页面行脚本**。
 注意：**建表/补列脚本已经在发布工作流的重放清单里**（切镜像前自动跑，由
 `AigDeploySchemaReplayCoverageTest` 把关）；权限种子只授 `aig_admin`，设计 §4.3 的业务角色
 应由运维按需新建并单独授权；页面行脚本登记的是草稿/反馈/知识/工具页面菜单。
