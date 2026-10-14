@@ -55,8 +55,18 @@ public final class VideoTemplateDrafts {
         String prompt=TemplateVariables.resolve(body.path("variables"),template,properties.getBlockedTerms(),errors);
         if(!errors.isEmpty()) throw new TemplateFeedException(422,"模板参数校验未通过",errors);
         var fixed=cache.current().profiles().get(template.path("binding").path("params_profile").asText()).path("definition").path("fixed");
+        var references=references(template,body.path("variables"));
         return Map.of("templateId",id,"revision",template.path("revision").asInt(),"model",template.path("binding").path("model").asText(),
-            "capability","T2V","prompt",prompt,"seconds",fixed.path("duration").asInt(),"resolution","1080p",
-            "ratio",fixed.path("width").asInt()>fixed.path("height").asInt()?"16:9":"9:16","references",List.of());
+            "capability",references.isEmpty()?"T2V":"I2V","prompt",prompt,"seconds",fixed.path("duration").asInt(),"resolution","1080p",
+            "ratio",fixed.path("width").asInt()>fixed.path("height").asInt()?"16:9":"9:16","references",references);
+    }
+    static List<Map<String,Object>> references(JsonNode template,JsonNode variables) {
+        var images=new ArrayList<Map<String,Object>>();
+        for(var field:template.path("variables"))if("image".equals(field.path("type").asText())) {
+            String value=variables.path(field.path("key").asText()).asText().strip();
+            if(!value.isEmpty())images.add(Map.of("assetId",Long.parseLong(value),"role","first_frame"));
+        }
+        if(images.size()>1)throw new TemplateFeedException(422,"此模板一次使用一张参考图片");
+        return List.copyOf(images);
     }
 }

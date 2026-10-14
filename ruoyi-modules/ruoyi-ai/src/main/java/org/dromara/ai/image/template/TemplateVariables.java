@@ -18,6 +18,14 @@ final class TemplateVariables {
             String type=declaration.path("type").asText(); String text=value.isTextual()?value.asText().strip():"";
             if(declaration.path("required").asBoolean() && text.isEmpty()) error(errors,key,"required");
             if(!value.isMissingNode() && !value.isTextual()) error(errors,key,"text_required");
+            if("image".equals(type) && "video".equals(template.path("type").asText())) {
+                if(!text.isEmpty()) {
+                    try { if(!text.matches("[1-9][0-9]{0,18}") || Long.parseLong(text)<=0)error(errors,key,"image_asset_required"); }
+                    catch(NumberFormatException exception) { error(errors,key,"image_asset_required"); }
+                }
+                prompt=prompt.replace("{{"+key+"}}",text.isEmpty()?"":"上传的参考图片");
+                continue;
+            }
             if(!List.of("text","select").contains(type)) error(errors,key,"type_not_supported");
             if(text.codePointCount(0,text.length())>declaration.path("max_len").asInt(200)) error(errors,key,"max_length");
             if(text.contains("{{") || text.contains("}}")) error(errors,key,"placeholder_injection");
@@ -35,7 +43,7 @@ final class TemplateVariables {
             prompt=prompt.replace("{{"+key+"}}",text);
         }
         // Video square brackets describe shots and time ranges; declared variables use double braces.
-        if(prompt.contains("{{") || prompt.contains("}}") || (!"video".equals(template.path("type").asText()) && Pattern.compile("\\[[^\\]\\r\\n]{1,200}\\]").matcher(prompt).find())) error(errors,"prompt","unresolved_placeholder");
+        if(prompt.contains("{{") || prompt.contains("}}") || (!"video".equals(template.path("type").asText()) && Pattern.compile("\\[(?:[A-Z][A-Z0-9_ ]{0,80}|主体|商品|产品|品牌|标题|文案)\\]").matcher(prompt).find())) error(errors,"prompt","unresolved_placeholder");
         if(prompt.isBlank() || prompt.length()>8000) error(errors,"prompt","length");
         return prompt;
     }

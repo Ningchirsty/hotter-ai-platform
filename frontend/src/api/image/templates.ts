@@ -1,7 +1,7 @@
 import request from '@/utils/request';
 import type { AxiosPromise } from '@/utils/api-types';
 
-export interface FeedVariable { key: string; label: { zh: string; en: string }; type: 'text' | 'select'; required: boolean; max_len?: number; options?: string[] }
+export interface FeedVariable { key: string; label: { zh: string; en: string }; type: 'text' | 'select' | 'image'; required: boolean; max_len?: number; options?: string[] }
 export interface FeedTemplate { id: string; revision: number; title: { zh: string; en: string }; category: string; tags: string[]; variables: FeedVariable[]; cover: string; status: 'published' | 'maintenance'; canGenerate: boolean; outputSize: string; model?: string; durationSeconds?: number; hasVideoPreview?: boolean; promptTemplate?: string; output?: import('./types').CloudImageOutputParams }
 export interface FeedPage { items: FeedTemplate[]; total: number; categories: { id: string; zh: string; en: string }[]; feed: { version: number; online: boolean; checkedAt: string; syncCode: string } }
 export interface TemplateSubmission { template_id: string; revision: number; client_request_id: string; variables: Record<string, string> }

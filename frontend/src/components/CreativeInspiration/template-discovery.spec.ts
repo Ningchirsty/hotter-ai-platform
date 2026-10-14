@@ -15,7 +15,7 @@ const renderer = vue.createRenderer<Node, Node>({
   remove(n) { if (n.parent) n.parent.children.splice(n.parent.children.indexOf(n), 1); },
   parentNode: n => n.parent!, nextSibling: n => n.parent?.children[n.parent.children.indexOf(n) + 1]!
 });
-const api = Object.fromEntries(['listTemplates', 'getTemplate', 'prepareTemplate', 'prepareVideoTemplate', 'generateTemplate', 'getTemplateGeneration', 'retryTemplateGeneration'].map(key => [key, vi.fn()]));
+const api = Object.fromEntries(['listTemplates', 'getTemplate', 'prepareTemplate', 'prepareVideoTemplate', 'uploadVideoCloudAsset', 'generateTemplate', 'getTemplateGeneration', 'retryTemplateGeneration'].map(key => [key, vi.fn()]));
 const fixture = { id: 'poster-one', revision: 3, title: { zh: '极简商品海报', en: 'Poster' }, category: '设计海报', outputSize: '1024x1536', model: 'gpt-image-2.5-sunburst', status: 'published', canGenerate: true,
   variables: [{ key: 'subject', label: { zh: '商品', en: 'Subject' }, required: true, type: 'text' }], promptTemplate: '为{{subject}}设计极简海报，保留充足留白，使用杂志式文字排版。', output: { size: '1024x1536', n: 1, quality: 'high' } };
 const cover = vue.defineComponent({ props: ['id', 'revision', 'title', 'media'], setup: props => () => vue.h('img', { alt: props.title, 'data-template': props.id }) });
@@ -27,6 +27,7 @@ new Function('require', 'exports', javascript)((name: string) => {
   if (name === 'vue') return vue;
   if (name === '@/store/modules/user') return { useUserStore: () => ({ userId: 'test-user' }) };
   if (name === '@/api/image/templates') return api;
+  if (name === '@/api/video/cloud') return api;
   if (name === './template-reuse') return { creationMessage: (message?: string) => message || '' };
   if (name.endsWith('.vue')) return { __esModule: true, default: cover };
   throw new Error('Unexpected component dependency: ' + name);
@@ -95,5 +96,23 @@ describe('image template preview and editable reuse', () => {
     await click('使用模版');
     expect(applied[0][0]).toMatchObject({ media: 'video', prompt: video.promptTemplate, videoDraft: draft });
     expect(api.generateTemplate).not.toHaveBeenCalled(); expect(api.prepareTemplate).not.toHaveBeenCalled();
+  });
+  it('uploads a required video reference and applies an editable image-to-video draft', async () => {
+    const video = { ...fixture, model: 'doubao-seedance-2-5-260628', variables: [{ key: 'image', label: { zh: '参考图片' }, required: true, type: 'image' }], promptTemplate: '以{{image}}为首帧，镜头缓慢推进。' };
+    api.listTemplates.mockResolvedValue({ data: { items: [video], total: 1, categories: [], feed: { version: 24, online: true } } });
+    api.getTemplate.mockResolvedValue({ data: video });
+    api.uploadVideoCloudAsset.mockResolvedValue({ data: { assetId: '99' } });
+    const draft = { model: video.model, capability: 'I2V', prompt: '以上传的参考图片为首帧，镜头缓慢推进。', seconds: 5, resolution: '1080p', ratio: '16:9', references: [{ assetId: '99', role: 'first_frame' }] };
+    api.prepareVideoTemplate.mockResolvedValue({ data: draft });
+    await mount('video');
+    const file = { name: 'reference.png', type: 'image/png', size: 100 };
+    await nodes().find(n => n.type === 'input' && n.props.type === 'file')!.props.onChange({ target: { files: [file] } });
+    await vue.nextTick();
+    expect(api.uploadVideoCloudAsset).toHaveBeenCalledWith(file);
+    expect(nodes().find(n => n.type === 'textarea')?.props.value).toBe(draft.prompt);
+    await click('使用模版');
+    expect(api.prepareVideoTemplate).toHaveBeenCalledWith({ template_id: video.id, revision: 3, variables: { image: '99' } });
+    expect(applied[0][0]).toMatchObject({ media: 'video', capability: 'I2V', videoDraft: draft });
+    expect(api.generateTemplate).not.toHaveBeenCalled();
   });
 });
