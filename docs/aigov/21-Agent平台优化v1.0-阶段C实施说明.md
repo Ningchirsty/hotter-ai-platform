@@ -46,11 +46,31 @@
 
 ## 2 本轮**不做**的事（明确的边界）
 
-1. **知识中心页面（已在 C-4 交付）**：`frontend/src/views/aigov/knowledge/index.vue`
-   ——集合列表 + 文档登记/列表 + 版本处理（推进/退役，幂等键由前端每次换新）+ 检索测试；
+1. **知识中心页面（已在 C-4 交付，分段预览为本轮补齐）**：`frontend/src/views/aigov/knowledge/index.vue`
+   ——集合列表 + 文档登记/列表 + 版本处理（推进/退役，幂等键由前端每次换新）+ 检索测试
+   + **分段预览**（版本处理弹窗里「看分段（预览）」）；
    纯函数层 `presentation.ts`（状态/来源类型词表、状态标签色、推进/退役可用性、
-   **64 位 SHA-256 前端先校验**、登记校验与后端同口径、检索摘要）；页面行
-   `script/sql/aig_knowledge_pages.sql`。
+   **64 位 SHA-256 前端先校验**、登记校验与后端同口径、检索摘要、
+   **分段摘要/预览/索引状态**）；页面行 `script/sql/aig_knowledge_pages.sql`。
+
+### 2.5 分段预览（设计 §6.4「解析预览、分段」）
+
+设计 §6.4 要求"单份文档详情提供原文件信息、**解析预览、分段**、检索测试"。分段此前只在库里：
+
+- `GET /aigov/knowledge/document-versions/{versionId}/chunks?limit=` →
+  `AigKnowledgeChunkVo`（段序 / 定位 / **受限长度的预览** / 等级 / `hasFullText` / `indexed`）。
+- **只给预览不给正文**：正文按设计 §10.2 走受控存储引用（`aig_knowledge_chunk.text_ref`），
+  本接口暴露的是表里那段 `text_excerpt`——维护人据此判断"这一版解析/分段靠不靠谱"
+  （标题、页码、片段是否成句），而不是"想看看解析效果"就把整本资料拉进界面。
+  这不是"暂时没做"，而是**看解析效果**与**读原文**本来就是两种权限、两件事。
+- **权限沿用 `aig:knowledge:retrieval:test`**：它给的是与"检索测试返回的引用预览"同一类东西，
+  能跑检索测试的人本来就看得到命中片段的预览；再单开一个只有管理员能勾的点，
+  只会让"谁能看预览"更难回答。**没有新增权限点，也没有新增菜单行。**
+- 条数默认 50、上限 200（`resolveChunkLimit` 单独抽出来单测：非正数回落、超限截断）；
+  版本不存在时**拒绝**而不是回空列表——回空会被读成"这一版没有分段"。
+- 两个布尔字段（`hasFullText`/`indexed`）是刻意加的：没有它们，界面只能把"没有预览"
+  读成"没有正文"，而"有没有真的进检索索引"正是解析之后唯一的可见信号。
+
 2. **解析器 / OCR / 表格解析**：仓储层不实现解析算法，只承载"处理阶段"与结论；
    真实 PDF/DOCX 解析需接入解析引擎并按实际资料评估（设计 §6.4 明确"效果需评估"）。
 3. **嵌入与向量存储**：未选型、未接入。
@@ -91,6 +111,7 @@
 | `POST /document-versions/{id}/fail` | `aig:knowledge:document:manage` | 记录失败阶段 |
 | `POST /document-versions/{id}/retire` | `aig:knowledge:document:manage` | 退役版本 |
 | `POST /retrieval-tests` | `aig:knowledge:retrieval:test` | 只检索不生成 |
+| `GET /document-versions/{id}/chunks` | `aig:knowledge:retrieval:test` | **分段预览**（只给 `text_excerpt`，见 §2.5；无新权限点） |
 
 授权沿用既有口径：**只授 `aig_admin`**；设计 §4.3 的「知识维护人」是业务角色，应由运维按需新建并单独授权。
 
@@ -117,14 +138,19 @@
 
 - 新增测试 22 条：
   - `AigKnowledgeAccessTest`（5）：状态/有效期闭区间/集合授权/版本限制；
-  - `AigKnowledgeServiceImplTest`（13）：集合唯一与默认严格级、格式识别、重复提示不拒绝、
-    版本号冲突、管道推进与幂等、终态保护、CAS 冲突；
+  - `AigKnowledgeServiceImplTest`（13 → 16，含分段预览 3 条）：集合唯一与默认严格级、格式识别、
+    重复提示不拒绝、版本号冲突、管道推进与幂等、终态保护、CAS 冲突；
+    **分段预览只给预览 + 正文/索引状态如实**、条数归一化、版本不存在拒绝；
   - `AigKnowledgeRetrievalServiceTest`（4）：已授权片段返回可核验引用、非就绪不返回、空授权与空查询明说。
-- 后端 `ruoyi-ai-gov` 全量：**1198 tests / 0 failures / 0 errors**（全阶段累计）。
+- 后端 `ruoyi-ai-gov` 全量：阶段 C 时为 **1198 tests / 0 failures / 0 errors**；
+  全阶段累计到本轮为 **1274 tests / 0 failures / 0 errors**（以 `24-总体说明` §4 为准）。
+- 前端：`knowledge/presentation.spec.ts` 7 → 9 条（分段摘要、预览/索引文案）。
 
 ---
 
 ## 4 部署注意
 
 - 需在测试环境执行 `script/sql/aig_knowledge.sql`（五张新表）。
-- 本轮**不新增接口、不新增权限点**，对既有生产行为零影响。
+- **本轮不新增建表、不新增权限点**：分段预览接口复用 `aig:knowledge:retrieval:test`
+  （已有菜单行），对既有行为零影响。
+- 页面侧新增「看分段（预览）」按钮：它只读、不改处理状态；**预览不是原文**（原文在受控存储引用里）。
