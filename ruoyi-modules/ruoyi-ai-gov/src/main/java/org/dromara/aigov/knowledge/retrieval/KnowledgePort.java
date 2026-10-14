@@ -39,9 +39,10 @@ public interface KnowledgePort {
      * @param allowedVersionIds     允许的文档版本ID（可空=由集合解析）
      * @param allowedCollectionCodes 允许的集合编码（授权范围）
      * @param maxChunks             返回片段上限
+     * @param orgId                 调用方组织ID（可空=不做组织层收窄）
      */
     record RetrievalQuery(String query, Set<Long> allowedVersionIds, Set<String> allowedCollectionCodes,
-                          Integer maxChunks) {
+                          Integer maxChunks, Long orgId) {
     }
 
     /**

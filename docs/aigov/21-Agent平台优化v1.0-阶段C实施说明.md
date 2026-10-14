@@ -99,6 +99,20 @@
 
 ---
 
+### 2.4 身份层收窄：授权上下文进入知识检索（C-5，设计 §7.2）
+
+`AigAuthorizationContext`（阶段 A 冻结）现被**检索消费**：
+
+- `KnowledgePort.RetrievalQuery` 新增 `orgId`；
+- `AigKnowledgeAccess.orgAllowed(orgScope, orgId)`：`orgId` 为空 → 不做该层收窄
+  （如知识维护人的检索测试入口，按显式选择的集合测试）；`orgScope` 为空 → 不限组织；
+  否则按字符串等值匹配（当前 `org_scope` 是字符串列，尚无结构化组织字段）；
+- 检索按该判据过滤候选集合，解析器把 `authorizationContext.orgId()` 传下去。
+
+口径：组织不匹配的集合**不进入候选**；没有身份上下文时不因 `orgScope` 排除。
+
+---
+
 ## 3 验证
 
 - 新增测试 22 条：
@@ -106,7 +120,7 @@
   - `AigKnowledgeServiceImplTest`（13）：集合唯一与默认严格级、格式识别、重复提示不拒绝、
     版本号冲突、管道推进与幂等、终态保护、CAS 冲突；
   - `AigKnowledgeRetrievalServiceTest`（4）：已授权片段返回可核验引用、非就绪不返回、空授权与空查询明说。
-- 后端 `ruoyi-ai-gov` 全量：**1109 tests / 0 failures / 0 errors**（C-1 后 1107 + C-3 新增 2）。
+- 后端 `ruoyi-ai-gov` 全量：**1198 tests / 0 failures / 0 errors**（全阶段累计）。
 
 ---
 

@@ -87,4 +87,15 @@ class AigKnowledgeAccessTest {
             version("READY", null, null), Set.of(999L), CODES, "product_docs", LocalDateTime.now()));
     }
 
+    @Test
+    @DisplayName("★ 组织范围：不限则放行；有限则按身份等值匹配；无身份不做该层收窄")
+    void orgScopeJudge() {
+        assertTrue(AigKnowledgeAccess.orgAllowed(null, 5L), "不限组织");
+        assertTrue(AigKnowledgeAccess.orgAllowed("  ", 5L), "空白视为不限");
+        assertTrue(AigKnowledgeAccess.orgAllowed("5", 5L));
+        assertTrue(AigKnowledgeAccess.orgAllowed(" 5 ", 5L));
+        assertFalse(AigKnowledgeAccess.orgAllowed("999", 5L), "组织不匹配应排除");
+        assertTrue(AigKnowledgeAccess.orgAllowed("999", null), "无身份上下文时不做该层收窄");
+    }
+
 }

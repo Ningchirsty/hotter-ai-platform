@@ -106,6 +106,9 @@ public class AigAgentExecutionResolver implements IAigAgentExecutionResolver {
         // ★ C-3：知识检索在**解析阶段**完成并冻结进计划（设计 §7.1/§7.4）。
         //   检索带入授权范围（本版本的 knowledgeRefs）；只检索不生成；
         //   返回的引用来自服务端合法集合，因此可作为可核验来源。
+        // §7.1/§7.2：先冻结授权上下文（身份 + 岗位卡片），知识检索要按它做身份层收窄
+        AigAuthorizationContext authorization = authorizationContext(taskId);
+
         String knowledgeBlock = null;
         List<AigExecutionCitation> citations = new ArrayList<>();
         // §7.2：有效知识范围 = 版本声明 ∩ 启用的 KNOWLEDGE 绑定（绑定只做收窄；无绑定不额外收窄）
@@ -113,7 +116,8 @@ public class AigAgentExecutionResolver implements IAigAgentExecutionResolver {
             knowledgeBindings(version.getAgentVersionId()));
         if (!allowedCollections.isEmpty() && StringUtils.isNotBlank(businessInput)) {
             KnowledgePort.RetrievalResult retrieval = knowledgePort.retrieve(new KnowledgePort.RetrievalQuery(
-                businessInput, Set.of(), Set.copyOf(allowedCollections), DEFAULT_MAX_CITATIONS));
+                businessInput, Set.of(), Set.copyOf(allowedCollections), DEFAULT_MAX_CITATIONS,
+                authorization == null ? null : authorization.orgId()));
             for (KnowledgePort.Citation citation : retrieval.citations()) {
                 citations.add(new AigExecutionCitation(citation.chunkId(), citation.versionId(),
                     citation.documentId(), citation.sourceName(), citation.locator(),
@@ -166,7 +170,7 @@ public class AigAgentExecutionResolver implements IAigAgentExecutionResolver {
             .knowledgeRefs(config.getKnowledgeRefs())
             .toolRefs(config.getToolRefs())
             .subAgentVersionIds(subAgentVersionIds)
-            .authorizationContext(authorizationContext(taskId))
+            .authorizationContext(authorization)
             .flowNodes(flowNodes)
             .retrievedKnowledgeBlock(knowledgeBlock)
             .knowledgeCitations(citations)

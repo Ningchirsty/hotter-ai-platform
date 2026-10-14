@@ -60,4 +60,29 @@ public final class AigKnowledgeAccess {
         return version.getEffectiveTo() == null || !time.isAfter(version.getEffectiveTo());
     }
 
+    /**
+     * 组织范围是否允许（设计 §7.2「登录身份范围 ∩ …」）。
+     *
+     * <p>口径三条：</p>
+     * <ul>
+     *     <li>{@code orgId} 为空 → <b>不做该层收窄</b>（如知识维护人的检索测试入口，
+     *         它本来就要按显式选择的集合测试；执行路径一定带身份，因此这不算放宽）；</li>
+     *     <li>{@code orgScope} 为空 → 该集合不限组织，允许；</li>
+     *     <li>否则按字符串等值匹配（当前 {@code org_scope} 是字符串列，尚无结构化组织字段）。</li>
+     * </ul>
+     *
+     * @param orgScope 集合的组织范围（可空）
+     * @param orgId    调用方组织ID（可空）
+     * @return 允许返回 true
+     */
+    public static boolean orgAllowed(String orgScope, Long orgId) {
+        if (orgId == null) {
+            return true;
+        }
+        if (orgScope == null || orgScope.isBlank()) {
+            return true;
+        }
+        return orgScope.trim().equalsIgnoreCase(String.valueOf(orgId));
+    }
+
 }

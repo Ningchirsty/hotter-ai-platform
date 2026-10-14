@@ -112,7 +112,7 @@ class AigKnowledgeRetrievalServiceTest {
         stubAuthorizedScenario("READY");
 
         KnowledgePort.RetrievalResult result = service.retrieve(new KnowledgePort.RetrievalQuery(
-            "3-6 岁", Set.of(), Set.of("product_docs"), 5));
+            "3-6 岁", Set.of(), Set.of("product_docs"), 5, null));
 
         assertFalse(result.noSupport());
         assertEquals(1, result.citations().size());
@@ -129,7 +129,7 @@ class AigKnowledgeRetrievalServiceTest {
         stubAuthorizedScenario("FAILED");
 
         KnowledgePort.RetrievalResult result = service.retrieve(new KnowledgePort.RetrievalQuery(
-            "3-6 岁", Set.of(), Set.of("product_docs"), 5));
+            "3-6 岁", Set.of(), Set.of("product_docs"), 5, null));
 
         assertTrue(result.noSupport());
         assertTrue(result.reason().contains("就绪"), result.reason());
@@ -139,9 +139,9 @@ class AigKnowledgeRetrievalServiceTest {
     @DisplayName("没有授权范围 / 查询为空：明确说明，而不是回一个空列表让人猜")
     void emptyScopeIsExplicit() {
         assertTrue(service.retrieve(new KnowledgePort.RetrievalQuery(
-            "x", Set.of(), Set.of(), 5)).noSupport());
+            "x", Set.of(), Set.of(), 5, null)).noSupport());
         assertTrue(service.retrieve(new KnowledgePort.RetrievalQuery(
-            "  ", Set.of(), Set.of("product_docs"), 5)).noSupport());
+            "  ", Set.of(), Set.of("product_docs"), 5, null)).noSupport());
     }
 
     @Test
@@ -149,7 +149,39 @@ class AigKnowledgeRetrievalServiceTest {
     void unknownCollectionIsExplicit() {
         when(collectionMapper.selectList(any())).thenReturn(List.of());
         assertTrue(service.retrieve(new KnowledgePort.RetrievalQuery(
-            "x", Set.of(), Set.of("product_docs"), 5)).noSupport());
+            "x", Set.of(), Set.of("product_docs"), 5, null)).noSupport());
+    }
+
+    @Test
+    @DisplayName("★ 身份层收窄：组织范围不匹配的集合被排除（§7.2）")
+    void orgScopeMismatchIsExcluded() {
+        AigKnowledgeCollection scoped = collection();
+        scoped.setOrgScope("999");
+        when(collectionMapper.selectList(any())).thenReturn(List.of(scoped));
+        when(documentMapper.selectList(any())).thenReturn(List.of(document()));
+        when(versionMapper.selectList(any())).thenReturn(List.of(version("READY")));
+        when(chunkMapper.selectList(any())).thenReturn(List.of(chunk()));
+
+        KnowledgePort.RetrievalResult result = service.retrieve(new KnowledgePort.RetrievalQuery(
+            "3-6 岁", Set.of(), Set.of("product_docs"), 5, 5L));
+
+        assertTrue(result.noSupport(), "组织不匹配的集合不应进入候选");
+    }
+
+    @Test
+    @DisplayName("身份为空时不做组织层收窄（维护测试入口按显式集合检索）")
+    void nullOrgDoesNotNarrow() {
+        AigKnowledgeCollection scoped = collection();
+        scoped.setOrgScope("999");
+        when(collectionMapper.selectList(any())).thenReturn(List.of(scoped));
+        when(documentMapper.selectList(any())).thenReturn(List.of(document()));
+        when(versionMapper.selectList(any())).thenReturn(List.of(version("READY")));
+        when(chunkMapper.selectList(any())).thenReturn(List.of(chunk()));
+
+        KnowledgePort.RetrievalResult result = service.retrieve(new KnowledgePort.RetrievalQuery(
+            "3-6 岁", Set.of(), Set.of("product_docs"), 5, null));
+
+        assertTrue(result.noSupport() == false, "无身份上下文时不因 orgScope 排除");
     }
 
 }

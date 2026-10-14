@@ -71,6 +71,10 @@ public class AigKnowledgeRetrievalService implements KnowledgePort {
                 new LambdaQueryWrapper<AigKnowledgeCollection>()
                     .in(AigKnowledgeCollection::getCollectionCode, allowedCodes));
             for (AigKnowledgeCollection c : collections) {
+                // §7.2：身份层收窄——组织范围不匹配的集合不进入候选
+                if (!AigKnowledgeAccess.orgAllowed(c.getOrgScope(), query.orgId())) {
+                    continue;
+                }
                 collectionCodeById.put(c.getCollectionId(), c.getCollectionCode());
                 collectionIdByCode.put(c.getCollectionCode(), c.getCollectionId());
             }

@@ -185,7 +185,8 @@ public class AigKnowledgeController extends BaseController {
             bo.getQuery(),
             bo.getVersionIds() == null ? Set.of() : Set.copyOf(bo.getVersionIds()),
             bo.getCollectionCodes() == null ? Set.of() : Set.copyOf(bo.getCollectionCodes()),
-            bo.getMaxChunks()));
+            // 维护测试入口由权限点管控，按显式选择的集合检索；正式执行路径才带身份
+            bo.getMaxChunks(), null));
         AigKnowledgeRetrievalTestVo vo = new AigKnowledgeRetrievalTestVo();
         vo.setNoSupport(result.noSupport());
         vo.setReason(result.reason());

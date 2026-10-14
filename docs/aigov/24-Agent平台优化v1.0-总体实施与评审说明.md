@@ -76,7 +76,7 @@
 
 ## 4 验证汇总
 
-- 后端 `ruoyi-ai-gov`：**1195 tests / 0 failures / 0 errors**（基线 1053 → 新增 142）。
+- 后端 `ruoyi-ai-gov`：**1198 tests / 0 failures / 0 errors**（基线 1053 → 新增 145）。
 - 前端 `frontend`：**49 files / 466 tests** 全过；`oxlint src` 543 files 0/0。
 - 关键守卫全部通过：`AigPermissionSeedCoverageTest`（权限串已种子 + menu_id 不撞）、
   `AigRepeatSubmitCoverageTest`（写接口防重或显式豁免）、`AigWp3WiringAndRoutesTest`。
@@ -129,8 +129,9 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
    （含 `studio/layout.ts` 口径与单测）；**完整三栏组件化重构仍待做**。
 4. **执行入口收窄**：§7.2 已落地 **有效知识范围 = 版本声明 ∩ 启用的 KNOWLEDGE 绑定**、
    **有效数据等级 = 各来源最高值**、**有效外发 = 各方取与**（`AigEffectivePolicy`）；
-   并在计划中**冻结授权上下文**（身份 + 岗位卡片，来自启动记录，`AigAuthorizationContext`）。
-   尚未做：让知识/工具执行**读取**该上下文做进一步相交（当前它已冻结、可核验，但下游尚未消费）。
+   计划中**冻结授权上下文**（身份 + 岗位卡片）；且该上下文已被**知识检索消费**——
+   按 `orgScope` 做身份层收窄（`AigKnowledgeAccess.orgAllowed`）。
+   尚未做：工具执行侧按身份/卡片进一步相交（当前工具按版本声明 + 确认判据执行）。
 5. **解析器与嵌入**：PDF/DOCX 解析引擎、嵌入模型与向量存储选型（设计明确需按试点资料评测）。
 
 ---
