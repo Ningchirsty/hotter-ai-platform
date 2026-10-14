@@ -14,16 +14,19 @@ class CloudVideoExecutionTest {
  @TempDir Path temp;
  @Test void measuredSuccessArchivesAndOpensOnlyItsExactCombination()throws Exception{run(true);}
  @Test void missingArtifactFailsWithoutPromotingOrResubmitting()throws Exception{run(false);}
- @Test void recoverExistingRemoteAfterUnknownQueryNeverResubmitsOrConsumesBudget()throws Exception{
+ @Test void recoverExistingRemoteAfterUnknownQueryNeverResubmitsOrConsumesBudget()throws Exception{recover(false);}
+ @Test void recoveryRetainsTheSubmittedTransportAfterProviderRouteChanges()throws Exception{recover(true);}
+ void recover(boolean storedTransport)throws Exception{
   var p=new VideoCloudProperties();p.setEnabled(true);Path key=temp.resolve("key");Files.writeString(key,"offline-key");p.setApiKeyFile(key.toString());p.setVerificationFile(temp.resolve("ledger.json").toString());p.setValidationLimit(4);p.setValidationUserIds(List.of(7L));p.setValidationVariants(List.of("wan2.7-t2v|T2V|5|720p|16:9|true"));
   var request=new CloudVideoRequest("wan2.7-t2v","T2V","scene",5,"720p","16:9",List.of(),true,null,null,"once");
   var registry=new VideoCloudVerification(p);registry.reserve(request,7,11);
   assertThrows(VideoTaskException.class,()->registry.requireRecovery(request,8,11));
   assertThrows(VideoTaskException.class,()->registry.requireRecovery(request,7,12));
   var repo=mock(VideoTaskRepository.class);var storage=mock(AssetStorage.class);var probe=mock(MediaProbe.class);var client=mock(BluOctoVideoClient.class);
-  var task=Map.<String,Object>of("workflow_code",VideoCloudService.WORKFLOW,"status","FAILED","comfy_prompt_id","existing-remote","input_json",new ObjectMapper().writeValueAsString(Map.of("request",request)));
+  var task=new HashMap<String,Object>(Map.<String,Object>of("workflow_code",VideoCloudService.WORKFLOW,"status","FAILED","comfy_prompt_id","existing-remote","input_json",new ObjectMapper().writeValueAsString(Map.of("request",request))));
+  if(storedTransport)task.put("comfy_worker","BluOcto:generations");
   when(repo.requireOwnedTask(11,"tenant",7)).thenReturn(task);when(repo.transition(11,VideoTaskStatus.QUEUED,VideoTaskStatus.RUNNING,null,null)).thenReturn(1);when(repo.listEvents(11,"tenant")).thenReturn(List.of());
-  var remote=new BluOctoVideoClient.RemoteTask("existing-remote","alibaba");when(client.query(remote)).thenReturn(new ObjectMapper().readTree("{}"),new ObjectMapper().readTree("{\"status\":\"SUCCESS\"}"));
+  var remote=new BluOctoVideoClient.RemoteTask("existing-remote",storedTransport?"generations":"alibaba");when(client.query(remote)).thenReturn(new ObjectMapper().readTree("{}"),new ObjectMapper().readTree("{\"status\":\"SUCCESS\"}"));
   when(client.download(remote)).thenReturn(new byte[]{1});when(storage.storeOutput(anyString(),anyLong(),anyLong(),anyString(),any(),anyString())).thenReturn("output");when(storage.localPath("output")).thenReturn(temp.resolve("result.mp4"));when(probe.probe(any())).thenReturn(new MediaProbe.Probe(1280,720,24.0,5000L,true));
   when(repo.markSucceeded(eq(11L),anyLong(),anyLong(),anyInt(),anyInt(),anyDouble(),anyLong(),anyBoolean())).thenReturn(1);
   var service=new VideoCloudService(p,repo,storage,probe,client,new java.util.concurrent.atomic.AtomicLong(100)::incrementAndGet);

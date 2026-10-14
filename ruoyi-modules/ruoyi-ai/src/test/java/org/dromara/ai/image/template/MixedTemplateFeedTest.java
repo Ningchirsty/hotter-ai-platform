@@ -85,4 +85,28 @@ class MixedTemplateFeedTest {
             JsonNode request=TemplateFeedCache.JSON.readTree(invalid);assertThrows(TemplateFeedException.class,()->VideoTemplateDrafts.prepare(cache,properties(),request));
         }
     }
+    @Test void requiredVideoImageBecomesOwnedAssetReferenceInsteadOfPromptText() throws Exception {
+        var cache=cache(false);
+        var template=(com.fasterxml.jackson.databind.node.ObjectNode)cache.require("video-example");
+        template.set("variables",TemplateFeedCache.JSON.readTree("[{\"key\":\"image\",\"type\":\"image\",\"required\":true}]"));
+        ((com.fasterxml.jackson.databind.node.ObjectNode)template.path("prompt")).put("zh","以{{image}}为首帧，镜头缓慢推进。");
+        for(String value:List.of("","https://example.com/reference.png","-1","9223372036854775808")) {
+            var body=TemplateFeedCache.JSON.createObjectNode().put("template_id","video-example").put("revision",1);
+            body.putObject("variables").put("image",value);
+            assertThrows(TemplateFeedException.class,()->VideoTemplateDrafts.prepare(cache,properties(),body));
+        }
+        var body=TemplateFeedCache.JSON.readTree("{\"template_id\":\"video-example\",\"revision\":1,\"variables\":{\"image\":\"123\"}}");
+        var draft=VideoTemplateDrafts.prepare(cache,properties(),body);
+        assertEquals("I2V",draft.get("capability"));assertEquals("以上传的参考图片为首帧，镜头缓慢推进。",draft.get("prompt"));
+        assertEquals(List.of(Map.of("assetId",123L,"role","first_frame")),draft.get("references"));
+        ((com.fasterxml.jackson.databind.node.ObjectNode)template.path("variables").get(0)).put("required",false);
+        ((com.fasterxml.jackson.databind.node.ObjectNode)body.path("variables")).remove("image");
+        assertEquals("T2V",VideoTemplateDrafts.prepare(cache,properties(),body).get("capability"));
+    }
+    @Test void literalImageCreditsAndJsonArraysAreNotUnfilledVariables() throws Exception {
+        var template=TemplateFeedCache.JSON.readTree("{\"type\":\"image\",\"variables\":[],\"prompt\":{\"zh\":\"底部印刷[作品设计：小林]，配色为[\\\"#fff\\\",\\\"#000\\\"]。\"}}");
+        var errors=new ArrayList<Map<String,String>>();
+        assertEquals(template.path("prompt").path("zh").asText(),TemplateVariables.resolve(TemplateFeedCache.JSON.createObjectNode(),template,List.of(),errors));
+        assertTrue(errors.isEmpty(),errors.toString());
+    }
 }

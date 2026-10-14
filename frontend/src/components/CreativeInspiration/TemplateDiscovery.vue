@@ -30,20 +30,21 @@
         <TemplateVideoPreview v-if="media === 'video'" :id="selected.id" :revision="selected.revision" :title="selected.title.zh" :available="selected.hasVideoPreview === true" detail />
         <TemplateCover v-else :media="media" :id="selected.id" :revision="selected.revision" :title="selected.title.zh" />
         <div><span class="tag">{{ selected.category }}</span><h3>{{ media === 'image' ? '参考模板，创作同款风格' : '复用此模板' }}</h3><p>{{ media === 'image' ? '图像创作' : '视频创作' }} · {{ selected.outputSize.replace('x', ' × ') }} · {{ media === 'image' ? '1 张' : selected.durationSeconds + ' 秒' }}</p>
-          <section v-if="media === 'image'" class="template-recipe" aria-label="模板提示词和参数">
+          <section class="template-recipe" aria-label="模板提示词和参数">
             <label for="template-image-prompt">模板提示词</label>
-            <textarea id="template-image-prompt" :value="imagePromptPreview" rows="7" readonly aria-label="模板提示词" />
-            <dl><dt>模型</dt><dd>{{ selected.model || '暂不可用' }}</dd><dt>尺寸</dt><dd>{{ selected.output?.size?.replace('x', ' × ') || selected.outputSize.replace('x', ' × ') }}</dd><dt>画质</dt><dd>{{ selected.output?.quality || '模型默认' }}</dd><dt>数量</dt><dd>{{ selected.output?.n || 1 }} 张</dd></dl>
-            <p>参考图用于查看风格、排版和构图。修改主体或文案后再生成；不会直接复制示例图。</p>
+            <textarea id="template-image-prompt" :value="templatePromptPreview" rows="7" readonly aria-label="模板提示词" />
+            <dl><dt>模型</dt><dd>{{ selected.model || '暂不可用' }}</dd><dt>尺寸</dt><dd>{{ selected.output?.size?.replace('x', ' × ') || selected.outputSize.replace('x', ' × ') }}</dd><template v-if="media === 'image'"><dt>画质</dt><dd>{{ ({ low: '标准', medium: '精细', high: '高质量' } as Record<string, string>)[selected.output?.quality || ''] || '模型默认' }}</dd><dt>数量</dt><dd>{{ selected.output?.n || 1 }} 张</dd></template><template v-else><dt>时长</dt><dd>{{ selected.durationSeconds }} 秒</dd></template></dl>
+            <p>{{ media === 'image' ? '参考图用于查看风格、排版和构图。修改主体或文案后再生成；不会直接复制示例图。' : '示例视频用于参考镜头、动作和叙事。带入中文描述后可继续修改，不会直接复制示例视频。' }}</p>
           </section>
           <el-form label-position="top"><el-form-item v-for="v in selected.variables" :key="v.key" :label="v.key === 'subject' ? '画面主体' : v.label.zh || v.label.en" :required="v.required">
             <el-select v-if="v.type === 'select'" v-model="variables[v.key]"><el-option v-for="option in v.options" :key="option" :label="option" :value="option" /></el-select>
+            <div v-else-if="v.type === 'image'"><input type="file" accept="image/png,image/jpeg,image/webp" :aria-label="v.label.zh || '参考图片'" :disabled="preparing || uploadingReference" @change="uploadReference(v.key, $event)" /><p>{{ uploadingReference ? '正在上传参考图片…' : referenceNames[v.key] ? '已上传：' + referenceNames[v.key] : '上传参考图片后使用模板；建议图片比例与输出比例一致。' }}</p></div>
             <el-input v-else v-model="variables[v.key]" :maxlength="v.max_len || 200" show-word-limit />
           </el-form-item></el-form>
           <p v-if="!selected.variables.length">模板已包含完整创作描述，带入表单后可继续编辑。</p>
           <p v-if="formError" class="error" role="alert">{{ formError }}</p>
           <p>{{ media === 'image' ? '带入参考图、提示词和原参数后可继续编辑，按当前模型支持的范围调整参数，再提交生成。' : '复用视频模板的镜头与叙事，带入后可调整描述与输出设置。' }}</p>
-          <el-button v-hasPermi="[media + ':creation:submit']" :type="media === 'image' ? 'primary' : undefined" :loading="preparing" :disabled="busy || preparing || selected.status === 'maintenance'" @click="applyTemplate">{{ media === 'image' ? '使用模版' : selected.status === 'maintenance' ? '暂不可用' : '带入编辑' }}</el-button>
+          <el-button v-hasPermi="[media + ':creation:submit']" type="primary" :loading="preparing || uploadingReference" :disabled="busy || preparing || uploadingReference || selected.status === 'maintenance'" @click="applyTemplate">使用模版</el-button>
         </div>
       </div>
     </el-dialog>
@@ -55,6 +56,7 @@ import { useUserStore } from '@/store/modules/user';
 import { prepareVideoTemplate, listTemplates, getTemplate, prepareTemplate, generateTemplate, getTemplateGeneration, retryTemplateGeneration, type FeedTemplate, type FeedPage, type TemplateSubmission, type TemplateGeneration } from '@/api/image/templates';
 import TemplateCover from './TemplateCover.vue';
 import TemplateVideoPreview from './TemplateVideoPreview.vue';
+import { uploadVideoCloudAsset } from '@/api/video/cloud';
 import type { InspirationRoute } from './types';
 import { creationMessage } from './template-reuse';
 import type { CloudImageModelsVO } from '@/api/image/types';
@@ -62,6 +64,7 @@ const props = withDefaults(defineProps<{ busy?: boolean; media?: 'image' | 'vide
 const busy = computed(() => props.busy === true);
 const emit = defineEmits<{ 'task-created': []; apply: [route: InspirationRoute, title: string] }>();
 const preparing = ref(false);
+const uploadingReference = ref(false), referenceNames = ref<Record<string, string>>({});
 const userStore = useUserStore();
 const storageKey = computed(() => 'hotter-template-action-v2-' + String(userStore.userId));
 const items = ref<FeedTemplate[]>([]), categories = ref<FeedPage['categories']>([]), feed = ref<FeedPage['feed']>();
@@ -70,7 +73,10 @@ const pageSize = 6, pages = computed(() => Math.max(1, Math.ceil(total.value / p
 const selected = ref<FeedTemplate>(), dialog = ref(false), variables = ref<Record<string, string>>({}), sending = ref(false), formError = ref('');
 const pending = ref<TemplateGeneration>(), savedAction = ref<{ body: TemplateSubmission; requestId?: string }>();
 const deferred = ref<{ body: TemplateSubmission; requestId: string; result: TemplateGeneration }[]>([]);
-const imagePromptPreview = computed(() => (selected.value?.promptTemplate || '').replace(/\{\{([^{}]+)\}\}/g, (placeholder, key: string) => variables.value[key]?.trim() || placeholder));
+const templatePromptPreview = computed(() => (selected.value?.promptTemplate || '').replace(/\{\{([^{}]+)\}\}/g, (placeholder, key: string) => {
+  const value = variables.value[key]?.trim();
+  return value ? selected.value?.variables?.find(field => field.key === key)?.type === 'image' ? '上传的参考图片' : value : placeholder;
+}));
 let sequence = 0, debounce: ReturnType<typeof setTimeout> | undefined, interval: ReturnType<typeof setInterval> | undefined;
 async function load() {
   const current = ++sequence; loading.value = true; error.value = '';
@@ -83,8 +89,8 @@ async function load() {
 function refresh() { page.value = 1; void load(); }
 function nextBatch() { page.value = page.value < pages.value ? page.value + 1 : 1; void load(); }
 async function open(item: FeedTemplate) {
-  if (preparing.value) return;
-  formError.value = ''; variables.value = {};
+  if (preparing.value || uploadingReference.value) return;
+  formError.value = ''; variables.value = {}; referenceNames.value = {};
   try { const r = await getTemplate(item.id, props.media); selected.value = r.data; dialog.value = true; }
   catch { void load(); }
 }
@@ -94,6 +100,15 @@ function persist() {
   else localStorage.removeItem(storageKey.value);
 }
 function clearPending() { savedAction.value = undefined; pending.value = undefined; persist(); }
+async function uploadReference(key: string, event: Event) {
+  const file = (event.target as HTMLInputElement).files?.[0];
+  if (!file || !selected.value || props.media !== 'video' || uploadingReference.value) return;
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 20 * 1024 * 1024) { formError.value = '请上传不超过 20MB 的 JPG、PNG 或 WEBP 图片'; return; }
+  const template = selected.value; uploadingReference.value = true; formError.value = '';
+  try { const result = await uploadVideoCloudAsset(file); if (selected.value === template && dialog.value) { variables.value[key] = String(result.data.assetId); referenceNames.value[key] = file.name; } }
+  catch { formError.value = '参考图片上传失败，请重新上传'; }
+  finally { uploadingReference.value = false; }
+}
 function deferPending() {
   if (sending.value || !savedAction.value || pending.value?.status !== 'unknown' || !pending.value.request_id || savedAction.value?.requestId !== pending.value.request_id) return;
   if (!deferred.value.some(record => record.requestId === pending.value!.request_id)) deferred.value.push({ body: savedAction.value.body, requestId: pending.value.request_id, result: pending.value });
@@ -108,7 +123,7 @@ async function queryDeferred(record: (typeof deferred.value)[number]) {
   } finally { sending.value = false; }
 }
 async function applyTemplate() {
-  if (!selected.value || busy.value || preparing.value || selected.value.status === 'maintenance') return;
+  if (!selected.value || busy.value || preparing.value || uploadingReference.value || selected.value.status === 'maintenance') return;
   const template = selected.value;
   const title = template.title.zh || template.title.en;
   preparing.value = true; formError.value = '';
@@ -117,7 +132,7 @@ async function applyTemplate() {
     if (props.media === 'video') {
       const r = await prepareVideoTemplate(body);
       if (busy.value || !dialog.value || selected.value !== template) return;
-      emit('apply', { media: 'video', source: 'cloud', capability: 'T2V', workflowCode: 'cloud-bluocto-video', model: r.data.model, prompt: r.data.prompt, videoDraft: r.data, templateTitle: title, reason: '', referenceHint: '' }, title);
+      emit('apply', { media: 'video', source: 'cloud', capability: r.data.capability as InspirationRoute['capability'], workflowCode: 'cloud-bluocto-video', model: r.data.model, prompt: r.data.prompt, videoDraft: r.data, templateTitle: title, reason: '', referenceHint: '' }, title);
       dialog.value = false; return;
     }
     const r = await prepareTemplate(body);

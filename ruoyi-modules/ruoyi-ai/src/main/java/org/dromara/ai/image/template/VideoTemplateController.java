@@ -35,7 +35,7 @@ public class VideoTemplateController {
         return R.ok(Map.of("items",templates.stream().skip((long)(page-1)*size).limit(size).map(t->VideoTemplateDrafts.project(cache,t)).toList(),"total",templates.size(),"categories",categories,"feed",cache.state()));
     }
     @GetMapping("/{id}") @SaCheckPermission("video:creation:view")
-    public R<Map<String,Object>> detail(@PathVariable String id) { authorize();cache.refresh();if(!cache.browsable()) throw new TemplateFeedException(503,"模板缓存已过期");return R.ok(VideoTemplateDrafts.project(cache,requireVideo(id))); }
+    public R<Map<String,Object>> detail(@PathVariable String id) { authorize();cache.refresh();if(!cache.browsable()) throw new TemplateFeedException(503,"模板缓存已过期");return R.ok(VideoTemplateDrafts.detail(cache,requireVideo(id))); }
     @GetMapping("/{id}/cover") @SaCheckPermission("video:creation:view")
     public ResponseEntity<byte[]> cover(@PathVariable String id) { authorize();var t=requireVideo(id);String name=t.path("cover").path("url").asText();String type=name.endsWith(".webp")?"image/webp":name.endsWith(".jpg")?"image/jpeg":"image/png";return ResponseEntity.ok().header("Cache-Control","private, max-age=600").header("X-Content-Type-Options","nosniff").header("Content-Type",type).body(cache.cover(id)); }
     @PostMapping("/prepare") @SaCheckPermission("video:creation:view")

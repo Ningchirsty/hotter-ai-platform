@@ -229,7 +229,7 @@ public class TemplateFeedCache {
     public Map<String,Object> imageDetail(JsonNode template) {
         if(!"image".equals(template.path("type").asText())) throw new TemplateFeedException(404,"图像模板不存在");
         var out=project(template);
-        out.put("promptTemplate",template.path("prompt").path("en").asText());
+        out.put("promptTemplate",TemplatePrompts.chinese(template));
         JsonNode profile=snapshot.profiles().get(template.path("binding").path("params_profile").asText());
         var output=new LinkedHashMap<String,Object>();
         if(profile!=null && TemplateRequestBuilder.bindingAllowed(template,snapshot.profiles())) {

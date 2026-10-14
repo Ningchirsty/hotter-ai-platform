@@ -46,6 +46,28 @@ class CloudVideoContractTest {
   JsonNode payload=mapper.valueToTree(BluOctoVideoClient.payload(d,"Seedance",r->"https://example.org/video"));
   assertEquals("reference_video",payload.at("/metadata/content/1/role").asText());assertEquals("video_url",payload.at("/metadata/content/1/type").asText());
  }
+ @Test void correctedGatewayRoutesAndWanTopLevelFieldsMatchProviderContract()throws Exception{
+  var calls=new ArrayList<String>();var bodies=new ArrayList<JsonNode>();
+  var client=new BluOctoVideoClient(new VideoCloudProperties()) {
+   @Override protected JsonNode json(String method,String path,Map<String,Object> body) {
+    calls.add(method+" "+path);bodies.add(CloudVideoContractTest.this.mapper.valueToTree(body));
+    return CloudVideoContractTest.this.mapper.createObjectNode().put(path.equals("/v1/video/generations")?"task_id":"id","same-task").put("status","completed");
+   }
+  };
+  var r2v=draft(profile("wan2.7-r2v"),List.of(new CloudVideoRequest.Reference(7,"reference_image")),"R2V");
+  var remote=client.submit(r2v,profile(r2v.model()),r->"https://example.org/product.png");
+  assertEquals("POST /v1/videos",calls.getLast());assertEquals("openai",remote.protocol());
+  assertTrue(bodies.getLast().path("seconds").isTextual());assertEquals("720P",bodies.getLast().path("resolution").asText());
+  assertEquals("https://example.org/product.png",bodies.getLast().path("images").get(0).asText());
+  var wan3=draft(profile("wan3.0-video"),List.of(new CloudVideoRequest.Reference(7,"first_frame")),"I2V");
+  client.submit(wan3,profile(wan3.model()),r->"https://example.org/product.png");
+  assertEquals("POST /v1/videos",calls.getLast());assertEquals("https://example.org/product.png",bodies.getLast().path("image").asText());
+  var seedance=draft(profile("doubao-seedance-2-5-260628"),List.of(),"T2V");
+  remote=client.submit(seedance,profile(seedance.model()),r->"unused");
+  assertEquals("POST /v1/video/generations",calls.getLast());assertTrue(bodies.getLast().path("content").isArray());
+  client.query(remote);assertEquals("GET /v1/tasks/same-task",calls.getLast());
+  client.query(new BluOctoVideoClient.RemoteTask("legacy","doubao"));assertEquals("GET /doubao/api/v3/contents/generations/tasks/legacy",calls.getLast());
+ }
  @Test void klingTailAndRatioAreNotLost()throws Exception{
   var d=draft(profile("kling-3.0"),List.of(new CloudVideoRequest.Reference(2,"last_frame"),new CloudVideoRequest.Reference(1,"first_frame")),"FL2V");
   JsonNode payload=mapper.valueToTree(BluOctoVideoClient.payload(d,"Kling",r->"https://example.org/"+r.assetId()));
