@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS image_task (
   status              VARCHAR(16)   NOT NULL COMMENT 'QUEUED/RUNNING/SUCCEEDED/FAILED/CANCELED/TIMEOUT',
   size_label          VARCHAR(64)   NULL COMMENT 'size 档位标签（文生图）',
   strength_label      VARCHAR(64)   NULL COMMENT 'strength 档位标签（图生图）',
-  prompt              VARCHAR(1000) NULL,
+  prompt              TEXT          NULL COMMENT '图像描述（支持完整模板提示词）',
   negative_prompt     VARCHAR(500)  NULL,
   input_json          JSON          NULL COMMENT '字段快照（含素材 ID）',
   comfy_prompt_id     VARCHAR(64)   NULL COMMENT 'ComfyUI prompt_id',
