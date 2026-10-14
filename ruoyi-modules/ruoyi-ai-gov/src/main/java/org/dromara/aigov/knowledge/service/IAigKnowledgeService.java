@@ -79,6 +79,18 @@ public interface IAigKnowledgeService {
     List<org.dromara.aigov.knowledge.domain.vo.AigKnowledgeChunkVo> listChunks(Long versionId, Integer limit);
 
     /**
+     * 「谁在引用这个知识集合」（设计 §6.4「引用该版本的 Agent」）。
+     *
+     * <p>退役之前先看清楚影响面——这是维护人真正会做的动作。只给绑定 ID 不够，
+     * 所以由 Agent 模块把 Agent 编码/名称/版本解析出来（解析属于它自己的表）。</p>
+     *
+     * @param collectionId 集合ID
+     * @return 引用清单（含停用中的绑定，如实标注 enabled）；集合不存在时抛错
+     */
+    List<org.dromara.aigov.agent.domain.vo.AigAgentResourceReferenceVo> listReferencingAgents(
+        Long collectionId);
+
+    /**
      * 分段预览的默认条数。
      */
     int DEFAULT_CHUNK_LIMIT = 50;

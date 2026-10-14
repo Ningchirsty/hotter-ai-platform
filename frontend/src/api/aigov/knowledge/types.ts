@@ -112,3 +112,26 @@ export interface AigKnowledgeChunkVO {
   hasFullText?: boolean;
   indexed?: boolean;
 }
+
+/**
+ * 「谁在引用这个知识集合」（设计 §6.4「引用该版本的 Agent」）。
+ *
+ * 退役前的影响面：只有绑定 ID 没法判断"停了会影响谁"。
+ * `enabled=N` 的也返回并如实标注——它不会被采用，但仍是"这份资源曾经给过谁"的记录。
+ */
+export interface AigAgentResourceReferenceVO {
+  bindingId?: string | number;
+  agentVersionId?: string | number;
+  agentId?: string | number;
+  /** 版本或 Agent 已删除时为空（留空才能看出"它指着的东西不在了"） */
+  agentCode?: string;
+  agentName?: string;
+  agentVersion?: string;
+  releaseStatus?: string;
+  enabled?: string;
+  companyId?: string | number;
+  brandId?: string | number;
+  scenarioCode?: string;
+  roleScope?: string;
+  createTime?: string;
+}

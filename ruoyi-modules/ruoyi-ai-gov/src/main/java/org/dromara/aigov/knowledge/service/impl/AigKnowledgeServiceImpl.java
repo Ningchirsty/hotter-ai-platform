@@ -4,6 +4,9 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.dromara.aigov.agent.domain.vo.AigAgentResourceReferenceVo;
+import org.dromara.aigov.agent.enums.AigAgentResourceTypeEnum;
+import org.dromara.aigov.agent.service.IAigAgentRegistryQueryService;
 import org.dromara.aigov.enums.AigDataLevelEnum;
 import org.dromara.aigov.knowledge.domain.AigKnowledgeChunk;
 import org.dromara.aigov.knowledge.domain.AigKnowledgeCollection;
@@ -50,6 +53,7 @@ public class AigKnowledgeServiceImpl implements IAigKnowledgeService {
     private final AigKnowledgeDocumentVersionMapper versionMapper;
     private final AigKnowledgeProcessingJobMapper jobMapper;
     private final AigKnowledgeChunkMapper chunkMapper;
+    private final IAigAgentRegistryQueryService registryQueryService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -200,6 +204,20 @@ public class AigKnowledgeServiceImpl implements IAigKnowledgeService {
             result.add(vo);
         }
         return result;
+    }
+
+    @Override
+    public List<AigAgentResourceReferenceVo> listReferencingAgents(Long collectionId) {
+        if (collectionId == null) {
+            throw new ServiceException("集合ID不能为空");
+        }
+        AigKnowledgeCollection collection = collectionMapper.selectById(collectionId);
+        if (collection == null) {
+            throw new ServiceException("知识集合不存在或已删除：" + collectionId);
+        }
+        // 绑定按"集合编码"而不是集合ID：编码是跨版本稳定的那个标识（见集合的唯一键）
+        return registryQueryService.listResourceReferences(
+            AigAgentResourceTypeEnum.KNOWLEDGE.getCode(), collection.getCollectionCode());
     }
 
     /**

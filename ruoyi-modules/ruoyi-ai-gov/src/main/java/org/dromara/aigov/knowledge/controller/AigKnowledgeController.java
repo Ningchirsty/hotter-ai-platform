@@ -3,6 +3,7 @@ package org.dromara.aigov.knowledge.controller;
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
+import org.dromara.aigov.agent.domain.vo.AigAgentResourceReferenceVo;
 import org.dromara.aigov.constant.AigConstants;
 import org.dromara.aigov.knowledge.domain.AigKnowledgeCollection;
 import org.dromara.aigov.knowledge.domain.AigKnowledgeDocument;
@@ -167,6 +168,26 @@ public class AigKnowledgeController extends BaseController {
     public R<String> retire(
         @NotNull(message = "版本ID不能为空") @PathVariable Long versionId) {
         return R.ok(knowledgeService.retire(versionId).getCode());
+    }
+
+    /**
+     * 「谁在引用这个知识集合」（设计 §6.4「引用该版本的 Agent」）。
+     *
+     * <p>退役之前先看影响面：只给一串绑定 ID，运维没法判断"停了会影响谁"，
+     * 退役就变成"先停掉再看谁来报错"。</p>
+     *
+     * <p><b>权限沿用 {@code aig:knowledge:document:list}</b>：返回的是"哪个 Agent 引用了这个集合"
+     * 这类元数据（Agent 编码/名称/版本/范围），不含任何资料正文；能看文档清单的人就该能看影响面。
+     * 停用中的绑定也一并返回（如实标注），否则会被读成"没人用过"。</p>
+     *
+     * @param collectionId 集合ID
+     * @return 引用清单
+     */
+    @SaCheckPermission(AigConstants.PERM_KNOWLEDGE_DOCUMENT_LIST)
+    @GetMapping("/collections/{collectionId:\\d+}/references")
+    public R<List<AigAgentResourceReferenceVo>> references(
+        @NotNull(message = "集合ID不能为空") @PathVariable Long collectionId) {
+        return R.ok(knowledgeService.listReferencingAgents(collectionId));
     }
 
     /**

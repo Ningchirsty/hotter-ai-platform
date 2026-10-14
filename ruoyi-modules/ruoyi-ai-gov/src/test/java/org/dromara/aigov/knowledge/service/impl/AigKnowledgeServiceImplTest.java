@@ -61,6 +61,7 @@ class AigKnowledgeServiceImplTest {
     private AigKnowledgeDocumentVersionMapper versionMapper;
     private AigKnowledgeProcessingJobMapper jobMapper;
     private org.dromara.aigov.knowledge.mapper.AigKnowledgeChunkMapper chunkMapper;
+    private org.dromara.aigov.agent.service.IAigAgentRegistryQueryService registryQueryService;
     private AigKnowledgeServiceImpl service;
 
     @BeforeAll
@@ -81,8 +82,10 @@ class AigKnowledgeServiceImplTest {
         versionMapper = mock(AigKnowledgeDocumentVersionMapper.class);
         jobMapper = mock(AigKnowledgeProcessingJobMapper.class);
         chunkMapper = mock(org.dromara.aigov.knowledge.mapper.AigKnowledgeChunkMapper.class);
+        registryQueryService =
+            mock(org.dromara.aigov.agent.service.IAigAgentRegistryQueryService.class);
         service = new AigKnowledgeServiceImpl(collectionMapper, documentMapper, versionMapper, jobMapper,
-            chunkMapper);
+            chunkMapper, registryQueryService);
         when(collectionMapper.insert(any(AigKnowledgeCollection.class))).thenAnswer(invocation -> {
             invocation.<AigKnowledgeCollection>getArgument(0).setCollectionId(COLLECTION_ID);
             return 1;
@@ -135,6 +138,27 @@ class AigKnowledgeServiceImplTest {
         chunk.setIndexRef(indexRef);
         chunk.setDataLevel("STRICT");
         return chunk;
+    }
+
+    @Test
+    @DisplayName("★ 谁在引用这个集合：按「集合编码」查绑定（退役前的影响面），集合不存在则拒绝")
+    void listReferencingAgentsUsesCollectionCode() {
+        AigKnowledgeCollection collection = new AigKnowledgeCollection();
+        collection.setCollectionId(COLLECTION_ID);
+        collection.setCollectionCode("product_docs");
+        when(collectionMapper.selectById(COLLECTION_ID)).thenReturn(collection);
+        when(registryQueryService.listResourceReferences("KNOWLEDGE", "product_docs"))
+            .thenReturn(List.of(new org.dromara.aigov.agent.domain.vo.AigAgentResourceReferenceVo()));
+
+        List<org.dromara.aigov.agent.domain.vo.AigAgentResourceReferenceVo> references =
+            service.listReferencingAgents(COLLECTION_ID);
+
+        assertEquals(1, references.size());
+        verify(registryQueryService).listResourceReferences("KNOWLEDGE", "product_docs");
+
+        when(collectionMapper.selectById(COLLECTION_ID)).thenReturn(null);
+        assertThrows(ServiceException.class, () -> service.listReferencingAgents(COLLECTION_ID));
+        assertThrows(ServiceException.class, () -> service.listReferencingAgents(null));
     }
 
     @Test

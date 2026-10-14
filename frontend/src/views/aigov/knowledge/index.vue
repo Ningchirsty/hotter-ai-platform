@@ -30,6 +30,9 @@
           <template #default="{ row }">
             <el-button link type="primary" @click="selectCollection(row)">看文档</el-button>
             <el-button link type="primary" @click="openRetrieval(row)">检索测试</el-button>
+            <el-button v-hasPermi="['aig:knowledge:document:list']" link type="primary" @click="openReferences(row)">
+              看引用
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -180,6 +183,36 @@
       </template>
     </el-dialog>
 
+    <!-- 谁在引用这个集合（设计 §6.4「引用该版本的 Agent」）：退役前先看影响面 -->
+    <el-dialog
+      v-model="referencesVisible"
+      :title="'谁在引用：' + (referencesCollection?.collectionName || '')"
+      width="760px"
+      append-to-body
+    >
+      <el-alert type="warning" :closable="false" class="mb-2" show-icon :title="referenceSummary(references)" />
+      <el-table :data="references" border size="small" max-height="320">
+        <el-table-column label="Agent" min-width="200">
+          <template #default="{ row }">{{ referenceAgentText(row) }}</template>
+        </el-table-column>
+        <el-table-column label="版本状态" prop="releaseStatus" width="130" show-overflow-tooltip />
+        <el-table-column label="收窄范围" min-width="200">
+          <template #default="{ row }">{{ referenceScopeText(row) }}</template>
+        </el-table-column>
+        <el-table-column label="绑定" width="90">
+          <template #default="{ row }">
+            <el-tag :type="row.enabled === 'Y' ? 'success' : 'info'" size="small">
+              {{ row.enabled === 'Y' ? '启用中' : '已停用' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button @click="referencesVisible = false">关闭</el-button>
+        <el-button :loading="referencesLoading" @click="loadReferences">刷新</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 检索测试 -->
     <el-dialog v-model="retrievalVisible" title="知识检索测试（只检索、不生成）" width="720px" append-to-body>
       <el-form label-width="110px">
@@ -233,6 +266,7 @@ import {
   advanceVersion,
   createCollection,
   getDocumentVersion,
+  listCollectionReferences,
   listCollections,
   listDocuments,
   listVersionChunks,
@@ -241,6 +275,7 @@ import {
   retireVersion
 } from '@/api/aigov/knowledge';
 import type {
+  AigAgentResourceReferenceVO,
   AigKnowledgeChunkVO,
   AigKnowledgeCollectionForm,
   AigKnowledgeCollectionVO,
@@ -258,6 +293,9 @@ import {
   chunkExcerptText,
   chunkIndexText,
   chunkSummary,
+  referenceAgentText,
+  referenceScopeText,
+  referenceSummary,
   registerValidation,
   retrievalSummary,
   sourceTypeLabel,
@@ -288,6 +326,34 @@ const retrievalResult = ref<AigKnowledgeRetrievalTestVO>();
 const chunks = ref<AigKnowledgeChunkVO[]>([]);
 const chunksLoaded = ref(false);
 const chunksLoading = ref(false);
+
+/** 谁在引用这个集合（退役前的影响面） */
+const referencesVisible = ref(false);
+const referencesLoading = ref(false);
+const referencesCollection = ref<AigKnowledgeCollectionVO>();
+const references = ref<AigAgentResourceReferenceVO[]>([]);
+
+const loadReferences = async () => {
+  if (!referencesCollection.value?.collectionId) {
+    return;
+  }
+  referencesLoading.value = true;
+  try {
+    const res = await listCollectionReferences(referencesCollection.value.collectionId);
+    references.value = res.data || [];
+  } catch (e: any) {
+    modal.alertError(e?.message || '读取引用清单失败');
+  } finally {
+    referencesLoading.value = false;
+  }
+};
+
+const openReferences = (row: AigKnowledgeCollectionVO) => {
+  referencesCollection.value = row;
+  references.value = [];
+  referencesVisible.value = true;
+  loadReferences();
+};
 
 const loadChunks = async () => {
   if (!version.value?.versionId) {

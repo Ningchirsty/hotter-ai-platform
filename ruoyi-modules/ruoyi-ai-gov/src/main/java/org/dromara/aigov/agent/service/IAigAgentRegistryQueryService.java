@@ -11,6 +11,7 @@ import org.dromara.aigov.agent.domain.bo.AigSkillVersionQueryBo;
 import org.dromara.aigov.agent.domain.vo.AigAgentBindingVo;
 import org.dromara.aigov.agent.domain.vo.AigAgentDeclaredResourceVo;
 import org.dromara.aigov.agent.domain.vo.AigAgentResourceBindingVo;
+import org.dromara.aigov.agent.domain.vo.AigAgentResourceReferenceVo;
 import org.dromara.aigov.agent.domain.vo.AigAgentVersionVo;
 import org.dromara.aigov.agent.domain.vo.AigAgentVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageVersionVo;
@@ -19,6 +20,8 @@ import org.dromara.aigov.agent.domain.vo.AigSkillVersionVo;
 import org.dromara.aigov.agent.domain.vo.AigSkillVo;
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.mybatis.core.page.PageQuery;
+
+import java.util.List;
 
 /**
  * 注册中心的只读查询（设计 §5、§6、§10.2）。
@@ -150,5 +153,21 @@ public interface IAigAgentRegistryQueryService {
      * @return 声明视图
      */
     AigAgentDeclaredResourceVo declaredResources(Long agentVersionId);
+
+    /**
+     * 取「谁在用这份资源」：按资源类型 + 编码列出全部绑定，并把 Agent 版本与 Agent 解析出来
+     * （设计 §6.4「引用该版本的 Agent」）。
+     *
+     * <p><b>为什么要有它</b>：退役知识版本 / 停用工具之前，维护人真正要回答的是
+     * "停了会影响谁"。只给一串 {@code agentVersionId}，退役就变成"先停掉再看谁来报错"。</p>
+     *
+     * <p>停用中的绑定（{@code enabled=N}）<b>也返回</b>并如实标注：它们不会被采用，
+     * 但仍是"这份资源曾经给过谁"的记录；藏起来会让人以为没人用过。</p>
+     *
+     * @param resourceType 资源类型（TOOL / KNOWLEDGE）
+     * @param resourceCode 资源编码（工具编码 / 知识集合编码）
+     * @return 引用清单（创建时间倒序）；入参为空返回空列表
+     */
+    List<AigAgentResourceReferenceVo> listResourceReferences(String resourceType, String resourceCode);
 
 }

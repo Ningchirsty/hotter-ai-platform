@@ -1,6 +1,7 @@
 import type { AxiosPromise } from '@/utils/api-types';
 import request from '@/utils/request';
 import type {
+  AigAgentResourceReferenceVO,
   AigKnowledgeChunkVO,
   AigKnowledgeCollectionForm,
   AigKnowledgeCollectionVO,
@@ -88,4 +89,16 @@ export function listVersionChunks(
     method: 'get',
     params: { limit }
   });
+}
+
+/**
+ * 「谁在引用这个知识集合」（设计 §6.4「引用该版本的 Agent」）。
+ *
+ * 退役之前先看影响面——只给绑定 ID，运维没法判断"停了会影响谁"。
+ * 返回含停用中的绑定（如实标注 enabled），它们不会被采用。
+ */
+export function listCollectionReferences(
+  collectionId: string | number
+): AxiosPromise<AigAgentResourceReferenceVO[]> {
+  return request({ url: `/aigov/knowledge/collections/${collectionId}/references`, method: 'get' });
 }

@@ -6,6 +6,9 @@ import {
   chunkExcerptText,
   chunkIndexText,
   chunkSummary,
+  referenceAgentText,
+  referenceScopeText,
+  referenceSummary,
   registerValidation,
   retrievalSummary,
   sha256Valid,
@@ -103,5 +106,29 @@ describe('knowledge presentation', () => {
     expect(chunkExcerptText(undefined)).toBe('（无预览）');
     expect(chunkIndexText({ indexed: true })).toBe('已进索引');
     expect(chunkIndexText({})).toBe('未进索引');
+  });
+
+  it('★ 引用影响面：启用/停用分开数（按虚高的影响面退役会误判）', () => {
+    expect(referenceSummary([])).toContain('没有 Agent 引用');
+    expect(referenceSummary(undefined)).toContain('没有 Agent 引用');
+    const summary = referenceSummary([{ enabled: 'Y' }, { enabled: 'Y' }, { enabled: 'N' }]);
+    expect(summary).toContain('共 3 条引用');
+    expect(summary).toContain('启用中 2 条');
+    expect(summary).toContain('已停用 1 条');
+  });
+
+  it('★ 引用行：名称解析不到就说"已删除"；范围为空就是"不限"（不是空白）', () => {
+    expect(referenceAgentText({ agentName: '产品问答', agentVersion: '0.2.0' })).toBe(
+      '产品问答 · 0.2.0'
+    );
+    expect(referenceAgentText({ agentCode: 'PRODUCT_QA' })).toBe('PRODUCT_QA');
+    expect(referenceAgentText({})).toBe('（Agent 或版本已删除）');
+    expect(referenceAgentText(undefined)).toBe('（Agent 或版本已删除）');
+
+    expect(referenceScopeText({})).toBe('不限');
+    expect(referenceScopeText(undefined)).toBe('不限');
+    expect(referenceScopeText({ companyId: 9, brandId: 3, scenarioCode: 'POSTER', roleScope: 'a,b' })).toBe(
+      '公司 9，品牌 3，场景 POSTER，角色 a,b'
+    );
   });
 });

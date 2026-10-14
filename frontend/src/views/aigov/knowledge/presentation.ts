@@ -153,3 +153,58 @@ export function chunkSummary(chunks?: { hasFullText?: boolean; indexed?: boolean
   const indexed = list.filter((item) => item.indexed).length;
   return `共 ${list.length} 段（每段只显示受限长度的预览）：正文在受控存储 ${withFullText} 段、已进检索索引 ${indexed} 段。`;
 }
+
+/** 引用行的名称文案：解析不到就如实说"已删除"，不显示成空白 */
+export function referenceAgentText(ref?: {
+  agentName?: string;
+  agentCode?: string;
+  agentVersion?: string;
+}): string {
+  const name = ref?.agentName?.trim() || ref?.agentCode?.trim();
+  if (!name) {
+    return '（Agent 或版本已删除）';
+  }
+  return ref?.agentVersion ? `${name} · ${ref.agentVersion}` : name;
+}
+
+/**
+ * 引用收窄范围文案：**空 = 不限**（与后端同一口径），不要显示成空白。
+ *
+ * 留空被读成"没有范围限制"还是"范围未知"，是运维判断影响面的关键差别。
+ */
+export function referenceScopeText(ref?: {
+  companyId?: string | number;
+  brandId?: string | number;
+  scenarioCode?: string;
+  roleScope?: string;
+}): string {
+  const parts: string[] = [];
+  if (ref?.companyId) {
+    parts.push(`公司 ${ref.companyId}`);
+  }
+  if (ref?.brandId) {
+    parts.push(`品牌 ${ref.brandId}`);
+  }
+  if (ref?.scenarioCode) {
+    parts.push(`场景 ${ref.scenarioCode}`);
+  }
+  if (ref?.roleScope) {
+    parts.push(`角色 ${ref.roleScope}`);
+  }
+  return parts.length ? parts.join('，') : '不限';
+}
+
+/**
+ * 引用清单摘要（设计 §6.4「引用该版本的 Agent」）。
+ *
+ * 只说"共 N 条"不够：停用中的绑定**不会被采用**，必须与启用中的分开数，
+ * 否则维护人会按一个虚高的影响面去做退役决策。
+ */
+export function referenceSummary(references?: { enabled?: string }[]): string {
+  const list = references ?? [];
+  if (!list.length) {
+    return '没有 Agent 引用这个集合：退役/停用不会影响任何已登记的使用方。';
+  }
+  const enabled = list.filter((item) => item.enabled === 'Y').length;
+  return `共 ${list.length} 条引用：启用中 ${enabled} 条、已停用 ${list.length - enabled} 条（停用中的不会被采用，但仍保留为使用记录）。`;
+}
