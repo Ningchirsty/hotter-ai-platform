@@ -98,10 +98,10 @@ public class BluOctoVideoClient {
         String path="/v1/videos";
         if(protocol.equals("doubao")) {
             path="/v1/video/generations";
-            var metadata=(Map<?,?>)body.get("metadata");
-            body=new LinkedHashMap<>(Map.of("model",request.model(),"content",metadata.get("content"),"duration",request.seconds(),"resolution",request.resolution(),"ratio",request.ratio()));
-            if(profile.path("hasAudioOutput").asBoolean()) body.put("generate_audio",Boolean.TRUE.equals(request.generateAudio()));
-            if(request.seed()!=null)body.put("seed",request.seed());
+            // The compatibility route requires prompt and a string seconds field.
+            // Keep Ark content, reference roles, output settings and seed in metadata.
+            body.put("seconds",String.valueOf(request.seconds()));
+            if(!profile.path("hasAudioOutput").asBoolean())((Map<?,?>)body.get("metadata")).remove("generate_audio");
             protocol="generations";
         } else if(protocol.equals("alibaba")) {
             path="/ali/api/v1/services/aigc/video-generation/video-synthesis";
