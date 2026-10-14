@@ -385,7 +385,6 @@
 ---
 
 ## 4 部署注意
-
 - 需执行 `script/sql/aig_tool.sql`（三张新表）、`script/sql/aig_task_step.sql`（步骤账本）。
 - **存量库**还要执行 `script/sql/aig_task_step_node_identity.sql`（给已有的步骤账本补
   `node_type` / `node_ref` 两列）；它已加进 `.github/workflows/deploy-poc.yml` 的重放清单，
