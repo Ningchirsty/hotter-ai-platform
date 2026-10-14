@@ -144,10 +144,7 @@
         <span class="strip-item">草稿状态：{{ detail.status || '—' }}</span>
       </div>
 
-      <!-- 左侧步骤导航（设计 §6.3 的七个步骤；当前为只读展示，顺序即编辑顺序） -->
-      <el-steps simple class="mb-2" :active="1">
-        <el-step v-for="step in STUDIO_STEPS" :key="step.key" :title="step.label" />
-      </el-steps>
+      <!-- 左侧步骤导航已移入下方三栏的左栏（设计 §6.3 / §5.4 图一：左步骤 / 中编辑 / 右辅助） -->
 
       <el-alert v-if="localDirty" type="warning" :closable="false" class="mb-2">
         有<b>未保存</b>的改动。预检与提交都针对「已保存的内容」——请先保存。
@@ -159,8 +156,27 @@
         </ul>
       </el-alert>
 
+      <!-- ★ 三栏（设计 §6.3、§5.4 图一）：左=步骤导航，中=编辑区，右=修订差异 -->
       <el-row :gutter="16">
-        <el-col :span="14">
+        <el-col :span="4">
+          <el-card shadow="never" class="step-card">
+            <template #header><b>步骤</b></template>
+            <ul class="step-list">
+              <li
+                v-for="(step, index) in STUDIO_STEPS"
+                :key="step.key"
+                :class="['step-item', index === activeStep ? 'step-item-active' : '']"
+                @click="activeStep = index"
+              >
+                <span class="step-no">{{ index + 1 }}</span>
+                <span class="step-label">{{ step.label }}</span>
+              </li>
+            </ul>
+            <p class="step-hint">顺序即编辑顺序；表单暂未按步骤拆分，这里用于定位当前在填哪一段。</p>
+          </el-card>
+        </el-col>
+
+        <el-col :span="13">
           <el-card shadow="never">
             <template #header><b>配置与 Prompt</b></template>
             <el-form label-width="130px">
@@ -208,7 +224,7 @@
           </el-card>
         </el-col>
 
-        <el-col :span="10">
+        <el-col :span="7">
           <el-card shadow="never">
             <template #header>
               <div style="display: flex; justify-content: space-between; align-items: center">
@@ -266,7 +282,11 @@
         </el-col>
       </el-row>
 
-      <!-- 变更提案：培训助手只提案，人在本面板审阅/采纳/拒绝（采纳才产生新修订） -->
+      <!-- 变更提案：培训助手只提案，人在本面板审阅/采纳/拒绝（采纳才产生新修订）。
+           ⚠️ 刻意仍放在三栏下方占满宽度，而不是塞进右栏：提案面板要并排显示
+           「分节原文 / 改动 / 理由」三列，塞进 7/24 的右栏后每列只剩几个字，审阅会变成误点。
+           设计 §6.3 的「右栏可在培训助手/测试预览/修订差异之间切换」因此只兑现了「修订差异」那一支；
+           培训助手以「下面这块宽面板 + 提交/测试按钮」的形态存在。 -->
       <ProposalPanel
         :draft-id="detail.draftId"
         :current-revision="expectedRevision"
@@ -448,6 +468,14 @@ const content = ref<AigStudioDraftContentForm>({ promptSections: {} });
 const expectedRevision = ref(0);
 const localDirty = ref(false);
 const problems = ref<string[]>([]);
+
+/**
+ * 左栏当前高亮的步骤（设计 §6.3 的七步导航）。
+ *
+ * 只做定位与高亮，**不按步骤过滤中间的表单**：表单目前是一整块（八个 Prompt 分节共享一个内容对象），
+ * 过滤会让人以为"别的步骤的内容丢了"。等表单真按步骤拆开后再让它联动。
+ */
+const activeStep = ref(0);
 
 const revisions = ref<AigStudioRevisionVO[]>([]);
 const selectedRevisionNo = ref<number | undefined>(undefined);
@@ -796,6 +824,67 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.step-card {
+  height: 100%;
+}
+
+.step-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step-item {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--app-text-color-regular, #606266);
+}
+
+.step-item:hover {
+  background: var(--app-hover-bg, #f5f7fa);
+}
+
+.step-item-active {
+  background: var(--el-color-primary-light-9, #ecf5ff);
+  color: var(--el-color-primary, #409eff);
+  font-weight: 600;
+}
+
+.step-no {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: var(--el-color-info-light-8, #ebeef5);
+  color: #606266;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+}
+
+.step-item-active .step-no {
+  background: var(--el-color-primary, #409eff);
+  color: #fff;
+}
+
+.step-label {
+  word-break: break-all;
+}
+
+.step-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--app-text-color-secondary, #909399);
+}
+
 .editor-strip {
   display: flex;
   align-items: center;

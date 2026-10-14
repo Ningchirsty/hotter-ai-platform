@@ -30,7 +30,10 @@ export const STUDIO_STEPS: readonly StepItem[] = [
   { key: 'release', label: '发布' }
 ] as const;
 
-/** 右侧辅助区（可切换） */
+/** 右侧辅助区（可切换）——<b>当前只兑现了「修订差异」那一支</b>：
+ *  右栏宽度是 7/24，而变更提案面板要并排显示「分节原文 / 改动 / 理由」三列，
+ *  塞进去后每列只剩几个字、审阅会变成误点，所以提案面板仍占满三栏下方。
+ *  这份清单留着当唯一口径，等右栏做切换（或提案面板瘦身）时直接消费。 */
 export const AUX_TABS: readonly TabItem[] = [
   { key: 'copilot', label: '培训助手' },
   { key: 'test', label: '测试预览' },
