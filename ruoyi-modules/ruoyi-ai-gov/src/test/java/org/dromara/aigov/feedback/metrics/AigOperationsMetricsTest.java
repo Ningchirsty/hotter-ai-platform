@@ -5,8 +5,11 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 运营指标口径测试（设计 §6.9）。
@@ -61,6 +64,25 @@ class AigOperationsMetricsTest {
         assertEquals(0.3333, AigOperationsMetrics.rate(1, 3));
         assertEquals(0d, AigOperationsMetrics.rate(1, 0));
         assertEquals(0d, AigOperationsMetrics.rate(1, -1));
+    }
+
+    @Test
+    @DisplayName("★ 故障分类：次数降序、编码升序；空/null 编码统一记为 UNKNOWN")
+    void faultClassCounts() {
+        java.util.Map<String, Long> counts = AigOperationsMetrics.faultClassCounts(
+            java.util.Arrays.asList("TIMEOUT", "UNKNOWN", "TIMEOUT", null, " "));
+
+        assertEquals(2L, counts.get("TIMEOUT"));
+        assertEquals(3L, counts.get("UNKNOWN"), "显式 UNKNOWN + null + 空白 都归入 UNKNOWN");
+        assertEquals(List.of("UNKNOWN", "TIMEOUT"), new ArrayList<>(counts.keySet()),
+            "次数降序（3 在前），稳定输出才谈得上比对");
+    }
+
+    @Test
+    @DisplayName("故障分类：null/空输入安全")
+    void faultClassCountsNullSafe() {
+        assertTrue(AigOperationsMetrics.faultClassCounts(null).isEmpty());
+        assertTrue(AigOperationsMetrics.faultClassCounts(List.of()).isEmpty());
     }
 
 }

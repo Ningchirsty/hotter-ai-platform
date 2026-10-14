@@ -15,6 +15,8 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -81,6 +83,23 @@ class AigOperationsMetricsServiceImplTest {
 
         assertEquals(0L, result.completedTasks());
         assertEquals(0d, result.adoptionRate());
+    }
+
+    @Test
+    @DisplayName("★ 故障分类聚合：按错误分类编码计数")
+    void faultClassCounts() {
+        AigTask a = new AigTask();
+        a.setErrorCode("TIMEOUT");
+        AigTask b = new AigTask();
+        b.setErrorCode("TIMEOUT");
+        AigTask c = new AigTask();
+        c.setErrorCode("POLICY_DENIED");
+        when(taskMapper.selectList(any())).thenReturn(List.of(a, b, c));
+
+        Map<String, Long> counts = service.faultClassCounts();
+
+        assertEquals(2L, counts.get("TIMEOUT"));
+        assertEquals(1L, counts.get("POLICY_DENIED"));
     }
 
 }

@@ -42,7 +42,7 @@
 | D09 | 存在两份分节拼装 | ✅ | 提交改调 `AigStudioPromptBuilder.build`，删除第二份实现 |
 | D10 | Copilot 复用被训练 Agent 的能力 | ✅ | `aigov.studio.copilot.capability`；`AigStudioCopilotServiceImplTest` |
 | D11 | 员工需填实现概念（任务类型/业务域/数据等级/原始 JSON） | ✅ | `aig_launch_template` + `AigLaunchTemplateServiceImpl`；`GET /aigov/portal/launch/template`；前端业务表单 |
-| D12 | 缺业务反馈与有效成果口径 | 🔶 | 反馈账本+队列规则+指标口径（`feedback/`）；**聚合查询、资产索引增量同步、故障分类指标未做** |
+| D12 | 缺业务反馈与有效成果口径 | 🔶 | 反馈账本+队列规则+接口、运营指标（口径与聚合，含**故障分类**）已完成（`feedback/`）；**资产索引增量同步未做** |
 
 ---
 
@@ -60,7 +60,7 @@
 
 ## 4 验证汇总
 
-- 后端 `ruoyi-ai-gov`：**1153 tests / 0 failures / 0 errors**（基线 1053 → 新增 100）。
+- 后端 `ruoyi-ai-gov`：**1156 tests / 0 failures / 0 errors**（基线 1053 → 新增 103）。
 - 前端 `frontend`：**45 files / 442 tests** 全过；`oxlint src` 526 files 0/0。
 - 关键守卫全部通过：`AigPermissionSeedCoverageTest`（权限串已种子 + menu_id 不撞）、
   `AigRepeatSubmitCoverageTest`（写接口防重或显式豁免）、`AigWp3WiringAndRoutesTest`。

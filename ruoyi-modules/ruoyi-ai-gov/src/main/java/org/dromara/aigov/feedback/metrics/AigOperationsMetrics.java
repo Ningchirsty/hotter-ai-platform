@@ -1,6 +1,12 @@
 package org.dromara.aigov.feedback.metrics;
 
+import org.dromara.common.core.utils.StringUtils;
+
 import java.math.BigDecimal;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 运营指标计算（设计 §6.9）。
@@ -89,6 +95,32 @@ public final class AigOperationsMetrics {
         }
         double raw = (double) numerator / (double) denominator;
         return Math.round(raw * 10000d) / 10000d;
+    }
+
+    /**
+     * 故障分类计数（设计 §6.9「故障分类」）。
+     *
+     * <p>口径：按任务的错误分类编码计数；空编码统一记为 {@code UNKNOWN}
+     * （把"没分类"混进某个具体分类会掩盖分类本身的问题）。排序：次数降序、编码升序，
+     * 让报表输出稳定（同样的数据每次得到同样的顺序，才谈得上比对）。</p>
+     *
+     * @param errorCodes 错误分类编码（可空、可含空白/null）
+     * @return 分类 → 次数（按次数降序）
+     */
+    public static Map<String, Long> faultClassCounts(List<String> errorCodes) {
+        Map<String, Long> counts = new LinkedHashMap<>();
+        if (errorCodes == null) {
+            return counts;
+        }
+        for (String code : errorCodes) {
+            String key = StringUtils.isBlank(code) ? "UNKNOWN" : code.trim();
+            counts.merge(key, 1L, Long::sum);
+        }
+        return counts.entrySet().stream()
+            .sorted(Map.Entry.<String, Long>comparingByValue().reversed()
+                .thenComparing(Map.Entry.comparingByKey()))
+            .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (a, b) -> a,
+                LinkedHashMap::new));
     }
 
 }

@@ -2,6 +2,8 @@ package org.dromara.aigov.feedback.service;
 
 import org.dromara.aigov.feedback.metrics.AigOperationsMetrics;
 
+import java.util.Map;
+
 /**
  * 运营指标聚合服务（设计 §6.9）。
  *
@@ -18,5 +20,12 @@ public interface IAigOperationsMetricsService {
      * @return 指标
      */
     AigOperationsMetrics.Result compute();
+
+    /**
+     * 故障分类计数（设计 §6.9）。
+     *
+     * @return 分类 → 次数（次数降序）
+     */
+    Map<String, Long> faultClassCounts();
 
 }

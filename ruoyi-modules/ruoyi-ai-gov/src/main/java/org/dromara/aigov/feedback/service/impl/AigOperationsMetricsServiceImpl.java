@@ -15,7 +15,9 @@ import org.dromara.aigov.task.mapper.AigTaskResultMapper;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 运营指标聚合实现（设计 §6.9）。
@@ -73,8 +75,19 @@ public class AigOperationsMetricsServiceImpl implements IAigOperationsMetricsSer
         return result;
     }
 
-    private long count(LambdaQueryWrapper<AigTask> wrapper) {
-        Long counted = taskMapper.selectCount(wrapper);
+    @Override
+    public Map<String, Long> faultClassCounts() {
+        List<AigTask> rows = taskMapper.selectList(new LambdaQueryWrapper<AigTask>()
+            .select(AigTask::getErrorCode)
+            .isNotNull(AigTask::getErrorCode));
+        List<String> codes = new ArrayList<>();
+        for (AigTask task : rows) {
+            codes.add(task.getErrorCode());
+        }
+        return AigOperationsMetrics.faultClassCounts(codes);
+    }
+
+    private long count(LambdaQueryWrapper<AigTask> wrapper) {        Long counted = taskMapper.selectCount(wrapper);
         return counted == null ? 0L : counted;
     }
 

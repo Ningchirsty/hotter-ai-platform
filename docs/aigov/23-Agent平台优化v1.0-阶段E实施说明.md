@@ -67,6 +67,14 @@
 
 ---
 
+### 1.6 故障分类指标（E-4）
+
+`AigOperationsMetrics.faultClassCounts(List<String>)`（纯函数）按任务的错误分类编码计数：
+次数降序、编码升序（**输出稳定才谈得上比对**）；空/null 编码统一记为 `UNKNOWN`。
+接口 `GET /aigov/operations/fault-classes`（复用 `aig:ops:metrics`）。
+
+---
+
 ## 2 本轮**不做**的事（明确的边界）
 
 1. **反馈接口与权限点（已在 E-2 补齐）**：`POST /aigov/feedback`（员工提交，`@SaCheckLogin`）、
@@ -81,7 +89,9 @@
    如实置 0 而不是用别的数字顶替。
 3. **资产索引增量同步**（§12.1 E）：现有资产索引是全量刷新（`AigAssetIndexService`）；
    增量同步需要变更订阅/水位，属独立增量。
-4. **故障分类指标**：依赖审计错误分类的聚合，随审计口径接入。
+4. **故障分类指标（已在 E-4 补齐）**：`GET /aigov/operations/fault-classes` 按任务错误分类编码计数，
+   次数降序、编码升序（输出稳定才谈得上比对）；空/null 编码统一记 `UNKNOWN`
+   （把"没分类"混进具体分类会掩盖分类本身的问题）。
 
 ---
 
@@ -91,7 +101,7 @@
   - `AigOperationsMetricsTest`（4）：采纳率以确认为分子、零分母返回 0、null 安全、四舍五入；
   - `AigResultFeedbackServiceImplTest`（6）：非法原因/无关联拒绝、进入队列、
     确认必须给动作、确认记录动作与处理人、驳回清空动作且 PENDING 不可提交、反馈不存在可读拒绝。
-- 后端 `ruoyi-ai-gov` 全量：**1137 tests / 0 failures / 0 errors**（阶段 D 后 1125 + E 的 12）。
+- 后端 `ruoyi-ai-gov` 全量：**1156 tests / 0 failures / 0 errors**。
 
 ---
 
