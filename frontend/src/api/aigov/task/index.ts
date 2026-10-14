@@ -1,7 +1,7 @@
 import type { PageResult } from '@/api/types';
 import type { AxiosPromise } from '@/utils/api-types';
 import request from '@/utils/request';
-import type { AigTaskDetailVO, AigTaskMirrorQuery, AigTaskMirrorSourceVO, AigTaskMirrorVO, AigTaskQuery, AigTaskSweepVO, AigTaskVO } from './types';
+import type { AigTaskDetailVO, AigTaskFlowNodeVO, AigTaskMirrorQuery, AigTaskMirrorSourceVO, AigTaskMirrorVO, AigTaskQuery, AigTaskSweepVO, AigTaskVO } from './types';
 
 // 任务列表（只读视图，不含快照原文与事件流）
 export function listAigTask(query: AigTaskQuery): AxiosPromise<PageResult<AigTaskVO>> {
@@ -86,5 +86,30 @@ export function listAigTaskMirror(query: AigTaskMirrorQuery): AxiosPromise<PageR
     url: '/aigov/task/mirror/list',
     method: 'get',
     params: query
+  });
+}
+
+// 任务的流程节点（谁停住了、停在第几个、是不是人工确认）：
+// 节点的身份与状态都在步骤账本里，前端只读不改。
+export function listAigTaskFlowNodes(taskId: string | number): AxiosPromise<AigTaskFlowNodeVO[]> {
+  return request({
+    url: `/aigov/task/${taskId}/flow-nodes`,
+    method: 'get'
+  });
+}
+
+// 记录一次人工确认（挂起后的恢复入口）。
+// 批准引用必填：没有凭据的「确认」事后无法追溯是谁批的。
+// 刻意不自动重新入队——确认只回答「这个节点批准了」，是否继续跑由人再点一次重新入队决定，
+// 否则一次点击就会夹带一次可能计费的执行。
+export function confirmAigTaskFlowNode(
+  taskId: string | number,
+  nodeIndex: number,
+  approvalRef: string
+): AxiosPromise<AigTaskFlowNodeVO> {
+  return request({
+    url: `/aigov/task/${taskId}/flow/confirm`,
+    method: 'post',
+    params: { nodeIndex, approvalRef }
   });
 }

@@ -55,8 +55,7 @@ export interface AigTaskVO {
   remark?: string;
 }
 
-/** 任务事件（排障主视图：从哪到哪、什么时候、谁改的） */
-export interface AigTaskEventVO {
+/** 任务事件（排障主视图：从哪到哪、什么时候、谁改的） */export interface AigTaskEventVO {
   eventId?: string | number;
   taskId?: string | number;
   sequence?: number;
@@ -210,4 +209,28 @@ export interface AigTaskMirrorQuery extends PageQuery {
   source?: string;
   status?: string;
   projectId?: string | number;
+}
+
+/**
+ * 任务流程节点（设计 §6.5）。
+ *
+ * 「等人工确认」这个判据由**后端**给（`awaitingConfirmation`），前端不自己拼
+ * 「RUNNING 且 approvalRef 为空」：两处判据迟早不一致，而不一致的方向恰好是
+ * 「界面说已批准、服务端说没有」——那会让人以为批过了。
+ */
+export interface AigTaskFlowNodeVO {
+  taskId?: string | number;
+  /** 节点下标（从 0 开始；确认接口按它指定对象） */
+  nodeIndex?: number;
+  /** 账本里的全局步骤序号（含子 Agent 步骤） */
+  sequence?: number;
+  /** STEP / CONDITION / HUMAN_CONFIRM / OUTPUT；存量行可能为空 */
+  nodeType?: string;
+  nodeRef?: string;
+  status?: string;
+  outputRef?: string;
+  approvalRef?: string;
+  errorCode?: string;
+  errorMessage?: string;
+  awaitingConfirmation?: boolean;
 }
