@@ -58,13 +58,23 @@ describe('studio three-column layout (source guard)', () => {
     expect(withVIf).toEqual([]);
   });
 
-  it('★ 右栏：修订历史与差异在子组件里，动作通过事件回抛（不复制状态）', () => {
-    expect(REVISIONS).toContain('修订历史与差异');
+  it('★ 右栏：修订差异与测试预览两个页签在子组件里，动作通过事件回抛（不复制状态）', () => {
     expect(REVISIONS).toContain('回滚到所选修订');
     expect(REVISIONS).toContain('差异（当前 ↔ 所选修订）');
     expect(REVISIONS).toContain("emit('select'");
     expect(REVISIONS).toContain("emit('rollback')");
     expect(REVISIONS).toContain("emit('clear')");
+
+    // 设计 §6.3「右栏可切换」：兑现了「修订差异」与「测试预览」两支
+    expect(REVISIONS).toContain('el-tab-pane label="修订差异"');
+    expect(REVISIONS).toContain('el-tab-pane label="测试预览"');
+    // §6.6：测试结果要含版本哈希与 Schema 结论
+    expect(REVISIONS).toContain('hashShort(lastTest.contentHash)');
+    expect(REVISIONS).toContain('schemaVerdictText(lastTest)');
+    // 「培训助手」刻意不在右栏：它要并排显示原文/改动/理由，塞进来会挤到没法审阅
+    expect(REVISIONS).toContain('培训助手');
+    // 收到新结果时自动切到预览（刚跑完测试的人想看的就是结果）
+    expect(REVISIONS).toContain("activeTab.value = 'preview'");
   });
 
   it('★ 不再有顶部横向 step（改版后残留会让步骤出现两次）', () => {

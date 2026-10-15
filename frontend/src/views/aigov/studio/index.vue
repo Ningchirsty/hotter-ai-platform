@@ -221,6 +221,7 @@
             :selected-diff="selectedDiff"
             :selected-diff-changed="selectedDiffChanged"
             :selected-summary="selectedSummary"
+            :last-test="lastTest"
             @select="selectRevision"
             @rollback="handleRollback"
             @clear="clearSelection"
@@ -320,6 +321,15 @@
           {{ testResult.externalCall ? '发生了外发' : '未外发' }}
           <span class="text-gray-500">（耗时 {{ testResult.latencyMs ?? '-' }} ms）</span>
         </el-descriptions-item>
+        <!-- 设计 §6.6：测试结果要含"版本哈希"与 Schema 结论。这两项服务端一直在返回，
+             此前界面没显示，于是"这一测到底测的是哪一版内容"无从核对 -->
+        <el-descriptions-item label="版本哈希（测的是哪一版内容）">
+          {{ hashShort(testResult.contentHash) }}
+          <span class="text-gray-500">（结果摘要 {{ hashShort(testResult.resultDigest) }}）</span>
+        </el-descriptions-item>
+        <el-descriptions-item label="Schema 结论">
+          {{ schemaVerdictText(testResult) }}
+        </el-descriptions-item>
         <el-descriptions-item v-if="testResult.policyHits" label="策略命中">
           {{ testResult.policyHits }}
         </el-descriptions-item>
@@ -382,6 +392,7 @@ import { revisionText, saveStateLabel, saveStateTagType } from './layout';
 import ProposalPanel from './components/ProposalPanel.vue';
 import StudioRevisionColumn from './components/StudioRevisionColumn.vue';
 import StudioStepsColumn from './components/StudioStepsColumn.vue';
+import { hashShort, schemaVerdictText } from './testPreview';
 
 defineOptions({ name: 'AigStudio' });
 
@@ -436,6 +447,14 @@ const testVisible = ref(false);
 const testing = ref(false);
 const testForm = ref<AigStudioTestRunForm>({ dataLevel: 'INTERNAL', input: '' });
 const testResult = ref<AigStudioTestRunVO>();
+
+/**
+ * 最近一次测试结果（右栏「测试预览」用）。
+ *
+ * <p>与 {@link testResult} 分开：那个是「弹窗里的本次结果」，打开弹窗就会被清空；
+ * 这个要一直留着——否则关掉弹窗后右栏就"忘了刚才测过什么"。</p>
+ */
+const lastTest = ref<AigStudioTestRunVO>();
 
 /** 当前内容序列化（用于与所选修订比较） */
 const currentJson = computed(() => JSON.stringify(content.value));
@@ -744,6 +763,9 @@ const doTest = async () => {
   try {
     const res = await runStudioTest(detail.value.draftId, testForm.value);
     testResult.value = res.data;
+    // 右栏「测试预览」看的是**最近一次**测试：它不随弹窗开关而被清掉
+    // （testResult 在 openTest 里会清空，那是"弹窗里的本次结果"）
+    lastTest.value = res.data;
   } catch (e: any) {
     // 后端默认关闭时会给出明确原因（aigov.studio.test.enabled），原样展示
     modal.alertError(e?.message || '测试调用失败');

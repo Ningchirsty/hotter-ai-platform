@@ -59,6 +59,7 @@
 | `fad26a64` | —/CI | **验收脚本 `script/ci/verify-aigov-v1.mjs`**（编排既有守卫，一条命令出逐项结论）+ `check-script-setup.mjs` 支持 `--files-from`（Windows 命令行长度上限） |
 | 见本轮提交 | —/CI | **文档口径检查 `script/ci/check-aigov-docs.mjs`**（类名 / SQL 清单 / 测试数三类漂移，接入验收脚本最后一步） |
 | 见本轮提交 | B | **三条路径系统指令同源的用例**（设计 §11.2 #4）+ 阶段文档去掉会过期的"当前 N"数字 |
+| 见本轮提交 | B/前端 | **右栏两页签**（修订差异 / 测试预览）+ 测试结果的**版本哈希与 Schema 结论**（设计 §6.3、§6.6） |
 
 ---
 
@@ -88,7 +89,7 @@
 | 阶段 | 状态 | 说明 |
 | --- | --- | --- |
 | A 基线一致性 | ✅ | D01/D02/D03/D04/D08（+D10）全部落地并有正反例测试 |
-| B 训练体验 | ✅（三栏布局与左右栏拆分、员工业务状态已落地；右栏页签与中栏拆分未做） | D06/D07/D09/D10/D11 + 元数据；**三栏布局**（左步骤 / 中编辑 / 右差异）已落地，**左右两栏已拆成子组件**并有结构守卫；**员工业务状态**（§6.8）由服务端计算下发；**右栏页签切换（助手/测试）与按步骤拆分表单未做** |
+| B 训练体验 | ✅（三栏布局、左右栏拆分、右栏两页签已落地；表单按步骤拆分未做） | D06/D07/D09/D10/D11 + 元数据；**三栏布局**（左步骤 / 中编辑 / 辅助区）已落地，**左右两栏已拆成子组件**并有结构守卫；**右栏页签**（修订差异 / 测试预览，含版本哈希与 Schema 结论）；**员工业务状态**（§6.8）由服务端计算下发；**按步骤拆分表单未做** |
 | C 知识试点 | 🔶 | 数据模型/处理管道/检索端口/接口/接入执行计划、**知识中心页面（含分段预览、引用影响面）**完成；**解析器与嵌入未接入** |
 | D 工具与流程 | 🔶 | 工具注册/执行/确认/接口、**工具许可（版本声明 + 有效绑定 + 调用人权限）与契约详情**、子 Agent 编排/派发/对账、顺序流程节点的校验与**运行时驱动**完成；**多 STEP 节点的调度循环与 WarmFlow/LiteFlow 适配器未做** |
 | E 持续运营 | ✅ | 反馈账本/队列/接口 + **队列按动作/原因过滤** + 指标口径与聚合（含故障分类）+ **资产索引全量/增量同步** |
@@ -101,7 +102,7 @@
   > 各阶段文档（`19`–`23`）里的测试数**是各自增量当时的数**；
   > **以本节为准**——阶段文档只留"本轮新增几条"，不再写会过期的"当前 N"。
   > 另有 `script/ci/check-aigov-docs.mjs` 会**机械核对**本节这个数与磁盘上的报告是否一致。
-- 前端 `frontend`：**52 files / 520 tests** 全过；`oxlint src` 550 files 0/0。
+- 前端 `frontend`：**53 files / 524 tests** 全过；`oxlint src` 552 files 0/0。
   其中 `views/aigov/sfcCompile.spec.ts` 真编译全部 29 个治理层 SFC
   （无 DOM 环境下的最低保证：模板/`<script setup>` 写错会在这里红）。
 - 关键守卫全部通过：`AigPermissionSeedCoverageTest`（权限串已种子 + menu_id 不撞）、
@@ -174,11 +175,10 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
 2. **D12 已完成**：资产索引**增量同步**（水位线 `syncNewForUser`，`?mode=incremental`）已落地，
    口径边界写在 `23` 与 `10`：**只补新增**，删除/更新靠定期全量重建（三个业务域都没有变更事件）。
 3. **界面**：反馈与运营页、知识中心页、工具注册页、**任务页的流程节点与人工确认面板**
-   （`TaskFlowPanel.vue`）已交付；训练台**三栏布局已落地**（左步骤导航 / 中编辑 / 右修订差异），
-   **左右两栏已拆成子组件**（`components/StudioStepsColumn.vue`、`components/StudioRevisionColumn.vue`，
-   含结构守卫），中栏因共享整份 `content` 对象而留在主文件（可拆但风险大于收益，理由写在 `20`）；
-   **仍待做**：右栏在「培训助手 / 测试预览 / 修订差异」之间切换（变更提案面板刻意保留宽版在下方，
-   否则挤到没法审阅）、左侧步骤驱动中部编辑（表单按步骤拆分）；
+   （`TaskFlowPanel.vue`）已交付；训练台**三栏布局**已落地（左步骤 / 中编辑 / 辅助区），
+   **左右两栏已拆成子组件**，**右栏两页签**（修订差异 / 测试预览）含版本哈希与 Schema 结论；
+   **仍待做**：把变更提案面板塞进右栏当第三个页签（现在刻意保留宽版在下方，
+   塞进 7/24 右栏会挤到没法审阅）、左侧步骤驱动中部编辑（表单按步骤拆分）；
    **布局观感需人眼验收**（前端无 DOM 测试环境，守卫只证明结构与编译）。
 4. **执行入口收窄**：§7.2 已落地 **有效知识范围 = 版本声明 ∩ 启用的 KNOWLEDGE 绑定**、
    **有效数据等级 = 各来源最高值**、**有效外发 = 各方取与**（`AigEffectivePolicy`）；
@@ -263,6 +263,7 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
 | 训练台是否会静默丢内容 | `frontend/src/views/aigov/studio/dirtyGuard.ts` |
 | 训练台三栏是否还在 | `frontend/src/views/aigov/studio/threeColumnLayout.spec.ts`（源码结构 + SFC 真编译；**观感需人眼**） |
 | 测试/提交/正式执行是否同一份系统指令 | `AigStudioTestServiceImplTest#systemPromptIsIdenticalAcrossTestSubmitAndProductionPaths`（设计 §11.2 #4） |
+| 测试结果里的版本哈希与 Schema 结论 | `frontend/src/views/aigov/studio/testPreview.ts`（`hashShort`/`schemaVerdictText`；**未判定 ≠ 不通过**） |
 | 治理层页面模板有没有被写坏 | `frontend/src/views/aigov/sfcCompile.spec.ts`（全部 27 个 SFC 真编译） |
 | 分段预览会不会顺手把原文吐出来 | `AigKnowledgeChunkVo`（无正文字段）+ `AigKnowledgeServiceImpl#listChunks`（只取 `text_excerpt`） |
 | 退役一个知识版本会影响谁 | `AigKnowledgeController#references` → `AigAgentRegistryQueryServiceImpl#listResourceReferences`（解析 Agent 身份；停用中的也返回） |
