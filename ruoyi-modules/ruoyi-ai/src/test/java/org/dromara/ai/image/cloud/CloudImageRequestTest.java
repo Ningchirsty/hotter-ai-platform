@@ -12,6 +12,11 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class CloudImageRequestTest {
+    @Test void selectableCatalogExcludesUnsupportedLegacyFluxModel() {
+        assertFalse(CloudImageRequest.availableModels().contains("flux-2-pro"));
+        assertEquals(6,CloudImageRequest.availableModels().size());
+        assertEquals(CloudImageRequest.availableModels(),CloudImageRequest.profiles().stream().map(p->p.get("model")).toList());
+    }
     byte[] png(int width, int height, boolean alpha) throws Exception {
         var image=new BufferedImage(width,height,alpha?BufferedImage.TYPE_INT_ARGB:BufferedImage.TYPE_INT_RGB);
         var bytes=new ByteArrayOutputStream(); ImageIO.write(image,"png",bytes); return bytes.toByteArray();

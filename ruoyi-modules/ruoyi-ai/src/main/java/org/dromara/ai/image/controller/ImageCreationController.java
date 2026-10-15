@@ -371,7 +371,7 @@ public class ImageCreationController extends BaseController {
     @GetMapping("/cloud/models")
     @SaCheckPermission("image:creation:view")
     public R<Map<String, Object>> cloudModels() {
-        return R.ok(Map.of("configured", cloudService.configured(), "models", BluOctoImageClient.MODELS,
+        return R.ok(Map.of("configured", cloudService.configured(), "models", CloudImageRequest.availableModels(),
             "capabilities", CloudImageRequest.CAPABILITIES, "verified", BluOctoImageClient.MODELS.stream().anyMatch(model -> CloudImageRequest.verified(model, "T2I")), "profiles", CloudImageRequest.profiles()));
     }
 

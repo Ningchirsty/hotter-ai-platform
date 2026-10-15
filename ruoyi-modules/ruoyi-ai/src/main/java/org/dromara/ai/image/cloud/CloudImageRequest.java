@@ -29,8 +29,11 @@ public record CloudImageRequest(String model, String prompt, String capability,
         return model != null && !"flux-2-pro".equals(model) && CloudImageValidation.capabilities(model).contains(capability);
     }
     public static boolean verified(String model, String capability) { return CloudImageValidation.verified(model, capability); }
+    public static List<String> availableModels() {
+        return BluOctoImageClient.MODELS.stream().filter(model -> supported(model,"T2I")).toList();
+    }
     public static List<Map<String, Object>> profiles() {
-        return BluOctoImageClient.MODELS.stream().map(model -> Map.<String, Object>of(
+        return availableModels().stream().map(model -> Map.<String, Object>of(
             "model", model, "testedAt", CloudImageValidation.testedAt(model),
             "outputProfiles", CloudImageOutputValidation.profiles(model), "submissionPolicy", "supported",
             "maxReferenceImages", CloudImageValidation.maxReferences(model), "maxReferenceBytes", CloudImageValidation.maxReferenceBytes(model),

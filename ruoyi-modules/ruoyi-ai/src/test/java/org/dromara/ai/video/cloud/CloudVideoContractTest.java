@@ -36,8 +36,8 @@ class CloudVideoContractTest {
   var p=profile("MiniMax-H3");var d=draft(p,List.of(),"T2V");
   assertThrows(VideoTaskException.class,()->new CloudVideoRequest(d.model(),d.capability(),d.prompt(),d.seconds(),d.resolution(),"adaptive",d.references(),null,null,null,"key").validate(p));
  }
- @Test void wanNativePayloadUsesRoleMediaAndExplicitOutputParameters()throws Exception{
-  var d=draft(profile("wan2.7-i2v"),List.of(new CloudVideoRequest.Reference(1,"first_frame")),"I2V");
+ @Test void wanAdvancedPayloadUsesRoleMediaAndExplicitOutputParameters()throws Exception{
+  var d=new CloudVideoRequest("wan2.7-i2v","I2V","scene",5,"720p","16:9",List.of(new CloudVideoRequest.Reference(1,"first_frame")),true,null,null,"offline");
   JsonNode payload=mapper.valueToTree(BluOctoVideoClient.payload(d,"Wan",r->"https://example.org/ref"));
   assertEquals("first_frame",payload.at("/metadata/input/media/0/type").asText());assertEquals("720P",payload.at("/metadata/parameters/resolution").asText());assertEquals(d.seconds(),payload.at("/metadata/parameters/duration").asInt());
  }
@@ -103,6 +103,34 @@ class CloudVideoContractTest {
   var d=draft(profile("kling-3.0"),List.of(new CloudVideoRequest.Reference(2,"last_frame"),new CloudVideoRequest.Reference(1,"first_frame")),"FL2V");
   JsonNode payload=mapper.valueToTree(BluOctoVideoClient.payload(d,"Kling",r->"https://example.org/"+r.assetId()));
   assertEquals("https://example.org/1",payload.path("input_reference").asText());assertEquals("https://example.org/2",payload.at("/metadata/image_tail").asText());assertEquals("16:9",payload.at("/metadata/aspect_ratio").asText());
+ }
+ @Test void compatibilityFieldsReachKlingAndMiniMaxWithoutLosingOutputControls()throws Exception{
+  var d=new CloudVideoRequest("kling-2.6","FL2V","scene",10,"720p","9:16",List.of(new CloudVideoRequest.Reference(1,"first_frame"),new CloudVideoRequest.Reference(2,"last_frame")),false,null,null,"offline");
+  var body=mapper.valueToTree(BluOctoVideoClient.payload(d,"Kling",r->"https://example.org/"+r.assetId()));
+  assertEquals("10",body.path("seconds").asText());assertTrue(body.path("seconds").isTextual());
+  assertEquals("std",body.at("/metadata/mode").asText());assertEquals("10",body.at("/metadata/duration").asText());
+  assertEquals("9:16",body.path("aspect_ratio").asText());assertEquals("https://example.org/1",body.path("start_frame_url").asText());assertEquals("https://example.org/2",body.path("end_frame_url").asText());
+  var h3=new CloudVideoRequest("MiniMax-H3","T2V","scene",4,"768p","16:9",List.of(),false,null,null,"offline");
+  var mini=mapper.valueToTree(BluOctoVideoClient.payload(h3,"MiniMax",r->"unused"));
+  assertEquals("768P",mini.at("/metadata/resolution").asText());assertEquals(4,mini.at("/metadata/duration").asInt());assertEquals("16:9",mini.at("/metadata/ratio").asText());
+ }
+ @Test void legacyWanModelsUseAdvertisedCompatibilitySubmissionAndKeepNativeRecovery()throws Exception{
+  var paths=new ArrayList<String>();var bodies=new ArrayList<JsonNode>();
+  var client=new BluOctoVideoClient(new VideoCloudProperties()) {
+   @Override protected JsonNode json(String method,String path,Map<String,Object> body) {
+    paths.add(method+" "+path);bodies.add(CloudVideoContractTest.this.mapper.valueToTree(body));
+    return CloudVideoContractTest.this.mapper.createObjectNode().put("task_id","existing");
+   }
+  };
+  for(String model:List.of("wan2.7-t2v","wan2.7-i2v")) {
+   var refs=model.endsWith("i2v")?List.of(new CloudVideoRequest.Reference(1,"first_frame")):List.<CloudVideoRequest.Reference>of();
+   var req=new CloudVideoRequest(model,refs.isEmpty()?"T2V":"I2V","scene",5,"720p","16:9",refs,false,null,null,"offline");
+   var task=client.submit(req,profile(model),r->"https://example.org/image.png");assertEquals("generations",task.protocol());
+   assertEquals("POST /v1/video/generations",paths.getLast());assertEquals("scene",bodies.getLast().path("prompt").asText());assertTrue(bodies.getLast().path("seconds").isTextual());
+   if(!refs.isEmpty())assertEquals("https://example.org/image.png",bodies.getLast().path("image").asText());
+   client.query(task);assertEquals("GET /v1/tasks/existing",paths.getLast());
+   client.query(new BluOctoVideoClient.RemoteTask("old","alibaba"));assertEquals("GET /ali/api/v1/tasks/old",paths.getLast());
+  }
  }
  @Test void unknownStatusIsNotReportedAsRunning()throws Exception{
   assertEquals("SUCCEEDED",BluOctoVideoClient.state(mapper.readTree("{\"status\":\"succeeded\"}")));

@@ -93,10 +93,33 @@ class CloudVideoProviderRecoveryTest {
         var e=assertThrows(VideoTaskException.class,()->client(http).download(new BluOctoVideoClient.RemoteTask("existing","openai")));
         assertEquals("CLOUD_ARTIFACT_MISSING",e.getErrorCode());verify(http,times(2)).send(any(HttpRequest.class),any());
     }
+    @Test void safeParameterDiagnosticsDoNotExposeProviderBodiesOrRetryPaidRequests()throws Exception {
+        var errors=java.util.Map.of("seconds must be between 5 and 10","CLOUD_DURATION_UNSUPPORTED",
+            "resolution must be 720p","CLOUD_RESOLUTION_UNSUPPORTED","prompt is required","CLOUD_PROMPT_REQUIRED",
+            "json: cannot unmarshal number","CLOUD_REQUEST_FORMAT_INVALID");
+        for(var entry:errors.entrySet()) {
+            var http=mock(HttpClient.class);var body=new ObjectMapper().createObjectNode();body.putObject("error").put("message",entry.getKey()+" test-secret https://private.invalid/signed");
+            stub(http,response(400,body.toString()));
+            var request=new CloudVideoRequest("kling-2.6","T2V","scene",5,"720p","16:9",List.of(),false,null,null,"once");
+            var profile=new ObjectMapper().readTree("{\"protocol\":\"openai\",\"family\":\"Kling\"}");
+            var error=assertThrows(VideoTaskException.class,()->client(http).submit(request,profile,r->"unused"));
+            assertEquals(entry.getValue(),error.getErrorCode());assertFalse(error.getMessage().contains("test-secret"));assertFalse(error.getMessage().contains("private.invalid"));
+            verify(http,times(1)).send(any(HttpRequest.class),any());
+        }
+    }
     @Test void unknownErrorBodiesAreNotExposedToUsers()throws Exception {
         var http=mock(HttpClient.class);
         stub(http,response(503,"test-secret upstream internal details"));
         var e=assertThrows(VideoTaskException.class,()->client(http).query(new BluOctoVideoClient.RemoteTask("existing","openai")));
         assertEquals("CLOUD_QUERY_FAILED",e.getErrorCode());assertFalse(e.getMessage().contains("test-secret"));verify(http,times(1)).send(any(HttpRequest.class),any());
+    }
+    @Test void failedLegacyNativeQueryReadsSameTaskThroughGenericEndpointWithoutSubmission()throws Exception {
+        for(String protocol:List.of("alibaba","doubao")) {
+            var http=mock(HttpClient.class);stub(http,response(502,"upstream internal detail"),response(200,"{\"status\":\"SUCCESS\"}"));
+            assertEquals("SUCCESS",client(http).query(new BluOctoVideoClient.RemoteTask("existing",protocol)).path("status").asText());
+            var captured=ArgumentCaptor.forClass(HttpRequest.class);verify(http,times(2)).send(captured.capture(),any());
+            assertEquals("/v1/tasks/existing",captured.getAllValues().getLast().uri().getPath());
+            assertTrue(captured.getAllValues().stream().allMatch(r->r.method().equals("GET")&&r.uri().getHost().equals("bluocto.com")));
+        }
     }
 }
