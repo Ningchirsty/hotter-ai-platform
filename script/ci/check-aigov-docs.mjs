@@ -8,13 +8,15 @@
  *   本脚本把三类可机械核对的claim 拿出来逐条验：
  *     ① 文档里提到的类，仓库里是否真的还有这个文件；
  *     ② 文档里提到的 SQL 脚本是否存在；含 ALTER 的迁移是否都在发布工作流的重放清单里；
- *     ③ 文档 §4 的测试数是否与"刚跑出来的报告"一致（报告不存在则跳过，并说明原因）。
+ *     ③ 文档 §4 的测试数是否与"刚跑出来的报告"一致（报告不存在则跳过，并说明原因）；
+ *     ④ 文档 §1 提交表里的每个提交号是否真的存在于当前分支（手抄哈希很容易抄错一位）。
  *
  * 用法：node script/ci/check-aigov-docs.mjs
  * 退出码：全部通过 0；有任何一条对不上 1。
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -161,6 +163,25 @@ if (!existsSync(VITEST_JSON)) {
   } else {
     notes.push(`③ 前端测试数：文档 §4 与报告一致（${ranFiles} files / ${ranTests} tests）`);
   }
+}
+
+/** ④ 提交表里的提交号是否真的在分支上（手抄哈希很容易抄错一位） */
+const tableSection = doc.slice(doc.indexOf('## 1 提交序列'), doc.indexOf('## 2 D01–D12 对照'));
+const hashes = new Set([...tableSection.matchAll(/`([0-9a-f]{7,40})`/g)].map((hit) => hit[1]));
+const unknownHashes = [];
+for (const hash of [...hashes].sort()) {
+  // 不只看"对象存在"：还要是 HEAD 的祖先——rebase 掉的分支上仍可能有那些对象，
+  // 而评审人要的是"这个提交号能在当前分支上找到"
+  const probe = spawnSync('git', ['merge-base', '--is-ancestor', hash, 'HEAD'],
+    { cwd: ROOT, stdio: 'ignore' });
+  if (probe.status !== 0) {
+    unknownHashes.push(hash);
+  }
+}
+if (unknownHashes.length > 0) {
+  failures.push(`§1 提交表里有不是当前分支祖先的提交号（抄错、或已被 rebase 掉）：${unknownHashes.join('、')}`);
+} else {
+  notes.push(`④ 提交表：${hashes.size} 个提交号都是当前分支 HEAD 的祖先`);
 }
 
 /** 结论 */
