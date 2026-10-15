@@ -16,6 +16,28 @@ class CloudVideoExecutionTest {
  @Test void missingArtifactFailsWithoutPromotingOrResubmitting()throws Exception{run(false);}
  @Test void recoverExistingRemoteAfterUnknownQueryNeverResubmitsOrConsumesBudget()throws Exception{recover(false);}
  @Test void recoveryRetainsTheSubmittedTransportAfterProviderRouteChanges()throws Exception{recover(true);}
+ @Test void recoveryNormalizesHigherKlingOutputWithoutResubmittingAndArchivesActualBytes()throws Exception{
+  var p=new VideoCloudProperties();p.setEnabled(true);Path key=temp.resolve("key");Files.writeString(key,"offline-key");p.setApiKeyFile(key.toString());p.setVerificationFile(temp.resolve("normalized-ledger.json").toString());
+  var request=new CloudVideoRequest("kling-2.6","T2V","scene",5,"720p","16:9",List.of(),false,null,null,"once");
+  var repo=mock(VideoTaskRepository.class);var storage=mock(AssetStorage.class);var probe=mock(MediaProbe.class);var client=mock(BluOctoVideoClient.class);
+  var task=new HashMap<String,Object>(Map.<String,Object>of("workflow_code",VideoCloudService.WORKFLOW,"status","FAILED","comfy_prompt_id","existing-remote","comfy_worker","BluOcto:openai","input_json",new ObjectMapper().writeValueAsString(Map.of("request",request))));
+  when(repo.requireOwnedTask(11,"tenant",7)).thenReturn(task);when(repo.transition(11,VideoTaskStatus.QUEUED,VideoTaskStatus.RUNNING,null,null)).thenReturn(1);when(repo.listEvents(11,"tenant")).thenReturn(List.of());
+  var remote=new BluOctoVideoClient.RemoteTask("existing-remote","openai");when(client.query(remote)).thenReturn(new ObjectMapper().readTree("{\"status\":\"SUCCESS\"}"));when(client.download(remote)).thenReturn(new byte[]{1});
+  Path source=temp.resolve("original.mp4"),normalized=temp.resolve("normalized.mp4");
+  when(storage.storeOutput(anyString(),anyLong(),anyLong(),anyString(),any(),anyString())).thenReturn("original-key");when(storage.localPath("original-key")).thenReturn(source);
+  when(probe.probe(source)).thenReturn(new MediaProbe.Probe(1920,1080,24d,5000L,true));when(probe.downscale(source,1280,720)).thenReturn(normalized);
+  when(storage.keyOf(normalized)).thenReturn("normalized-key");when(storage.read("normalized-key")).thenReturn(new byte[]{2,3});
+  when(probe.probe(normalized)).thenReturn(new MediaProbe.Probe(1280,720,24d,5020L,true));when(probe.hasAudio(source)).thenReturn(true);when(probe.hasAudio(normalized)).thenReturn(true);
+  when(repo.markSucceeded(eq(11L),anyLong(),anyLong(),anyInt(),anyInt(),anyDouble(),anyLong(),anyBoolean())).thenReturn(1);
+  var service=new VideoCloudService(p,repo,storage,probe,client,new java.util.concurrent.atomic.AtomicLong(100)::incrementAndGet);
+  try {
+   service.execute(11,"tenant",7,true);verify(repo,timeout(5000)).appendEvent(anyLong(),eq(11L),eq("tenant"),anyInt(),eq("SUCCEEDED"),anyString());
+   verify(repo).markSucceeded(eq(11L),anyLong(),anyLong(),eq(1280),eq(720),eq(24d),eq(5020L),eq(false));
+   verify(repo).appendEvent(anyLong(),eq(11L),eq("tenant"),anyInt(),eq("OUTPUT_NORMALIZED"),contains("1920×1080"));
+   var asset=org.mockito.ArgumentCaptor.forClass(VideoTaskRepository.AssetRow.class);verify(repo).insertAsset(asset.capture());assertEquals("normalized-key",asset.getValue().storageKey());assertEquals(2L,asset.getValue().sizeBytes());
+   verify(client,never()).submit(any(),any(),any());verify(client,times(1)).download(remote);
+  }finally{service.shutdown();}
+ }
  void recover(boolean storedTransport)throws Exception{
   var p=new VideoCloudProperties();p.setEnabled(true);Path key=temp.resolve("key");Files.writeString(key,"offline-key");p.setApiKeyFile(key.toString());p.setVerificationFile(temp.resolve("ledger.json").toString());p.setValidationLimit(4);p.setValidationUserIds(List.of(7L));p.setValidationVariants(List.of("wan2.7-t2v|T2V|5|720p|16:9|true"));
   var request=new CloudVideoRequest("wan2.7-t2v","T2V","scene",5,"720p","16:9",List.of(),true,null,null,"once");

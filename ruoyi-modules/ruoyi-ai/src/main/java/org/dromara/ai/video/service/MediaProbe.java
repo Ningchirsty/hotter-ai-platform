@@ -178,6 +178,30 @@ public class MediaProbe {
         }
     }
 
+    /** Create a separate, bounded MP4 output; never delete or overwrite the source. */
+    public Path downscale(Path source, int width, int height) {
+        if(source==null || width<=0 || height<=0 || width%2!=0 || height%2!=0
+            || width>8192 || height>8192 || !Files.isRegularFile(source,java.nio.file.LinkOption.NOFOLLOW_LINKS)) return source;
+        Path target=null;Process process=null;boolean completed=false;
+        try {
+            target=Files.createTempFile(source.toAbsolutePath().getParent(),"cloud-downscaled-",".mp4");
+            var command=List.of(ffmpegPath,"-nostdin","-y","-v","error","-i",source.toAbsolutePath().toString(),
+                "-map","0:v:0","-map","0:a?","-vf","scale="+width+":"+height+":flags=lanczos,setsar=1",
+                "-c:v","libx264","-preset","veryfast","-crf","18","-pix_fmt","yuv420p",
+                "-threads","2","-filter_threads","1","-c:a","aac","-b:a","128k","-map_metadata","-1",
+                "-movflags","+faststart",target.toString());
+            process=new ProcessBuilder(command).redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                .redirectError(ProcessBuilder.Redirect.DISCARD).start();
+            if(!process.waitFor(timeoutSeconds,TimeUnit.SECONDS) || process.exitValue()!=0 || Files.size(target)==0)return source;
+            completed=true;return target;
+        } catch(InterruptedException e) {Thread.currentThread().interrupt();return source;}
+        catch(IOException e) {return source;}
+        finally {
+            if(process!=null && process.isAlive()) {process.destroyForcibly();try{process.waitFor(5,TimeUnit.SECONDS);}catch(InterruptedException e){Thread.currentThread().interrupt();}}
+            if(!completed && target!=null)try{Files.deleteIfExists(target);}catch(IOException ignored) { }
+        }
+    }
+
     /**
      * 判断可执行文件是否可用。
      */

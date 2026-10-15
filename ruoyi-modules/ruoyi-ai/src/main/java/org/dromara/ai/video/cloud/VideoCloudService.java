@@ -131,7 +131,20 @@ public class VideoCloudService {
             if(!completed)throw new VideoTaskException("CLOUD_RESULT_UNKNOWN","供应商任务等待超时，结果未知，请核对记录");
             byte[] bytes=client.download(remote);String key=storage.storeOutput(tenant,user,id,"cloud-"+id+".mp4",bytes,"video/mp4");
             var measured=probe.probe(storage.localPath(key));
-            if(!measured.measured()||measured.width()==null||measured.height()==null||measured.durationMillis()==null||measured.fps()==null||measured.fps()<=0||Math.abs(measured.durationMillis()-request.seconds()*1000L)>1000)throw VideoTaskException.outputInvalid("云端视频无法实测或时长与请求不符");
+            if(!measured.measured()||measured.width()==null||measured.height()==null||measured.durationMillis()==null||measured.fps()==null||measured.fps()<=0)throw VideoTaskException.outputInvalid("云端视频无法读取有效的尺寸、时长或帧率；保留原任务，无需重新生成");
+            if(Math.abs(measured.durationMillis()-request.seconds()*1000L)>1000)throw VideoTaskException.outputInvalid("视频时长与请求不符：请求 "+request.seconds()+" 秒，实际 "+String.format(java.util.Locale.ROOT,"%.3f",measured.durationMillis()/1000.0)+" 秒；保留原任务，请联系管理员核对");
+            int[] target=downscaleTarget(request,measured);
+            if(target!=null) {
+                var sourcePath=storage.localPath(key);var normalized=probe.downscale(sourcePath,target[0],target[1]);
+                if(normalized==null || normalized.equals(sourcePath))throw VideoTaskException.outputInvalid("云端成片高于目标分辨率，平台缩放未完成；可恢复原任务，无需重新生成");
+                String normalizedKey=storage.keyOf(normalized);
+                if(normalizedKey==null)throw VideoTaskException.outputInvalid("平台缩放成片无法归档");
+                var original=measured;measured=probe.probe(normalized);
+                if(!measured.measured()||measured.width()==null||measured.height()==null||measured.fps()==null||measured.fps()<=0||measured.durationMillis()==null||Math.abs(measured.durationMillis()-original.durationMillis())>500)throw VideoTaskException.outputInvalid("平台缩放成片未通过媒体校验");
+                if(probe.hasAudio(sourcePath) && !probe.hasAudio(normalized))throw VideoTaskException.outputInvalid("平台缩放成片缺少原音轨");
+                validateOutput(request,measured.width(),measured.height());key=normalizedKey;bytes=storage.read(key);
+                event(id,tenant,"OUTPUT_NORMALIZED","上游成片 "+original.width()+"×"+original.height()+"，平台缩放为请求尺寸 "+measured.width()+"×"+measured.height()+"；保留原生成任务，未重新付费生成");
+            }
             validateOutput(request,measured.width(),measured.height());
             long asset=ids.getAsLong();repository.insertAsset(new VideoTaskRepository.AssetRow(asset,tenant,user,id,"VIDEO","OUTPUT","cloud-"+id+".mp4",key,"video/mp4",(long)bytes.length,null,measured.width(),measured.height(),measured.durationMillis(),null));
             if(repository.markSucceeded(id,asset,asset,measured.width(),measured.height(),measured.fps(),measured.durationMillis(),false)==0)throw new VideoTaskException("CLOUD_RESULT_UNKNOWN","视频归档状态写入未完成，请核对任务记录");
@@ -144,10 +157,20 @@ public class VideoCloudService {
         String[] parts=request.ratio().split(":");double ratio=Double.parseDouble(parts[0])/Double.parseDouble(parts[1]);
         if(Math.abs((double)width/height-ratio)>ratio*.02)throw VideoTaskException.invalidContract("Wan 图生视频沿用首帧比例，请选择与图片一致的画面比例");
     }
+    /** Only reduce a matching Kling 1080p result to requested 720p; never upscale or crop. */
+    static int[] downscaleTarget(CloudVideoRequest request,MediaProbe.Probe measured) {
+        if(!request.model().startsWith("kling-") || !request.resolution().equals("720p")
+            || !measured.measured() || measured.width()==null || measured.height()==null
+            || Math.min(measured.width(),measured.height())!=1080)return null;
+        var higher=new CloudVideoRequest(request.model(),request.capability(),request.prompt(),request.seconds(),"1080p",request.ratio(),request.references(),request.generateAudio(),request.negativePrompt(),request.seed(),request.idempotencyKey());
+        validateOutput(higher,measured.width(),measured.height());
+        int width=(int)Math.round(measured.width()*2.0/3),height=(int)Math.round(measured.height()*2.0/3);
+        validateOutput(request,width,height);return new int[]{width,height};
+    }
     static void validateOutput(CloudVideoRequest request,int width,int height) {
         if(SeedanceOutputGeometry.applies(request.model())) { SeedanceOutputGeometry.validate(request,width,height);return; }
         int expected=switch(request.resolution()){case "480p"->480;case "720p"->720;case "768p"->768;case "1080p"->1080;case "4k"->2160;default->0;};
-        if(expected>0&&Math.min(width,height)!=expected)throw VideoTaskException.outputInvalid("视频分辨率与请求不符");
+        if(expected>0&&Math.min(width,height)!=expected)throw VideoTaskException.outputInvalid("视频分辨率与请求不符：请求 "+request.resolution()+"，实际 "+width+"×"+height);
         if(!request.ratio().equals("adaptive")){String[] r=request.ratio().split(":");double ratio=Double.parseDouble(r[0])/Double.parseDouble(r[1]);if(Math.abs((double)width/height-ratio)>ratio*.02)throw VideoTaskException.outputInvalid("视频比例与请求不符");}
     }
     private CloudVideoRequest request(Map<String,Object> task){try{Object raw=task.get("input_json");JsonNode n=raw instanceof byte[] bytes?mapper.readTree(bytes):mapper.readTree(String.valueOf(raw));if(n.isTextual())n=mapper.readTree(n.asText());return mapper.treeToValue(n.path("request"),CloudVideoRequest.class);}catch(Exception e){throw VideoTaskException.invalidContract("视频云端任务快照无法读取");}}
