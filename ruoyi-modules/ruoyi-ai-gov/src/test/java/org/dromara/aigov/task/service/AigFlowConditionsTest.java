@@ -38,6 +38,53 @@ class AigFlowConditionsTest {
     }
 
     @Test
+    @DisplayName("★ 支持 a.b.c 路径：对象逐层取，数组用数字下标（用户 2026-10-14 要求）")
+    void dottedPathReadsNestedValues() {
+        String json = "{\"input\":{\"needVideo\":true,\"flags\":{\"voice\":false}},"
+            + "\"items\":[{\"ready\":true},{\"ready\":false}]}";
+
+        Map<String, Boolean> results = AigFlowConditions.fromSnapshotJson(json, List.of(
+            condition("input.needVideo"),
+            condition("input.flags.voice"),
+            condition("items.0.ready"),
+            condition("items.1.ready")), MAPPER);
+
+        assertEquals(4, results.size());
+        assertTrue(results.get("input.needVideo"));
+        assertFalse(results.get("input.flags.voice"));
+        assertTrue(results.get("items.0.ready"));
+        assertFalse(results.get("items.1.ready"));
+    }
+
+    @Test
+    @DisplayName("★ 路径取不到就是「没有结论」：中间缺失/穿标量/空段/下标越界，一律不猜")
+    void brokenPathsYieldNoResult() {
+        String json = "{\"input\":{\"needVideo\":true},\"items\":[{\"ready\":true}],\"flag\":true}";
+
+        assertTrue(AigFlowConditions.fromSnapshotJson(json,
+            List.of(condition("input.noSuchKey")), MAPPER).isEmpty());
+        assertTrue(AigFlowConditions.fromSnapshotJson(json,
+            List.of(condition("flag.deep")), MAPPER).isEmpty(), "穿过标量不该继续猜");
+        assertTrue(AigFlowConditions.fromSnapshotJson(json,
+            List.of(condition("input..needVideo")), MAPPER).isEmpty(), "空段应按无结论处理");
+        assertTrue(AigFlowConditions.fromSnapshotJson(json,
+            List.of(condition("items.5.ready")), MAPPER).isEmpty(), "下标越界");
+        assertTrue(AigFlowConditions.fromSnapshotJson(json,
+            List.of(condition("items.first.ready")), MAPPER).isEmpty(), "数组段不是数字");
+        assertTrue(AigFlowConditions.fromSnapshotJson(json,
+            List.of(condition("input")), MAPPER).isEmpty(), "取到的是对象，不是布尔 → 无结论");
+    }
+
+    @Test
+    @DisplayName("★ 不含点的引用键仍按顶层取（存量配置不受影响）")
+    void plainKeyStillReadsTopLevel() {
+        Map<String, Boolean> results = AigFlowConditions.fromSnapshotJson(
+            "{\"needVideo\":true}", List.of(condition("needVideo")), MAPPER);
+
+        assertEquals(Boolean.TRUE, results.get("needVideo"));
+    }
+
+    @Test
     @DisplayName("★ 快照里的布尔字段给出结论（true / false 都算结论）")
     void booleanFieldsGiveResults() {
         Map<String, Boolean> results = AigFlowConditions.fromSnapshotJson(
