@@ -172,6 +172,7 @@ public class AigAgentExecutionResolver implements IAigAgentExecutionResolver {
             .subAgentVersionIds(subAgentVersionIds)
             .authorizationContext(authorization)
             .flowNodes(flowNodes)
+            .maxFlowSteps(config.getMaxFlowSteps())
             .retrievedKnowledgeBlock(knowledgeBlock)
             .knowledgeCitations(citations)
             .build();

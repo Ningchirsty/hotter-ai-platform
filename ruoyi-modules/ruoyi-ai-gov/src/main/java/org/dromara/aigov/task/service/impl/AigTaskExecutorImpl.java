@@ -23,6 +23,7 @@ import org.dromara.aigov.task.enums.AigTaskStatusEnum;
 import org.dromara.aigov.task.service.IAigTaskExecutor;
 import org.dromara.aigov.task.service.IAigSubAgentRunner;
 import org.dromara.aigov.task.service.IAigFlowDriverService;
+import org.dromara.aigov.task.service.AigFlowCallPolicy;
 import org.dromara.aigov.task.service.AigFlowConditions;
 import org.dromara.aigov.task.service.AigFlowDriveResult;
 import org.dromara.aigov.task.service.AigFlowRuntime;
@@ -41,7 +42,9 @@ import org.springframework.stereotype.Service;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -191,13 +194,58 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
             throw new ServiceException("任务未登记能力编码，无法路由：taskId=" + bo.getTaskId());
         }
 
-        // 3) 统一调用入口：路由 / 有序 fallback / 退避重试 / 逐次审计都在里面。
-        AigInvokeVo invoked = invokeService.invoke(invokeBo);
+        // ★ D05（用户 2026-10-14 授权）：顺序流程的**多步驱动**。
+        //   在此之前"一次任务执行 = 一次模型调用"，声明了多个 STEP 节点的流程只有第一个会跑。
+        //   现在按声明的顺序逐步调用：每步一次模型调用，第 k 步以上一步的输出作为业务输入；
+        //   次数上限见 AigFlowCallPolicy（声明节点数 ∩ limits.maxFlowSteps ∩ 平台默认 10）。
+        //   ⚠️ 累计成本**不可控**：调用结果里没有成本字段，maxCost 只能管"每一次"，
+        //   任务级累计上限要等成本回执接入（与"模型成本指标无数据源"同一处缺口）——写在 policy 的类注释里。
+        List<AigInvokeVo> calls = new ArrayList<>();
+        int maxStepCalls = plan == null
+            ? 0 : AigFlowCallPolicy.maxStepCalls(plan.getFlowNodes(), plan.getMaxFlowSteps());
+        int rounds = Math.max(1, maxStepCalls);
+        Long stepIdToSettle = flowStepId;
+        String businessInput = bo.getPrompt();
+        AigInvokeVo invoked = null;
+        for (int round = 0; round < rounds; round++) {
+            // 3) 统一调用入口：路由 / 有序 fallback / 退避重试 / 逐次审计都在里面。
+            invoked = invokeOnce(task, bo, snapshot, plan, businessInput, invokeBo);
+            calls.add(invoked);
+            boolean callOk = StringUtils.isNotBlank(invoked.getOutput())
+                && StringUtils.isBlank(invoked.getErrorCode());
+            settleFlowStep(bo.getTaskId(), stepIdToSettle, callOk, invoked);
+            // ★ D05：把"不需要人、也不需要再执行"的尾部节点推进掉（典型是收尾的输出节点）。
+            if (plan != null) {
+                drainSettleableFlowTail(bo.getTaskId(), plan,
+                    AigFlowConditions.fromSnapshotJson(snapshot.getSnapshotJson(), plan.getFlowNodes(),
+                        jsonMapper));
+            }
+            if (!callOk) {
+                // 这一步失败：不再往下跑（后面每一步都要花一次调用，且失败原因通常对后续同样成立）
+                break;
+            }
+            if (round + 1 >= maxStepCalls) {
+                if (maxStepCalls > 1) {
+                    log.info("顺序流程按声明步数执行完成, taskId={}, calls={}", bo.getTaskId(), calls.size());
+                }
+                break;
+            }
+            // 下一步：先过闸门（等人工/缺条件/受阻就停），再取该走哪个 STEP 节点
+            FlowGate next = checkFlowGate(bo, plan, running, snapshot);
+            if (next.stopped() != null) {
+                return stopAfterFlowCalls(bo, next.stopped(), calls);
+            }
+            if (next.stepId() == null) {
+                break;
+            }
+            stepIdToSettle = next.stepId();
+            businessInput = AigFlowCallPolicy.nextInput(invoked.getOutput(), bo.getPrompt());
+        }
 
         // 4) 记录执行事实（路由快照 / traceId / 是否外发 / 耗时）。
         //    路由快照是执行与排障的唯一依据：治理配置会变，只有当时那一刻的结论能解释「为什么跑的是它」
         AigTask afterFacts = taskService.recordExecutionFacts(bo.getTaskId(), running.getVersion(),
-            invoked.getTraceId(), buildRouteSnapshot(invoked, plan),
+            invoked.getTraceId(), buildRouteSnapshot(invoked, plan, calls),
             Boolean.TRUE.equals(invoked.getExternalCall()), invoked.getLatencyMs());
 
         // 4.5 记录策略结论（aig_task.policy_result/policy_reason + 事件 AI_TASK_POLICY_DECIDED）。
@@ -206,29 +254,8 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
         //     词表映射只有一处实现（拒绝写 REJECT、转人工写 MANUAL、其余 PASS）。
         AigTask afterPolicy = recordPolicyDecision(bo.getTaskId(), afterFacts.getVersion(), invoked);
 
-        // 5) 成功判定：**必须有输出且没有错误码**。
-        //    只看 errorCode 会漏掉「决策为 MANUAL 但既无输出也无错误码」这类空转；
-        //    只看 output 又可能把「恰好回了一段文本的错误响应」当成功。
+        // ★ D05：这次模型调用就是流程里那个 STEP 节点的执行，按结果收尾它（多步时每步各收尾一次）。
         boolean success = StringUtils.isNotBlank(invoked.getOutput()) && StringUtils.isBlank(invoked.getErrorCode());
-
-        // ★ D05：这次模型调用就是流程里那个 STEP 节点的执行，按结果收尾它。
-        //   写失败不影响本次结论（任务状态才是权威），但必须留痕。
-        if (flowStepId != null) {
-            try {
-                flowDriver.settle(flowStepId, success, invoked.getTraceId(), invoked.getErrorCode(),
-                    StringUtils.substring(invoked.getReason(), 0, 500));
-            } catch (Exception e) {
-                log.error("收尾流程步骤失败, taskId={}, stepId={}", bo.getTaskId(), flowStepId, e);
-            }
-        }
-        // ★ D05：把"不需要人、也不需要再执行"的尾部节点推进掉（典型是收尾的输出节点）。
-        //   少了这一步，{STEP, OUTPUT} 这类流程永远停在"输出节点待执行"——账本看起来是"没跑完"，
-        //   而实际上该做的都做完了。见 drainSettleableFlowTail 的边界说明。
-        if (plan != null) {
-            drainSettleableFlowTail(bo.getTaskId(), plan,
-                AigFlowConditions.fromSnapshotJson(snapshot.getSnapshotJson(), plan.getFlowNodes(),
-                    jsonMapper));
-        }
 
         AigTaskExecuteVo vo = new AigTaskExecuteVo();
         vo.setTaskId(bo.getTaskId());
@@ -243,7 +270,7 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
         if (success) {
             AigTask succeeded = taskService.transition(bo.getTaskId(), afterPolicy.getVersion(),
                 AigTaskStatusEnum.SUCCEEDED, "调用成功，产出待复核（执行成功不等于审核通过）",
-                buildRouteSnapshot(invoked, plan));
+                buildRouteSnapshot(invoked, plan, calls));
             vo.setSuccess(true);
             vo.setOutput(invoked.getOutput());
             vo.setStatus(succeeded.getStatus());
@@ -308,6 +335,88 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
             }
             flowDriver.advance(taskId, plan, conditionResults);
         }
+    }
+
+    /**
+     * 发起一次模型调用（多步流程里每个 {@code STEP} 节点一次）。
+     *
+     * <p>入参模板（能力/等级/场景/任务身份/预算）在循环外组好，这里只替换
+     * <b>业务输入</b>：有冻结计划时按 {@code 系统指令 → 资料节 → 业务输入} 组装（设计 §7.2/§7.3），
+     * 没有计划时沿用"调用方提供 prompt"的旧语义。</p>
+     *
+     * @param task         任务视图
+     * @param bo           执行入参
+     * @param snapshot     输入快照（引用用）
+     * @param plan         冻结执行计划（可空）
+     * @param businessInput 本次的业务输入
+     * @param template     循环外组好的入参模板（会被复制）
+     * @return 调用结果
+     */
+    private AigInvokeVo invokeOnce(AigTaskVo task, AigTaskExecuteBo bo, AigTaskSnapshotVo snapshot,
+                                   AigExecutionPlan plan, String businessInput,
+                                   AigInvokeBo template) {
+        AigInvokeBo each = new AigInvokeBo();
+        each.setCapabilityCode(template.getCapabilityCode());
+        each.setDataLevel(template.getDataLevel());
+        each.setScenarioCode(template.getScenarioCode());
+        each.setTaskId(template.getTaskId());
+        each.setAgentVersionId(template.getAgentVersionId());
+        each.setPayload(template.getPayload());
+        each.setInputSnapshotRef(template.getInputSnapshotRef());
+        each.setMaxCost(template.getMaxCost());
+        each.setAllowExternal(template.getAllowExternal());
+        each.setPrompt(plan == null ? businessInput : plan.composePrompt(businessInput));
+        return invokeService.invoke(each);
+    }
+
+    /**
+     * 按调用结果收尾本次对应的流程 STEP 节点（写失败不影响任务结论，但必须留痕）。
+     *
+     * @param taskId  任务ID
+     * @param stepId  步骤ID（可空=本次调用不对应流程节点）
+     * @param success 是否成功
+     * @param invoked 调用结果
+     */
+    private void settleFlowStep(Long taskId, Long stepId, boolean success, AigInvokeVo invoked) {
+        if (stepId == null) {
+            return;
+        }
+        try {
+            flowDriver.settle(stepId, success, invoked.getTraceId(), invoked.getErrorCode(),
+                StringUtils.substring(invoked.getReason(), 0, 500));
+        } catch (Exception e) {
+            log.error("收尾流程步骤失败, taskId={}, stepId={}", taskId, stepId, e);
+        }
+    }
+
+    /**
+     * 多步流程中途遇到闸门（等人工确认 / 缺条件结论 / 受阻）：停下，但**不丢掉已经产出的结果**。
+     *
+     * <p>闸门那一侧已经通过 {@code recordFailure} 把任务落成 {@code NEED_HUMAN}
+     * （并用 {@code APPROVAL_REQUIRED}/{@code INVALID_REQUEST} 说清为什么）。
+     * 这里只把**最后一次成功调用的产出与身份**补进返回体：此前跑完的那几步是真花钱做出来的，
+     * 只回一句"待人工处理"会让人以为什么都没发生。</p>
+     *
+     * @param bo      执行入参
+     * @param stopped 闸门给出的停留结果（非空）
+     * @param calls   本次执行已经发出的调用（≥1）
+     * @return 补上产出信息的结果
+     */
+    private AigTaskExecuteVo stopAfterFlowCalls(AigTaskExecuteBo bo, AigTaskExecuteVo stopped,
+                                                List<AigInvokeVo> calls) {
+        AigInvokeVo last = calls.isEmpty() ? null : calls.get(calls.size() - 1);
+        if (last != null) {
+            stopped.setTraceId(last.getTraceId());
+            stopped.setModelKey(last.getModelKey());
+            stopped.setDeploymentType(last.getDeploymentType());
+            stopped.setInvoker(last.getInvoker());
+            stopped.setExternalCall(Boolean.TRUE.equals(last.getExternalCall()));
+            stopped.setLatencyMs(last.getLatencyMs());
+            stopped.setOutput(last.getOutput());
+        }
+        log.info("顺序流程中途停留（已调用 {} 次）, taskId={}, 落点={}",
+            calls.size(), bo.getTaskId(), stopped.getStatus());
+        return stopped;
     }
 
     /**
@@ -624,11 +733,13 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
     /**
      * 组装路由快照：执行与排障的唯一依据。
      *
-     * @param invoked 调用结果
+     * @param invoked 最后一次调用结果（任务上的 traceId/模型等字段取自它）
      * @param plan    冻结的执行计划（可为空=非 Agent 模式）
+     * @param calls   本次执行发出的全部调用（顺序流程多步时 &gt;1；单次调用时长度 1）
      * @return JSON 文本
      */
-    private String buildRouteSnapshot(AigInvokeVo invoked, AigExecutionPlan plan) {
+    private String buildRouteSnapshot(AigInvokeVo invoked, AigExecutionPlan plan,
+                                      List<AigInvokeVo> calls) {
         Map<String, Object> snapshot = new LinkedHashMap<>();
         snapshot.put("decision", invoked.getDecision());
         snapshot.put("modelId", invoked.getModelId());
@@ -639,6 +750,26 @@ public class AigTaskExecutorImpl implements IAigTaskExecutor {
         snapshot.put("traceId", invoked.getTraceId());
         // 策略命中明细一并冻结：只看「用了哪个模型」回答不了「当时为什么是它」
         snapshot.put("policyHits", invoked.getPolicyHits());
+        // ★ 顺序流程多步驱动（用户 2026-10-14 授权）：把**每一次**调用都冻结下来。
+        //   任务行上的 traceId 只是最后一次——只看它，"这一步是谁跑的"就无从回答；
+        //   单次调用时不写这一段（保持既有快照形状，便于与历史数据比对）。
+        if (calls != null && calls.size() > 1) {
+            List<Map<String, Object>> executed = new ArrayList<>();
+            int stepNo = 0;
+            for (AigInvokeVo call : calls) {
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("step", ++stepNo);
+                item.put("traceId", call.getTraceId());
+                item.put("decision", call.getDecision());
+                item.put("modelKey", call.getModelKey());
+                item.put("deploymentType", call.getDeploymentType());
+                item.put("externalCall", call.getExternalCall());
+                item.put("latencyMs", call.getLatencyMs());
+                item.put("errorCode", call.getErrorCode());
+                executed.add(item);
+            }
+            snapshot.put("executedCalls", executed);
+        }
         // D01：把冻结计划的身份一并写进快照——这是"这次执行依据哪份配置"的持久证据。
         // 只记 agentVersionId 不够：同一版本的内容也可能被后续修订影响，configHash 才是锚点
         if (plan != null) {

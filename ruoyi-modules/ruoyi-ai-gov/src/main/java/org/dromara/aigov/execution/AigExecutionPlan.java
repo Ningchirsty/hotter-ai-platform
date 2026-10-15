@@ -120,6 +120,15 @@ public class AigExecutionPlan implements Serializable {
     private final List<AigFlowNode> flowNodes;
 
     /**
+     * 一次运行允许的最大流程步骤数（可空=按平台默认）。
+     *
+     * <p>用户 2026-10-14 授权"顺序流程每步一次模型调用"之后，它多了一层含义：
+     * <b>一次执行最多发起的流程调用次数</b>——每步一次调用，所以"步骤上限"就是"调用上限"。
+     * 与 {@code maxToolCalls} 同属预算类约束，因此与它同层冻结。</p>
+     */
+    private final Integer maxFlowSteps;
+
+    /**
      * 本次运行采用的知识资料节（已渲染；可为空表示没有检索资料节）。
      *
      * <p>在解析阶段（{@code AgentExecutionResolver}）由 {@code KnowledgePort} 检索并渲染，
@@ -144,6 +153,7 @@ public class AigExecutionPlan implements Serializable {
                             List<Long> subAgentVersionIds,
                             AigAuthorizationContext authorizationContext,
                             List<AigFlowNode> flowNodes,
+                            Integer maxFlowSteps,
                             String retrievedKnowledgeBlock, List<AigExecutionCitation> knowledgeCitations) {
         this.planId = planId;
         this.taskId = taskId;
@@ -163,6 +173,7 @@ public class AigExecutionPlan implements Serializable {
         this.subAgentVersionIds = subAgentVersionIds == null ? List.of() : List.copyOf(subAgentVersionIds);
         this.authorizationContext = authorizationContext;
         this.flowNodes = flowNodes == null ? List.of() : List.copyOf(flowNodes);
+        this.maxFlowSteps = maxFlowSteps;
         this.retrievedKnowledgeBlock = retrievedKnowledgeBlock;
         this.knowledgeCitations = knowledgeCitations == null
             ? List.of() : List.copyOf(knowledgeCitations);

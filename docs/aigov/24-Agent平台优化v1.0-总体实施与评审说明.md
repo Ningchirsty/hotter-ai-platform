@@ -60,6 +60,7 @@
 | `f528f43a` | —/CI | **文档口径检查 `script/ci/check-aigov-docs.mjs`**（类名 / SQL 清单 / 测试数 / 提交号四类漂移，接入验收脚本最后一步） |
 | `84e29fff` | B | **三条路径系统指令同源的用例**（设计 §11.2 #4）+ 阶段文档去掉会过期的"当前 N"数字 |
 | `6db724f4` | B/前端 | **右栏两页签**（修订差异 / 测试预览）+ 测试结果的**版本哈希与 Schema 结论**（设计 §6.3、§6.6） |
+| `本次提交` | D | **顺序流程每步一次调用**（用户 2026-10-14 授权）：`AigFlowCallPolicy`（次数上限 / 链式输入 / 累计成本边界）+ 执行器多步循环 + `route_snapshot.executedCalls` |
 
 > 表里是**有实质内容的提交**；纯文档补记（例如把本表自己补上一行）不逐条登记——它们不改变交付物。
 > `check-aigov-docs.mjs` 会核对表里每个提交号都是当前分支 HEAD 的祖先（抄错/被 rebase 掉会红）。
@@ -76,7 +77,7 @@
 | D02 | 草稿 `allowExternal` 不是网关硬约束 | ✅ | `AigInvokeBo`/`AigRouteHint`/`AigRouteServiceImpl`；`AigRouteServiceExternalConstraintTest` |
 | D03 | 绑定只看 enabled、缺撤销入口 | ✅ | `countActiveBindings` 统一有效期口径；`assertExecutionAuthorized`；`POST /aigov/agent/binding/{id}/revoke`；`AigAgentBindingLifecycleTest` |
 | D04 | 执行态内异常直接抛出、等超时清扫 | ✅ | `AigTaskExecutorImpl#settleFailure` 单一收口；`AigTaskExecutorImplTest`（缺能力编码、ServiceException） |
-| D05 | 工具/知识可绑定但无执行引擎 | 🔶 | 工具注册+执行+确认、子 Agent 顺序编排 + 运行时派发/对账 + 对账定时作业、顺序流程节点校验、任务步骤账本（含状态迁移与 CAS）、**流程节点运行时驱动（闸门接线 + 人工确认的挂起与恢复入口 + 条件结论取自冻结快照 + 尾部节点本轮收尾）**已完成；**一个任务只驱动第一个 STEP 节点（多节点需动调度循环）、条件的复杂来源（路径/外部求值）、WarmFlow/LiteFlow 适配器未做** |
+| D05 | 工具/知识可绑定但无执行引擎 | 🔶 | 工具注册+执行+确认、子 Agent 顺序编排 + 运行时派发/对账 + 对账定时作业、顺序流程节点校验、任务步骤账本（含状态迁移与 CAS）、**流程节点运行时驱动（闸门接线 + 人工确认的挂起与恢复入口 + 条件结论取自冻结快照 + 尾部节点收尾 + 顺序流程每步一次调用）**已完成；**条件的复杂来源（路径/外部求值）、WarmFlow/LiteFlow 适配器未做** |
 | D06 | 采纳提案/关闭编辑器丢未保存内容 | ✅ | `dirtyGuard.ts` + `dirtyGuard.spec.ts`；`index.vue`/`ProposalPanel.vue` |
 | D07 | 预检只查结构、类别在提交阶段查 | ✅ | `AigStudioPrecheck` 分级（blockers/warnings + fieldPath）；`AigStudioDraftServiceImplTest` |
 | D08 | 网络调用包在长事务里 | ✅ | `runTest`/`chat` 去掉方法级 `@Transactional`；`AigStudioShortTransactionGuardTest` + 更新的 `AigStudioProposalTransactionBoundaryTest` |
@@ -101,7 +102,7 @@
 
 ## 4 验证汇总
 
-- 后端 `ruoyi-ai-gov`：**1288 tests / 0 failures / 0 errors**（基线 1053 → 新增 235）。
+- 后端 `ruoyi-ai-gov`：**1297 tests / 0 failures / 0 errors**（基线 1053 → 新增 244）。
   > 各阶段文档（`19`–`23`）里的测试数**是各自增量当时的数**；
   > **以本节为准**——阶段文档只留"本轮新增几条"，不再写会过期的"当前 N"。
   > 另有 `script/ci/check-aigov-docs.mjs` 会**机械核对**本节的测试数与提交号
@@ -168,12 +169,13 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
 ## 6 剩余工作（诚实的待办，不影响已交付部分可评审）
 
 1. **D05 续**：**流程节点运行时驱动的剩余部分**——
-   ①一个任务只驱动第一个 `STEP` 节点，多 `STEP` 节点的流程需把调度循环改成"按节点多次发起调用"；
-   ②**条件结论的复杂来源**——现在是"读冻结快照顶层布尔字段"（`a.b.c` 路径、业务侧实时求值、
+   ①**条件结论的复杂来源**——现在是"读冻结快照顶层布尔字段"（`a.b.c` 路径、业务侧实时求值、
    表达式引擎属独立变更）；
-   ③WarmFlow/LiteFlow 适配器（适配点已明确：`AigFlowRuntime` 的判定输入是
+   ②WarmFlow/LiteFlow 适配器（适配点已明确：`AigFlowRuntime` 的判定输入是
    "节点顺序 + 步骤状态 + 条件结论"）。
-   **已闭环的部分**：人工确认的"挂起—恢复"（节点身份落账本 + `GET /task/{id}/flow-nodes` +
+   **已闭环的部分**：**顺序流程每步一次调用**（用户 2026-10-14 授权；次数上限 = 声明步数 ∩
+   `limits.maxFlowSteps` ∩ 平台默认 10，第 k 步以上一步输出为输入，见 `22` §1.17）；
+   人工确认的"挂起—恢复"（节点身份落账本 + `GET /task/{id}/flow-nodes` +
    `POST /task/{id}/flow/confirm`，见 `22` §1.16；操作序列"读 → 确认 → requeue"，确认刻意不自动重跑）；
    条件结论来源（`AigFlowConditions`，取不到结论不猜真假）；
    尾部可自行收尾的节点（`peek` 只读判定 → 输出节点/已定条件在本轮推到完成，
@@ -265,6 +267,7 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
 | 条件判断/人工确认是否真拦得住 | `task/service/AigFlowRuntime`、`task/.../AigFlowDriverServiceImpl`、`AigTaskExecutorImpl#checkFlowGate` |
 | 人工确认能否被"恢复"、批准会不会被覆盖 | `task/controller/AigTaskController#flowNodes/#confirmFlowNode`、`task/domain/vo/AigTaskFlowNodeVo#isAwaitingConfirmation` |
 | 条件判断的结论从哪来 | `task/service/AigFlowConditions`（快照顶层布尔字段；取不到结论不猜）+ `AigTaskExecutorImpl#checkFlowGate` |
+| 一次执行会发几次调用、每步输入是什么 | `task/service/AigFlowCallPolicy`（声明步数 ∩ `maxFlowSteps` ∩ 平台默认 10；第 k 步以上一步输出为输入；**累计成本不可控已写明**） |
 | 尾部节点为什么能自己收尾、又为什么不会假挂起 | `IAigFlowDriverService#peek`（只读）+ `AigTaskExecutorImpl#drainSettleableFlowTail` |
 | 新增的库表/列会不会在部署时被漏掉 | `.github/workflows/deploy-poc.yml` 的重放清单 + `AigDeploySchemaReplayCoverageTest` |
 | 反馈是否会直接改线上 | `feedback/.../AigResultFeedbackServiceImpl`（动作只进改进流程） |

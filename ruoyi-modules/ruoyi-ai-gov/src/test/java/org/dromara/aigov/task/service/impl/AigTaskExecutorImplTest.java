@@ -492,6 +492,99 @@ class AigTaskExecutorImplTest {
     }
 
     @Test
+    @DisplayName("★ 多步流程：按声明顺序逐步调用，第 2 步以上一步输出为业务输入（用户 2026-10-14 授权）")
+    void drivesEveryStepNodeInOrder() {
+        stubHappyPath(invoked("{\"step1\":\"初稿\"}", null, null));
+        stubPlanWithFlow(flowNode("STEP", "a"), flowNode("STEP", "b"), flowNode("OUTPUT", "out"));
+        when(invokeService.invoke(any())).thenReturn(
+            invoked("{\"step1\":\"初稿\"}", null, null),
+            invoked("{\"step2\":\"终稿\"}", null, null));
+        when(flowDriver.advance(any(), any(), any())).thenReturn(
+            drive(AigFlowRuntime.Action.START, "a", "STEP", 555L, "启动第 1 个节点"),
+            drive(AigFlowRuntime.Action.START, "b", "STEP", 556L, "启动第 2 个节点"));
+
+        AigTaskExecuteVo vo = executor.execute(executedBo());
+
+        assertTrue(vo.isSuccess(), "两步都成功 → 任务成功");
+        assertEquals("{\"step2\":\"终稿\"}", vo.getOutput(), "任务输出取最后一步的产出");
+
+        ArgumentCaptor<AigInvokeBo> captor = ArgumentCaptor.forClass(AigInvokeBo.class);
+        verify(invokeService, times(2)).invoke(captor.capture());
+        List<AigInvokeBo> calls = captor.getAllValues();
+        assertTrue(calls.get(0).getPrompt().contains("a cute cat"), "第 1 步用调用方给的业务输入");
+        assertTrue(calls.get(1).getPrompt().contains("初稿"),
+            "第 2 步的业务输入必须是第 1 步的输出（否则只是把同一句话问两遍）");
+        verify(flowDriver).settle(eq(555L), eq(true), eq("trace-1"), isNull(), isNull());
+        verify(flowDriver).settle(eq(556L), eq(true), eq("trace-1"), isNull(), isNull());
+        // 路由快照要能回答"每一步是谁跑的"（任务行上的 traceId 只是最后一次）
+        ArgumentCaptor<String> snapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(taskService).recordExecutionFacts(any(), any(), any(), snapshotCaptor.capture(),
+            anyBoolean(), any());
+        assertTrue(snapshotCaptor.getValue().contains("executedCalls"),
+            "多步执行要把每次调用都冻结进路由快照：" + snapshotCaptor.getValue());
+    }
+
+    @Test
+    @DisplayName("★ 多步流程：第一步失败就不再往下跑（后面每步都要花一次调用）")
+    void stopsAfterFirstFailedStep() {
+        stubHappyPath(invoked(null, "TIMEOUT", "调用超时"));
+        stubPlanWithFlow(flowNode("STEP", "a"), flowNode("STEP", "b"));
+        when(taskService.recordFailure(eq(TASK_ID), eq(5), eq(AigErrorClassEnum.TIMEOUT), any()))
+            .thenReturn(AigTaskStatusEnum.RETRY_WAIT);
+        when(flowDriver.advance(any(), any(), any())).thenReturn(
+            drive(AigFlowRuntime.Action.START, "a", "STEP", 555L, "启动第 1 个节点"));
+
+        executor.execute(executedBo());
+
+        verify(invokeService, times(1)).invoke(any());
+        verify(flowDriver).settle(eq(555L), eq(false), eq("trace-1"), eq("TIMEOUT"), eq("调用超时"));
+    }
+
+    @Test
+    @DisplayName("★ 多步流程：中途要人工确认 → 停下，但已产出的结果如实带回（不假装什么都没发生）")
+    void midFlowHumanConfirmKeepsProducedOutput() {
+        stubHappyPath(invoked("{\"step1\":\"初稿\"}", null, null));
+        // 人工确认夹在两步之间：第 2 步还等着执行，所以闸门必须真的拦住
+        stubPlanWithFlow(flowNode("STEP", "a"), flowNode("HUMAN_CONFIRM", "approve"),
+            flowNode("STEP", "b"));
+        when(taskService.recordFailure(eq(TASK_ID), eq(3), eq(AigErrorClassEnum.APPROVAL_REQUIRED), any()))
+            .thenReturn(AigTaskStatusEnum.NEED_HUMAN);
+        when(flowDriver.advance(any(), any(), any())).thenReturn(
+            drive(AigFlowRuntime.Action.START, "a", "STEP", 555L, "启动第 1 个节点"),
+            drive(AigFlowRuntime.Action.WAIT_HUMAN, "approve", "HUMAN_CONFIRM", 556L, "待人工确认"));
+
+        AigTaskExecuteVo vo = executor.execute(executedBo());
+
+        assertEquals("NEED_HUMAN", vo.getStatus(), "闸门拦住 → 任务等人工");
+        assertFalse(vo.isSuccess());
+        assertEquals("{\"step1\":\"初稿\"}", vo.getOutput(), "已经跑完那一步的产出要带回来");
+        assertEquals("trace-1", vo.getTraceId());
+        verify(invokeService, times(1)).invoke(any());
+    }
+
+    @Test
+    @DisplayName("★ 多步流程：limits.maxFlowSteps 收紧到 1 → 只发一次调用（预算类约束必须生效）")
+    void respectsDeclaredMaxFlowSteps() {
+        stubHappyPath(invoked("{\"step1\":\"初稿\"}", null, null));
+        when(executionResolver.resolve(any(), any(), any(), any(), any(), any(), any()))
+            .thenReturn(AigExecutionPlan.builder()
+                .planId("plan-capped")
+                .taskId(TASK_ID)
+                .capabilityCode("text_generation")
+                .flowNodes(List.of(flowNode("STEP", "a"), flowNode("STEP", "b")))
+                .maxFlowSteps(1)
+                .build());
+        when(flowDriver.advance(any(), any(), any())).thenReturn(
+            drive(AigFlowRuntime.Action.START, "a", "STEP", 555L, "启动第 1 个节点"));
+
+        AigTaskExecuteVo vo = executor.execute(executedBo());
+
+        assertTrue(vo.isSuccess());
+        verify(invokeService, times(1)).invoke(any());
+        verify(flowDriver, times(1)).settle(any(), anyBoolean(), any(), any(), any());
+    }
+
+    @Test
     @DisplayName("★ D05：尾部可自行收尾的节点（输出节点）会在本轮推到完成，不留「没跑完」的假象")
     void settleableFlowTailIsDrainedToDone() {
         stubHappyPath(invoked("{\"image\":\"x\"}", null, null));
