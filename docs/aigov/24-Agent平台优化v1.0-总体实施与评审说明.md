@@ -113,11 +113,19 @@
   它同时会跑"每个有测试的模块都必须产出 Surefire 报告"的台账守卫。
   ⚠️ 该模式需要 CI 前置步骤装好的 **ffmpeg/ffprobe**（缺了会是 `ruoyi-ai` 的 4 个媒体用例报
   "图片格式转换服务不可用"——环境前提，不是本分支的回归；见 §7.2）。
-- 前端 `frontend`：**53 files / 526 tests** 全过；`oxlint src` 552 files 0/0。
+- 前端 `frontend`：**53 files / 527 tests** 全过；`oxlint src` 552 files 0/0；
+  **生产构建 `vite build --mode production` 通过**（与 CI 的 `pnpm build:prod` 同一条命令）。
   其中 `views/aigov/sfcCompile.spec.ts` 真编译全部 30 个治理层 SFC
-  （无 DOM 环境下的最低保证：模板/`<script setup>` 写错会在这里红）。
+  （无 DOM 环境下的最低保证：模板/`<script setup>` 写错会在这里红），
+  并用**构建插件本身**扫 `src/views/**` 全部页面，守住"根节点只能有一个"（见 §7.2 的说明）。
 - 关键守卫全部通过：`AigPermissionSeedCoverageTest`（权限串已种子 + menu_id 不撞）、
   `AigRepeatSubmitCoverageTest`（写接口防重或显式豁免）、`AigWp3WiringAndRoutesTest`。
+- **本轮由 CI 首次跑通整条流水线，抓到 3 处"只有 `vite build` 才会失败"的问题**：
+  `TaskFlowPanel.vue` 的相对 import 写成 `./flow`（实际在 `../flow`）、
+  `ProposalPanel.vue` 与两个 studio 子组件存在**根级注释/第二个根节点**（`<transition>` 只接受单根）。
+  它们在本地的单测 + lint + 全部守卫里**零信号**（vitest 只加载测试引用到的文件），
+  是"把这个分支推上去让 CI 跑"之后才暴露的。⇒ 已把 `vite build` 加成验收脚本的一步，
+  并把"单根节点"判定接进 `sfcCompile.spec.ts`（复用构建插件、口径同源）。
 
 复现命令：
 
@@ -257,8 +265,17 @@ node script/ci/verify-aigov-v1.mjs --full-reactor   # 与 CI 同口径跑整棵�
 守卫脚本本身是仓里既有的两个（`check-test-results.py` / `check-frontend-tests.mjs`），
 本脚本只做编排、不另写判定。
 
+> **它现在还会跑一次前端生产构建（`vite build`，与 CI 的 `pnpm build:prod` 同一条命令）**。
+> 这是本轮后补的一步，原因值得评审人知道：`vitest` 只加载"测试引用到的文件"，
+> 而 `sfcCompile.spec.ts` 只编译 SFC 自身、不解析它的 `import` ⇒ **断掉的相对 import
+> 与模板多根节点这两类问题，在"单测 + lint + 全部守卫全绿"时依然存在**。
+> 本分支实测被 CI 的前端镜像构建抓到 3 处（`TaskFlowPanel` 的 `./flow` 应为 `../flow`；
+> `ProposalPanel` 的 `el-card`+`el-dialog` 双根；两个 studio 子组件的根级注释）——
+> 现在其中"单根节点"这条又额外在 `sfcCompile.spec.ts` 里以**同一个构建插件**跑了一遍，
+> 本地几十秒就能红（口径与构建完全一致，不复制判定逻辑）。
+
 最后一步是 **`check-aigov-docs.mjs`（文档口径检查）**：核对文档里写的
-①类名（46 个 `Aig*` 名字都能在源码里找到）、②SQL 脚本清单（含 `ALTER` 的都在发布工作流的
+①类名（54 个 `Aig*` 名字都能在源码里找到）、②SQL 脚本清单（含 `ALTER` 的都在发布工作流的
 重放清单里）、③**测试数**（与本轮刚跑出来的 Surefire 报告 / vitest JSON 一致）。
 它防的是"文档漂移"——代码改名、脚本漏清单、测试数前移，都不会让任何测试变红。
 
@@ -268,7 +285,8 @@ node script/ci/verify-aigov-v1.mjs --full-reactor   # 与 CI 同口径跑整棵�
 # 后端（注意根 pom 默认 maven.test.skip=true，必须显式关闭）
 ./mvnw -o -Plocal -pl ruoyi-modules/ruoyi-ai-gov -am test -Dmaven.test.skip=false
 # 前端
-cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
+cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src \
+  && ./node_modules/.bin/vite build --mode production
 ```
 
 > ⚠️ `--full-reactor` 的前提与 CI 相同：**ffmpeg/ffprobe 等媒体工具要在 PATH 上**
@@ -309,7 +327,8 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
 | 训练台三栏是否还在 | `frontend/src/views/aigov/studio/threeColumnLayout.spec.ts`（源码结构 + SFC 真编译；**观感需人眼**） |
 | 测试/提交/正式执行是否同一份系统指令 | `AigStudioTestServiceImplTest#systemPromptIsIdenticalAcrossTestSubmitAndProductionPaths`（设计 §11.2 #4） |
 | 测试结果里的版本哈希与 Schema 结论 | `frontend/src/views/aigov/studio/testPreview.ts`（`hashShort`/`schemaVerdictText`；**未判定 ≠ 不通过**） |
-| 治理层页面模板有没有被写坏 | `frontend/src/views/aigov/sfcCompile.spec.ts`（全部 30 个 SFC 真编译） |
+| 治理层页面模板有没有被写坏 | `frontend/src/views/aigov/sfcCompile.spec.ts`（全部 30 个 SFC 真编译 + **用构建插件扫 `src/views/**` 的单根节点规则**） |
+| 前端改动会不会在"构建期"才炸（断 import / 多根节点） | `script/ci/verify-aigov-v1.mjs` 的**前端生产构建**步骤 + `frontend/vite/plugins/check-transition.ts`（单测与它同源，见 §7.2） |
 | 分段预览会不会顺手把原文吐出来 | `AigKnowledgeChunkVo`（无正文字段）+ `AigKnowledgeServiceImpl#listChunks`（只取 `text_excerpt`） |
 | 退役一个知识版本会影响谁 | `AigKnowledgeController#references` → `AigAgentRegistryQueryServiceImpl#listResourceReferences`（解析 Agent 身份；停用中的也返回） |
 | 一个工具收什么、回什么、超时多久 | `AigToolController#versionDetail` → `AigToolDetailVo`（定义 + 版本两处来源；未接入也显示执行器引用名） |

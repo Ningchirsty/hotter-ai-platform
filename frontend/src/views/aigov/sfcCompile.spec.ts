@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { compileScript, compileTemplate, parse } from '@vue/compiler-sfc';
 import { describe, expect, it } from 'vitest';
+import { viteCheckTransitionPlugin } from '../../../vite/plugins/check-transition';
 
 /**
  * 治理层页面（`views/aigov/**`）的 SFC 编译守卫。
@@ -16,6 +17,9 @@ import { describe, expect, it } from 'vitest';
  * 能抓到语法与模板编译错误，抓不到"逻辑对不对"（那要靠纯函数单测与请求级测试）。</p>
  */
 const ROOT = fileURLToPath(new URL('.', import.meta.url));
+
+/** `src/views` 根：本仓所有"页面"都在它下面（构建期单根节点规则的作用范围）。 */
+const VIEWS_ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 function walkVue(dir: string): string[] {
   const out: string[] = [];
@@ -31,6 +35,7 @@ function walkVue(dir: string): string[] {
 }
 
 const FILES = walkVue(ROOT).toSorted();
+const VIEW_FILES = walkVue(VIEWS_ROOT).toSorted();
 
 describe('aigov views SFC compile guard', () => {
   it('扫描本身不能空转（否则这条守卫会静默通过）', () => {
@@ -58,4 +63,35 @@ describe('aigov views SFC compile guard', () => {
       }
     }
   );
+});
+
+describe('src/views 页面「transition 单根节点」守卫', () => {
+  /**
+   * 直接调用**构建插件自己的 transform**，不复制一份判定逻辑。
+   *
+   * <p>为什么要在单测里再跑一遍：这条规则原本只在 `vite build` 时才报错，而"跑生产构建"在 CI 里是
+   * 前端镜像构建步骤、在本地通常不会跑（本轮就吃过：`ProposalPanel.vue` 的 `el-card` + `el-dialog`
+   * 双根节点，单测 + lint + 全部守卫全绿，直到 CI 构建镜像才红）。把同一份判定挪到 `vitest` 里，
+   * 这类问题在本地几十秒内就能看见，而且口径与构建完全一致（同一个插件对象）。</p>
+   */
+  const plugin = viteCheckTransitionPlugin() as unknown as {
+    transform: ((code: string, id: string) => unknown) | { handler: (code: string, id: string) => unknown };
+  };
+  const transformFn =
+    typeof plugin.transform === 'function' ? plugin.transform : plugin.transform.handler;
+
+  it('全部页面都只允许一个根节点（违规一次性列全，避免逐个文件重跑）', () => {
+    expect(VIEW_FILES.length).toBeGreaterThan(100);
+
+    const violations: string[] = [];
+    for (const file of VIEW_FILES) {
+      const id = file.replaceAll('\\', '/');
+      try {
+        transformFn.call({}, readFileSync(file, 'utf8'), id);
+      } catch (error: unknown) {
+        violations.push(`${id.slice(id.indexOf('/src/') + 1)}: ${String(error)}`);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
 });

@@ -97,7 +97,7 @@ import {
   flowNodeTagType,
   flowNodeTypeLabel,
   flowSummary
-} from './flow';
+} from '../flow';
 
 defineOptions({ name: 'AigTaskFlowPanel' });
 

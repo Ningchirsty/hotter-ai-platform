@@ -9,6 +9,12 @@
  *   评审人照着文档一条条敲，任何一个坑都会得到"看着通过了"的假结论。
  *   这里把它们固化成可执行的一步，并且**复用仓里已有的守卫脚本**（不另写一份判定逻辑）。
  *
+ * 覆盖的 7 步：①后端测试（含全部守卫）②后端台账守卫（仅 --full-reactor）
+ *   ③前端全量单测 ④spec 覆盖守卫 ⑤前端 lint ⑥**前端生产构建（vite build，与 CI 同一条命令）**
+ *   ⑦全部 .vue 的 `<script setup>` 守卫 + 文档口径检查。
+ *   ⑥ 是后补的：单测只加载"测试引用到的文件"，所以断掉的相对 import、模板多根节点这类问题
+ *   在单测+lint 全绿时依然存在（本分支实测被它抓到两次）——CI 的前端镜像构建步骤才发现。
+ *
  * 用法：
  *   node script/ci/verify-aigov-v1.mjs                 # 全跑（后端只跑治理模块，快）
  *   node script/ci/verify-aigov-v1.mjs --full-reactor  # 后端跑整个反应堆（与 CI 同口径，慢）
@@ -105,6 +111,7 @@ if (JAVA_HOME) {
 const MVNW = IS_WINDOWS ? join(ROOT, 'mvnw.cmd') : join(ROOT, 'mvnw');
 const VITEST_MJS = join(FRONTEND, 'node_modules', 'vitest', 'vitest.mjs');
 const OXLINT_JS = join(FRONTEND, 'node_modules', 'oxlint', 'bin', 'oxlint');
+const VITE_JS = join(FRONTEND, 'node_modules', 'vite', 'bin', 'vite.js');
 
 /**
  * 跑一步并记账。
@@ -236,6 +243,18 @@ if (SKIP_FRONTEND) {
 
   if (!run('前端 lint（oxlint src）', '未使用变量/危险写法等会在构建期之外漏掉',
     process.execPath, [OXLINT_JS, 'src'], { cwd: FRONTEND })) {
+    failed = true;
+  }
+
+  // 生产构建（与 CI 的 `pnpm build:prod` 同一条命令）。
+  // 为什么必须有这一步：vitest 只加载"测试引用到的文件"，sfcCompile 只编译 SFC 自身、
+  // 不解析它的 import —— 于是"相对路径写错（断掉的 import）"和"模板多根节点"这两类问题
+  // 在单测 + lint + 全部守卫全绿的情况下依然存在，只有 vite build 会失败。
+  // （本分支实测被它抓到两次：TaskFlowPanel 的 `./flow` 应为 `../flow`、
+  //   ProposalPanel 的 el-card + el-dialog 双根节点；两者都在 CI 的前端镜像构建步骤才暴露。）
+  if (!run('前端生产构建（vite build，同 CI）',
+    '断掉的 import / 模板多根节点等「只有构建期才会失败」的问题：单测与 lint 都看不见',
+    process.execPath, [VITE_JS, 'build', '--mode', 'production'], { cwd: FRONTEND })) {
     failed = true;
   }
 

@@ -1,6 +1,8 @@
 <template>
-  <!-- 三栏之左：步骤导航（设计 §6.3、§5.4 图一） -->
   <el-card shadow="never" class="step-card">
+    <!-- 三栏之左：步骤导航（设计 §6.3、§5.4 图一）。
+         注释必须写在根元素内部：页面外层用 <transition> 包裹，根级注释也算一个子节点，
+         会让「模板必须只有一个根节点」这条规则失败（vite/plugins/check-transition.ts）。 -->
     <template #header><b>步骤</b></template>
     <ul class="step-list">
       <li

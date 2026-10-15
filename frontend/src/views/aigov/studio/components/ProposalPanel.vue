@@ -180,23 +180,24 @@
         <el-button type="primary" :loading="deciding" @click="doReject">确 定 拒 绝</el-button>
       </template>
     </el-dialog>
+    <!-- D06：本地有未保存改动时的三选一。采纳以「服务端已保存的修订」为基准并重载编辑器，
+         因此绝不能静默覆盖本地改动。
+         刻意放在 el-card 内部：本组件由页面用 <transition> 包裹，模板必须只有一个根节点；
+         而 el-dialog 带 append-to-body，插在哪里都不影响它的渲染位置与样式。 -->
+    <el-dialog v-model="applyDirtyVisible" title="有未保存的改动" width="480px" append-to-body>
+      <div>{{ adoptUnsavedMessage() }}</div>
+      <template #footer>
+        <el-button
+          v-for="choice in DIRTY_CHOICES"
+          :key="choice.key"
+          :type="choice.type"
+          @click="chooseApplyDirty(choice.key)"
+        >
+          {{ choice.label }}
+        </el-button>
+      </template>
+    </el-dialog>
   </el-card>
-
-  <!-- D06：本地有未保存改动时的三选一。采纳以「服务端已保存的修订」为基准并重载编辑器，
-       因此绝不能静默覆盖本地改动 -->
-  <el-dialog v-model="applyDirtyVisible" title="有未保存的改动" width="480px" append-to-body>
-    <div>{{ adoptUnsavedMessage() }}</div>
-    <template #footer>
-      <el-button
-        v-for="choice in DIRTY_CHOICES"
-        :key="choice.key"
-        :type="choice.type"
-        @click="chooseApplyDirty(choice.key)"
-      >
-        {{ choice.label }}
-      </el-button>
-    </template>
-  </el-dialog>
 </template>
 
 <script setup lang="ts">
