@@ -108,18 +108,26 @@ function sortActions(actions: AigPortalActionVO[]): AigPortalActionVO[] {
 }
 
 /**
- * 任务状态的展示（服务端给了中文就直接用，避免前端另写一份映射）。
+ * 任务状态的展示（设计 §6.8：员工看到的是**业务状态**）。
  *
- * @param status 状态码
- * @param statusLabel 服务端给的中文
+ * <p>优先级：服务端下发的业务状态文案 → 服务端下发的内部状态文案 → 原状态码。
+ * 三层都是"服务端说的"，前端不另写一份映射——业务状态还依赖复核状态这类任务侧事实，
+ * 搬到前端就是把状态机搬过来。</p>
+ *
+ * @param status             状态码
+ * @param statusLabel        服务端给的内部状态中文
+ * @param businessStatusLabel 服务端给的业务状态文案（设计 §6.8）
  * @returns 文案与标签色；未知状态原样显示并标灰（不是默认成"成功"）
  */
 export function taskStatusMeta(
   status?: string,
-  statusLabel?: string
+  statusLabel?: string,
+  businessStatusLabel?: string
 ): { label: string; tag: 'info' | 'warning' | 'success' | 'danger' } {
-  if (statusLabel) {
-    return { label: statusLabel, tag: tagOf(status) };
+  // 业务状态优先：它才是给员工看的那一层（例如"执行成功"未复核时是"草稿已生成 待复核"）
+  const label = businessStatusLabel || statusLabel;
+  if (label) {
+    return { label, tag: tagOf(status) };
   }
   if (!status) {
     return { label: '未知', tag: 'info' };

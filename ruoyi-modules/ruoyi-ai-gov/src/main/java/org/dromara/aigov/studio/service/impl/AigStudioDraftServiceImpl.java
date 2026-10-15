@@ -22,11 +22,14 @@ import org.dromara.aigov.studio.domain.bo.AigStudioDraftSubmitBo;
 import org.dromara.aigov.studio.domain.vo.AigStudioDraftDetailVo;
 import org.dromara.aigov.studio.domain.vo.AigStudioDraftSubmitVo;
 import org.dromara.aigov.studio.domain.vo.AigStudioDraftVo;
+import org.dromara.aigov.studio.domain.vo.AigStudioMetadataVo;
 import org.dromara.aigov.studio.domain.vo.AigStudioRevisionVo;
 import org.dromara.aigov.studio.domain.vo.AigStudioValidateVo;
 import org.dromara.aigov.studio.enums.AigStudioDraftStatusEnum;
 import org.dromara.aigov.studio.enums.AigStudioRevisionSourceEnum;
 import org.dromara.aigov.studio.helper.AigStudioContentHasher;
+import org.dromara.aigov.studio.helper.AigStudioPrecheck;
+import org.dromara.aigov.studio.helper.AigStudioPromptBuilder;
 import org.dromara.aigov.studio.mapper.AigStudioDraftMapper;
 import org.dromara.aigov.studio.mapper.AigStudioRevisionMapper;
 import org.dromara.aigov.studio.service.IAigStudioDraftService;
@@ -41,7 +44,6 @@ import tools.jackson.databind.json.JsonMapper;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -287,13 +289,23 @@ public class AigStudioDraftServiceImpl implements IAigStudioDraftService {
     @Override
     public AigStudioValidateVo validateDraft(Long draftId) {
         AigStudioDraft draft = requireDraft(draftId);
+        // D07：分级预检（阻断/提醒 + 字段定位 + 建议动作），且与提交共用同一套判据
+        AigStudioPrecheck.Result result = AigStudioPrecheck.evaluate(jsonMapper, draft.getContentJson());
         AigStudioValidateVo vo = new AigStudioValidateVo();
         vo.setDraftId(draft.getDraftId());
         vo.setRevision(draft.getLatestRevision());
         vo.setContentHash(draft.getContentHash());
-        vo.getProblems().addAll(collectProblems(draft.getContentJson()));
-        vo.setPassed(vo.getProblems().isEmpty());
+        vo.setBlockers(result.blockers());
+        vo.setWarnings(result.warnings());
+        // problems 保留给旧调用方，恒等于阻断项说明（提醒不放进 problems，避免被当成错误）
+        vo.setProblems(result.blockerMessages());
+        vo.setPassed(result.passed());
         return vo;
+    }
+
+    @Override
+    public AigStudioMetadataVo metadata() {
+        return AigStudioMetadataVo.build();
     }
 
     @Override
@@ -303,18 +315,21 @@ public class AigStudioDraftServiceImpl implements IAigStudioDraftService {
         requireOwner(draft, actorId);
         requireEditable(draft);
 
-        // 预检必须先过：不允许"先提交、后面再补"——那会让一份不合格内容进入发布流程
-        List<String> problems = collectProblems(draft.getContentJson());
-        if (!problems.isEmpty()) {
-            throw new ServiceException("草稿未通过预检，不能提交：" + String.join("；", problems));
+        // 预检必须先过：不允许"先提交、后面再补"——那会让一份不合格内容进入发布流程。
+        // D07：与 validateDraft 共用 AigStudioPrecheck，因此"预检说通过"与"提交被接受"
+        // 不可能分叉；类别校验也已随这次前移从提交阶段并进同一套判据。
+        AigStudioPrecheck.Result precheck = AigStudioPrecheck.evaluate(jsonMapper, draft.getContentJson());
+        if (!precheck.passed()) {
+            throw new ServiceException("草稿未通过预检，不能提交："
+                + String.join("；", precheck.blockerMessages()));
         }
         AigStudioDraftContent content = parseContent(draft.getContentJson());
 
-        // 类别必须由草稿显式声明：本仓只有四个与创作工厂绑定的类别，服务层替它挑会挑错实现
+        // 类别在预检里已作为阻断项校验过；这里只做防御性兜底（并发写入等）
         AigAgentCategoryEnum category = AigAgentCategoryEnum.find(content.getAgentCategory());
         if (category == null) {
             throw new ServiceException("草稿未声明合法的 Agent 类别（agentCategory=" + content.getAgentCategory()
-                + "）：当前只接受 " + categoryCodes() + "。非创作类 Agent 需要的新类别属于独立变更，"
+                + "）：当前只接受 " + AigStudioPrecheck.categoryCodes() + "。非创作类 Agent 需要的新类别属于独立变更，"
                 + "不在本增量内——请先扩展类别枚举与契约。");
         }
 
@@ -356,7 +371,7 @@ public class AigStudioDraftServiceImpl implements IAigStudioDraftService {
         agentVersion.setReleaseChannel(AigReleaseChannelEnum.TESTING.getCode());
         agentVersion.setInputSchema(content.getInputSchema());
         agentVersion.setOutputSchema(content.getOutputSchema());
-        agentVersion.setPromptTemplate(buildPromptTemplate(content));
+        agentVersion.setPromptTemplate(AigStudioPromptBuilder.build(content));
         // 结构化留档：把提交时那一版内容原文存进既有 config_json，
         // 事后要回答「这条版本当时是什么内容」不必靠拼凑
         agentVersion.setConfigJson(draft.getContentJson());
@@ -432,21 +447,13 @@ public class AigStudioDraftServiceImpl implements IAigStudioDraftService {
     }
 
     /**
-     * 把八个 Prompt 分节拼成可读的模板文本（提交时落 {@code prompt_template}）。
+     * 把八个 Prompt 分节拼成可读的模板文本。
      *
-     * @param content 草稿内容
-     * @return 模板文本
+     * <p><b>已被 {@link AigStudioPromptBuilder} 取代（D09）</b>：这里曾经有第二份分节拼装实现，
+     * 与测试/执行用的那份是"两份实现拼同一段文本"，一旦漂移就会出现
+     * "测试跑的是 A、提交上去的是 B"。现在只有一份实现，调用点在
+     * {@code agentVersion.setPromptTemplate(AigStudioPromptBuilder.build(content))}。</p>
      */
-    private String buildPromptTemplate(AigStudioDraftContent content) {
-        StringBuilder text = new StringBuilder();
-        Map<String, String> sections = content.getPromptSections() == null
-            ? Map.of() : content.getPromptSections();
-        for (String key : AigStudioDraftContent.PROMPT_SECTION_KEYS) {
-            text.append("## ").append(key).append('\n')
-                .append(StringUtils.blankToDefault(sections.get(key), "")).append("\n\n");
-        }
-        return text.toString().trim();
-    }
 
     /**
      * 解析草稿内容（已过预检，因此这里解析失败只可能是并发写入损坏，按内部错误抛）。
@@ -485,96 +492,6 @@ public class AigStudioDraftServiceImpl implements IAigStudioDraftService {
             }
         }
         return cleaned.isEmpty() ? null : String.join(",", cleaned);
-    }
-
-    /**
-     * 当前可用的 Agent 类别编码（用于报错文案）。
-     *
-     * @return 形如 {@code PLANNING/VISUAL_DNA/GENERATION/QA}
-     */
-    private String categoryCodes() {
-        StringBuilder codes = new StringBuilder();
-        for (AigAgentCategoryEnum item : AigAgentCategoryEnum.values()) {
-            if (codes.length() > 0) {
-                codes.append('/');
-            }
-            codes.append(item.getCode());
-        }
-        return codes.toString();
-    }
-
-    /**
-     * 静态校验规则（一次列全，不抛第一个错）。
-     *
-     * <p>这些规则刻意都是<b>能判定真假</b>的：不做"看起来更专业"的软性建议，
-     * 否则预检会变成一堆没人看的提示。</p>
-     *
-     * @param contentJson 草稿内容（规范 JSON）
-     * @return 问题清单
-     */
-    private List<String> collectProblems(String contentJson) {
-        List<String> problems = new java.util.ArrayList<>();
-        AigStudioDraftContent content;
-        try {
-            content = jsonMapper.readValue(contentJson, AigStudioDraftContent.class);
-        } catch (Exception e) {
-            problems.add("内容不是合法 JSON：" + e.getMessage());
-            return problems;
-        }
-        if (content == null) {
-            problems.add("内容为空");
-            return problems;
-        }
-        Map<String, String> sections = content.getPromptSections() == null
-            ? Map.of() : content.getPromptSections();
-        List<String> missing = AigStudioDraftContent.PROMPT_SECTION_KEYS.stream()
-            .filter(key -> !sections.containsKey(key))
-            .toList();
-        if (!missing.isEmpty()) {
-            problems.add("缺少 Prompt 分节：" + String.join("、", missing)
-                + "（八个分节是 Diff 与缺节校验的唯一口径，不能少）");
-        }
-        boolean allBlank = sections.values().stream().allMatch(StringUtils::isBlank);
-        if (allBlank) {
-            problems.add("至少填写一个 Prompt 分节（当前全部为空）");
-        }
-        if (StringUtils.isBlank(content.getProviderCapability())) {
-            problems.add("未声明所需能力（providerCapability）：没有它无法路由，提交后也调不通");
-        }
-        String allowExternal = content.getAllowExternal();
-        if (StringUtils.isNotBlank(allowExternal)
-            && !"Y".equalsIgnoreCase(allowExternal) && !"N".equalsIgnoreCase(allowExternal)) {
-            problems.add("allowExternal 只能是 Y 或 N，当前=" + allowExternal);
-        }
-        checkJsonField(problems, "输入 Schema", content.getInputSchema());
-        checkJsonField(problems, "输出 Schema", content.getOutputSchema());
-        // 页面定制不允许夹带可执行脚本（专题 C §C6：不接受任意 JavaScript 在门户执行）
-        String page = content.getPageCustomizationJson();
-        if (StringUtils.isNotBlank(page)) {
-            String lower = page.toLowerCase(Locale.ROOT);
-            if (lower.contains("<script") || lower.contains("javascript:")) {
-                problems.add("页面定制里出现了可执行脚本（<script / javascript:）：门户只接受安全组件白名单，不接受任意脚本");
-            }
-        }
-        return problems;
-    }
-
-    /**
-     * 校验一个"内容里带的 JSON 字段"是否合法（为空视为未填，不算问题）。
-     *
-     * @param problems 问题清单（就地追加）
-     * @param label    字段中文名（用于提示）
-     * @param json     字段值
-     */
-    private void checkJsonField(List<String> problems, String label, String json) {
-        if (StringUtils.isBlank(json)) {
-            return;
-        }
-        try {
-            jsonMapper.readValue(json, Object.class);
-        } catch (Exception e) {
-            problems.add(label + "不是合法 JSON");
-        }
     }
 
     // ------------------------------------------------------------------ 内部

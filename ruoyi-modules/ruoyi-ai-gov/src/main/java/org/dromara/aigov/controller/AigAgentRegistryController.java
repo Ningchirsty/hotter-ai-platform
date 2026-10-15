@@ -204,6 +204,29 @@ public class AigAgentRegistryController {
     }
 
     /**
+     * 撤销一条 Agent 版本绑定（D03，设计 §9.2）。
+     *
+     * <p>绑定决定"受限通道发布后谁能看见、哪个版本能被启动"。此前只有新增与查询，
+     * 绑错一次（品牌/有效期填错、灰度结束）就只能改库；此入口把它变成可撤销的操作。
+     * 逻辑删除，撤销后发布门槛计数与执行期版本授权立刻按新状态判定。</p>
+     *
+     * <p><b>刻意不加 {@code @RepeatSubmit}</b>：按 id 撤销本身幂等（第二次得到
+     * "不存在或已撤销"），加防重反而会挡住"撤销后立刻重建同范围绑定"这一步。</p>
+     *
+     * @param bindingId 绑定ID
+     * @param reason    撤销原因（可空）
+     * @return 操作结果
+     */
+    @SaCheckPermission(AigConstants.PERM_AGENT_BINDING)
+    @PostMapping("/binding/{bindingId:\\d+}/revoke")
+    public R<Void> revokeBinding(
+        @NotNull(message = "绑定ID不能为空") @PathVariable Long bindingId,
+        @RequestParam(required = false) String reason) {
+        registryService.revokeBinding(bindingId, reason);
+        return R.ok();
+    }
+
+    /**
      * 分页查询 Agent 版本绑定清单。
      *
      * @param bo        查询条件

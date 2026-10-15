@@ -19,6 +19,7 @@ import org.dromara.aigov.studio.enums.AigStudioDraftStatusEnum;
 import org.dromara.aigov.studio.enums.AigStudioProposalSourceEnum;
 import org.dromara.aigov.studio.helper.AigStudioCopilotParser;
 import org.dromara.aigov.studio.helper.AigStudioCopilotPrompts;
+import org.dromara.aigov.studio.helper.AigStudioDataPolicy;
 import org.dromara.aigov.studio.mapper.AigStudioCopilotTurnMapper;
 import org.dromara.aigov.studio.service.IAigStudioCopilotService;
 import org.dromara.aigov.studio.service.IAigStudioDraftService;
@@ -26,7 +27,6 @@ import org.dromara.aigov.studio.service.IAigStudioProposalService;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.util.ArrayList;
@@ -46,6 +46,16 @@ import java.util.List;
  *         被规划器拒绝时记 REJECTED（<b>这不是失败，是"模型越界了"</b>——要能看见）；</li>
  *     <li><b>收尾这一轮</b>：结论、原因、提案ID、traceId、模型与是否外发。</li>
  * </ol>
+ *
+ * <p><b>刻意不带 {@code @Transactional}</b>（设计 D08「短事务登记 独立执行 短事务收尾」）：
+ * ①登记 RUNNING、②网络调用、③收尾必须分属不同事务。整段包一个事务时，网络调用期间崩溃会让
+ * RUNNING 行随事务回滚，"证据先落"在最需要它的场景下失效；而且内层 {@code create} 抛异常会
+ * 把共享事务标成 rollback-only（与 {@code AigStudioProposalTransactionBoundaryTest} 记录的那次事故同源）。
+ * 去掉外层事务后，登记与收尾各自提交，{@code create} 也退回它自己的事务边界。</p>
+ *
+ * <p><b>能力编码独立</b>（设计 D10）：助手用 {@code aigov.studio.copilot.capability}（默认
+ * {@code text_generation}）路由，而不是被训练 Agent 的 {@code providerCapability}——
+ * 后者的产物可能是图像，不适合生成文本提案。</p>
  *
  * @author ai-gov
  */
@@ -67,7 +77,6 @@ public class AigStudioCopilotServiceImpl implements IAigStudioCopilotService {
     private final JsonMapper jsonMapper;
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public AigStudioCopilotTurnVo chat(Long draftId, AigStudioCopilotChatBo bo, Long actorId) {
         if (!properties.isEnabled()) {
             throw new ServiceException("对话式 Copilot 当前是关闭的（aigov.studio.copilot.enabled=false）："
@@ -111,8 +120,13 @@ public class AigStudioCopilotServiceImpl implements IAigStudioCopilotService {
 
         // ② 走网关：策略校验/配额/审计在同一层，训练台不开第二条模型通道
         AigInvokeBo invokeBo = new AigInvokeBo();
-        invokeBo.setCapabilityCode(content.getProviderCapability());
+        // D10：培训助手用**自己的文本能力编码**，不复用被训练 Agent 的 providerCapability——
+        // 后者可能是图像/视觉能力，拿它路由"生成文本变更提案"会走错链路。
+        // 上面那道「草稿未声明所需能力」的校验仍保留：它守的是"草稿是不是半成品"，与本次路由无关。
+        invokeBo.setCapabilityCode(properties.getCapability());
         invokeBo.setDataLevel(bo.getDataLevel());
+        // D02：Copilot 读取完整草稿也属于数据处理，草稿的 allowExternal 同样是硬约束
+        invokeBo.setAllowExternal(AigStudioDataPolicy.externalAllowed(content.getAllowExternal()));
         invokeBo.setPrompt(AigStudioCopilotPrompts.build(draft.getContentJson(), message));
         invokeBo.setMaxCost(bo.getMaxCost());
         // ⚠️ 刻意不设 agentVersionId：设了点几次对话就会把该版本的 CANARY 计数/失败率抬上去，

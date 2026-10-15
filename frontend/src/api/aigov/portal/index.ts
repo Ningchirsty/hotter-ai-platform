@@ -6,6 +6,7 @@ import type {
   AigLaunchPrepareVO,
   AigLaunchRecordVO,
   AigLaunchRequestForm,
+  AigLaunchTemplateVO,
   AigPortalArtifactQuery,
   AigPortalArtifactVO,
   AigPortalAssetGroupVO,
@@ -78,6 +79,23 @@ export function commitLaunch(data: AigLaunchRequestForm): AxiosPromise<AigLaunch
     url: '/aigov/portal/launch/commit',
     method: 'post',
     data
+  });
+}
+
+/**
+ * 取该卡片的启动任务模板（D11）。
+ *
+ * 返回模板时，前端只需渲染 `businessFields`（业务字段）；任务类型/业务域/数据等级由服务端推导，
+ * 员工不该填。返回 null 表示未配置模板，按旧表单处理。
+ */
+export function getLaunchTemplate(
+  roleCode: string,
+  actionCode: string
+): AxiosPromise<AigLaunchTemplateVO | null> {
+  return request({
+    url: '/aigov/portal/launch/template',
+    method: 'get',
+    params: { roleCode, actionCode }
   });
 }
 

@@ -34,6 +34,12 @@ import java.util.Set;
  *         而不是中间的空档。</li>
  *     <li><b>页式拉取有上限</b>：既防实现方"永远返回满页"造成死循环，也防一次重建把内存吃穿；
  *         到上限会 WARN 留痕（而不是静默少同步）。</li>
+ *     <li><b>不靠"短页"判结束</b>：各域实现会<b>自设单次上限</b>（内容/视频端口是 50，而这里的
+ *         同步页大小是 200），"返回条数少于请求条数"会被误判成"已经到底"——那会把一个用户某个域
+ *         只同步前 50 条，而且<b>一声不响</b>。结束条件改为两条：①空页；
+ *         ②本页没有带来任何新资产（实现忽略了 offset 的信号，也是防死循环的兜底）。
+ *         "少同步"是索引类缺陷里最难发现的一种：界面只是"少了几个资产"，
+ *         没人会怀疑是同步逻辑，所以宁可多请求一页空页。</li>
  *     <li><b>同一域内按 assetId 去重</b>：唯一键是 {@code (user_id, domain, asset_id)}，
  *         实现方若返回重复行，重复插入会撞唯一键——去重比捕获异常更清楚。</li>
  * </ol>
@@ -46,7 +52,7 @@ import java.util.Set;
 public class AigAssetIndexServiceImpl implements IAigAssetIndexService {
 
     /**
-     * 同步时每页拉多少条
+     * 同步时每页拉多少条（<b>只是"我希望一次拉多少"</b>：实现可自行下调）
      */
     private static final int SYNC_PAGE_SIZE = 200;
 
@@ -76,38 +82,138 @@ public class AigAssetIndexServiceImpl implements IAigAssetIndexService {
                 log.warn("跳过没有声明域的资产提供方：{}", port.getClass().getName());
                 continue;
             }
-            indexMapper.deleteByUserAndDomain(userId, domain);
-            Set<Long> seenAssetIds = new LinkedHashSet<>();
-            int offset = 0;
-            int pages = 0;
-            while (pages < MAX_SYNC_PAGES) {
-                List<MyAssetDTO> batch = port.listMyAssets(userId, offset, SYNC_PAGE_SIZE);
-                if (batch == null || batch.isEmpty()) {
-                    break;
-                }
-                for (MyAssetDTO dto : batch) {
-                    if (dto == null || dto.getAssetId() == null) {
-                        continue;
-                    }
-                    if (!seenAssetIds.add(dto.getAssetId())) {
-                        continue;
-                    }
-                    indexMapper.insert(toEntity(userId, domain, dto));
-                    total++;
-                }
-                offset += batch.size();
-                pages++;
-                if (batch.size() < SYNC_PAGE_SIZE) {
-                    break;
-                }
-            }
-            if (pages >= MAX_SYNC_PAGES) {
-                log.warn("重建资产索引达到页数上限（{} 页 × {} 条），可能未同步完：userId={}, domain={}",
-                    MAX_SYNC_PAGES, SYNC_PAGE_SIZE, userId, domain);
-            }
+            total += rebuildDomain(userId, port, domain);
         }
         log.info("资产索引重建完成：userId={}, 写入 {} 行", userId, total);
         return total;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int syncNewForUser(long userId) {
+        if (userId <= 0) {
+            throw new ServiceException("用户ID不能为空");
+        }
+        int total = 0;
+        for (MyAssetPort port : sortedPorts()) {
+            String domain = normalize(port.domain());
+            if (domain == null) {
+                log.warn("跳过没有声明域的资产提供方：{}", port.getClass().getName());
+                continue;
+            }
+            Long watermark = indexMapper.selectMaxAssetId(userId, domain);
+            if (watermark == null || watermark <= 0L) {
+                // 还没有水位线：不能"从 0 开始只补新增"（那等于什么都没做），退回该域全量
+                total += rebuildDomain(userId, port, domain);
+                continue;
+            }
+            total += syncNewDomain(userId, port, domain, watermark);
+        }
+        log.info("资产索引增量同步完成：userId={}, 新增 {} 行", userId, total);
+        return total;
+    }
+
+    /**
+     * 全量重建一个域：先删该用户该域旧行，再分页拉取写入。
+     *
+     * @param userId 用户ID
+     * @param port   该域的资产提供方
+     * @param domain 归一化后的域编码
+     * @return 写入行数
+     */
+    private int rebuildDomain(long userId, MyAssetPort port, String domain) {
+        indexMapper.deleteByUserAndDomain(userId, domain);
+        int written = 0;
+        Set<Long> seenAssetIds = new LinkedHashSet<>();
+        int offset = 0;
+        int pages = 0;
+        while (pages < MAX_SYNC_PAGES) {
+            List<MyAssetDTO> batch = port.listMyAssets(userId, offset, SYNC_PAGE_SIZE);
+            if (batch == null || batch.isEmpty()) {
+                break;
+            }
+            int addedOnThisPage = 0;
+            for (MyAssetDTO dto : batch) {
+                if (dto == null || dto.getAssetId() == null) {
+                    continue;
+                }
+                if (!seenAssetIds.add(dto.getAssetId())) {
+                    continue;
+                }
+                indexMapper.insert(toEntity(userId, domain, dto));
+                written++;
+                addedOnThisPage++;
+            }
+            offset += batch.size();
+            pages++;
+            if (addedOnThisPage == 0) {
+                // 本页全是已见过的资产：实现要么忽略了 offset（再翻也是同一页），
+                // 要么返回了重复数据。两种情况下继续翻都不会有新数据，停。
+                log.warn("资产索引同步本页无新增，停止翻页（实现可能忽略 offset）：userId={}, domain={}, offset={}",
+                    userId, domain, offset);
+                break;
+            }
+        }
+        if (pages >= MAX_SYNC_PAGES) {
+            log.warn("重建资产索引达到页数上限（{} 页 × {} 条），可能未同步完：userId={}, domain={}",
+                MAX_SYNC_PAGES, SYNC_PAGE_SIZE, userId, domain);
+        }
+        return written;
+    }
+
+    /**
+     * 增量同步一个域：只补比水位线更大的资产。
+     *
+     * @param userId    用户ID
+     * @param port      该域的资产提供方
+     * @param domain    归一化后的域编码
+     * @param watermark 水位线（该域已索引的最大 asset_id）
+     * @return 新增写入行数
+     */
+    private int syncNewDomain(long userId, MyAssetPort port, String domain, long watermark) {
+        int written = 0;
+        Set<Long> seenAssetIds = new LinkedHashSet<>();
+        int offset = 0;
+        int pages = 0;
+        while (pages < MAX_SYNC_PAGES) {
+            List<MyAssetDTO> batch = port.listMyAssets(userId, offset, SYNC_PAGE_SIZE);
+            if (batch == null || batch.isEmpty()) {
+                break;
+            }
+            boolean reachedWatermark = false;
+            int addedOnThisPage = 0;
+            for (MyAssetDTO dto : batch) {
+                if (dto == null || dto.getAssetId() == null) {
+                    continue;
+                }
+                if (dto.getAssetId() <= watermark) {
+                    // 已经翻到"同步过"的区间：端口按资产 ID 倒序，后面的只会更旧
+                    reachedWatermark = true;
+                    continue;
+                }
+                if (!seenAssetIds.add(dto.getAssetId())) {
+                    continue;
+                }
+                indexMapper.insert(toEntity(userId, domain, dto));
+                written++;
+                addedOnThisPage++;
+            }
+            offset += batch.size();
+            pages++;
+            if (reachedWatermark) {
+                break;
+            }
+            if (addedOnThisPage == 0) {
+                log.warn("资产索引增量同步本页无新增，停止翻页（实现可能忽略 offset）：userId={}, domain={}, offset={}",
+                    userId, domain, offset);
+                break;
+            }
+        }
+        if (pages >= MAX_SYNC_PAGES) {
+            log.warn("增量同步资产索引达到页数上限（{} 页 × {} 条），可能未同步完：userId={}, domain={}",
+                MAX_SYNC_PAGES, SYNC_PAGE_SIZE, userId, domain);
+        }
+        return written;
     }
 
     @Override

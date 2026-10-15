@@ -34,6 +34,7 @@ import org.dromara.aigov.workspace.launch.helper.AigLaunchRequestDigest;
 import org.dromara.aigov.workspace.launch.helper.IAigLaunchTicketStore;
 import org.dromara.aigov.workspace.launch.mapper.AigLaunchRecordMapper;
 import org.dromara.aigov.workspace.launch.service.IAigLaunchService;
+import org.dromara.aigov.workspace.launch.service.IAigLaunchTemplateService;
 import org.dromara.aigov.workspace.mapper.AigScenarioMapper;
 import org.dromara.aigov.workspace.mapper.AigScenarioVersionMapper;
 import org.dromara.aigov.workspace.mapper.AigRoleProfileMapper;
@@ -104,6 +105,8 @@ public class AigLaunchServiceImpl implements IAigLaunchService {
     private final AigRoleProfileMapper roleProfileMapper;
     private final AigLaunchProjectPolicy projectPolicy;
     private final AigLaunchProperties properties;
+    /** 启动任务模板（D11：员工只填业务输入，执行字段由服务端推导） */
+    private final IAigLaunchTemplateService launchTemplateService;
 
     @Override
     public AigLaunchPrepareVo prepare(AigLaunchRequestBo bo, AigPortalActor actor) {
@@ -111,6 +114,9 @@ public class AigLaunchServiceImpl implements IAigLaunchService {
         if (bo == null) {
             throw new ServiceException("启动请求不能为空");
         }
+        // D11：若该岗位/卡片配置了任务模板，用模板推导执行字段（任务类型/业务域/数据等级/快照）。
+        // 必须在算摘要之前：prepare 与 commit 看到同一份有效字段，摘要才可能一致。
+        launchTemplateService.apply(bo);
         AigPortalActionContext context = null;
         try {
             context = portalService.resolveAction(bo.getRoleCode(), bo.getActionCode(), actor);
@@ -169,6 +175,8 @@ public class AigLaunchServiceImpl implements IAigLaunchService {
             ticketStore.consume(ticket.ticketId());
             return commitVo(List.of(AigLaunchErrorEnum.LAUNCH_TICKET_EXPIRED.getCode()));
         }
+        // D11：与 prepare 完全一致地套用模板，再算摘要——否则确认时摘要会变（假冲突）
+        launchTemplateService.apply(bo);
         String digest = digest(bo, ticket);
         if (!digest.equals(ticket.requestDigest())) {
             // 确认时改了内容：不能"按新内容默默执行"，也不能"按旧内容执行"（用户看到的不是这个）

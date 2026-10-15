@@ -224,6 +224,13 @@ public class AigRouteServiceImpl implements IAigRouteService {
             }
             allowExternal = false;
         }
+        // 业务侧硬约束（设计 §7.2）：Agent 配置/草稿声明的 allowExternal=N 必须压过策略行。
+        // 与 STRICT 同理，放在这里而不是只靠候选过滤——策略行写错也必须拦得住。
+        if (Boolean.FALSE.equals(hint == null ? null : hint.getAllowExternal()) && allowExternal) {
+            decision.addHit("业务侧（Agent 配置/草稿）声明不允许外发："
+                + "策略 allowExternal='Y' 被忽略，本次仅允许非外部部署模型");
+            allowExternal = false;
+        }
         decision.addHit("命中路由策略 policyId=" + policy.getPolicyId()
             + "，数据等级=" + dataLevel.getCode()
             + "，preferredDeployment=" + StringUtils.blankToDefault(policy.getPreferredDeployment(), "-")

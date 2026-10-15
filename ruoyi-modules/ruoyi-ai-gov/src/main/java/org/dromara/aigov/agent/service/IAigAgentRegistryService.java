@@ -96,6 +96,44 @@ public interface IAigAgentRegistryService {
     Long addBinding(AigAgentBindingBo bo);
 
     /**
+     * 撤销一条 Agent 版本绑定（D03，逻辑删除）。
+     *
+     * <h3>为什么必须有这个入口</h3>
+     * <p>绑定决定「受限通道发布后谁能看见、哪个版本能被启动」。此前只有新增与查询接口，
+     * 一旦绑错（品牌选错、有效期填错、灰度结束），没有任何办法让它失效——只能改库。
+     * 撤销后：发布门槛的「启用中的绑定」计数立刻下降，执行侧的版本授权检查立刻拒绝。</p>
+     *
+     * <h3>为什么是逻辑删除</h3>
+     * <p>{@code del_flag} 带 {@code @TableLogic}，删除只置标志：行还在，能回答
+     * 「这条绑定曾经存在过、什么时候没的、为什么没的」；而所有查询（含发布门槛计数、
+     * 执行期授权）都由框架自动追加 {@code del_flag='0'}，撤销即时生效。</p>
+     *
+     * <h3>与「停用（enabled）」的区别</h3>
+     * <p>这里不提供"改 enabled 开关"：{@code enabled='N'} 的行仍占据该版本的一个绑定名额，
+     * 外观上"有绑定"、实际"不可用"，是最容易误判的状态。撤销 = 移除，语义唯一。</p>
+     *
+     * @param bindingId 绑定ID
+     * @param reason    撤销原因（可空；写入日志，便于事后回答"为什么没的"）
+     */
+    void revokeBinding(Long bindingId, String reason);
+
+    /**
+     * 执行期版本授权检查（D03：设计 §7.2「正式执行时重新检查授权、停用和资源退役」）。
+     *
+     * <p>受限通道（TESTING/BRAND/DEPT 等）的 Agent 版本，必须在<b>当前</b>存在一条
+     * 启用中且在有效期内的绑定时才允许执行；否则拒绝并说明原因。
+     * 不受限通道（如 PUBLIC）不依赖绑定，直接放行。裸能力调用（{@code agentVersionId} 为空）
+     * 不属于"某个版本的执行"，本方法直接返回。</p>
+     *
+     * <p><b>为什么在这里再查一次</b>：发布时校验过不等于执行时仍成立——绑定可能被撤销、
+     * 有效期可能到期。只在发布时查，等于把"当时能发布"错误地当成了"现在能执行"。</p>
+     *
+     * @param agentVersionId Agent 版本ID（可空）
+     * @throws org.dromara.common.core.exception.ServiceException 版本不存在，或受限通道且无有效绑定
+     */
+    void assertExecutionAuthorized(Long agentVersionId);
+
+    /**
      * 新增一条工具/知识绑定（附件 07 §5）。
      *
      * <p>会校验：版本存在；资源类型合法；<b>资源编码命中该版本已声明的项</b>

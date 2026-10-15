@@ -23,6 +23,7 @@ import org.dromara.aigov.workspace.portal.domain.vo.AigPortalArtifactVo;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalCategoryVo;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalRoleHomeVo;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalRoleVo;
+import org.dromara.aigov.workspace.portal.helper.AigPortalTaskStatus;
 import org.dromara.aigov.workspace.portal.domain.vo.AigPortalTaskVo;
 import org.dromara.aigov.workspace.portal.helper.AigPortalActor;
 import org.dromara.aigov.workspace.portal.helper.AigRoleVisibilityResolver;
@@ -409,6 +410,15 @@ public class AigPortalServiceImpl implements IAigPortalService {
         vo.setProjectId(task.getProjectId());
         vo.setStatus(task.getStatus());
         vo.setStatusLabel(task.getStatusLabel());
+        // ★ 业务状态由服务端算：员工看到的是"草稿已生成 待复核"这类措辞，
+        //   而不是"执行成功（待复核，不等于通过）"这种带内部口径的长句；
+        //   复核状态只有任务侧知道，放到前端就得把状态机搬过去
+        AigPortalTaskStatus.BusinessStatus business =
+            AigPortalTaskStatus.resolve(task.getStatus(), task.getReviewStatus());
+        if (business != null) {
+            vo.setBusinessStatus(business.code());
+            vo.setBusinessStatusLabel(business.label());
+        }
         vo.setProgress(task.getProgress());
         vo.setDataLevel(task.getDataLevel());
         vo.setStartedAt(task.getStartedAt());

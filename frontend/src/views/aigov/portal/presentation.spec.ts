@@ -92,9 +92,15 @@ describe('员工 AI 工作台展示层', () => {
     expect(groups[1].actions[0].actionCode).toBe('ORPHAN');
   });
 
-  it('任务状态：服务端给了中文就用它；未知状态不冒充成功', () => {
-    expect(taskStatusMeta('SUCCEEDED', '成功')).toEqual({ label: '成功', tag: 'success' });
-    expect(taskStatusMeta('FAILED', '失败').tag).toBe('danger');
+  it('★ 任务状态：业务状态优先于内部状态；都没有才原样显示状态码', () => {
+    // 设计 §6.8：员工看到的是业务状态——"执行成功"未复核时应是"草稿已生成 待复核"
+    expect(taskStatusMeta('SUCCEEDED', '执行成功（待复核，不等于通过）', '草稿已生成 待复核')).toEqual({
+      label: '草稿已生成 待复核',
+      tag: 'success'
+    });
+    expect(taskStatusMeta('SUCCEEDED', '成功', '完成')).toEqual({ label: '完成', tag: 'success' });
+    // 服务端没给业务状态时回落内部状态中文（老数据/新状态）
+    expect(taskStatusMeta('FAILED', '失败')).toEqual({ label: '失败', tag: 'danger' });
     expect(taskStatusMeta('RUNNING', '进行中').tag).toBe('warning');
     expect(taskStatusMeta('SOMETHING_NEW')).toEqual({ label: 'SOMETHING_NEW', tag: 'info' });
     expect(taskStatusMeta(undefined)).toEqual({ label: '未知', tag: 'info' });

@@ -164,7 +164,12 @@ class AigScenarioDispatchE2ELiveTest {
         dispatchProperties.setEnabled(true);
         JsonMapper jsonMapper = JsonMapper.builder().build();
         executor = new AigTaskExecutorImpl(taskService, mock(IAigInvokeService.class),
-            dispatchProperties, resolver, dispatcher, jsonMapper);
+            dispatchProperties, resolver, dispatcher,
+            mock(org.dromara.aigov.execution.IAigAgentExecutionResolver.class),
+            mock(org.dromara.aigov.task.service.IAigTaskStepService.class),
+            mock(org.dromara.aigov.task.service.IAigSubAgentRunner.class),
+            // 场景派发路径不经过流程节点；驱动桩返回「没有流程节点」，不影响本用例
+            mock(org.dromara.aigov.task.service.IAigFlowDriverService.class), jsonMapper);
         reportService = new AigScenarioReportServiceImpl(taskService, jsonMapper);
     }
 

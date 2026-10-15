@@ -6,6 +6,10 @@
  * 这类错误本地没有 node_modules（无 tsc/eslint）时很难发现，但用正则收集声明名即可拦住。
  *
  * 用法：node script/ci/check-script-setup.mjs <file.vue> [...]
+ *      node script/ci/check-script-setup.mjs --files-from <列表文件>
+ *      （`--files-from` 是给 Windows 用的：全部 200+ 个路径拼成一条命令行会超过
+ *       CreateProcess 的 8191 字符上限，于是"想跑全量"会以 `命令行太长` 直接失败。
+ *       一行一个路径，空行与 # 开头的行忽略。两种用法语义完全一致。）
  *
  * ── 2026-10-08 加固：原实现会**空跑也算通过** ──
  * 它只遍历 `process.argv.slice(2)`：一旦调用方给不出文件（例如 `$(git ls-files '*.vue')`
@@ -37,7 +41,22 @@ const DECL = [
 // 这些是 Vue 组合式 API，重复声明会直接报错，必须检查
 const IGNORE = new Set([]);
 
-const passed = process.argv.slice(2);
+const rawArgs = process.argv.slice(2);
+const filesFromIndex = rawArgs.indexOf('--files-from');
+let passed;
+if (filesFromIndex >= 0) {
+  const listPath = rawArgs[filesFromIndex + 1];
+  if (!listPath) {
+    console.error('--files-from 后面必须跟一个列表文件路径');
+    process.exit(1);
+  }
+  passed = readFileSync(listPath, 'utf8')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith('#'));
+} else {
+  passed = rawArgs;
+}
 const scanRoot = process.env.HOTTER_VUE_SCAN_ROOT ?? 'frontend/src';
 
 const toPosix = (p) => p.split(sep).join('/');

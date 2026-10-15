@@ -192,4 +192,53 @@ class AigAgentRegistryQueryServiceImplTest {
         String sql = captor.getValue().getSqlSegment();
         assertTrue(sql.contains("create_time DESC"), "最新在前：" + sql);
     }
+
+    @Test
+    @DisplayName("★ 谁在用这份资源：解析出 Agent 编码/名称/版本，停用中的绑定也返回并如实标注")
+    void listResourceReferencesResolvesAgentIdentity() {
+        setUp(null, List.of());
+        AigAgentResourceBinding active = bound("KNOWLEDGE", "product_docs");
+        active.setBindingId(8801L);
+        AigAgentResourceBinding stopped = bound("KNOWLEDGE", "product_docs");
+        stopped.setBindingId(8802L);
+        stopped.setEnabled("N");
+        stopped.setAgentVersionId(9999L);
+        when(resourceBindingMapper.selectList(any())).thenReturn(List.of(active, stopped));
+
+        AigAgentVersion version = new AigAgentVersion();
+        version.setAgentVersionId(VERSION_ID);
+        version.setAgentId(7001L);
+        version.setVersion("0.2.0");
+        version.setReleaseStatus("STABLE");
+        when(agentVersionMapper.selectByIds(any())).thenReturn(List.of(version));
+        org.dromara.aigov.agent.domain.AigAgent agent = new org.dromara.aigov.agent.domain.AigAgent();
+        agent.setAgentId(7001L);
+        agent.setAgentCode("PRODUCT_QA");
+        agent.setAgentName("产品问答");
+        when(agentMapper.selectByIds(any())).thenReturn(List.of(agent));
+
+        List<org.dromara.aigov.agent.domain.vo.AigAgentResourceReferenceVo> rows =
+            service.listResourceReferences("KNOWLEDGE", "product_docs");
+
+        assertEquals(2, rows.size());
+        assertEquals("PRODUCT_QA", rows.get(0).getAgentCode());
+        assertEquals("产品问答", rows.get(0).getAgentName());
+        assertEquals("0.2.0", rows.get(0).getAgentVersion());
+        assertEquals("STABLE", rows.get(0).getReleaseStatus());
+        assertEquals("Y", rows.get(0).getEnabled());
+        // 第二条指向一个不存在的版本：留空而不是编一个名字，才能看出"它指着的东西不在了"
+        assertEquals("N", rows.get(1).getEnabled());
+        assertEquals(8802L, rows.get(1).getBindingId());
+        org.junit.jupiter.api.Assertions.assertNull(rows.get(1).getAgentCode());
+    }
+
+    @Test
+    @DisplayName("空条件不查库：否则会被读成「这份资源被所有人引用」")
+    void listResourceReferencesIgnoresBlankInput() {
+        setUp(null, List.of());
+
+        assertTrue(service.listResourceReferences(null, "x").isEmpty());
+        assertTrue(service.listResourceReferences("KNOWLEDGE", "  ").isEmpty());
+        verify(resourceBindingMapper, org.mockito.Mockito.never()).selectList(any());
+    }
 }

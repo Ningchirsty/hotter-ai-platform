@@ -23,6 +23,7 @@ import org.dromara.aigov.agent.domain.bo.AigSkillVersionQueryBo;
 import org.dromara.aigov.agent.domain.vo.AigAgentBindingVo;
 import org.dromara.aigov.agent.domain.vo.AigAgentDeclaredResourceVo;
 import org.dromara.aigov.agent.domain.vo.AigAgentResourceBindingVo;
+import org.dromara.aigov.agent.domain.vo.AigAgentResourceReferenceVo;
 import org.dromara.aigov.agent.domain.vo.AigAgentVersionVo;
 import org.dromara.aigov.agent.domain.vo.AigAgentVo;
 import org.dromara.aigov.agent.domain.vo.AigPackageVersionVo;
@@ -46,8 +47,11 @@ import org.dromara.common.mybatis.core.page.PageQuery;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -291,6 +295,95 @@ public class AigAgentRegistryQueryServiceImpl implements IAigAgentRegistryQueryS
         Page<AigAgentResourceBindingVo> voPage = resourceBindingMapper.selectVoPage(pageOf(pageQuery),
             wrapper);
         return PageResult.build(voPage.getRecords(), voPage.getTotal());
+    }
+
+    @Override
+    public List<AigAgentResourceReferenceVo> listResourceReferences(String resourceType,
+                                                                   String resourceCode) {
+        if (StringUtils.isBlank(resourceType) || StringUtils.isBlank(resourceCode)) {
+            // 不按空条件查出"全库绑定"——那既慢又会被当成"这份资源被所有人引用"
+            return List.of();
+        }
+        List<AigAgentResourceBinding> bindings = resourceBindingMapper.selectList(
+            new LambdaQueryWrapper<AigAgentResourceBinding>()
+                .eq(AigAgentResourceBinding::getResourceType, resourceType.trim())
+                .eq(AigAgentResourceBinding::getResourceCode, resourceCode.trim())
+                .orderByDesc(AigAgentResourceBinding::getCreateTime));
+        if (bindings.isEmpty()) {
+            return List.of();
+        }
+        // 批量取版本与 Agent：逐个查版本会变成 N+1，而这一屏本来就是要"看清楚影响面"的
+        Map<Long, AigAgentVersion> versionById = loadVersions(bindings);
+        Map<Long, AigAgent> agentById = loadAgents(versionById.values());
+
+        List<AigAgentResourceReferenceVo> result = new ArrayList<>();
+        for (AigAgentResourceBinding binding : bindings) {
+            AigAgentVersion version = versionById.get(binding.getAgentVersionId());
+            AigAgent agent = version == null ? null : agentById.get(version.getAgentId());
+            AigAgentResourceReferenceVo vo = new AigAgentResourceReferenceVo();
+            vo.setBindingId(binding.getBindingId());
+            vo.setAgentVersionId(binding.getAgentVersionId());
+            vo.setAgentId(version == null ? null : version.getAgentId());
+            // 版本/Agent 已被删除时留空而不是编一个名字：留空才能看出"这条引用指着的东西不在了"
+            vo.setAgentCode(agent == null ? null : agent.getAgentCode());
+            vo.setAgentName(agent == null ? null : agent.getAgentName());
+            vo.setAgentVersion(version == null ? null : version.getVersion());
+            vo.setReleaseStatus(version == null ? null : version.getReleaseStatus());
+            vo.setEnabled(binding.getEnabled());
+            vo.setCompanyId(binding.getCompanyId());
+            vo.setBrandId(binding.getBrandId());
+            vo.setScenarioCode(binding.getScenarioCode());
+            vo.setRoleScope(binding.getRoleScope());
+            vo.setCreateTime(binding.getCreateTime());
+            result.add(vo);
+        }
+        return result;
+    }
+
+    /**
+     * 批量取绑定指向的 Agent 版本。
+     *
+     * @param bindings 绑定行
+     * @return 版本ID → 版本
+     */
+    private Map<Long, AigAgentVersion> loadVersions(List<AigAgentResourceBinding> bindings) {
+        Set<Long> versionIds = new LinkedHashSet<>();
+        for (AigAgentResourceBinding binding : bindings) {
+            if (binding.getAgentVersionId() != null) {
+                versionIds.add(binding.getAgentVersionId());
+            }
+        }
+        if (versionIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, AigAgentVersion> byId = new LinkedHashMap<>();
+        for (AigAgentVersion version : agentVersionMapper.selectByIds(versionIds)) {
+            byId.put(version.getAgentVersionId(), version);
+        }
+        return byId;
+    }
+
+    /**
+     * 批量取 Agent。
+     *
+     * @param versions 版本集合
+     * @return AgentID → Agent
+     */
+    private Map<Long, AigAgent> loadAgents(Collection<AigAgentVersion> versions) {
+        Set<Long> agentIds = new LinkedHashSet<>();
+        for (AigAgentVersion version : versions) {
+            if (version.getAgentId() != null) {
+                agentIds.add(version.getAgentId());
+            }
+        }
+        if (agentIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, AigAgent> byId = new LinkedHashMap<>();
+        for (AigAgent agent : agentMapper.selectByIds(agentIds)) {
+            byId.put(agent.getAgentId(), agent);
+        }
+        return byId;
     }
 
     @Override

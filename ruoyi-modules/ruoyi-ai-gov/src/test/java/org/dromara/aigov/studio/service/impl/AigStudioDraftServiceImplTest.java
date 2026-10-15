@@ -10,6 +10,7 @@ import org.dromara.aigov.agent.enums.AigReleaseStatusEnum;
 import org.dromara.aigov.agent.mapper.AigAgentMapper;
 import org.dromara.aigov.agent.mapper.AigAgentVersionMapper;
 import org.dromara.aigov.studio.domain.AigStudioDraft;
+import org.dromara.aigov.agent.enums.AigAgentCategoryEnum;
 import org.dromara.aigov.studio.domain.AigStudioDraftContent;
 import org.dromara.aigov.studio.domain.AigStudioRevision;
 import org.dromara.aigov.studio.domain.bo.AigStudioDraftCreateBo;
@@ -520,7 +521,8 @@ class AigStudioDraftServiceImplTest {
             }
             sections.append('"').append(key).append("\":\"内容-").append(key).append('"');
         }
-        return "{\"agentName\":\"详情页文案助手\",\"promptSections\":{" + sections + "},"
+        return "{\"agentName\":\"详情页文案助手\",\"agentCategory\":\"PLANNING\","
+            + "\"promptSections\":{" + sections + "},"
             + "\"providerCapability\":\"text_generation\",\"allowExternal\":\"N\","
             + "\"inputSchema\":\"{\\\"type\\\":\\\"object\\\"}\","
             + "\"outputSchema\":\"{\\\"type\\\":\\\"object\\\"}\"}";
@@ -582,6 +584,46 @@ class AigStudioDraftServiceImplTest {
 
         assertFalse(vo.getPassed());
         assertTrue(vo.getProblems().get(0).contains("不是合法 JSON"), vo.getProblems().toString());
+    }
+
+    @Test
+    @DisplayName("★ D07：预检返回分级结构（编码 + 字段定位），提醒不混进必须清空的问题清单")
+    void validateReturnsTieredStructuredItems() {
+        // 类别缺失（阻断，D07 已从提交阶段前移）+ 未声明输出 Schema（提醒）+ 声明了工具（提醒：仅登记）
+        String content = "{\"promptSections\":{\"role\":\"写文案\",\"objective\":\"出稿\","
+            + "\"inputs\":\"x\",\"workflow_rules\":\"x\",\"tools_and_skills\":\"x\","
+            + "\"constraints\":\"x\",\"output_contract\":\"x\",\"uncertainty_policy\":\"x\"},"
+            + "\"providerCapability\":\"text_generation\",\"allowedTools\":[\"brand_brief\"]}";
+        existingDraft(1, content, AigStudioDraftStatusEnum.EDITING.getCode());
+
+        AigStudioValidateVo vo = service.validateDraft(DRAFT_ID);
+
+        assertFalse(vo.getPassed());
+        assertTrue(vo.getBlockers().stream().anyMatch(b -> "CATEGORY_MISSING".equals(b.getCode())
+            && "/agentCategory".equals(b.getFieldPath())), "阻断项要带编码与字段定位：" + vo.getBlockers());
+        assertTrue(vo.getWarnings().stream().anyMatch(w -> "OUTPUT_SCHEMA_MISSING".equals(w.getCode())),
+            "未声明输出 Schema 应是提醒：" + vo.getWarnings());
+        assertTrue(vo.getWarnings().stream().anyMatch(w -> "RESOURCE_REGISTERED_ONLY".equals(w.getCode())),
+            "声明工具应提示「已登记待接入」：" + vo.getWarnings());
+        assertTrue(vo.getProblems().stream().noneMatch(p -> p.contains("输出 Schema")),
+            "提醒不能混进 problems（否则会被当成必须清空的错误）：" + vo.getProblems());
+    }
+
+    @Test
+    @DisplayName("★ D07/D09：元数据由服务端给出唯一词表（类别 + 八分节标签）")
+    void metadataIsServerSideSingleSource() {
+        var metadata = service.metadata();
+
+        assertEquals(AigAgentCategoryEnum.values().length, metadata.getCategories().size());
+        assertEquals(AigStudioDraftContent.PROMPT_SECTION_KEYS.size(), metadata.getPromptSections().size());
+        for (int i = 0; i < AigStudioDraftContent.PROMPT_SECTION_KEYS.size(); i++) {
+            assertEquals(AigStudioDraftContent.PROMPT_SECTION_KEYS.get(i),
+                metadata.getPromptSections().get(i).getKey(), "分节顺序必须与内容模型一致");
+            assertTrue(org.dromara.common.core.utils.StringUtils.isNotBlank(
+                metadata.getPromptSections().get(i).getLabel()), "分节要有中文标签");
+        }
+        assertTrue(metadata.getCategories().stream().anyMatch(c -> "ANALYSIS".equals(c.getCode())
+            && Boolean.FALSE.equals(c.getExecutable())), "占位实现必须如实标为非可执行");
     }
 
     // ------------------------------------------------------------------ 清单（S3）

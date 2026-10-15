@@ -55,6 +55,10 @@ export interface AigPortalTaskVO {
   projectId?: string | number;
   status?: string;
   statusLabel?: string;
+  /** 业务状态码（设计 §6.8：待检查/排队中/生成中/等待确认/完成/失败…）；服务端算好下发 */
+  businessStatus?: string;
+  /** 业务状态文案（如「草稿已生成 待复核」）；认不出的内部状态为空，回落到 statusLabel */
+  businessStatusLabel?: string;
   progress?: number;
   dataLevel?: string;
   startedAt?: string;
@@ -74,6 +78,28 @@ export interface AigPortalTaskQuery {
 export interface AigLaunchProblemVO {
   code: string;
   message?: string;
+}
+
+/**
+ * 启动任务模板（设计 D11）：员工只填业务字段，任务类型/业务域/数据等级等执行字段由服务端推导。
+ *
+ * 未配置模板时接口返回 null，前端回退到旧表单（向后兼容）。
+ */
+export interface AigLaunchTemplateVO {
+  templateCode?: string;
+  title?: string;
+  roleCode?: string;
+  actionCode?: string;
+  /** 服务端推导的任务类型（只读展示） */
+  taskType?: string;
+  /** 服务端推导的业务域（只读展示） */
+  projectType?: string;
+  /** 服务端推导的数据等级（服务端结论，员工不可放宽） */
+  dataLevel?: string;
+  /** 员工要填的业务字段（上下文键） */
+  businessFields?: string[];
+  /** 是否由服务端按业务输入组装快照 */
+  snapshotFromContext?: boolean;
 }
 
 /** 启动请求（prepare 与 commit 共用） */

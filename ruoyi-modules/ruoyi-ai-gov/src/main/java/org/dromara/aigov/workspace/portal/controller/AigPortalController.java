@@ -160,17 +160,26 @@ public class AigPortalController extends BaseController {
     }
 
     /**
-     * 刷新我的资产索引（按当前用户重建；先删后插，同一事务）。
+     * 刷新我的资产索引（按当前用户；默认全量重建，先删后插，同一事务）。
      *
      * <p>没有 MQ/调度依赖，所以同步入口就是这里——由用户在门户点"刷新"。
      * 将来做定时清扫时调用同一个服务方法即可。</p>
      *
+     * <p><b>{@code mode=incremental}</b> 走水位线增量：只补新增，不删也不更新。
+     * 默认仍是全量，因为只有全量能回收"各域已删掉/改过名"的资产；
+     * 增量是给"频繁同步"准备的，典型用法是「定时增量 + 定期全量」。</p>
+     *
+     * @param mode 同步模式（可空=全量；{@code incremental}=增量）
      * @return 本次写入的索引行数
      */
     @SaCheckLogin
     @PostMapping("/my-assets/refresh")
-    public R<Integer> refreshMyAssets() {
-        return R.ok(assetIndexService.rebuildForUser(requireActor().userId()));
+    public R<Integer> refreshMyAssets(@RequestParam(required = false) String mode) {
+        long userId = requireActor().userId();
+        boolean incremental = mode != null && "incremental".equalsIgnoreCase(mode.trim());
+        return R.ok(incremental
+            ? assetIndexService.syncNewForUser(userId)
+            : assetIndexService.rebuildForUser(userId));
     }
 
     /**

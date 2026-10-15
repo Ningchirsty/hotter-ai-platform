@@ -144,9 +144,12 @@
         <el-table-column label="创建时间" align="center" width="180">
           <template #default="scope">{{ parseTime(scope.row.createTime) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="200" align="center" class-name="small-padding fixed-width">
+        <el-table-column label="操作" width="250" align="center" class-name="small-padding fixed-width">
           <template #default="scope">
             <el-button link type="primary" icon="View" @click="handleDetail(scope.row)">详情</el-button>
+            <el-button v-hasPermi="['aig:task:query']" link type="primary" icon="Share" @click="handleFlow(scope.row)">
+              流程
+            </el-button>
             <el-button
               v-if="scope.row.status === 'QUEUED'"
               v-hasPermi="['aig:task:operate']"
@@ -190,6 +193,9 @@
 
     <!-- 存量任务的只读镜像（新任务走统一任务层；存量只读呈现，操作仍回各业务域） -->
     <TaskMirrorPanel />
+
+    <!-- 流程节点与人工确认（设计 §6.5：哪个节点停住了、批的是不是它） -->
+    <TaskFlowPanel ref="flowPanelRef" />
 
     <!-- 任务详情：任务 + 快照 + 事件流 + 候选结果 -->
     <el-drawer v-model="detailVisible" title="任务详情" size="72%" append-to-body>
@@ -332,6 +338,7 @@ import modal from '@/plugins/modal';
 import { useDict } from '@/utils/dict';
 import { parseTime } from '@/utils/ruoyi';
 import TaskMirrorPanel from './components/TaskMirrorPanel.vue';
+import TaskFlowPanel from './components/TaskFlowPanel.vue';
 
 defineOptions({ name: 'AigTask' });
 
@@ -421,6 +428,12 @@ const canCancel = (row: AigTaskVO) =>
 
 /** 待人工处理的任务可以由人重新入队；等待重试交给调度器，不在这里抢 */
 const canRequeue = (row: AigTaskVO) => row.status === 'NEED_HUMAN';
+
+/** 打开某个任务的流程节点面板（只读列表 + 人工确认；确认不会自动重跑） */
+const flowPanelRef = ref<InstanceType<typeof TaskFlowPanel>>();
+const handleFlow = (row: AigTaskVO) => {
+  flowPanelRef.value?.open(row.taskId!);
+};
 
 const getList = async () => {
   await withLoading(async () => {

@@ -1,13 +1,16 @@
 package org.dromara.aigov.workspace.launch.controller;
 
 import cn.dev33.satoken.annotation.SaCheckLogin;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
 import org.dromara.aigov.workspace.launch.domain.bo.AigLaunchRequestBo;
 import org.dromara.aigov.workspace.launch.domain.vo.AigLaunchCommitVo;
 import org.dromara.aigov.workspace.launch.domain.vo.AigLaunchPrepareVo;
 import org.dromara.aigov.workspace.launch.domain.vo.AigLaunchRecordVo;
+import org.dromara.aigov.workspace.launch.domain.vo.AigLaunchTemplateVo;
 import org.dromara.aigov.workspace.launch.service.IAigLaunchService;
+import org.dromara.aigov.workspace.launch.service.IAigLaunchTemplateService;
 import org.dromara.aigov.workspace.portal.helper.AigPortalActor;
 import org.dromara.aigov.workspace.portal.helper.AigPortalActorProvider;
 import org.dromara.common.core.domain.R;
@@ -20,6 +23,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -47,7 +51,23 @@ import org.springframework.web.bind.annotation.RestController;
 public class AigPortalLaunchController extends BaseController {
 
     private final IAigLaunchService launchService;
+    private final IAigLaunchTemplateService launchTemplateService;
     private final AigPortalActorProvider actorProvider;
+
+    /**
+     * 取该卡片的启动任务模板（D11）：前端据此只渲染业务字段，执行字段由服务端推导。
+     *
+     * @param roleCode   岗位编码
+     * @param actionCode 卡片编码
+     * @return 模板；未配置返回 null（前端回退到旧表单）
+     */
+    @SaCheckLogin
+    @GetMapping("/template")
+    public R<AigLaunchTemplateVo> template(
+        @NotBlank(message = "岗位编码不能为空") @RequestParam String roleCode,
+        @NotBlank(message = "卡片编码不能为空") @RequestParam String actionCode) {
+        return R.ok(launchTemplateService.describe(roleCode, actionCode));
+    }
 
     /**
      * 预检并发放票据（无副作用）。

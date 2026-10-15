@@ -123,6 +123,13 @@ jobs:
       #     掩成「发生未知异常，请联系管理员」，响应体和日志都看不出缺的是哪一列。
       #     这份清单由构建期守卫 AigDeploySchemaReplayCoverageTest 把关（新增补列脚本
       #     忘了加进来、或加进来但不幂等，CI 直接红）。
+      #   ℹ️ v1.0 优化分支新增的表/列也一并收在这里（launch_template / knowledge / tool /
+      #     result_feedback / task_step 五张表 + task_step 的节点身份两列），
+      #     理由同上：只写在文档里的"部署清单"没人会在切镜像前照着执行，
+      #     漏掉的后果就是"部署成功但接口 500"。它们分别是 create table if not exists
+      #     与 information_schema+PREPARE，都可重复执行。
+      #     ⚠️ 权限/页面种子（aig_*_menu.sql / aig_*_pages.sql）**不在此列**：
+      #     它们插的是 sys_menu/sys_role_menu，属"授权变更"，应由运维按 §5 清单显式执行。
       - name: Prepare additive runtime schema before switching backend
         run: |
           set -euo pipefail
@@ -137,7 +144,10 @@ jobs:
             aig_model_capability_tags.sql aig_model_cost_limit_amount.sql \
             aig_package_version_body_ref.sql aig_route_scenario_binding.sql \
             aig_sandbox_run_attestation.sql aig_skill_version_package_ref.sql \
-            aig_task_execution_mode.sql; do
+            aig_task_execution_mode.sql \
+            aig_launch_template.sql aig_knowledge.sql aig_tool.sql \
+            aig_result_feedback.sql aig_task_step.sql \
+            aig_task_step_node_identity.sql; do
             test -s "script/sql/$migration"
             echo "Preparing additive runtime schema: $migration"
             docker exec -i ai-video-poc-mysql-1 sh -c \

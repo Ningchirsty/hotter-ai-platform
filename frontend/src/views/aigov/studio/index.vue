@@ -135,6 +135,17 @@
       top="5vh"
       append-to-body
     >
+      <!-- 页头状态条（设计 §6.3：保存状态 + 修订号 + 草稿状态必须一直可见） -->
+      <div class="editor-strip mb-2">
+        <el-tag :type="saveStateTagType(localDirty, saving)" size="small">
+          {{ saveStateLabel(localDirty, saving) }}
+        </el-tag>
+        <span class="strip-item">修订号：{{ revisionText(expectedRevision) }}</span>
+        <span class="strip-item">草稿状态：{{ detail.status || '—' }}</span>
+      </div>
+
+      <!-- 左侧步骤导航已移入下方三栏的左栏（设计 §6.3 / §5.4 图一：左步骤 / 中编辑 / 右辅助） -->
+
       <el-alert v-if="localDirty" type="warning" :closable="false" class="mb-2">
         有<b>未保存</b>的改动。预检与提交都针对「已保存的内容」——请先保存。
       </el-alert>
@@ -145,8 +156,16 @@
         </ul>
       </el-alert>
 
+      <!-- ★ 三栏（设计 §6.3、§5.4 图一）：左=步骤导航，中=编辑区，右=修订差异。
+           左右两栏已拆成子组件（StudioStepsColumn / StudioRevisionColumn）；
+           中间编辑区仍在本文件：它与八个 Prompt 分节共享一个 content 对象，
+           抽成子组件需要 v-model 穿透整份内容，收益（少几十行）远小于绑定出错的风险。 -->
       <el-row :gutter="16">
-        <el-col :span="14">
+        <el-col :span="4">
+          <StudioStepsColumn />
+        </el-col>
+
+        <el-col :span="13">
           <el-card shadow="never">
             <template #header><b>配置与 Prompt</b></template>
             <el-form label-width="130px">
@@ -194,74 +213,38 @@
           </el-card>
         </el-col>
 
-        <el-col :span="10">
-          <el-card shadow="never">
-            <template #header>
-              <div style="display: flex; justify-content: space-between; align-items: center">
-                <b>修订历史与差异</b>
-                <span class="text-gray-500">当前修订 #{{ expectedRevision }}</span>
-              </div>
-            </template>
-            <el-table
-              :data="revisions"
-              size="small"
-              border
-              highlight-current-row
-              @current-change="selectRevision"
-              style="max-height: 240px; overflow: auto"
-            >
-              <el-table-column label="修订" prop="revisionNo" width="70" />
-              <el-table-column label="来源" prop="source" width="140" show-overflow-tooltip />
-              <el-table-column label="说明" prop="summary" show-overflow-tooltip />
-              <el-table-column label="时间" prop="createTime" width="160" show-overflow-tooltip />
-            </el-table>
-
-            <div class="mt-2">
-              <el-button
-                v-hasPermi="['aig:studio:draft:edit']"
-                size="small"
-                :disabled="selectedRevisionNo === undefined"
-                @click="handleRollback"
-              >
-                回滚到所选修订
-              </el-button>
-              <el-button size="small" :disabled="selectedRevisionNo === undefined" @click="clearSelection">清除选择</el-button>
-            </div>
-
-            <el-divider content-position="left">差异（当前 ↔ 所选修订）</el-divider>
-            <p v-if="selectedRevisionNo === undefined" class="text-gray-500">
-              从上面点一条修订，这里会逐节显示与当前内容的差异（改动过的节会标出来）。
-            </p>
-            <template v-else>
-              <p :class="selectedDiffChanged.length ? 'text-orange-500' : 'text-gray-500'">
-                {{ selectedSummary }}
-              </p>
-              <div v-for="item in selectedDiff" :key="item.key" class="diff-block">
-                <div class="diff-head">
-                  <el-tag v-if="item.changed" type="warning" size="small">改动</el-tag>
-                  <el-tag v-else type="info" size="small">一致</el-tag>
-                  <span class="diff-label">{{ item.label }}</span>
-                </div>
-                <template v-if="item.changed">
-                  <div class="diff-side"><b>修订 #{{ selectedRevisionNo }}：</b>{{ item.revision || '（空）' }}</div>
-                  <div class="diff-side"><b>当前：</b>{{ item.current || '（空）' }}</div>
-                </template>
-              </div>
-            </template>
-          </el-card>
+        <el-col :span="7">
+          <StudioRevisionColumn
+            :current-revision="expectedRevision"
+            :revisions="revisions"
+            :selected-revision-no="selectedRevisionNo"
+            :selected-diff="selectedDiff"
+            :selected-diff-changed="selectedDiffChanged"
+            :selected-summary="selectedSummary"
+            :last-test="lastTest"
+            @select="selectRevision"
+            @rollback="handleRollback"
+            @clear="clearSelection"
+          />
         </el-col>
       </el-row>
 
-      <!-- 变更提案：培训助手只提案，人在本面板审阅/采纳/拒绝（采纳才产生新修订） -->
+      <!-- 变更提案：培训助手只提案，人在本面板审阅/采纳/拒绝（采纳才产生新修订）。
+           ⚠️ 刻意仍放在三栏下方占满宽度，而不是塞进右栏：提案面板要并排显示
+           「分节原文 / 改动 / 理由」三列，塞进 7/24 的右栏后每列只剩几个字，审阅会变成误点。
+           设计 §6.3 的「右栏可在培训助手/测试预览/修订差异之间切换」因此只兑现了「修订差异」那一支；
+           培训助手以「下面这块宽面板 + 提交/测试按钮」的形态存在。 -->
       <ProposalPanel
         :draft-id="detail.draftId"
         :current-revision="expectedRevision"
         :archived="detail.status === 'ARCHIVED'"
+        :dirty="localDirty"
+        :save="handleSave"
         @applied="handleProposalApplied"
       />
 
       <template #footer>
-        <el-button @click="editorVisible = false">关 闭</el-button>
+        <el-button @click="guardOrRun(() => (editorVisible = false), '关闭编辑器')">关 闭</el-button>
         <el-button v-hasPermi="['aig:studio:draft:validate']" @click="handleValidate">预 检</el-button>
         <el-button v-hasPermi="['aig:studio:draft:edit']" type="primary" :loading="saving" @click="handleSave">保 存</el-button>
         <el-button v-hasPermi="['aig:studio:test:run']" type="warning" @click="openTest">
@@ -338,6 +321,15 @@
           {{ testResult.externalCall ? '发生了外发' : '未外发' }}
           <span class="text-gray-500">（耗时 {{ testResult.latencyMs ?? '-' }} ms）</span>
         </el-descriptions-item>
+        <!-- 设计 §6.6：测试结果要含"版本哈希"与 Schema 结论。这两项服务端一直在返回，
+             此前界面没显示，于是"这一测到底测的是哪一版内容"无从核对 -->
+        <el-descriptions-item label="版本哈希（测的是哪一版内容）">
+          {{ hashShort(testResult.contentHash) }}
+          <span class="text-gray-500">（结果摘要 {{ hashShort(testResult.resultDigest) }}）</span>
+        </el-descriptions-item>
+        <el-descriptions-item label="Schema 结论">
+          {{ schemaVerdictText(testResult) }}
+        </el-descriptions-item>
         <el-descriptions-item v-if="testResult.policyHits" label="策略命中">
           {{ testResult.policyHits }}
         </el-descriptions-item>
@@ -357,6 +349,21 @@
         <el-button @click="testVisible = false">关 闭</el-button>
         <el-button v-hasPermi="['aig:studio:test:run']" type="primary" :loading="testing" @click="doTest">
           发 起 测 试
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- D06：未保存改动的三选一。刻意没有"直接继续"——那会让本地改动静默丢失 -->
+    <el-dialog v-model="dirtyDialogVisible" title="有未保存的改动" width="480px" append-to-body>
+      <div class="dirty-tip">{{ unsavedMessage(dirtyActionLabel) }}</div>
+      <template #footer>
+        <el-button
+          v-for="choice in DIRTY_CHOICES"
+          :key="choice.key"
+          :type="choice.type"
+          @click="chooseDirty(choice.key)"
+        >
+          {{ choice.label }}
         </el-button>
       </template>
     </el-dialog>
@@ -380,7 +387,12 @@ import { useLoading } from '@/hooks/async/useLoading';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import modal from '@/plugins/modal';
 import { PROMPT_SECTION_LABELS, diffSummary, parseDraftContent, sectionDiff } from './diff';
+import { DIRTY_CHOICES, beforeUnloadShouldWarn, needsGuard, unsavedMessage, type DirtyChoice } from './dirtyGuard';
+import { revisionText, saveStateLabel, saveStateTagType } from './layout';
 import ProposalPanel from './components/ProposalPanel.vue';
+import StudioRevisionColumn from './components/StudioRevisionColumn.vue';
+import StudioStepsColumn from './components/StudioStepsColumn.vue';
+import { hashShort, schemaVerdictText } from './testPreview';
 
 defineOptions({ name: 'AigStudio' });
 
@@ -435,6 +447,14 @@ const testVisible = ref(false);
 const testing = ref(false);
 const testForm = ref<AigStudioTestRunForm>({ dataLevel: 'INTERNAL', input: '' });
 const testResult = ref<AigStudioTestRunVO>();
+
+/**
+ * 最近一次测试结果（右栏「测试预览」用）。
+ *
+ * <p>与 {@link testResult} 分开：那个是「弹窗里的本次结果」，打开弹窗就会被清空；
+ * 这个要一直留着——否则关掉弹窗后右栏就"忘了刚才测过什么"。</p>
+ */
+const lastTest = ref<AigStudioTestRunVO>();
 
 /** 当前内容序列化（用于与所选修订比较） */
 const currentJson = computed(() => JSON.stringify(content.value));
@@ -569,7 +589,7 @@ const handleValidate = async (): Promise<boolean> => {
   return false;
 };
 
-const handleSave = async () => {
+const handleSave = async (): Promise<boolean> => {
   saving.value = true;
   try {
     const res = await saveDraft(detail.value.draftId, {
@@ -587,11 +607,55 @@ const handleSave = async () => {
     }
     await loadRevisions();
     await getList();
+    return true;
   } catch (e: any) {
     // 冲突消息里给出了"你手上的修订号 / 库中当前"，原样展示，人才能决定刷新还是重改
     modal.alertError(e?.message || '保存失败');
+    return false;
   } finally {
     saving.value = false;
+  }
+};
+
+/* ------------------------------------------------------------------ 未保存保护（D06） */
+
+/**
+ * 关闭编辑器 / 采纳提案前的三选一。
+ *
+ * <p>没有"直接继续"：那条路径会让本地改动静默丢失——D06 要求任何选项都不静默丢内容。</p>
+ */
+const dirtyDialogVisible = ref(false);
+const dirtyActionLabel = ref('');
+let pendingDirtyAction: null | (() => void | Promise<void>) = null;
+
+const guardOrRun = (action: () => void | Promise<void>, actionLabel: string) => {
+  if (!needsGuard(localDirty.value)) {
+    void action();
+    return;
+  }
+  pendingDirtyAction = action;
+  dirtyActionLabel.value = actionLabel;
+  dirtyDialogVisible.value = true;
+};
+
+const chooseDirty = async (choice: DirtyChoice) => {
+  dirtyDialogVisible.value = false;
+  const action = pendingDirtyAction;
+  pendingDirtyAction = null;
+  if (choice === 'CANCEL') return;
+  if (choice === 'SAVE') {
+    // 保存失败就不继续：内容仍在编辑器里，让人先处理冲突/原因
+    const saved = await handleSave();
+    if (!saved) return;
+  }
+  if (action) await action();
+};
+
+/** 浏览器关闭/刷新只能给通用提示（自定义按钮不可用），因此只决定是否拦截 */
+const onBeforeUnload = (event: BeforeUnloadEvent) => {
+  if (beforeUnloadShouldWarn(localDirty.value)) {
+    event.preventDefault();
+    event.returnValue = '';
   }
 };
 
@@ -699,6 +763,9 @@ const doTest = async () => {
   try {
     const res = await runStudioTest(detail.value.draftId, testForm.value);
     testResult.value = res.data;
+    // 右栏「测试预览」看的是**最近一次**测试：它不随弹窗开关而被清掉
+    // （testResult 在 openTest 里会清空，那是"弹窗里的本次结果"）
+    lastTest.value = res.data;
   } catch (e: any) {
     // 后端默认关闭时会给出明确原因（aigov.studio.test.enabled），原样展示
     modal.alertError(e?.message || '测试调用失败');
@@ -708,11 +775,28 @@ const doTest = async () => {
 };
 
 onMounted(() => {
+  // D06：关闭/刷新页面时若仍有未保存改动，浏览器给出通用离开确认
+  window.addEventListener('beforeunload', onBeforeUnload);
   getList();
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('beforeunload', onBeforeUnload);
 });
 </script>
 
 <style scoped>
+.editor-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.strip-item {
+  font-size: 12px;
+  color: var(--app-text-color-secondary, #606266);
+}
+
 .diff-block {
   border-bottom: 1px dashed var(--app-border-color, #e4e7ed);
   padding: 6px 0;

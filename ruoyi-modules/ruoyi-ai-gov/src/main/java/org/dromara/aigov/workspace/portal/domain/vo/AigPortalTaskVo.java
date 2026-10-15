@@ -70,6 +70,19 @@ public class AigPortalTaskVo implements Serializable {
     private String statusLabel;
 
     /**
+     * 业务状态码（设计 §6.8 的"待检查/排队中/生成中/等待确认/完成/失败"）。
+     *
+     * <p>与 {@link #statusLabel} 并存，而不是替换它：{@code statusLabel} 是**内部状态**的中文，
+     * 这个字段是**给员工看的业务状态**——例如内部 {@code SUCCEEDED} 在未复核时应显示
+     * "草稿已生成 待复核"（设计 §6.8：执行成功不等于业务通过）。
+     * 由服务端计算（复核状态只有任务侧知道），前端不再写第二份映射。</p>
+     */
+    private String businessStatus;
+
+    /** 业务状态文案；认不出的内部状态为空（调用方回落到 {@link #statusLabel}） */
+    private String businessStatusLabel;
+
+    /**
      * 进度百分比
      */
     private Integer progress;

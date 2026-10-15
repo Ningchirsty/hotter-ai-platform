@@ -179,10 +179,15 @@
         <el-table-column label="场景" prop="scenarioCode" min-width="150" show-overflow-tooltip>
           <template #default="scope">{{ scope.row.scenarioCode || '—' }}</template>
         </el-table-column>
-        <el-table-column label="状态" align="center" width="110">
+        <el-table-column label="状态" align="center" width="150">
           <template #default="scope">
-            <el-tag :type="taskStatusMeta(scope.row.status, scope.row.statusLabel).tag">
-              {{ taskStatusMeta(scope.row.status, scope.row.statusLabel).label }}
+            <!-- 业务状态优先（服务端算好下发）：员工看到"草稿已生成 待复核"这类措辞 -->
+            <el-tag
+              :type="
+                taskStatusMeta(scope.row.status, scope.row.statusLabel, scope.row.businessStatusLabel).tag
+              "
+            >
+              {{ taskStatusMeta(scope.row.status, scope.row.statusLabel, scope.row.businessStatusLabel).label }}
             </el-tag>
           </template>
         </el-table-column>

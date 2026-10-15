@@ -25,9 +25,9 @@ import static org.junit.jupiter.api.Assertions.fail;
  * 而该表的建表注释明确写着：模型越界记 {@code REJECTED} 是"这条通道最该被看见的信号"——
  * 也就是说，修之前最重要的那个信号在生产上永远看不到。</p>
  *
- * <h3>为什么会这样（机制）</h3>
+ * <h3>为什么会这样（机制，2026-10-12 时的状态）</h3>
  * <ol>
- *     <li>{@code AigStudioCopilotServiceImpl#chat} 带 {@code @Transactional}；</li>
+ *     <li>{@code AigStudioCopilotServiceImpl#chat} <b>当时</b>带 {@code @Transactional}；</li>
  *     <li>它调用的 {@code create} 也带 {@code @Transactional}（默认 {@code PROPAGATION_REQUIRED}
  *         ⇒ <b>参与同一个事务</b>，不是新事务）；</li>
  *     <li>设计上 chat 要"捕获 create 抛出的『模型越界』业务异常 → 记 {@code REJECTED} 后继续写结论"；</li>
@@ -35,12 +35,19 @@ import static org.junit.jupiter.api.Assertions.fail;
  *         外层即使 catch 住并继续写完，<b>提交时仍抛 {@code UnexpectedRollbackException}</b>。</li>
  * </ol>
  *
- * <p>⇒ 修法：判定"模型越界"必须发生在调 {@code create} <b>之前</b>，用只读、不落库、
+ * <h3>两个层次的修法</h3>
+ * <p>①当年的修法：判定"模型越界"必须发生在调 {@code create} <b>之前</b>，用只读、不落库、
  * <b>不带事务注解</b>的 {@link IAigStudioProposalService#validateForCreate}。
  * 正因为那个方法<b>没有事务拦截器</b>，它抛出的业务异常才不会参与 rollback-only 标记。</p>
  *
- * <p>⚠️ 这条守卫存在的唯一原因，是防止有人"顺手"给 {@code validateForCreate} 补上
- * {@code @Transactional}（看起来完全合理："它要读草稿，给它加个只读事务吧"）——
+ * <p>②2026-10-14（附件《Agent 平台优化详细设计 v1.0》D08）进一步移除了 {@code chat} 的
+ * {@code @Transactional}：网络调用不该在数据库事务里进行，且去掉外层事务后 {@code create}
+ * 退回自己的事务边界——即使 create 抛异常也不会再带崩整轮对话。这两层是叠加的：
+ * 现在 {@code chat} 无事务、{@code create} 有自己的事务、{@code validateForCreate} 无事务。</p>
+ *
+ * <p>⚠️ 本类守卫存在的唯一原因，是防止有人"顺手"改这两处（看起来都完全合理）：
+ * 给 {@code validateForCreate} 补 {@code @Transactional}（"它要读草稿，给它加个只读事务吧"），
+ * 或给 {@code chat} 补回 {@code @Transactional}（"要写两张表，给它加个事务吧"）——
  * 那会把上面这个故障原样带回来，而且<b>单元测试会全绿</b>：单测里没有事务代理，
  * catch 住就能继续往下写，只有真库上的提交才会炸。这正是它漏到线上的原因。</p>
  *
@@ -77,14 +84,19 @@ class AigStudioProposalTransactionBoundaryTest {
     }
 
     @Test
-    @DisplayName("chat 必须仍然是 @Transactional：它与提案落库同事务，是「要么都成、要么都不成」的保证")
-    void chatMustStayTransactional() {
+    @DisplayName("★ chat 绝不能带 @Transactional（D08）：它必须让登记/调用/收尾分属不同事务")
+    void chatMustNotBeTransactional() {
         Method method = assertFound(AigStudioCopilotServiceImpl.class, "chat",
             new Class<?>[]{Long.class,
                 org.dromara.aigov.studio.domain.bo.AigStudioCopilotChatBo.class, Long.class});
-        assertNotNull(method.getAnnotation(Transactional.class),
-            "chat 的 @Transactional 是它与提案落库同事务的保证；去掉会改变语义，"
-                + "若真要改，请连同 AigStudioProposalTransactionBoundaryTest 的说明一起更新");
+        assertNull(method.getAnnotation(Transactional.class),
+            "chat 的 @Transactional 已被 D08（Agent 平台优化 v1.0）移除："
+                + "①网络调用期间崩溃会让 RUNNING 证据随事务回滚，"
+                + "『证据先落』在最需要它的场景失效；"
+                + "②它会让内层 create 与 chat 共享事务，create 抛异常时把共享事务标成 rollback-only，"
+                + "整轮对话（含 REJECTED 结论）被回滚——正是本类记录的那次 2026-10-12 事故。"
+                + "去掉外层事务后，登记与收尾各自提交，create 退回自己的事务边界。"
+                + "若要改回，请先推翻 D08 并同步更新本说明与 AigStudioShortTransactionGuardTest。");
     }
 
     @Test

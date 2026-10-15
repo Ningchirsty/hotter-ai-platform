@@ -8,6 +8,7 @@ import org.dromara.aigov.studio.domain.bo.AigStudioDraftSubmitBo;
 import org.dromara.aigov.studio.domain.vo.AigStudioDraftDetailVo;
 import org.dromara.aigov.studio.domain.vo.AigStudioDraftSubmitVo;
 import org.dromara.aigov.studio.domain.vo.AigStudioDraftVo;
+import org.dromara.aigov.studio.domain.vo.AigStudioMetadataVo;
 import org.dromara.aigov.studio.domain.vo.AigStudioRevisionVo;
 import org.dromara.aigov.studio.domain.vo.AigStudioValidateVo;
 import org.dromara.aigov.studio.enums.AigStudioRevisionSourceEnum;
@@ -137,6 +138,14 @@ public interface IAigStudioDraftService {
      * @return 预检结论
      */
     AigStudioValidateVo validateDraft(Long draftId);
+
+    /**
+     * 训练台元数据（设计 §9.2 {@code GET /aigov/studio/metadata}）：类别与 Prompt 分节的
+     * <b>服务端唯一词表来源</b>，供前端渲染，避免前端各自枚举导致漂移。
+     *
+     * @return 元数据
+     */
+    AigStudioMetadataVo metadata();
 
     /**
      * 提交草稿：把当前内容固化成一条 <b>DRAFT</b> 的 Agent 版本（专题 C §C7 的"提交"）。

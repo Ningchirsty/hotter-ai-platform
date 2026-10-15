@@ -138,7 +138,9 @@ class AigLaunchServiceImplTest {
         service = new AigLaunchServiceImpl(portalService, ticketStore, recordMapper, taskService,
             mock(IAigUserQuotaService.class), scenarioMapper,
             scenarioVersionMapper, agentVersionMapper, agentMapper, roleProfileMapper,
-            new AigLaunchProjectPolicyNotYetEnforceable(), new AigLaunchProperties());
+            new AigLaunchProjectPolicyNotYetEnforceable(), new AigLaunchProperties(),
+            // 默认不套用模板（返回 false = 无模板）：既有用例行为完全不变（D11 单独覆盖）
+            mock(org.dromara.aigov.workspace.launch.service.IAigLaunchTemplateService.class));
     }
 
     @Test

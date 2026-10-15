@@ -430,6 +430,61 @@ public interface AigConstants {
     String PERM_ROLE_PACKAGE_DISABLE = "aig:role:disable";
 
     /**
+     * 知识集合清单（读）：有哪些集合、责任人、数据等级
+     */
+    String PERM_KNOWLEDGE_COLLECTION_LIST = "aig:knowledge:collection:list";
+
+    /**
+     * 新建知识集合（写）：集合是授权与责任的最小单位，因此与"看清单"分开授权
+     */
+    String PERM_KNOWLEDGE_COLLECTION_CREATE = "aig:knowledge:collection:create";
+
+    /**
+     * 知识文档与版本清单/详情（读）
+     */
+    String PERM_KNOWLEDGE_DOCUMENT_LIST = "aig:knowledge:document:list";
+
+    /**
+     * 登记知识文档与版本（写）
+     */
+    String PERM_KNOWLEDGE_DOCUMENT_UPLOAD = "aig:knowledge:document:upload";
+
+    /**
+     * 知识处理推进/失败/退役（写）：改变"这份资料能不能被检索"，因此独立授权
+     */
+    String PERM_KNOWLEDGE_DOCUMENT_MANAGE = "aig:knowledge:document:manage";
+
+    /**
+     * 知识检索测试（只检索、不生成）：区分"知识问题"与"模型问题"的入口
+     */
+    String PERM_KNOWLEDGE_RETRIEVAL_TEST = "aig:knowledge:retrieval:test";
+
+    /**
+     * 可绑定工具清单（读）：版本、操作类型、接入与权限状态
+     */
+    String PERM_TOOL_LIST = "aig:tool:list";
+
+    /**
+     * 工具登记（写）：新建工具定义、新增执行契约版本
+     */
+    String PERM_TOOL_MANAGE = "aig:tool:manage";
+
+    /**
+     * 反馈问题队列（读）：训练负责人看待处理/已确认/已驳回的反馈
+     */
+    String PERM_FEEDBACK_QUEUE = "aig:feedback:queue";
+
+    /**
+     * 处理反馈（写）：确认问题（并给出补知识/改规则/加用例动作）或驳回
+     */
+    String PERM_FEEDBACK_HANDLE = "aig:feedback:handle";
+
+    /**
+     * 运营指标（读）：完成任务数、结果采纳率、首次通过率、返工率、策略阻断等
+     */
+    String PERM_OPS_METRICS = "aig:ops:metrics";
+
+    /**
      * 服务令牌管理权限码的公共前缀。
      *
      * <p><b>它同时是一条安全边界</b>：签发令牌时，凡以此前缀开头的 scope 一律拒绝

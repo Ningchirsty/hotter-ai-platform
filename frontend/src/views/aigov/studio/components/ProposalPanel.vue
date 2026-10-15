@@ -180,6 +180,23 @@
         <el-button type="primary" :loading="deciding" @click="doReject">确 定 拒 绝</el-button>
       </template>
     </el-dialog>
+    <!-- D06：本地有未保存改动时的三选一。采纳以「服务端已保存的修订」为基准并重载编辑器，
+         因此绝不能静默覆盖本地改动。
+         刻意放在 el-card 内部：本组件由页面用 <transition> 包裹，模板必须只有一个根节点；
+         而 el-dialog 带 append-to-body，插在哪里都不影响它的渲染位置与样式。 -->
+    <el-dialog v-model="applyDirtyVisible" title="有未保存的改动" width="480px" append-to-body>
+      <div>{{ adoptUnsavedMessage() }}</div>
+      <template #footer>
+        <el-button
+          v-for="choice in DIRTY_CHOICES"
+          :key="choice.key"
+          :type="choice.type"
+          @click="chooseApplyDirty(choice.key)"
+        >
+          {{ choice.label }}
+        </el-button>
+      </template>
+    </el-dialog>
   </el-card>
 </template>
 
@@ -190,6 +207,7 @@ import type {
   AigStudioCopilotTurnVO
 } from '@/api/aigov/studio/types';
 import modal from '@/plugins/modal';
+import { adoptUnsavedMessage, DIRTY_CHOICES, type DirtyChoice } from '../dirtyGuard';
 import {
   canChat,
   copilotStatusLabel,
@@ -225,6 +243,10 @@ const props = defineProps<{
   currentRevision: number;
   /** 草稿是否已归档（归档后不能再采纳/拒绝） */
   archived?: boolean;
+  /** 编辑器是否有未保存改动（D06：采纳前必须处理本地改动） */
+  dirty?: boolean;
+  /** 由父组件提供的保存动作（"保存并继续"用）；返回是否保存成功 */
+  save?: () => Promise<boolean>;
 }>();
 
 const emit = defineEmits<{ (e: 'applied'): void }>();
@@ -236,6 +258,8 @@ const selected = ref<AigStudioChangeProposalVO>();
 
 const rejectVisible = ref(false);
 const rejectReason = ref('');
+/** D06：本地有未保存改动时，"采纳"先弹三选一 */
+const applyDirtyVisible = ref(false);
 
 /* ------------------------------------------------------------------ 对话式 Copilot */
 
@@ -291,8 +315,34 @@ function decidedReasonOf(proposal: AigStudioChangeProposalVO): boolean {
   return !!proposal.decidedReason;
 }
 
-/** 采纳：带 CAS 落一条新修订，然后让父组件重新载入内容与修订历史 */
+/** 采纳入口（D06）：本地有未保存改动时，先让人选择 保存并继续 / 放弃并继续 / 返回 */
 async function handleApply(): Promise<void> {
+  const target = selected.value;
+  if (!target) return;
+  if (props.archived) {
+    modal.msgWarning('草稿已归档，不能再采纳提案');
+    return;
+  }
+  if (props.dirty) {
+    applyDirtyVisible.value = true;
+    return;
+  }
+  await doApply();
+}
+
+/** 三选一的收口：CANCEL 不动；SAVE 先保存（失败则不继续）；随后照常采纳 */
+async function chooseApplyDirty(choice: DirtyChoice): Promise<void> {
+  applyDirtyVisible.value = false;
+  if (choice === 'CANCEL') return;
+  if (choice === 'SAVE') {
+    const saved = props.save ? await props.save() : false;
+    if (!saved) return;
+  }
+  await doApply();
+}
+
+/** 真正采纳：带 CAS 落一条新修订，然后让父组件重新载入内容与修订历史 */
+async function doApply(): Promise<void> {
   const target = selected.value;
   if (!target) return;
   if (props.archived) {
