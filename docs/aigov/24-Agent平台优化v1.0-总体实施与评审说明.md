@@ -63,6 +63,7 @@
 | `e621929e` | D | **顺序流程每步一次调用**（用户 2026-10-14 授权）：`AigFlowCallPolicy`（次数上限 / 链式输入 / 累计成本边界）+ 执行器多步循环 + `route_snapshot.executedCalls` |
 | `c8c8b610` | D | **条件结论支持 `a.b.c` 路径与数组下标**（用户 2026-10-14 要求；取不到就「没有结论」，不猜真假） |
 | `f709ee28` | C | **知识解析/嵌入的内部可部署基线**（PDFBox 3 + 内置文本/DOCX 解析 + 哈希嵌入 + 文件向量索引，全部走端口）+ `POST /document-versions/{id}/index` 全链路 + 检索测试 `KEYWORD`/`VECTOR` + 前端入口与模式选择 + 方案文档 `25` |
+| `1e86662e` | 前端/CI | **修 3 处「只有 `vite build` 才会失败」的问题**（`TaskFlowPanel` 的 `./flow` 应为 `../flow`；`ProposalPanel` 与两个 studio 子组件的多根节点）+ 验收脚本新增**前端生产构建**步骤 + `sfcCompile.spec.ts` 复用构建插件守"单根节点" |
 
 > 表里是**有实质内容的提交**；纯文档补记（例如把本表自己补上一行）不逐条登记——它们不改变交付物。
 > `check-aigov-docs.mjs` 会核对表里每个提交号都是当前分支 HEAD 的祖先（抄错/被 rebase 掉会红）。
