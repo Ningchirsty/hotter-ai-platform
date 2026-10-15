@@ -4,6 +4,8 @@
 .studio.creative-light {
     @include theme.creative-light-tokens;
     background-image: none;
+    // Keep full task/asset content in the outer viewport's scrollable area.
+    flex-shrink: 0;
 
     .guide-bar {
         color: var(--t2);
