@@ -126,6 +126,58 @@ export function retrievalSummary(result?: { citations?: unknown[]; noSupport?: b
   return '命中 ' + count + ' 段可引用资料';
 }
 
+/**
+ * 检索模式（评测对比用；附件「关键词检索与向量检索可组合……排序参数通过评测确定」）。
+ *
+ * 只给两路、不给混合：混合要定权重，而权重正是要评测出来的东西。
+ */
+export const RETRIEVAL_MODE_OPTIONS: readonly CodeOption[] = [
+  { code: 'KEYWORD', label: '关键字（同正式执行路径）' },
+  { code: 'VECTOR', label: '向量（需先解析并索引）' }
+];
+
+/** 检索模式文案（未知值按默认模式显示，避免界面上出现空白） */
+export function retrievalModeLabel(code?: string): string {
+  return labelOf(RETRIEVAL_MODE_OPTIONS, code || 'KEYWORD');
+}
+
+/**
+ * 检索模式的提醒。
+ *
+ * 向量模式**没有命中不等于资料里没有**：可能是这一版还没执行「解析并索引」。
+ * 不把这句话写在界面上，评测的人会把"没索引"读成"向量检索没用"。
+ */
+export function retrievalModeHint(mode?: string): string {
+  return mode === 'VECTOR'
+    ? '向量模式只返回向量索引命中的片段：没有命中不代表资料里没有，可能是这一版还没执行「解析并索引」。'
+    : '关键字模式与正式执行路径同口径；要对比向量效果，请切换模式后用同一条查询重跑。';
+}
+
+/** 解析并索引结果摘要（失败时必须带分类与原因，不能只说"处理失败"） */
+export function indexingSummary(result?: {
+  status?: string;
+  chunkCount?: number;
+  parserEngineId?: string;
+  embeddingEngineId?: string;
+  errorCode?: string;
+  message?: string;
+}): string {
+  if (!result) {
+    return '';
+  }
+  if (result.status === 'FAILED') {
+    return '处理失败（' + (result.errorCode || '未分类') + '）：' + (result.message || '无说明');
+  }
+  return (
+    '已就绪：' +
+    (result.chunkCount ?? 0) +
+    ' 段｜解析引擎=' +
+    (result.parserEngineId || '未知') +
+    '｜嵌入引擎=' +
+    (result.embeddingEngineId || '未知')
+  );
+}
+
 /** 分段预览文案（没有预览就如实说，不显示成空白） */
 export function chunkExcerptText(chunk?: { textExcerpt?: string }): string {
   const text = chunk?.textExcerpt?.trim();

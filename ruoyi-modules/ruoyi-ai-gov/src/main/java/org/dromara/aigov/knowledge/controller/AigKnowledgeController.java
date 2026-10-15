@@ -13,10 +13,14 @@ import org.dromara.aigov.knowledge.domain.bo.AigKnowledgeDocumentBo;
 import org.dromara.aigov.knowledge.domain.bo.AigKnowledgeRetrievalTestBo;
 import org.dromara.aigov.knowledge.domain.vo.AigKnowledgeChunkVo;
 import org.dromara.aigov.knowledge.domain.vo.AigKnowledgeDocumentRegisterVo;
+import org.dromara.aigov.knowledge.domain.vo.AigKnowledgeIndexingVo;
 import org.dromara.aigov.knowledge.domain.vo.AigKnowledgeRetrievalTestVo;
+import org.dromara.aigov.knowledge.enums.AigKnowledgeRetrievalModeEnum;
 import org.dromara.aigov.knowledge.retrieval.KnowledgePort;
+import org.dromara.aigov.knowledge.service.IAigKnowledgeIndexingService;
 import org.dromara.aigov.knowledge.service.IAigKnowledgeService;
 import org.dromara.common.core.domain.R;
+import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.redis.annotation.RepeatSubmit;
 import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.common.web.core.BaseController;
@@ -28,7 +32,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Set;
 
@@ -56,6 +62,8 @@ import java.util.Set;
 public class AigKnowledgeController extends BaseController {
 
     private final IAigKnowledgeService knowledgeService;
+
+    private final IAigKnowledgeIndexingService indexingService;
 
     private final KnowledgePort knowledgePort;
 
@@ -135,6 +143,41 @@ public class AigKnowledgeController extends BaseController {
         @NotNull(message = "版本ID不能为空") @PathVariable Long versionId,
         @RequestParam String idempotencyKey) {
         return R.ok(knowledgeService.advanceProcessing(versionId, idempotencyKey).getCode());
+    }
+
+    /**
+     * 解析并索引一份文档版本（设计 §6.4 的完整管道；附件「知识处理引擎：优先内部可部署，按试点评测选型」）。
+     *
+     * <p><b>它和 {@code /advance} 的区别</b>：{@code /advance} 只推状态；本接口会真的解析、分段、
+     * 嵌向量、写索引，结束后版本进入 {@code READY}（真能被检索）。</p>
+     *
+     * <p><b>为什么要传文件</b>：登记接口只收元数据（文件名/哈希/来源引用），文件本体不在本服务里。
+     * 试点的直接做法是把文件随本次请求送进来；接入对象存储取文（按 {@code sourceRef} 读）属于
+     * 后续接入范围，届时本接口会换成"按版本号触发、由服务端取文"。</p>
+     *
+     * <p><b>权限沿用 {@code aig:knowledge:document:manage}</b>：这个动作直接决定"这份资料能不能被
+     * 检索到"，与推进/回退/退役是同一类权限；只让"只想上传待审"的人顺手把未审资料推成可检索，
+     * 正是要避免的事（见 {@code /documents} 的权限说明）。</p>
+     *
+     * @param versionId      版本ID
+     * @param idempotencyKey 幂等键（重试必须复用同一个键）
+     * @param file           文件本体
+     * @return 索引结果（引擎、条数、状态）
+     */
+    @SaCheckPermission(AigConstants.PERM_KNOWLEDGE_DOCUMENT_MANAGE)
+    @RepeatSubmit
+    @PostMapping("/document-versions/{versionId:\\d+}/index")
+    public R<AigKnowledgeIndexingVo> index(
+        @NotNull(message = "版本ID不能为空") @PathVariable Long versionId,
+        @RequestParam String idempotencyKey,
+        @RequestParam("file") MultipartFile file) {
+        byte[] content;
+        try {
+            content = file.getBytes();
+        } catch (IOException e) {
+            throw new ServiceException("读取上传文件失败：" + e.getMessage());
+        }
+        return R.ok(indexingService.index(content, versionId, idempotencyKey));
     }
 
     /**
@@ -223,13 +266,22 @@ public class AigKnowledgeController extends BaseController {
     @PostMapping("/retrieval-tests")
     public R<AigKnowledgeRetrievalTestVo> retrievalTest(
         @RequestBody @Validated AigKnowledgeRetrievalTestBo bo) {
-        KnowledgePort.RetrievalResult result = knowledgePort.retrieve(new KnowledgePort.RetrievalQuery(
+        AigKnowledgeRetrievalModeEnum mode = AigKnowledgeRetrievalModeEnum.from(bo.getMode());
+        if (mode == null) {
+            // 不认识的模式直接报错：静默按关键字处理会让"我明明选了向量"变成一次无效对比
+            throw new ServiceException("不认识的检索模式：" + bo.getMode() + "（可选：KEYWORD / VECTOR）");
+        }
+        KnowledgePort.RetrievalQuery query = new KnowledgePort.RetrievalQuery(
             bo.getQuery(),
             bo.getVersionIds() == null ? Set.of() : Set.copyOf(bo.getVersionIds()),
             bo.getCollectionCodes() == null ? Set.of() : Set.copyOf(bo.getCollectionCodes()),
             // 维护测试入口由权限点管控，按显式选择的集合检索；正式执行路径才带身份
-            bo.getMaxChunks(), null));
+            bo.getMaxChunks(), null);
+        KnowledgePort.RetrievalResult result = mode == AigKnowledgeRetrievalModeEnum.VECTOR
+            ? knowledgePort.retrieveByVector(query)
+            : knowledgePort.retrieve(query);
         AigKnowledgeRetrievalTestVo vo = new AigKnowledgeRetrievalTestVo();
+        vo.setMode(mode.getCode());
         vo.setNoSupport(result.noSupport());
         vo.setReason(result.reason());
         for (KnowledgePort.Citation citation : result.citations()) {

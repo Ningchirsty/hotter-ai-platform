@@ -77,6 +77,12 @@ export interface AigKnowledgeRetrievalTestForm {
   collectionCodes?: string[];
   versionIds?: (string | number)[];
   maxChunks?: number;
+  /**
+   * 检索模式：`KEYWORD`（默认，同正式执行路径）/ `VECTOR`（向量索引）。
+   *
+   * 两路各自跑，**不提供混合模式**：排序权重属于"按试点评测确定"的参数。
+   */
+  mode?: string;
 }
 
 /** 检索引用 */
@@ -93,8 +99,23 @@ export interface AigKnowledgeCitationVO {
 /** 检索测试结果 */
 export interface AigKnowledgeRetrievalTestVO {
   citations?: AigKnowledgeCitationVO[];
+  /** 实际使用的检索模式（服务端回显） */
+  mode?: string;
   noSupport?: boolean;
   reason?: string;
+}
+
+/** 解析并索引结果（`POST /document-versions/{id}/index`） */
+export interface AigKnowledgeIndexingVO {
+  versionId?: string | number;
+  status?: string;
+  parserEngineId?: string;
+  embeddingEngineId?: string;
+  encoding?: string;
+  chunkCount?: number;
+  vectorIndexEngine?: string;
+  errorCode?: string;
+  message?: string;
 }
 
 /**

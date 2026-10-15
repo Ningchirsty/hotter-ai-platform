@@ -37,8 +37,9 @@
     `READY` 是终态，不被一次失败改写。
 - `KnowledgePort` + `AigKnowledgeRetrievalService`：
   - **授权前过滤**（集合/版本/`READY`/有效期）→ **授权后校验**（片段所属版本复检），两道都有；
-  - 首期只做**关键字检索**（`text_excerpt` 包含匹配 + 段序），**不宣称向量/嵌入可用**
-    ——设计 §7.4 明确嵌入与排序参数需按试点资料评测后确定；
+  - 正式执行路径仍是**关键字检索**（`text_excerpt` 包含匹配 + 段序）；
+  - **向量检索**已作为"检索测试的另一路"接入（见 §5.4），**混合排序权重仍待评测**——
+    设计 §7.4 明确嵌入与排序参数需按试点资料评测后确定；
   - 没有命中时返回 `noSupport=true` + 原因，而不是空列表让人猜。
 - `AigKnowledgeAccess`：检索授权的**纯函数判据**（可逐条单测）。
 
@@ -94,9 +95,11 @@
 - 两个布尔字段（`hasFullText`/`indexed`）是刻意加的：没有它们，界面只能把"没有预览"
   读成"没有正文"，而"有没有真的进检索索引"正是解析之后唯一的可见信号。
 
-2. **解析器 / OCR / 表格解析**：仓储层不实现解析算法，只承载"处理阶段"与结论；
-   真实 PDF/DOCX 解析需接入解析引擎并按实际资料评估（设计 §6.4 明确"效果需评估"）。
-3. **嵌入与向量存储**：未选型、未接入。
+2. **~~解析器 / OCR / 表格解析~~ 解析器已落地（见 §5）**：PDF/DOCX/TXT/Markdown 四类已接引擎
+   （PDF = PDFBox 3，其余为内置零依赖实现）；**OCR 与表格解析仍不做**——扫描件与 XLSX 分别
+   "显式失败 + 指向 OCR"与"登记阶段拒绝（走结构化导入）"。
+3. **~~嵌入与向量存储~~ 已落地内部可部署基线（见 §5）**：嵌入 = 内置哈希基线（不承诺效果），
+   向量存储 = 单节点文件索引；**最终选型与混合排序权重按试点评测确定**（方案见 `25-…试点评测方案.md`）。
 4. **岗位卡片/身份的进一步收窄**：C-3 的授权范围取自版本的 `knowledgeRefs`（版本级）；
    设计 §7.2 的"登录身份 ∩ 岗位卡片 ∩ Agent 版本 ∩ 资源绑定"完整相交留待执行入口接线时补齐。
 
@@ -133,7 +136,8 @@
 | `POST /document-versions/{id}/advance` | `aig:knowledge:document:manage` | 推进一阶段（幂等键） |
 | `POST /document-versions/{id}/fail` | `aig:knowledge:document:manage` | 记录失败阶段 |
 | `POST /document-versions/{id}/retire` | `aig:knowledge:document:manage` | 退役版本 |
-| `POST /retrieval-tests` | `aig:knowledge:retrieval:test` | 只检索不生成 |
+| `POST /document-versions/{id}/index` | `aig:knowledge:document:manage` | **解析并索引**（multipart：`idempotencyKey` + `file`；见 §5.3；无新权限点） |
+| `POST /retrieval-tests` | `aig:knowledge:retrieval:test` | 只检索不生成（**新增 `mode`：`KEYWORD`/`VECTOR`**，见 §5.4） |
 | `GET /document-versions/{id}/chunks` | `aig:knowledge:retrieval:test` | **分段预览**（只给 `text_excerpt`，见 §2.5；无新权限点） |
 | `GET /collections/{id}/references` | `aig:knowledge:document:list` | **谁在引用这个集合**（退役前的影响面，见 §2.6；无新权限点） |
 
@@ -181,3 +185,48 @@
 - **本轮不新增建表、不新增权限点**：分段预览接口复用 `aig:knowledge:retrieval:test`
   （已有菜单行），对既有行为零影响。
 - 页面侧新增「看分段（预览）」按钮：它只读、不改处理状态；**预览不是原文**（原文在受控存储引用里）。
+
+---
+
+## 5 知识处理引擎与嵌入式接入（C-6，本轮补齐）
+
+> 依据附件「知识处理引擎：优先内部可部署，按试点评测选型」。**详细方案与评测表见
+> `25-知识处理引擎与嵌入-内部可部署基线与试点评测方案.md`**，此处只列落地点。
+
+### 5.1 端口 + 内置基线（换引擎不动业务路径）
+
+| 端口 | 内置基线 | 引擎 ID |
+| --- | --- | --- |
+| `KnowledgeParsePort` | PDF = PDFBox 3（Apache-2.0、离线）；TXT/Markdown = JDK 解码（BOM/严格 UTF-8/严格 GBK）；DOCX = JDK zip + `word/document.xml` | `pdfbox-3` / `builtin-text-v1` / `builtin-docx-v1` |
+| `KnowledgeEmbeddingPort` | 哈希嵌入（CJK 单字+双字、拉丁词；符号位抵消碰撞；L2 归一化）——**可用性基线，不承诺效果** | `builtin-hash-ngram-v1` |
+| `KnowledgeVectorIndexPort` | 单节点文件索引（整版本原子替换；维度不一致直接失败） | `builtin-file-cosine-v1` |
+
+切换方式：配置 `aigov.knowledge.pipeline.parser-engine-id`；嵌入/向量存储换实现类即可。
+**指定了不存在或不支持该类型的引擎会显式报错**，不静默退回默认（"切了没生效"最难查）。
+
+### 5.2 分段与处理编排
+
+- `AigKnowledgeChunker`：相邻短块合并到目标长度（定位写**范围**）、超长块内部重叠切分
+  （定位补 `（片段 k）`）、**超分段上限直接失败**（绝不"只索引前 N 段"）。
+- `AigKnowledgeProcessor`：解析 → 分段 → 嵌入（纯计算）；分段长度 > 预览列宽 = 配置不自洽，
+  处理前报错（正文只以 `text_excerpt` 落库，超出部分无处存放）。
+- `IAigKnowledgeIndexingService#index`：**干完一步才记一步成功**（5 个阶段各有自己的幂等键
+  `键#阶段`）；**失败同时写库与抛错**；**不加外层事务**（长处理不占事务，且外层回滚会把
+  `FAILED` 记录一起回滚掉）；重建前**物理删除**该版本分段（唯一键 `(version_id, ordinal)`
+  不含 `del_flag`，逻辑删除会让重建撞键）。
+
+### 5.3 触发入口
+
+`POST /aigov/knowledge/document-versions/{versionId}/index`（`multipart/form-data`：
+`idempotencyKey` + `file`），权限沿用 `aig:knowledge:document:manage` + `@RepeatSubmit`；
+返回 `AigKnowledgeIndexingVo`（解析/嵌入引擎、编码、分段数、向量索引、状态）。
+界面入口：版本处理弹窗里的「上传并解析索引」。
+**本服务不取文件本体**：按 `sourceRef` 从对象存储取文属于后续接入范围（见 `25` §4）。
+**只处理未就绪版本**：已 `READY` 的版本明确拒绝"原地重建"（版本不可变；重建中途失败会让
+就绪版本数据不全而不被察觉），换引擎后的存量重建属运维迁移作业（`25` §3.3）。
+
+### 5.4 检索测试可对比两路
+
+`POST /retrieval-tests` 新增 `mode`：`KEYWORD`（默认，正式执行路径同口径）/
+`VECTOR`（嵌入查询 → 向量索引 → **落点回库复查授权**）；返回体回显实际模式。
+**不给混合模式**：排序权重正是附件交给评测决定的部分，两路各自跑通后再由结论定权重。

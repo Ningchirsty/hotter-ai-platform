@@ -27,6 +27,14 @@ public class AigKnowledgeRetrievalTestVo implements Serializable {
     private List<Item> citations = new ArrayList<>();
 
     /**
+     * 实际使用的检索模式（{@code KEYWORD} / {@code VECTOR}）。
+     *
+     * <p>回显是为了评测对比时不会把两种模式的结论搞混：同一句话在两种模式下的命中往往不同，
+     * 少了这个字段，结果就只能靠调用方自己记着"刚才点的是哪个"。</p>
+     */
+    private String mode;
+
+    /**
      * 是否"没有支持资料"
      */
     private Boolean noSupport;

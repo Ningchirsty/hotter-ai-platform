@@ -119,6 +119,21 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- PDF 解析（知识处理 §6.4 / D 阶段）：**引擎选型结论 = PDFBox 3**，
+             Apache-2.0、纯 Java、离线可跑，属于附件要求的「优先内部可部署」。
+             为什么必须依赖一个成熟库：现代 PDF（Word/浏览器导出）普遍用 Identity-H 子集字体，
+             正文字形要查 ToUnicode 才能还原。按字节抠 (…)Tj 字面串的"自研解析"能跑通一部分文件，
+             但另一部分会抽出乱码或空文本——而乱码同样会被索引、被检索，线上只表现为
+             「检索得到、内容看不懂」，没有任何信号（这条正是仓库里反复强调的"静默降级"）。
+             版本显式声明：PDFBox 3 的 API 与 2.x 不兼容（Loader.loadPDF），不能被上游顺带升级。
+             知识处理引擎仍走 KnowledgeParsePort：试点评测若判定要换引擎（如加 OCR），
+             换实现 + aigov.knowledge.pipeline.parser-engine-id 即可，业务路径不动。 -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>3.0.7</version>
+        </dependency>
+
         <!-- 单元测试：路由引擎的数据等级硬约束（STRICT 禁止外发）必须有测试钉住，
              否则「策略配错也能拦得住」这条不变式只存在于注释里。 -->
         <dependency>

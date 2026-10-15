@@ -1,15 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import {
+  RETRIEVAL_MODE_OPTIONS,
   STATUS_OPTIONS,
   canAdvance,
   canRetire,
   chunkExcerptText,
   chunkIndexText,
   chunkSummary,
+  indexingSummary,
   referenceAgentText,
   referenceScopeText,
   referenceSummary,
   registerValidation,
+  retrievalModeHint,
+  retrievalModeLabel,
   retrievalSummary,
   sha256Valid,
   sourceTypeLabel,
@@ -130,5 +134,34 @@ describe('knowledge presentation', () => {
     expect(referenceScopeText({ companyId: 9, brandId: 3, scenarioCode: 'POSTER', roleScope: 'a,b' })).toBe(
       '公司 9，品牌 3，场景 POSTER，角色 a,b'
     );
+  });
+
+  it('★ 检索模式：两种、默认关键字；向量模式必须提醒「没命中≠资料里没有」', () => {
+    expect(RETRIEVAL_MODE_OPTIONS.map(item => item.code)).toEqual(['KEYWORD', 'VECTOR']);
+    expect(retrievalModeLabel('VECTOR')).toContain('向量');
+    expect(retrievalModeLabel(undefined)).toContain('关键字');
+
+    expect(retrievalModeHint('VECTOR')).toContain('不代表资料里没有');
+    expect(retrievalModeHint('KEYWORD')).toContain('正式执行路径');
+    // 空值按默认模式给提示，界面不出现空白
+    expect(retrievalModeHint(undefined)).toContain('正式执行路径');
+  });
+
+  it('★ 解析并索引结果：失败带分类与原因；成功要说清引擎与段数', () => {
+    expect(indexingSummary(undefined)).toBe('');
+    expect(
+      indexingSummary({ status: 'FAILED', errorCode: 'PARSE_FAILED', message: 'PDF 一页文本都没取到' })
+    ).toBe('处理失败（PARSE_FAILED）：PDF 一页文本都没取到');
+    expect(indexingSummary({ status: 'FAILED' })).toContain('未分类');
+
+    const ok = indexingSummary({
+      status: 'READY',
+      chunkCount: 12,
+      parserEngineId: 'pdfbox-3',
+      embeddingEngineId: 'builtin-hash-ngram-v1'
+    });
+    expect(ok).toContain('12 段');
+    expect(ok).toContain('pdfbox-3');
+    expect(ok).toContain('builtin-hash-ngram-v1');
   });
 });

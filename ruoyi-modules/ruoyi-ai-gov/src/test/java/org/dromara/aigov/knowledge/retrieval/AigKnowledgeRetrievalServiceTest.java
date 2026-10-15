@@ -7,10 +7,13 @@ import org.dromara.aigov.knowledge.domain.AigKnowledgeChunk;
 import org.dromara.aigov.knowledge.domain.AigKnowledgeCollection;
 import org.dromara.aigov.knowledge.domain.AigKnowledgeDocument;
 import org.dromara.aigov.knowledge.domain.AigKnowledgeDocumentVersion;
+import org.dromara.aigov.knowledge.config.AigKnowledgePipelineProperties;
 import org.dromara.aigov.knowledge.mapper.AigKnowledgeChunkMapper;
 import org.dromara.aigov.knowledge.mapper.AigKnowledgeCollectionMapper;
 import org.dromara.aigov.knowledge.mapper.AigKnowledgeDocumentMapper;
 import org.dromara.aigov.knowledge.mapper.AigKnowledgeDocumentVersionMapper;
+import org.dromara.aigov.knowledge.pipeline.KnowledgeEmbeddingPort;
+import org.dromara.aigov.knowledge.pipeline.KnowledgeVectorIndexPort;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -24,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -43,6 +47,9 @@ class AigKnowledgeRetrievalServiceTest {
     private AigKnowledgeDocumentMapper documentMapper;
     private AigKnowledgeDocumentVersionMapper versionMapper;
     private AigKnowledgeChunkMapper chunkMapper;
+    private KnowledgeEmbeddingPort embeddingPort;
+    private KnowledgeVectorIndexPort vectorIndex;
+    private AigKnowledgePipelineProperties properties;
     private AigKnowledgeRetrievalService service;
 
     @BeforeAll
@@ -61,8 +68,11 @@ class AigKnowledgeRetrievalServiceTest {
         documentMapper = mock(AigKnowledgeDocumentMapper.class);
         versionMapper = mock(AigKnowledgeDocumentVersionMapper.class);
         chunkMapper = mock(AigKnowledgeChunkMapper.class);
+        embeddingPort = mock(KnowledgeEmbeddingPort.class);
+        vectorIndex = mock(KnowledgeVectorIndexPort.class);
+        properties = new AigKnowledgePipelineProperties();
         service = new AigKnowledgeRetrievalService(collectionMapper, documentMapper, versionMapper,
-            chunkMapper);
+            chunkMapper, embeddingPort, vectorIndex, properties);
     }
 
     private static AigKnowledgeCollection collection() {
@@ -182,6 +192,87 @@ class AigKnowledgeRetrievalServiceTest {
             "3-6 岁", Set.of(), Set.of("product_docs"), 5, null));
 
         assertTrue(result.noSupport() == false, "无身份上下文时不因 orgScope 排除");
+    }
+
+    @Test
+    @DisplayName("★ 向量检索：按索引顺序返回引用，且落点必须回库复查")
+    void vectorModeReturnsCitationsByIndexOrder() {
+        stubAuthorizedScenario("READY");
+        when(embeddingPort.engineId()).thenReturn("builtin-hash-ngram-v1");
+        when(embeddingPort.embed("3-6 岁")).thenReturn(new float[] {1f, 0f});
+        when(vectorIndex.search(any(), any(), anyInt()))
+            .thenReturn(List.of(new KnowledgeVectorIndexPort.Hit(1000L, 0.9)));
+        when(chunkMapper.selectByIds(any())).thenReturn(List.of(chunk()));
+
+        KnowledgePort.RetrievalResult result = service.retrieveByVector(new KnowledgePort.RetrievalQuery(
+            "3-6 岁", Set.of(), Set.of("product_docs"), 5, null));
+
+        assertFalse(result.noSupport());
+        assertEquals(1, result.citations().size());
+        assertEquals(1000L, result.citations().get(0).chunkId());
+        assertEquals("第3页", result.citations().get(0).locator());
+    }
+
+    @Test
+    @DisplayName("★ 向量命中但分段已不在授权范围（或已被删除）：丢掉，不当成引用")
+    void vectorHitOutsideAuthorizedScopeIsDropped() {
+        stubAuthorizedScenario("READY");
+        when(embeddingPort.embed(any())).thenReturn(new float[] {1f, 0f});
+        when(vectorIndex.search(any(), any(), anyInt()))
+            .thenReturn(List.of(new KnowledgeVectorIndexPort.Hit(1000L, 0.9)));
+        AigKnowledgeChunk other = chunk();
+        other.setDocumentVersionId(999L);
+        when(chunkMapper.selectByIds(any())).thenReturn(List.of(other));
+
+        KnowledgePort.RetrievalResult result = service.retrieveByVector(new KnowledgePort.RetrievalQuery(
+            "3-6 岁", Set.of(), Set.of("product_docs"), 5, null));
+
+        assertTrue(result.noSupport(), "索引命中但落点越权/不存在时必须没有支持资料");
+        assertTrue(result.reason().contains("不在授权范围内"), result.reason());
+    }
+
+    @Test
+    @DisplayName("★ 索引里没有这个版本的向量：原因要指向「还没执行解析索引」，而不是「资料里没写」")
+    void vectorIndexEmptyPointsToMissingIndexing() {
+        stubAuthorizedScenario("READY");
+        when(embeddingPort.engineId()).thenReturn("builtin-hash-ngram-v1");
+        when(embeddingPort.embed(any())).thenReturn(new float[] {1f, 0f});
+        when(vectorIndex.search(any(), any(), anyInt())).thenReturn(List.of());
+
+        KnowledgePort.RetrievalResult result = service.retrieveByVector(new KnowledgePort.RetrievalQuery(
+            "3-6 岁", Set.of(), Set.of("product_docs"), 5, null));
+
+        assertTrue(result.noSupport());
+        assertTrue(result.reason().contains("解析并索引"), result.reason());
+    }
+
+    @Test
+    @DisplayName("向量检索被配置关闭 / 嵌入不产出向量：都要明说，不许静默退化成关键字")
+    void vectorDisabledOrEmptyEmbeddingIsExplicit() {
+        properties.setVectorSearchEnabled(false);
+        KnowledgePort.RetrievalResult disabled = service.retrieveByVector(new KnowledgePort.RetrievalQuery(
+            "3-6 岁", Set.of(), Set.of("product_docs"), 5, null));
+        assertTrue(disabled.noSupport());
+        assertTrue(disabled.reason().contains("vector-search-enabled"), disabled.reason());
+
+        properties.setVectorSearchEnabled(true);
+        stubAuthorizedScenario("READY");
+        when(embeddingPort.engineId()).thenReturn("builtin-hash-ngram-v1");
+        when(embeddingPort.embed(any())).thenReturn(null);
+        KnowledgePort.RetrievalResult empty = service.retrieveByVector(new KnowledgePort.RetrievalQuery(
+            "3-6 岁", Set.of(), Set.of("product_docs"), 5, null));
+        assertTrue(empty.reason().contains("空向量"), empty.reason());
+    }
+
+    @Test
+    @DisplayName("向量检索沿用同一套授权判定：非就绪版本照样没有结果")
+    void vectorModeRespectsReadiness() {
+        stubAuthorizedScenario("FAILED");
+        KnowledgePort.RetrievalResult result = service.retrieveByVector(new KnowledgePort.RetrievalQuery(
+            "3-6 岁", Set.of(), Set.of("product_docs"), 5, null));
+
+        assertTrue(result.noSupport());
+        assertTrue(result.reason().contains("就绪"), result.reason());
     }
 
 }

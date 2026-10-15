@@ -33,6 +33,24 @@ public interface KnowledgePort {
     RetrievalResult retrieve(RetrievalQuery query);
 
     /**
+     * 执行一次<b>向量</b>检索（设计 §7.4；附件「关键词检索与向量检索可组合」）。
+     *
+     * <p><b>默认实现返回"未启用"而不是空列表</b>：空列表会被读成"向量检索跑了、但没命中"，
+     * 而真实原因是"这个实现没有向量检索"。这两件事的排查方向完全不同，所以必须由
+     * {@link RetrievalResult#none} 带上原因说清楚。</p>
+     *
+     * <p>默认方法的意义在于：正式执行路径的检索器（只做关键字）不需要为了"多一个可选能力"改签名，
+     * 而实现了向量检索的实现类可以直接覆盖它。</p>
+     *
+     * @param query 检索请求
+     * @return 检索结果
+     */
+    default RetrievalResult retrieveByVector(RetrievalQuery query) {
+        return RetrievalResult.none("向量检索未启用：当前检索实现只提供关键字检索"
+            + "（正式执行路径仍走关键字，向量只用于检索测试与试点评测）");
+    }
+
+    /**
      * 检索请求。
      *
      * @param query                 查询文本

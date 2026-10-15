@@ -49,4 +49,12 @@ public class AigKnowledgeRetrievalTestBo implements Serializable {
      */
     private Integer maxChunks;
 
+    /**
+     * 检索模式（{@code KEYWORD} / {@code VECTOR}，可空=关键字）。
+     *
+     * <p>加这个字段是为了让"关键词与向量各自表现如何"能被试点评测<b>当着同一批资料对比</b>
+     * （附件要求按评测选型）。它只影响本测试入口，不影响正式执行路径的检索方式。</p>
+     */
+    private String mode;
+
 }

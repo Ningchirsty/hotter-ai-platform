@@ -60,7 +60,7 @@
 | `f528f43a` | —/CI | **文档口径检查 `script/ci/check-aigov-docs.mjs`**（类名 / SQL 清单 / 测试数 / 提交号四类漂移，接入验收脚本最后一步） |
 | `84e29fff` | B | **三条路径系统指令同源的用例**（设计 §11.2 #4）+ 阶段文档去掉会过期的"当前 N"数字 |
 | `6db724f4` | B/前端 | **右栏两页签**（修订差异 / 测试预览）+ 测试结果的**版本哈希与 Schema 结论**（设计 §6.3、§6.6） |
-| `本次提交` | D | **顺序流程每步一次调用**（用户 2026-10-14 授权）：`AigFlowCallPolicy`（次数上限 / 链式输入 / 累计成本边界）+ 执行器多步循环 + `route_snapshot.executedCalls` |
+| `e621929e` | D | **顺序流程每步一次调用**（用户 2026-10-14 授权）：`AigFlowCallPolicy`（次数上限 / 链式输入 / 累计成本边界）+ 执行器多步循环 + `route_snapshot.executedCalls` |
 
 > 表里是**有实质内容的提交**；纯文档补记（例如把本表自己补上一行）不逐条登记——它们不改变交付物。
 > `check-aigov-docs.mjs` 会核对表里每个提交号都是当前分支 HEAD 的祖先（抄错/被 rebase 掉会红）。
@@ -77,7 +77,7 @@
 | D02 | 草稿 `allowExternal` 不是网关硬约束 | ✅ | `AigInvokeBo`/`AigRouteHint`/`AigRouteServiceImpl`；`AigRouteServiceExternalConstraintTest` |
 | D03 | 绑定只看 enabled、缺撤销入口 | ✅ | `countActiveBindings` 统一有效期口径；`assertExecutionAuthorized`；`POST /aigov/agent/binding/{id}/revoke`；`AigAgentBindingLifecycleTest` |
 | D04 | 执行态内异常直接抛出、等超时清扫 | ✅ | `AigTaskExecutorImpl#settleFailure` 单一收口；`AigTaskExecutorImplTest`（缺能力编码、ServiceException） |
-| D05 | 工具/知识可绑定但无执行引擎 | 🔶 | 工具注册+执行+确认、子 Agent 顺序编排 + 运行时派发/对账 + 对账定时作业、顺序流程节点校验、任务步骤账本（含状态迁移与 CAS）、**流程节点运行时驱动（闸门接线 + 人工确认的挂起与恢复入口 + 条件结论取自冻结快照 + 尾部节点收尾 + 顺序流程每步一次调用）**已完成；**条件的复杂来源（路径/外部求值）、WarmFlow/LiteFlow 适配器未做** |
+| D05 | 工具/知识可绑定但无执行引擎 | ✅（WarmFlow/LiteFlow 适配器与条件外部求值未做） | 工具注册+执行+确认、子 Agent 顺序编排 + 运行时派发/对账 + 对账定时作业、顺序流程节点校验、任务步骤账本（含状态迁移与 CAS）、**流程节点运行时驱动（闸门接线 + 人工确认的挂起与恢复入口 + 条件结论取自冻结快照 + 尾部节点收尾 + 顺序流程每步一次调用 + 条件结论支持 `a.b.c` 路径/数组下标）** 已完成；**WarmFlow/LiteFlow 适配器、条件的业务侧实时求值未做**（适配点与边界见 `22` §1.17/§1.18） |
 | D06 | 采纳提案/关闭编辑器丢未保存内容 | ✅ | `dirtyGuard.ts` + `dirtyGuard.spec.ts`；`index.vue`/`ProposalPanel.vue` |
 | D07 | 预检只查结构、类别在提交阶段查 | ✅ | `AigStudioPrecheck` 分级（blockers/warnings + fieldPath）；`AigStudioDraftServiceImplTest` |
 | D08 | 网络调用包在长事务里 | ✅ | `runTest`/`chat` 去掉方法级 `@Transactional`；`AigStudioShortTransactionGuardTest` + 更新的 `AigStudioProposalTransactionBoundaryTest` |
@@ -94,15 +94,15 @@
 | --- | --- | --- |
 | A 基线一致性 | ✅ | D01/D02/D03/D04/D08（+D10）全部落地并有正反例测试 |
 | B 训练体验 | ✅（三栏布局、左右栏拆分、右栏两页签已落地；表单按步骤拆分未做） | D06/D07/D09/D10/D11 + 元数据；**三栏布局**（左步骤 / 中编辑 / 辅助区）已落地，**左右两栏已拆成子组件**并有结构守卫；**右栏页签**（修订差异 / 测试预览，含版本哈希与 Schema 结论）；**员工业务状态**（§6.8）由服务端计算下发；**按步骤拆分表单未做** |
-| C 知识试点 | 🔶 | 数据模型/处理管道/检索端口/接口/接入执行计划、**知识中心页面（含分段预览、引用影响面）**完成；**解析器与嵌入未接入** |
-| D 工具与流程 | 🔶 | 工具注册/执行/确认/接口、**工具许可（版本声明 + 有效绑定 + 调用人权限）与契约详情**、子 Agent 编排/派发/对账、顺序流程节点的校验与**运行时驱动**完成；**多 STEP 节点的调度循环与 WarmFlow/LiteFlow 适配器未做** |
+| C 知识试点 | ✅（内部可部署基线已接入；引擎/嵌入的**最终选型**按试点评测确定） | 数据模型/处理管道/检索端口/接口/接入执行计划、**知识中心页面（含分段预览、引用影响面）**、**解析引擎（PDF=PDFBox 3 / DOCX / TXT / Markdown）与嵌入+向量索引的内部可部署基线**、**「上传并解析索引」入口**、**检索测试可取向量模式**均完成；**OCR、对象存储取文、混合排序权重**按设计留给评测/后续接入（方案见 `25`） |
+| D 工具与流程 | ✅（WarmFlow/LiteFlow 适配器未做） | 工具注册/执行/确认/接口、**工具许可（版本声明 + 有效绑定 + 调用人权限）与契约详情**、子 Agent 编排/派发/对账、顺序流程节点的校验与**运行时驱动**、**顺序流程每步一次调用**、**条件结论支持 `a.b.c` 路径**完成；仅剩 WarmFlow/LiteFlow 适配器与条件的外部求值（见 §6） |
 | E 持续运营 | ✅ | 反馈账本/队列/接口 + **队列按动作/原因过滤** + 指标口径与聚合（含故障分类）+ **资产索引全量/增量同步** |
 
 ---
 
 ## 4 验证汇总
 
-- 后端 `ruoyi-ai-gov`：**1297 tests / 0 failures / 0 errors**（基线 1053 → 新增 244）。
+- 后端 `ruoyi-ai-gov`：**1354 tests / 0 failures / 0 errors**（基线 1053 → 新增 301）。
   > 各阶段文档（`19`–`23`）里的测试数**是各自增量当时的数**；
   > **以本节为准**——阶段文档只留"本轮新增几条"，不再写会过期的"当前 N"。
   > 另有 `script/ci/check-aigov-docs.mjs` 会**机械核对**本节的测试数与提交号
@@ -111,8 +111,8 @@
   它同时会跑"每个有测试的模块都必须产出 Surefire 报告"的台账守卫。
   ⚠️ 该模式需要 CI 前置步骤装好的 **ffmpeg/ffprobe**（缺了会是 `ruoyi-ai` 的 4 个媒体用例报
   "图片格式转换服务不可用"——环境前提，不是本分支的回归；见 §7.2）。
-- 前端 `frontend`：**53 files / 524 tests** 全过；`oxlint src` 552 files 0/0。
-  其中 `views/aigov/sfcCompile.spec.ts` 真编译全部 29 个治理层 SFC
+- 前端 `frontend`：**53 files / 526 tests** 全过；`oxlint src` 552 files 0/0。
+  其中 `views/aigov/sfcCompile.spec.ts` 真编译全部 30 个治理层 SFC
   （无 DOM 环境下的最低保证：模板/`<script setup>` 写错会在这里红）。
 - 关键守卫全部通过：`AigPermissionSeedCoverageTest`（权限串已种子 + menu_id 不撞）、
   `AigRepeatSubmitCoverageTest`（写接口防重或显式豁免）、`AigWp3WiringAndRoutesTest`。
@@ -152,6 +152,21 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
 > 权限/页面种子（`aig_*_menu.sql` / `aig_*_pages.sql`）**不在自动重放之列**——它们插的是
 > `sys_menu`/`sys_role_menu`，属授权变更，应由运维按本清单显式执行。
 
+**知识处理链路（本轮新增；`21` §5 有明细）**：
+
+- **无新增建表、无新增权限点**：`/document-versions/{id}/index` 复用 `aig:knowledge:document:manage`
+  与既有表；向量也不落业务表（只写 `aig_knowledge_chunk.index_ref` 键）。
+- **新增 Maven 依赖**：`org.apache.pdfbox:pdfbox:3.0.7`（Apache-2.0、纯 Java、离线）——PDF 解析引擎；
+  多一个 jar，**部署形态不变、无外发通道**。理由与替代方案见 `25` §2.2。
+- **新增配置**（`aigov.knowledge.pipeline.*`，全部有默认值，不配也能跑）：
+  `parser-engine-id`（空=内置默认；评测后切换引擎用）、`chunk-target-chars`(800)、
+  `chunk-overlap-chars`(100)、`max-chunks-per-version`(2000)、`embedding-dimension`(256)、
+  `vector-index-dir`（空=`${java.io.tmpdir}/aigov-knowledge-vector-index`）、`excerpt-max-chars`(1000)、
+  `vector-search-enabled`(true)。
+  ⚠️ **多副本部署前必须替换向量索引实现**：默认文件索引是单节点的（`25` §4）。
+- **运维注意**：`parser-engine-id` 指定了不存在/不支持该类型的引擎会**显式报错**（不静默退回默认），
+  所以切换引擎时请先用 `25` §3.3 的清单确认引擎 ID。
+
 **权限种子**（幂等，只授 `aig_admin`）：
 
 | 脚本 | 权限点 |
@@ -168,23 +183,24 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
 
 ## 6 剩余工作（诚实的待办，不影响已交付部分可评审）
 
-1. **D05 续**：**流程节点运行时驱动的剩余部分**——
-   ①**条件结论的复杂来源**——现在是"读冻结快照顶层布尔字段"（`a.b.c` 路径、业务侧实时求值、
-   表达式引擎属独立变更）；
+1. **D05 续**：**只剩两项**——
+   ①**条件结论的外部求值**（业务域回调 / 表达式引擎）：快照内的 `a.b.c` 路径与数组下标
+   **已落地**（`AigFlowConditions`，见 `22` §1.18），仍不做的是"由谁来算这个条件"这类口径变更；
    ②WarmFlow/LiteFlow 适配器（适配点已明确：`AigFlowRuntime` 的判定输入是
    "节点顺序 + 步骤状态 + 条件结论"）。
    **已闭环的部分**：**顺序流程每步一次调用**（用户 2026-10-14 授权；次数上限 = 声明步数 ∩
    `limits.maxFlowSteps` ∩ 平台默认 10，第 k 步以上一步输出为输入，见 `22` §1.17）；
    人工确认的"挂起—恢复"（节点身份落账本 + `GET /task/{id}/flow-nodes` +
    `POST /task/{id}/flow/confirm`，见 `22` §1.16；操作序列"读 → 确认 → requeue"，确认刻意不自动重跑）；
-   条件结论来源（`AigFlowConditions`，取不到结论不猜真假）；
+   条件结论来源（`AigFlowConditions`：顶层字段 / `a.b.c` 路径 / 数组下标，取不到结论不猜真假）；
    尾部可自行收尾的节点（`peek` 只读判定 → 输出节点/已定条件在本轮推到完成，
    **不留下没有任务态支撑的假挂起**）；
    子 Agent 的编排校验、派发、对账与对账定时作业（`IAigSubAgentRunner` /
    `IAigSubAgentReconcileService`）。
 2. **D12 已完成**：资产索引**增量同步**（水位线 `syncNewForUser`，`?mode=incremental`）已落地，
    口径边界写在 `23` 与 `10`：**只补新增**，删除/更新靠定期全量重建（三个业务域都没有变更事件）。
-3. **界面**：反馈与运营页、知识中心页、工具注册页、**任务页的流程节点与人工确认面板**
+3. **界面**：反馈与运营页、知识中心页（**新增「上传并解析索引」入口与检索模式选择**）、
+   工具注册页、**任务页的流程节点与人工确认面板**
    （`TaskFlowPanel.vue`）已交付；训练台**三栏布局**已落地（左步骤 / 中编辑 / 辅助区），
    **左右两栏已拆成子组件**，**右栏两页签**（修订差异 / 测试预览）含版本哈希与 Schema 结论；
    **仍待做**：把变更提案面板塞进右栏当第三个页签（现在刻意保留宽版在下方，
@@ -196,9 +212,19 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
    工具侧已落地 **命中有效绑定 + 命中调用人权限**（`AigToolExecutionPolicy.bindingsPermit`
    / `permissionPermit` + `ToolPermissionChecker`）。
    **仍未做**：机器身份（服务令牌 scope）作为工具调用人的授权路径——当前无登录态一律按无权限处理。
-5. **解析器与嵌入**：PDF/DOCX 解析引擎、嵌入模型与向量存储选型（设计明确需按试点资料评测）。
+5. **知识处理：基线已接入，最终选型待评测结论**（方案与记录表见
+   `25-知识处理引擎与嵌入-内部可部署基线与试点评测方案.md`）。
+   **已交付**：PDF/DOCX/TXT/Markdown 解析（`pdfbox-3` / `builtin-*`）、内置哈希嵌入、
+   单节点文件向量索引、`POST /document-versions/{id}/index` 全链路、检索测试的
+   `KEYWORD`/`VECTOR` 两路对比。
+   **仍待（都不是"分析不出来"，而是"需要评测或外部条件"）**：
+   ①**评测本身**（≥50 条查询 + 10 条无答案查询，判据与记录表见 `25` §3）；
+   ②**OCR**（扫描件按设计失败并指向 OCR，是否接入由评测里那份扫描件决定）；
+   ③**对象存储取文**（现在由调用方上传文件；按 `sourceRef` 读属于后续接入）；
+   ④**混合排序权重**（评测结论的产物，不预先拍）；
+   ⑤**多副本向量存储**（默认文件索引是单节点的，多副本上线前必须替换）。
    > **分段预览已交付**（`GET /document-versions/{id}/chunks` + 界面「看分段」）：
-   > 维护人现在就能判断"解析出来的分段靠不靠谱"，不必等真引擎接入才有这个能力。
+   > 维护人现在就能判断"解析出来的分段靠不靠谱"。
 
 ---
 
@@ -206,11 +232,11 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
 
 ### 7.1 先看结论（5 分钟）
 
-1. 本文 §2 的 D01–D12 对照表：**哪些 ✅、哪些 🔶、🔶 的边界是什么**；
+1. 本文 §2 的 D01–D12 对照表：**哪些 ✅、哪些还有明确列出的边界**；
    前端部分注意：**训练台三栏布局的观感只能靠人眼**——本仓无 DOM 测试环境，
    守卫（`threeColumnLayout.spec.ts`）只证明结构在、SFC 能编译；
-2. §3 阶段完成情况：A/B 完整，C/D/E 各自只剩明确列出的子项；
-3. §6 剩余工作：每条都写明了缺什么（D05 的三项剩余、右栏页签与组件拆分、解析器与嵌入）。
+2. §3 阶段完成情况：A/B/C/D/E 的剩余子项都被逐条写明；
+3. §6 剩余工作：每条都写明了缺什么，以及**为什么**（外部条件、评测结论、或人会拍板的取舍）。
 
 ### 7.2 跑一遍（10 分钟）
 
@@ -266,16 +292,22 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
 | 写工具是否必须先确认、幂等 | `tool/exec/AigToolExecutionPolicy`（含 `permissionPermit`）、`tool/exec/impl/SaTokenToolPermissionChecker`、`tool/.../AigToolRegistryServiceImpl#execute` |
 | 条件判断/人工确认是否真拦得住 | `task/service/AigFlowRuntime`、`task/.../AigFlowDriverServiceImpl`、`AigTaskExecutorImpl#checkFlowGate` |
 | 人工确认能否被"恢复"、批准会不会被覆盖 | `task/controller/AigTaskController#flowNodes/#confirmFlowNode`、`task/domain/vo/AigTaskFlowNodeVo#isAwaitingConfirmation` |
-| 条件判断的结论从哪来 | `task/service/AigFlowConditions`（快照顶层布尔字段；取不到结论不猜）+ `AigTaskExecutorImpl#checkFlowGate` |
+| 条件判断的结论从哪来 | `task/service/AigFlowConditions`（顶层布尔字段 + `a.b.c` 路径 + 数组下标；取不到结论不猜）+ `AigTaskExecutorImpl#checkFlowGate` |
 | 一次执行会发几次调用、每步输入是什么 | `task/service/AigFlowCallPolicy`（声明步数 ∩ `maxFlowSteps` ∩ 平台默认 10；第 k 步以上一步输出为输入；**累计成本不可控已写明**） |
 | 尾部节点为什么能自己收尾、又为什么不会假挂起 | `IAigFlowDriverService#peek`（只读）+ `AigTaskExecutorImpl#drainSettleableFlowTail` |
+| 解析引擎怎么选、取不到文本会怎样 | `knowledge/pipeline/AigKnowledgeParseRegistry`（指定引擎不存在/不支持 → 报错不回退）+ `AigPdfParseEngine`（扫描件显式失败并指向 OCR） |
+| 嵌入基线是什么、为什么不能当"效果达标" | `knowledge/pipeline/AigHashedNgramEmbedding`（类注释写明三条已知弱点）+ `25` §2/§4 |
+| 分段为什么不会"只索引前 N 段" | `knowledge/pipeline/AigKnowledgeChunker#guardLimit`（超限直接失败） |
+| 处理失败为什么"写库 + 抛错"两件事都做 | `knowledge/service/impl/AigKnowledgeIndexingServiceImpl#index`（干完一步才记成功；不加外层事务的理由在类注释） |
+| 想对比关键字与向量两路 | `knowledge/retrieval/AigKnowledgeRetrievalService#retrieveByVector`（落点回库复查授权）+ `POST /retrieval-tests` 的 `mode` |
+| 向量索引能不能多副本 | `knowledge/pipeline/AigFileVectorIndex` 类注释（单节点边界）+ `25` §4 |
 | 新增的库表/列会不会在部署时被漏掉 | `.github/workflows/deploy-poc.yml` 的重放清单 + `AigDeploySchemaReplayCoverageTest` |
 | 反馈是否会直接改线上 | `feedback/.../AigResultFeedbackServiceImpl`（动作只进改进流程） |
 | 训练台是否会静默丢内容 | `frontend/src/views/aigov/studio/dirtyGuard.ts` |
 | 训练台三栏是否还在 | `frontend/src/views/aigov/studio/threeColumnLayout.spec.ts`（源码结构 + SFC 真编译；**观感需人眼**） |
 | 测试/提交/正式执行是否同一份系统指令 | `AigStudioTestServiceImplTest#systemPromptIsIdenticalAcrossTestSubmitAndProductionPaths`（设计 §11.2 #4） |
 | 测试结果里的版本哈希与 Schema 结论 | `frontend/src/views/aigov/studio/testPreview.ts`（`hashShort`/`schemaVerdictText`；**未判定 ≠ 不通过**） |
-| 治理层页面模板有没有被写坏 | `frontend/src/views/aigov/sfcCompile.spec.ts`（全部 27 个 SFC 真编译） |
+| 治理层页面模板有没有被写坏 | `frontend/src/views/aigov/sfcCompile.spec.ts`（全部 30 个 SFC 真编译） |
 | 分段预览会不会顺手把原文吐出来 | `AigKnowledgeChunkVo`（无正文字段）+ `AigKnowledgeServiceImpl#listChunks`（只取 `text_excerpt`） |
 | 退役一个知识版本会影响谁 | `AigKnowledgeController#references` → `AigAgentRegistryQueryServiceImpl#listResourceReferences`（解析 Agent 身份；停用中的也返回） |
 | 一个工具收什么、回什么、超时多久 | `AigToolController#versionDetail` → `AigToolDetailVo`（定义 + 版本两处来源；未接入也显示执行器引用名） |

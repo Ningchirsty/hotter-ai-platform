@@ -133,6 +133,14 @@
         <el-descriptions-item label="生效结束">{{ version.effectiveTo || '—' }}</el-descriptions-item>
       </el-descriptions>
       <el-alert
+        v-if="indexingResult"
+        :type="indexingResult.status === 'FAILED' ? 'error' : 'success'"
+        :closable="false"
+        class="mb-2"
+        show-icon
+        :title="indexingSummary(indexingResult)"
+      />
+      <el-alert
         v-if="chunksLoaded"
         type="info"
         :closable="false"
@@ -171,6 +179,19 @@
         >
           推进一阶段
         </el-button>
+        <el-upload
+          v-hasPermi="['aig:knowledge:document:manage']"
+          :show-file-list="false"
+          :http-request="(option: any) => doIndexVersion(option)"
+        >
+          <el-button
+            type="primary"
+            :disabled="!version"
+            :loading="indexing"
+          >
+            上传并解析索引
+          </el-button>
+        </el-upload>
         <el-button
           v-hasPermi="['aig:knowledge:document:manage']"
           type="danger"
@@ -229,6 +250,18 @@
         <el-form-item label="查询" required>
           <el-input v-model="retrievalForm.query" placeholder="如：3-6 岁适用材质" />
         </el-form-item>
+        <el-form-item label="检索模式">
+          <el-radio-group v-model="retrievalForm.mode">
+            <el-radio-button
+              v-for="item in RETRIEVAL_MODE_OPTIONS"
+              :key="item.code"
+              :value="item.code"
+            >
+              {{ item.label }}
+            </el-radio-button>
+          </el-radio-group>
+          <div class="mode-hint">{{ retrievalModeHint(retrievalForm.mode) }}</div>
+        </el-form-item>
         <el-form-item label="最大片段数">
           <el-input-number v-model="retrievalForm.maxChunks" :min="1" :max="20" />
         </el-form-item>
@@ -238,7 +271,7 @@
         :type="retrievalResult.noSupport ? 'warning' : 'success'"
         :closable="false"
         class="mb-2"
-        :title="retrievalSummary(retrievalResult)"
+        :title="retrievalModeLabel(retrievalResult.mode) + ' · ' + retrievalSummary(retrievalResult)"
       />
       <el-table v-if="retrievalResult?.citations?.length" :data="retrievalResult.citations" border>
         <el-table-column label="片段" prop="chunkId" width="180" />
@@ -266,6 +299,7 @@ import {
   advanceVersion,
   createCollection,
   getDocumentVersion,
+  indexVersion,
   listCollectionReferences,
   listCollections,
   listDocuments,
@@ -282,21 +316,26 @@ import type {
   AigKnowledgeDocumentForm,
   AigKnowledgeDocumentVO,
   AigKnowledgeDocumentVersionVO,
+  AigKnowledgeIndexingVO,
   AigKnowledgeRetrievalTestForm,
   AigKnowledgeRetrievalTestVO
 } from '@/api/aigov/knowledge/types';
 import modal from '@/plugins/modal';
 import {
   DATA_LEVEL_OPTIONS,
+  RETRIEVAL_MODE_OPTIONS,
   canAdvance,
   canRetire,
   chunkExcerptText,
   chunkIndexText,
   chunkSummary,
+  indexingSummary,
   referenceAgentText,
   referenceScopeText,
   referenceSummary,
   registerValidation,
+  retrievalModeHint,
+  retrievalModeLabel,
   retrievalSummary,
   sourceTypeLabel,
   statusLabel,
@@ -319,8 +358,12 @@ const collectionForm = ref<AigKnowledgeCollectionForm>({ dataLevel: 'STRICT' });
 const documentForm = ref<AigKnowledgeDocumentForm>({});
 const versionId = ref<string | number>('');
 const version = ref<AigKnowledgeDocumentVersionVO>();
-const retrievalForm = ref<AigKnowledgeRetrievalTestForm>({ collectionCodes: [], maxChunks: 5 });
+const retrievalForm = ref<AigKnowledgeRetrievalTestForm>({ collectionCodes: [], maxChunks: 5, mode: 'KEYWORD' });
 const retrievalResult = ref<AigKnowledgeRetrievalTestVO>();
+
+/** 解析并索引（本轮新增的完整管道入口）：结果如实展示用了哪个引擎、多少段 */
+const indexing = ref(false);
+const indexingResult = ref<AigKnowledgeIndexingVO>();
 
 /** 分段预览（设计 §6.4「解析预览、分段」）：按版本加载，只显示受限长度的预览 */
 const chunks = ref<AigKnowledgeChunkVO[]>([]);
@@ -512,7 +555,9 @@ const doRetire = async () => {
 const openRetrieval = (row: AigKnowledgeCollectionVO) => {
   retrievalForm.value = {
     collectionCodes: row.collectionCode ? [row.collectionCode] : [],
-    maxChunks: 5
+    maxChunks: 5,
+    // 默认关键字：与正式执行路径同口径，避免"随手一测"得到与线上不同的结论
+    mode: 'KEYWORD'
   };
   retrievalResult.value = undefined;
   retrievalVisible.value = true;
@@ -531,6 +576,40 @@ const doRetrievalTest = async () => {
     modal.alertError(e?.message || '检索失败');
   } finally {
     saving.value = false;
+  }
+};
+
+/**
+ * 解析并索引（上传原文）。
+ *
+ * 幂等键**每次点击换新**：这是"我现在要处理这一版"的一次请求；
+ * 重试同一个请求才会复用同一个键，而用户再点一次属于新的处理意图。
+ */
+const doIndexVersion = async (option: any) => {
+  const file: File | undefined = option?.file;
+  if (!version.value?.versionId && !versionId.value) {
+    modal.msgWarning('请先填一个存在的版本ID');
+    return;
+  }
+  if (!file) {
+    modal.msgWarning('请选择要解析的原文文件');
+    return;
+  }
+  indexing.value = true;
+  indexingResult.value = undefined;
+  try {
+    const res = await indexVersion(version.value?.versionId ?? versionId.value, newKey(), file);
+    indexingResult.value = res.data;
+    if (res.data?.status === 'FAILED') {
+      modal.alertError(indexingSummary(res.data));
+    } else {
+      modal.msgSuccess(indexingSummary(res.data));
+    }
+    await loadVersion();
+  } catch (e: any) {
+    modal.alertError(e?.message || '解析并索引失败');
+  } finally {
+    indexing.value = false;
   }
 };
 
@@ -560,5 +639,11 @@ onMounted(() => {
 
 .ml-2 {
   margin-left: 8px;
+}
+
+.mode-hint {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--el-text-color-secondary);
 }
 </style>

@@ -9,6 +9,7 @@ import type {
   AigKnowledgeDocumentVO,
   AigKnowledgeDocumentRegisterVO,
   AigKnowledgeDocumentVersionVO,
+  AigKnowledgeIndexingVO,
   AigKnowledgeRetrievalTestForm,
   AigKnowledgeRetrievalTestVO
 } from './types';
@@ -64,6 +65,30 @@ export function retireVersion(versionId: string | number): AxiosPromise<string> 
   return request({
     url: '/aigov/knowledge/document-versions/' + versionId + '/retire',
     method: 'post'
+  });
+}
+
+/**
+ * 解析并索引（设计 §6.4 的完整管道；附件「知识处理引擎：优先内部可部署，按试点评测选型」）。
+ *
+ * 与 `advanceVersion` 的区别：`advance` 只推状态；本接口会**真的解析、分段、嵌向量、写索引**，
+ * 结束后版本进入 `READY`（真能被检索）。文件随请求上传——本服务不取对象存储里的原文。
+ *
+ * 幂等键必须由调用方给出并**在重试时复用**：换个键重试等于让同一份资料再索引一次。
+ */
+export function indexVersion(
+  versionId: string | number,
+  idempotencyKey: string,
+  file: File
+): AxiosPromise<AigKnowledgeIndexingVO> {
+  const data = new FormData();
+  data.append('file', file);
+  data.append('idempotencyKey', idempotencyKey);
+  return request({
+    url: `/aigov/knowledge/document-versions/${versionId}/index`,
+    method: 'post',
+    data,
+    headers: { 'Content-Type': 'multipart/form-data' }
   });
 }
 
