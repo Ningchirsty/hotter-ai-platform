@@ -29,6 +29,7 @@
 | `b576cc1e` | P2/交互规范 | 第二批：剩余主表空态（model / route / agent / quota / approval / binding）+ 长 ID 折叠扫尾（feedback 的 5 个 19 位 ID 列、quota 用户ID、approval 单号、binding 四个 ID 列） |
 | `b37045c9` | P2/交互规范 | **危险操作确认审计**（`script/ci/audit-aigov-dangerous-ops.mjs`，评审用不接门禁）+ 补 2 处缺失确认（approval 超时扫描批量改状态、knowledge 解析并索引会覆盖分段与索引） |
 | `e9d73d21` | P2/交互规范 | 第三批空态：9 个页面 / 18 张表（artifactDraft / package / portal / resourceBinding / rolePackage / servicetoken / skill / studio / task），`skill` 与 `task` 达到全覆盖 |
+| `0c6d9ef3` | P2/分页 | **问题队列分页**：新增 `GET /aigov/feedback/queue/page`（与全量版**共用同一份过滤条件**），前端队列页改分页 + 改筛选回第 1 页；旧全量接口保留 |
 
 > 表里是**有实质内容的提交**；纯文档补记（例如把本表自己补上一行）不逐条登记——它们不改变交付物。
 > `check-aigov-docs.mjs` 会核对**本节**每个提交号都是当前分支 HEAD 的祖先（抄错/被 rebase 掉会红）。
@@ -132,9 +133,9 @@
 
 ## 4 验证汇总
 
-- 后端 `ruoyi-ai-gov`：**1412 tests / 0 failures / 0 errors**（基线 1053 → 新增 359；其中 **能力域重构 P0 13 条**、
+- 后端 `ruoyi-ai-gov`：**1413 tests / 0 failures / 0 errors**（基线 1053 → 新增 360；其中 **能力域重构 P0 13 条**、
   **Q6 影响面 5 条**、**训练台能力就绪度预检与能力事实查询 14 条**、**Q3 预演闸门 5 条**、**Q1C 高风险门槛 12 条**、
-  **Q2C 声明等级/生效等级 11 条**，见 §8）。
+  **Q2C 声明等级/生效等级 11 条**、**问题队列分页 1 条**，见 §8）。
   > 勘误（2026-10-16）：本节此前记的 **1367** 是 **Q6 影响面提交（`56563b8b`）之前**的数，
   > 漏计了 Q6 的 5 条（引用服务 4 + 路由烟测 1）。⇒ 以本节为准
   > （`script/ci/check-aigov-docs.mjs` 是拿本节数字与磁盘报告对账，所以它本来就会把这类漂移报出来）。
@@ -473,6 +474,23 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src 
 > 其余待办：**分页**（`tool`/`knowledge`/`feedback`/`evaluation` 的后端接口本就整表返回，补分页要连带改后端）、
 > **各页观感仍需人眼验收**（本仓前端没有 DOM 测试环境）。
 
+**P2 附加：问题队列分页（后端 + 前端；2026-10-16）**
+
+走读 U10 说"5 个页面无分页"。逐个看下来，**真正需要分页的是问题队列**——它是"收件箱"，行数只增不减，
+全量拉取在队列长了以后既慢又难用（运维得自己在页面上找第几页）。其余几个（`tool` 注册表、`knowledge` 集合/文档、
+`evaluation` 用例/运行）后端接口返回的是 `List<>`，条数量级是几十，改成分页属**破坏性接口变更**，收益不抵风险 ⇒ **不做**。
+
+| 层 | 交付 | 文件 |
+| --- | --- | --- |
+| 后端 | 新增 `GET /aigov/feedback/queue/page`（`PageQuery` + `PageResult`，权限沿用 `feedback:queue`）；**过滤条件与全量版抽成同一个私有方法**（`queueWrapper`）——两份过滤迟早会出现"翻页后筛选口径不一致"这类看不见的错 | `AigResultFeedbackController#queuePage`、`IAigResultFeedbackService#queryQueuePage`、`AigResultFeedbackServiceImpl` |
+| 后端 | 旧 `GET /aigov/feedback/queue`（全量）**保留不动**：避免破坏未知调用方，javadoc 上写明"页面请用分页版" | 同上 |
+| 前端 | 问题队列页改用分页接口 + `<pagination>`；**改筛选回到第 1 页**（否则停在第 3 页一改筛选只剩空表，看起来像"没有数据"） | `views/aigov/feedback/index.vue`、`api/aigov/feedback/index.ts#listFeedbackQueuePage` |
+| 测试 | 新增 1 条：分页版与全量版**共用同一份过滤条件**（断言 where 片段含 `verdict`/`action_code`），且非法编码仍抛错——**不能把"筛错了"变成"空队列"** | `AigResultFeedbackServiceImplTest#queryQueuePageSharesFilterWithListQueue` |
+
+> 踩坑：`PageQuery` 的构造器是 **`(pageSize, pageNum)`**（顺序与直觉相反），测试里写错会静默换页。
+
+**仍未做**：其余页面按 v3 规范改写、弹窗子表空态（18 张）、**Q1C 完整版**（需新表）、**权限边界正名**（§5.4，属授权变更）。
+
 **P2 附加：危险操作确认审计（2026-10-16，把口径写死以便复核）**
 
 走读 U10 的"**5 处危险操作无二次确认**"当初**没有留下可复核的清单**（是哪 5 处、按什么口径数）。
@@ -491,7 +509,7 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src 
 - 结论（对我们的口径）：**"5 处"这个数现在无法复核**，按上面口径重测后真实缺口是 2 处、已补；这一点如实记下，
   避免以后有人拿"5 处"当结论继续找。
 
-**验证**（本次实测，2026-10-16）：后端 **1412 tests / 0 failures / 0 errors**；
+**验证**（本次实测，2026-10-16）：后端 **1413 tests / 0 failures / 0 errors**；
 前端 **57 files / 572 tests**；`oxlint` **572 files 0/0**；`vite build` 通过；`verify-aigov-v1.mjs` 全绿。
 
 **Q2C 之后 P1 已全部完成**：剩下的只有 Q1C **完整版**（变更单 + 批准 + 生效记录，需新表，属 P2）与
