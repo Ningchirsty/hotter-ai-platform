@@ -393,6 +393,124 @@ export function extractModelToken(text?: string): string {
 }
 
 /**
+ * 引用类型 → 标签（影响面表格用）。
+ *
+ * @param refType AGENT_VERSION / TASK / DRAFT
+ * @returns 标签
+ */
+export function referenceTypeMeta(refType?: string): TagMeta {
+  switch (refType) {
+    case 'AGENT_VERSION':
+      return { label: 'Agent 版本', type: 'primary' };
+    case 'TASK':
+      return { label: '历史任务', type: 'info' };
+    case 'DRAFT':
+      return { label: '训练台草稿', type: 'gray' };
+    default:
+      return { label: refType || '未知引用', type: 'gray' };
+  }
+}
+
+/**
+ * 影响面摘要（一句话；用于详情区块与删除确认框标题）。
+ *
+ * <p>空引用要**明说"没有任何引用"**：那句话正是"可以安全删除"的唯一依据。</p>
+ *
+ * @param refs 引用清单（可空）
+ * @returns 摘要文案
+ */
+export function referenceSummary(refs?: { refType?: string; count?: number }[]): string {
+  const list = refs || [];
+  if (list.length === 0) {
+    return '没有任何 Agent 版本 / 历史任务 / 训练台草稿引用它。';
+  }
+  const parts = list.map((ref) => {
+    const label = referenceTypeMeta(ref.refType).label;
+    return ref.refType === 'AGENT_VERSION' ? `Agent 版本 ${ref.count ?? 1} 个` : `${label} ${ref.count ?? 0} 条`;
+  });
+  return `共 ${list.length} 类引用：${parts.join(' · ')}。`;
+}
+
+/**
+ * 删除/停用前的确认文案（把影响面写进确认框，而不是只说"确定删除吗"）。
+ *
+ * @param capabilityName 能力名（可空则用编码）
+ * @param capabilityCode 能力编码
+ * @param refs           引用清单
+ * @returns 确认文案
+ */
+export function deleteConfirmText(
+  capabilityName: string | undefined,
+  capabilityCode: string,
+  refs?: { refLabel?: string; refType?: string; count?: number }[]
+): string {
+  const title = capabilityName || capabilityCode;
+  const list = refs || [];
+  const head = `删除能力「${title}」？`;
+  const impact = ['删除后，它的模型候选、策略、调用授权会变成指向已删能力的孤儿配置（永远不生效）。'];
+  if (list.length === 0) {
+    impact.push(referenceSummary(list) + ' 仍建议先确认没有正在使用它的任务。');
+  } else {
+    impact.push('当前引用：');
+    list.slice(0, 5).forEach((ref) => {
+      impact.push(`· ${ref.refLabel || referenceTypeMeta(ref.refType).label}${ref.count ? `（${ref.count}）` : ''}`);
+    });
+    if (list.length > 5) {
+      impact.push(`· …另有 ${list.length - 5} 类引用`);
+    }
+  }
+  impact.push('如果只是暂时不用，建议改为「停用」——停用可以恢复。');
+  return [head, '', ...impact].join('\n');
+}
+
+/** 能力就绪度的两类问题：阻断项（现在引用它一定失败）与提示项（能存草稿但不能真正路由） */
+export interface CapabilityReadiness {
+  /** 阻断项：不存在 / 已停用 */
+  blockers: string[];
+  /** 提示项：缺候选 / 候选不健康 / 缺策略 */
+  warnings: string[];
+  /** 两类合起来的一句话（下拉项与预检提示直接用；就绪时为空串） */
+  text: string;
+}
+
+/**
+ * 能力就绪度（训练台下拉与预检共用的唯一口径）。
+ *
+ * <p><b>为什么阻断项与提示项要分开</b>：按 D07 的既定语义，训练台草稿允许先存半成品，
+ * 所以「缺候选 / 缺策略」只能是提示（让人知道现在跑不通），不能拦保存；
+ * 而「能力不存在 / 已停用」是编码层面就错了，必须报阻断。</p>
+ *
+ * @param vo 能力概览行；为空表示能力清单里没有这个编码
+ * @returns 就绪度（不改任何配置，纯判定）
+ */
+export function capabilityReadiness(vo?: AigCapabilityOverviewVO): CapabilityReadiness {
+  const blockers: string[] = [];
+  const warnings: string[] = [];
+  if (!vo) {
+    blockers.push('能力不存在（不在能力清单里，编码可能写错或能力已被删除）');
+  } else {
+    if ((vo.status ?? '0') !== '0') {
+      blockers.push('能力已停用（停用后调用一律拒绝）');
+    }
+    if ((vo.candidateCount ?? 0) === 0) {
+      warnings.push('缺模型候选（无法路由）');
+    } else if (vo.candidateHealthAgg === 'UNHEALTHY') {
+      warnings.push('模型候选全部不健康');
+    } else if (vo.candidateHealthAgg === 'NONE' || vo.candidateHealthAgg === 'UNKNOWN') {
+      warnings.push('模型候选健康状态未知（尚未探测）');
+    }
+    const covered = vo.policyCoveredLevels ?? 0;
+    const total = vo.policyTotalLevels ?? 4;
+    if (covered === 0) {
+      warnings.push(`缺路由策略（0/${total}）`);
+    } else if (covered < total) {
+      warnings.push(`路由策略不全（${covered}/${total}）`);
+    }
+  }
+  return { blockers, warnings, text: [...blockers, ...warnings].join('；') };
+}
+
+/**
  * 策略配置建议（P0 用规则模板；明确标注"建议，不会自动写入"）。
  *
  * @param vo       dryRun 结果（用来判断当前被什么挡住）

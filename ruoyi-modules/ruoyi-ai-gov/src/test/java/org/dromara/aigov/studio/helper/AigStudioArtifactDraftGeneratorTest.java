@@ -83,7 +83,8 @@ class AigStudioArtifactDraftGeneratorTest {
         row = new AigStudioDraft[1];
         when(draftMapper.selectById(any())).thenAnswer(invocation -> row[0]);
         draftService = new AigStudioDraftServiceImpl(draftMapper, mock(AigStudioRevisionMapper.class),
-            mock(AigAgentMapper.class), mock(AigAgentVersionMapper.class), JSON);
+            mock(AigAgentMapper.class), mock(AigAgentVersionMapper.class),
+            mock(AigStudioCapabilityFactsResolver.class), JSON);
     }
 
     /**

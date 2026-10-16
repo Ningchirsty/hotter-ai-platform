@@ -61,6 +61,31 @@
               输入/输出 Schema 与其它高级字段走「编辑」弹窗的高级配置：默认不摊在详情里，
               避免一屏原始 JSON。
             </div>
+
+            <!-- Q6 影响面：改策略/换候选/停用/删除之前先看清"谁在用它" -->
+            <div class="cap-detail__refs">
+              <div class="cap-detail__refs-head">
+                <b>影响面（谁在用它）</b>
+                <span class="cap-detail__sub">{{ referenceSummary(references) }}</span>
+                <el-button link size="small" type="primary" @click="loadReferences">
+                  刷新
+                </el-button>
+              </div>
+              <el-table v-if="(references || []).length" :data="references" border size="small">
+                <el-table-column label="类型" width="120">
+                  <template #default="{ row }">
+                    <el-tag size="small" :type="referenceTypeMeta(row.refType).type">
+                      {{ referenceTypeMeta(row.refType).label }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="refLabel" label="引用" min-width="280" />
+                <el-table-column prop="detail" label="说明" min-width="180" />
+              </el-table>
+              <div v-else class="cap-detail__sub">
+                没有任何 Agent 版本 / 历史任务 / 训练台草稿引用它。
+              </div>
+            </div>
           </el-tab-pane>
 
           <el-tab-pane label="模型候选" name="candidates">
@@ -201,6 +226,8 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { getCapability } from '@/api/aigov/capability';
 import { capabilityOverview } from '@/api/aigov/capability/overview';
+import { listCapabilityReferences } from '@/api/aigov/capability/references';
+import type { AigCapabilityReferenceVO } from '@/api/aigov/capability/references';
 import { deleteCandidate, listCandidates, updateCandidate } from '@/api/aigov/candidate';
 import { listRoutePolicy, listScenarioBinding } from '@/api/aigov/route';
 import { listInvocationAudit } from '@/api/aigov/audit';
@@ -214,6 +241,8 @@ import {
   coverageText,
   issueTags,
   parseTags,
+  referenceSummary,
+  referenceTypeMeta,
   riskHint,
   statusMeta,
   usageMeta
@@ -242,6 +271,8 @@ const candidates = ref<any[]>([]);
 const policies = ref<any[]>([]);
 const scenes = ref<any[]>([]);
 const audits = ref<any[]>([]);
+/** 影响面（Q6）：Agent 版本 / 历史任务 / 训练台草稿 */
+const references = ref<AigCapabilityReferenceVO[]>([]);
 const expanded = ref(false);
 const activeTab = ref('basic');
 const rawVisible = ref(false);
@@ -318,8 +349,26 @@ const loadAudits = async () => {
   }
 };
 
+/** 影响面：删除/停用/改策略前必须先看清引用方（Q6） */
+const loadReferences = async () => {
+  try {
+    const res: any = await listCapabilityReferences(props.capabilityCode);
+    references.value = res.data || [];
+  } catch {
+    references.value = [];
+  }
+};
+
 const loadAll = async () => {
-  await Promise.all([loadOverview(), loadDetail(), loadCandidates(), loadPolicies(), loadScenes(), loadAudits()]);
+  await Promise.all([
+    loadOverview(),
+    loadDetail(),
+    loadCandidates(),
+    loadPolicies(),
+    loadScenes(),
+    loadAudits(),
+    loadReferences()
+  ]);
 };
 
 const openCandidate = (row: any) => {

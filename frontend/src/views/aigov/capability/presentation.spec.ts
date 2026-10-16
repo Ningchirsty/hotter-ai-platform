@@ -4,9 +4,11 @@ import type { AigInvokeVO } from '@/api/aigov/invoke';
 import {
   assistantBoundaryNote,
   candidateStateOptions,
+  capabilityReadiness,
   cardSummary,
   coverageText,
   decisionMeta,
+  deleteConfirmText,
   excludedHits,
   extractModelToken,
   healthMeta,
@@ -19,6 +21,8 @@ import {
   parseTags,
   policySuggestions,
   presetQuestions,
+  referenceSummary,
+  referenceTypeMeta,
   riskHint,
   statusMeta,
   usageMeta,
@@ -198,5 +202,95 @@ describe('capability presentation', () => {
     expect(extractModelToken('为什么排除 modelId=88')).toBe('modelId');
     expect(extractModelToken('数据等级是严格会怎样')).toBe('');
     expect(extractModelToken('   ')).toBe('');
+  });
+
+  it('★ 影响面：无引用要明说"没有任何引用"（这句话正是"可安全删除"的依据）', () => {
+    expect(referenceSummary([])).toContain('没有任何 Agent 版本');
+    expect(referenceSummary(undefined)).toContain('没有任何');
+    const summary = referenceSummary([
+      { refType: 'AGENT_VERSION', count: 1 },
+      { refType: 'TASK', count: 12 },
+      { refType: 'DRAFT', count: 2 }
+    ]);
+    expect(summary).toContain('共 3 类引用');
+    expect(summary).toContain('Agent 版本 1 个');
+    expect(summary).toContain('历史任务 12 条');
+    expect(summary).toContain('训练台草稿 2 条');
+  });
+
+  it('★ 删除确认框：把引用方逐条写出来（超过 5 条折叠），并给出"停用可恢复"的替代', () => {
+    const withRefs = deleteConfirmText('图片生成', 'image_generation', [
+      { refType: 'AGENT_VERSION', refLabel: 'Agent「图片助手」版本 1.0.0（已发布）' },
+      { refType: 'TASK', count: 12, refLabel: '历史任务 12 条' }
+    ]);
+    expect(withRefs).toContain('删除能力「图片生成」？');
+    expect(withRefs).toContain('图片助手');
+    expect(withRefs).toContain('历史任务 12 条');
+    expect(withRefs).toContain('停用');
+    expect(withRefs).toContain('孤儿配置');
+
+    const many = deleteConfirmText(undefined, 'code_x', Array.from({ length: 7 }, (_, index) => ({
+      refType: 'AGENT_VERSION',
+      refLabel: `Agent#${index}`
+    })));
+    expect(many).toContain('另有 2 类引用');
+    expect(many).toContain('删除能力「code_x」？');
+
+    const none = deleteConfirmText('某能力', 'code_y', []);
+    expect(none).toContain('没有任何 Agent 版本');
+  });
+
+  it('★ 就绪度：能力不存在/已停用是阻断项；缺候选缺策略只是提示项（草稿允许存半成品）', () => {
+    const missing = capabilityReadiness(undefined);
+    expect(missing.blockers.join(' ')).toContain('能力不存在');
+    expect(missing.warnings).toEqual([]);
+
+    const disabled = capabilityReadiness({ status: '1', candidateCount: 1, policyCoveredLevels: 4 });
+    expect(disabled.blockers.join(' ')).toContain('已停用');
+    expect(disabled.warnings).toEqual([]);
+
+    const halfBaked = capabilityReadiness({ status: '0', candidateCount: 0, policyCoveredLevels: 0 });
+    expect(halfBaked.blockers).toEqual([]);
+    expect(halfBaked.warnings.join(' ')).toContain('缺模型候选');
+    expect(halfBaked.warnings.join(' ')).toContain('缺路由策略（0/4）');
+
+    // 就绪：没有任何问题 → 空文案（界面据此不显示任何提示）
+    const ready = capabilityReadiness({
+      status: '0',
+      candidateCount: 2,
+      candidateHealthAgg: 'HEALTHY',
+      policyCoveredLevels: 4,
+      policyTotalLevels: 4
+    });
+    expect(ready.blockers).toEqual([]);
+    expect(ready.warnings).toEqual([]);
+    expect(ready.text).toBe('');
+  });
+
+  it('候选状态：全部不健康 / 从未探测 要分开说（不能把"没探测过"当健康）', () => {
+    const unhealthy = capabilityReadiness({
+      status: '0',
+      candidateCount: 3,
+      candidateHealthAgg: 'UNHEALTHY',
+      policyCoveredLevels: 4
+    });
+    expect(unhealthy.warnings.join(' ')).toContain('全部不健康');
+
+    const unknown = capabilityReadiness({
+      status: '0',
+      candidateCount: 3,
+      candidateHealthAgg: 'UNKNOWN',
+      policyCoveredLevels: 4
+    });
+    expect(unknown.warnings.join(' ')).toContain('尚未探测');
+
+    const partial = capabilityReadiness({
+      status: '0',
+      candidateCount: 1,
+      candidateHealthAgg: 'HEALTHY',
+      policyCoveredLevels: 2,
+      policyTotalLevels: 4
+    });
+    expect(partial.warnings.join(' ')).toContain('路由策略不全（2/4）');
   });
 });

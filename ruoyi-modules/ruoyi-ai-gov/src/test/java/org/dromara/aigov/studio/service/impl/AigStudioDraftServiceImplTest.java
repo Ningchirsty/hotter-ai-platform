@@ -23,6 +23,7 @@ import org.dromara.aigov.studio.domain.vo.AigStudioDraftVo;
 import org.dromara.aigov.studio.domain.vo.AigStudioValidateVo;
 import org.dromara.aigov.studio.enums.AigStudioDraftStatusEnum;
 import org.dromara.aigov.studio.enums.AigStudioRevisionSourceEnum;
+import org.dromara.aigov.studio.helper.AigStudioCapabilityFactsResolver;
 import org.dromara.aigov.studio.helper.AigStudioContentHasher;
 import org.dromara.aigov.studio.mapper.AigStudioDraftMapper;
 import org.dromara.aigov.studio.mapper.AigStudioRevisionMapper;
@@ -110,7 +111,7 @@ class AigStudioDraftServiceImplTest {
         agentMapper = mock(AigAgentMapper.class);
         agentVersionMapper = mock(AigAgentVersionMapper.class);
         service = new AigStudioDraftServiceImpl(draftMapper, revisionMapper, agentMapper,
-            agentVersionMapper, JsonMapper.builder().build());
+            agentVersionMapper, mock(AigStudioCapabilityFactsResolver.class), JsonMapper.builder().build());
         row = new AigStudioDraft[1];
         revisions = new ArrayList<>();
         createdVersions = new ArrayList<>();

@@ -190,7 +190,58 @@
                 <el-input v-model="content.prohibitions" type="textarea" :rows="2" />
               </el-form-item>
               <el-form-item label="所需能力">
-                <el-input v-model="content.providerCapability" placeholder="能力编码，如 text_generation（没有它无法路由）" />
+                <el-select
+                  v-model="content.providerCapability"
+                  filterable
+                  allow-create
+                  default-first-option
+                  :loading="capabilityLoading"
+                  style="width: 100%"
+                  placeholder="从能力清单里选（不再手打编码；确实要新建能力时才手打）"
+                >
+                  <el-option
+                    v-for="item in capabilityOptions"
+                    :key="item.capabilityCode"
+                    :label="capabilityOptionLabel(item)"
+                    :value="item.capabilityCode!"
+                  >
+                    <span>{{ item.capabilityCode }}</span>
+                    <span style="float: right; color: #909399; font-size: 12px; margin-left: 12px">
+                      {{ capabilityReadiness(item).text || '就绪' }}
+                    </span>
+                  </el-option>
+                </el-select>
+                <!-- 就绪度就地反馈：阻断项（现在引用它一定跑不通）与提示项（能存草稿，正式跑前补齐）分开说 -->
+                <div
+                  v-if="capabilityLoaded && currentCapabilityReadiness.blockers.length"
+                  style="color: #f56c6c; font-size: 12px; line-height: 1.5"
+                >
+                  {{ currentCapabilityReadiness.blockers.join('；') }}
+                  ——草稿可以先存，但正式跑之前必须处理。
+                </div>
+                <div
+                  v-else-if="capabilityLoaded && currentCapabilityReadiness.warnings.length"
+                  style="color: #e6a23c; font-size: 12px; line-height: 1.5"
+                >
+                  {{ currentCapabilityReadiness.warnings.join('；') }}
+                  ——草稿可以先这样存（训练台允许半成品），只是现在正式调用一定失败。
+                </div>
+                <div
+                  v-else-if="capabilityLoaded && content.providerCapability"
+                  style="color: #67c23a; font-size: 12px; line-height: 1.5"
+                >
+                  该能力候选与策略齐全，可以直接用于正式调用。
+                </div>
+                <div
+                  v-else-if="!capabilityLoaded"
+                  class="text-gray-500"
+                  style="font-size: 12px; line-height: 1.5"
+                >
+                  没读到能力清单（可能没有「平台治理 → 能力」的查看权限）：只能按编码填写，无法在这里核对就绪度。
+                </div>
+                <div v-else class="text-gray-500" style="font-size: 12px; line-height: 1.5">
+                  先选能力编码——它决定这条 Agent 能不能路由到模型（没有它无法路由）。
+                </div>
               </el-form-item>
               <el-form-item label="允许外发">
                 <el-select v-model="content.allowExternal" style="width: 100%">
@@ -372,6 +423,8 @@
 
 <script setup lang="ts">
 import { listDraft, getDraft, getRevision, createDraft, saveDraft, listRevisions, validateDraft, rollbackDraft, archiveDraft, submitDraft, runStudioTest } from '@/api/aigov/studio';
+import { capabilityOverview } from '@/api/aigov/capability/overview';
+import type { AigCapabilityOverviewVO } from '@/api/aigov/capability/overview-types';
 import type {
   AigStudioDraftCreateForm,
   AigStudioDraftContentForm,
@@ -387,6 +440,7 @@ import { useLoading } from '@/hooks/async/useLoading';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import modal from '@/plugins/modal';
 import { PROMPT_SECTION_LABELS, diffSummary, parseDraftContent, sectionDiff } from './diff';
+import { capabilityReadiness } from '@/views/aigov/capability/presentation';
 import { DIRTY_CHOICES, beforeUnloadShouldWarn, needsGuard, unsavedMessage, type DirtyChoice } from './dirtyGuard';
 import { revisionText, saveStateLabel, saveStateTagType } from './layout';
 import ProposalPanel from './components/ProposalPanel.vue';
@@ -427,6 +481,51 @@ const content = ref<AigStudioDraftContentForm>({ promptSections: {} });
 const expectedRevision = ref(0);
 const localDirty = ref(false);
 const problems = ref<string[]>([]);
+
+/**
+ * 「所需能力」下拉的数据源（能力清单 + 就绪度）。
+ *
+ * <p>为什么不再手打：能力编码是路由的第一道键，打错一个字符不会有任何提示，
+ * 要到调用时才发现"没有路由策略"。下拉把能力清单与就绪度一起摊开，选的时候就知道能不能跑通。</p>
+ */
+const capabilityOptions = ref<AigCapabilityOverviewVO[]>([]);
+const capabilityLoading = ref(false);
+/** 是否成功读到能力清单：读不到时**不能**谎报"能力不存在"（那是权限/网络问题，不是配置问题） */
+const capabilityLoaded = ref(false);
+
+const loadCapabilities = async () => {
+  capabilityLoading.value = true;
+  try {
+    const res: any = await capabilityOverview({} as any);
+    capabilityOptions.value = res.data || [];
+    capabilityLoaded.value = true;
+  } catch {
+    capabilityOptions.value = [];
+    capabilityLoaded.value = false;
+  } finally {
+    capabilityLoading.value = false;
+  }
+};
+
+/** 按编码找能力（大小写不敏感兜底；路由用的是规范化后的大写，这里只做展示核对） */
+const findCapability = (code?: string): AigCapabilityOverviewVO | undefined => {
+  const key = (code || '').trim();
+  if (!key) {
+    return undefined;
+  }
+  return (
+    capabilityOptions.value.find((item) => item.capabilityCode === key) ||
+    capabilityOptions.value.find((item) => (item.capabilityCode || '').toLowerCase() === key.toLowerCase())
+  );
+};
+
+const capabilityOptionLabel = (item: AigCapabilityOverviewVO): string =>
+  item.capabilityName ? `${item.capabilityCode}（${item.capabilityName}）` : item.capabilityCode || '';
+
+/** 当前选中能力的就绪度（选空值时无任何提示） */
+const currentCapabilityReadiness = computed(() =>
+  capabilityReadiness(findCapability(content.value.providerCapability))
+);
 
 const revisions = ref<AigStudioRevisionVO[]>([]);
 const selectedRevisionNo = ref<number | undefined>(undefined);
@@ -552,6 +651,8 @@ const openEditor = async (row: any) => {
   selectedRevisionJson.value = undefined;
   await applyContent(res.data.contentJson);
   await loadRevisions();
+  // 打开编辑器时顺手刷新能力清单：别让人对着上一次加载的就绪度做决定
+  loadCapabilities();
   editorVisible.value = true;
 };
 
@@ -778,6 +879,7 @@ onMounted(() => {
   // D06：关闭/刷新页面时若仍有未保存改动，浏览器给出通用离开确认
   window.addEventListener('beforeunload', onBeforeUnload);
   getList();
+  loadCapabilities();
 });
 
 onBeforeUnmount(() => {

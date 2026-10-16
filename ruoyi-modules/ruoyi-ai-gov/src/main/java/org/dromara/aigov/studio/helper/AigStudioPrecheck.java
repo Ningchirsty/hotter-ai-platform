@@ -20,11 +20,17 @@ import java.util.Map;
  *
  * <p><b>分级（本方法的输出）</b>：</p>
  * <ul>
- *     <li><b>blockers（阻断）</b>：内容结构或执行前提缺失（非法 JSON、缺分节、无能力、类别非法、
- *         Schema 非法、夹带脚本）。提交必须全部清空。</li>
+ *     <li><b>blockers（阻断）</b>：内容结构或执行前提缺失（非法 JSON、缺分节、无能力、**能力不存在或已停用**、
+ *         类别非法、Schema 非法、夹带脚本）。提交必须全部清空。</li>
  *     <li><b>warnings（提醒）</b>：不影响提交，但责任人应当看见——例如未声明输出 Schema、
- *         工具/知识「已登记待接入」（设计 §4.1 要求如实展示，不得显示为可用）。</li>
+ *         工具/知识「已登记待接入」（设计 §4.1 要求如实展示，不得显示为可用）、
+ *         **该能力目前缺模型候选或缺路由策略**（草稿允许先存半成品，所以只能提醒，不能拦）。</li>
  * </ul>
+ *
+ * <p><b>能力事实从哪来</b>：本类是纯函数，不能查库；调用方先查出
+ * {@link AigStudioCapabilityFacts} 再传进来。传 {@code null} 表示"本次不判能力事实"——
+ * 那是<b>有意的</b>：如果把"没查"默认当成"不存在"，任何一处忘了传事实的调用都会突然报
+ * "能力不存在"，那比不判更糟。</p>
  *
  * @author ai-gov
  */
@@ -77,6 +83,18 @@ public final class AigStudioPrecheck {
      * @return 结论
      */
     public static Result evaluate(JsonMapper mapper, String contentJson) {
+        return evaluate(mapper, contentJson, null);
+    }
+
+    /**
+     * 从内容 JSON 原文预检，并带上能力事实。
+     *
+     * @param mapper      序列化器
+     * @param contentJson 内容原文
+     * @param facts       能力事实（可为 null，表示本次不判能力事实）
+     * @return 结论
+     */
+    public static Result evaluate(JsonMapper mapper, String contentJson, AigStudioCapabilityFacts facts) {
         AigStudioDraftContent content;
         try {
             content = mapper.readValue(contentJson, AigStudioDraftContent.class);
@@ -88,7 +106,7 @@ public final class AigStudioPrecheck {
             return new Result(List.of(AigStudioPrecheckItem.blocker("CONTENT_EMPTY", "",
                 "内容为空", "填写至少一个 Prompt 分节", null)), List.of());
         }
-        return of(content);
+        return of(content, facts);
     }
 
     /**
@@ -98,6 +116,17 @@ public final class AigStudioPrecheck {
      * @return 结论
      */
     public static Result of(AigStudioDraftContent content) {
+        return of(content, null);
+    }
+
+    /**
+     * 对已解析的内容预检（含能力事实判定）。
+     *
+     * @param content 草稿内容
+     * @param facts   能力事实（可为 null，表示本次不判能力事实）
+     * @return 结论
+     */
+    public static Result of(AigStudioDraftContent content, AigStudioCapabilityFacts facts) {
         List<AigStudioPrecheckItem> blockers = new ArrayList<>();
         List<AigStudioPrecheckItem> warnings = new ArrayList<>();
 
@@ -125,6 +154,9 @@ public final class AigStudioPrecheck {
             blockers.add(AigStudioPrecheckItem.blocker("CAPABILITY_MISSING", "/providerCapability",
                 "未声明所需能力（providerCapability）：没有它无法路由，提交后也调不通",
                 "选择一个能力编码（如 text_generation）", null));
+        } else {
+            // 2.1) 声明的能力在能力清单里的客观状态（facts 为 null 表示调用方没查，不判）
+            checkCapabilityFacts(blockers, warnings, content.getProviderCapability(), facts);
         }
 
         // 3) 类别：D07 把"合法类别"从提交阶段前移到预检（执行前提，必须显式声明）
@@ -173,6 +205,63 @@ public final class AigStudioPrecheck {
                 "如需要真实执行，请等待知识/工具接入后再声明为可用", null));
         }
         return new Result(blockers, warnings);
+    }
+
+    /**
+     * 能力事实判定（阻断项与提醒项分开，规则见本类注释）。
+     *
+     * <p>分级理由：<b>能力不存在 / 已停用</b>是"编码错了或这个能力根本不能用"，属阻断；
+     * <b>缺候选 / 缺策略 / 候选不健康</b>是"配置还没补齐"，训练台按 D07 允许先存半成品，
+     * 所以只能是提醒 —— 提醒里也要写清"现在正式调用一定失败"，不能让人误以为能跑。</p>
+     *
+     * @param blockers 阻断项集合（写出口）
+     * @param warnings 提醒项集合（写出口）
+     * @param code     草稿声明的能力编码
+     * @param facts    能力事实（null 表示本次不判）
+     */
+    private static void checkCapabilityFacts(List<AigStudioPrecheckItem> blockers,
+                                             List<AigStudioPrecheckItem> warnings,
+                                             String code, AigStudioCapabilityFacts facts) {
+        if (facts == null) {
+            return;
+        }
+        if (!facts.exists()) {
+            blockers.add(AigStudioPrecheckItem.blocker("CAPABILITY_NOT_FOUND", "/providerCapability",
+                "声明的能力「" + code + "」不在能力清单里：编码可能写错，或这个能力已被删除"
+                    + "（引用不存在的能力，提交后一定调不通）",
+                "到「平台治理 → 能力」里选一个已登记的能力编码；确需新能力请先登记能力本身", code));
+            return;
+        }
+        if (facts.disabled()) {
+            blockers.add(AigStudioPrecheckItem.blocker("CAPABILITY_DISABLED", "/providerCapability",
+                "声明的能力「" + code + "」已停用：停用能力的所有调用都会被拒绝",
+                "在能力页面启用它，或改用另一个可用能力", code));
+            return;
+        }
+        if (facts.noCandidate()) {
+            warnings.add(AigStudioPrecheckItem.warning("CAPABILITY_NO_CANDIDATE", "/providerCapability",
+                "能力「" + code + "」现在没有任何启用的模型候选：路由到第 3 步会失败，正式调用一定调不通",
+                "到「平台治理 → 能力 → 模型候选」给它挂一个候选（本预检按 D07 不拦草稿保存）", code));
+        } else if (facts.candidateUnhealthy()) {
+            warnings.add(AigStudioPrecheckItem.warning("CAPABILITY_CANDIDATE_UNHEALTHY", "/providerCapability",
+                "能力「" + code + "」的模型候选当前全部不健康：调用会被路由排除，正式调用一定调不通",
+                "检查模型可用性（或补一个健康候选）后再正式使用；本预检不拦草稿保存", code));
+        } else if (facts.candidateUnknown()) {
+            warnings.add(AigStudioPrecheckItem.warning("CAPABILITY_CANDIDATE_UNKNOWN", "/providerCapability",
+                "能力「" + code + "」的模型候选尚未探测过健康状态：能否调用要到实际调用才知道",
+                "如计划正式使用，建议先探测一次模型健康状态", code));
+        }
+        if (facts.noPolicy()) {
+            warnings.add(AigStudioPrecheckItem.warning("CAPABILITY_NO_ROUTE_POLICY", "/providerCapability",
+                "能力「" + code + "」一条路由策略都没配（0/" + facts.policyTotalLevels()
+                    + "）：任何数据等级都无法路由，正式调用一定调不通",
+                "到「平台治理 → 能力 → 路由策略」补上各数据等级的策略；本预检不拦草稿保存", code));
+        } else if (facts.policyIncomplete()) {
+            warnings.add(AigStudioPrecheckItem.warning("CAPABILITY_POLICY_INCOMPLETE", "/providerCapability",
+                "能力「" + code + "」的路由策略不全（" + facts.policyCoveredLevels() + "/"
+                    + facts.policyTotalLevels() + "）：未覆盖的数据等级走默认兜底，可能不是你要的行为",
+                "补齐剩余数据等级的策略后重新预检", code));
+        }
     }
 
     /**

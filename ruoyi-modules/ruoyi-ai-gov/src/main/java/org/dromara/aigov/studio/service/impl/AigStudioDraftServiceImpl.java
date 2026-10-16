@@ -27,6 +27,8 @@ import org.dromara.aigov.studio.domain.vo.AigStudioRevisionVo;
 import org.dromara.aigov.studio.domain.vo.AigStudioValidateVo;
 import org.dromara.aigov.studio.enums.AigStudioDraftStatusEnum;
 import org.dromara.aigov.studio.enums.AigStudioRevisionSourceEnum;
+import org.dromara.aigov.studio.helper.AigStudioCapabilityFacts;
+import org.dromara.aigov.studio.helper.AigStudioCapabilityFactsResolver;
 import org.dromara.aigov.studio.helper.AigStudioContentHasher;
 import org.dromara.aigov.studio.helper.AigStudioPrecheck;
 import org.dromara.aigov.studio.helper.AigStudioPromptBuilder;
@@ -63,6 +65,7 @@ public class AigStudioDraftServiceImpl implements IAigStudioDraftService {
     private final AigStudioRevisionMapper revisionMapper;
     private final AigAgentMapper agentMapper;
     private final AigAgentVersionMapper agentVersionMapper;
+    private final AigStudioCapabilityFactsResolver capabilityFactsResolver;
     private final JsonMapper jsonMapper;
 
     @Override
@@ -289,8 +292,10 @@ public class AigStudioDraftServiceImpl implements IAigStudioDraftService {
     @Override
     public AigStudioValidateVo validateDraft(Long draftId) {
         AigStudioDraft draft = requireDraft(draftId);
-        // D07：分级预检（阻断/提醒 + 字段定位 + 建议动作），且与提交共用同一套判据
-        AigStudioPrecheck.Result result = AigStudioPrecheck.evaluate(jsonMapper, draft.getContentJson());
+        // D07：分级预检（阻断/提醒 + 字段定位 + 建议动作），且与提交共用同一套判据。
+        // 能力事实先查成快照再传进去：预检是纯函数，判定与 I/O 分开（口径来自能力概览，见 facts 类注释）。
+        AigStudioPrecheck.Result result = AigStudioPrecheck.evaluate(jsonMapper, draft.getContentJson(),
+            factsFor(draft.getContentJson()));
         AigStudioValidateVo vo = new AigStudioValidateVo();
         vo.setDraftId(draft.getDraftId());
         vo.setRevision(draft.getLatestRevision());
@@ -318,7 +323,8 @@ public class AigStudioDraftServiceImpl implements IAigStudioDraftService {
         // 预检必须先过：不允许"先提交、后面再补"——那会让一份不合格内容进入发布流程。
         // D07：与 validateDraft 共用 AigStudioPrecheck，因此"预检说通过"与"提交被接受"
         // 不可能分叉；类别校验也已随这次前移从提交阶段并进同一套判据。
-        AigStudioPrecheck.Result precheck = AigStudioPrecheck.evaluate(jsonMapper, draft.getContentJson());
+        AigStudioPrecheck.Result precheck = AigStudioPrecheck.evaluate(jsonMapper, draft.getContentJson(),
+            factsFor(draft.getContentJson()));
         if (!precheck.passed()) {
             throw new ServiceException("草稿未通过预检，不能提交："
                 + String.join("；", precheck.blockerMessages()));
@@ -454,6 +460,24 @@ public class AigStudioDraftServiceImpl implements IAigStudioDraftService {
      * "测试跑的是 A、提交上去的是 B"。现在只有一份实现，调用点在
      * {@code agentVersion.setPromptTemplate(AigStudioPromptBuilder.build(content))}。</p>
      */
+
+    /**
+     * 取草稿声明的能力事实（供预检判定）。
+     *
+     * <p><b>内容连 JSON 都不合法时返回 null</b>：那种情况预检会给出 {@code CONTENT_NOT_JSON}，
+     * 这里再抛一次错只会把"具体哪里不合法"换成一句笼统的服务异常。</p>
+     *
+     * @param contentJson 内容原文
+     * @return 能力事实；解析失败或未声明能力返回 null（表示"本次不判能力事实"）
+     */
+    private AigStudioCapabilityFacts factsFor(String contentJson) {
+        try {
+            AigStudioDraftContent content = jsonMapper.readValue(contentJson, AigStudioDraftContent.class);
+            return content == null ? null : capabilityFactsResolver.resolve(content.getProviderCapability());
+        } catch (Exception e) {
+            return null;
+        }
+    }
 
     /**
      * 解析草稿内容（已过预检，因此这里解析失败只可能是并发写入损坏，按内部错误抛）。

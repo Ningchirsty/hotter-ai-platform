@@ -227,6 +227,8 @@
 import { computed, onMounted, reactive, ref, toRefs } from 'vue';
 import { addCapability, delCapability, getCapability, updateCapability } from '@/api/aigov/capability';
 import { capabilityOverview } from '@/api/aigov/capability/overview';
+import { listCapabilityReferences } from '@/api/aigov/capability/references';
+import type { AigCapabilityReferenceVO } from '@/api/aigov/capability/references';
 import type { AigCapabilityOverviewQuery, AigCapabilityOverviewVO } from '@/api/aigov/capability/overview-types';
 import type { AigCapabilityForm, AigCapabilityVO } from '@/api/aigov/capability/types';
 import CapabilityBoard from './components/CapabilityBoard.vue';
@@ -236,6 +238,7 @@ import { useDict } from '@/utils/dict';
 import {
   candidateStateOptions,
   cardSummary,
+  deleteConfirmText,
   healthMeta,
   issueFilterOptions,
   issueTags,
@@ -420,13 +423,19 @@ const submit = async () => {
 };
 
 const remove = async (row: AigCapabilityOverviewVO) => {
+  // Q6（已拍板）：删除前强制先看影响面 —— 先把"谁在引用它"查出来写进确认框，
+  // 而不是只问一句"确定删除吗"。查不到引用时也要明说"没有任何引用"（那是可安全删除的唯一依据）。
+  let refs: AigCapabilityReferenceVO[] = [];
   try {
-    await modal.confirm(
-      `删除能力「${row.capabilityName || row.capabilityCode}」？\n\n`
-        + '删除后，它的模型候选、策略、调用授权会变成指向已删能力的孤儿配置（永远不生效）。\n'
-        + '如果只是暂时不用，建议改为「停用」——停用可以恢复。\n\n'
-        + '（P1 起这里会先列出「哪些 Agent 版本与任务在用这个能力」，再让你决定。）'
-    );
+    const res = await listCapabilityReferences(row.capabilityCode!);
+    refs = res.data || [];
+  } catch (error: any) {
+    // 影响面查不出来时**不静默继续**：宁可让使用者自己判断，也不要在没有影响面的情况下删掉
+    modal.alertError(error?.message || '读取引用清单失败：请稍后重试，或在无引用确认后再删除');
+    return;
+  }
+  try {
+    await modal.confirm(deleteConfirmText(row.capabilityName, row.capabilityCode!, refs));
   } catch {
     return;
   }
