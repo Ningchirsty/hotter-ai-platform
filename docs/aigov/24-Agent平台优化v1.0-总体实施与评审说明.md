@@ -22,6 +22,7 @@
 | `56563b8b` | 能力域/Q6 | **影响面**：`GET /aigov/capability/references`（Agent 版本 / 历史任务 / 训练台草稿三类引用，一次拿全） |
 | `60041e3c` | 能力域/Q6+训练台 | Q6 前端（删除前先查引用再确认、详情「影响面」区块）+ 训练台「所需能力」改能力下拉与就绪度 + 预检补能力事实（不存在/停用＝阻断，缺候选/缺策略＝提醒） |
 | `9e1eecd7` | 能力域/Q3 | dryRun 补 `wouldRequireApproval` 与只读 `quotaStatus`（不写审计/不写账本/不消耗额度/只回本人额度）+ 试调助手第 ⑤ 段渲染"预判" |
+| `8c0677a7` | 能力域/Q1C+Q6 | **高风险变更轻量门槛**：新增权限点 `aig:capability:high-risk`（只授 aig_admin）+ 规则纯函数/闸门 + 路由策略（新增/编辑/删除）与能力（停用/删除）接线 + 前端确认框（原因 + 权限点 + 影响面） |
 
 > 表里是**有实质内容的提交**；纯文档补记（例如把本表自己补上一行）不逐条登记——它们不改变交付物。
 > `check-aigov-docs.mjs` 会核对**本节**每个提交号都是当前分支 HEAD 的祖先（抄错/被 rebase 掉会红）。
@@ -125,8 +126,8 @@
 
 ## 4 验证汇总
 
-- 后端 `ruoyi-ai-gov`：**1391 tests / 0 failures / 0 errors**（基线 1053 → 新增 338；其中 **能力域重构 P0 13 条**、
-  **Q6 影响面 5 条**、**训练台能力就绪度预检与能力事实查询 14 条**、**Q3 预演闸门 5 条**，见 §8）。
+- 后端 `ruoyi-ai-gov`：**1401 tests / 0 failures / 0 errors**（基线 1053 → 新增 348；其中 **能力域重构 P0 13 条**、
+  **Q6 影响面 5 条**、**训练台能力就绪度预检与能力事实查询 14 条**、**Q3 预演闸门 5 条**、**Q1C 高风险门槛 10 条**，见 §8）。
   > 勘误（2026-10-16）：本节此前记的 **1367** 是 **Q6 影响面提交（`56563b8b`）之前**的数，
   > 漏计了 Q6 的 5 条（引用服务 4 + 路由烟测 1）。⇒ 以本节为准
   > （`script/ci/check-aigov-docs.mjs` 是拿本节数字与磁盘报告对账，所以它本来就会把这类漂移报出来）。
@@ -138,7 +139,7 @@
   它同时会跑"每个有测试的模块都必须产出 Surefire 报告"的台账守卫。
   ⚠️ 该模式需要 CI 前置步骤装好的 **ffmpeg/ffprobe**（缺了会是 `ruoyi-ai` 的 4 个媒体用例报
   "图片格式转换服务不可用"——环境前提，不是本分支的回归；见 §7.2）。
-- 前端 `frontend`：**54 files / 551 tests** 全过；`oxlint src` 563 files 0/0；
+- 前端 `frontend`：**55 files / 557 tests** 全过；`oxlint src` 565 files 0/0；
   **生产构建 `vite build --mode production` 通过**（与 CI 的 `pnpm build:prod` 同一条命令）。
   其中 `views/aigov/sfcCompile.spec.ts` 真编译全部 34 个治理层 SFC
   （无 DOM 环境下的最低保证：模板/`<script setup>` 写错会在这里红），
@@ -210,6 +211,7 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
 | `script/sql/aig_tool_menu.sql` | `aig:tool:list` / `aig:tool:manage` |
 | `script/sql/aig_feedback_menu.sql` | `aig:feedback:queue` / `aig:feedback:handle` |
 | `script/sql/aig_ops_menu.sql` | `aig:ops:metrics` |
+| `script/sql/aig_capability_high_risk_menu.sql` | `aig:capability:high-risk`（**Q1C 新增**；只授 `aig_admin`——安全角色默认不给，要让它也能改由运维显式授权） |
 
 > 设计 §4.3 的「业务训练负责人」「知识维护人」等业务角色应由运维按需新建并单独授权；
 > 本仓当前只有 `aig_admin` / `aig_security` / `aig_viewer`，因此种子只授 `aig_admin`。
@@ -423,14 +425,25 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src 
 | 前端 | 试调助手第 ⑤ 段改为「真实调用前还会遇到什么（预判）」：人工确认点 + 审批需求（**三态**：需要/不需要/**未返回＝未知**）+ 额度（已超限/还剩 N 次/不限/**读不到**）；边界说明改写为"**预判 ≠ 校验**"（dryRun 仍不查你手上有没有有效授权） | `api/aigov/invoke/index.ts`、`capability/presentation.ts#realCallGates`/`assistantBoundaryNote`、`components/TrialAssistant.vue` |
 | 口径 | `remaining` 取日/月里**最紧**的那个（"日剩 2、月剩 5"必须说 2，否则界面会让人以为还能调 5 次）；已超限时下限 0，不给负数 | `AigQuotaStatusVo.of` |
 
-**P0/Q6/Q3 未做（P1/P2，见联动方案 §7–§8）**：**改策略/停用**的强制确认（删除已做，策略与停用入口尚未接同一套确认框）、
-员工"我的额度/我的申请"（Q5）、高风险变更轻量门槛（Q1C）、数据等级取最高 `min_data_level`（Q2C，需一条 ALTER，已定 P1 末尾）——
-以及 22 项交互规范与其余模块按 v3 改写。
+**仍未做（P1 尾巴 / P2，见联动方案 §7–§8）**：员工"我的额度/我的申请"（Q5，门户两屏，接口已有）、
+数据等级取最高 `min_data_level`（Q2C，需一条 ALTER，已定 P1 末尾；届时一并补"限制级能力的候选变更"那半条规则）、
+Q1C 的**完整版**（变更单 + 批准 + 生效记录，需新表）——以及 22 项交互规范与其余模块按 v3 改写。
 
-**验证**（本次实测，2026-10-16）：后端 **1391 tests / 0 failures / 0 errors**
-（本轮新增 19 条：预检能力事实分级 9 + 能力事实查询/精确匹配 5 + 预演闸门 5）；
-前端 **54 files / 551 tests**（本轮新增 5 条：就绪度分级 2 + 候选状态口径 2 + 闸门预判口径 1）；`oxlint` **563 files 0/0**；
-`vite build` 清缓存重建通过；`node script/ci/verify-aigov-v1.mjs` 全绿。
+**Q1C「高风险变更轻量门槛」+ Q6 剩余（改策略 / 停用入口的同一套确认）**
+
+| 层 | 交付 | 文件 |
+| --- | --- | --- |
+| 权限点 | 新增 `aig:capability:high-risk`（与 `aig:capability:edit` / `aig:route:edit` **刻意分开**：能改配置 ≠ 能放宽数据出界），只授 `aig_admin`；幂等种子 | `script/sql/aig_capability_high_risk_menu.sql`、`AigConstants#PERM_CAPABILITY_HIGH_RISK` |
+| 后端 | 规则本身抽成纯函数 `AigHighRiskChanges`（放开外发 / RESTRICTED·STRICT 策略 / 首选外部部署 / 删除命中行；停用只判「启用→停用」一个迁移）；闸门 `AigHighRiskGuard` 用 Sa-Token 判权限，**无登录态 fail-closed** | `helper/AigHighRiskChanges`、`helper/AigHighRiskGuard` |
+| 后端接线 | 路由策略 **新增 / 编辑（对比新旧行，N→Y 才算放宽）/ 删除**；能力 **停用 / 删除** | `AigRoutePolicyServiceImpl`、`AigCapabilityServiceImpl` |
+| 前端 | 策略保存 / 列表内开启外发 / 删除策略：高风险时弹确认框——**列原因 + 需要哪个权限点 + 影响面（谁在用它）**；能力停用同样先列影响面 | `views/aigov/route/highRisk.ts`、`route/index.vue`、`capability/presentation.ts#disableConfirmText`、`capability/index.vue#submit` |
+
+**刻意没做的（如实标注，不假装已防住）**：联动方案 §8.1 第 4 条里"**限制级/严格级能力的候选变更**
+（新增/改用途/启停）"依赖能力的**声明等级列**（Q2C 的 `min_data_level`），该列尚不存在；
+现在只能按策略行猜，会误报，所以留到 Q2C 一起做。本轮覆盖的是**放宽外发与限制级策略变更**这条主线。
+
+**验证**（本次实测，2026-10-16）：后端 **1401 tests / 0 failures / 0 errors**（本轮新增 10 条高风险判定与接线）；
+前端 **55 files / 557 tests**；`oxlint` **565 files 0/0**；`vite build` 通过；`verify-aigov-v1.mjs` 全绿。
 
 **顺带修好的一处"守卫会误报"**：`check-aigov-docs.mjs` 原先要求 §1 表里**每个**提交号都是当前分支 HEAD 的祖先。
 A–E 分支已由 PR #80 **squash 合并**（祖先关系被故意抹掉），这条规则于是会一口气报 54 个"不是祖先"——
