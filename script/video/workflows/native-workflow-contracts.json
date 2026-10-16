@@ -39,6 +39,11 @@
               "field": "_seed",
               "nodeId": "8",
               "inputKey": "noise_seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "6",
+              "inputKey": "length"
             }
           ],
           "outputRule": {
@@ -48,7 +53,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 4
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -64,10 +69,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 768×448",
-            "dur": "2.33 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 768×448"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 24,
+              "frameStep": 17,
+              "frameOffset": 5
+            }
           },
           "publicationEvidence": {
             "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
@@ -111,6 +126,11 @@
               "field": "_seed",
               "nodeId": "8",
               "inputKey": "noise_seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "6",
+              "inputKey": "length"
             }
           ],
           "outputRule": {
@@ -120,7 +140,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 4
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -136,10 +156,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 768×448",
-            "dur": "2.33 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 768×448"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 24,
+              "frameStep": 17,
+              "frameOffset": 5
+            }
           },
           "publicationEvidence": {
             "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
@@ -191,6 +221,11 @@
               "field": "_seed",
               "nodeId": "8",
               "inputKey": "seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "6",
+              "inputKey": "length"
             }
           ],
           "outputRule": {
@@ -200,7 +235,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 4
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -216,10 +251,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 832×480",
-            "dur": "2.04 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 832×480"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 24,
+              "frameStep": 4,
+              "frameOffset": 1
+            }
           },
           "publicationEvidence": {
             "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
@@ -263,6 +308,11 @@
               "field": "_seed",
               "nodeId": "8",
               "inputKey": "seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "6",
+              "inputKey": "length"
             }
           ],
           "outputRule": {
@@ -272,7 +322,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 4
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -288,10 +338,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 832×480",
-            "dur": "2.04 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 832×480"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 24,
+              "frameStep": 4,
+              "frameOffset": 1
+            }
           },
           "publicationEvidence": {
             "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
@@ -348,6 +408,11 @@
               "field": "_seed",
               "nodeId": "14",
               "inputKey": "noise_seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "8",
+              "inputKey": "length"
             }
           ],
           "outputRule": {
@@ -357,7 +422,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 4
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -373,10 +438,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 832×480",
-            "dur": "2.04 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 832×480"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 24,
+              "frameStep": 4,
+              "frameOffset": 1
+            }
           },
           "publicationEvidence": {
             "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
@@ -441,6 +516,11 @@
               "field": "_seed",
               "nodeId": "14",
               "inputKey": "noise_seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "8",
+              "inputKey": "length"
             }
           ],
           "outputRule": {
@@ -450,7 +530,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 4
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -466,10 +546,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 832×480",
-            "dur": "2.04 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 832×480"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 24,
+              "frameStep": 4,
+              "frameOffset": 1
+            }
           },
           "publicationEvidence": {
             "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
@@ -529,6 +619,11 @@
               "field": "_seed",
               "nodeId": "8",
               "inputKey": "noise_seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "6",
+              "inputKey": "length"
             }
           ],
           "outputRule": {
@@ -538,7 +633,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 4
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -554,10 +649,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 768×448",
-            "dur": "2.33 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 768×448"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 24,
+              "frameStep": 17,
+              "frameOffset": 5
+            }
           },
           "publicationEvidence": {
             "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
@@ -614,6 +719,11 @@
               "field": "_seed",
               "nodeId": "129:85",
               "inputKey": "noise_seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "129:98",
+              "inputKey": "length"
             }
           ],
           "outputRule": {
@@ -623,7 +733,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 7
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -639,10 +749,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 832×480",
-            "dur": "5.06 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 832×480"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 16,
+              "frameStep": 4,
+              "frameOffset": 1
+            }
           },
           "publicationEvidence": {
             "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
@@ -707,6 +827,11 @@
               "field": "_seed",
               "nodeId": "87",
               "inputKey": "noise_seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "81",
+              "inputKey": "length"
             }
           ],
           "outputRule": {
@@ -716,7 +841,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 5
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -732,10 +857,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 832×480",
-            "dur": "3.06 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 832×480"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 16,
+              "frameStep": 4,
+              "frameOffset": 1
+            }
           },
           "publicationEvidence": {
             "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
@@ -779,6 +914,11 @@
               "field": "_seed",
               "nodeId": "3",
               "inputKey": "seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "55",
+              "inputKey": "length"
             }
           ],
           "outputRule": {
@@ -788,7 +928,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 4
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -804,10 +944,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 832×480",
-            "dur": "2.04 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 832×480"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 24,
+              "frameStep": 4,
+              "frameOffset": 1
+            }
           },
           "publicationEvidence": {
             "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
@@ -851,6 +1001,11 @@
               "field": "_seed",
               "nodeId": "140:129",
               "inputKey": "noise_seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "140:131",
+              "inputKey": "length"
             }
           ],
           "outputRule": {
@@ -860,7 +1015,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 4
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -876,10 +1031,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 864×480",
-            "dur": "2.33 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 864×480"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 24,
+              "frameStep": 17,
+              "frameOffset": 5
+            }
           },
           "publicationEvidence": {
             "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
@@ -931,6 +1096,11 @@
               "field": "_seed",
               "nodeId": "105:15",
               "inputKey": "noise_seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "105:104",
+              "inputKey": "length"
             }
           ],
           "outputRule": {
@@ -940,7 +1110,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 4
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -956,10 +1126,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 640×640",
-            "dur": "2.33 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 640×640"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 24,
+              "frameStep": 17,
+              "frameOffset": 5
+            }
           },
           "publicationEvidence": {
             "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
@@ -1019,6 +1199,11 @@
               "field": "_seed",
               "nodeId": "129",
               "inputKey": "noise_seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "136",
+              "inputKey": "length"
             }
           ],
           "outputRule": {
@@ -1028,7 +1213,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 4
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -1044,10 +1229,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 864×480",
-            "dur": "2.33 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 864×480"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 24,
+              "frameStep": 17,
+              "frameOffset": 5
+            }
           },
           "publicationEvidence": {
             "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
@@ -1091,6 +1286,11 @@
               "field": "_seed",
               "nodeId": "12:8",
               "inputKey": "seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "12:5",
+              "inputKey": "length"
             }
           ],
           "outputRule": {
@@ -1100,7 +1300,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 4
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -1116,10 +1316,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 832×480",
-            "dur": "2.04 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 832×480"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 24,
+              "frameStep": 4,
+              "frameOffset": 1
+            }
           },
           "publicationEvidence": {
             "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
@@ -1171,6 +1381,11 @@
               "field": "_seed",
               "nodeId": "69:63",
               "inputKey": "seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "69:62",
+              "inputKey": "length"
             }
           ],
           "outputRule": {
@@ -1180,7 +1395,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 4
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -1196,10 +1411,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 768×512",
-            "dur": "2.04 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 768×512"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 24,
+              "frameStep": 4,
+              "frameOffset": 1
+            }
           },
           "publicationEvidence": {
             "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
@@ -1243,6 +1468,11 @@
               "field": "_seed",
               "nodeId": "129",
               "inputKey": "noise_seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "124",
+              "inputKey": "length"
             }
           ],
           "outputRule": {
@@ -1252,7 +1482,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 4
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -1268,10 +1498,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 832×480",
-            "dur": "2.04 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 832×480"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 24,
+              "frameStep": 4,
+              "frameOffset": 1
+            }
           },
           "publicationEvidence": {
             "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
@@ -1323,6 +1563,11 @@
               "field": "_seed",
               "nodeId": "127",
               "inputKey": "noise_seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "78",
+              "inputKey": "length"
             }
           ],
           "outputRule": {
@@ -1332,7 +1577,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 4
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -1348,10 +1593,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 832×480",
-            "dur": "2.04 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 832×480"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 24,
+              "frameStep": 4,
+              "frameOffset": 1
+            }
           },
           "publicationEvidence": {
             "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
@@ -1400,6 +1655,16 @@
               "field": "_seed",
               "nodeId": "405:339",
               "inputKey": "noise_seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "405:356",
+              "inputKey": "length"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "405:366",
+              "inputKey": "frames_number"
             }
           ],
           "outputRule": {
@@ -1409,7 +1674,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 4
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -1425,10 +1690,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 832×448",
-            "dur": "2.04 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 832×448"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 24,
+              "frameStep": 8,
+              "frameOffset": 1
+            }
           },
           "publicationEvidence": {
             "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
@@ -1485,6 +1760,16 @@
               "field": "_seed",
               "nodeId": "398:339",
               "inputKey": "noise_seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "398:356",
+              "inputKey": "length"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "398:366",
+              "inputKey": "frames_number"
             }
           ],
           "outputRule": {
@@ -1494,7 +1779,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 4
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -1510,10 +1795,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 832×448",
-            "dur": "2.04 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 832×448"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 24,
+              "frameStep": 8,
+              "frameOffset": 1
+            }
           },
           "publicationEvidence": {
             "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
@@ -1573,6 +1868,16 @@
               "field": "_seed",
               "nodeId": "251:196",
               "inputKey": "noise_seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "251:201",
+              "inputKey": "length"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "251:197",
+              "inputKey": "frames_number"
             }
           ],
           "outputRule": {
@@ -1582,7 +1887,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 4
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -1598,10 +1903,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 832×480",
-            "dur": "2.04 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 832×480"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 24,
+              "frameStep": 8,
+              "frameOffset": 1
+            }
           },
           "publicationEvidence": {
             "testedCommit": "240268b8626ced26fef67159a11636674ae10915",
@@ -1658,6 +1973,11 @@
               "field": "_seed",
               "nodeId": "14",
               "inputKey": "noise_seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "8",
+              "inputKey": "length"
             }
           ],
           "outputRule": {
@@ -1667,7 +1987,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 4
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -1683,10 +2003,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 832×480",
-            "dur": "2.04 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 832×480"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 24,
+              "frameStep": 4,
+              "frameOffset": 1
+            }
           }
         }
       ]
@@ -1730,6 +2060,11 @@
               "field": "_seed",
               "nodeId": "127",
               "inputKey": "noise_seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "78",
+              "inputKey": "length"
             }
           ],
           "outputRule": {
@@ -1739,7 +2074,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 4
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -1755,10 +2090,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 832×480",
-            "dur": "2.04 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 832×480"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 24,
+              "frameStep": 4,
+              "frameOffset": 1
+            }
           }
         }
       ]
@@ -1802,6 +2147,11 @@
               "field": "_seed",
               "nodeId": "69:63",
               "inputKey": "seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "69:62",
+              "inputKey": "length"
             }
           ],
           "outputRule": {
@@ -1811,7 +2161,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 4
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -1827,10 +2177,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 768×512",
-            "dur": "2.04 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 768×512"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 24,
+              "frameStep": 4,
+              "frameOffset": 1
+            }
           }
         }
       ]
@@ -1871,6 +2231,16 @@
               "field": "_seed",
               "nodeId": "405:339",
               "inputKey": "noise_seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "405:356",
+              "inputKey": "length"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "405:366",
+              "inputKey": "frames_number"
             }
           ],
           "outputRule": {
@@ -1880,7 +2250,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 4
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -1896,10 +2266,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 832×448",
-            "dur": "2.04 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 832×448"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 24,
+              "frameStep": 8,
+              "frameOffset": 1
+            }
           }
         }
       ]
@@ -1935,6 +2315,11 @@
               "field": "_seed",
               "nodeId": "8",
               "inputKey": "noise_seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "6",
+              "inputKey": "length"
             }
           ],
           "outputRule": {
@@ -1944,7 +2329,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 4
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -1960,10 +2345,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 768×448",
-            "dur": "2.33 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 768×448"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 24,
+              "frameStep": 17,
+              "frameOffset": 5
+            }
           }
         }
       ]
@@ -2007,6 +2402,11 @@
               "field": "_seed",
               "nodeId": "8",
               "inputKey": "seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "6",
+              "inputKey": "length"
             }
           ],
           "outputRule": {
@@ -2016,7 +2416,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 4
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -2032,10 +2432,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 832×480",
-            "dur": "2.04 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 832×480"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 24,
+              "frameStep": 4,
+              "frameOffset": 1
+            }
           }
         }
       ]
@@ -2079,6 +2489,11 @@
               "field": "_seed",
               "nodeId": "69:63",
               "inputKey": "seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "69:62",
+              "inputKey": "length"
             }
           ],
           "outputRule": {
@@ -2088,7 +2503,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 4
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -2104,10 +2519,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 768×512",
-            "dur": "2.04 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 768×512"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 24,
+              "frameStep": 4,
+              "frameOffset": 1
+            }
           }
         }
       ]
@@ -2156,6 +2581,16 @@
               "field": "_seed",
               "nodeId": "398:339",
               "inputKey": "noise_seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "398:356",
+              "inputKey": "length"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "398:366",
+              "inputKey": "frames_number"
             }
           ],
           "outputRule": {
@@ -2165,7 +2600,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 4
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -2181,10 +2616,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 832×448",
-            "dur": "2.04 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 832×448"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 24,
+              "frameStep": 8,
+              "frameOffset": 1
+            }
           }
         }
       ]
@@ -2220,6 +2665,11 @@
               "field": "_seed",
               "nodeId": "8",
               "inputKey": "seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "6",
+              "inputKey": "length"
             }
           ],
           "outputRule": {
@@ -2229,7 +2679,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 4
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -2245,10 +2695,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 832×480",
-            "dur": "2.04 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 832×480"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 24,
+              "frameStep": 4,
+              "frameOffset": 1
+            }
           }
         }
       ]
@@ -2284,6 +2744,11 @@
               "field": "_seed",
               "nodeId": "129",
               "inputKey": "noise_seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "124",
+              "inputKey": "length"
             }
           ],
           "outputRule": {
@@ -2293,7 +2758,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 4
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -2309,10 +2774,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 832×480",
-            "dur": "2.04 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 832×480"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 24,
+              "frameStep": 4,
+              "frameOffset": 1
+            }
           }
         }
       ]
@@ -2348,6 +2823,11 @@
               "field": "_seed",
               "nodeId": "12:8",
               "inputKey": "seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "12:5",
+              "inputKey": "length"
             }
           ],
           "outputRule": {
@@ -2357,7 +2837,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 4
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -2373,10 +2853,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 832×480",
-            "dur": "2.04 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 832×480"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 24,
+              "frameStep": 4,
+              "frameOffset": 1
+            }
           }
         }
       ]
@@ -2433,6 +2923,11 @@
               "field": "_seed",
               "nodeId": "14",
               "inputKey": "noise_seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "8",
+              "inputKey": "length"
             }
           ],
           "outputRule": {
@@ -2442,7 +2937,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 4
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -2458,10 +2953,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 832×480",
-            "dur": "2.04 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 832×480"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 24,
+              "frameStep": 4,
+              "frameOffset": 1
+            }
           }
         }
       ]
@@ -2513,6 +3018,16 @@
               "field": "_seed",
               "nodeId": "251:196",
               "inputKey": "noise_seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "251:201",
+              "inputKey": "length"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "251:197",
+              "inputKey": "frames_number"
             }
           ],
           "outputRule": {
@@ -2522,7 +3037,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 4
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -2538,10 +3053,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 832×480",
-            "dur": "2.04 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 832×480"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 24,
+              "frameStep": 8,
+              "frameOffset": 1
+            }
           }
         }
       ]
@@ -2593,6 +3118,11 @@
               "field": "_seed",
               "nodeId": "8",
               "inputKey": "noise_seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "6",
+              "inputKey": "length"
             }
           ],
           "outputRule": {
@@ -2602,7 +3132,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 4
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -2618,10 +3148,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 768×448",
-            "dur": "2.33 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 768×448"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 24,
+              "frameStep": 17,
+              "frameOffset": 5
+            }
           }
         }
       ]
@@ -2673,6 +3213,11 @@
               "field": "_seed",
               "nodeId": "129",
               "inputKey": "noise_seed"
+            },
+            {
+              "field": "_durationFrames",
+              "nodeId": "136",
+              "inputKey": "length"
             }
           ],
           "outputRule": {
@@ -2682,7 +3227,7 @@
             "mime": "video/mp4",
             "maxPixels": 4194304,
             "maxSizeMB": 128,
-            "maxDurationSeconds": 4
+            "maxDurationSeconds": 20
           },
           "supportedOutputs": [
             {
@@ -2698,10 +3243,20 @@
           },
           "fixedFieldValidation": {
             "tier": "验证档位 · 864×480",
-            "dur": "2.33 秒",
+            "dur": "5 秒",
             "supportedTiers": [
               "验证档位 · 864×480"
-            ]
+            ],
+            "supportedDurations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "durationControl": {
+              "fps": 24,
+              "frameStep": 17,
+              "frameOffset": 5
+            }
           }
         }
       ]

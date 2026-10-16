@@ -136,7 +136,7 @@ public class WorkflowContractRegistry {
         WorkflowVersion.FixedFieldValidation fixed = fixedNode.isObject()
             ? new WorkflowVersion.FixedFieldValidation(
                 fixedNode.path("tier").asText(null), fixedNode.path("dur").asText(null),
-                readSupportedTiers(fixedNode))
+                readSupportedTiers(fixedNode), readSupportedDurations(fixedNode), readDurationControl(fixedNode))
             : null;
         JsonNode outputRule = binding.path("outputRule");
         Integer maxDuration = outputRule.hasNonNull("maxDurationSeconds")
@@ -176,6 +176,23 @@ public class WorkflowContractRegistry {
             }
         }
         return java.util.Collections.unmodifiableSet(tiers);
+    }
+
+    private java.util.List<String> readSupportedDurations(JsonNode fixedNode) {
+        JsonNode node = fixedNode.path("supportedDurations");
+        if (!node.isArray()) return java.util.List.of();
+        java.util.ArrayList<String> durations = new java.util.ArrayList<>();
+        for (JsonNode item : node) {
+            String text = item.asText("").trim();
+            if (!text.isEmpty() && !durations.contains(text)) durations.add(text);
+        }
+        return java.util.Collections.unmodifiableList(durations);
+    }
+
+    private WorkflowVersion.DurationControl readDurationControl(JsonNode fixedNode) {
+        JsonNode control = fixedNode.path("durationControl");
+        return control.isObject() ? new WorkflowVersion.DurationControl(control.path("fps").asInt(),
+            control.path("frameStep").asInt(), control.path("frameOffset").asInt()) : null;
     }
 
     private void register(WorkflowVersion version) {

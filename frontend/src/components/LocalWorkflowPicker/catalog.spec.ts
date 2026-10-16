@@ -32,6 +32,21 @@ describe('31 个工作流目录和提交边界', () => {
     expect(JSON.stringify(all)).not.toMatch(/class_type|nodeId|apiJsonFile|safetensors|192\.168\.|submitted_prompt/);
   });
 
+  it('五个本地视频模型均提供与后端一致的 5、10、20 秒档位', () => {
+    const contract = JSON.parse(readFileSync(new URL('../../../../script/video/workflows/native-workflow-contracts.json', import.meta.url), 'utf8'));
+    const bindings = contract.capabilities.flatMap((c: any) => c.workflows);
+    for (const option of video) {
+      const backend = bindings.find((w: any) => w.workflowCode === option.workflowCode);
+      expect(backend).toBeDefined();
+      expect(option.supportedDuration).toBe('5 秒');
+      expect(option.maxDurationSeconds).toBe(20);
+      for (const tier of option.supportedTiers) {
+        expect(option.supportedDurationsByTier[tier]).toEqual(['5 秒', '10 秒', '20 秒']);
+        expect(option.supportedDurationsByTier[tier]).toEqual(backend.fixedFieldValidation.supportedDurations);
+      }
+    }
+  });
+
   it('提交必须匹配媒体、能力、模型、版本和服务器发布许可', () => {
     const option = all[0]!;
     const registered = { ...option, status: 'PUBLISHED', submittable: true };

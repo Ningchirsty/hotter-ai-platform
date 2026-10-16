@@ -145,6 +145,10 @@ public final class H3TemplatePreparer {
             input.put("first", fields.firstFile()); input.put("last", fields.lastFile());
             input.put("reference1", fields.firstFile()); input.put("reference2", fields.lastFile());
             input.put("_seed", java.util.concurrent.ThreadLocalRandom.current().nextLong(Long.MAX_VALUE));
+            if (version.fixedFieldValidation() != null && version.fixedFieldValidation().durationControl() != null) {
+                input.put("_durationFrames", version.fixedFieldValidation().durationControl()
+                    .frames(parseDurationSeconds(fields.durationLabel())));
+            }
             try {
                 return org.dromara.ai.creative.NativeGraph.prepare(mapper, templateContent,
                     version.mapping().stream().map(m -> new org.dromara.ai.creative.NativeGraph.Input(m.field(), m.nodeId(), m.inputKey())).toList(), input);
@@ -451,7 +455,12 @@ public final class H3TemplatePreparer {
                     throw VideoTaskException.invalidContract(
                         fields.tier() + " 只支持时长 " + String.join(" / ", allowedDurations));
                 }
-            } else if (fixed.dur() != null && !fixed.dur().equals(fields.durationLabel())) {
+            } else if (!fixed.allowedDurations().isEmpty()
+                && !fixed.allowedDurations().contains(fields.durationLabel())) {
+                throw VideoTaskException.invalidContract(
+                    "视频时长只支持 " + String.join(" / ", fixed.allowedDurations()));
+            } else if (fixed.allowedDurations().isEmpty()
+                && fixed.dur() != null && !fixed.dur().equals(fields.durationLabel())) {
                 throw VideoTaskException.invalidContract(
                     "视频时长只支持 " + fixed.dur());
             }

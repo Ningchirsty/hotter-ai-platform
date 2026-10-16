@@ -35,7 +35,7 @@
       }
     ],
     "promptTemplate": "Commercial product motion shot based on the provided image. Action: ${action}. Camera: ${camera}. Keep the product shape and scene coherent. No subtitles, logos or watermark.",
-    "note": "先使用已验证的短片档位；此用途不要求音轨。",
+    "note": "可选择 5 秒、10 秒或 20 秒；此用途不要求音轨。",
     "acceptance": [
       "主体稳定，没有明显变形",
       "动作和镜头符合要求"
@@ -63,11 +63,13 @@
         ],
         "supportedDurationsByTier": {
           "验证档位 · 832×480": [
-            "2.04 秒"
+            "5 秒",
+            "10 秒",
+            "20 秒"
           ]
         },
-        "supportedDuration": "2.04 秒",
-        "maxDurationSeconds": 2.0416666666666665,
+        "supportedDuration": "5 秒",
+        "maxDurationSeconds": 20,
         "fps": 24.0,
         "apiChecksum": "39768892ff6b3de51574a8fb5f51ff902e98f8b718bb8d0845309db49b8d4a40",
         "sourceWorkflowCode": "wf-local-ready-wan22-a14b-4steps-i2v",
@@ -99,11 +101,13 @@
         ],
         "supportedDurationsByTier": {
           "验证档位 · 832×480": [
-            "2.04 秒"
+            "5 秒",
+            "10 秒",
+            "20 秒"
           ]
         },
-        "supportedDuration": "2.04 秒",
-        "maxDurationSeconds": 2.0416666666666665,
+        "supportedDuration": "5 秒",
+        "maxDurationSeconds": 20,
         "fps": 24.0,
         "apiChecksum": "3f4c70c287bcb0cdfb55dbcef4536635c97605cfdfecb1ac10b3f1922857aadb",
         "sourceWorkflowCode": "wf-local-video-hunyuan-video-1.5-720p-i2v",
@@ -135,11 +139,13 @@
         ],
         "supportedDurationsByTier": {
           "验证档位 · 768×512": [
-            "2.04 秒"
+            "5 秒",
+            "10 秒",
+            "20 秒"
           ]
         },
-        "supportedDuration": "2.04 秒",
-        "maxDurationSeconds": 2.0416666666666665,
+        "supportedDuration": "5 秒",
+        "maxDurationSeconds": 20,
         "fps": 24.0,
         "apiChecksum": "7c570d3c71352277dc865a55fd0e0eb1b5a91c100c31e5df0bb32eeb17107e41",
         "sourceWorkflowCode": "wf-local-video-kandinsky5-i2v",
@@ -218,11 +224,13 @@
         ],
         "supportedDurationsByTier": {
           "验证档位 · 832×448": [
-            "2.04 秒"
+            "5 秒",
+            "10 秒",
+            "20 秒"
           ]
         },
-        "supportedDuration": "2.04 秒",
-        "maxDurationSeconds": 2.0416666666666665,
+        "supportedDuration": "5 秒",
+        "maxDurationSeconds": 20,
         "fps": 24.0,
         "apiChecksum": "571c87a4403e89531e1fab5b7d319ade508f46e4bc2107556e384dd64dac1a3d",
         "sourceWorkflowCode": "wf-local-video-ltx2-5-t2v",
@@ -253,11 +261,13 @@
         ],
         "supportedDurationsByTier": {
           "验证档位 · 768×448": [
-            "2.33 秒"
+            "5 秒",
+            "10 秒",
+            "20 秒"
           ]
         },
-        "supportedDuration": "2.33 秒",
-        "maxDurationSeconds": 2.3333333333333335,
+        "supportedDuration": "5 秒",
+        "maxDurationSeconds": 20,
         "fps": 24.0,
         "apiChecksum": "624d3ea9aacd684ade9ddad6401199c9609de36a69c1eb7813cba37268631b5d",
         "sourceWorkflowCode": "wf-local-ready-minimaxh3-turbo-t2v-av",
@@ -335,11 +345,13 @@
         ],
         "supportedDurationsByTier": {
           "验证档位 · 832×480": [
-            "2.04 秒"
+            "5 秒",
+            "10 秒",
+            "20 秒"
           ]
         },
-        "supportedDuration": "2.04 秒",
-        "maxDurationSeconds": 2.0416666666666665,
+        "supportedDuration": "5 秒",
+        "maxDurationSeconds": 20,
         "fps": 24.0,
         "apiChecksum": "8cb946ce69d4e596c2e79dbc9e93c57a5bdd4c38c419f848c954d6536d25c73d",
         "sourceWorkflowCode": "wf-local-ready-wan22-5b-i2v",
@@ -371,11 +383,13 @@
         ],
         "supportedDurationsByTier": {
           "验证档位 · 768×512": [
-            "2.04 秒"
+            "5 秒",
+            "10 秒",
+            "20 秒"
           ]
         },
-        "supportedDuration": "2.04 秒",
-        "maxDurationSeconds": 2.0416666666666665,
+        "supportedDuration": "5 秒",
+        "maxDurationSeconds": 20,
         "fps": 24.0,
         "apiChecksum": "b382f66063637385a519f40ec2e110419ca164deb2511bee99b1e151586cdd7e",
         "sourceWorkflowCode": "wf-local-video-kandinsky5-i2v",
@@ -407,11 +421,13 @@
         ],
         "supportedDurationsByTier": {
           "验证档位 · 832×448": [
-            "2.04 秒"
+            "5 秒",
+            "10 秒",
+            "20 秒"
           ]
         },
-        "supportedDuration": "2.04 秒",
-        "maxDurationSeconds": 2.0416666666666665,
+        "supportedDuration": "5 秒",
+        "maxDurationSeconds": 20,
         "fps": 24.0,
         "apiChecksum": "5fb6a47032dd0ef493b589578ce8dd7efcf2c693f6a23bd4d246d1a8ed6cbc28",
         "sourceWorkflowCode": "wf-local-video-ltx2-5-i2v",
@@ -489,11 +505,13 @@
         ],
         "supportedDurationsByTier": {
           "验证档位 · 832×480": [
-            "2.04 秒"
+            "5 秒",
+            "10 秒",
+            "20 秒"
           ]
         },
-        "supportedDuration": "2.04 秒",
-        "maxDurationSeconds": 2.0416666666666665,
+        "supportedDuration": "5 秒",
+        "maxDurationSeconds": 20,
         "fps": 24.0,
         "apiChecksum": "a6b50a1cd7a910a1291ca9f89ef6460d134a6ed45ebc8b8e2b3dcc6c3a863c49",
         "sourceWorkflowCode": "wf-local-ready-wan22-5b-t2v",
@@ -524,11 +542,13 @@
         ],
         "supportedDurationsByTier": {
           "验证档位 · 832×480": [
-            "2.04 秒"
+            "5 秒",
+            "10 秒",
+            "20 秒"
           ]
         },
-        "supportedDuration": "2.04 秒",
-        "maxDurationSeconds": 2.0416666666666665,
+        "supportedDuration": "5 秒",
+        "maxDurationSeconds": 20,
         "fps": 24.0,
         "apiChecksum": "9bdef7d43a5cbec2db9208325985e5332fba83df0521f95598146fae618852f3",
         "sourceWorkflowCode": "wf-local-video-hunyuan-video-1.5-720p-t2v",
@@ -559,11 +579,13 @@
         ],
         "supportedDurationsByTier": {
           "验证档位 · 832×480": [
-            "2.04 秒"
+            "5 秒",
+            "10 秒",
+            "20 秒"
           ]
         },
-        "supportedDuration": "2.04 秒",
-        "maxDurationSeconds": 2.0416666666666665,
+        "supportedDuration": "5 秒",
+        "maxDurationSeconds": 20,
         "fps": 24.0,
         "apiChecksum": "c51cba03a4215dd96b14aacc6cc525d28cbc822600df87e64ab4b50db0438e96",
         "sourceWorkflowCode": "wf-local-video-kandinsky5-t2v",
@@ -634,11 +656,13 @@
         ],
         "supportedDurationsByTier": {
           "验证档位 · 832×480": [
-            "2.04 秒"
+            "5 秒",
+            "10 秒",
+            "20 秒"
           ]
         },
-        "supportedDuration": "2.04 秒",
-        "maxDurationSeconds": 2.0416666666666665,
+        "supportedDuration": "5 秒",
+        "maxDurationSeconds": 20,
         "fps": 24.0,
         "apiChecksum": "d3c2f4f0e57d212fa3e4c208f6b0c23c131a47c56f7d0c555fb25b82f66c5abb",
         "sourceWorkflowCode": "wf-local-ready-wan22-a14b-4steps-flf2v",
@@ -671,11 +695,13 @@
         ],
         "supportedDurationsByTier": {
           "验证档位 · 832×480": [
-            "2.04 秒"
+            "5 秒",
+            "10 秒",
+            "20 秒"
           ]
         },
-        "supportedDuration": "2.04 秒",
-        "maxDurationSeconds": 2.0416666666666665,
+        "supportedDuration": "5 秒",
+        "maxDurationSeconds": 20,
         "fps": 24.0,
         "apiChecksum": "cb054f8babe8332abaf634725eb128548ac98a38189922f720e1cc4eef486d23",
         "sourceWorkflowCode": "wf-local-video-ltx2-5-flf2v",
@@ -708,11 +734,13 @@
         ],
         "supportedDurationsByTier": {
           "验证档位 · 768×448": [
-            "2.33 秒"
+            "5 秒",
+            "10 秒",
+            "20 秒"
           ]
         },
-        "supportedDuration": "2.33 秒",
-        "maxDurationSeconds": 2.3333333333333335,
+        "supportedDuration": "5 秒",
+        "maxDurationSeconds": 20,
         "fps": 24.0,
         "apiChecksum": "97e3f089948a2517bac60555dd47b6dcea8e030a6f02b8e3a8e1554ba0486f98",
         "sourceWorkflowCode": "wf-local-ready-minimaxh3-turbo-flf2v-av",
@@ -791,11 +819,13 @@
         ],
         "supportedDurationsByTier": {
           "验证档位 · 864×480": [
-            "2.33 秒"
+            "5 秒",
+            "10 秒",
+            "20 秒"
           ]
         },
-        "supportedDuration": "2.33 秒",
-        "maxDurationSeconds": 2.3333333333333335,
+        "supportedDuration": "5 秒",
+        "maxDurationSeconds": 20,
         "fps": 24.0,
         "apiChecksum": "d11e2390bba213a3a7350b8b0e9c4dd233b4d7826da79dd462cb0fe111498052",
         "sourceWorkflowCode": "wf-local-video-minimax-h3-r2v",

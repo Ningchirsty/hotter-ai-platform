@@ -17,6 +17,8 @@ import org.dromara.ai.video.service.WorkflowContractRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -85,6 +87,8 @@ class VideoTaskOrchestratorTest {
         Long durationMillis = 5000L;
         boolean truncateCalled = false;
         Double capturedFps = null;
+        boolean audioAvailable = false;
+        boolean truncateWorks = true;
 
         StubMediaProbe() {
             super("ffprobe-not-used-in-tests", "ffmpeg-not-used-in-tests", 5);
@@ -101,10 +105,60 @@ class VideoTaskOrchestratorTest {
         public java.nio.file.Path truncate(java.nio.file.Path source, long maxMillis, Double fps) {
             truncateCalled = true;
             capturedFps = fps;
+            if (!truncateWorks) return source;
             // 模拟帧精确截断后的重新实测：时长变为上限值。
             this.durationMillis = maxMillis;
             return java.nio.file.Path.of("/tmp/capped.mp4");
         }
+
+        @Override
+        public boolean hasAudio(java.nio.file.Path file) { return audioAvailable; }
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {5, 10, 20})
+    void nativeDurationPaddingIsCappedBeforeCheckingRequestedDuration(int seconds) {
+        String code = "wf-local-ready-minimaxh3-turbo-t2v-av";
+        WorkflowVersion version = registry.require(code, true);
+        probe.measured = true;
+        probe.audioAvailable = true;
+        probe.width = 768;
+        probe.height = 448;
+        probe.durationMillis = Math.round(version.fixedFieldValidation().durationControl().frames(seconds) / 24.0 * 1000);
+        var context = new VideoTaskOrchestrator.TaskContext(1L, "000000", 100L, 10L,
+            "T2V", code, "茶壶轻柔冒出蒸汽", version.fixedFieldValidation().tier(),
+            seconds + " 秒", null, null, null, false, System::nanoTime, new AtomicInteger(0));
+        var result = orchestrator(2000).execute(context);
+        assertEquals(seconds * 1000L, result.output().durationMillis());
+        assertTrue(probe.truncateCalled);
+    }
+
+    @Test
+    void nativeShortClipCannotPassAsTwentySeconds() {
+        String code = "wf-local-ready-wan22-5b-t2v";
+        WorkflowVersion version = registry.require(code, true);
+        probe.measured = true;
+        probe.durationMillis = 2042L;
+        var context = new VideoTaskOrchestrator.TaskContext(1L, "000000", 100L, 10L,
+            "T2V", code, "茶壶轻柔冒出蒸汽", version.fixedFieldValidation().tier(),
+            "20 秒", null, null, null, false, System::nanoTime, new AtomicInteger(0));
+        assertThrows(VideoTaskException.class, () -> orchestrator(2000).execute(context));
+        assertFalse(probe.truncateCalled);
+    }
+
+    @Test
+    void nativeClipCannotSucceedWhenDurationCappingFails() {
+        String code = "wf-local-ready-minimaxh3-turbo-t2v-av";
+        WorkflowVersion version = registry.require(code, true);
+        probe.measured = true;
+        probe.audioAvailable = true;
+        probe.durationMillis = 5167L;
+        probe.truncateWorks = false;
+        var context = new VideoTaskOrchestrator.TaskContext(1L, "000000", 100L, 10L,
+            "T2V", code, "茶壶轻柔冒出蒸汽", version.fixedFieldValidation().tier(),
+            "5 秒", null, null, null, false, System::nanoTime, new AtomicInteger(0));
+        assertThrows(VideoTaskException.class, () -> orchestrator(2000).execute(context));
+        assertTrue(probe.truncateCalled);
     }
 
     @Test

@@ -21,11 +21,13 @@
     ],
     "supportedDurationsByTier": {
       "验证档位 · 768×448": [
-        "2.33 秒"
+        "5 秒",
+        "10 秒",
+        "20 秒"
       ]
     },
-    "supportedDuration": "2.33 秒",
-    "maxDurationSeconds": 2.3333333333333335,
+    "supportedDuration": "5 秒",
+    "maxDurationSeconds": 20,
     "fps": 24.0
   },
   {
@@ -49,11 +51,13 @@
     ],
     "supportedDurationsByTier": {
       "验证档位 · 768×448": [
-        "2.33 秒"
+        "5 秒",
+        "10 秒",
+        "20 秒"
       ]
     },
-    "supportedDuration": "2.33 秒",
-    "maxDurationSeconds": 2.3333333333333335,
+    "supportedDuration": "5 秒",
+    "maxDurationSeconds": 20,
     "fps": 24.0
   },
   {
@@ -78,11 +82,13 @@
     ],
     "supportedDurationsByTier": {
       "验证档位 · 832×480": [
-        "2.04 秒"
+        "5 秒",
+        "10 秒",
+        "20 秒"
       ]
     },
-    "supportedDuration": "2.04 秒",
-    "maxDurationSeconds": 2.0416666666666665,
+    "supportedDuration": "5 秒",
+    "maxDurationSeconds": 20,
     "fps": 24.0
   },
   {
@@ -106,11 +112,13 @@
     ],
     "supportedDurationsByTier": {
       "验证档位 · 832×480": [
-        "2.04 秒"
+        "5 秒",
+        "10 秒",
+        "20 秒"
       ]
     },
-    "supportedDuration": "2.04 秒",
-    "maxDurationSeconds": 2.0416666666666665,
+    "supportedDuration": "5 秒",
+    "maxDurationSeconds": 20,
     "fps": 24.0
   },
   {
@@ -135,11 +143,13 @@
     ],
     "supportedDurationsByTier": {
       "验证档位 · 832×480": [
-        "2.04 秒"
+        "5 秒",
+        "10 秒",
+        "20 秒"
       ]
     },
-    "supportedDuration": "2.04 秒",
-    "maxDurationSeconds": 2.0416666666666665,
+    "supportedDuration": "5 秒",
+    "maxDurationSeconds": 20,
     "fps": 24.0
   },
   {
@@ -165,11 +175,13 @@
     ],
     "supportedDurationsByTier": {
       "验证档位 · 832×480": [
-        "2.04 秒"
+        "5 秒",
+        "10 秒",
+        "20 秒"
       ]
     },
-    "supportedDuration": "2.04 秒",
-    "maxDurationSeconds": 2.0416666666666665,
+    "supportedDuration": "5 秒",
+    "maxDurationSeconds": 20,
     "fps": 24.0
   },
   {
@@ -195,11 +207,13 @@
     ],
     "supportedDurationsByTier": {
       "验证档位 · 768×448": [
-        "2.33 秒"
+        "5 秒",
+        "10 秒",
+        "20 秒"
       ]
     },
-    "supportedDuration": "2.33 秒",
-    "maxDurationSeconds": 2.3333333333333335,
+    "supportedDuration": "5 秒",
+    "maxDurationSeconds": 20,
     "fps": 24.0
   },
   {
@@ -224,11 +238,13 @@
     ],
     "supportedDurationsByTier": {
       "验证档位 · 832×480": [
-        "5.06 秒"
+        "5 秒",
+        "10 秒",
+        "20 秒"
       ]
     },
-    "supportedDuration": "5.06 秒",
-    "maxDurationSeconds": 5.0625,
+    "supportedDuration": "5 秒",
+    "maxDurationSeconds": 20,
     "fps": 16.0
   },
   {
@@ -254,11 +270,13 @@
     ],
     "supportedDurationsByTier": {
       "验证档位 · 832×480": [
-        "3.06 秒"
+        "5 秒",
+        "10 秒",
+        "20 秒"
       ]
     },
-    "supportedDuration": "3.06 秒",
-    "maxDurationSeconds": 3.0625,
+    "supportedDuration": "5 秒",
+    "maxDurationSeconds": 20,
     "fps": 16.0
   },
   {
@@ -282,11 +300,13 @@
     ],
     "supportedDurationsByTier": {
       "验证档位 · 832×480": [
-        "2.04 秒"
+        "5 秒",
+        "10 秒",
+        "20 秒"
       ]
     },
-    "supportedDuration": "2.04 秒",
-    "maxDurationSeconds": 2.0416666666666665,
+    "supportedDuration": "5 秒",
+    "maxDurationSeconds": 20,
     "fps": 24.0
   },
   {
@@ -310,11 +330,13 @@
     ],
     "supportedDurationsByTier": {
       "验证档位 · 864×480": [
-        "2.33 秒"
+        "5 秒",
+        "10 秒",
+        "20 秒"
       ]
     },
-    "supportedDuration": "2.33 秒",
-    "maxDurationSeconds": 2.3333333333333335,
+    "supportedDuration": "5 秒",
+    "maxDurationSeconds": 20,
     "fps": 24.0
   },
   {
@@ -339,11 +361,13 @@
     ],
     "supportedDurationsByTier": {
       "验证档位 · 640×640": [
-        "2.33 秒"
+        "5 秒",
+        "10 秒",
+        "20 秒"
       ]
     },
-    "supportedDuration": "2.33 秒",
-    "maxDurationSeconds": 2.3333333333333335,
+    "supportedDuration": "5 秒",
+    "maxDurationSeconds": 20,
     "fps": 24.0
   },
   {
@@ -369,11 +393,13 @@
     ],
     "supportedDurationsByTier": {
       "验证档位 · 864×480": [
-        "2.33 秒"
+        "5 秒",
+        "10 秒",
+        "20 秒"
       ]
     },
-    "supportedDuration": "2.33 秒",
-    "maxDurationSeconds": 2.3333333333333335,
+    "supportedDuration": "5 秒",
+    "maxDurationSeconds": 20,
     "fps": 24.0
   },
   {
@@ -397,11 +423,13 @@
     ],
     "supportedDurationsByTier": {
       "验证档位 · 832×480": [
-        "2.04 秒"
+        "5 秒",
+        "10 秒",
+        "20 秒"
       ]
     },
-    "supportedDuration": "2.04 秒",
-    "maxDurationSeconds": 2.0416666666666665,
+    "supportedDuration": "5 秒",
+    "maxDurationSeconds": 20,
     "fps": 24.0
   },
   {
@@ -426,11 +454,13 @@
     ],
     "supportedDurationsByTier": {
       "验证档位 · 768×512": [
-        "2.04 秒"
+        "5 秒",
+        "10 秒",
+        "20 秒"
       ]
     },
-    "supportedDuration": "2.04 秒",
-    "maxDurationSeconds": 2.0416666666666665,
+    "supportedDuration": "5 秒",
+    "maxDurationSeconds": 20,
     "fps": 24.0
   },
   {
@@ -454,11 +484,13 @@
     ],
     "supportedDurationsByTier": {
       "验证档位 · 832×480": [
-        "2.04 秒"
+        "5 秒",
+        "10 秒",
+        "20 秒"
       ]
     },
-    "supportedDuration": "2.04 秒",
-    "maxDurationSeconds": 2.0416666666666665,
+    "supportedDuration": "5 秒",
+    "maxDurationSeconds": 20,
     "fps": 24.0
   },
   {
@@ -483,11 +515,13 @@
     ],
     "supportedDurationsByTier": {
       "验证档位 · 832×480": [
-        "2.04 秒"
+        "5 秒",
+        "10 秒",
+        "20 秒"
       ]
     },
-    "supportedDuration": "2.04 秒",
-    "maxDurationSeconds": 2.0416666666666665,
+    "supportedDuration": "5 秒",
+    "maxDurationSeconds": 20,
     "fps": 24.0
   },
   {
@@ -511,11 +545,13 @@
     ],
     "supportedDurationsByTier": {
       "验证档位 · 832×448": [
-        "2.04 秒"
+        "5 秒",
+        "10 秒",
+        "20 秒"
       ]
     },
-    "supportedDuration": "2.04 秒",
-    "maxDurationSeconds": 2.0416666666666665,
+    "supportedDuration": "5 秒",
+    "maxDurationSeconds": 20,
     "fps": 24.0
   },
   {
@@ -540,11 +576,13 @@
     ],
     "supportedDurationsByTier": {
       "验证档位 · 832×448": [
-        "2.04 秒"
+        "5 秒",
+        "10 秒",
+        "20 秒"
       ]
     },
-    "supportedDuration": "2.04 秒",
-    "maxDurationSeconds": 2.0416666666666665,
+    "supportedDuration": "5 秒",
+    "maxDurationSeconds": 20,
     "fps": 24.0
   },
   {
@@ -570,11 +608,13 @@
     ],
     "supportedDurationsByTier": {
       "验证档位 · 832×480": [
-        "2.04 秒"
+        "5 秒",
+        "10 秒",
+        "20 秒"
       ]
     },
-    "supportedDuration": "2.04 秒",
-    "maxDurationSeconds": 2.0416666666666665,
+    "supportedDuration": "5 秒",
+    "maxDurationSeconds": 20,
     "fps": 24.0
   }
 ]
