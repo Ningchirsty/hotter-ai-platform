@@ -24,6 +24,7 @@
 | `9e1eecd7` | 能力域/Q3 | dryRun 补 `wouldRequireApproval` 与只读 `quotaStatus`（不写审计/不写账本/不消耗额度/只回本人额度）+ 试调助手第 ⑤ 段渲染"预判" |
 | `8c0677a7` | 能力域/Q1C+Q6 | **高风险变更轻量门槛**：新增权限点 `aig:capability:high-risk`（只授 aig_admin）+ 规则纯函数/闸门 + 路由策略（新增/编辑/删除）与能力（停用/删除）接线 + 前端确认框（原因 + 权限点 + 影响面） |
 | `5b82c9f6` | Q5/门户 | **员工自助**「我的额度 / 我的申请」：门户工具栏 → 弹窗两页签（额度四态含"读不到"；申请含「已批准但已过期」；续期=新单，按 `aig:approval:apply` 决定是否给入口）——**无新增权限点/菜单/路由/建表** |
+| `8b0e1d1a` | 能力域/Q2C | **能力声明最低数据等级**：`aig_capability.min_data_level`（ALTER + 重放清单）+ 路由 `max(声明, 调用方)` **只抬不降**（放在路由引擎，所有入口一处生效）+ 生效等级落审计/审批核对 + 「调低/清空」高风险 + **限制级能力的候选变更**需高风险权限（补 Q1C 那半条） |
 
 > 表里是**有实质内容的提交**；纯文档补记（例如把本表自己补上一行）不逐条登记——它们不改变交付物。
 > `check-aigov-docs.mjs` 会核对**本节**每个提交号都是当前分支 HEAD 的祖先（抄错/被 rebase 掉会红）。
@@ -127,8 +128,9 @@
 
 ## 4 验证汇总
 
-- 后端 `ruoyi-ai-gov`：**1401 tests / 0 failures / 0 errors**（基线 1053 → 新增 348；其中 **能力域重构 P0 13 条**、
-  **Q6 影响面 5 条**、**训练台能力就绪度预检与能力事实查询 14 条**、**Q3 预演闸门 5 条**、**Q1C 高风险门槛 10 条**，见 §8）。
+- 后端 `ruoyi-ai-gov`：**1412 tests / 0 failures / 0 errors**（基线 1053 → 新增 359；其中 **能力域重构 P0 13 条**、
+  **Q6 影响面 5 条**、**训练台能力就绪度预检与能力事实查询 14 条**、**Q3 预演闸门 5 条**、**Q1C 高风险门槛 12 条**、
+  **Q2C 声明等级/生效等级 11 条**，见 §8）。
   > 勘误（2026-10-16）：本节此前记的 **1367** 是 **Q6 影响面提交（`56563b8b`）之前**的数，
   > 漏计了 Q6 的 5 条（引用服务 4 + 路由烟测 1）。⇒ 以本节为准
   > （`script/ci/check-aigov-docs.mjs` 是拿本节数字与磁盘报告对账，所以它本来就会把这类漂移报出来）。
@@ -140,7 +142,7 @@
   它同时会跑"每个有测试的模块都必须产出 Surefire 报告"的台账守卫。
   ⚠️ 该模式需要 CI 前置步骤装好的 **ffmpeg/ffprobe**（缺了会是 `ruoyi-ai` 的 4 个媒体用例报
   "图片格式转换服务不可用"——环境前提，不是本分支的回归；见 §7.2）。
-- 前端 `frontend`：**56 files / 565 tests** 全过；`oxlint src` 568 files 0/0；
+- 前端 `frontend`：**56 files / 566 tests** 全过；`oxlint src` 568 files 0/0；
   **生产构建 `vite build --mode production` 通过**（与 CI 的 `pnpm build:prod` 同一条命令）。
   其中 `views/aigov/sfcCompile.spec.ts` 真编译全部 34 个治理层 SFC
   （无 DOM 环境下的最低保证：模板/`<script setup>` 写错会在这里红），
@@ -182,6 +184,7 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
 | 脚本 | 内容 |
 | --- | --- |
 | `script/sql/aig_task_step_node_identity.sql` | 给已有步骤账本补 `node_type`/`node_ref`（information_schema + PREPARE，幂等） |
+| `script/sql/aig_capability_min_data_level.sql` | 给 `aig_capability` 补 `min_data_level`（能力声明的最低数据等级，Q2C；**NULL = 不声明**，存量能力行为不变） |
 
 > **这两类脚本已加进 `.github/workflows/deploy-poc.yml` 的 `Prepare additive runtime schema` 重放清单**，
 > 由构建期守卫 `AigDeploySchemaReplayCoverageTest` 把关：**只写在文档里的"部署清单"没人会在切镜像前
@@ -434,11 +437,22 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src 
 | 续期入口 | 「重新申请」只出现在**现在没有有效授权**的行（驳回 / 超时未批 / 撤回 / 已过期）；**待审批**与**仍在有效期内**的行不给（重复单只会打扰审批人）。提交需要 `aig:approval:apply`：没有该权限时不显示按钮并说明找谁，而不是点了才 403 | 同上（`renewable` / `renewalHint`） |
 | 边界（沿用后端口径） | 两个接口 `/aigov/quota/my-usage`、`/aigov/approval/my` **都不挂权限点**（登录即可见**自己**，后端用登录态覆盖 `requesterId`）⇒ **不新增权限点、不新增菜单/路由、不改表**；也因此不占治理台导航 | — |
 
-**仍未做（P1 尾巴 / P2）**：数据等级取最高 `min_data_level`（Q2C，需一条 ALTER；届时一并补"限制级能力的候选变更"那半条 Q1C 规则）、
-Q1C 的**完整版**（变更单 + 批准 + 生效记录，需新表）——以及 22 项交互规范与其余模块按 v3 改写。
+**Q2C「能力声明的最低数据等级」（唯一要改表的一项）**
 
-**验证**（本次实测，2026-10-16）：后端 **1401 tests / 0 failures / 0 errors**；
-前端 **56 files / 565 tests**；`oxlint` **568 files 0/0**；`vite build` 通过；`verify-aigov-v1.mjs` 全绿。
+| 层 | 交付 | 文件 |
+| --- | --- | --- |
+| 迁移 | `aig_capability.min_data_level`（VARCHAR(16)，**NULL = 不声明**）；幂等（information_schema + PREPARE）并已进 `deploy-poc.yml` 重放清单 | `script/sql/aig_capability_min_data_level.sql`、`.github/workflows/deploy-poc.yml` |
+| 口径 | 抽成纯函数 `AigDataLevelEscalation`：生效等级 = **max(声明, 调用方传入)**，**只抬不降**；声明无法识别时保留调用方等级**并在命中明细里写出来**（不静默失效） | `helper/AigDataLevelEscalation` |
+| 路由 | 在**路由引擎**里合并（步骤 1.5）：后面每一步（找策略 / 判外发 / 筛候选）都用生效等级；新增 `AigRouteDecision#effectiveDataLevel` 供上层与审计读取 | `AigRouteServiceImpl#doDecide`、`AigRouteDecision` |
+| 调用入口 | `invoke` 改用**生效等级**落审计 / 决策账本 / 审批核对（否则会出现"审计写 INTERNAL、实际按 RESTRICTED 跑"、"按 RESTRICTED 要求审批却拿 INTERNAL 的授权核对"） | `AigInvokeServiceImpl#effectiveLevel` |
+| 校验与高风险 | 声明值只接受四个等级（服务端兜底 + 表单四个选项）；**调低/清空**已声明的等级 = 高风险（松锁）；**限制级/严格级能力的候选变更**（新增/改/删）也需 `aig:capability:high-risk`——这正是 Q1C 里因"没有声明等级列"而留到本轮的那半条规则 | `AigCapabilityServiceImpl#assertLegalMinDataLevel`、`AigHighRiskChanges#forMinDataLevelChange`/`forCandidateChange`、`AigModelBindingServiceImpl` |
+| 前端 | 能力表单新增「最低数据等级」下拉（默认不声明）+ 就地解释"只抬不降"；详情页显示声明值与"候选变更属高风险"提示；候选编辑/删除前弹确认框 | `capability/index.vue`、`capability/components/CapabilityDetail.vue`、`capability/presentation.ts#minDataLevelOptions`/`minDataLevelLabel`/`candidateChangeNeedsHighRisk` |
+
+**Q2C 之后 P1 已全部完成**：剩下的只有 Q1C **完整版**（变更单 + 批准 + 生效记录，需新表，属 P2）与
+22 项交互规范 / 其余模块按 v3 改写（P2）。
+
+**验证**（本次实测，2026-10-16）：后端 **1412 tests / 0 failures / 0 errors**；前端 **56 files / 566 tests**；
+`oxlint` **568 files 0/0**；`vite build` 通过；`verify-aigov-v1.mjs` 全绿。
 
 **Q1C「高风险变更轻量门槛」+ Q6 剩余（改策略 / 停用入口的同一套确认）**
 
