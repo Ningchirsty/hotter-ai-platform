@@ -12,6 +12,7 @@
             </p>
           </div>
           <div class="toolbar-actions">
+            <el-button plain icon="Wallet" @click="mineVisible = true">我的额度与申请</el-button>
             <el-button v-if="defaultRoleCode" plain icon="Close" @click="handleClearDefault">清空默认岗位</el-button>
             <el-button icon="Refresh" @click="reload">刷新</el-button>
           </div>
@@ -377,6 +378,9 @@
       :action="launchAction"
       @launched="handleLaunched"
     />
+
+    <!-- Q5 员工自助：我的额度 / 我的申请（只看自己，不需要治理权限） -->
+    <MyQuotaAndApprovals v-model="mineVisible" />
   </div>
 </template>
 
@@ -413,6 +417,7 @@ import { useLoading } from '@/hooks/async/useLoading';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import modal from '@/plugins/modal';
 import LaunchFormDrawer from './LaunchFormDrawer.vue';
+import MyQuotaAndApprovals from '../mine/MyQuotaAndApprovals.vue';
 import {
   assetDomainLabel,
   assetPageEmptyHint,
@@ -447,6 +452,8 @@ const taskQuery = ref<AigPortalTaskQuery>({ pageNum: 1, pageSize: 10 });
 
 /** 启动表单（非导航类卡片走这里：预检 → 确认） */
 const launchVisible = ref(false);
+/** Q5 员工自助弹窗（我的额度 / 我的申请） */
+const mineVisible = ref(false);
 const launchAction = ref<AigPortalActionVO>();
 
 /** 偏好（收藏 + 默认岗位）；只是"先看哪个"，不参与可见性判定 */
