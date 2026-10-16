@@ -31,6 +31,7 @@
 | `e9d73d21` | P2/交互规范 | 第三批空态：9 个页面 / 18 张表（artifactDraft / package / portal / resourceBinding / rolePackage / servicetoken / skill / studio / task），`skill` 与 `task` 达到全覆盖 |
 | `0c6d9ef3` | P2/分页 | **问题队列分页**：新增 `GET /aigov/feedback/queue/page`（与全量版**共用同一份过滤条件**），前端队列页改分页 + 改筛选回第 1 页；旧全量接口保留 |
 | `73d75d54` | P2/交互规范 | 第四批空态：弹窗子表 / 多类表格 15 张（走读 U10 的"20+ 处无空态"收口）；顺带**修掉一个坏按钮**（portal 任务表空态按钮写了不存在的 `getList`，真实 loader 是 `getTasks`） |
+| `b9956efd` | 能力域/Q1C 完整版 | **高风险变更单**：新表 `aig_change_request` + 申请/批准/驳回/撤销/分页接口 + **批准即执行（乐观并发校验，冲突置 CONFLICTED 且不覆盖别人的改动）** + 申请人不得自批 + 前端抽屉（before→after 逐项对比） |
 
 > 表里是**有实质内容的提交**；纯文档补记（例如把本表自己补上一行）不逐条登记——它们不改变交付物。
 > `check-aigov-docs.mjs` 会核对**本节**每个提交号都是当前分支 HEAD 的祖先（抄错/被 rebase 掉会红）。
@@ -134,9 +135,9 @@
 
 ## 4 验证汇总
 
-- 后端 `ruoyi-ai-gov`：**1413 tests / 0 failures / 0 errors**（基线 1053 → 新增 360；其中 **能力域重构 P0 13 条**、
+- 后端 `ruoyi-ai-gov`：**1420 tests / 0 failures / 0 errors**（基线 1053 → 新增 367；其中 **能力域重构 P0 13 条**、
   **Q6 影响面 5 条**、**训练台能力就绪度预检与能力事实查询 14 条**、**Q3 预演闸门 5 条**、**Q1C 高风险门槛 12 条**、
-  **Q2C 声明等级/生效等级 11 条**、**问题队列分页 1 条**，见 §8）。
+  **Q2C 声明等级/生效等级 11 条**、**问题队列分页 1 条**、**Q1C 完整版变更单 7 条**，见 §8）。
   > 勘误（2026-10-16）：本节此前记的 **1367** 是 **Q6 影响面提交（`56563b8b`）之前**的数，
   > 漏计了 Q6 的 5 条（引用服务 4 + 路由烟测 1）。⇒ 以本节为准
   > （`script/ci/check-aigov-docs.mjs` 是拿本节数字与磁盘报告对账，所以它本来就会把这类漂移报出来）。
@@ -148,7 +149,7 @@
   它同时会跑"每个有测试的模块都必须产出 Surefire 报告"的台账守卫。
   ⚠️ 该模式需要 CI 前置步骤装好的 **ffmpeg/ffprobe**（缺了会是 `ruoyi-ai` 的 4 个媒体用例报
   "图片格式转换服务不可用"——环境前提，不是本分支的回归；见 §7.2）。
-- 前端 `frontend`：**57 files / 572 tests** 全过；`oxlint src` 572 files 0/0；
+- 前端 `frontend`：**58 files / 578 tests** 全过；`oxlint src` 577 files 0/0；
   **生产构建 `vite build --mode production` 通过**（与 CI 的 `pnpm build:prod` 同一条命令）。
   其中 `views/aigov/sfcCompile.spec.ts` 真编译全部 34 个治理层 SFC
   （无 DOM 环境下的最低保证：模板/`<script setup>` 写错会在这里红），
@@ -191,6 +192,7 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
 | --- | --- |
 | `script/sql/aig_task_step_node_identity.sql` | 给已有步骤账本补 `node_type`/`node_ref`（information_schema + PREPARE，幂等） |
 | `script/sql/aig_capability_min_data_level.sql` | 给 `aig_capability` 补 `min_data_level`（能力声明的最低数据等级，Q2C；**NULL = 不声明**，存量能力行为不变） |
+| `script/sql/aig_change_request.sql` | **新表** `aig_change_request`（高风险变更单：申请 → 批准 → 生效记录；`create table if not exists`） |
 
 > **这两类脚本已加进 `.github/workflows/deploy-poc.yml` 的 `Prepare additive runtime schema` 重放清单**，
 > 由构建期守卫 `AigDeploySchemaReplayCoverageTest` 把关：**只写在文档里的"部署清单"没人会在切镜像前
@@ -510,7 +512,36 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src 
 - 结论（对我们的口径）：**"5 处"这个数现在无法复核**，按上面口径重测后真实缺口是 2 处、已补；这一点如实记下，
   避免以后有人拿"5 处"当结论继续找。
 
-**验证**（本次实测，2026-10-16）：后端 **1413 tests / 0 failures / 0 errors**；
+**Q1C 完整版：变更单 + 批准 + 生效记录（2026-10-16）**
+
+轻量版把高风险改动挡在 `aig:capability:high-risk` 后面，但它补不了两件事：**没有该权限的人提不出这类改动**
+（只能去 IM 上找管理员）、以及**没有"谁批的 / 批的是什么值"**。完整版把高风险变更变成一张单子。
+
+> **两个语义我替你定了（写在最前面，便于你否决）**：
+> ① **谁能批**：`aig:capability:high-risk` 的持有者，且**申请人不得自批**——这条沿用 `aig_call_approval`
+> 已经在本仓落地的同一规矩（"一张单子要两个人才能成立"），服务端强制、不靠页面藏按钮。
+> 这也顺带解释了为什么**不需要新权限点**：申请人只需要 `aig:capability:edit`（能改配置就能提单），
+> "能放宽边界的人"就是"该批这件事的人"，与轻量版闸门同一权限点。
+> ② **批准即执行**：审批的意义就是"批了就生效"。不做"批准后还要人再点一次应用"——那样单子容易烂尾，
+> 而且没人知道到底生效了没有。**执行前与现场逐字段比对**（乐观并发）：不一致就置 `CONFLICTED`
+> 并说清是谁先改了，**绝不覆盖别人的改动**。
+
+| 层 | 交付 | 文件 |
+| --- | --- | --- |
+| 迁移 | 新表 `aig_change_request`（已进部署重放清单） | `script/sql/aig_change_request.sql` |
+| 后端 | `POST /aigov/change-request`（申请，`capability:edit`）、`GET /list`、`GET /my`、`POST /{id}/approve|reject|cancel`（批准/驳回用 `high-risk`）；状态 PENDING / APPLIED / REJECTED / CANCELLED / **CONFLICTED**；本轮覆盖**路由策略三件套**（新增/修改/删除） | `changerequest/**`（domain / mapper / service / controller / enums） |
+| 执行 | 批准时**复用既有服务方法**（`routePolicyService.create/update/remove`）⇒ Q1C 闸门仍生效，**这条路径不提供任何绕过闸门的方式** | `AigChangeRequestServiceImpl#applyChange` |
+| 前端 | 能力清单工具栏「高风险变更单」→ 抽屉：待批准 / 我提交的 / 全部三个范围、before→after 逐项对比、批准/驳回/撤回、提交表单 | `views/aigov/changeRequest/ChangeRequestDrawer.vue`、`presentation.ts`、`api/aigov/changeRequest/**` |
+
+**一处刻意的取舍（不写出来将来会被当成漏了事务）**：`approve` **不加 `@Transactional`**。
+冲突/执行失败都要**留下那一行**（那是留痕事实），而异常会把"写入 CONFLICTED"一起回滚——
+页面上就什么都没有了（同类教训：知识索引的 FAILED 记录也曾被外层事务回滚掉）。
+所以批准返回**处理后的单子**而不是抛异常，由前端按 `APPLIED` / `CONFLICTED` 如实展示。
+
+**未做（如实列出）**：变更单目前只覆盖路由策略三件套；能力停用/删除、候选变更也能套这套，
+但"目标值"形态不同，等真有人要按单子批再扩。Q1C 的**审批流**（多级、会签）没有做——本版是单级批准。
+
+**验证**（本次实测，2026-10-16）：后端 **1420 tests / 0 failures / 0 errors**；
 前端 **57 files / 572 tests**；`oxlint` **572 files 0/0**；`vite build` 通过；`verify-aigov-v1.mjs` 全绿。
 
 **Q2C 之后 P1 已全部完成**：剩下的只有 Q1C **完整版**（变更单 + 批准 + 生效记录，需新表，属 P2）与
