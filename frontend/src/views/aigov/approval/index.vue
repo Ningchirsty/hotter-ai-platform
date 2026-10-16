@@ -333,6 +333,17 @@ const handleCancel = async (row: AigCallApprovalVO) => {
 };
 
 const handleExpireScan = async () => {
+  // 危险操作统一确认结构（走读 §5.5）：做哪件事 + 影响什么 + 能不能恢复。
+  // 这一次是**批量改状态**：一次点击会把所有超时未批的单子置为「已超时未批」，且不可逆。
+  try {
+    await modal.confirm(
+      '现在做一次「超时扫描」？做的是：把所有已超过审批时限的待审批单一次性置为「已超时未批」。'
+        + '影响：这些单子之后不能再被批准，申请人需要重新提交一张。能不能恢复：不能。'
+        + '（只想看有没有超时单的话，用上面的状态筛选即可，不必跑扫描。）'
+    );
+  } catch {
+    return;
+  }
   const res = await expireScanApproval();
   modal.msgSuccess('超时扫描完成：本次置为「已超时」' + (res.data?.expired ?? 0) + ' 张');
   getList();

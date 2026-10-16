@@ -639,6 +639,17 @@ const doIndexVersion = async (option: any) => {
     modal.msgWarning('请选择要解析的原文文件');
     return;
   }
+  // 危险操作统一确认结构（走读 §5.5）：做哪件事 + 影响什么 + 能不能恢复
+  try {
+    await modal.confirm(
+      `解析并索引「${file.name}」？做的是：解析原文、切段、写入分段与向量索引。`
+        + '影响：这一版的分段与索引会被这次结果覆盖（检索立刻按新结果走）。'
+        + '不能恢复的点：如果该版本已经是「就绪」，服务端会拒绝原地重建（版本不可变），'
+        + '需要先新建一个版本再处理。'
+    );
+  } catch {
+    return;
+  }
   indexing.value = true;
   indexingResult.value = undefined;
   try {
