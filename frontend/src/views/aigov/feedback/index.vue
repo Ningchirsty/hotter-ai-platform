@@ -70,11 +70,21 @@
             <el-button size="small" @click="loadQueue">刷新</el-button>
           </AigEmptyState>
         </template>
-        <el-table-column label="反馈ID" prop="feedbackId" width="180" />
-        <el-table-column label="任务" prop="taskId" width="180" />
-        <el-table-column label="结果" prop="resultId" width="180" />
-        <el-table-column label="Agent 版本" prop="agentVersionId" width="180" show-overflow-tooltip />
-        <el-table-column label="知识版本" prop="knowledgeVersionId" width="180" show-overflow-tooltip />
+        <el-table-column label="反馈ID" width="160">
+          <template #default="{ row }"><AigLongId :id="row.feedbackId" :keep="6" /></template>
+        </el-table-column>
+        <el-table-column label="任务" width="160">
+          <template #default="{ row }"><AigLongId :id="row.taskId" :keep="6" /></template>
+        </el-table-column>
+        <el-table-column label="结果" width="160">
+          <template #default="{ row }"><AigLongId :id="row.resultId" :keep="6" /></template>
+        </el-table-column>
+        <el-table-column label="Agent 版本" width="160">
+          <template #default="{ row }"><AigLongId :id="row.agentVersionId" :keep="6" /></template>
+        </el-table-column>
+        <el-table-column label="知识版本" width="160">
+          <template #default="{ row }"><AigLongId :id="row.knowledgeVersionId" :keep="6" /></template>
+        </el-table-column>
         <el-table-column label="原因" width="120">
           <template #default="{ row }">{{ reasonLabel(row.reasonCode) }}</template>
         </el-table-column>
@@ -151,6 +161,7 @@ import type {
 import modal from '@/plugins/modal';
 import { useLoading } from '@/hooks/async/useLoading';
 import AigEmptyState from '../components/AigEmptyState.vue';
+import AigLongId from '../components/AigLongId.vue';
 import {
   ACTION_OPTIONS,
   QUEUE_ACTION_FILTERS,

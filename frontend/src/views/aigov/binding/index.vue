@@ -58,10 +58,30 @@
       </template>
 
       <el-table v-loading="loading" border class="data-table" :data="bindingList">
-        <el-table-column label="绑定ID" align="center" prop="bindingId" width="160" show-overflow-tooltip />
-        <el-table-column label="Agent版本ID" align="center" prop="agentVersionId" width="160" show-overflow-tooltip />
-        <el-table-column label="公司" align="center" prop="companyId" width="120" show-overflow-tooltip />
-        <el-table-column label="品牌" align="center" prop="brandId" width="120" show-overflow-tooltip />
+        <template #empty>
+          <AigEmptyState
+            icon="Link"
+            title="还没有工具/知识绑定"
+            hint="绑定 = 「这个 Agent 版本在什么范围内可以用这些工具/知识」；解绑后用同一范围可以重新绑。"
+          >
+            <el-button v-hasPermi="['aig:agent:binding']" type="primary" size="small" @click="handleAdd">
+              新增绑定
+            </el-button>
+            <el-button size="small" @click="getList">刷新</el-button>
+          </AigEmptyState>
+        </template>
+        <el-table-column label="绑定ID" align="center" width="160">
+          <template #default="scope"><AigLongId :id="scope.row.bindingId" :keep="6" /></template>
+        </el-table-column>
+        <el-table-column label="Agent版本ID" align="center" width="160">
+          <template #default="scope"><AigLongId :id="scope.row.agentVersionId" :keep="6" /></template>
+        </el-table-column>
+        <el-table-column label="公司" align="center" width="130">
+          <template #default="scope"><AigLongId :id="scope.row.companyId" :keep="5" /></template>
+        </el-table-column>
+        <el-table-column label="品牌" align="center" width="130">
+          <template #default="scope"><AigLongId :id="scope.row.brandId" :keep="5" /></template>
+        </el-table-column>
         <el-table-column label="场景" align="center" prop="scenarioCode" width="140" show-overflow-tooltip />
         <el-table-column label="角色范围" align="center" prop="roleScope" show-overflow-tooltip />
         <el-table-column label="通道" align="center" width="110">
@@ -147,6 +167,8 @@ import { useLoading } from '@/hooks/async/useLoading';
 import { useSearchReset } from '@/hooks/form/useSearchReset';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import modal from '@/plugins/modal';
+import AigEmptyState from '../components/AigEmptyState.vue';
+import AigLongId from '../components/AigLongId.vue';
 
 defineOptions({ name: 'AigAgentBinding' });
 

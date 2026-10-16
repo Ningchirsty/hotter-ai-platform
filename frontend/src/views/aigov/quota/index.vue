@@ -22,7 +22,21 @@
       </template>
 
       <el-table v-loading="loading" border class="data-table" :data="quotaList">
-        <el-table-column label="用户ID" align="center" prop="userId" width="140" />
+        <template #empty>
+          <AigEmptyState
+            icon="Odometer"
+            title="还没有人配置调用额度"
+            hint="没有配额行 = 不限（不是禁止调用）；要按人限额，先新增一行。"
+          >
+            <el-button v-hasPermi="['aig:quota:edit']" type="primary" size="small" @click="openEdit()">
+              新增配额
+            </el-button>
+            <el-button size="small" @click="getList">刷新</el-button>
+          </AigEmptyState>
+        </template>
+        <el-table-column label="用户ID" align="center" width="150">
+          <template #default="scope"><AigLongId :id="scope.row.userId" :keep="5" /></template>
+        </el-table-column>
         <el-table-column label="账号" align="center" prop="userName" width="160" show-overflow-tooltip />
         <el-table-column label="每日上限" align="center" width="120">
           <template #default="scope">{{ limitText(scope.row.dailyLimit) }}</template>
@@ -127,6 +141,8 @@ import type { AigUserQuotaForm, AigUserQuotaQuery, AigUserQuotaUsageVO, AigUserQ
 import { useLoading } from '@/hooks/async/useLoading';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import modal from '@/plugins/modal';
+import AigEmptyState from '../components/AigEmptyState.vue';
+import AigLongId from '../components/AigLongId.vue';
 
 defineOptions({ name: 'AigUserQuota' });
 

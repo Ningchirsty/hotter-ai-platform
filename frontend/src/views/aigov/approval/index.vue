@@ -49,7 +49,21 @@
       </el-form>
 
       <el-table v-loading="loading" border class="data-table" :data="approvalList">
-        <el-table-column label="单号" align="center" prop="approvalId" width="170" show-overflow-tooltip />
+        <template #empty>
+          <AigEmptyState
+            icon="Stamp"
+            title="当前筛选下没有审批单"
+            hint="审批单在调用被拒（APPROVAL_REQUIRED）后由申请人提交；也可以清掉筛选看全部。"
+          >
+            <el-button v-hasPermi="['aig:approval:apply']" type="primary" size="small" @click="openApply">
+              提交申请
+            </el-button>
+            <el-button size="small" @click="getList">刷新</el-button>
+          </AigEmptyState>
+        </template>
+        <el-table-column label="单号" align="center" width="180">
+          <template #default="scope"><AigLongId :id="scope.row.approvalId" :keep="6" /></template>
+        </el-table-column>
         <el-table-column label="申请人" align="center" width="140" show-overflow-tooltip>
           <template #default="scope">
             <span>{{ scope.row.requesterName || '-' }}</span>
@@ -176,6 +190,8 @@ import type { AigCapabilityVO } from '@/api/aigov/capability/types';
 import { useLoading } from '@/hooks/async/useLoading';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import modal from '@/plugins/modal';
+import AigEmptyState from '../components/AigEmptyState.vue';
+import AigLongId from '../components/AigLongId.vue';
 import { useDict } from '@/utils/dict';
 import { parseTime } from '@/utils/ruoyi';
 

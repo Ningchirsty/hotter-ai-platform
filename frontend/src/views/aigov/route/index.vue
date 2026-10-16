@@ -114,6 +114,16 @@
         :data="policyList"
         @selection-change="handleSelectionChange"
       >
+        <template #empty>
+          <AigEmptyState
+            icon="Guide"
+            title="还没有路由策略"
+            hint="「无策略即拒绝」：能力×数据等级没有策略行时，该格子的调用一律被拒。先给常用等级补一行。"
+          >
+            <el-button v-hasPermi="['aig:route:add']" type="primary" size="small" @click="handleAdd">新增策略</el-button>
+            <el-button size="small" @click="getList">刷新</el-button>
+          </AigEmptyState>
+        </template>
         <el-table-column type="selection" width="55" align="center" />
         <el-table-column label="能力" align="center" width="200" show-overflow-tooltip>
           <template #default="scope">{{ capabilityLabel(scope.row) }}</template>
@@ -294,6 +304,7 @@ import { useSearchReset } from '@/hooks/form/useSearchReset';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import { useTableSelection } from '@/hooks/table/useTableSelection';
 import modal from '@/plugins/modal';
+import AigEmptyState from '../components/AigEmptyState.vue';
 import { useDict } from '@/utils/dict';
 import { checkPermi } from '@/utils/permission';
 import ScenarioBindingDialog from './components/ScenarioBindingDialog.vue';

@@ -55,6 +55,15 @@
       </template>
 
       <el-table v-loading="loading" border class="data-table" :data="agentList">
+        <template #empty>
+          <AigEmptyState
+            icon="Connection"
+            title="还没有 Agent"
+            hint="Agent 通常从训练台（草稿→提交→发布）产生；这里只做检索与版本/绑定管理。"
+          >
+            <el-button size="small" @click="getList">刷新</el-button>
+          </AigEmptyState>
+        </template>
         <el-table-column label="Agent编码" align="center" prop="agentCode" width="200" show-overflow-tooltip />
         <el-table-column label="名称" align="center" prop="agentName" width="160" show-overflow-tooltip />
         <el-table-column label="类别" align="center" width="120">
@@ -390,6 +399,7 @@ import { useLoading } from '@/hooks/async/useLoading';
 import { useSearchReset } from '@/hooks/form/useSearchReset';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import modal from '@/plugins/modal';
+import AigEmptyState from '../components/AigEmptyState.vue';
 import { saveBlob } from '@/utils/save';
 import { artifactSummary, downloadSummary, downloaderLabel, fileNameOf, shortSha } from './sandboxArtifact';
 

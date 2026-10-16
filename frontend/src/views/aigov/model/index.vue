@@ -110,6 +110,16 @@
         :data="modelList"
         @selection-change="handleSelectionChange"
       >
+        <template #empty>
+          <AigEmptyState
+            icon="Cpu"
+            title="还没有登记模型"
+            hint="模型先登记进注册中心（含治理属性：部署类型、数据等级上限、可用状态），能力才能把它挂成候选。"
+          >
+            <el-button v-hasPermi="['aig:model:add']" type="primary" size="small" @click="handleCreateModel">新增模型</el-button>
+            <el-button size="small" @click="getList">刷新</el-button>
+          </AigEmptyState>
+        </template>
         <el-table-column type="selection" width="55" align="center" />
         <el-table-column label="模型键" align="center" prop="modelKey" width="160" show-overflow-tooltip />
         <el-table-column label="模型名称" align="center" prop="modelName" width="160" show-overflow-tooltip />
@@ -942,6 +952,7 @@ import { useSearchReset } from '@/hooks/form/useSearchReset';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import { useTableSelection } from '@/hooks/table/useTableSelection';
 import modal from '@/plugins/modal';
+import AigEmptyState from '../components/AigEmptyState.vue';
 import { useDict } from '@/utils/dict';
 import { checkPermi } from '@/utils/permission';
 import { parseTime } from '@/utils/ruoyi';
