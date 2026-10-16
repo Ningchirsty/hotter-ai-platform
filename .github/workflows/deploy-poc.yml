@@ -148,7 +148,8 @@ jobs:
             aig_launch_template.sql aig_knowledge.sql aig_tool.sql \
             aig_result_feedback.sql aig_task_step.sql \
             aig_task_step_node_identity.sql \
-            aig_capability_min_data_level.sql; do
+            aig_capability_min_data_level.sql \
+            aig_change_request.sql; do
             test -s "script/sql/$migration"
             echo "Preparing additive runtime schema: $migration"
             docker exec -i ai-video-poc-mysql-1 sh -c \

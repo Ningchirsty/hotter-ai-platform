@@ -58,6 +58,9 @@
           </el-select>
           <el-button type="primary" @click="load">查询</el-button>
           <el-button @click="clearFilter">清除筛选</el-button>
+          <el-button v-if="checkPermi(['aig:capability:edit'])" @click="changeVisible = true">
+            高风险变更单
+          </el-button>
           <span class="cap-list__count">显示 {{ rows.length }} 个能力（有问题的在前）</span>
         </div>
       </el-card>
@@ -231,6 +234,9 @@
         <el-button type="primary" :loading="saving" @click="submit">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- Q1C 完整版：高风险变更单（申请 → 批准 → 生效记录） -->
+    <ChangeRequestDrawer v-model="changeVisible" />
   </div>
 </template>
 
@@ -244,6 +250,7 @@ import type { AigCapabilityOverviewQuery, AigCapabilityOverviewVO } from '@/api/
 import type { AigCapabilityForm, AigCapabilityVO } from '@/api/aigov/capability/types';
 import CapabilityBoard from './components/CapabilityBoard.vue';
 import CapabilityDetail from './components/CapabilityDetail.vue';
+import ChangeRequestDrawer from '../changeRequest/ChangeRequestDrawer.vue';
 import modal from '@/plugins/modal';
 import { useDict } from '@/utils/dict';
 import {
@@ -302,6 +309,8 @@ const detailId = ref<string | number>();
 const detailCode = ref<string>();
 
 const formVisible = ref(false);
+/** 高风险变更单抽屉（Q1C 完整版；不占菜单行，挂在能力清单上） */
+const changeVisible = ref(false);
 const saving = ref(false);
 /** 编辑弹窗打开时的原状态（Q1C 只把「启用 → 停用」当高风险迁移） */
 const originalStatus = ref('0');
