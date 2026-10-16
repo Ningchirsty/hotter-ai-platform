@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -63,6 +64,23 @@ public class AigModelBindingController {
     @PostMapping
     public R<Long> add(@Validated({Default.class, AddGroup.class}) @RequestBody AigCapabilityModelBo bo) {
         return R.ok(modelBindingService.create(bo));
+    }
+
+    /**
+     * 编辑候选的用途与优先级（不换模型）。
+     *
+     * @param bindId 绑定ID
+     * @param bo     绑定参数（usageType / priority / status / remark）
+     * @return 操作结果
+     */
+    @SaCheckPermission(AigConstants.PERM_ROUTE_EDIT)
+    @RepeatSubmit
+    @PutMapping("/{bindId}")
+    public R<Void> update(@NotNull(message = "主键不能为空")
+                          @PathVariable("bindId") Long bindId,
+                          @RequestBody AigCapabilityModelBo bo) {
+        modelBindingService.update(bindId, bo);
+        return R.ok();
     }
 
     /**

@@ -40,6 +40,22 @@ public interface IAigModelBindingService {
     Long create(AigCapabilityModelBo bo);
 
     /**
+     * 编辑候选的用途与优先级（<b>不能换模型</b>）。
+     *
+     * <p><b>为什么必须有这个方法</b>：在此之前，"候选"只有新增与删除两个动作
+     * （{@code POST} / {@code DELETE}），而"用途（PRIMARY/FALLBACK/GRAY）"与"优先级"是路由排序的
+     * 直接输入 —— 配错一次只能删了重建，删的瞬间这条候选在路由里消失（生产上就是这段时间没有候选）。</p>
+     *
+     * <p><b>为什么不支持换模型</b>：换模型等于换了一条候选的身份（模型主数据、部署类型、健康、
+     * 成本上限全都变），"改"会让变更记录与审计看起来像"同一个候选改了属性"，
+     * 而真实发生的是"另一个模型接管了"。因此换模型请新增候选 + 删除旧候选（接口层面不做）。</p>
+     *
+     * @param bindId 绑定ID
+     * @param bo     绑定参数（只取 usageType / priority / status / remark）
+     */
+    void update(Long bindId, AigCapabilityModelBo bo);
+
+    /**
      * 删除绑定（逻辑删除）。
      *
      * @param bindId 绑定ID
