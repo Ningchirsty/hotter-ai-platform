@@ -23,6 +23,7 @@
 | `60041e3c` | 能力域/Q6+训练台 | Q6 前端（删除前先查引用再确认、详情「影响面」区块）+ 训练台「所需能力」改能力下拉与就绪度 + 预检补能力事实（不存在/停用＝阻断，缺候选/缺策略＝提醒） |
 | `9e1eecd7` | 能力域/Q3 | dryRun 补 `wouldRequireApproval` 与只读 `quotaStatus`（不写审计/不写账本/不消耗额度/只回本人额度）+ 试调助手第 ⑤ 段渲染"预判" |
 | `8c0677a7` | 能力域/Q1C+Q6 | **高风险变更轻量门槛**：新增权限点 `aig:capability:high-risk`（只授 aig_admin）+ 规则纯函数/闸门 + 路由策略（新增/编辑/删除）与能力（停用/删除）接线 + 前端确认框（原因 + 权限点 + 影响面） |
+| `5b82c9f6` | Q5/门户 | **员工自助**「我的额度 / 我的申请」：门户工具栏 → 弹窗两页签（额度四态含"读不到"；申请含「已批准但已过期」；续期=新单，按 `aig:approval:apply` 决定是否给入口）——**无新增权限点/菜单/路由/建表** |
 
 > 表里是**有实质内容的提交**；纯文档补记（例如把本表自己补上一行）不逐条登记——它们不改变交付物。
 > `check-aigov-docs.mjs` 会核对**本节**每个提交号都是当前分支 HEAD 的祖先（抄错/被 rebase 掉会红）。
@@ -139,7 +140,7 @@
   它同时会跑"每个有测试的模块都必须产出 Surefire 报告"的台账守卫。
   ⚠️ 该模式需要 CI 前置步骤装好的 **ffmpeg/ffprobe**（缺了会是 `ruoyi-ai` 的 4 个媒体用例报
   "图片格式转换服务不可用"——环境前提，不是本分支的回归；见 §7.2）。
-- 前端 `frontend`：**55 files / 557 tests** 全过；`oxlint src` 565 files 0/0；
+- 前端 `frontend`：**56 files / 565 tests** 全过；`oxlint src` 568 files 0/0；
   **生产构建 `vite build --mode production` 通过**（与 CI 的 `pnpm build:prod` 同一条命令）。
   其中 `views/aigov/sfcCompile.spec.ts` 真编译全部 34 个治理层 SFC
   （无 DOM 环境下的最低保证：模板/`<script setup>` 写错会在这里红），
@@ -425,9 +426,19 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src 
 | 前端 | 试调助手第 ⑤ 段改为「真实调用前还会遇到什么（预判）」：人工确认点 + 审批需求（**三态**：需要/不需要/**未返回＝未知**）+ 额度（已超限/还剩 N 次/不限/**读不到**）；边界说明改写为"**预判 ≠ 校验**"（dryRun 仍不查你手上有没有有效授权） | `api/aigov/invoke/index.ts`、`capability/presentation.ts#realCallGates`/`assistantBoundaryNote`、`components/TrialAssistant.vue` |
 | 口径 | `remaining` 取日/月里**最紧**的那个（"日剩 2、月剩 5"必须说 2，否则界面会让人以为还能调 5 次）；已超限时下限 0，不给负数 | `AigQuotaStatusVo.of` |
 
-**仍未做（P1 尾巴 / P2，见联动方案 §7–§8）**：员工"我的额度/我的申请"（Q5，门户两屏，接口已有）、
-数据等级取最高 `min_data_level`（Q2C，需一条 ALTER，已定 P1 末尾；届时一并补"限制级能力的候选变更"那半条规则）、
+**Q5「员工自助：我的额度 / 我的申请」（纯前端）**
+
+| 层 | 交付 | 文件 |
+| --- | --- | --- |
+| 前端 | 门户（AI 工作台）工具栏新增「我的额度与申请」→ 一个弹窗两页签：**我的额度**（四态：正常 / 已超限 / 不限 / **读不到**；日·月已用与上限、周期起点；写明"统计的是调用次数，含失败"）与**我的申请**（状态标签含**「已批准但已过期」**、授权有效期止、审批意见、按状态筛选、分页） | `views/aigov/mine/MyQuotaAndApprovals.vue`、`views/aigov/portal/index.vue`、`views/aigov/mine/presentation.ts` |
+| 续期入口 | 「重新申请」只出现在**现在没有有效授权**的行（驳回 / 超时未批 / 撤回 / 已过期）；**待审批**与**仍在有效期内**的行不给（重复单只会打扰审批人）。提交需要 `aig:approval:apply`：没有该权限时不显示按钮并说明找谁，而不是点了才 403 | 同上（`renewable` / `renewalHint`） |
+| 边界（沿用后端口径） | 两个接口 `/aigov/quota/my-usage`、`/aigov/approval/my` **都不挂权限点**（登录即可见**自己**，后端用登录态覆盖 `requesterId`）⇒ **不新增权限点、不新增菜单/路由、不改表**；也因此不占治理台导航 | — |
+
+**仍未做（P1 尾巴 / P2）**：数据等级取最高 `min_data_level`（Q2C，需一条 ALTER；届时一并补"限制级能力的候选变更"那半条 Q1C 规则）、
 Q1C 的**完整版**（变更单 + 批准 + 生效记录，需新表）——以及 22 项交互规范与其余模块按 v3 改写。
+
+**验证**（本次实测，2026-10-16）：后端 **1401 tests / 0 failures / 0 errors**；
+前端 **56 files / 565 tests**；`oxlint` **568 files 0/0**；`vite build` 通过；`verify-aigov-v1.mjs` 全绿。
 
 **Q1C「高风险变更轻量门槛」+ Q6 剩余（改策略 / 停用入口的同一套确认）**
 
@@ -443,7 +454,7 @@ Q1C 的**完整版**（变更单 + 批准 + 生效记录，需新表）——以
 现在只能按策略行猜，会误报，所以留到 Q2C 一起做。本轮覆盖的是**放宽外发与限制级策略变更**这条主线。
 
 **验证**（本次实测，2026-10-16）：后端 **1401 tests / 0 failures / 0 errors**（本轮新增 10 条高风险判定与接线）；
-前端 **55 files / 557 tests**；`oxlint` **565 files 0/0**；`vite build` 通过；`verify-aigov-v1.mjs` 全绿。
+前端 **56 files / 565 tests**；`oxlint` **568 files 0/0**；`vite build` 通过；`verify-aigov-v1.mjs` 全绿。
 
 **顺带修好的一处"守卫会误报"**：`check-aigov-docs.mjs` 原先要求 §1 表里**每个**提交号都是当前分支 HEAD 的祖先。
 A–E 分支已由 PR #80 **squash 合并**（祖先关系被故意抹掉），这条规则于是会一口气报 54 个"不是祖先"——
