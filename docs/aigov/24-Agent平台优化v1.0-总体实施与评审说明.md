@@ -30,6 +30,7 @@
 | `b37045c9` | P2/交互规范 | **危险操作确认审计**（`script/ci/audit-aigov-dangerous-ops.mjs`，评审用不接门禁）+ 补 2 处缺失确认（approval 超时扫描批量改状态、knowledge 解析并索引会覆盖分段与索引） |
 | `e9d73d21` | P2/交互规范 | 第三批空态：9 个页面 / 18 张表（artifactDraft / package / portal / resourceBinding / rolePackage / servicetoken / skill / studio / task），`skill` 与 `task` 达到全覆盖 |
 | `0c6d9ef3` | P2/分页 | **问题队列分页**：新增 `GET /aigov/feedback/queue/page`（与全量版**共用同一份过滤条件**），前端队列页改分页 + 改筛选回第 1 页；旧全量接口保留 |
+| `73d75d54` | P2/交互规范 | 第四批空态：弹窗子表 / 多类表格 15 张（走读 U10 的"20+ 处无空态"收口）；顺带**修掉一个坏按钮**（portal 任务表空态按钮写了不存在的 `getList`，真实 loader 是 `getTasks`） |
 
 > 表里是**有实质内容的提交**；纯文档补记（例如把本表自己补上一行）不逐条登记——它们不改变交付物。
 > `check-aigov-docs.mjs` 会核对**本节**每个提交号都是当前分支 HEAD 的祖先（抄错/被 rebase 掉会红）。
@@ -464,15 +465,15 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src 
 
 | 第 3 批接入 | `artifactDraft`(主表)、`package`(主表 + 版本表)、`portal`(我的任务 + 产出物)、`resourceBinding`、`rolePackage`(岗位表 + 卡片表)、`servicetoken`、`skill`(主表 + 版本表 **2/2 全覆盖**)、`studio`(草稿表)、`task`(任务表 + 事件流 + 候选结果 **3/3 全覆盖**) | 这一批用**脚本化插入**完成（同一模式套 18 张表，逐页写 spec 保证标题/提示是给这张表写的；脚本在 `.tools/tmp/`，未入库） |
 
-> **空态覆盖率（2026-10-16 实测；口径＝`<el-table>`（注意用 `(?![-\w])`，否则会把 `<el-table-column>` 也算进去）与 `#empty` 出现次数）**：
-> **1/1 全覆盖**：`approval`、`audit`、`binding`、`feedback`、`quota`、`resourceBinding`、`route`、`servicetoken`、`studio`、`tool`；
-> **全覆盖（多表）**：`skill` 2/2、`task` 3/3；
-> **部分覆盖**：`package` 2/5、`portal` 2/5、`rolePackage` 2/4、`evaluation` 2/3、`agent` 1/4、`artifactDraft` 1/3、`knowledge` 2/5、`model` 1/2。
-> **尚未接的 18 张表**基本都是"弹窗里的子表/版本表/扫描结论表"（`agent` 版本·沙箱产物·下载记录、
-> `knowledge` 分段·引用·检索结果、`package` 扫描结论·动作结果·状态流转、`portal` 三个资产分域、
-> `rolePackage` 分类·卡片明细、`artifactDraft` 两张子表、`evaluation` 人工复核、`model` 供应商表）。
-> 其余待办：**分页**（`tool`/`knowledge`/`feedback`/`evaluation` 的后端接口本就整表返回，补分页要连带改后端）、
-> **各页观感仍需人眼验收**（本仓前端没有 DOM 测试环境）。
+| 第 4 批接入（弹窗子表 / 多类表格，15 张） | `artifactDraft`(子 Agent 草案 + 指令草案 → **3/3**)、`package`(扫描结论 + 停用前状态 + 状态流转 → **5/5**)、`rolePackage`(分类 + 卡片 → **4/4**)、`evaluation`(人工复核 → **3/3**)、`knowledge`(分段预览 + 引用 + 检索结果 → **5/5**)、`model`(供应商 → **2/2**)、`agent`(版本 + 沙箱产物 → **3/4**)、`portal`(我的资产 → **3/5**) | 同一套脚本化插入 |
+| **刻意不加空态的 3 张表** | `portal` 的「最近资产」（外层 `v-if="recentAssets.length"`）、「按域分组资产」（`v-for="group in assetGroups"`，空域不建组）、`agent` 的「下载记录」（外层 `v-if="downloadsOpen && artifactDownloads.length"`） | 它们**本来就只在有数据时才渲染**，加空态只会变成永远看不到的死代码 |
+
+> **空态覆盖率（2026-10-16 实测；口径＝`<el-table>`（用 `(?![-\w])`，否则会把 `<el-table-column>` 也算进去）与 `#empty` 次数）**：
+> **全覆盖**：`agent` 3/4、`artifactDraft` 3/3、`approval`、`audit`、`binding`、`evaluation` 3/3、`feedback`、`knowledge` 5/5、
+> `model` 2/2、`package` 5/5、`quota`、`resourceBinding`、`rolePackage` 4/4、`route`、`servicetoken`、`skill` 2/2、`studio`、`task` 3/3、`tool`；
+> **有意不覆盖**：上面那 3 张（`agent` 少 1、`portal` 少 2）；`capability` 用卡片网格 + `el-empty`（不走 `el-table`，另行覆盖）。
+> 走读 U10 的"**20+ 处无空态**"至此收口。
+> 其余待办：**分页**已只对问题队列做（见下）；**各页观感仍需人眼验收**（本仓前端没有 DOM 测试环境）。
 
 **P2 附加：问题队列分页（后端 + 前端；2026-10-16）**
 
