@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>治理台 · 能力域 v3（按 DinTal 真实截图重做）</title>
+<!--
+  ============================================================================
+  v3 依据：用户提供的 DinTal 真实截图 24 张（1920×1030，可逐字阅读）。
+  与 v2 的四处关键修正（v2 是猜的，v3 按真图）：
+    ① 左侧栏是「图标 + 图标下小字标签」（不是纯图标 + tooltip）
+    ② 顶部一级是「对象类型页签」（能力 / 行业场景 / 组织 / 岗位），下设「全部 / 待处理 / 草稿」次级页签
+    ③ 清单页 = 「创建能力」卡（直接创建 / 快速导入 / 从模板创建）+ 筛选条（多下拉 + 清除筛选 + 显示 N 个）
+       + 分组标题 + 卡片网格；卡片 hover 出菜单（试调 / 编辑基本信息 / 模型候选 / 提交发布审核 / 删除）
+    ④ 详情是整页：封面图 + 头像名称 + 版本 + 「展开配置详情」渐进披露（分页签）+ 右侧可折叠「试调助手」对话面板
+  静态原型：未接接口、mock 数据；确认风格与交互后才排开发。
+  ============================================================================
+-->
+<style>
+  :root {
+    --bg: #F4F7FC; --surface: #FFFFFF; --surface-2: #F7F9FD;
+    --border: #E7ECF5; --border-strong: #D6DEEB;
+    --text: #1F2A44; --text-2: #5B6B85; --text-3: #93A0B5;
+    --primary: #2B63F0; --primary-600: #1E52D8; --primary-50: #EEF3FE; --primary-100: #DCE7FD;
+    --success: #0F9D58; --success-bg: #E8F7EF;
+    --warning: #C77700; --warning-bg: #FFF4E1;
+    --danger: #D93025; --danger-bg: #FDECEA;
+    --teal: #0E9F9F; --violet: #6941C6; --amber: #E08700;
+    --radius-lg: 16px; --radius: 10px; --radius-sm: 8px;
+    --shadow: 0 2px 6px rgba(23,43,77,.05), 0 12px 28px rgba(23,43,77,.06);
+    --shadow-sm: 0 1px 3px rgba(23,43,77,.06);
+    --mono: ui-monospace, "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text);
+    font: 14px/1.62 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; -webkit-font-smoothing: antialiased; }
+  .mono, code { font-family: var(--mono); font-size: 12px; }
+  .proto-flag { background: #1F2A44; color: #EAF0FF; font-size: 12px; padding: 6px 14px; display: flex; gap: 14px; align-items: center; justify-content: center; flex-wrap: wrap; }
+  .proto-flag b { color: #FFD666; }
+
+  .app { display: flex; min-height: calc(100vh - 32px); }
+
+  /* ===== 左栏：图标 + 小字标签（按真图） ===== */
+  .rail { width: 82px; flex: 0 0 82px; background: var(--surface); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 12px 0 16px;
+    position: sticky; top: 0; height: calc(100vh - 32px); overflow: auto; }
+  .rail .logo { width: 34px; height: 34px; border-radius: 10px; background: linear-gradient(135deg,#2B63F0,#48B0FF);
+    color:#fff; display:grid; place-items:center; font-weight:700; font-size:13px; margin-bottom: 12px;
+    box-shadow: 0 4px 10px rgba(43,99,240,.28); }
+  .rail button { width: 68px; border: 0; background: transparent; cursor: pointer; color: var(--text-3);
+    display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 7px 0; border-radius: 12px; }
+  .rail button:hover { background: var(--surface-2); color: var(--primary-600); }
+  .rail button.active { background: var(--primary-50); color: var(--primary-600); }
+  .rail button .lb { font-size: 11px; line-height: 1.2; text-align: center; }
+  .rail .spacer { flex: 1; }
+  .rail .who { width: 32px; height: 32px; border-radius: 50%; background: var(--primary-100); color: var(--primary-600);
+    display: grid; place-items: center; font-weight: 700; font-size: 12px; }
+
+  main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+  .topbar { height: 52px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center;
+    gap: 16px; padding: 0 20px; position: sticky; top: 0; z-index: 30; }
+  .topbar .crumb { font-size: 13px; color: var(--text-3); }
+  .topbar .crumb b { color: var(--text); }
+  .topbar .spacer { flex: 1; }
+  .searchbox { width: 250px; height: 34px; border: 1px solid var(--border); background: var(--surface-2); border-radius: 999px;
+    padding: 0 12px; color: var(--text-3); font-size: 13px; display: flex; align-items: center; gap: 8px; }
+  .who { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2); }
+  .who .av { width: 28px; height: 28px; border-radius: 50%; background: var(--primary-100); color: var(--primary-600); display: grid; place-items: center; font-weight: 700; font-size: 12px; }
+
+  /* 模块页签（对象类型）+ 次级页签 */
+  .modtabs { display: flex; align-items: center; gap: 26px; padding: 8px 20px 0; background: var(--surface); border-bottom: 1px solid var(--border); }
+  .modtabs .mt { padding: 6px 2px 12px; font-size: 14px; color: var(--text-2); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .modtabs .mt:hover { color: var(--primary-600); }
+  .modtabs .mt.active { color: var(--primary-600); font-weight: 600; border-bottom-color: var(--primary); }
+  .subrow { display: flex; align-items: center; gap: 18px; padding: 10px 20px; background: var(--surface); border-bottom: 1px solid var(--border); }
+  .subrow .st { font-size: 13px; color: var(--text-2); cursor: pointer; padding: 2px 0; border-bottom: 2px solid transparent; }
+  .subrow .st.active { color: var(--primary-600); font-weight: 600; border-bottom-color: var(--primary); }
+  .subrow .st .n { font-size: 11px; color: var(--text-3); }
+  .subrow .spacer { flex: 1; }
+  .subrow .chipbtn { height: 30px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface);
+    color: var(--text-2); font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+
+  .page { padding: 18px 20px 50px; }
+  .page-head { display: flex; gap: 14px; align-items: flex-start; }
+  .page-head h1 { margin: 0; font-size: 20px; }
+  .page-head .hint { margin-top: 6px; color: var(--text-3); font-size: 12px; }
+  .page-head .actions { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+
+  .btn { height: 34px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface);
+    color: var(--text-2); font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .btn:hover { border-color: var(--primary); color: var(--primary-600); }
+  .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; box-shadow: 0 6px 14px rgba(43,99,240,.22); }
+  .btn.primary:hover { background: var(--primary-600); color: #fff; }
+  .btn.sm { height: 28px; padding: 0 10px; font-size: 12px; }
+  .btn.ghost { border-color: transparent; background: transparent; }
+
+  /* 筛选条（按真图：多下拉 + 清除筛选 + 显示 N 个） */
+  .filterbar { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px 14px; box-shadow: var(--shadow-sm);
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+  .filterbar select { height: 32px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text-2);
+    font-size: 13px; padding: 0 8px; min-width: 132px; }
+  .filterbar .clr { font-size: 12px; color: var(--text-2); border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); height: 32px; padding: 0 12px; cursor: pointer; }
+  .filterbar .count { margin-left: auto; font-size: 12px; color: var(--text-3); }
+
+  .grp { margin: 18px 0 10px; display: flex; align-items: center; gap: 10px; }
+  .grp .gt { font-size: 14px; font-weight: 600; }
+  .grp .gd { font-size: 12px; color: var(--text-3); }
+  .grp .spacer { flex: 1; }
+
+  /* 卡片网格 + 对象卡（按真图：头像 + 名称 + 版本 chip + @owner·date + 描述 3 行 + 底部动作） */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+  .create-card, .obj-card { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm); padding: 16px; }
+  .create-card { display: flex; flex-direction: column; gap: 10px; }
+  .create-card h3 { margin: 0 0 2px; font-size: 15px; }
+  .create-line { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2); cursor: pointer;
+    padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
+  .create-line:hover { border-color: var(--primary); color: var(--primary-600); background: var(--primary-50); }
+  .obj-card { cursor: pointer; transition: box-shadow .15s, border-color .15s, transform .15s; }
+  .obj-card:hover { border-color: var(--primary-100); box-shadow: var(--shadow); transform: translateY(-1px); }
+  .obj-card.selected { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-50), var(--shadow); }
+  .obj-top { display: flex; gap: 10px; align-items: center; }
+  .av-ico { width: 38px; height: 38px; flex: 0 0 38px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 12px; }
+  .ico-text { background: linear-gradient(135deg,#2B63F0,#4C8DFF); }
+  .ico-vision { background: linear-gradient(135deg,#6941C6,#8B6BE0); }
+  .ico-image { background: linear-gradient(135deg,#E08700,#FFAE33); }
+  .ico-multi { background: linear-gradient(135deg,#0E9F9F,#38C2C2); }
+  .obj-name { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .obj-name .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .vchip { font-size: 10px; color: var(--text-3); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; font-family: var(--mono); }
+  .obj-meta { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+  .obj-desc { margin-top: 10px; font-size: 13px; color: var(--text-2); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; min-height: 60px; }
+  .obj-foot { margin-top: 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .obj-act { margin-left: auto; opacity: 0; transition: opacity .15s; }
+  .obj-card:hover .obj-act { opacity: 1; }
+
+  /* hover 菜单（按真图 1403） */
+  .popmenu { position: absolute; right: 14px; bottom: 52px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; box-shadow: 0 14px 40px rgba(23,43,77,.16); padding: 6px; min-width: 168px; display: none; z-index: 25; }
+  .obj-card.menu-open .popmenu { display: block; }
+  .popmenu div { padding: 8px 10px; border-radius: 8px; font-size: 13px; color: var(--text-2); cursor: pointer; }
+  .popmenu div:hover { background: var(--surface-2); color: var(--text); }
+  .popmenu div.del { color: var(--danger); }
+  .popmenu div.del:hover { background: var(--danger-bg); }
+
+  .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 2px 8px; border-radius: 999px; font-weight: 600; white-space: nowrap; }
+  .pill.ok { background: var(--success-bg); color: var(--success); }
+  .pill.warn { background: var(--warning-bg); color: var(--warning); }
+  .pill.bad { background: var(--danger-bg); color: var(--danger); }
+  .pill.blue { background: var(--primary-50); color: var(--primary-600); }
+  .pill.gray { background: #EFF2F7; color: var(--text-2); }
+  .pill.teal { background: #E4F6F6; color: var(--teal); }
+  .pill.violet { background: #F3EEFF; color: var(--violet); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .dot.ok { background: var(--success); } .dot.warn { background: var(--amber); } .dot.bad { background: var(--danger); }
+  .code-chip { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; font-family: var(--mono); font-size: 12px; color: var(--text-2); }
+
+  /* ===== 详情页（按真图 1404/1405）===== */
+  .detail-top { display: flex; align-items: center; gap: 12px; padding: 10px 20px; background: var(--surface); border-bottom: 1px solid var(--border); }
+  .detail-top .back { font-size: 13px; color: var(--text-2); cursor: pointer; }
+  .detail-top .who2 { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
+  .detail-top .avatar { width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(135deg,#2B63F0,#4C8DFF); color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 700; }
+  .detail-top .spacer { flex: 1; }
+  .cover { height: 190px; background:
+      radial-gradient(120% 150% at 12% 0%, #FFD9A8 0%, rgba(255,217,168,0) 55%),
+      radial-gradient(120% 140% at 78% 15%, #FF9E7A 0%, rgba(255,158,122,0) 60%),
+      linear-gradient(135deg, #5B6B85 0%, #2B3A55 60%, #1F2A44 100%); }
+  .detail-body { display: grid; grid-template-columns: minmax(0,1fr) 380px; gap: 18px; padding: 0 20px 40px; }
+  .doc-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 0 0 var(--radius-lg) var(--radius-lg); margin-top: -34px;
+    padding: 0 22px 24px; box-shadow: var(--shadow); }
+  .doc-head { display: flex; gap: 14px; align-items: flex-end; padding-top: 0; }
+  .doc-avatar { width: 72px; height: 72px; border-radius: 50%; border: 4px solid #fff; background: linear-gradient(135deg,#2B63F0,#4C8DFF);
+    color: #fff; display: grid; place-items: center; font-weight: 700; font-size: 20px; margin-top: -34px; box-shadow: var(--shadow-sm); }
+  .doc-title { font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .expander { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-3); cursor: pointer; margin: 8px 0 4px; }
+  .expander:hover { color: var(--primary-600); }
+  .cfg { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); padding: 10px 12px; margin-bottom: 6px; display: none; }
+  .cfg.show { display: block; }
+  .cfg-tabs { display: flex; gap: 16px; border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 10px; }
+  .cfg-tabs span { font-size: 13px; color: var(--text-2); cursor: pointer; padding-bottom: 8px; margin-bottom: -9px; border-bottom: 2px solid transparent; }
+  .cfg-tabs span.on { color: var(--primary-600); font-weight: 600; border-bottom-color: var(--primary); }
+  .kv { display: grid; grid-template-columns: 110px 1fr; gap: 7px 12px; font-size: 13px; }
+  .kv dt { color: var(--text-3); } .kv dd { margin: 0; }
+  .prompt h4 { margin: 22px 0 8px; font-size: 15px; }
+  .prompt p { margin: 0 0 10px; font-size: 14px; color: var(--text); white-space: pre-wrap; }
+
+  /* 右侧试调助手（按真图 1405） */
+  .assist { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow);
+    display: flex; flex-direction: column; height: calc(100vh - 130px); position: sticky; top: 76px; }
+  .assist header { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 600; }
+  .assist header .icons { margin-left: auto; display: flex; gap: 10px; color: var(--text-3); font-size: 14px; cursor: pointer; }
+  .assist .hero { flex: 1; display: grid; place-items: center; text-align: center; padding: 18px; }
+  .assist .mascot { width: 78px; height: 78px; border-radius: 50%; background: var(--primary-50); display: grid; place-items: center; font-size: 34px; margin: 0 auto 10px; }
+  .assist .scope { font-size: 12px; color: var(--text-3); margin-bottom: 10px; }
+  .assist .chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; padding: 0 14px 12px; }
+  .chip { border: 1px solid var(--border-strong); background: var(--surface); border-radius: 10px; padding: 7px 12px; font-size: 12px; color: var(--text-2); cursor: pointer; }
+  .chip:hover { border-color: var(--primary); color: var(--primary-600); background: var(--primary-50); }
+  .assist .msgs { flex: 1; overflow: auto; padding: 12px 14px; }
+  .msg { display: flex; gap: 8px; margin-bottom: 10px; }
+  .msg.me { justify-content: flex-end; }
+  .msg .b { max-width: 88%; padding: 9px 12px; border-radius: 12px; font-size: 13px; }
+  .msg.bot .b { background: var(--surface-2); border: 1px solid var(--border); }
+  .msg.me .b { background: var(--primary); color: #fff; }
+  .assist .inputbar { border-top: 1px solid var(--border); padding: 10px 12px; background: var(--surface-2); }
+  .assist .inputbar .row { display: flex; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 6px 8px; }
+  .assist .inputbar input { flex: 1; border: 0; outline: none; font-size: 13px; background: transparent; height: 30px; }
+  .assist .inputbar .ic { color: var(--text-3); font-size: 15px; cursor: pointer; }
+  .assist .inputbar .send { width: 30px; height: 30px; border-radius: 50%; background: var(--primary); color: #fff; border: 0; cursor: pointer; }
+  .assist.collapsed { height: auto; position: fixed; right: 22px; bottom: 22px; width: 300px; z-index: 45; }
+  .assist.collapsed .hero, .assist.collapsed .chips, .assist.collapsed .msgs, .assist.collapsed .inputbar { display: none; }
+
+  /* ===== 看板（按真图 1420）===== */
+  .metrics { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 14px; }
+  .metric { border-radius: var(--radius-lg); padding: 16px 18px; color: #fff; }
+  .metric .k { font-size: 13px; opacity: .95; }
+  .metric .v { font-size: 30px; font-weight: 700; margin-top: 8px; font-variant-numeric: tabular-nums; }
+  .metric .v span { font-size: 14px; font-weight: 500; margin-left: 4px; }
+  .metric.blue { background: linear-gradient(135deg,#2B63F0,#4C8DFF); box-shadow: 0 10px 22px rgba(43,99,240,.22); }
+  .metric.teal { background: linear-gradient(135deg,#12A8A8,#3FC9C9); box-shadow: 0 10px 22px rgba(18,168,168,.2); }
+  .metric.amber { background: linear-gradient(135deg,#E08700,#FFAE33); box-shadow: 0 10px 22px rgba(224,135,0,.2); }
+  .metric.yellow { background: linear-gradient(135deg,#E0A800,#FFC93C); box-shadow: 0 10px 22px rgba(224,168,0,.2); }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: 16px 18px; }
+  .panel h3 { margin: 0 0 4px; font-size: 15px; }
+  .panel .sub { font-size: 12px; color: var(--text-3); margin-bottom: 10px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+  .rank { list-style: none; margin: 0; padding: 0; }
+  .rank li { display: grid; grid-template-columns: 22px 1fr 62px; gap: 10px; align-items: center; padding: 8px 0; font-size: 13px; }
+  .rank .no { width: 20px; height: 20px; border-radius: 6px; background: var(--primary-50); color: var(--primary-600); font-size: 11px; font-weight: 700; display: grid; place-items: center; }
+  .rank .bar { height: 6px; border-radius: 3px; background: #EEF1F6; margin-top: 5px; overflow: hidden; }
+  .rank .bar i { display: block; height: 100%; background: linear-gradient(90deg,#2B63F0,#4C8DFF); }
+  .trend { display: flex; align-items: flex-end; gap: 6px; height: 104px; }
+  .trend i { flex: 1; border-radius: 4px 4px 0 0; background: linear-gradient(180deg,#4C8DFF,#2B63F0); opacity: .88; }
+  .trend i.w { background: linear-gradient(180deg,#FFAE33,#E08700); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th { text-align: left; font-size: 12px; color: var(--text-3); font-weight: 600; padding: 10px 8px; border-bottom: 1px solid var(--border); }
+  tbody td { padding: 11px 8px; border-bottom: 1px solid var(--border); }
+  tbody tr:hover td { background: var(--surface-2); }
+  .owner { width: 26px; height: 26px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 11px; font-weight: 700; color: #fff; background: #8B6BE0; }
+
+  .empty { text-align: center; padding: 40px 12px; color: var(--text-3); }
+  .empty .art { font-size: 44px; filter: grayscale(1); opacity: .55; }
+  .empty h4 { margin: 8px 0 4px; color: var(--text); font-size: 14px; }
+  .empty p { margin: 0 0 14px; font-size: 12px; }
+
+  /* 弹窗 / 深色控制台 / toast */
+  .mask { position: fixed; inset: 0; background: rgba(23,43,77,.35); display: none; place-items: center; z-index: 60; padding: 24px; }
+  .mask.show { display: grid; }
+  .modal { width: min(620px, 100%); background: var(--surface); border-radius: var(--radius-lg); box-shadow: 0 24px 60px rgba(15,23,42,.26); overflow: hidden; }
+  .modal header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; }
+  .modal header h3 { margin: 0; font-size: 15px; }
+  .modal .body { padding: 18px 20px; }
+  .modal .avatar-edit { width: 66px; height: 66px; border-radius: 50%; background: linear-gradient(135deg,#2B63F0,#4C8DFF); color: #fff;
+    display: grid; place-items: center; margin: 0 auto 14px; font-weight: 700; position: relative; }
+  .modal .avatar-edit::after { content: '📷'; position: absolute; right: -2px; bottom: -2px; background: #fff; border-radius: 50%; font-size: 12px; padding: 2px; box-shadow: var(--shadow-sm); }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 13px; color: var(--text-2); margin-bottom: 6px; }
+  .field label b { color: var(--danger); }
+  .field input, .field textarea { width: 100%; border: 1px solid var(--border); border-radius: 10px; padding: 9px 11px; font-size: 13px; font-family: inherit; background: var(--surface-2); }
+  .field textarea { min-height: 120px; resize: vertical; }
+  .field .cnt { text-align: right; font-size: 11px; color: var(--text-3); margin-top: 4px; }
+  .modal footer { padding: 12px 20px; border-top: 1px solid var(--border); background: var(--surface-2); display: flex; justify-content: flex-end; gap: 10px; }
+
+  .console-mask { position: fixed; inset: 0; background: rgba(15,23,42,.5); display: none; place-items: center; z-index: 70; padding: 24px; }
+  .console-mask.show { display: grid; }
+  .console { width: min(900px, 100%); background: #232323; border-radius: var(--radius-lg); overflow: hidden; }
+  .console header { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: #2b2b2b; color: #E5E7EB; border-bottom: 1px solid #3a3a3a; }
+  .console pre { margin: 0; padding: 14px 16px; color: #C9D6A0; font-family: var(--mono); font-size: 12px; line-height: 1.66; max-height: 56vh; overflow: auto; white-space: pre-wrap; }
+  .console footer { padding: 9px 14px; background: #2b2b2b; border-top: 1px solid #3a3a3a; display: flex; gap: 10px; justify-content: flex-end; }
+  .console footer button { background: #3a3a3a; border: 1px solid #4a4a4a; color: #E5E7EB; border-radius: 6px; padding: 5px 12px; font-size: 12px; cursor: pointer; }
+
+  .toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%) translateY(10px); background: #1F2A44; color: #fff;
+    padding: 9px 16px; border-radius: 999px; font-size: 13px; opacity: 0; pointer-events: none; transition: all .2s; z-index: 95; max-width: 84vw; text-align: center; }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .note { background: var(--primary-50); border: 1px solid var(--primary-100); color: #24417a; border-radius: var(--radius); padding: 10px 12px; font-size: 12px; }
+  .note b { color: var(--primary-600); }
+  .tokens { display: flex; flex-wrap: wrap; gap: 10px; }
+  .token { width: 146px; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .token .sw { height: 42px; }
+  .token .meta { padding: 6px 8px; font-size: 11px; color: var(--text-2); }
+  @media (max-width: 1280px) {
+    .detail-body { grid-template-columns: 1fr; }
+    .assist { position: static; height: auto; }
+    .metrics { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .grid-2 { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="proto-flag">
+  <span><b>静态原型 v3</b> · 按 DinTal 真实截图重做 · 未接接口 · mock 数据</span>
+  <span>四处修正：左栏图标+小字 · 顶部对象类型页签+次级页签 · 创建卡+筛选条+卡片 hover 菜单 · 详情整页+右侧试调助手</span>
+</div>
+
+<div class="app">
+  <aside class="rail">
+    <div class="logo">AI</div>
+    <button class="active"><span>🖥️</span><span class="lb">训练台</span></button>
+    <button onclick="tab('list')"><span>🧠</span><span class="lb">能力</span></button>
+    <button onclick="toast('原型只做「能力」模块；模型模块复用同一套规范')"><span>🔲</span><span class="lb">模型</span></button>
+    <button onclick="toast('原型只做「能力」模块')"><span>🔀</span><span class="lb">路由</span></button>
+    <button onclick="toast('原型只做「能力」模块')"><span>📈</span><span class="lb">调用</span></button>
+    <button onclick="toast('原型只做「能力」模块')"><span>📦</span><span class="lb">资产库</span></button>
+    <button onclick="tab('board')"><span>📊</span><span class="lb">看板</span></button>
+    <div class="spacer"></div>
+    <div class="who">管</div>
+  </aside>
+
+  <main>
+    <header class="topbar">
+      <div class="crumb">训练台 / <b>能力</b> / <span id="crumb-page">能力清单</span></div>
+      <div class="spacer"></div>
+      <div class="searchbox">⌕ 搜索能力 / 模型名称</div>
+      <div class="who"><span>能力管理员</span><div class="av">管</div></div>
+    </header>
+
+    <nav class="modtabs">
+      <div class="mt active">能力</div>
+      <div class="mt" onclick="toast('对象类型页签：行业/场景（把能力按业务场景分组）——原型未展开')">行业 / 场景</div>
+      <div class="mt" onclick="toast('对象类型页签：组织（按部门/机构看能力归属）——原型未展开')">组织</div>
+      <div class="mt" onclick="toast('对象类型页签：岗位（能力挂到岗位卡）——原型未展开')">岗位</div>
+    </nav>
+
+    <div class="subrow" id="subrow">
+      <div class="st active" data-sub="all" onclick="setSub('all')">全部 <span class="n">12</span></div>
+      <div class="st" data-sub="todo" onclick="setSub('todo')">待处理 <span class="n">3</span></div>
+      <div class="st" data-sub="draft" onclick="setSub('draft')">草稿 <span class="n">2</span></div>
+      <div class="spacer"></div>
+      <button class="chipbtn" onclick="openConsole()">&lt;/&gt; 原始与日志</button>
+      <button class="chipbtn" onclick="toast('原型：批量治理（批量补候选 / 批量套策略）')">批量治理</button>
+    </div>
+
+    <!-- ================= 清单 ================= -->
+    <div class="page" id="pane-list">
+      <div class="filterbar">
+        <select><option>能力类型：全部</option><option>文本</option><option>视觉</option><option>图像</option><option>多模态</option></select>
+        <select><option>状态：全部</option><option>已就绪</option><option>待处理</option><option>草稿</option><option>已停用</option></select>
+        <select><option>数据等级：全部</option><option>公开</option><option>内部</option><option>限制</option><option>严格</option></select>
+        <select><option>模型候选：全部</option><option>有候选</option><option>无候选</option></select>
+        <select><option>归属：全部</option><option>平台</option><option>内容域</option><option>视觉域</option></select>
+        <button class="clr" onclick="toast('原型：清除筛选')">清除筛选</button>
+        <span class="count" id="filter-count">显示 12 个能力（按配置完整度排序）</span>
+      </div>
+
+      <div class="grid" style="margin-top:16px">
+        <!-- 创建卡（按真图「创建数智员工」） -->
+        <div class="create-card">
+          <h3>创建能力</h3>
+          <div class="create-line" onclick="toast('原型：直接创建（弹窗：编码 / 名称 / 标签 / 人设）')">➕ 直接创建</div>
+          <div class="create-line" onclick="toast('原型：快速导入（粘贴 OpenAPI/工具清单 → 生成能力）')">⬆️ 快速导入</div>
+          <div class="create-line" onclick="toast('原型：从模板创建（内容域 / 视觉域 / 客服 / 招聘 模板）')">🗂 从模板创建</div>
+          <div class="note" style="margin-top:2px">创建后到「模型候选」挂模型、到「策略」定外发，链路才算通。</div>
+        </div>
+
+        <div id="cap-grid" class="grid" style="margin:0; display:contents"></div>
+      </div>
+
+      <div class="empty" id="list-empty" style="display:none">
+        <div class="art">🗺️</div>
+        <h4>没有符合条件的能力</h4>
+        <p>清掉筛选条件，或直接创建一个新能力</p>
+        <button class="btn primary" onclick="toast('原型：直接创建')">+ 创建能力</button>
+      </div>
+    </div>
+
+    <!-- ================= 详情 ================= -->
+    <div id="pane-detail" style="display:none">
+      <div class="detail-top">
+        <span class="back" onclick="showDetail(null)">← 返回</span>
+        <div class="who2"><div class="avatar" id="d-av">IMG</div><span id="d-name">图片生成</span>
+          <span class="pill warn" id="d-dirty">有未发布改动</span></div>
+        <div class="spacer"></div>
+        <button class="btn" onclick="openConsole()">原始与日志</button>
+        <button class="btn primary" onclick="toast('原型：提交发布审核（会走人工批准）')">发布</button>
+      </div>
+
+      <div class="cover"></div>
+
+      <div class="detail-body">
+        <div class="doc-wrap">
+          <div class="doc-head">
+            <div class="doc-avatar" id="d-big">IMG</div>
+            <div style="padding-bottom:6px">
+              <div class="doc-title"><span id="d-title">图片生成</span> <span class="vchip">v1.0</span></div>
+              <div class="obj-meta" id="d-meta">@能力管理员 · 2026-10-14 更新 · <span class="code-chip" id="d-code">image_generation</span></div>
+            </div>
+          </div>
+
+          <div class="expander" onclick="toggleCfg()"><span id="cfg-caret">▸</span> 展开配置详情 <span style="color:var(--text-3)">（基本信息 · 模型候选 · 策略 · 场景 · 最近调用）</span></div>
+          <div class="cfg" id="cfg">
+            <div class="cfg-tabs">
+              <span class="on" onclick="setCfgTab(this,'c1')">基本信息</span>
+              <span onclick="setCfgTab(this,'c2')">模型候选</span>
+              <span onclick="setCfgTab(this,'c3')">策略</span>
+              <span onclick="setCfgTab(this,'c4')">场景指定</span>
+              <span onclick="setCfgTab(this,'c5')">最近调用</span>
+            </div>
+            <div id="c1"><dl class="kv">
+              <dt>能力编码</dt><dd><span class="code-chip" id="c-code">image_generation</span></dd>
+              <dt>能力标签</dt><dd id="c-tags"></dd>
+              <dt>人设摘要</dt><dd id="c-persona">依据业务输入生成合规图片，不臆造产品事实；外发前按数据等级策略校验。</dd>
+              <dt>数据策略</dt><dd>LOCAL_FIRST（<span class="muted">登记项，判定以外发策略为准</span>）</dd>
+              <dt>审计等级</dt><dd>SUMMARY</dd>
+              <dt>人工确认点</dt><dd>对外发送前</dd>
+            </dl></div>
+            <div id="c2" style="display:none"><table><thead><tr><th>模型</th><th>用途</th><th>优先级</th><th>部署</th><th>健康</th></tr></thead><tbody id="c-cands"></tbody></table>
+              <div class="note" style="margin-top:10px">这里补上了现在缺失的「编辑用途与优先级」（原来只能删了重建）。</div></div>
+            <div id="c3" style="display:none"><table><thead><tr><th>数据等级</th><th>允许外发</th><th>调用前审批</th><th>无模型时</th></tr></thead><tbody>
+              <tr><td><span class="pill gray">公开</span></td><td>是</td><td>否</td><td>转人工</td></tr>
+              <tr><td><span class="pill gray">内部</span></td><td>是</td><td>否</td><td>转人工</td></tr>
+              <tr><td><span class="pill violet">限制</span></td><td>是</td><td>是</td><td>转人工</td></tr>
+              <tr><td><span class="pill bad">严格</span></td><td><b>否（硬拒）</b></td><td>是</td><td>转人工</td></tr>
+            </tbody></table></div>
+            <div id="c4" style="display:none"><div class="empty" style="padding:20px"><div class="art">🧭</div><h4>没有场景指定</h4><p>不按场景收窄时，能力对所有场景一视同仁</p><button class="btn sm" onclick="toast('原型：新增场景指定')">+ 新增</button></div></div>
+            <div id="c5" style="display:none"><table><thead><tr><th>时间</th><th>命中模型</th><th>外发</th><th>结果</th></tr></thead><tbody>
+              <tr><td class="mono">10:18:22</td><td>bluocto-image-v2</td><td><span class="pill warn">是</span></td><td><span class="pill ok">成功</span></td></tr>
+              <tr><td class="mono">09:52:07</td><td>qwen-image</td><td><span class="pill warn">是</span></td><td><span class="pill ok">成功</span></td></tr>
+              <tr><td class="mono">09:31:44</td><td class="muted">—</td><td><span class="pill ok">否</span></td><td><span class="pill bad">候选健康异常</span></td></tr>
+            </tbody></table></div>
+          </div>
+
+          <div class="prompt">
+            <h4>[角色]</h4>
+            <p id="p-role">你是图片生成能力的主流程执行器。你与调用方交互，收集业务输入与风格要求，在关键节点调用子 Agent（提示词改写专家、合规检查专家、质量评估专家）完成任务，并保证输出可追溯到来源。</p>
+            <h4>[任务]</h4>
+            <p>1) 校验业务输入与输出 Schema；2) 按数据等级策略决定是否允许外发；3) 选择模型候选（PRIMARY → FALLBACK → GRAY）；4) 产出图片与结构化结果，返回可下载链接与审计 traceId。</p>
+            <h4>[禁止事项]</h4>
+            <p>不得臆造产品事实；不得绕过人工确认点对外发送；外发失败不得静默改用本地模型重试，必须记录真实错误分类。</p>
+          </div>
+        </div>
+
+        <!-- 右侧试调助手（可折叠，按真图 1405/1404） -->
+        <aside class="assist" id="assist">
+          <header>
+            <span>🤖</span> 能力试调助手
+            <div class="icons">
+              <span title="版本记录" onclick="toast('原型：查看该能力的配置版本记录')">🕘</span>
+              <span title="展开/收起" onclick="toggleAssist()">⤢</span>
+              <span title="收起为浮卡" onclick="collapseAssist()">—</span>
+            </div>
+          </header>
+          <div class="hero" id="assist-hero">
+            <div>
+              <div class="mascot">🤖</div>
+              <div style="font-size:16px; font-weight:700">能力试调助手</div>
+              <div style="font-size:13px; color:var(--text-3); margin-top:4px">很高兴为您服务</div>
+            </div>
+          </div>
+          <div class="scope" style="padding:0 14px 8px">当前作用域：<b>图片生成（image_generation）</b> · dryRun 不产生费用、不写审计</div>
+          <div class="chips">
+            <span class="chip" onclick="ask('这条链路会走哪条路？')">会走哪条路？</span>
+            <span class="chip" onclick="ask('为什么排除了 local-sdxl？')">为什么排除某个模型？</span>
+            <span class="chip" onclick="ask('数据等级是严格会怎样？')">等级=严格会怎样？</span>
+            <span class="chip" onclick="ask('帮我补一条策略建议')">生成策略建议</span>
+          </div>
+          <div class="msgs" id="msgs"></div>
+          <div class="inputbar">
+            <div class="row">
+              <span class="ic" onclick="toast('原型：上传附件（图片/文档）')">＋</span>
+              <input id="ask-input" placeholder="输入消息开始对话" onkeydown="if(event.key==='Enter'){ask(this.value);this.value=''}" />
+              <span class="ic" onclick="toast('原型：语音输入')">🎙</span>
+              <button class="send" onclick="const i=document.getElementById('ask-input'); ask(i.value); i.value=''">➤</button>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <!-- ================= 看板 ================= -->
+    <div class="page" id="pane-board" style="display:none">
+      <div class="page-head">
+        <div>
+          <h1>能力运行看板</h1>
+          <div class="hint">项目组视角：全部组织 · 最近 30 天</div>
+        </div>
+        <div class="actions">
+          <select style="height:32px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);color:var(--text-2);font-size:13px;padding:0 8px"><option>最近 7 天</option><option selected>最近 30 天</option><option>最近 90 天</option></select>
+        </div>
+      </div>
+
+      <div class="metrics" style="margin-top:14px">
+        <div class="metric blue"><div class="k">实例总数</div><div class="v">12 <span>个能力</span></div></div>
+        <div class="metric teal"><div class="k">Token 消耗</div><div class="v">1,292.2 <span>M</span></div></div>
+        <div class="metric amber"><div class="k">累计成果</div><div class="v">912 <span>份</span></div></div>
+        <div class="metric yellow"><div class="k">累计使用时长</div><div class="v">119.2 <span>小时</span></div></div>
+      </div>
+
+      <div class="grid-2">
+        <div class="panel">
+          <h3>调用与 Token 消耗分布</h3>
+          <div class="sub">按天 · 最近 30 天</div>
+          <div class="trend">
+            <i style="height:40%"></i><i style="height:52%"></i><i style="height:46%"></i><i style="height:68%"></i>
+            <i style="height:60%"></i><i class="w" style="height:92%"></i><i style="height:56%"></i><i style="height:64%"></i>
+            <i style="height:50%"></i><i style="height:72%"></i><i style="height:80%"></i><i style="height:58%"></i>
+            <i style="height:54%"></i><i style="height:70%"></i><i style="height:62%"></i><i style="height:76%"></i>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>能力使用排行榜</h3>
+          <div class="sub">按调用次数与成果数</div>
+          <ul class="rank">
+            <li><span class="no">1</span><div><div><span class="code-chip">image_generation</span></div><div class="bar"><i style="width:92%"></i></div></div><span class="n">812</span></li>
+            <li><span class="no">2</span><div><div><span class="code-chip">talent_match</span></div><div class="bar"><i style="width:64%"></i></div></div><span class="n">214</span></li>
+            <li><span class="no">3</span><div><div><span class="code-chip">brief_precheck</span></div><div class="bar"><i style="width:38%"></i></div></div><span class="n">104</span></li>
+            <li><span class="no">4</span><div><div><span class="code-chip">document_parse</span></div><div class="bar"><i style="width:30%"></i></div></div><span class="n">96</span></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:14px">
+        <h3>按状态与健康度统计</h3>
+        <div class="sub">表格视图（同 DinTal「看板」列表：名称 / 状态 / 所有者 / 最后修改）</div>
+        <table>
+          <thead><tr><th style="width:40px"></th><th>能力</th><th>状态</th><th>所有者</th><th>最后修改</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr><td>☆</td><td><b>图片生成</b> <span class="code-chip">image_generation</span></td><td><span class="pill warn">待处理</span></td><td><span class="owner">管</span></td><td class="muted">今天</td><td><a onclick="showDetail('image_generation')">查看</a></td></tr>
+            <tr><td>☆</td><td><b>文档解析</b> <span class="code-chip">document_parse</span></td><td><span class="pill bad">缺模型候选</span></td><td><span class="owner" style="background:#0E9F9F">内</span></td><td class="muted">今天</td><td><a onclick="showDetail('document_parse')">查看</a></td></tr>
+            <tr><td>☆</td><td><b>人才匹配</b> <span class="code-chip">talent_match</span></td><td><span class="pill ok">已就绪</span></td><td><span class="owner" style="background:#E08700">人</span></td><td class="muted">3 天前</td><td><a onclick="showDetail('talent_match')">查看</a></td></tr>
+            <tr><td>☆</td><td><b>视觉 DNA 提取</b> <span class="code-chip">visual_dna_extract</span></td><td><span class="pill bad">缺模型候选</span></td><td><span class="owner" style="background:#6941C6">视</span></td><td class="muted">7 天前</td><td><a onclick="showDetail('visual_dna_extract')">查看</a></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 规范 + 确认清单 -->
+    <div class="page" id="pane-spec">
+      <div class="panel">
+        <h3>v3 设计规范（DinTal 真实截图提炼）</h3>
+        <div class="sub">确认这一节＝确认整套风格；实现时按它落到组件库，不再逐页拍脑袋</div>
+        <div class="tokens">
+          <div class="token"><div class="sw" style="background:#F4F7FC"></div><div class="meta">页面底 #F4F7FC</div></div>
+          <div class="token"><div class="sw" style="background:#FFFFFF"></div><div class="meta">卡片 / 内容区白</div></div>
+          <div class="token"><div class="sw" style="background:#2B63F0"></div><div class="meta">主色 #2B63F0</div></div>
+          <div class="token"><div class="sw" style="background:#EEF3FE"></div><div class="meta">选中/激活浅底</div></div>
+          <div class="token"><div class="sw" style="background:linear-gradient(135deg,#2B63F0,#4C8DFF)"></div><div class="meta">指标卡 蓝</div></div>
+          <div class="token"><div class="sw" style="background:linear-gradient(135deg,#12A8A8,#3FC9C9)"></div><div class="meta">指标卡 青</div></div>
+          <div class="token"><div class="sw" style="background:linear-gradient(135deg,#E08700,#FFAE33)"></div><div class="meta">指标卡 橙</div></div>
+          <div class="token"><div class="sw" style="background:linear-gradient(135deg,#E0A800,#FFC93C)"></div><div class="meta">指标卡 黄</div></div>
+          <div class="token"><div class="sw" style="background:#232323"></div><div class="meta">日志控制台</div></div>
+        </div>
+        <div class="note" style="margin-top:12px">
+          真图里的三条"手感"规则，已落进本原型：<b>①卡片是对象（头像 + 名称 + 版本 + 归属人 + 描述）</b>，
+          <b>②配置藏在「展开配置详情」后面</b>（默认只给人看的描述，避免原始字段糊一屏），
+          <b>③右侧助手常驻可折叠</b>（试调/问答就在手边，不用切页）。
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:16px">
+        <h3>请圈选（v3 相对 v2 的四处修正，均来自你的真图）</h3>
+        <table>
+          <thead><tr><th style="width:26%">项</th><th style="width:42%">v3 按真图的做法</th><th style="width:32%">可退回到</th></tr></thead>
+          <tbody>
+            <tr><td>左栏</td><td>宽 82px，<b>图标 + 图标下小字标签</b>（训练台 / 能力 / 模型 / 路由 / 调用 / 资产库 / 看板）</td><td>纯图标 + tooltip（v2）；或展开成 200px 文字栏</td></tr>
+            <tr><td>顶部导航</td><td>一级＝<b>对象类型</b>页签（能力 / 行业·场景 / 组织 / 岗位）＋ 二级＝全部 / 待处理 / 草稿</td><td>不加对象类型页签，只留二级</td></tr>
+            <tr><td>清单页</td><td><b>创建能力卡</b>（直接创建 / 快速导入 / 从模板）+ 筛选条（多下拉 + 清除筛选 + 显示 N 个）+ 分组 + 卡片 hover 菜单</td><td>只留筛选条 + 卡片，不做创建卡</td></tr>
+            <tr><td>详情页</td><td><b>整页</b>：封面 + 头像名称 + 「展开配置详情」（基本信息/模型候选/策略/场景/最近调用）+ <b>右侧试调助手</b>（可折叠成浮卡）</td><td>v2 的右侧抽屉（更轻，但装不下"配置详情 + 助手"两块）</td></tr>
+            <tr><td>看板</td><td>4 张彩色指标卡（实例/Token/成果/时长）+ 分布卡 + 排行榜 + 表格视图</td><td>去掉彩色卡，改白卡浅色数字</td></tr>
+            <tr><td>原始数据</td><td><b>深色控制台</b>（等宽、可复制/下载/清空）</td><td>浅色代码块内联</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- 编辑弹窗（按真图 1406：头像 + 名称 + 人设 + 计数器） -->
+<div class="mask" id="edit-mask">
+  <div class="modal">
+    <header><h3>编辑能力</h3><div style="margin-left:auto"><button class="btn ghost" onclick="closeMask('edit-mask')">✕</button></div></header>
+    <div class="body">
+      <div class="avatar-edit" id="edit-av">IMG</div>
+      <div class="field"><label>能力名称</label><input id="edit-name" value="图片生成" /><div class="cnt">4 / 20</div></div>
+      <div class="field"><label><b>*</b> 人设（把这段当作能力的职责与边界说明，会进入系统提示）</label>
+        <textarea id="edit-persona">你是图片生成能力的主流程执行器。你与调用方交互，收集业务输入与风格要求，在关键节点调用子 Agent（提示词改写专家、合规检查专家、质量评估专家）完成任务，并保证输出可追溯到来源。</textarea>
+        <div class="cnt">209 / 500</div></div>
+      <div class="note">原型不落库；真实页面这里还有「高级配置」（八分节）入口，避免把原始 JSON 摊在一屏。</div>
+    </div>
+    <footer><button class="btn" onclick="closeMask('edit-mask')">取消</button><button class="btn primary" onclick="closeMask('edit-mask'); toast('原型：已保存（会写一条修订）')">确定</button></footer>
+  </div>
+</div>
+
+<!-- 深色控制台 -->
+<div class="console-mask" id="console-mask">
+  <div class="console">
+    <header><span>🖥️ 原始与日志 · <span id="console-title">能力清单</span></span><div style="margin-left:auto; display:flex; gap:8px">
+      <button onclick="toast('原型：下载 JSON')">下载</button><button onclick="closeConsole()">关闭</button></div></header>
+    <pre>GET /aigov/capability/list?pageNum=1&pageSize=12   200 OK  86ms
+GET /aigov/binding/list?capabilityCode=image_generation   200 OK  41ms
+
+{
+  "code": 200,
+  "rows": [
+    { "capabilityId": 1769100000000000101, "capabilityCode": "image_generation",
+      "capabilityName": "图片生成", "requiredTags": "IMAGE",
+      "dataPolicy": "LOCAL_FIRST", "auditLevel": "SUMMARY", "status": "0" }
+  ],
+  "total": 12
+}
+
+--- dryRun：capability=image_generation, dataLevel=INTERNAL ---
+[1] 能力校验     OK     存在且启用
+[2] 策略命中     OK     aig_route_policy(capability, INTERNAL) → allow_external=Y, require_approval=N, fallback=MANUAL
+[3] 模型候选     3 条   bluocto-image-v2(PRIMARY) / qwen-image(FALLBACK) / local-sdxl(GRAY)
+[4] 可用性过滤   -1     local-sdxl: health_status=UNHEALTHY（读取口径 DOWN/UNHEALTHY）
+[5] 标签比对     OK     required_tags=[IMAGE] ⊇ capability_tags=[IMAGE,TEXT]
+[6] 最终选择     OK     bluocto-image-v2（EXTERNAL_ENTERPRISE, priority=10）
+[7] 审计预览     -      capability_code / data_level / model_id / external_call=Y / trace_id
+
+--- 说明 ---
+· 原始字段一律进这里（usageJson / inputSnapshotRef / 长 ID），列表只给人读的值。
+· 这是全站唯一深色区域：看日志与配能力互不干扰。</pre>
+    <footer><button onclick="toast('原型：复制全部')">复制全部</button><button onclick="closeConsole()">知道了</button></footer>
+  </div>
+</div>
+
+<!-- 折叠态的助手浮卡 -->
+<button class="btn primary" id="assist-fab" style="position:fixed; right:22px; bottom:22px; display:none; z-index:46" onclick="expandAssist()">🤖 能力试调助手</button>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const CAPS = [
+    { code: 'image_generation', name: '图片生成', tags: ['IMAGE'], ico: 'IMG', cls: 'ico-image', owner: '@ranfangjie', date: '2026-10-14',
+      desc: '依据业务输入与风格要求生成合规图片；关键节点调用提示词改写、合规检查、质量评估三个子 Agent，输出可追溯到来源。',
+      cands: [ { key: 'bluocto-image-v2', usage: 'PRIMARY', prio: 10, health: 'ok', deploy: '外部企业' },
+               { key: 'qwen-image', usage: 'FALLBACK', prio: 20, health: 'ok', deploy: '外部API' },
+               { key: 'local-sdxl', usage: 'GRAY', prio: 30, health: 'bad', deploy: '本地' } ],
+      policy: 4, scenes: 2, calls: 812, fail: 9, state: 'todo', stateText: '待处理' },
+    { code: 'talent_match', name: '人才匹配', tags: ['TEXT'], ico: 'TAL', cls: 'ico-text', owner: '@zhangzuoluo', date: '2026-10-12',
+      desc: '按岗位画像与候选人条件做匹配与排序，输出匹配理由与置信度；不输出与招聘无关的个人敏感信息。',
+      cands: [ { key: 'qwen-plus', usage: 'PRIMARY', prio: 10, health: 'ok', deploy: '外部API' } ],
+      policy: 4, scenes: 1, calls: 214, fail: 2, state: 'ok', stateText: '已就绪' },
+    { code: 'document_parse', name: '文档解析', tags: ['OCR', 'TEXT'], ico: 'DOC', cls: 'ico-multi', owner: '@finch', date: '2026-10-11',
+      desc: '把 PDF/DOCX/图片解析为结构化文本与表格字段；扫描件需 OCR 引擎（未选型），解析结果进入知识分段。',
+      cands: [], policy: 2, scenes: 0, calls: 96, fail: 12, state: 'todo', stateText: '待处理' },
+    { code: 'deliverable_consistency', name: '交付一致性检查', tags: ['TEXT'], ico: 'CHK', cls: 'ico-text', owner: '@aries', date: '2026-10-10',
+      desc: '对比多份交付物之间的口径与数据一致性，列出冲突项与建议；只读，不修改任何交付物。',
+      cands: [ { key: 'qwen-plus', usage: 'PRIMARY', prio: 10, health: 'ok', deploy: '外部API' } ],
+      policy: 0, scenes: 0, calls: 0, fail: 0, state: 'draft', stateText: '草稿' },
+    { code: 'visual_dna_extract', name: '视觉 DNA 提取', tags: ['VISION'], ico: 'DNA', cls: 'ico-vision', owner: '@ranfangjie', date: '2026-10-09',
+      desc: '从品牌物料中提取配色、字体、构图与调性，产出可复用的视觉 DNA 描述，供后续生成任务引用。',
+      cands: [], policy: 3, scenes: 1, calls: 58, fail: 3, state: 'todo', stateText: '待处理' },
+    { code: 'brief_precheck', name: 'Brief 预检', tags: ['TEXT'], ico: 'BRF', cls: 'ico-text', owner: '@andy.shi', date: '2026-10-08',
+      desc: '对外部 Brief 做可执行性预检：缺项、冲突、不可达目标与合规风险，输出阻断项与建议项。',
+      cands: [ { key: 'qwen-plus', usage: 'PRIMARY', prio: 10, health: 'ok', deploy: '外部API' },
+               { key: 'snail-local-7b', usage: 'FALLBACK', prio: 20, health: 'ok', deploy: '本地' } ],
+      policy: 4, scenes: 1, calls: 104, fail: 1, state: 'ok', stateText: '已就绪' },
+    { code: 'text_generation', name: '文本生成（未登记）', tags: ['TEXT'], ico: 'TXT', cls: 'ico-text', owner: '@system', date: '2026-09-30',
+      desc: '训练台助手与推荐默认调用的能力编码，但当前资料/登记里查不到它的定义 —— 属于「配了以为生效」的典型。',
+      cands: [], policy: 1, scenes: 0, calls: 0, fail: 0, state: 'draft', stateText: '草稿' },
+    { code: 'intent_suggest', name: '意图推荐（未登记）', tags: ['TEXT'], ico: 'TXT', cls: 'ico-text', owner: '@system', date: '2026-09-30',
+      desc: '推荐模块默认调用的能力编码，同样未在能力目录登记；需要在能力清单里补齐或改配置。',
+      cands: [], policy: 1, scenes: 0, calls: 0, fail: 0, state: 'draft', stateText: '草稿' },
+    { code: 'image_caption', name: '图片描述', tags: ['VISION', 'TEXT'], ico: 'CAP', cls: 'ico-vision', owner: '@songzhiyi', date: '2026-09-28',
+      desc: '为素材生成可检索的描述与关键词，供资产索引与知识检索使用；不评价画面质量。',
+      cands: [ { key: 'qwen-vl-plus', usage: 'PRIMARY', prio: 10, health: 'warn', deploy: '外部API' } ],
+      policy: 3, scenes: 0, calls: 0, fail: 0, state: 'todo', stateText: '待处理' },
+    { code: 'poster_copy', name: '海报文案', tags: ['TEXT'], ico: 'POS', cls: 'ico-text', owner: '@zhangzuoluo', date: '2026-09-26',
+      desc: '按品牌调性与版面限制生成海报主标题、副标题与卖点文案，遵守广告法与禁用词清单。',
+      cands: [ { key: 'qwen-plus', usage: 'PRIMARY', prio: 10, health: 'ok', deploy: '外部API' } ],
+      policy: 4, scenes: 1, calls: 0, fail: 0, state: 'ok', stateText: '已就绪' },
+    { code: 'rerank_docs', name: '文档重排', tags: ['RERANK（已下线）'], ico: 'RNK', cls: 'ico-multi', owner: '@finch', date: '2026-09-20',
+      desc: '对检索候选做重排。注意：RERANK 标签已在生产下线，但能力页的下拉里仍在提供它 —— 可能配出永远没有候选的能力。',
+      cands: [ { key: 'bge-rerank', usage: 'PRIMARY', prio: 10, health: 'ok', deploy: '本地' } ],
+      policy: 4, scenes: 0, calls: 0, fail: 0, state: 'ok', stateText: '已就绪' },
+    { code: 'video_brief', name: '视频脚本纲要', tags: ['TEXT'], ico: 'VID', cls: 'ico-multi', owner: '@vivi', date: '2026-09-18',
+      desc: '把投放目标拆成分镜纲要与节奏点，供视频生产流水线使用；不含具体画面生成。',
+      cands: [ { key: 'qwen-plus', usage: 'PRIMARY', prio: 10, health: 'ok', deploy: '外部API' } ],
+      policy: 4, scenes: 1, calls: 0, fail: 0, state: 'ok', stateText: '已就绪' }
+  ];
+
+  let current = CAPS[0];
+  let sub = 'all';
+
+  function visible() {
+    if (sub === 'todo') return CAPS.filter(c => c.state === 'todo');
+    if (sub === 'draft') return CAPS.filter(c => c.state === 'draft');
+    return CAPS;
+  }
+
+  function healthLine(c) {
+    if (!c.cands.length) return '<span class="dot bad"></span> 无模型候选';
+    if (c.cands.some(x => x.health !== 'ok')) return '<span class="dot warn"></span> 候选健康异常';
+    if (!c.policy) return '<span class="dot warn"></span> 缺策略';
+    return '<span class="dot ok"></span> 链路完整';
+  }
+
+  function statePill(c) {
+    const cls = c.state === 'ok' ? 'ok' : (c.state === 'todo' ? 'warn' : 'gray');
+    return `<span class="pill ${cls}">${c.stateText}</span>`;
+  }
+
+  function renderCards() {
+    const rows = visible();
+    document.getElementById('cap-grid').innerHTML = rows.map(c => `
+      <article class="obj-card${current && current.code === c.code ? ' selected' : ''}" onclick="showDetail('${c.code}')">
+        <div class="obj-top">
+          <div class="av-ico ${c.cls}">${c.ico}</div>
+          <div style="min-width:0; flex:1">
+            <div class="obj-name"><span class="nm">${c.name}</span><span class="vchip">v1.0</span>${statePill(c)}</div>
+            <div class="obj-meta">${c.owner} · ${c.date} 更新</div>
+          </div>
+        </div>
+        <div class="obj-desc">${c.desc}</div>
+        <div class="obj-foot">
+          ${c.tags.map(t => `<span class="pill gray">${t}</span>`).join('')}
+          <span class="obj-meta">候选 ${c.cands.length} · 策略 ${c.policy}/4 · 近24h ${c.calls}</span>
+        </div>
+        <div class="obj-foot" style="margin-top:6px">${healthLine(c)}
+          <span class="obj-act"><button class="btn sm" onclick="event.stopPropagation(); openAssist('${c.code}')">试调</button></span>
+        </div>
+        <div class="popmenu">
+          <div onclick="event.stopPropagation(); openAssist('${c.code}')">训练 / 试调能力</div>
+          <div onclick="event.stopPropagation(); openEdit('${c.code}')">编辑基本信息</div>
+          <div onclick="event.stopPropagation(); showDetail('${c.code}', 'c2')">模型候选</div>
+          <div onclick="event.stopPropagation(); toast('原型：提交发布审核（人工批准）')">提交发布审核</div>
+          <div class="del" onclick="event.stopPropagation(); toast('原型：删除（会做引用校验）')">删除</div>
+        </div>
+      </article>`).join('');
+    document.getElementById('list-empty').style.display = rows.length ? 'none' : 'block';
+    document.getElementById('filter-count').textContent = `显示 ${rows.length} 个能力（按配置完整度排序）`;
+  }
+
+  function setSub(v) {
+    sub = v;
+    document.querySelectorAll('.subrow .st').forEach(el => el.classList.toggle('active', el.dataset.sub === v));
+    renderCards();
+  }
+
+  // ---- 详情 ----
+  function showDetail(code, cfgTab) {
+    if (!code) {
+      document.getElementById('pane-detail').style.display = 'none';
+      document.getElementById('pane-list').style.display = '';
+      document.getElementById('pane-board').style.display = 'none';
+      document.getElementById('pane-spec').style.display = 'none';
+      document.getElementById('subrow').style.display = '';
+      document.getElementById('crumb-page').textContent = '能力清单';
+      return;
+    }
+    const c = CAPS.find(x => x.code === code) || CAPS[0];
+    current = c;
+    document.getElementById('pane-list').style.display = 'none';
+    document.getElementById('pane-board').style.display = 'none';
+    document.getElementById('pane-spec').style.display = 'none';
+    document.getElementById('subrow').style.display = 'none';
+    document.getElementById('pane-detail').style.display = '';
+    document.getElementById('crumb-page').textContent = '能力详情';
+    document.getElementById('d-av').textContent = c.ico;
+    document.getElementById('d-big').textContent = c.ico;
+    document.getElementById('d-name').textContent = c.name;
+    document.getElementById('d-title').textContent = c.name;
+    document.getElementById('d-code').textContent = c.code;
+    document.getElementById('d-meta').innerHTML = c.owner + ' · ' + c.date + ' 更新 · <span class="code-chip">' + c.code + '</span>';
+    document.getElementById('c-code').textContent = c.code;
+    document.getElementById('c-tags').innerHTML = c.tags.map(t => `<span class="pill gray">${t}</span>`).join(' ');
+    document.getElementById('c-cands').innerHTML = c.cands.length
+      ? c.cands.map(x => `<tr><td><span class="code-chip">${x.key}</span></td><td><span class="pill ${x.usage === 'PRIMARY' ? 'blue' : (x.usage === 'FALLBACK' ? 'teal' : 'violet')}">${x.usage}</span></td><td>${x.prio}</td><td>${x.deploy}</td><td>${x.health === 'ok' ? '<span class="pill ok">健康</span>' : '<span class="pill bad">异常</span>'}</td></tr>`).join('')
+      : '<tr><td colspan="5"><div class="empty" style="padding:18px"><div class="art">🗺️</div><h4>这个能力还没有模型候选</h4><p>没有候选 ⇒ 调用一定失败</p><button class="btn primary sm" onclick="toast(\'原型：添加候选\')">+ 添加第一个候选</button></div></td></tr>';
+    document.getElementById('d-dirty').style.display = c.state === 'ok' ? 'none' : '';
+    if (cfgTab) { document.getElementById('cfg').classList.add('show'); }
+    renderCards();
+  }
+
+  function toggleCfg() {
+    const cfg = document.getElementById('cfg');
+    cfg.classList.toggle('show');
+    document.getElementById('cfg-caret').textContent = cfg.classList.contains('show') ? '▾' : '▸';
+  }
+  function setCfgTab(el, id) {
+    el.parentElement.querySelectorAll('span').forEach(s => s.classList.remove('on'));
+    el.classList.add('on');
+    ['c1', 'c2', 'c3', 'c4', 'c5'].forEach(x => document.getElementById(x).style.display = (x === id) ? '' : 'none');
+  }
+
+  // ---- 助手 ----
+  function openAssist(code) {
+    if (code) { showDetail(code); expandAssist(); }
+    else expandAssist();
+  }
+  function toggleAssist() {
+    document.getElementById('assist').classList.toggle('collapsed');
+    document.getElementById('assist-fab').style.display = 'none';
+  }
+  function collapseAssist() {
+    document.getElementById('assist').classList.add('collapsed');
+    document.getElementById('assist-fab').style.display = '';
+  }
+  function expandAssist() {
+    document.getElementById('assist').classList.remove('collapsed');
+    document.getElementById('assist-fab').style.display = 'none';
+  }
+
+  function ask(q) {
+    if (!q || !q.trim()) return;
+    const c = current || CAPS[0];
+    const box = document.getElementById('msgs');
+    const esc = s => String(s).replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
+    box.insertAdjacentHTML('beforeend', `<div class="msg me"><div class="b">${esc(q)}</div></div>`);
+    let a;
+    const bad = c.cands.find(x => x.health !== 'ok');
+    if (!c.cands.length) {
+      a = `这条链路<b>走不通</b>：<span class="code-chip">${c.code}</span> 没有任何模型候选，路由会在第 3 步返回「没有可用模型候选」。建议先添加候选。`;
+    } else if (/排除|为什么/.test(q)) {
+      a = `被排除的是 <span class="code-chip">${bad ? bad.key : '无'}</span>：库里健康值是 <span class="code-chip">UNHEALTHY</span>，路由读取口径是 <span class="code-chip">DOWN/UNHEALTHY</span>，而 DDL 注释写的是 UP/DOWN/DEGRADED —— 这正是要统一的坑之一。`;
+    } else if (/严格|STRICT/.test(q)) {
+      a = `等级＝<b>严格</b> 时策略层硬拒绝外发（不看策略行），只会挑本地模型；当前本地候选 ${c.cands.filter(x => x.deploy === '本地').length} 个，不足时走「无模型时＝转人工」。`;
+    } else if (/策略建议/.test(q)) {
+      a = `建议：①给「限制」等级加审批（现在没有）；②「严格」等级显式写一条策略，避免依赖兜底；③把 ${c.code} 的<code>数据策略</code>登记项与真实外发口径对齐（现在登记项不参与判定）。`;
+    } else {
+      a = `链路：① 能力校验通过 → ② 命中策略 <span class="code-chip">aig_route_policy(${c.code}, 内部)</span> → ③ ${c.cands.length} 个候选按 PRIMARY/FALLBACK/GRAY 排序 → ④ 选中 <span class="code-chip">${bad ? c.cands[0].key : '—'}</span> → ⑤ 真实调用会写审计与配额。<br><b>本次未发起调用。</b>`;
+    }
+    setTimeout(() => {
+      box.insertAdjacentHTML('beforeend', `<div class="msg bot"><div class="b">${a}</div></div>`);
+      box.scrollTop = box.scrollHeight;
+    }, 160);
+    box.scrollTop = box.scrollHeight;
+  }
+
+  // ---- 编辑弹窗 ----
+  function openEdit(code) {
+    const c = CAPS.find(x => x.code === code) || CAPS[0];
+    document.getElementById('edit-av').textContent = c.ico;
+    document.getElementById('edit-name').value = c.name;
+    document.getElementById('edit-mask').classList.add('show');
+  }
+  function closeMask(id) { document.getElementById(id).classList.remove('show'); }
+
+  // ---- 控制台 ----
+  function openConsole() { document.getElementById('console-mask').classList.add('show'); }
+  function closeConsole() { document.getElementById('console-mask').classList.remove('show'); }
+  document.getElementById('console-mask').addEventListener('click', e => { if (e.target.id === 'console-mask') closeConsole(); });
+
+  // ---- 顶栏切换 ----
+  function tab(pane) {
+    document.getElementById('subrow').style.display = (pane === 'list') ? '' : 'none';
+    document.getElementById('pane-list').style.display = (pane === 'list') ? '' : 'none';
+    document.getElementById('pane-board').style.display = (pane === 'board') ? '' : 'none';
+    document.getElementById('pane-detail').style.display = 'none';
+    document.getElementById('pane-spec').style.display = (pane === 'spec') ? '' : 'none';
+    document.getElementById('crumb-page').textContent = pane === 'board' ? '能力运行看板' : '能力清单';
+  }
+
+  let toastTimer = null;
+  function toast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+  }
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeConsole(); closeMask('edit-mask'); } });
+
+  // hover 菜单：卡片右侧「…」区域触发（真图是 hover 出现；这里用 hover + 长按提示）
+  document.addEventListener('mouseover', e => {
+    const card = e.target.closest('.obj-card');
+    if (card) card.classList.add('menu-open');
+    else document.querySelectorAll('.obj-card.menu-open').forEach(c => c.classList.remove('menu-open'));
+  });
+
+  renderCards();
+</script>
+</body>
+</html>

@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>能力总览 v2 · 静态原型（参考 DinTal Agent 设计思路）</title>
+<!--
+  ============================================================================
+  v2 与 v1 的差别（v1 只借了配色，v2 借的是 DinTal 的 Agent 设计思路与交互）：
+    1. 导航：20 项文字平铺 → 「图标竖栏（一级模块） + 顶部页签（模块内）」
+    2. 对象：能力从「表格行」升级为「卡片对象」——色块图标 + 名称 + 编码 + 标签 + 状态点 + 健康摘要
+    3. 视图：卡片视图 / 表格视图 可切换（给人看用卡片，排障用表格）
+    4. 详情：右侧抽屉 = 档案 + 「试调对话面板」（Agent 的"使用"就是对话，带快捷问题 chips）
+    5. 首页：彩色指标卡 + 链路色块节点（缺环用橙色加号）+ 趋势 + 失败 TOP 排行
+    6. 原始数据：深色控制台抽屉（等宽/滚动/清空/下载）——唯一深色区域，替掉列表里直出 JSON
+    7. 空态：插画 + 一句话 + 主按钮
+  静态原型：未接接口、mock 数据；只用于确认「风格 + 交互」，确认后才排开发。
+  风格来源：DinTal / Aquila Pilot 数智员工平台（华为云云商店）× 用户选定「浅色 + 卡片分区」。
+  ============================================================================
+-->
+<style>
+  :root {
+    --bg: #F4F7FC; --surface: #FFFFFF; --surface-2: #FAFBFE;
+    --border: #E4EAF3; --border-strong: #D3DCEB;
+    --text: #1F2A44; --text-2: #5B6B85; --text-3: #8A97AC;
+    --primary: #2B63F0; --primary-600: #1E52D8; --primary-50: #EEF3FE; --primary-100: #DCE7FD;
+    --success: #0F9D58; --success-bg: #E8F7EF;
+    --warning: #C77700; --warning-bg: #FFF4E1;
+    --danger: #D93025; --danger-bg: #FDECEA;
+    --teal: #0E9F9F; --teal-bg: #E4F6F6;
+    --violet: #6941C6; --violet-bg: #F3EEFF;
+    --amber: #E08700; --amber-bg: #FFF3DC;
+    --radius-lg: 14px; --radius: 10px; --radius-sm: 8px;
+    --shadow: 0 1px 2px rgba(23,43,77,.05), 0 10px 26px rgba(23,43,77,.06);
+    --shadow-sm: 0 1px 2px rgba(23,43,77,.06);
+    --mono: ui-monospace, "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text);
+    font: 14px/1.6 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; -webkit-font-smoothing: antialiased; }
+  a { color: var(--primary); text-decoration: none; }
+  .mono, code { font-family: var(--mono); font-size: 12px; }
+
+  .proto-flag { background: #1F2A44; color: #EAF0FF; font-size: 12px; padding: 6px 14px; display: flex; gap: 14px; align-items: center; justify-content: center; flex-wrap: wrap; }
+  .proto-flag b { color: #FFD666; }
+
+  /* ===== 图标竖栏 + 顶部页签 ===== */
+  .app { display: flex; min-height: calc(100vh - 32px); }
+  .rail {
+    width: 68px; flex: 0 0 68px; background: var(--surface); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 14px 0;
+    position: sticky; top: 0; height: calc(100vh - 32px);
+  }
+  .rail .logo { width: 34px; height: 34px; border-radius: 10px; background: linear-gradient(135deg,#2B63F0,#48B0FF);
+    color:#fff; display:grid; place-items:center; font-weight:700; font-size:13px; margin-bottom: 10px;
+    box-shadow: 0 4px 10px rgba(43,99,240,.28); }
+  .rail button {
+    width: 44px; height: 44px; border: 0; background: transparent; border-radius: 12px; cursor: pointer;
+    color: var(--text-3); display: grid; place-items: center; position: relative;
+  }
+  .rail button:hover { background: var(--surface-2); color: var(--primary-600); }
+  .rail button.active { background: var(--primary-50); color: var(--primary-600); }
+  .rail button.active::before { content: ''; position: absolute; left: -14px; top: 12px; bottom: 12px; width: 3px; border-radius: 0 3px 3px 0; background: var(--primary); }
+  .rail button .tip {
+    position: absolute; left: 54px; top: 50%; transform: translateY(-50%); background: #1F2A44; color: #fff;
+    font-size: 12px; padding: 4px 8px; border-radius: 6px; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity .15s; z-index: 40;
+  }
+  .rail button:hover .tip { opacity: 1; }
+  .rail .spacer { flex: 1; }
+  .rail .who { width: 34px; height: 34px; border-radius: 50%; background: var(--primary-100); color: var(--primary-600);
+    display: grid; place-items: center; font-weight: 700; font-size: 12px; }
+
+  main { flex: 1 1 auto; min-width: 0; }
+  .topbar { height: 54px; background: rgba(255,255,255,.88); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 14px; padding: 0 22px; position: sticky; top: 0; z-index: 30; }
+  .crumb { color: var(--text-3); font-size: 12px; }
+  .crumb b { color: var(--text-2); }
+  .topbar .spacer { flex: 1; }
+  .searchbox { width: 250px; height: 34px; border: 1px solid var(--border); background: var(--surface); border-radius: 999px;
+    padding: 0 12px; color: var(--text-3); font-size: 13px; display: flex; align-items: center; gap: 8px; }
+  .page { padding: 18px 22px 44px; max-width: 1600px; }
+  .page-head { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; }
+  .page-head h1 { margin: 0; font-size: 21px; }
+  .page-head .sub { color: var(--text-3); font-size: 13px; margin-top: 2px; }
+  .page-head .actions { margin-left: auto; display: flex; gap: 10px; }
+
+  /* module tabs */
+  .mtabs { display: flex; gap: 6px; margin: 16px 0 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .mtab { padding: 9px 14px; font-size: 13px; color: var(--text-2); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .mtab:hover { color: var(--primary-600); }
+  .mtab.active { color: var(--primary-600); font-weight: 600; border-bottom-color: var(--primary); }
+  .mtab .mini { font-size: 11px; color: var(--text-3); margin-left: 6px; }
+
+  .btn { height: 34px; padding: 0 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong); background: var(--surface);
+    color: var(--text-2); font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .btn:hover { border-color: var(--primary); color: var(--primary-600); }
+  .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; box-shadow: 0 4px 12px rgba(43,99,240,.22); }
+  .btn.primary:hover { background: var(--primary-600); color: #fff; }
+  .btn.sm { height: 28px; padding: 0 10px; font-size: 12px; }
+  .btn.ghost { border-color: transparent; background: transparent; }
+  .seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); overflow: hidden; }
+  .seg button { height: 30px; padding: 0 12px; border: 0; background: var(--surface); color: var(--text-2); font-size: 12px; cursor: pointer; }
+  .seg button.active { background: var(--primary-50); color: var(--primary-600); font-weight: 600; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); padding: 16px 18px; }
+  .card + .card { margin-top: 16px; }
+  .card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .card-head h3 { margin: 0; font-size: 14px; }
+  .card-head .hint { color: var(--text-3); font-size: 12px; }
+  .card-head .right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+
+  /* ===== 彩色指标卡（DinTal 看板范式）===== */
+  .metrics { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 12px; }
+  .metric { border-radius: var(--radius-lg); padding: 14px 16px; color: #fff; cursor: pointer; position: relative; overflow: hidden; }
+  .metric:hover { filter: brightness(1.04); }
+  .metric .k { font-size: 12px; opacity: .92; display: flex; align-items: center; gap: 6px; }
+  .metric .v { font-size: 26px; font-weight: 700; margin: 4px 0 2px; letter-spacing: .3px; font-variant-numeric: tabular-nums; }
+  .metric .d { font-size: 12px; opacity: .92; }
+  .metric.blue { background: linear-gradient(135deg,#2B63F0,#4C8DFF); box-shadow: 0 8px 18px rgba(43,99,240,.22); }
+  .metric.teal { background: linear-gradient(135deg,#0E9F9F,#38C2C2); box-shadow: 0 8px 18px rgba(14,159,159,.2); }
+  .metric.amber { background: linear-gradient(135deg,#E08700,#FFAE33); box-shadow: 0 8px 18px rgba(224,135,0,.2); }
+  .metric.violet { background: linear-gradient(135deg,#6941C6,#8B6BE0); box-shadow: 0 8px 18px rgba(105,65,198,.2); }
+  .metric.green { background: linear-gradient(135deg,#0F9D58,#35BE7B); box-shadow: 0 8px 18px rgba(15,157,88,.2); }
+  .metric .spark { position: absolute; right: 10px; bottom: 8px; opacity: .35; }
+
+  /* ===== 链路：色块节点 + 橙色加号（DinTal 流程范式）===== */
+  .chain { display: grid; grid-template-columns: repeat(9, auto); align-items: center; gap: 10px; }
+  .node { min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-sm); padding: 12px 14px; cursor: pointer; }
+  .node:hover { border-color: var(--primary); }
+  .node .k { font-size: 12px; color: var(--text-3); display: flex; gap: 6px; align-items: center; }
+  .node .v { font-size: 20px; font-weight: 700; margin: 4px 0 2px; font-variant-numeric: tabular-nums; }
+  .node .d { font-size: 12px; color: var(--text-2); }
+  .node.stage-blue { border-top: 3px solid var(--primary); }
+  .node.stage-teal { border-top: 3px solid var(--teal); }
+  .node.stage-amber { border-top: 3px solid var(--amber); }
+  .node.stage-violet { border-top: 3px solid var(--violet); }
+  .node.stage-green { border-top: 3px solid var(--success); }
+  .arrow { color: var(--border-strong); font-size: 16px; }
+  .plus-node { border: 1px dashed var(--amber); background: var(--amber-bg); color: #8a5a00; border-radius: var(--radius-lg);
+    padding: 12px 14px; cursor: pointer; font-size: 12px; display: grid; place-items: center; text-align: center; min-width: 118px; }
+  .plus-node b { display: block; font-size: 13px; }
+  .plus-node:hover { border-style: solid; }
+
+  /* ===== 排行 / 趋势 ===== */
+  .grid-2 { display: grid; grid-template-columns: 1.25fr .75fr; gap: 16px; margin-top: 16px; }
+  .grid-2 > .card + .card { margin-top: 0; }
+  .rank { list-style: none; margin: 0; padding: 0; }
+  .rank li { display: grid; grid-template-columns: 22px 1fr 54px; gap: 10px; align-items: center; padding: 7px 0; font-size: 13px; }
+  .rank .no { width: 20px; height: 20px; border-radius: 6px; display: grid; place-items: center; font-size: 11px; font-weight: 700; background: var(--primary-50); color: var(--primary-600); }
+  .rank .bar { height: 6px; border-radius: 3px; background: #EEF1F6; overflow: hidden; margin-top: 5px; }
+  .rank .bar i { display: block; height: 100%; background: linear-gradient(90deg,#2B63F0,#4C8DFF); }
+  .rank .n { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .trend { display: flex; align-items: flex-end; gap: 6px; height: 96px; padding-top: 6px; }
+  .trend i { flex: 1; background: linear-gradient(180deg,#4C8DFF,#2B63F0); border-radius: 4px 4px 0 0; opacity: .85; }
+  .trend i.warn { background: linear-gradient(180deg,#FFAE33,#E08700); }
+
+  /* ===== 能力卡片（对象卡，DinTal 数字员工卡范式）===== */
+  .grid-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+  .obj-card { position: relative; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface);
+    box-shadow: var(--shadow-sm); padding: 14px; cursor: pointer; transition: box-shadow .15s, transform .15s, border-color .15s; }
+  .obj-card:hover { border-color: var(--primary); box-shadow: var(--shadow); transform: translateY(-1px); }
+  .obj-card.selected { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-50), var(--shadow); }
+  .obj-top { display: flex; gap: 12px; align-items: flex-start; }
+  .obj-ico { width: 40px; height: 40px; flex: 0 0 40px; border-radius: 12px; display: grid; place-items: center; font-weight: 700; font-size: 13px; color: #fff; }
+  .ico-text { background: linear-gradient(135deg,#2B63F0,#4C8DFF); }
+  .ico-vision { background: linear-gradient(135deg,#6941C6,#8B6BE0); }
+  .ico-image { background: linear-gradient(135deg,#E08700,#FFAE33); }
+  .ico-multi { background: linear-gradient(135deg,#0E9F9F,#38C2C2); }
+  .obj-name { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 6px; }
+  .obj-code { font-family: var(--mono); font-size: 12px; color: var(--text-3); margin-top: 1px; }
+  .obj-tags { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 8px; }
+  .obj-line { margin-top: 9px; font-size: 12px; color: var(--text-2); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .dot.ok { background: var(--success); box-shadow: 0 0 0 3px var(--success-bg); }
+  .dot.warn { background: var(--amber); box-shadow: 0 0 0 3px var(--amber-bg); }
+  .dot.bad { background: var(--danger); box-shadow: 0 0 0 3px var(--danger-bg); }
+  .obj-hover { position: absolute; right: 10px; bottom: 10px; display: flex; gap: 6px; opacity: 0; transition: opacity .15s; }
+  .obj-card:hover .obj-hover { opacity: 1; }
+
+  .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 2px 9px; border-radius: 999px; font-weight: 600; white-space: nowrap; }
+  .pill.ok { background: var(--success-bg); color: var(--success); }
+  .pill.warn { background: var(--warning-bg); color: var(--warning); }
+  .pill.bad { background: var(--danger-bg); color: var(--danger); }
+  .pill.info { background: var(--teal-bg); color: var(--teal); }
+  .pill.blue { background: var(--primary-50); color: var(--primary-600); }
+  .pill.violet { background: var(--violet-bg); color: var(--violet); }
+  .pill.gray { background: #EEF1F6; color: var(--text-2); }
+  .code-chip { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; font-family: var(--mono); font-size: 12px; color: var(--text-2); }
+
+  table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+  thead th { text-align: left; font-size: 12px; color: var(--text-3); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--border); background: var(--surface-2); white-space: nowrap; }
+  tbody td { padding: 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover td { background: var(--primary-50); }
+  .t-name { font-weight: 600; }
+  .t-sub { color: var(--text-3); font-size: 12px; }
+  .muted { color: var(--text-3); }
+
+  /* ===== 右侧详情抽屉 + 对话面板 ===== */
+  .drawer-mask { position: fixed; inset: 0; background: rgba(23,43,77,.28); opacity: 0; pointer-events: none; transition: opacity .18s; z-index: 50; }
+  .drawer-mask.show { opacity: 1; pointer-events: auto; }
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 94vw); background: var(--surface);
+    box-shadow: -18px 0 50px rgba(15,23,42,.18); transform: translateX(102%); transition: transform .22s ease; z-index: 60; display: flex; flex-direction: column; }
+  .drawer.show { transform: translateX(0); }
+  .drawer header { padding: 16px 18px; border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: flex-start; }
+  .drawer header .obj-ico { width: 46px; height: 46px; flex: 0 0 46px; font-size: 15px; }
+  .drawer header h3 { margin: 0; font-size: 16px; }
+  .drawer .body { flex: 1; overflow: auto; padding: 16px 18px; }
+  .drawer footer { border-top: 1px solid var(--border); padding: 12px 18px; background: var(--surface-2); display: flex; gap: 10px; }
+  .kv { display: grid; grid-template-columns: 92px 1fr; gap: 7px 10px; font-size: 13px; }
+  .kv dt { color: var(--text-3); }
+  .kv dd { margin: 0; }
+  .sub-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; background: var(--surface-2); }
+  .sub-card + .sub-card { margin-top: 10px; }
+  .sub-card h4 { margin: 0 0 6px; font-size: 13px; display: flex; gap: 8px; align-items: center; }
+
+  /* 试调对话面板 */
+  .chat { margin-top: 14px; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+  .chat .chat-head { background: var(--primary-50); padding: 9px 12px; font-size: 12px; color: var(--primary-600); display: flex; gap: 8px; align-items: center; }
+  .chat .msgs { padding: 12px; max-height: 260px; overflow: auto; background: var(--surface); }
+  .msg { display: flex; gap: 8px; margin-bottom: 10px; }
+  .msg .b { max-width: 88%; padding: 8px 11px; border-radius: 12px; font-size: 13px; }
+  .msg.me { justify-content: flex-end; }
+  .msg.me .b { background: var(--primary); color: #fff; border-bottom-right-radius: 4px; }
+  .msg.bot .b { background: var(--surface-2); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+  .msg .b .mono { color: inherit; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 12px 10px; }
+  .chip { border: 1px solid var(--border-strong); background: var(--surface); border-radius: 999px; padding: 4px 10px; font-size: 12px; color: var(--text-2); cursor: pointer; }
+  .chip:hover { border-color: var(--primary); color: var(--primary-600); }
+  .chat .input { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); background: var(--surface-2); }
+  .chat .input input { flex: 1; height: 34px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0 10px; font-size: 13px; }
+
+  /* ===== 深色控制台（DinTal 日志范式）===== */
+  .console-mask { position: fixed; inset: 0; background: rgba(15,23,42,.5); display: none; place-items: center; z-index: 70; padding: 24px; }
+  .console-mask.show { display: grid; }
+  .console { width: min(880px, 100%); background: #232323; border-radius: var(--radius-lg); overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,.42); }
+  .console header { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: #2b2b2b; border-bottom: 1px solid #3a3a3a; color: #E5E7EB; }
+  .console header .tt { font-size: 13px; }
+  .console header .spacer { flex: 1; }
+  .console .tabs { display: flex; gap: 4px; }
+  .console .tabs span { font-size: 12px; padding: 3px 9px; border-radius: 6px; color: #9CA3AF; cursor: pointer; }
+  .console .tabs span.on { background: #3a3a3a; color: #F3F4F6; }
+  .console pre { margin: 0; padding: 14px 16px; color: #C9D6A0; font-family: var(--mono); font-size: 12px; line-height: 1.65; max-height: 54vh; overflow: auto; white-space: pre-wrap; }
+  .console footer { padding: 9px 14px; background: #2b2b2b; border-top: 1px solid #3a3a3a; display: flex; gap: 10px; justify-content: flex-end; }
+  .console footer button { background: #3a3a3a; border: 1px solid #4a4a4a; color: #E5E7EB; border-radius: 6px; padding: 5px 12px; font-size: 12px; cursor: pointer; }
+  .console footer button:hover { background: #454545; }
+
+  /* ===== 空态 ===== */
+  .empty { text-align: center; padding: 34px 12px; color: var(--text-3); }
+  .empty .art { font-size: 40px; margin-bottom: 6px; }
+  .empty h4 { margin: 4px 0 2px; color: var(--text); font-size: 14px; }
+  .empty p { margin: 0 0 12px; font-size: 12px; }
+
+  .raw-toggle { font-size: 12px; color: var(--text-3); cursor: pointer; }
+  .raw-toggle:hover { color: var(--primary-600); }
+  .toast { position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%) translateY(10px); background: #1F2A44; color: #fff;
+    padding: 9px 16px; border-radius: 999px; font-size: 13px; opacity: 0; pointer-events: none; transition: all .2s; z-index: 90; max-width: 82vw; text-align: center; }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .note { background: var(--primary-50); border: 1px solid var(--primary-100); color: #24417a; border-radius: var(--radius); padding: 10px 12px; font-size: 12px; }
+  .note b { color: var(--primary-600); }
+  .tokens { display: flex; flex-wrap: wrap; gap: 10px; }
+  .token { width: 148px; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .token .sw { height: 44px; }
+  .token .meta { padding: 6px 8px; font-size: 11px; color: var(--text-2); }
+  @media (max-width: 1240px) {
+    .metrics { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .chain { grid-template-columns: 1fr; }
+    .chain .arrow { display: none; }
+    .grid-2 { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="proto-flag">
+  <span><b>静态原型 v2</b> · 未接接口 · mock 数据</span>
+  <span>借的是 DinTal 的 <b>Agent 设计思路与交互</b>：图标竖栏 + 顶部页签 / 对象卡片 / 卡片·表格双视图 / 详情抽屉 + 试调对话 / 彩色指标 + 色块链路 / 深色日志控制台</span>
+</div>
+
+<div class="app">
+  <!-- 一级：图标竖栏 -->
+  <aside class="rail">
+    <div class="logo">AI</div>
+    <button class="active" data-mod="capability" onclick="switchModule('capability')">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l7.5 4.3v8.4L12 21l-7.5-5.3V7.3z"/><circle cx="12" cy="12" r="2.6"/></svg>
+      <span class="tip">能力</span>
+    </button>
+    <button data-mod="model" onclick="switchModule('model')">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="7" y="7" width="10" height="10" rx="2"/><path d="M10 3v3M14 3v3M10 18v3M14 18v3M3 10h3M3 14h3M18 10h3M18 14h3"/></svg>
+      <span class="tip">模型与供应商</span>
+    </button>
+    <button data-mod="route" onclick="switchModule('route')">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h6a4 4 0 014 4v0a4 4 0 004 4h2"/><path d="M4 18h4"/><circle cx="18" cy="6" r="2"/></svg>
+      <span class="tip">路由与策略</span>
+    </button>
+    <button data-mod="ops" onclick="switchModule('ops')">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12h4l2.5-6 4 12 2.5-6h5"/></svg>
+      <span class="tip">调用治理</span>
+    </button>
+    <button data-mod="asset" onclick="switchModule('asset')">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7l8-4 8 4-8 4z"/><path d="M4 12l8 4 8-4M4 17l8 4 8-4"/></svg>
+      <span class="tip">资产登记</span>
+    </button>
+    <button data-mod="train" onclick="switchModule('train')">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l2.2 5.2L20 10l-4.4 3.4L17 20l-5-3-5 3 1.4-6.6L4 10l5.8-1.8z"/></svg>
+      <span class="tip">训练与运营</span>
+    </button>
+    <div class="spacer"></div>
+    <div class="who">管</div>
+  </aside>
+
+  <main>
+    <header class="topbar">
+      <div class="crumb">平台治理 / <b>能力</b> / 能力总览</div>
+      <div class="spacer"></div>
+      <div class="searchbox">⌕ 搜能力 / 模型 / traceId</div>
+      <button class="btn"><span>🔔</span> 3</button>
+    </header>
+
+    <div class="page">
+      <div class="page-head">
+        <div>
+          <h1>能力</h1>
+          <div class="sub">每个能力是一张卡片；点开就是它的档案 + 试调对话。链路是否通、缺哪一环，一眼可见。</div>
+        </div>
+        <div class="actions">
+          <button class="btn" onclick="openConsole()">&lt;/&gt; 原始与日志</button>
+          <button class="btn" onclick="toast('原型：打开「配置缺口」修复向导')">修复配置缺口</button>
+          <button class="btn primary" onclick="toast('原型：新建能力（弹窗，不跳页）')">+ 新建能力</button>
+        </div>
+      </div>
+
+      <nav class="mtabs">
+        <div class="mtab active" data-pane="overview">总览</div>
+        <div class="mtab" data-pane="cards">能力清单 <span class="mini">12</span></div>
+        <div class="mtab" data-pane="candidates">模型候选 <span class="mini">缺口 3</span></div>
+        <div class="mtab" data-pane="trial">调用试调 <span class="mini">dryRun</span></div>
+        <div class="mtab" data-pane="audit">最近调用</div>
+      </nav>
+
+      <!-- ============ 总览 ============ -->
+      <div class="pane" id="pane-overview">
+        <!-- 彩色指标卡 -->
+        <div class="metrics">
+          <div class="metric blue" onclick="toast('点进「能力清单」：按配置完整度排序')">
+            <div class="k">业务能力</div>
+            <div class="v">12</div>
+            <div class="d">9 个链路完整 · 3 个缺模型候选</div>
+          </div>
+          <div class="metric teal" onclick="toast('点进「模型候选」：PRIMARY / FALLBACK / GRAY')">
+            <div class="k">模型候选</div>
+            <div class="v">7</div>
+            <div class="d">在用 6 · 健康异常 1</div>
+          </div>
+          <div class="metric amber" onclick="toast('点进「路由与策略」')">
+            <div class="k">策略覆盖</div>
+            <div class="v">31</div>
+            <div class="d">覆盖 11/12 能力 · 缺 1</div>
+          </div>
+          <div class="metric violet" onclick="toast('点进「调用试调」：不产生费用的决策预览')">
+            <div class="k">近 24h 调用</div>
+            <div class="v">1,284</div>
+            <div class="d">外发 118 次</div>
+          </div>
+          <div class="metric green" onclick="tab('audit')">
+            <div class="k">失败率</div>
+            <div class="v">1.8%</div>
+            <div class="d">23 次失败 · 多为「无模型候选」</div>
+          </div>
+        </div>
+
+        <!-- 链路：色块节点 + 橙色加号 -->
+        <div class="card" style="margin-top:16px">
+          <div class="card-head">
+            <h3>链路</h3>
+            <span class="hint">能力 → 模型候选 → 策略 → 场景指定 → 调用；<b style="color:var(--amber)">橙色加号</b>＝这里缺一环，点它直接补</span>
+          </div>
+          <div class="chain">
+            <div class="node stage-blue" onclick="tab('cards')">
+              <div class="k"><span class="dot ok"></span> ① 能力</div>
+              <div class="v">12</div>
+              <div class="d">登记在册</div>
+            </div>
+            <div class="arrow">→</div>
+            <div class="plus-node" onclick="toast('缺口：3 个能力没有模型候选 —— 点这里直接补（默认打开「模型候选」新建）')">
+              <div><b>+ 补模型候选</b>缺 3 个能力</div>
+            </div>
+            <div class="arrow">→</div>
+            <div class="node stage-amber" onclick="toast('点进「路由与策略」：能力 × 数据等级 → 外发 / 审批')">
+              <div class="k"><span class="dot warn"></span> ③ 策略</div>
+              <div class="v">31</div>
+              <div class="d">缺 1 个能力</div>
+            </div>
+            <div class="arrow">→</div>
+            <div class="node stage-violet" onclick="toast('点进「场景指定」：场景 × 能力 → 指定供应商（只收窄）')">
+              <div class="k"><span class="dot ok"></span> ④ 场景指定</div>
+              <div class="v">5</div>
+              <div class="d">1 条从未命中</div>
+            </div>
+            <div class="arrow">→</div>
+            <div class="node stage-green" onclick="tab('audit')">
+              <div class="k"><span class="dot ok"></span> ⑤ 调用</div>
+              <div class="v">1,284</div>
+              <div class="d">失败 23 · 1.8%</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-head">
+              <h3>近 7 天调用与失败</h3>
+              <span class="hint">失败集中在「无模型候选」与「模型健康异常」两类</span>
+            </div>
+            <div class="trend">
+              <i style="height:46%"></i><i style="height:58%"></i><i style="height:40%"></i>
+              <i style="height:72%"></i><i style="height:64%"></i><i class="warn" style="height:88%"></i>
+              <i style="height:54%"></i><i style="height:62%"></i><i style="height:48%"></i>
+              <i style="height:70%"></i><i style="height:78%"></i><i style="height:60%"></i>
+              <i style="height:52%"></i><i style="height:68%"></i>
+            </div>
+            <div class="t-sub" style="display:flex; justify-content:space-between; margin-top:6px">
+              <span>10-08</span><span>10-14</span>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>失败最多的能力</h3><span class="hint">TOP 4</span></div>
+            <ul class="rank">
+              <li><span class="no">1</span><div><div><span class="code-chip">document_parse</span></div><div class="bar"><i style="width:82%"></i></div></div><span class="n">12</span></li>
+              <li><span class="no">2</span><div><div><span class="code-chip">image_generation</span></div><div class="bar"><i style="width:56%"></i></div></div><span class="n">9</span></li>
+              <li><span class="no">3</span><div><div><span class="code-chip">visual_dna_extract</span></div><div class="bar"><i style="width:28%"></i></div></div><span class="n">3</span></li>
+              <li><span class="no">4</span><div><div><span class="code-chip">talent_match</span></div><div class="bar"><i style="width:16%"></i></div></div><span class="n">2</span></li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- 能力卡片（对象卡） -->
+        <div class="card" style="margin-top:16px">
+          <div class="card-head">
+            <h3>能力</h3>
+            <span class="hint">卡片＝给人看的（点开档案 + 试调对话）；表格＝给排障看的</span>
+            <div class="right">
+              <span class="seg">
+                <button class="active" id="seg-card" onclick="setView('card')">卡片</button>
+                <button id="seg-table" onclick="setView('table')">表格</button>
+              </span>
+            </div>
+          </div>
+
+          <div id="view-card" class="grid-cards"></div>
+
+          <div id="view-table" style="display:none">
+            <table>
+              <thead><tr><th style="width:24%">能力</th><th style="width:20%">模型候选</th><th style="width:15%">策略覆盖</th><th style="width:12%">场景</th><th style="width:13%">近 24h</th><th style="width:16%">体检</th></tr></thead>
+              <tbody id="cap-table"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ 能力清单 ============ -->
+      <div class="pane" id="pane-cards" style="display:none">
+        <div class="card">
+          <div class="card-head"><h3>能力清单</h3><span class="hint">与总览同一批数据；这里给完整筛选（编码 / 名称 / 标签 / 配置完整度 / 状态）</span></div>
+          <div class="note">原型只做到「总览」的完整交互；清单页在开发时是同一套卡片/表格 + 筛选条 + 批量操作。</div>
+          <div class="empty" style="margin-top:12px">
+            <div class="art">🧱</div>
+            <h4>该页签在原型里是占位</h4>
+            <p>等你确认风格与交互后，按同一套规范实现（卡片/表格双视图 + 筛选 + 批量操作）</p>
+            <button class="btn primary" onclick="tab('overview')">回到总览看交互</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ 模型候选（含空态范式） ============ -->
+      <div class="pane" id="pane-candidates" style="display:none">
+        <div class="card">
+          <div class="card-head"><h3>模型候选 · <span class="code-chip" id="cand-cap">document_parse</span></h3>
+            <span class="hint">PRIMARY / FALLBACK / GRAY + 优先级；这里补上了现在缺失的「编辑用途与优先级」</span>
+            <div class="right"><button class="btn primary" onclick="toast('原型：新增候选（弹窗）')">+ 添加候选</button></div>
+          </div>
+          <div class="empty">
+            <div class="art">🗺️</div>
+            <h4>这个能力还没有模型候选</h4>
+            <p>没有候选 ⇒ 调用一定失败（会得到「没有可用模型候选」）。先给它挂一个模型，再回总览看链路是否通了。</p>
+            <button class="btn primary" onclick="toast('原型：添加候选（弹窗：选模型 + 用途 + 优先级）')">+ 添加第一个候选</button>
+            <button class="btn" style="margin-left:8px" onclick="openConsole()">看接口原始返回</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ 试调 ============ -->
+      <div class="pane" id="pane-trial" style="display:none">
+        <div class="card">
+          <div class="card-head"><h3>调用试调（dryRun）</h3><span class="hint">回答「这条链路会走哪条路、为什么」，不产生费用</span></div>
+          <div class="note">这是本次要补的断点之一：后端已有 <span class="code-chip">POST /aigov/invoke/dryRun</span>，前端此前零入口。
+            交互上不再做成一个孤立表单，而是<b>能力档案里的对话</b>——见右侧抽屉里那一栏。</div>
+          <div style="margin-top:12px"><button class="btn primary" onclick="openDrawer('document_parse'); tab('overview')">打开能力档案看对话式试调</button></div>
+        </div>
+      </div>
+
+      <!-- ============ 最近调用 ============ -->
+      <div class="pane" id="pane-audit" style="display:none">
+        <div class="card">
+          <div class="card-head"><h3>最近调用</h3><span class="hint">摘要；原始字段进「原始与日志」（深色控制台）</span>
+            <div class="right"><button class="btn" onclick="openConsole()">&lt;/&gt; 原始与日志</button></div>
+          </div>
+          <table>
+            <thead><tr><th>时间</th><th>能力</th><th>命中模型</th><th>数据等级</th><th>外发</th><th>结果</th><th>traceId</th></tr></thead>
+            <tbody>
+              <tr onclick="openDrawer('image_generation')"><td class="mono">10:18:22</td><td><span class="code-chip">image_generation</span></td><td>bluocto-image-v2</td><td><span class="pill gray">内部</span></td><td><span class="pill warn">是</span></td><td><span class="pill ok">成功</span></td><td class="mono">a91f…7c2</td></tr>
+              <tr onclick="openDrawer('document_parse')"><td class="mono">10:17:05</td><td><span class="code-chip">document_parse</span></td><td class="muted">—</td><td><span class="pill gray">内部</span></td><td><span class="pill ok">否</span></td><td><span class="pill bad">无模型候选</span></td><td class="mono">a91e…11d</td></tr>
+              <tr onclick="openDrawer('talent_match')"><td class="mono">10:15:40</td><td><span class="code-chip">talent_match</span></td><td>qwen-plus</td><td><span class="pill violet">限制</span></td><td><span class="pill ok">否</span></td><td><span class="pill ok">成功</span></td><td class="mono">a91d…9ab</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ============ 规范 ============ -->
+      <div class="card" style="margin-top:16px">
+        <div class="card-head"><h3>设计规范（DinTal 色系 × 你选的「浅色 + 卡片分区」）</h3><span class="hint">确认这一节＝确认整套风格</span></div>
+        <div class="tokens">
+          <div class="token"><div class="sw" style="background:#F4F7FC"></div><div class="meta">页面底 #F4F7FC</div></div>
+          <div class="token"><div class="sw" style="background:linear-gradient(135deg,#2B63F0,#4C8DFF)"></div><div class="meta">主色（指标卡）</div></div>
+          <div class="token"><div class="sw" style="background:linear-gradient(135deg,#0E9F9F,#38C2C2)"></div><div class="meta">辅助青</div></div>
+          <div class="token"><div class="sw" style="background:linear-gradient(135deg,#E08700,#FFAE33)"></div><div class="meta">缺环/警示橙</div></div>
+          <div class="token"><div class="sw" style="background:linear-gradient(135deg,#6941C6,#8B6BE0)"></div><div class="meta">场景/紫</div></div>
+          <div class="token"><div class="sw" style="background:linear-gradient(135deg,#0F9D58,#35BE7B)"></div><div class="meta">成功率绿</div></div>
+          <div class="token"><div class="sw" style="background:#232323"></div><div class="meta">日志控制台 #232323</div></div>
+        </div>
+        <div class="note" style="margin-top:12px">
+          <b>为什么敢用彩色指标卡：</b>DinTal 的看板正是「4~5 个彩色指标卡 + 趋势 + 排行榜」，
+          数字先给结论、再给对象；彩色卡片只在<b>总览顶部</b>出现，其余页面仍是白卡片，不会花。
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <div class="card-head"><h3>v2 风格与交互确认清单</h3><span class="hint">逐条圈选；有异议直接说，我按你的选择再改一版</span></div>
+        <table>
+          <thead><tr><th style="width:30%">待确认</th><th style="width:40%">v2 的做法（参考 DinTal）</th><th style="width:30%">备选</th></tr></thead>
+          <tbody>
+            <tr><td>一级导航</td><td>左侧 <b>图标竖栏</b>（6 个模块）+ 模块内<b>顶部页签</b></td><td>图标栏可展开为文字（宽 200px）；或保留分组文字导航</td></tr>
+            <tr><td>能力对象形态</td><td><b>卡片</b>：色块图标 + 名称 + 编码 + 标签 + 状态点 + 健康摘要</td><td>只保留表格（更省地方，但失去"对象感"）</td></tr>
+            <tr><td>视图切换</td><td>卡片 / 表格 可切换（保留"按配置完整度排序"）</td><td>只要卡片；或只要表格</td></tr>
+            <tr><td>详情形态</td><td>右侧<b>抽屉</b>：档案 + <b>试调对话面板</b>（快捷问题 chips）</td><td>独立详情页；或弹窗</td></tr>
+            <tr><td>试调交互</td><td><b>对话式</b>：问"会走哪条路""为什么排除它"</td><td>表单式：选能力+数据等级 → 输出决策明细</td></tr>
+            <tr><td>原始数据</td><td><b>深色控制台</b>抽屉（等宽、可清空/下载）</td><td>浅色代码块内联展开</td></tr>
+            <tr><td>指标卡</td><td>总览顶部 5 张<b>彩色渐变</b>指标卡</td><td>改白卡片 + 彩色数字；或减少到 3 张</td></tr>
+            <tr><td>缺环表达</td><td>链路里的<b>橙色虚线加号</b>（点它直接补）</td><td>只在指标卡上用徽标提示</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- 右侧详情抽屉：档案 + 试调对话 -->
+<div class="drawer-mask" id="drawer-mask" onclick="closeDrawer()"></div>
+<aside class="drawer" id="drawer">
+  <header>
+    <div class="obj-ico ico-text" id="d-ico">TXT</div>
+    <div style="flex:1">
+      <h3 id="d-name">能力</h3>
+      <div class="obj-code" id="d-code">capability_code</div>
+      <div class="obj-tags" id="d-tags"></div>
+    </div>
+    <button class="btn ghost" onclick="closeDrawer()">✕</button>
+  </header>
+  <div class="body">
+    <dl class="kv">
+      <dt>状态</dt><dd id="d-status"></dd>
+      <dt>模型候选</dt><dd id="d-cands"></dd>
+      <dt>策略覆盖</dt><dd id="d-policy"></dd>
+      <dt>场景指定</dt><dd id="d-scene"></dd>
+      <dt>近 24h</dt><dd id="d-calls"></dd>
+      <dt>体检</dt><dd id="d-verdict"></dd>
+    </dl>
+
+    <div class="chat">
+      <div class="chat-head"><span>💬</span> 试调对话（dryRun · 不产生费用、不写审计）</div>
+      <div class="msgs" id="d-msgs">
+        <div class="msg bot"><div class="b">我是这个能力的试调助手。你可以问我：会走哪条路、命中了哪条策略、为什么排除某个模型。<b>不会真的发起调用。</b></div></div>
+      </div>
+      <div class="chips" id="d-chips">
+        <span class="chip" onclick="ask('这条链路会走哪条路？')">这条链路会走哪条路？</span>
+        <span class="chip" onclick="ask('为什么排除了 local-sdxl？')">为什么排除了某个模型？</span>
+        <span class="chip" onclick="ask('如果数据等级是「严格」会怎样？')">数据等级=严格会怎样？</span>
+      </div>
+      <div class="input">
+        <input id="d-input" placeholder="问点什么…（原型：回车即答）" onkeydown="if(event.key==='Enter'){ask(this.value);this.value=''}" />
+        <button class="btn primary" onclick="const i=document.getElementById('d-input'); ask(i.value); i.value=''">发送</button>
+      </div>
+    </div>
+  </div>
+  <footer>
+    <button class="btn primary" onclick="toast('原型：真实调用（会写审计与配额）')">发起真实调用</button>
+    <button class="btn" onclick="openConsole()">&lt;/&gt; 原始与日志</button>
+    <button class="btn" onclick="toast('原型：编辑能力（弹窗）')">编辑</button>
+  </footer>
+</aside>
+
+<!-- 深色控制台 -->
+<div class="console-mask" id="console-mask">
+  <div class="console">
+    <header>
+      <span class="tt">&lt;/&gt; 原始与日志 · 能力总览</span>
+      <div class="tabs"><span class="on">接口返回</span><span>决策链路</span><span>系统日志</span></div>
+      <div class="spacer"></div>
+      <button class="btn sm" style="background:#3a3a3a;border-color:#4a4a4a;color:#E5E7EB" onclick="toast('原型：下载 JSON')">下载</button>
+      <button class="btn sm" style="background:#3a3a3a;border-color:#4a4a4a;color:#E5E7EB" onclick="toast('原型：清空控制台')">清空</button>
+      <button class="btn sm" style="background:#3a3a3a;border-color:#4a4a4a;color:#E5E7EB" onclick="closeConsole()">关闭</button>
+    </header>
+    <pre>GET /aigov/capability/list?pageNum=1&pageSize=12   200 OK  86ms
+
+{
+  "code": 200,
+  "rows": [
+    { "capabilityId": 1769100000000000101, "capabilityCode": "image_generation",
+      "capabilityName": "图片生成", "requiredTags": "IMAGE",
+      "dataPolicy": "LOCAL_FIRST", "auditLevel": "SUMMARY",
+      "inputSchema": "{...}", "outputSchema": "{...}", "status": "0" },
+    { "capabilityId": 1769100000000000102, "capabilityCode": "document_parse",
+      "capabilityName": "文档解析", "requiredTags": "OCR,TEXT",
+      "dataPolicy": "LOCAL_ONLY", "auditLevel": "FULL", "status": "0" }
+  ],
+  "total": 12
+}
+
+--- 决策预览（dryRun：capability=image_generation, dataLevel=INTERNAL）---
+[1] 能力校验            OK         capability 存在且启用
+[2] 策略命中            OK         aig_route_policy(capability, INTERNAL) → allow_external=Y, require_approval=N, fallback=MANUAL
+[3] 模型候选            3 条       bluocto-image-v2(PRIMARY) / qwen-image(FALLBACK) / local-sdxl(GRAY)
+[4] 可用性过滤          -1         local-sdxl: health_status=UNHEALTHY  (读取口径 DOWN/UNHEALTHY)
+[5] 标签比对            OK         required_tags=[IMAGE] ⊇ capability_tags=[IMAGE,TEXT]
+[6] 最终选择            OK         bluocto-image-v2   (deployment=EXTERNAL_ENTERPRISE, priority=10)
+[7] 审计预览            -          capability_code / data_level / model_id / external_call=Y / trace_id
+
+--- 提示 ---
+· 原始字段一律进这里查看，不再在列表里直出（usageJson / inputSnapshotRef / 长 ID）。
+· 本控制台是唯一深色区域，与浅色业务区分离，避免"看日志"和"配能力"互相干扰。</pre>
+    <footer>
+      <button onclick="toast('原型：复制全部')">复制全部</button>
+      <button onclick="closeConsole()">知道了</button>
+    </footer>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // ---------- mock 数据 ----------
+  const CAPS = [
+    { code: 'image_generation', name: '图片生成', tags: ['IMAGE'], ico: 'IMG', icoCls: 'ico-image',
+      cands: [
+        { key: 'bluocto-image-v2', usage: 'PRIMARY', prio: 10, health: 'ok', deploy: '外部企业' },
+        { key: 'qwen-image', usage: 'FALLBACK', prio: 20, health: 'ok', deploy: '外部API' },
+        { key: 'local-sdxl', usage: 'GRAY', prio: 30, health: 'bad', deploy: '本地' }],
+      policy: 4, policyTotal: 4, scenes: 2, calls: 812, fail: 9, issues: ['tag-gap'] },
+    { code: 'talent_match', name: '人才匹配', tags: ['TEXT'], ico: 'TXT', icoCls: 'ico-text',
+      cands: [{ key: 'qwen-plus', usage: 'PRIMARY', prio: 10, health: 'ok', deploy: '外部API' }],
+      policy: 4, policyTotal: 4, scenes: 1, calls: 214, fail: 2, issues: [] },
+    { code: 'document_parse', name: '文档解析', tags: ['OCR', 'TEXT'], ico: 'DOC', icoCls: 'ico-multi',
+      cands: [], policy: 2, policyTotal: 4, scenes: 0, calls: 96, fail: 12, issues: ['no-candidate', 'no-policy'] },
+    { code: 'deliverable_consistency', name: '交付一致性检查', tags: ['TEXT'], ico: 'CHK', icoCls: 'ico-text',
+      cands: [{ key: 'qwen-plus', usage: 'PRIMARY', prio: 10, health: 'ok', deploy: '外部API' }],
+      policy: 0, policyTotal: 4, scenes: 0, calls: 0, fail: 0, issues: ['no-policy'] },
+    { code: 'visual_dna_extract', name: '视觉 DNA 提取', tags: ['VISION'], ico: 'DNA', icoCls: 'ico-vision',
+      cands: [], policy: 3, policyTotal: 4, scenes: 1, calls: 58, fail: 3, issues: ['no-candidate'] },
+    { code: 'brief_precheck', name: 'Brief 预检', tags: ['TEXT'], ico: 'TXT', icoCls: 'ico-text',
+      cands: [
+        { key: 'qwen-plus', usage: 'PRIMARY', prio: 10, health: 'ok', deploy: '外部API' },
+        { key: 'snail-local-7b', usage: 'FALLBACK', prio: 20, health: 'ok', deploy: '本地' }],
+      policy: 4, policyTotal: 4, scenes: 1, calls: 104, fail: 1, issues: [] },
+    { code: 'text_generation', name: '文本生成（未登记）', tags: ['TEXT'], ico: 'TXT', icoCls: 'ico-text',
+      cands: [], policy: 1, policyTotal: 4, scenes: 0, calls: 0, fail: 0, issues: ['no-candidate', 'orphan'] },
+    { code: 'intent_suggest', name: '意图推荐（未登记）', tags: ['TEXT'], ico: 'TXT', icoCls: 'ico-text',
+      cands: [], policy: 1, policyTotal: 4, scenes: 0, calls: 0, fail: 0, issues: ['no-candidate', 'orphan'] },
+    { code: 'poster_copy', name: '海报文案', tags: ['TEXT'], ico: 'TXT', icoCls: 'ico-text',
+      cands: [{ key: 'qwen-plus', usage: 'PRIMARY', prio: 10, health: 'ok', deploy: '外部API' }],
+      policy: 4, policyTotal: 4, scenes: 1, calls: 0, fail: 0, issues: ['unused'] },
+    { code: 'image_caption', name: '图片描述', tags: ['VISION', 'TEXT'], ico: 'CAP', icoCls: 'ico-vision',
+      cands: [{ key: 'qwen-vl-plus', usage: 'PRIMARY', prio: 10, health: 'warn', deploy: '外部API' }],
+      policy: 3, policyTotal: 4, scenes: 0, calls: 0, fail: 0, issues: ['tag-gap'] },
+    { code: 'rerank_docs', name: '文档重排', tags: ['RERANK（已下线）'], ico: 'RNK', icoCls: 'ico-multi',
+      cands: [{ key: 'bge-rerank', usage: 'PRIMARY', prio: 10, health: 'ok', deploy: '本地' }],
+      policy: 4, policyTotal: 4, scenes: 0, calls: 0, fail: 0, issues: ['unused'] },
+    { code: 'video_brief', name: '视频脚本纲要', tags: ['TEXT'], ico: 'VID', icoCls: 'ico-multi',
+      cands: [{ key: 'qwen-plus', usage: 'PRIMARY', prio: 10, health: 'ok', deploy: '外部API' }],
+      policy: 4, policyTotal: 4, scenes: 1, calls: 0, fail: 0, issues: [] }
+  ];
+  const ISSUE_LABEL = { 'no-candidate': '缺模型候选', 'tag-gap': '模型缺能力标签', 'no-policy': '缺策略', 'orphan': '孤儿配置', 'unused': '从未命中' };
+  const ISSUE_CLS = { 'no-candidate': 'bad', 'tag-gap': 'bad', 'no-policy': 'warn', 'orphan': 'warn', 'unused': 'info' };
+
+  let current = null;
+
+  function findCap(code) { return CAPS.find(c => c.code === code) || CAPS[0]; }
+
+  function health(c) {
+    if (!c.cands.length) return '<span class="dot bad"></span> 无模型候选';
+    if (c.cands.some(x => x.health !== 'ok')) return '<span class="dot warn"></span> 候选健康异常';
+    if (!c.policy) return '<span class="dot warn"></span> 缺策略';
+    return '<span class="dot ok"></span> 链路完整';
+  }
+
+  function issuePills(c) {
+    return c.issues.map(i => `<span class="pill ${ISSUE_CLS[i] || 'info'}">${ISSUE_LABEL[i]}</span>`).join(' ') || '<span class="pill ok">链路完整</span>';
+  }
+
+  function renderCards() {
+    const box = document.getElementById('view-card');
+    box.innerHTML = CAPS.map(c => `
+      <article class="obj-card${current && current.code === c.code ? ' selected' : ''}" onclick="openDrawer('${c.code}')">
+        <div class="obj-top">
+          <div class="obj-ico ${c.icoCls}">${c.ico}</div>
+          <div style="min-width:0">
+            <div class="obj-name">${c.name}<span class="pill ${c.issues.length ? 'warn' : 'ok'}">${c.issues.length ? '待处理' : '已就绪'}</span></div>
+            <div class="obj-code">${c.code}</div>
+          </div>
+        </div>
+        <div class="obj-tags">${c.tags.map(t => `<span class="pill gray">${t}</span>`).join('')}</div>
+        <div class="obj-line">
+          <span>候选 <b>${c.cands.length}</b></span>
+          <span>策略 <b>${c.policy}/${c.policyTotal}</b></span>
+          <span>近 24h <b>${c.calls}</b>${c.fail ? `（失败 ${c.fail}）` : ''}</span>
+        </div>
+        <div class="obj-line" style="margin-top:6px">${health(c)}</div>
+        <div class="obj-hover">
+          <button class="btn sm" onclick="event.stopPropagation(); openTrialFor('${c.code}')">试调</button>
+          <button class="btn sm" onclick="event.stopPropagation(); toast('原型：编辑能力（弹窗）')">编辑</button>
+        </div>
+      </article>`).join('');
+  }
+
+  function renderTable() {
+    document.getElementById('cap-table').innerHTML = CAPS.map(c => {
+      const cand = c.cands.length
+        ? `${c.cands.map(x => `<span class="pill ${x.health === 'ok' ? 'blue' : 'warn'}">${x.usage}</span>`).join(' ')}<div class="t-sub">${c.cands.length} 个 · 异常 ${c.cands.filter(x => x.health !== 'ok').length}</div>`
+        : '<span class="pill bad">无候选</span>';
+      const policy = c.policy === 0 ? '<span class="pill bad">无策略</span>' : `<b>${c.policy}/${c.policyTotal}</b> <span class="t-sub">（缺 ${c.policyTotal - c.policy}）</span>`;
+      const calls = c.calls === 0 ? '<span class="muted">无调用</span>' : `<b>${c.calls}</b> <span class="t-sub">失败 ${c.fail}</span>`;
+      return `<tr onclick="openDrawer('${c.code}')">
+        <td><div class="t-name">${c.name}</div><div class="t-sub mono">${c.code}</div><div style="margin-top:4px">${c.tags.map(t => `<span class="pill gray">${t}</span>`).join(' ')}</div></td>
+        <td>${cand}</td><td>${policy}</td><td>${c.scenes || '<span class="muted">无</span>'}</td><td>${calls}</td><td>${issuePills(c)}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ---------- 抽屉 ----------
+  function openDrawer(code) {
+    const c = findCap(code);
+    current = c;
+    document.getElementById('d-ico').className = 'obj-ico ' + c.icoCls;
+    document.getElementById('d-ico').textContent = c.ico;
+    document.getElementById('d-name').textContent = c.name;
+    document.getElementById('d-code').textContent = c.code;
+    document.getElementById('d-tags').innerHTML = c.tags.map(t => `<span class="pill gray">${t}</span>`).join('');
+    document.getElementById('d-status').innerHTML = c.issues.includes('orphan')
+      ? '<span class="pill warn">配置不完整</span>' : '<span class="pill ok">启用</span>';
+    document.getElementById('d-cands').innerHTML = c.cands.length
+      ? c.cands.map(x => `<div><span class="pill ${x.health === 'ok' ? 'blue' : 'warn'}">${x.usage}</span> <span class="code-chip">${x.key}</span> <span class="t-sub">优先级 ${x.prio} · ${x.deploy}</span></div>`).join('')
+      : '<span class="pill bad">无候选 —— 调用必然失败</span>';
+    document.getElementById('d-policy').innerHTML = c.policy ? `<b>${c.policy}/${c.policyTotal}</b> 个等级已配` : '<span class="pill bad">没有数据等级策略</span>';
+    document.getElementById('d-scene').innerHTML = c.scenes ? `${c.scenes} 条场景指定` : '<span class="muted">无（不按场景收窄）</span>';
+    document.getElementById('d-calls').innerHTML = c.calls ? `${c.calls} 次 · 失败 ${c.fail}` : '<span class="muted">无调用</span>';
+    document.getElementById('d-verdict').innerHTML = issuePills(c);
+    document.getElementById('d-msgs').innerHTML = '<div class="msg bot"><div class="b">我是「' + c.name + '」的试调助手。你可以问我：会走哪条路、命中了哪条策略、为什么排除某个模型。<b>不会真的发起调用。</b></div></div>';
+    document.getElementById('drawer').classList.add('show');
+    document.getElementById('drawer-mask').classList.add('show');
+    renderCards();
+  }
+  function closeDrawer() {
+    document.getElementById('drawer').classList.remove('show');
+    document.getElementById('drawer-mask').classList.remove('show');
+    current = null;
+    renderCards();
+  }
+
+  function openTrialFor(code) { openDrawer(code); }
+
+  // ---------- 试调对话（mock）----------
+  function ask(q) {
+    if (!q || !q.trim()) return;
+    const c = current || CAPS[0];
+    const msgs = document.getElementById('d-msgs');
+    const esc = s => String(s).replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
+    msgs.insertAdjacentHTML('beforeend', `<div class="msg me"><div class="b">${esc(q)}</div></div>`);
+    let a;
+    const cand = c.cands[0];
+    if (!c.cands.length) {
+      a = `这条链路<b>走不通</b>：<span class="code-chip">${c.code}</span> 没有任何模型候选，路由会在第 3 步返回「没有可用模型候选」。<br>建议：先添加候选，再回来看。`;
+    } else if (/排除|为什么/.test(q)) {
+      a = `被排除的是 <span class="code-chip">${c.cands.find(x => x.health !== 'ok') ? c.cands.find(x => x.health !== 'ok').key : '无'}</span>：` +
+          `它写进库的健康值是 <span class="code-chip">UNHEALTHY</span>，而路由读取的口径是 <span class="code-chip">DOWN/UNHEALTHY</span>` +
+          `（DDL 注释里却是 UP/DOWN/DEGRADED）——这正是本次要统一的坑之一。`;
+    } else if (/严格|STRICT/.test(q)) {
+      a = `数据等级＝<b>严格</b> 时，策略层会硬拒绝外发（不依赖策略行是否存在），所以最终只会选本地模型；` +
+          `当前候选里本地只有 ${c.cands.filter(x => x.deploy === '本地').length} 个，可能不足 → 会走「无模型时＝转人工」。`;
+    } else {
+      a = `链路：① 能力校验通过 → ② 命中策略 <span class="code-chip">aig_route_policy(${c.code}, 内部)</span>（允许外发=${c.policy ? '是' : '未配'}）` +
+          ` → ③ ${c.cands.length} 个候选按 PRIMARY/FALLBACK/GRAY 排序 → ④ 最终选择 <span class="code-chip">${cand ? cand.key : '—'}</span>` +
+          `${cand ? `（优先级 ${cand.prio}，${cand.deploy}）` : ''} → ⑤ 真实调用会写审计与配额。<br><b>本次未发起调用。</b>`;
+    }
+    setTimeout(() => {
+      msgs.insertAdjacentHTML('beforeend', `<div class="msg bot"><div class="b">${a}</div></div>`);
+      msgs.scrollTop = msgs.scrollHeight;
+    }, 180);
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  // ---------- 控制台 ----------
+  function openConsole() { document.getElementById('console-mask').classList.add('show'); }
+  function closeConsole() { document.getElementById('console-mask').classList.remove('show'); }
+  document.getElementById('console-mask').addEventListener('click', e => { if (e.target.id === 'console-mask') closeConsole(); });
+
+  // ---------- 页签 / 视图 / 模块 ----------
+  function tab(pane) {
+    document.querySelectorAll('.mtab').forEach(t => t.classList.toggle('active', t.dataset.pane === pane));
+    ['overview', 'cards', 'candidates', 'trial', 'audit'].forEach(p => {
+      document.getElementById('pane-' + p).style.display = (p === pane) ? '' : 'none';
+    });
+  }
+  document.querySelectorAll('.mtab').forEach(t => t.addEventListener('click', () => tab(t.dataset.pane)));
+
+  function setView(v) {
+    document.getElementById('view-card').style.display = v === 'card' ? '' : 'none';
+    document.getElementById('view-table').style.display = v === 'table' ? '' : 'none';
+    document.getElementById('seg-card').classList.toggle('active', v === 'card');
+    document.getElementById('seg-table').classList.toggle('active', v === 'table');
+  }
+
+  function switchModule(mod) {
+    document.querySelectorAll('.rail button').forEach(b => b.classList.remove('active'));
+    const btn = document.querySelector(`.rail button[data-mod="${mod}"]`);
+    if (btn) btn.classList.add('active');
+    if (mod !== 'capability') {
+      toast('原型只做了「能力」模块；' + mod + ' 模块复用同一套规范（图标栏 + 页签 + 卡片/表格 + 抽屉）');
+    }
+  }
+
+  let toastTimer = null;
+  function toast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+  }
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeDrawer(); closeConsole(); } });
+
+  renderCards();
+  renderTable();
+</script>
+</body>
+</html>

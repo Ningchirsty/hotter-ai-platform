@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>能力总览 · 静态原型（治理台重构 demo）</title>
+<!--
+  这是**静态原型**（未接任何接口）：用于确认风格与信息架构，不参与构建、不影响现有页面。
+  风格来源：DinTal / Aquila Pilot 数智员工平台（华为云云商店）提炼 —— 蓝白主色、浅灰底、
+  白色圆角卡片、分区清晰、留白充足；叠加用户选择「浅色 + 卡片分区（业务工作台风）」。
+  交互：左侧分组导航（可折叠）/ 页签 / 能力行选中联动右侧链路卡 / 告警点击筛选 /
+        试调弹窗（dryRun 语义）/「显示原始字段」折叠 —— 全部为前端 mock 数据。
+-->
+<style>
+  :root {
+    --bg: #F4F7FC;
+    --surface: #FFFFFF;
+    --surface-2: #FAFBFE;
+    --border: #E4EAF3;
+    --border-strong: #D3DCEB;
+    --text: #1F2A44;
+    --text-2: #5B6B85;
+    --text-3: #8A97AC;
+    --primary: #2B63F0;
+    --primary-600: #1E52D8;
+    --primary-50: #EEF3FE;
+    --primary-100: #DCE7FD;
+    --success: #0F9D58;
+    --success-bg: #E8F7EF;
+    --warning: #C77700;
+    --warning-bg: #FFF4E1;
+    --danger: #D93025;
+    --danger-bg: #FDECEA;
+    --info: #0E7490;
+    --info-bg: #E6F6FA;
+    --violet: #6941C6;
+    --violet-bg: #F3EEFF;
+    --radius-lg: 14px;
+    --radius: 10px;
+    --radius-sm: 8px;
+    --shadow: 0 1px 2px rgba(23,43,77,.05), 0 10px 26px rgba(23,43,77,.06);
+    --shadow-sm: 0 1px 2px rgba(23,43,77,.06);
+    --mono: ui-monospace, "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.6 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--primary); text-decoration: none; }
+  .proto-flag {
+    background: #1F2A44; color: #EAF0FF; font-size: 12px; padding: 6px 14px;
+    display: flex; gap: 12px; align-items: center; justify-content: center;
+  }
+  .proto-flag b { color: #FFD666; }
+
+  /* ===== 布局 ===== */
+  .app { display: flex; min-height: calc(100vh - 32px); }
+  .sidenav {
+    width: 248px; flex: 0 0 248px; background: var(--surface); border-right: 1px solid var(--border);
+    padding: 16px 12px 20px; position: sticky; top: 0; height: calc(100vh - 32px); overflow: auto;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 6px 8px 14px; }
+  .brand-mark {
+    width: 30px; height: 30px; border-radius: 9px; flex: 0 0 30px;
+    background: linear-gradient(135deg, #2B63F0, #48B0FF);
+    display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 13px;
+    box-shadow: 0 4px 10px rgba(43,99,240,.28);
+  }
+  .brand-name { font-weight: 700; font-size: 15px; letter-spacing: .2px; }
+  .brand-sub { font-size: 11px; color: var(--text-3); margin-top: -2px; }
+  .nav-group { margin-top: 10px; }
+  .nav-group > button {
+    width: 100%; border: 0; background: transparent; cursor: pointer; color: var(--text-3);
+    display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600;
+    letter-spacing: .3px; padding: 6px 8px; border-radius: var(--radius-sm);
+  }
+  .nav-group > button:hover { background: var(--surface-2); color: var(--text-2); }
+  .nav-group .caret { transition: transform .16s ease; display: inline-block; }
+  .nav-group.collapsed .caret { transform: rotate(-90deg); }
+  .nav-group.collapsed ul { display: none; }
+  .nav-group ul { list-style: none; margin: 2px 0 0; padding: 0 0 0 6px; }
+  .nav-item {
+    display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: var(--radius-sm);
+    color: var(--text-2); cursor: pointer; font-size: 13px; margin: 1px 0;
+  }
+  .nav-item:hover { background: var(--surface-2); color: var(--text); }
+  .nav-item.active { background: var(--primary-50); color: var(--primary-600); font-weight: 600; }
+  .nav-item .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .45; }
+  .nav-item .badge { margin-left: auto; font-size: 11px; padding: 0 6px; border-radius: 999px; background: var(--danger-bg); color: var(--danger); font-weight: 600; }
+  .nav-foot { margin-top: 18px; padding: 10px 8px 0; border-top: 1px dashed var(--border); color: var(--text-3); font-size: 11px; }
+
+  main { flex: 1 1 auto; min-width: 0; }
+  .topbar {
+    height: 56px; background: rgba(255,255,255,.86); backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 14px;
+    padding: 0 24px; position: sticky; top: 0; z-index: 20;
+  }
+  .crumb { color: var(--text-3); font-size: 12px; }
+  .crumb b { color: var(--text-2); font-weight: 600; }
+  .topbar .spacer { flex: 1; }
+  .searchbox {
+    width: 260px; height: 34px; border: 1px solid var(--border); background: var(--surface);
+    border-radius: 999px; padding: 0 12px; color: var(--text-3); font-size: 13px; display: flex; align-items: center; gap: 8px;
+  }
+  .who { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2); }
+  .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--primary-100); color: var(--primary-600); display: grid; place-items: center; font-weight: 700; font-size: 12px; }
+
+  .page { padding: 20px 24px 40px; max-width: 1560px; }
+  .page-head { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+  .page-head h1 { margin: 0; font-size: 22px; letter-spacing: .2px; }
+  .page-head .sub { color: var(--text-3); font-size: 13px; margin-top: 2px; }
+  .page-head .actions { margin-left: auto; display: flex; gap: 10px; }
+
+  .btn {
+    height: 34px; padding: 0 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong);
+    background: var(--surface); color: var(--text-2); font-size: 13px; cursor: pointer; display: inline-flex;
+    align-items: center; gap: 6px; white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--primary); color: var(--primary-600); }
+  .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; box-shadow: 0 4px 12px rgba(43,99,240,.22); }
+  .btn.primary:hover { background: var(--primary-600); color: #fff; }
+  .btn.ghost { border-color: transparent; background: transparent; }
+  .btn.sm { height: 28px; padding: 0 10px; font-size: 12px; }
+
+  .tabs { display: flex; gap: 4px; margin: 18px 0 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .tab {
+    padding: 9px 14px; font-size: 13px; color: var(--text-2); cursor: pointer; border-bottom: 2px solid transparent;
+    margin-bottom: -1px; border-radius: 6px 6px 0 0;
+  }
+  .tab:hover { color: var(--primary-600); background: var(--surface-2); }
+  .tab.active { color: var(--primary-600); border-bottom-color: var(--primary); font-weight: 600; }
+  .tab .mini { font-size: 11px; color: var(--text-3); margin-left: 6px; }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+    box-shadow: var(--shadow); padding: 16px 18px;
+  }
+  .card + .card { margin-top: 16px; }
+  .card.tight { padding: 12px 14px; }
+  .card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .card-head h3 { margin: 0; font-size: 14px; }
+  .card-head .hint { color: var(--text-3); font-size: 12px; }
+  .card-head .right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+
+  /* ===== 链路总览 ===== */
+  .chain { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 0; align-items: stretch; }
+  .chain .node {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+    padding: 14px 16px; box-shadow: var(--shadow-sm); position: relative; cursor: pointer;
+  }
+  .chain .node:hover { border-color: var(--primary); box-shadow: var(--shadow); }
+  .chain .node .k { font-size: 12px; color: var(--text-3); display: flex; align-items: center; gap: 6px; }
+  .chain .node .v { font-size: 24px; font-weight: 700; margin: 6px 0 2px; letter-spacing: .3px; }
+  .chain .node .d { font-size: 12px; color: var(--text-2); }
+  .chain .arrow { display: grid; place-items: center; color: var(--border-strong); font-size: 16px; }
+  .chain .node .flag { position: absolute; top: 10px; right: 12px; }
+  .grid-chain { display: grid; grid-template-columns: 1fr 28px 1fr 28px 1fr 28px 1fr 28px 1fr; align-items: center; gap: 8px; }
+
+  .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 2px 9px; border-radius: 999px; font-weight: 600; white-space: nowrap; }
+  .pill.ok { background: var(--success-bg); color: var(--success); }
+  .pill.warn { background: var(--warning-bg); color: var(--warning); }
+  .pill.bad { background: var(--danger-bg); color: var(--danger); }
+  .pill.info { background: var(--info-bg); color: var(--info); }
+  .pill.blue { background: var(--primary-50); color: var(--primary-600); }
+  .pill.violet { background: var(--violet-bg); color: var(--violet); }
+  .pill.gray { background: #EEF1F6; color: var(--text-2); }
+
+  code, .mono { font-family: var(--mono); font-size: 12px; }
+  .code-chip { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; font-family: var(--mono); font-size: 12px; color: var(--text-2); }
+
+  .grid-2 { display: grid; grid-template-columns: 1.15fr .85fr; gap: 16px; margin-top: 16px; }
+  .grid-2 > .card + .card { margin-top: 0; }
+  .grid-2b { display: grid; grid-template-columns: 1.3fr .7fr; gap: 16px; margin-top: 16px; }
+  .grid-2b > .card + .card { margin-top: 0; }
+
+  /* ===== 告警清单 ===== */
+  .issues { list-style: none; margin: 0; padding: 0; }
+  .issues li {
+    display: flex; align-items: flex-start; gap: 10px; padding: 10px 10px; border-radius: var(--radius);
+    border: 1px dashed var(--border); cursor: pointer; margin-bottom: 8px; background: var(--surface-2);
+  }
+  .issues li:hover { border-style: solid; border-color: var(--primary); background: var(--primary-50); }
+  .issues li .txt { flex: 1; }
+  .issues li .txt b { font-size: 13px; }
+  .issues li .txt p { margin: 2px 0 0; font-size: 12px; color: var(--text-2); }
+  .issues li .cnt { font-weight: 700; font-size: 16px; color: var(--danger); min-width: 24px; text-align: right; }
+
+  /* ===== 表格 ===== */
+  table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+  thead th {
+    text-align: left; font-size: 12px; color: var(--text-3); font-weight: 600; padding: 8px 10px;
+    border-bottom: 1px solid var(--border); background: var(--surface-2); white-space: nowrap;
+  }
+  tbody td { padding: 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover td { background: var(--primary-50); }
+  tbody tr.selected td { background: var(--primary-50); }
+  tbody tr.selected td:first-child { box-shadow: inset 3px 0 0 var(--primary); }
+  .t-name { font-weight: 600; }
+  .t-sub { color: var(--text-3); font-size: 12px; }
+  .num { font-variant-numeric: tabular-nums; }
+  .muted { color: var(--text-3); }
+  .row-actions { display: flex; gap: 6px; opacity: .35; }
+  tbody tr:hover .row-actions { opacity: 1; }
+
+  /* ===== 详情面板 ===== */
+  .kv { display: grid; grid-template-columns: 96px 1fr; gap: 6px 10px; font-size: 13px; }
+  .kv dt { color: var(--text-3); }
+  .kv dd { margin: 0; }
+  .sub-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; background: var(--surface-2); }
+  .sub-card + .sub-card { margin-top: 10px; }
+  .sub-card h4 { margin: 0 0 6px; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+  .matrix { width: 100%; font-size: 12px; }
+  .matrix th, .matrix td { padding: 6px 8px; }
+  .matrix td { border-bottom: 1px dashed var(--border); }
+  .yes { color: var(--success); font-weight: 600; }
+  .no { color: var(--danger); font-weight: 600; }
+
+  .raw-toggle { font-size: 12px; color: var(--text-3); cursor: pointer; user-select: none; }
+  .raw-toggle:hover { color: var(--primary-600); }
+  .raw { display: none; margin-top: 8px; background: #0F172A; color: #C7D2FE; border-radius: var(--radius); padding: 10px 12px; font-family: var(--mono); font-size: 12px; overflow: auto; max-height: 190px; white-space: pre; }
+  .raw.show { display: block; }
+
+  .empty { text-align: center; padding: 28px 10px; color: var(--text-3); }
+  .empty .ico { font-size: 26px; opacity: .5; }
+  .skeleton { height: 12px; border-radius: 6px; background: linear-gradient(90deg,#EEF1F6 25%,#F7F9FC 37%,#EEF1F6 63%); background-size: 400% 100%; animation: sk 1.4s ease infinite; }
+  @keyframes sk { 0% { background-position: 100% 50% } 100% { background-position: 0 50% } }
+
+  /* ===== 规范区 ===== */
+  .tokens { display: flex; flex-wrap: wrap; gap: 10px; }
+  .token { width: 150px; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .token .sw { height: 46px; }
+  .token .meta { padding: 6px 8px; font-size: 11px; color: var(--text-2); }
+  .spec-row { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 12px; }
+  .spec-row > div { flex: 1 1 220px; border: 1px dashed var(--border); border-radius: var(--radius); padding: 10px 12px; }
+
+  /* ===== 弹窗 ===== */
+  .modal-mask { position: fixed; inset: 0; background: rgba(23,43,77,.42); display: none; place-items: center; z-index: 50; padding: 24px; }
+  .modal-mask.show { display: grid; }
+  .modal { background: var(--surface); border-radius: var(--radius-lg); width: min(660px, 100%); box-shadow: 0 24px 60px rgba(15,23,42,.28); overflow: hidden; }
+  .modal header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+  .modal header h3 { margin: 0; font-size: 15px; }
+  .modal .body { padding: 16px 20px; max-height: 60vh; overflow: auto; }
+  .modal footer { padding: 12px 20px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px; background: var(--surface-2); }
+  .step-list { list-style: none; margin: 0; padding: 0; }
+  .step-list li { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
+  .step-list li:last-child { border-bottom: 0; }
+  .step-list .ico { width: 20px; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 32px; transform: translateX(-50%) translateY(10px);
+    background: #1F2A44; color: #fff; padding: 9px 16px; border-radius: 999px; font-size: 13px;
+    opacity: 0; pointer-events: none; transition: all .2s ease; z-index: 80; max-width: 80vw; text-align: center;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  .note { background: var(--primary-50); border: 1px solid var(--primary-100); color: #24417a; border-radius: var(--radius); padding: 10px 12px; font-size: 12px; }
+  .note b { color: var(--primary-600); }
+  @media (max-width: 1180px) {
+    .grid-2, .grid-2b { grid-template-columns: 1fr; }
+    .grid-chain { grid-template-columns: 1fr; }
+    .chain .arrow { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="proto-flag">
+  <span><b>静态原型</b> · 未接接口 · 数据为 mock</span>
+  <span>用于确认「风格 + 信息架构」，确认后才排开发</span>
+  <span>风格来源：DinTal / Aquila Pilot（蓝白 + 卡片分区）</span>
+</div>
+
+<div class="app">
+  <!-- ===== 左侧导航：20 项平铺 → 6 组 ===== -->
+  <aside class="sidenav">
+    <div class="brand">
+      <div class="brand-mark">AI</div>
+      <div>
+        <div class="brand-name">平台治理</div>
+        <div class="brand-sub">AI 能力 · 模型 · 路由</div>
+      </div>
+    </div>
+
+    <nav>
+      <div class="nav-group" data-group="能力">
+        <button type="button" onclick="toggleGroup(this)"><span class="caret">▾</span> 能力</button>
+        <ul>
+          <li class="nav-item active"><span class="dot"></span> 能力总览</li>
+          <li class="nav-item"><span class="dot"></span> 能力清单</li>
+          <li class="nav-item"><span class="dot"></span> 模型候选</li>
+          <li class="nav-item"><span class="dot"></span> 调用试调</li>
+        </ul>
+      </div>
+      <div class="nav-group" data-group="模型">
+        <button type="button" onclick="toggleGroup(this)"><span class="caret">▾</span> 模型与供应商</button>
+        <ul>
+          <li class="nav-item"><span class="dot"></span> 模型清单</li>
+          <li class="nav-item"><span class="dot"></span> 供应商</li>
+          <li class="nav-item"><span class="dot"></span> 健康与探测</li>
+        </ul>
+      </div>
+      <div class="nav-group" data-group="路由">
+        <button type="button" onclick="toggleGroup(this)"><span class="caret">▾</span> 路由与策略</button>
+        <ul>
+          <li class="nav-item"><span class="dot"></span> 数据等级策略</li>
+          <li class="nav-item"><span class="dot"></span> 场景强制绑定</li>
+        </ul>
+      </div>
+      <div class="nav-group" data-group="调用">
+        <button type="button" onclick="toggleGroup(this)"><span class="caret">▾</span> 调用治理 <span class="badge" style="margin-left:6px">1</span></button>
+        <ul>
+          <li class="nav-item"><span class="dot"></span> 调用审计</li>
+          <li class="nav-item"><span class="dot"></span> 调用配额</li>
+          <li class="nav-item"><span class="dot"></span> 调用授权</li>
+          <li class="nav-item"><span class="dot"></span> 服务令牌</li>
+        </ul>
+      </div>
+      <div class="nav-group" data-group="资产">
+        <button type="button" onclick="toggleGroup(this)"><span class="caret">▾</span> 资产登记</button>
+        <ul>
+          <li class="nav-item"><span class="dot"></span> Agent 与版本</li>
+          <li class="nav-item"><span class="dot"></span> Skill / 工具 / 知识</li>
+          <li class="nav-item"><span class="dot"></span> Package</li>
+        </ul>
+      </div>
+      <div class="nav-group" data-group="训练">
+        <button type="button" onclick="toggleGroup(this)"><span class="caret">▾</span> 训练与运营</button>
+        <ul>
+          <li class="nav-item"><span class="dot"></span> 训练台</li>
+          <li class="nav-item"><span class="dot"></span> 草案生成器</li>
+          <li class="nav-item"><span class="dot"></span> 岗位包</li>
+          <li class="nav-item"><span class="dot"></span> 评测与黄金用例</li>
+          <li class="nav-item"><span class="dot"></span> 反馈与运营</li>
+        </ul>
+      </div>
+    </nav>
+    <div class="nav-foot">
+      原「平台治理」下 20 个页面平铺 → 收敛为 6 组；<br />组内用页签，不再新开页面。
+    </div>
+  </aside>
+
+  <main>
+    <header class="topbar">
+      <div class="crumb">管理中心 / <b>平台治理</b> / 能力总览</div>
+      <div class="spacer"></div>
+      <div class="searchbox">⌕ 搜能力 / 模型 / traceId</div>
+      <div class="who"><span>能力管理员</span><div class="avatar">管</div></div>
+    </header>
+
+    <div class="page">
+      <div class="page-head">
+        <div>
+          <h1>能力总览</h1>
+          <div class="sub">一条线看清「能力 → 模型候选 → 策略 → 场景 → 调用」，并把“配了但不会生效”的地方直接标出来</div>
+        </div>
+        <div class="actions">
+          <button class="btn" onclick="toast('原型未实现：真实页面会打开「配置缺口」修复向导')">修复配置缺口</button>
+          <button class="btn" onclick="toast('原型未实现：真实页面会打开调用试调（dryRun，不产生费用）')">调用试调</button>
+          <button class="btn primary" onclick="toast('原型未实现：新建能力')">+ 新建能力</button>
+        </div>
+      </div>
+
+      <nav class="tabs">
+        <div class="tab active" data-pane="overview">能力总览</div>
+        <div class="tab" data-pane="list">能力清单 <span class="mini">12</span></div>
+        <div class="tab" data-pane="trial">调用试调 <span class="mini">新</span></div>
+        <div class="tab" data-pane="audit">最近调用</div>
+        <div class="tab" data-pane="placeholder">模型候选 / 策略</div>
+      </nav>
+
+      <!-- ===== 页签 1：总览 ===== -->
+      <div class="pane" id="pane-overview">
+        <div class="grid-chain">
+          <div class="node" onclick="toast('点进「能力清单」，可按“配置完整度”筛')">
+            <div class="k">① 业务能力</div>
+            <div class="v num">12</div>
+            <div class="d">9 个配置完整 · <span style="color:var(--danger)">3 个缺模型候选</span></div>
+          </div>
+          <div class="arrow">→</div>
+          <div class="node" onclick="toast('点进「模型候选」：按能力看 PRIMARY / FALLBACK / GRAY')">
+            <div class="k">② 模型候选</div>
+            <div class="v num">7</div>
+            <div class="d">在用 6 · <span style="color:var(--warning)">1 个健康异常</span></div>
+          </div>
+          <div class="arrow">→</div>
+          <div class="node" onclick="toast('点进「数据等级策略」：能力 × 等级 → 外发/审批')">
+            <div class="k">③ 策略</div>
+            <div class="v num">31</div>
+            <div class="d">覆盖 11/12 能力 · <span style="color:var(--danger)">1 个能力无策略</span></div>
+          </div>
+          <div class="arrow">→</div>
+          <div class="node" onclick="toast('点进「场景强制绑定」：场景 × 能力 → 指定供应商')">
+            <div class="k">④ 场景绑定</div>
+            <div class="v num">5</div>
+            <div class="d">4 条命中过 · <span style="color:var(--warning)">1 条从未命中</span></div>
+          </div>
+          <div class="arrow">→</div>
+          <div class="node" onclick="toast('点进「调用审计」')">
+            <div class="k">⑤ 近 24h 调用</div>
+            <div class="v num">1,284</div>
+            <div class="d">失败 23（1.8%）· 外发 118</div>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-head">
+              <h3>待处理的配置缺口</h3>
+              <span class="hint">这些是「界面看着配好了、实际不会生效 / 会静默失败」的地方</span>
+              <div class="right"><span class="raw-toggle" onclick="toggleRaw(this)">显示原始字段</span></div>
+            </div>
+            <ul class="issues" id="issues">
+              <li data-issue="no-candidate" onclick="filterByIssue('no-candidate')">
+                <span class="pill bad">高</span>
+                <div class="txt">
+                  <b>3 个能力没有任何模型候选</b>
+                  <p>能力已登记、策略也配了，但 <span class="code-chip">aig_capability_model</span> 没有行 ⇒ 调用时只会得到「没有可用模型候选」。</p>
+                </div>
+                <span class="cnt">3</span>
+              </li>
+              <li data-issue="tag-gap" onclick="filterByIssue('tag-gap')">
+                <span class="pill bad">高</span>
+                <div class="txt">
+                  <b>2 个模型缺「能力标签」</b>
+                  <p>模型侧判据 <span class="code-chip">capability_tags</span> 在界面上没有入口 ⇒ 只能改库；模型页显示“治理属性齐全”，路由却可能静默排除它。</p>
+                </div>
+                <span class="cnt">2</span>
+              </li>
+              <li data-issue="no-policy" onclick="filterByIssue('no-policy')">
+                <span class="pill warn">中</span>
+                <div class="txt">
+                  <b>1 个能力没有数据等级策略</b>
+                  <p>策略是「外发 / 审批 / 无候选时行为」的唯一生效处；缺策略时按默认兜底，但界面不提示。</p>
+                </div>
+                <span class="cnt">1</span>
+              </li>
+              <li data-issue="orphan" onclick="filterByIssue('orphan')">
+                <span class="pill warn">中</span>
+                <div class="txt">
+                  <b>2 条孤儿配置</b>
+                  <p>能力删除时没有引用校验 ⇒ 绑定/策略/审批里留下指向已删能力的行，永远不生效。</p>
+                </div>
+                <span class="cnt">2</span>
+              </li>
+              <li data-issue="unused" onclick="filterByIssue('unused')">
+                <span class="pill info">提示</span>
+                <div class="txt">
+                  <b>1 条场景绑定从未命中</b>
+                  <p>场景编码是自由字符串、跨域不校验 ⇒ 拼错就静默永不命中，只留一行“未配置强制绑定”。</p>
+                </div>
+                <span class="cnt">1</span>
+              </li>
+            </ul>
+            <div class="raw" id="raw-issues">{
+  "generatedAt": "2026-10-14T10:20:00+08:00",
+  "issues": [
+    { "code": "NO_MODEL_CANDIDATE", "count": 3, "capabilityCodes": ["intent_suggest", "text_generation", "visual_dna_extract"] },
+    { "code": "MODEL_TAGS_MISSING", "count": 2, "modelIds": [21001, 21007], "field": "aig_model_governance.capability_tags" },
+    { "code": "NO_ROUTE_POLICY", "count": 1, "capabilityCodes": ["deliverable_consistency"] },
+    { "code": "ORPHAN_REFERENCE", "count": 2, "tables": ["aig_capability_model", "aig_call_approval"] }
+  ]
+}</div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <h3>链路体检</h3>
+              <span class="hint" id="health-subject">选中：image_generation</span>
+              <div class="right"><button class="btn sm" onclick="openTrial()">试调（dryRun）</button></div>
+            </div>
+            <dl class="kv">
+              <dt>能力编码</dt><dd><span class="code-chip" id="h-code">image_generation</span></dd>
+              <dt>名称</dt><dd id="h-name">图片生成</dd>
+              <dt>模型候选</dt><dd id="h-cand"></dd>
+              <dt>策略覆盖</dt><dd id="h-policy"></dd>
+              <dt>场景绑定</dt><dd id="h-scene"></dd>
+              <dt>近 24h</dt><dd id="h-calls"></dd>
+              <dt>体检结论</dt><dd id="h-verdict"></dd>
+            </dl>
+            <div class="note" style="margin-top:10px">
+              <b>为什么要有这一屏：</b>现在「能力配了哪个模型、哪个策略在生效」分散在 4 个页面里，
+              且没有任何一屏能回答“这条链路现在通不通”。
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:16px">
+          <div class="card-head">
+            <h3>能力清单</h3>
+            <span class="hint">默认按“配置完整度”升序 —— 先看到有问题的</span>
+            <div class="right">
+              <span class="pill gray" id="filter-chip" style="display:none"></span>
+              <span class="raw-toggle" onclick="toggleRaw(this)">显示原始字段</span>
+            </div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th style="width:26%">能力</th>
+                <th style="width:20%">模型候选</th>
+                <th style="width:16%">策略覆盖</th>
+                <th style="width:14%">场景绑定</th>
+                <th style="width:12%">近 24h 调用</th>
+                <th style="width:12%">体检</th>
+                <th style="width:80px"></th>
+              </tr>
+            </thead>
+            <tbody id="cap-table"></tbody>
+          </table>
+          <div class="empty" id="cap-empty" style="display:none">
+            <div class="ico">🗂</div>
+            <div>没有符合当前筛选的能力</div>
+            <div class="muted" style="font-size:12px">清掉筛选条件后再看</div>
+          </div>
+          <div class="raw" id="raw-caps">[
+  { "capabilityId": 1769100000000000101, "capabilityCode": "image_generation", "requiredTags": "IMAGE",
+    "dataPolicy": "LOCAL_FIRST", "auditLevel": "SUMMARY", "inputSchema": "{...}", "outputSchema": "{...}" }
+]</div>
+        </div>
+      </div>
+
+      <!-- ===== 页签 2：能力清单（放大版） ===== -->
+      <div class="pane" id="pane-list" style="display:none">
+        <div class="card">
+          <div class="card-head">
+            <h3>能力清单</h3>
+            <span class="hint">与总览同一张表；页签内提供完整筛选（编码 / 名称 / 标签 / 配置完整度 / 状态）</span>
+          </div>
+          <div class="note">原型只做了「能力总览」。清单页在开发时是同一张表的完整版（筛选 + 批量操作 + 导出）。</div>
+          <div class="empty" style="margin-top:14px">
+            <div class="ico">🧱</div>
+            <div>该页签在原型里是占位</div>
+            <div class="muted" style="font-size:12px">等你确认风格后按同一套卡片/表格规范实现</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 页签 3：试调说明 ===== -->
+      <div class="pane" id="pane-trial" style="display:none">
+        <div class="card">
+          <div class="card-head"><h3>调用试调（dryRun）</h3><span class="hint">原型里请点右上角「试调」或链路体检卡里的按钮</span></div>
+          <div class="note">
+            后端已有 <span class="code-chip">POST /aigov/invoke/dryRun</span>（只做路由决策、不调用、不写审计、不产生费用），
+            但界面上没有入口 —— 于是“策略配得对不对”只能靠真实调用 + 事后再翻审计页。
+            这是本次要补的两个断点之一。
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 页签 4：最近调用 ===== -->
+      <div class="pane" id="pane-audit" style="display:none">
+        <div class="card">
+          <div class="card-head"><h3>最近调用</h3><span class="hint">只展示摘要；完整审计保留在「调用治理 / 调用审计」</span></div>
+          <table>
+            <thead><tr><th>时间</th><th>能力</th><th>命中模型</th><th>数据等级</th><th>外发</th><th>结果</th><th>traceId</th></tr></thead>
+            <tbody>
+              <tr><td class="num">10:18:22</td><td><span class="code-chip">image_generation</span></td><td>bluocto-image-v2</td><td><span class="pill gray">内部</span></td><td><span class="pill warn">是</span></td><td><span class="pill ok">成功</span></td><td><span class="linkish">a91f…7c2</span></td></tr>
+              <tr><td class="num">10:17:05</td><td><span class="code-chip">document_parse</span></td><td>—</td><td><span class="pill gray">内部</span></td><td><span class="pill ok">否</span></td><td><span class="pill bad">无模型候选</span></td><td><span class="linkish">a91e…11d</span></td></tr>
+              <tr><td class="num">10:15:40</td><td><span class="code-chip">talent_match</span></td><td>qwen-plus</td><td><span class="pill violet">限制</span></td><td><span class="pill ok">否</span></td><td><span class="pill ok">成功</span></td><td><span class="linkish">a91d…9ab</span></td></tr>
+            </tbody>
+          </table>
+          <div class="note" style="margin-top:12px">
+            <b>与现状的差别：</b>不再直出 <span class="code-chip">usageJson</span> 一坨 JSON、不再把
+            <span class="code-chip">agentVersionId</span> 原始长数字当列值；需要原始字段时用「显示原始字段」展开。
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 页签 5：占位 ===== -->
+      <div class="pane" id="pane-placeholder" style="display:none">
+        <div class="card">
+          <div class="card-head"><h3>模型候选 / 策略</h3><span class="hint">原型占位</span></div>
+          <div class="empty">
+            <div class="ico">🧱</div>
+            <div>为了让「能力总览」这一屏足够真实，这两个页签在原型里不展开</div>
+            <div class="muted" style="font-size:12px">结构会沿用同一套：顶部筛选卡 + 表格卡 + 右侧详情抽屉</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 设计规范 ===== -->
+      <div class="card" style="margin-top:16px">
+        <div class="card-head">
+          <h3>本次提案的设计规范（提炼自 DinTal，待你确认）</h3>
+          <span class="hint">确认这一节 = 确认整套风格；后续所有页面按它实现</span>
+        </div>
+        <div class="tokens">
+          <div class="token"><div class="sw" style="background:#F4F7FC"></div><div class="meta">页面底色 #F4F7FC</div></div>
+          <div class="token"><div class="sw" style="background:#FFFFFF"></div><div class="meta">卡片 #FFFFFF</div></div>
+          <div class="token"><div class="sw" style="background:#2B63F0"></div><div class="meta">主色 #2B63F0</div></div>
+          <div class="token"><div class="sw" style="background:#EEF3FE"></div><div class="meta">主色浅底 #EEF3FE</div></div>
+          <div class="token"><div class="sw" style="background:linear-gradient(135deg,#2B63F0,#48B0FF)"></div><div class="meta">品牌渐变</div></div>
+          <div class="token"><div class="sw" style="background:#E4EAF3"></div><div class="meta">描边 #E4EAF3</div></div>
+          <div class="token"><div class="sw" style="background:#1F2A44"></div><div class="meta">主文字 #1F2A44</div></div>
+          <div class="token"><div class="sw" style="background:#8A97AC"></div><div class="meta">次要文字 #8A97AC</div></div>
+          <div class="token"><div class="sw" style="background:#0F9D58"></div><div class="meta">成功 #0F9D58</div></div>
+          <div class="token"><div class="sw" style="background:#C77700"></div><div class="meta">警示 #C77700</div></div>
+          <div class="token"><div class="sw" style="background:#D93025"></div><div class="meta">危险 #D93025</div></div>
+        </div>
+        <div class="spec-row">
+          <div>
+            <b>字号 / 圆角 / 阴影</b>
+            <div class="t-sub" style="margin-top:6px">行 14px、标题 22px、表头 12px；卡片圆角 14px、控件 8px；<br />阴影只用在卡片与弹窗（1px 描边 + 柔和外阴影），不用重投影。</div>
+          </div>
+          <div>
+            <b>状态胶囊（统一 5 类）</b>
+            <div style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap">
+              <span class="pill ok">成功 / 就绪</span>
+              <span class="pill warn">需注意</span>
+              <span class="pill bad">阻断 / 失败</span>
+              <span class="pill info">提示</span>
+              <span class="pill gray">停用 / 无</span>
+            </div>
+            <div class="t-sub" style="margin-top:6px">不再出现“裸枚举直出”（如 <span class="code-chip">CHAT</span>、<span class="code-chip">0/1</span>）。</div>
+          </div>
+          <div>
+            <b>空态 / 加载 / 长 ID</b>
+            <div class="t-sub" style="margin-top:6px">空态三行式（图标 + 一句人话 + 下一步动作）；加载用骨架屏；长 ID 默认折叠，需要时展开并可复制。</div>
+            <div style="margin-top:8px" class="skeleton" ></div>
+            <div style="margin-top:6px"><span class="code-chip">2109914104600293377</span> <span class="raw-toggle" onclick="toast('原型：复制到剪贴板')">复制</span></div>
+          </div>
+          <div>
+            <b>危险操作的确认文案（统一结构）</b>
+            <div class="t-sub" style="margin-top:6px">做哪件事 + 影响什么 + 能不能恢复。例：<br />“退役这个知识版本？退役后新任务不再检索它，历史回答仍按当时版本可追溯；<b>重新启用需要登记新版本</b>。”</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <div class="card-head"><h3>风格确认清单（请逐条圈选）</h3><span class="hint">确认后我按此实现；有异议的地方请直接说</span></div>
+        <table>
+          <thead><tr><th style="width:32%">待确认</th><th style="width:38%">本原型的做法</th><th style="width:30%">备选</th></tr></thead>
+          <tbody>
+            <tr><td>主色</td><td>蓝 #2B63F0（DinTal 同系）</td><td>改为企业现有品牌色 / 保持 Element Plus 默认蓝</td></tr>
+            <tr><td>分区方式</td><td>白卡片分区 + 1px 描边 + 柔和阴影</td><td>线框分区（无阴影，更“运维”）</td></tr>
+            <tr><td>导航</td><td>左侧 6 组（组内页签），组可折叠</td><td>3~4 个一级入口 + 顶部页签；或两级都留在左侧</td></tr>
+            <tr><td>首屏重点</td><td>链路 5 段 + 配置缺口 + 能力清单（三屏合一）</td><td>只留链路 + 缺口，清单另开页签</td></tr>
+            <tr><td>信息密度</td><td>中等：行高 40px、一屏 ~14 行</td><td>更紧凑（行高 32px、一屏 ~20 行）</td></tr>
+            <tr><td>原始字段</td><td>默认隐藏，「显示原始字段」展开</td><td>保留一列“原始值”便于排障</td></tr>
+            <tr><td>缺口语义</td><td>用状态胶囊 + 可点击筛选</td><td>只用文字提示，不做筛选联动</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- 试调弹窗 -->
+<div class="modal-mask" id="trial-mask">
+  <div class="modal">
+    <header>
+      <span class="pill blue">dryRun</span>
+      <h3>调用试调 · <span class="mono" id="trial-cap">image_generation</span></h3>
+      <div style="margin-left:auto"><span class="pill ok">不产生费用</span></div>
+    </header>
+    <div class="body">
+      <div class="note" style="margin-bottom:12px">
+        只做路由决策：<b>不发起真实调用、不写审计、不扣配额</b>。用来回答“这条链路会走哪条路、为什么”。
+      </div>
+      <ol class="step-list">
+        <li><span class="ico">🧭</span><div><b>能力校验</b> · 通过：<span class="code-chip" id="trial-code">image_generation</span> 处于启用状态</div></li>
+        <li><span class="ico">📋</span><div><b>策略命中</b> · <span class="code-chip">aig_route_policy(capability, 内部)</span> → 允许外发=<span class="yes">是</span>、调用前审批=<span class="no">否</span>、无模型时=转人工</div></li>
+        <li><span class="ico">🧩</span><div><b>模型候选</b> · 3 个：<span class="code-chip">bluocto-image-v2</span>（PRIMARY，健康）、<span class="code-chip">qwen-image</span>（FALLBACK，健康）、<span class="code-chip">local-sdxl</span>（GRAY，<span class="pill warn">健康异常</span>）</div></li>
+        <li><span class="ico">🎯</span><div><b>最终选择</b> · <span class="code-chip">bluocto-image-v2</span>（优先部署类型=外部企业；同优先级按 health → priority → 模型键排序）</div></li>
+        <li><span class="ico">🚫</span><div><b>被排除的</b> · <span class="code-chip">local-sdxl</span>：健康状态 = UNHEALTHY（配置里写的是“UP/DOWN/DEGRADED”，与代码读取词不一致，属于本次要收的坑）</div></li>
+        <li><span class="ico">🧾</span><div><b>审计预览</b> · 真实调用会写：<span class="code-chip">capability_code / data_level / model_id / external_call=Y / policy_hit / trace_id</span></div></li>
+      </ol>
+    </div>
+    <footer>
+      <button class="btn" onclick="closeTrial()">知道了</button>
+      <button class="btn primary" onclick="toast('原型：真实页面会发起一次真实调用（会写审计与配额）'); closeTrial()">发起真实调用</button>
+    </footer>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // ---------- mock 数据 ----------
+  const CAPS = [
+    { code: 'image_generation', name: '图片生成', tags: 'IMAGE', cands: [
+        { key: 'bluocto-image-v2', usage: 'PRIMARY', prio: 10, health: 'ok', deploy: '外部企业' },
+        { key: 'qwen-image', usage: 'FALLBACK', prio: 20, health: 'ok', deploy: '外部API' },
+        { key: 'local-sdxl', usage: 'GRAY', prio: 30, health: 'bad', deploy: '本地' }],
+      policy: 4, policyTotal: 4, scenes: 2, calls: 812, fail: 9, issues: ['tag-gap'] },
+    { code: 'talent_match', name: '人才匹配', tags: 'TEXT', cands: [
+        { key: 'qwen-plus', usage: 'PRIMARY', prio: 10, health: 'ok', deploy: '外部API' }],
+      policy: 4, policyTotal: 4, scenes: 1, calls: 214, fail: 2, issues: [] },
+    { code: 'document_parse', name: '文档解析', tags: 'OCR, TEXT', cands: [],
+      policy: 2, policyTotal: 4, scenes: 0, calls: 96, fail: 12, issues: ['no-candidate', 'no-policy'] },
+    { code: 'deliverable_consistency', name: '交付一致性检查', tags: 'TEXT', cands: [
+        { key: 'qwen-plus', usage: 'PRIMARY', prio: 10, health: 'ok', deploy: '外部API' }],
+      policy: 0, policyTotal: 4, scenes: 0, calls: 0, fail: 0, issues: ['no-policy'] },
+    { code: 'visual_dna_extract', name: '视觉 DNA 提取', tags: 'VISION', cands: [],
+      policy: 3, policyTotal: 4, scenes: 1, calls: 58, fail: 3, issues: ['no-candidate'] },
+    { code: 'brief_precheck', name: 'Brief 预检', tags: 'TEXT', cands: [
+        { key: 'qwen-plus', usage: 'PRIMARY', prio: 10, health: 'ok', deploy: '外部API' },
+        { key: 'snail-local-7b', usage: 'FALLBACK', prio: 20, health: 'ok', deploy: '本地' }],
+      policy: 4, policyTotal: 4, scenes: 1, calls: 104, fail: 1, issues: [] },
+    { code: 'text_generation', name: '（未登记）文本生成', tags: 'TEXT', cands: [],
+      policy: 1, policyTotal: 4, scenes: 0, calls: 0, fail: 0, issues: ['no-candidate', 'orphan'] },
+    { code: 'intent_suggest', name: '（未登记）意图推荐', tags: 'TEXT', cands: [],
+      policy: 1, policyTotal: 4, scenes: 0, calls: 0, fail: 0, issues: ['no-candidate', 'orphan'] },
+    { code: 'poster_copy', name: '海报文案', tags: 'TEXT', cands: [
+        { key: 'qwen-plus', usage: 'PRIMARY', prio: 10, health: 'ok', deploy: '外部API' }],
+      policy: 4, policyTotal: 4, scenes: 1, calls: 0, fail: 0, issues: ['unused'] },
+    { code: 'image_caption', name: '图片描述', tags: 'VISION, TEXT', cands: [
+        { key: 'qwen-vl-plus', usage: 'PRIMARY', prio: 10, health: 'warn', deploy: '外部API' }],
+      policy: 3, policyTotal: 4, scenes: 0, calls: 0, fail: 0, issues: ['tag-gap'] },
+    { code: 'rerank_docs', name: '文档重排', tags: 'RERANK（已下线）', cands: [
+        { key: 'bge-rerank', usage: 'PRIMARY', prio: 10, health: 'ok', deploy: '本地' }],
+      policy: 4, policyTotal: 4, scenes: 0, calls: 0, fail: 0, issues: ['unused'] },
+    { code: 'video_brief', name: '视频脚本纲要', tags: 'TEXT', cands: [
+        { key: 'qwen-plus', usage: 'PRIMARY', prio: 10, health: 'ok', deploy: '外部API' }],
+      policy: 4, policyTotal: 4, scenes: 1, calls: 0, fail: 0, issues: [] }
+  ];
+  const ISSUE_LABEL = {
+    'no-candidate': '缺模型候选', 'tag-gap': '模型缺能力标签', 'no-policy': '缺策略',
+    'orphan': '孤儿配置', 'unused': '从未命中'
+  };
+
+  let selected = CAPS[0];
+  let filterIssue = null;
+
+  // ---------- 渲染 ----------
+  function capsFiltered() {
+    return filterIssue ? CAPS.filter(c => c.issues.includes(filterIssue)) : CAPS;
+  }
+
+  function issuePills(c) {
+    return c.issues.map(i => {
+      const cls = i === 'no-candidate' ? 'bad' : (i === 'tag-gap' ? 'bad' : (i === 'no-policy' ? 'warn' : 'info'));
+      return `<span class="pill ${cls}">${ISSUE_LABEL[i]}</span>`;
+    }).join(' ') || '<span class="pill ok">链路完整</span>';
+  }
+
+  function renderTable() {
+    const rows = capsFiltered();
+    const tbody = document.getElementById('cap-table');
+    tbody.innerHTML = rows.map(c => {
+      const cand = c.cands.length === 0
+        ? '<span class="pill bad">无候选</span>'
+        : `${c.cands.map(x => `<span class="pill ${x.health === 'ok' ? 'blue' : 'warn'}">${x.usage}</span>`).join(' ')}
+           <div class="t-sub">${c.cands.length} 个 · ${c.cands.filter(x => x.health !== 'ok').length} 个健康异常</div>`;
+      const policy = c.policy === 0
+        ? '<span class="pill bad">无策略</span>'
+        : `<span class="num">${c.policy}/${c.policyTotal}</span> 等级 <span class="t-sub">（缺 ${c.policyTotal - c.policy}）</span>`;
+      const scenes = c.scenes === 0 ? '<span class="muted">无</span>' : `<span class="num">${c.scenes}</span> 条`;
+      const calls = c.calls === 0
+        ? '<span class="muted">近 24h 无调用</span>'
+        : `<span class="num">${c.calls}</span> <span class="t-sub">失败 ${c.fail}</span>`;
+      const sel = c.code === selected.code ? 'selected' : '';
+      return `<tr class="${sel}" onclick="selectCap('${c.code}')">
+        <td><div class="t-name">${c.name}</div><div class="t-sub mono">${c.code}</div>
+            <div style="margin-top:4px">${c.tags.split(',').map(t => `<span class="pill gray">${t.trim()}</span>`).join(' ')}</div></td>
+        <td>${cand}</td>
+        <td>${policy}</td>
+        <td>${scenes}</td>
+        <td>${calls}</td>
+        <td>${issuePills(c)}</td>
+        <td><div class="row-actions">
+            <button class="btn sm" onclick="event.stopPropagation(); openTrial('${c.code}')">试调</button>
+            <button class="btn sm" onclick="event.stopPropagation(); toast('原型：打开「${c.name}」详情（模型候选 / 策略 / 场景 / 试调 四个页签）')">详情</button>
+        </div></td>
+      </tr>`;
+    }).join('');
+    document.getElementById('cap-empty').style.display = rows.length ? 'none' : 'block';
+    const chip = document.getElementById('filter-chip');
+    if (filterIssue) {
+      chip.style.display = 'inline-flex';
+      chip.textContent = '筛选：' + ISSUE_LABEL[filterIssue] + ' · 点击清除';
+      chip.onclick = () => { filterIssue = null; renderTable(); };
+    } else {
+      chip.style.display = 'none';
+    }
+  }
+
+  function renderHealth() {
+    const c = selected;
+    document.getElementById('health-subject').textContent = '选中：' + c.code;
+    document.getElementById('h-code').textContent = c.code;
+    document.getElementById('h-name').textContent = c.name;
+    document.getElementById('h-cand').innerHTML = c.cands.length
+      ? c.cands.map(x => `<div><span class="pill ${x.health === 'ok' ? 'blue' : 'warn'}">${x.usage}</span>
+          <span class="code-chip">${x.key}</span> <span class="t-sub">优先级 ${x.prio} · ${x.deploy}</span>
+          ${x.health === 'ok' ? '' : '<span class="pill warn">健康异常</span>'}</div>`).join('')
+      : '<span class="pill bad">无模型候选 —— 调用必然失败</span>';
+    document.getElementById('h-policy').innerHTML = c.policy === 0
+      ? '<span class="pill bad">没有数据等级策略</span>'
+      : `<span class="num">${c.policy}/${c.policyTotal}</span> 个等级已配（缺的等级走默认兜底）`;
+    document.getElementById('h-scene').innerHTML = c.scenes
+      ? `<span class="num">${c.scenes}</span> 条场景绑定`
+      : '<span class="muted">无（不按场景收窄）</span>';
+    document.getElementById('h-calls').innerHTML = c.calls
+      ? `<span class="num">${c.calls}</span> 次 · 失败 <span class="num">${c.fail}</span>`
+      : '<span class="muted">无调用</span>';
+    document.getElementById('h-verdict').innerHTML = c.issues.length
+      ? issuePills(c)
+      : '<span class="pill ok">链路完整</span>';
+  }
+
+  function selectCap(code) {
+    const found = CAPS.find(c => c.code === code);
+    if (!found) return;
+    selected = found;
+    renderTable();
+    renderHealth();
+  }
+
+  function filterByIssue(issue) {
+    filterIssue = issue;
+    renderTable();
+    document.getElementById('cap-table').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  // ---------- 交互 ----------
+  function toggleGroup(btn) { btn.parentElement.classList.toggle('collapsed'); }
+
+  function toggleRaw(el) {
+    const card = el.closest('.card');
+    const raw = card.querySelector('.raw');
+    if (!raw) return;
+    raw.classList.toggle('show');
+    el.textContent = raw.classList.contains('show') ? '隐藏原始字段' : '显示原始字段';
+  }
+
+  function openTrial(code) {
+    const cap = code ? CAPS.find(c => c.code === code) : selected;
+    document.getElementById('trial-cap').textContent = cap.code;
+    document.getElementById('trial-code').textContent = cap.code;
+    document.getElementById('trial-mask').classList.add('show');
+  }
+  function closeTrial() { document.getElementById('trial-mask').classList.remove('show'); }
+
+  let toastTimer = null;
+  function toast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 2400);
+  }
+
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      const pane = tab.dataset.pane;
+      ['overview', 'list', 'trial', 'audit', 'placeholder'].forEach(p => {
+        document.getElementById('pane-' + p).style.display = (p === pane) ? '' : 'none';
+      });
+    });
+  });
+  document.getElementById('trial-mask').addEventListener('click', e => {
+    if (e.target.id === 'trial-mask') closeTrial();
+  });
+
+  renderTable();
+  renderHealth();
+</script>
+</body>
+</html>
