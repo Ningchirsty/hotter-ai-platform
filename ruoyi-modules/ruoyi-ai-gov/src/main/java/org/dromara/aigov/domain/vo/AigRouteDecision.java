@@ -122,6 +122,14 @@ public class AigRouteDecision implements Serializable {
     private String capabilityCode;
 
     /**
+     * <b>生效</b>数据等级（Q2C）：{@code max(能力声明的最低数据等级, 调用方传入)} 的编码。
+     *
+     * <p>与"调用方传入的等级"分开记：审计与界面要看到的是<b>实际按哪个等级路由的</b>。
+     * 只记调用方那个，会出现"审计写着 INTERNAL、实际按 RESTRICTED 跑"这种对不上的账。</p>
+     */
+    private String effectiveDataLevel;
+
+    /**
      * 本次调用的策略是否要求<b>调用授权审批</b>（{@code aig_route_policy.require_approval='Y'}）。
      *
      * <p>路由引擎只<b>读出并转达</b>这个要求，不在路由里做审批判定：授权是按「人 × 能力 × 数据等级」

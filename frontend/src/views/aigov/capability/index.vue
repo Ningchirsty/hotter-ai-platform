@@ -164,6 +164,17 @@
             placeholder="一句话说清这个能力做什么、边界在哪（会进入系统提示）"
           />
         </el-form-item>
+        <el-form-item label="最低数据等级">
+          <el-select v-model="form.minDataLevel" clearable style="width: 100%" placeholder="不声明（= 由调用方传入的等级决定）">
+            <el-option v-for="item in MIN_DATA_LEVEL_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+          <div class="text-gray-500" style="font-size: 12px; line-height: 1.5">
+            路由按 <b>max(这里声明的等级, 调用方传入)</b> 生效，<b>只抬不降</b>：
+            声明 RESTRICTED/STRICT 可以挡住"业务方把等级标低"（例如把客户名单按 INTERNAL 发过来）。
+            留空 = 与现状一致（存量能力不受影响）。<b>调低或清空</b>已声明的等级属于高风险变更，需要
+            「能力高风险变更」权限。
+          </div>
+        </el-form-item>
         <el-form-item label="状态">
           <el-radio-group v-model="form.status">
             <el-radio value="0">启用</el-radio>
@@ -236,6 +247,7 @@ import CapabilityDetail from './components/CapabilityDetail.vue';
 import modal from '@/plugins/modal';
 import { useDict } from '@/utils/dict';
 import {
+  candidateChangeNeedsHighRisk,
   candidateStateOptions,
   cardSummary,
   deleteConfirmText,
@@ -243,12 +255,16 @@ import {
   healthMeta,
   issueFilterOptions,
   issueTags,
+  minDataLevelOptions,
   parseTags,
   riskHint,
   validateJsonText
 } from './presentation';
 
 defineOptions({ name: 'AigCapability' });
+
+/** 「最低数据等级」下拉选项（Q2C；与服务端 AigDataLevelEnum 一致） */
+const MIN_DATA_LEVEL_OPTIONS = minDataLevelOptions();
 
 /**
  * 能力清单（卡片视图）。
@@ -359,6 +375,8 @@ const emptyForm = (): AigCapabilityForm => ({
   capabilityName: '',
   bizGoal: '',
   requiredTags: '',
+  // Q2C：默认「不声明」——新建能力若默认给一个等级，会让人以为那是系统推荐的等级
+  minDataLevel: undefined,
   inputSchema: '',
   outputSchema: '',
   dataPolicy: 'LOCAL_FIRST',

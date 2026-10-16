@@ -3,6 +3,7 @@ import type { AigCapabilityOverviewVO } from '@/api/aigov/capability/overview-ty
 import type { AigInvokeVO } from '@/api/aigov/invoke';
 import {
   assistantBoundaryNote,
+  candidateChangeNeedsHighRisk,
   candidateStateOptions,
   capabilityReadiness,
   cardSummary,
@@ -18,6 +19,8 @@ import {
   issueMeta,
   issueTags,
   matchPresetQuestion,
+  minDataLevelLabel,
+  minDataLevelOptions,
   otherHits,
   parseTags,
   policySuggestions,
@@ -290,6 +293,21 @@ describe('capability presentation', () => {
     const none = disableConfirmText(undefined, 'code_z', []);
     expect(none).toContain('停用能力「code_z」？');
     expect(none).toContain('没有任何 Agent 版本');
+  });
+
+  it('★ 最低数据等级（Q2C）：未声明要说成"未声明"；限制级/严格级的候选变更算高风险', () => {
+    expect(minDataLevelOptions().map((item) => item.value)).toEqual(['PUBLIC', 'INTERNAL', 'RESTRICTED', 'STRICT']);
+    expect(minDataLevelLabel(undefined)).toContain('未声明');
+    expect(minDataLevelLabel('  ')).toContain('未声明');
+    expect(minDataLevelLabel('restricted')).toContain('限制级');
+    // 认不出的值原样回显（不硬编成"未声明"，那会掩盖脏数据）
+    expect(minDataLevelLabel('TOPSECRET')).toBe('TOPSECRET');
+
+    expect(candidateChangeNeedsHighRisk('RESTRICTED')).toBe(true);
+    expect(candidateChangeNeedsHighRisk('strict')).toBe(true);
+    expect(candidateChangeNeedsHighRisk('INTERNAL')).toBe(false);
+    expect(candidateChangeNeedsHighRisk(undefined)).toBe(false);
+    expect(candidateChangeNeedsHighRisk('TOPSECRET')).toBe(false);
   });
 
   it('★ 就绪度：能力不存在/已停用是阻断项；缺候选缺策略只是提示项（草稿允许存半成品）', () => {

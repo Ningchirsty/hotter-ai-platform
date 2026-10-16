@@ -158,6 +158,11 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
         // 2. 路由决策（不抛异常）；带路由提示：场景命中强制绑定时候选收窄为指定供应商、
         //    声明了本次预算时排除单次上限高于预算的模型。两者都只收窄，不放宽治理口径。
         AigRouteDecision decision = routeService.decide(bo.getCapabilityCode(), dataLevel, routeHint(bo));
+        // 2.5 Q2C：改用**生效**数据等级（max(能力声明, 调用方传入)）落审计/账本/审批/配额判定。
+        //     理由：路由那一步已经按生效等级找策略了；这里若继续用调用方自称的等级，就会出现
+        //     "审计写着 INTERNAL、实际按 RESTRICTED 跑"，以及"按 RESTRICTED 要求审批、却拿 INTERNAL
+        //     的授权去核对"这类对不上的账。只取自决策、不另算一遍（口径单一）。
+        dataLevel = effectiveLevel(decision, dataLevel);
         // 3. 组装审计上下文；无论成败都在 finally 落库
         AigAuditContext audit = buildAuditContext(traceId, bo, dataLevel, decision);
         // 3.5 M-005 策略决策账本：**每次真实调用路径都落且只落一行**（dryRun 不落）。
@@ -630,6 +635,21 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
             throw new ServiceException("非法的数据等级：" + bo.getDataLevel());
         }
         return dataLevel;
+    }
+
+    /**
+     * 取本次调用的**生效**数据等级（Q2C）：决策里带上了就用它，没带（旧调用方/手工构造）就退回调用方等级。
+     *
+     * @param decision  路由决策
+     * @param requested 调用方传入的等级
+     * @return 生效等级
+     */
+    private AigDataLevelEnum effectiveLevel(AigRouteDecision decision, AigDataLevelEnum requested) {
+        if (decision == null || StringUtils.isBlank(decision.getEffectiveDataLevel())) {
+            return requested;
+        }
+        AigDataLevelEnum effective = AigDataLevelEnum.find(decision.getEffectiveDataLevel());
+        return effective == null ? requested : effective;
     }
 
     /**

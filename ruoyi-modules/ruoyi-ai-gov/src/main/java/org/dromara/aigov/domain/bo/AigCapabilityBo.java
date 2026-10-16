@@ -63,6 +63,15 @@ public class AigCapabilityBo implements Serializable {
     private String requiredTags;
 
     /**
+     * 能力声明的<b>最低数据等级</b>（空 = 不声明）。
+     *
+     * <p>只接受 {@code PUBLIC/INTERNAL/RESTRICTED/STRICT}；路由按 {@code max(声明, 调用方传入)} 生效，
+     * <b>只抬不降</b>。留空即"等于调用方说了算"（存量行为）。</p>
+     */
+    @Size(max = 16, message = "数据等级长度不能超过 16", groups = {AddGroup.class, EditGroup.class})
+    private String minDataLevel;
+
+    /**
      * 输入 Schema（JSON），约定允许的字段与数据等级
      */
     private String inputSchema;

@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.dromara.aigov.domain.AigCapabilityModel;
 import org.dromara.aigov.domain.bo.AigCapabilityModelBo;
+import org.dromara.aigov.helper.AigHighRiskGuard;
+import org.dromara.aigov.mapper.AigCapabilityMapper;
 import org.dromara.aigov.mapper.AigCapabilityModelMapper;
 import org.dromara.aigov.mapper.AigModelViewMapper;
 import org.dromara.common.core.exception.ServiceException;
@@ -51,7 +53,10 @@ class AigModelBindingServiceImplTest {
     @BeforeEach
     void setUp() {
         capabilityModelMapper = mock(AigCapabilityModelMapper.class);
-        service = new AigModelBindingServiceImpl(capabilityModelMapper, mock(AigModelViewMapper.class));
+        // Q2C：候选变更的高风险闸门看能力的声明等级；本类测的是候选编辑本身，
+        // 因此能力查不到（=不声明等级）⇒ 闸门不参与判定，与引入 Q2C 之前逐字一致
+        service = new AigModelBindingServiceImpl(capabilityModelMapper, mock(AigModelViewMapper.class),
+            mock(AigCapabilityMapper.class), mock(AigHighRiskGuard.class));
     }
 
     private static AigCapabilityModel existing() {

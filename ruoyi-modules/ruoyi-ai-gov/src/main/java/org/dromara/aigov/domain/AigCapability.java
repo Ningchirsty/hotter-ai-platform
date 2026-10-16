@@ -52,6 +52,17 @@ public class AigCapability extends BaseEntity implements Serializable {
     private String requiredTags;
 
     /**
+     * 能力声明的<b>最低数据等级</b>（PUBLIC/INTERNAL/RESTRICTED/STRICT）。
+     *
+     * <p><b>为什么要它</b>：数据等级此前完全由调用方传入——业务方把客户名单按 INTERNAL 发过来，
+     * 路由就按 INTERNAL 找策略，可能落在一个允许外发的模型上。</p>
+     *
+     * <p><b>语义（Q2C）</b>：路由按 {@code max(声明, 调用方传入)} 生效，<b>只抬不降</b>；
+     * {@code NULL} / 空 = <b>不声明</b>（等于调用方说了算，存量能力行为不变）。</p>
+     */
+    private String minDataLevel;
+
+    /**
      * 输入 Schema（JSON），约定允许的字段与数据等级
      */
     private String inputSchema;

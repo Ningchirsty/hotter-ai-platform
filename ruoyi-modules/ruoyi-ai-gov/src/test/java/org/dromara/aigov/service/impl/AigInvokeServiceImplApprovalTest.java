@@ -115,6 +115,25 @@ class AigInvokeServiceImplApprovalTest {
         when(routeService.decide(any(), any(), nullable(AigRouteHint.class))).thenReturn(decision);
     }
 
+    @Test
+    @DisplayName("★ Q2C：审批按【生效】数据等级核对（能力声明抬高了等级时，不能拿调用方自称的等级去查授权）")
+    void approvalUsesEffectiveDataLevel() {
+        stubModelDecision(true);
+        // 能力声明 RESTRICTED，调用方按 INTERNAL 发 → 路由给出的生效等级是 RESTRICTED
+        AigRouteDecision decision = routeService.decide(CAPABILITY, AigDataLevelEnum.INTERNAL, (AigRouteHint) null);
+        decision.setEffectiveDataLevel(AigDataLevelEnum.RESTRICTED.getCode());
+        when(approvalService.hasValidGrant(nullable(Long.class), any(), any())).thenReturn(true);
+        StubInvoker invoker = new StubInvoker("InvokerA", ModelInvokeResult.success("{\"image\":\"x\"}", 5L));
+
+        AigInvokeVo vo = service(invoker).invoke(bo());
+
+        assertEquals("{\"image\":\"x\"}", vo.getOutput());
+        // 关键断言：核对授权、落审计用的都是生效等级，而不是 bo 里那个 INTERNAL
+        verify(approvalService).hasValidGrant(isNull(), eq(CAPABILITY), eq(AigDataLevelEnum.RESTRICTED.getCode()));
+        assertEquals(AigDataLevelEnum.RESTRICTED.getCode(), captureAudit().getDataLevel(),
+            "审计里必须记生效等级，否则账面对不上");
+    }
+
     private AigInvokeServiceImpl service(StubInvoker invoker) {
         return new AigInvokeServiceImpl(routeService, auditRecorder, List.of(invoker),
             modelViewMapper, retryProperties, quotaService, approvalService,

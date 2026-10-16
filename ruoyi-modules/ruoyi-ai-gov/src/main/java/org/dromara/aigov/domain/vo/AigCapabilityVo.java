@@ -48,6 +48,11 @@ public class AigCapabilityVo implements Serializable {
     private String requiredTags;
 
     /**
+     * 能力声明的<b>最低数据等级</b>（空 = 不声明）；路由按 {@code max(声明, 调用方传入)} 生效。
+     */
+    private String minDataLevel;
+
+    /**
      * 输入 Schema（JSON）
      */
     private String inputSchema;

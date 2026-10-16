@@ -163,6 +163,34 @@ class AigHighRiskChangesTest {
     }
 
     @Test
+    @DisplayName("★ 限制级/严格级能力（按其声明等级）的候选变更算高风险；未声明/低等级不算")
+    void rulesOnCandidateChange() {
+        assertTrue(AigHighRiskChanges.forCandidateChange("RESTRICTED"));
+        assertTrue(AigHighRiskChanges.forCandidateChange("strict"));
+        assertFalse(AigHighRiskChanges.forCandidateChange("INTERNAL"));
+        assertFalse(AigHighRiskChanges.forCandidateChange("PUBLIC"));
+        assertFalse(AigHighRiskChanges.forCandidateChange(null));
+        assertFalse(AigHighRiskChanges.forCandidateChange("  "));
+    }
+
+    @Test
+    @DisplayName("★ 声明等级被调低或清空 = 高风险（松锁）；调高或从无到有 = 收紧，不拦")
+    void rulesOnDeclarationChange() {
+        // 调低：松锁
+        assertTrue(AigHighRiskChanges.forMinDataLevelChange("RESTRICTED", "INTERNAL"));
+        assertTrue(AigHighRiskChanges.forMinDataLevelChange("STRICT", "RESTRICTED"));
+        // 清空：同样是把锁摘掉
+        assertTrue(AigHighRiskChanges.forMinDataLevelChange("RESTRICTED", null));
+        assertTrue(AigHighRiskChanges.forMinDataLevelChange("RESTRICTED", "  "));
+        // 调高或从无到有：收紧，不需要额外权限
+        assertFalse(AigHighRiskChanges.forMinDataLevelChange("INTERNAL", "RESTRICTED"));
+        assertFalse(AigHighRiskChanges.forMinDataLevelChange(null, "STRICT"));
+        assertFalse(AigHighRiskChanges.forMinDataLevelChange("RESTRICTED", "RESTRICTED"));
+        // 之前就没有声明时谈不上"调低"
+        assertFalse(AigHighRiskChanges.forMinDataLevelChange(null, null));
+    }
+
+    @Test
     @DisplayName("★ 接线：新增放行外发的策略会过闸门，闸门拒绝时一次都不写库")
     void newPolicyGoesThroughGuard() {
         doThrow(new ServiceException("没有高风险权限")).when(guard).assertAllowed(any());

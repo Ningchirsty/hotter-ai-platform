@@ -134,6 +134,46 @@ public final class AigHighRiskChanges {
     }
 
     /**
+     * 限制级/严格级能力（按其声明的 {@code min_data_level}）的**候选变更**是否高风险。
+     *
+     * <p>对应联动方案 §8.1 第 4 条：这类能力的候选决定"限制级数据能落到哪个模型"，
+     * 所以新增/改用途改优先级/启停/删除都必须有高风险权限。</p>
+     *
+     * <p>判据是 Q2C 新增的 {@code aig_capability.min_data_level}；没有该列之前只能拿策略行猜，
+     * 会误报——这也是这条规则留到 Q2C 一起做的原因。</p>
+     *
+     * @param capabilityMinDataLevel 能力声明的最低数据等级（可空 = 不声明）
+     * @return 需要高风险权限返回 true
+     */
+    public static boolean forCandidateChange(String capabilityMinDataLevel) {
+        AigDataLevelEnum level = AigDataLevelEnum.find(upper(capabilityMinDataLevel));
+        return level != null && level.getRank() >= AigDataLevelEnum.RESTRICTED.getRank();
+    }
+
+    /**
+     * 能力声明的最低数据等级被**调低或取消**是否高风险。
+     *
+     * <p>声明等级是"防业务方标低等级"的那道锁。<b>调高</b>（甚至从无到有）是收紧，不需要额外权限；
+     * <b>调低或清空</b>等于把这把锁松开（例如 RESTRICTED → INTERNAL、RESTRICTED → 空），
+     * 与"放宽数据出界"同一类风险，因此同样要求高风险权限。</p>
+     *
+     * <p>本来就没声明（{@code existingLevel} 为空）时不算高风险：那时谈不上"调低"。</p>
+     *
+     * @param existingLevel 改之前的声明（可空）
+     * @param targetLevel   目标声明（可空 = 取消声明）
+     * @return 需要高风险权限返回 true
+     */
+    public static boolean forMinDataLevelChange(String existingLevel, String targetLevel) {
+        AigDataLevelEnum before = AigDataLevelEnum.find(upper(existingLevel));
+        if (before == null) {
+            return false;
+        }
+        AigDataLevelEnum after = AigDataLevelEnum.find(upper(targetLevel));
+        int afterRank = after == null ? -1 : after.getRank();
+        return afterRank < before.getRank();
+    }
+
+    /**
      * 是否外部部署类型。
      *
      * @param deploymentType 部署类型（可空）

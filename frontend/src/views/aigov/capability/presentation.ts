@@ -583,6 +583,40 @@ export function disableConfirmText(
   return lines.join('\n');
 }
 
+/** 「最低数据等级」可选项（空 = 不声明，由调用方传入的等级决定；Q2C） */
+export function minDataLevelOptions(): { value: string; label: string }[] {
+  return [
+    { value: 'PUBLIC', label: '公开（PUBLIC）' },
+    { value: 'INTERNAL', label: '内部（INTERNAL）' },
+    { value: 'RESTRICTED', label: '限制级（RESTRICTED）' },
+    { value: 'STRICT', label: '严格级（STRICT，一律禁止外发）' }
+  ];
+}
+
+/** 最低数据等级 → 展示文案（未声明要说成"未声明"，不能留空白让人以为没这一项） */
+export function minDataLevelLabel(level?: string): string {
+  const value = (level || '').trim().toUpperCase();
+  if (!value) {
+    return '未声明（由调用方传入的等级决定）';
+  }
+  const hit = minDataLevelOptions().find((item) => item.value === value);
+  return hit ? hit.label : value;
+}
+
+/**
+ * 该能力（按声明的等级）的候选变更是否属于高风险（需 `aig:capability:high-risk`）。
+ *
+ * <p>与服务端 `AigHighRiskChanges#forCandidateChange` 同规则：限制级/严格级能力的候选
+ * 决定"这类数据能落到哪个模型"，所以要额外权限。前端只负责把话说在前面。</p>
+ *
+ * @param minDataLevel 能力声明的最低数据等级（可空）
+ * @returns 需要高风险权限返回 true
+ */
+export function candidateChangeNeedsHighRisk(minDataLevel?: string): boolean {
+  const value = (minDataLevel || '').trim().toUpperCase();
+  return value === 'RESTRICTED' || value === 'STRICT';
+}
+
 /**
  * 策略配置建议（P0 用规则模板；明确标注"建议，不会自动写入"）。
  *

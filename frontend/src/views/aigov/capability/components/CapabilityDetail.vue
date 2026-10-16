@@ -48,6 +48,12 @@
             <el-descriptions :column="2" border size="small">
               <el-descriptions-item label="能力编码">{{ capability?.capabilityCode }}</el-descriptions-item>
               <el-descriptions-item label="能力标签">{{ parseTags(capability?.requiredTags).join(' / ') || '未声明' }}</el-descriptions-item>
+              <el-descriptions-item label="最低数据等级">
+                {{ minDataLevelLabel(capability?.minDataLevel) }}
+                <span v-if="candidateChangeNeedsHighRisk(capability?.minDataLevel)" class="cap-detail__warn">
+                  （该能力的候选变更属高风险：需要「能力高风险变更」权限）
+                </span>
+              </el-descriptions-item>
               <el-descriptions-item label="数据策略">
                 {{ capability?.dataPolicyLabel || capability?.dataPolicy || '未设置' }}
                 <span class="cap-detail__warn">（登记项，判定以外发策略为准）</span>
@@ -238,8 +244,10 @@ import RawConsole from './RawConsole.vue';
 import TrialAssistant from './TrialAssistant.vue';
 import {
   USAGE_OPTIONS,
+  candidateChangeNeedsHighRisk,
   coverageText,
   issueTags,
+  minDataLevelLabel,
   parseTags,
   referenceSummary,
   referenceTypeMeta,
@@ -376,8 +384,28 @@ const openCandidate = (row: any) => {
   candidateVisible.value = true;
 };
 
+/** 该能力（按声明等级）的候选变更属高风险时，先把话说清（Q1C/§8.1 第 4 条） */
+const confirmCandidateHighRisk = async (action: string) => {
+  if (!candidateChangeNeedsHighRisk(capability.value?.minDataLevel)) {
+    return true;
+  }
+  try {
+    await modal.confirm(
+      `这是一次高风险变更：${action}限制级/严格级能力「${props.capabilityName || props.capabilityCode}」的模型候选`
+        + `（声明的数据等级=${capability.value?.minDataLevel}），它会直接改变这类数据能落到哪个模型。`
+        + `需要「能力高风险变更」权限点（aig:capability:high-risk）；没有该权限时保存会被服务端拒绝。`
+    );
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 const saveCandidate = async () => {
   if (!candidateForm.value?.bindId) {
+    return;
+  }
+  if (!(await confirmCandidateHighRisk('修改'))) {
     return;
   }
   saving.value = true;
@@ -397,6 +425,9 @@ const saveCandidate = async () => {
 };
 
 const removeCandidate = async (row: any) => {
+  if (!(await confirmCandidateHighRisk('删除'))) {
+    return;
+  }
   try {
     await modal.confirm(
       `删除这条候选？删除后该模型不再参与「${props.capabilityCode}」的路由；若这是唯一候选，调用会立即失败。`

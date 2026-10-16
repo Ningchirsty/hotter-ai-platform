@@ -13,6 +13,11 @@ export interface AigCapabilityVO extends BaseEntity {
   bizGoal?: string;
   /** 需要的模型能力标签，逗号分隔：TEXT/VISION/OCR/IMAGE/VIDEO/EMBEDDING/RERANK/AGENT */
   requiredTags?: string;
+  /**
+   * 能力声明的**最低数据等级**（Q2C；空 = 不声明）。
+   * 路由按 `max(声明, 调用方传入)` 生效，**只抬不降**。
+   */
+  minDataLevel?: string;
   /** 输入 Schema（JSON 文本） */
   inputSchema?: string;
   /** 输出 Schema（JSON 文本） */
@@ -37,6 +42,8 @@ export interface AigCapabilityForm {
   capabilityName?: string;
   bizGoal?: string;
   requiredTags?: string;
+  /** 能力声明的最低数据等级（空 = 不声明；Q2C） */
+  minDataLevel?: string;
   inputSchema?: string;
   outputSchema?: string;
   dataPolicy?: string;

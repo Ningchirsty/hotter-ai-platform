@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.dromara.aigov.domain.AigCapability;
 import org.dromara.aigov.domain.bo.AigCapabilityBo;
 import org.dromara.aigov.domain.vo.AigCapabilityVo;
+import org.dromara.aigov.helper.AigDataLevelEscalation;
 import org.dromara.aigov.helper.AigHighRiskChanges;
 import org.dromara.aigov.helper.AigHighRiskGuard;
 import org.dromara.aigov.mapper.AigCapabilityMapper;
@@ -85,6 +86,7 @@ public class AigCapabilityServiceImpl implements IAigCapabilityService {
         if (existsCode(code, null)) {
             throw new ServiceException("能力编码已存在：" + code);
         }
+        assertLegalMinDataLevel(bo.getMinDataLevel());
         AigCapability entity = BeanUtil.copyProperties(bo, AigCapability.class);
         entity.setCapabilityId(null);
         entity.setCapabilityCode(code);
@@ -102,16 +104,38 @@ public class AigCapabilityServiceImpl implements IAigCapabilityService {
         if (existsCode(code, bo.getCapabilityId())) {
             throw new ServiceException("能力编码已存在：" + code);
         }
+        // Q2C：声明值只接受四个合法等级（空=不声明）。前端只给四个选项，这里是服务端兜底——
+        // 非法值若落库，路由会"识别不出声明"从而静默不抬等级，等于这道锁没上。
+        assertLegalMinDataLevel(bo.getMinDataLevel());
         // Q1C：停用一条正在用的能力 = 它的所有调用立刻被拒，属高风险（且这可逆，所以与删除分开说）。
         // 只判"启用 → 停用"这一个迁移：对已停用的能力再存一次（改描述）不该被要求高风险权限，
         // 否则人会觉得这个权限点是随机拦人的。
         if (AigHighRiskChanges.forCapabilityDisable(exist.getStatus(), bo.getStatus())) {
             highRiskGuard.assertAllowed("停用一个能力（它当前的调用会立即被拒）");
         }
+        // Q1C：把声明的最低数据等级**调低或清空**是"松开这把锁"（例如 RESTRICTED → INTERNAL），
+        // 与放宽数据出界同类；调高（或从无到有）是收紧，不拦。
+        if (AigHighRiskChanges.forMinDataLevelChange(exist.getMinDataLevel(), bo.getMinDataLevel())) {
+            highRiskGuard.assertAllowed("调低/取消能力「" + code + "」声明的最低数据等级（"
+                + exist.getMinDataLevel() + " → " + (StringUtils.isBlank(bo.getMinDataLevel())
+                ? "不声明" : bo.getMinDataLevel()) + "）：这会把「防业务方标低等级」的锁松开");
+        }
         AigCapability entity = BeanUtil.copyProperties(bo, AigCapability.class);
         entity.setCapabilityId(exist.getCapabilityId());
         entity.setCapabilityCode(code);
         capabilityMapper.updateById(entity);
+    }
+
+    /**
+     * 校验声明的最低数据等级是否合法（空 = 不声明，合法）。
+     *
+     * @param minDataLevel 声明值
+     */
+    private void assertLegalMinDataLevel(String minDataLevel) {
+        if (!AigDataLevelEscalation.legalDeclaration(minDataLevel)) {
+            throw new ServiceException("非法的数据等级：" + minDataLevel
+                + "（可选 PUBLIC / INTERNAL / RESTRICTED / STRICT，或留空表示不声明）");
+        }
     }
 
     @Override

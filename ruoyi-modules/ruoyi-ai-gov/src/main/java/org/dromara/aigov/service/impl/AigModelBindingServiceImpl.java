@@ -6,11 +6,15 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.dromara.aigov.domain.AigCapability;
 import org.dromara.aigov.domain.AigCapabilityModel;
 import org.dromara.aigov.domain.bo.AigCapabilityModelBo;
 import org.dromara.aigov.domain.vo.AigCapabilityModelVo;
 import org.dromara.aigov.domain.vo.AigModelVo;
 import org.dromara.aigov.enums.AigUsageTypeEnum;
+import org.dromara.aigov.helper.AigHighRiskChanges;
+import org.dromara.aigov.helper.AigHighRiskGuard;
+import org.dromara.aigov.mapper.AigCapabilityMapper;
 import org.dromara.aigov.mapper.AigCapabilityModelMapper;
 import org.dromara.aigov.mapper.AigModelViewMapper;
 import org.dromara.aigov.service.IAigModelBindingService;
@@ -63,6 +67,16 @@ public class AigModelBindingServiceImpl implements IAigModelBindingService {
      */
     private final AigModelViewMapper modelViewMapper;
 
+    /**
+     * 能力目录 Mapper：Q1C/§8.1 第 4 条要看能力的**声明等级**（限制级/严格级能力的候选变更算高风险）。
+     */
+    private final AigCapabilityMapper capabilityMapper;
+
+    /**
+     * 高风险变更闸门（Q1C）。
+     */
+    private final AigHighRiskGuard highRiskGuard;
+
     @Override
     public PageResult<AigCapabilityModelVo> queryPage(AigCapabilityModelBo bo, PageQuery pageQuery) {
         AigCapabilityModelBo query = bo == null ? new AigCapabilityModelBo() : bo;
@@ -110,6 +124,8 @@ public class AigModelBindingServiceImpl implements IAigModelBindingService {
         AigCapabilityModel entity = BeanUtil.copyProperties(bo, AigCapabilityModel.class);
         entity.setBindId(null);
         entity.setCapabilityCode(capabilityCode);
+        // Q1C/§8.1 第 4 条：限制级/严格级能力的候选变更算高风险（会直接改变这些数据能落到哪个模型）
+        assertCandidateChangeAllowed(capabilityCode, "新增");
         String usage = normalizeUsage(bo.getUsageType());
         entity.setUsageType(usage == null ? DEFAULT_USAGE : usage);
         entity.setPriority(bo.getPriority() == null ? DEFAULT_PRIORITY : bo.getPriority());
@@ -129,6 +145,7 @@ public class AigModelBindingServiceImpl implements IAigModelBindingService {
         }
         // 先归一化再校验：界面上复制粘贴常带空格/小写，为此报"非法用途"是没必要的摩擦；
         // 而且库里存进 "fallback" 会让路由排序把这条候选掉到最低权重（见 normalizeUsage）
+        assertCandidateChangeAllowed(exist.getCapabilityCode(), "修改");
         String usageType = normalizeUsage(bo == null ? null : bo.getUsageType());
         Integer priority = bo == null ? null : bo.getPriority();
         if (priority != null && (priority <= 0 || priority > 999)) {
@@ -158,10 +175,42 @@ public class AigModelBindingServiceImpl implements IAigModelBindingService {
         if (bindId == null) {
             throw new ServiceException("绑定ID不能为空");
         }
-        if (capabilityModelMapper.selectById(bindId) == null) {
+        AigCapabilityModel exist = capabilityModelMapper.selectById(bindId);
+        if (exist == null) {
             throw new ServiceException("绑定关系不存在");
         }
+        // Q1C/§8.1 第 4 条：删掉限制级/严格级能力的候选会立刻改变这些数据能落到哪个模型
+        assertCandidateChangeAllowed(exist.getCapabilityCode(), "删除");
         capabilityModelMapper.deleteById(bindId);
+    }
+
+    /**
+     * 候选变更的高风险闸门（Q1C / 联动方案 §8.1 第 4 条）。
+     *
+     * <p><b>判据来自能力的声明等级</b>（{@code aig_capability.min_data_level}，Q2C 新增）：
+     * 声明的等级 ≥ 限制级时，这个能力的候选决定的是"限制级数据能落到哪个模型"，
+     * 因此新增/改用途改优先级/启停/删除都必须持有 {@code aig:capability:high-risk}。</p>
+     *
+     * <p><b>为什么以前不做</b>：那时没有声明等级列，只能拿策略行去猜，会误报；
+     * Q2C 加了列之后这条规则才有可靠判据——这也是把它留到 Q2C 一起做的原因。</p>
+     *
+     * @param capabilityCode 能力编码
+     * @param action         动作（写进拒绝文案）
+     */
+    private void assertCandidateChangeAllowed(String capabilityCode, String action) {
+        if (StringUtils.isBlank(capabilityCode)) {
+            return;
+        }
+        AigCapability capability = capabilityMapper.selectOne(new LambdaQueryWrapper<AigCapability>()
+            .eq(AigCapability::getCapabilityCode, capabilityCode.trim()));
+        if (capability == null) {
+            // 能力不存在由别处（路由/校验）表达；这里不越权判定，也不因此拦人
+            return;
+        }
+        if (AigHighRiskChanges.forCandidateChange(capability.getMinDataLevel())) {
+            highRiskGuard.assertAllowed(action + "限制级/严格级能力「" + capabilityCode + "」的模型候选"
+                + "（它会直接改变这类数据能落到哪个模型）");
+        }
     }
 
     /**

@@ -21,6 +21,7 @@ import org.dromara.aigov.enums.AigPolicyReasonCodeEnum;
 import org.dromara.aigov.enums.AigProviderTypeEnum;
 import org.dromara.aigov.enums.AigRouteDecisionEnum;
 import org.dromara.aigov.enums.AigUsageTypeEnum;
+import org.dromara.aigov.helper.AigDataLevelEscalation;
 import org.dromara.aigov.mapper.AigCapabilityMapper;
 import org.dromara.aigov.mapper.AigCapabilityModelMapper;
 import org.dromara.aigov.mapper.AigModelGovernanceMapper;
@@ -197,6 +198,17 @@ public class AigRouteServiceImpl implements IAigRouteService {
         if (dataLevel == null) {
             return denied(decision, "非法的数据等级");
         }
+
+        // 步骤1.5（Q2C）：能力声明的「最低数据等级」与本次调用等级取最高（**只抬不降**）。
+        // 位置选在这里的理由：①后面每一步（找策略、判外发、筛候选）都必须用生效等级，
+        // 越靠前越不容易漏；②所有入口（invoke / dryRun / 任务）都经过这里，口径不可能分叉。
+        // 只加一处说明、不改变"没声明时"的任何行为（存量能力不受影响）。
+        String escalation = AigDataLevelEscalation.explain(capability.getMinDataLevel(), dataLevel);
+        if (escalation != null) {
+            decision.addHit(escalation);
+        }
+        dataLevel = AigDataLevelEscalation.effective(capability.getMinDataLevel(), dataLevel);
+        decision.setEffectiveDataLevel(dataLevel.getCode());
 
         // 步骤2：取 aig_route_policy(capability, dataLevel)；无策略 → DENIED（默认拒绝，不默认放行）
         AigRoutePolicy policy = routePolicyMapper.selectOne(new LambdaQueryWrapper<AigRoutePolicy>()
