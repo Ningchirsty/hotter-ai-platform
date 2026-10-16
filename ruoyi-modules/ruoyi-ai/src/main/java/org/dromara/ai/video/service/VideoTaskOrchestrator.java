@@ -583,13 +583,13 @@ public class VideoTaskOrchestrator {
         return Math.min(contractCap, requested * 1000L);
     }
 
-    /** Longer native clips need a proportional execution window, up to four 5-second units. */
+    /** Frame-sequence attention grows faster than clip length; keep a bounded window per duration tier. */
     public Duration resolvePollBudget(String durationLabel, WorkflowVersion version) {
         if (version == null || version.fixedFieldValidation() == null
             || version.fixedFieldValidation().durationControl() == null) return pollBudget;
         int seconds = H3TemplatePreparer.parseDurationSeconds(durationLabel);
         int multiplier = Math.max(1, Math.min(4, (seconds + 4) / 5));
-        return pollBudget.multipliedBy(multiplier);
+        return pollBudget.multipliedBy((long) multiplier * multiplier);
     }
 
     private ComfyOutput awaitOutput(String promptId, TaskContext context, ComfyClient client, WorkflowVersion version) {
