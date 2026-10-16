@@ -105,7 +105,7 @@
 
 ## 4 验证汇总
 
-- 后端 `ruoyi-ai-gov`：**1354 tests / 0 failures / 0 errors**（基线 1053 → 新增 301）。
+- 后端 `ruoyi-ai-gov`：**1367 tests / 0 failures / 0 errors**（基线 1053 → 新增 314；其中 **13 条**来自能力域重构 P0，见 §10）。
   > 各阶段文档（`19`–`23`）里的测试数**是各自增量当时的数**；
   > **以本节为准**——阶段文档只留"本轮新增几条"，不再写会过期的"当前 N"。
   > 另有 `script/ci/check-aigov-docs.mjs` 会**机械核对**本节的测试数与提交号
@@ -114,9 +114,9 @@
   它同时会跑"每个有测试的模块都必须产出 Surefire 报告"的台账守卫。
   ⚠️ 该模式需要 CI 前置步骤装好的 **ffmpeg/ffprobe**（缺了会是 `ruoyi-ai` 的 4 个媒体用例报
   "图片格式转换服务不可用"——环境前提，不是本分支的回归；见 §7.2）。
-- 前端 `frontend`：**53 files / 527 tests** 全过；`oxlint src` 552 files 0/0；
+- 前端 `frontend`：**54 files / 546 tests** 全过；`oxlint src` 562 files 0/0；
   **生产构建 `vite build --mode production` 通过**（与 CI 的 `pnpm build:prod` 同一条命令）。
-  其中 `views/aigov/sfcCompile.spec.ts` 真编译全部 30 个治理层 SFC
+  其中 `views/aigov/sfcCompile.spec.ts` 真编译全部 34 个治理层 SFC
   （无 DOM 环境下的最低保证：模板/`<script setup>` 写错会在这里红），
   并用**构建插件本身**扫 `src/views/**` 全部页面，守住"根节点只能有一个"（见 §7.2 的说明）。
 - 关键守卫全部通过：`AigPermissionSeedCoverageTest`（权限串已种子 + menu_id 不撞）、
@@ -344,3 +344,38 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src 
 注意：**建表/补列脚本已经在发布工作流的重放清单里**（切镜像前自动跑，由
 `AigDeploySchemaReplayCoverageTest` 把关）；权限种子只授 `aig_admin`，设计 §4.3 的业务角色
 应由运维按需新建并单独授权；页面行脚本登记的是草稿/反馈/知识/工具页面菜单。
+
+---
+
+## 8 能力域重构 P0（2026-10-15，已实现并自测通过；**未提交、未推送**）
+
+> 背景：平台发布到生产后反馈"能力这块很乱"。走读（后端 / 数据权限菜单 / 前端三路）后确认：
+> **界面乱的根源是流程没有单一入口**。设计与决策见 `docs/aigov/design/` 下三份文档：
+> `能力域-现状走读与重构方案.md`（现状 + 24 条问题）、`能力域-业务流程与界面联动改造方案.md`
+> （6 条流程 + 12 条流程断点 + 已拍板的 6 个业务口径）、`P0-能力域-字段级规格与改动清单.md`（施工图 + 26 条回归用例）；
+> 界面提案为 `治理台-能力域-demo-v3.html`（按 DinTal 真实截图重做，含 v1/v2 对比稿）。
+
+**P0 交付（不改表、不加权限点、不新增菜单行）**
+
+| 层 | 交付 | 文件 |
+| --- | --- | --- |
+| 后端 | 能力概览聚合（卡片/看板的唯一数据源；筛选下发服务端） | `AigCapabilityOverviewVo`、`IAigCapabilityOverviewService`(+Impl)、`AigCapabilityController#overview`、`GET /aigov/capability/overview` |
+| 后端 | 候选"编辑用途/优先级"（此前只能删了重建；且用途会归一化成规范大写，避免库里小写导致路由把它排到最低权重） | `IAigModelBindingService#update`、`AigModelBindingServiceImpl#update`、`PUT /aigov/binding/{bindId}` |
+| 前端 | 能力清单：卡片网格 + **服务端筛选**（问题码 / 候选有无 / 状态）+ 创建卡 + 空态 + 卡片进详情 | `views/aigov/capability/index.vue`、`capability/presentation.ts` |
+| 前端 | 能力详情**整页** + 「展开配置详情」5 页签（基本信息/模型候选/策略/场景指定/最近调用）+ 人设分节 | `capability/components/CapabilityDetail.vue` |
+| 前端 | **试调助手**（右侧常驻对话，用户已确认）：4 类固定问题 + 假设参数（数据等级/禁止外发/场景）× dryRun 六段式 | `capability/components/TrialAssistant.vue` |
+| 前端 | 深色「原始与日志」控制台；能力看板（4 指标 + 调用/失败排行 + 表格视图，**不画按天趋势**——避免用分页数据拼出错的曲线） | `capability/components/RawConsole.vue`、`CapabilityBoard.vue` |
+| 前端 API | 新增 `capability/overview`、`candidate`（= 能力×模型，路径独立于 Agent 版本绑定的 `binding`）、`invoke`（dryRun） | `api/aigov/capability/overview(-types).ts`、`api/aigov/candidate/index.ts`、`api/aigov/invoke/index.ts` |
+
+**实测结论（决定了 P0 的成本）**：`dryRun` 已经下发 `reasonCode` + `policyHits`（含"哪些候选因何被排除"），
+所以**试调助手没动一行后端**；P0 后端只加了 1 个只读聚合 + 1 个候选编辑。
+另：`dryRun` **不校验调用授权与配额**（那两道只在真实调用时拦），界面必须写清"试调通过 ≠ 能调"。
+
+**P0 未做（P1/P2，见联动方案 §7–§8）**：影响面与强制确认（Q6）、员工"我的额度/我的申请"（Q5）、
+高风险变更轻量门槛（Q1C）、dryRun 补 `wouldRequireApproval/quotaStatus`（Q3）、
+数据等级取最高 `min_data_level`（Q2C，需一条 ALTER，已定 P1 末尾）——
+以及 22 项交互规范与其余模块按 v3 改写。
+
+**验证**：后端 1367 tests / 0 failures（含新增 13 条：概览 6 / 候选编辑 4 / 路由烟测 3）；
+前端 54 files / 546 tests（含新增 15 条展示口径单测）；`oxlint` 562 files 0/0；
+`vite build` 清缓存重建通过；`node script/ci/verify-aigov-v1.mjs` 全绿。
