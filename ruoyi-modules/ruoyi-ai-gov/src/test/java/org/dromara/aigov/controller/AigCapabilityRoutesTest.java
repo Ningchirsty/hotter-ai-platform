@@ -1,6 +1,7 @@
 package org.dromara.aigov.controller;
 
 import org.dromara.aigov.service.IAigCapabilityOverviewService;
+import org.dromara.aigov.service.IAigCapabilityReferenceService;
 import org.dromara.aigov.service.IAigCapabilityService;
 import org.dromara.aigov.service.IAigModelBindingService;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,6 +36,7 @@ class AigCapabilityRoutesTest {
 
     private IAigCapabilityService capabilityService;
     private IAigCapabilityOverviewService overviewService;
+    private IAigCapabilityReferenceService referenceService;
     private IAigModelBindingService modelBindingService;
     private MockMvc mockMvc;
 
@@ -42,9 +44,10 @@ class AigCapabilityRoutesTest {
     void setUp() {
         capabilityService = mock(IAigCapabilityService.class);
         overviewService = mock(IAigCapabilityOverviewService.class);
+        referenceService = mock(IAigCapabilityReferenceService.class);
         modelBindingService = mock(IAigModelBindingService.class);
         mockMvc = MockMvcBuilders.standaloneSetup(
-            new AigCapabilityController(capabilityService, overviewService),
+            new AigCapabilityController(capabilityService, overviewService, referenceService),
             new AigModelBindingController(modelBindingService)).build();
     }
 
@@ -58,6 +61,15 @@ class AigCapabilityRoutesTest {
             .andExpect(status().isOk());
 
         verify(overviewService).overview(any(), any(), eq("NO_MODEL_CANDIDATE"), eq("NO"));
+    }
+
+    @Test
+    @DisplayName("★ GET /aigov/capability/references 不被数字型详情路由抢走（字面路径优先）")
+    void referencesRouteIsNotShadowedByDetailRoute() throws Exception {
+        mockMvc.perform(get("/aigov/capability/references").param("capabilityCode", "image_generation"))
+            .andExpect(status().isOk());
+
+        verify(referenceService).listReferences("image_generation");
     }
 
     @Test
