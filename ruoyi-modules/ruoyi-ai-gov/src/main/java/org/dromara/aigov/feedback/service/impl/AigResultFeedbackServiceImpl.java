@@ -1,6 +1,7 @@
 package org.dromara.aigov.feedback.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.aigov.feedback.domain.AigResultFeedback;
@@ -11,8 +12,10 @@ import org.dromara.aigov.feedback.enums.AigFeedbackReasonEnum;
 import org.dromara.aigov.feedback.enums.AigFeedbackVerdictEnum;
 import org.dromara.aigov.feedback.mapper.AigResultFeedbackMapper;
 import org.dromara.aigov.feedback.service.IAigResultFeedbackService;
+import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
+import org.dromara.common.mybatis.core.page.PageQuery;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -72,13 +75,39 @@ public class AigResultFeedbackServiceImpl implements IAigResultFeedbackService {
 
     @Override
     public List<AigResultFeedback> listQueue(String verdict, String actionCode, String reasonCode) {
+        return feedbackMapper.selectList(queueWrapper(verdict, actionCode, reasonCode));
+    }
+
+    @Override
+    public PageResult<AigResultFeedback> queryQueuePage(String verdict, String actionCode, String reasonCode,
+                                                       PageQuery pageQuery) {
+        PageQuery query = pageQuery == null ? new PageQuery() : pageQuery;
+        Page<AigResultFeedback> page = feedbackMapper.selectPage(query.build(),
+            queueWrapper(verdict, actionCode, reasonCode));
+        return PageResult.build(page.getRecords(), page.getTotal());
+    }
+
+    /**
+     * 队列的过滤条件（**唯一一处**，全量与分页共用）。
+     *
+     * <p>抽出来的理由：分页版与全量版若各写一份过滤，迟早会出现"翻到第 2 页看到的行
+     * 与第 1 页的筛选口径不一致"这类看不见的错。</p>
+     *
+     * <p>过滤条件一律走枚举校验：拼错的编码若被当成"没有匹配"，页面会显示成"队列是空的"——
+     * 那是"没有问题要处理"的意思，与"你筛错了"完全不同。</p>
+     *
+     * @param verdict    处理结论过滤（可空=默认 PENDING）
+     * @param actionCode 后续动作过滤（可空=不限）
+     * @param reasonCode 反馈原因过滤（可空=不限）
+     * @return 查询条件
+     */
+    private LambdaQueryWrapper<AigResultFeedback> queueWrapper(String verdict, String actionCode,
+                                                               String reasonCode) {
         String wanted = StringUtils.isBlank(verdict)
             ? AigFeedbackVerdictEnum.PENDING.getCode() : verdict.trim();
         if (AigFeedbackVerdictEnum.find(wanted) == null) {
             throw new ServiceException("非法的处理结论过滤：" + verdict);
         }
-        // 过滤条件一律走枚举校验：拼错的编码若被当成"没有匹配"，页面会显示成"队列是空的"——
-        // 那是"没有问题要处理"的意思，与"你筛错了"完全不同
         AigFeedbackActionEnum action = null;
         if (StringUtils.isNotBlank(actionCode)) {
             action = AigFeedbackActionEnum.find(actionCode);
@@ -94,14 +123,14 @@ public class AigResultFeedbackServiceImpl implements IAigResultFeedbackService {
                 throw new ServiceException("非法的反馈原因过滤：" + reasonCode);
             }
         }
-        return feedbackMapper.selectList(new LambdaQueryWrapper<AigResultFeedback>()
+        return new LambdaQueryWrapper<AigResultFeedback>()
             .eq(AigResultFeedback::getVerdict, wanted)
             .eq(action != null, AigResultFeedback::getActionCode,
                 action == null ? null : action.getCode())
             .eq(reason != null, AigResultFeedback::getReasonCode,
                 reason == null ? null : reason.getCode())
             .eq(AigResultFeedback::getStatus, STATUS_NORMAL)
-            .orderByDesc(AigResultFeedback::getCreateTime));
+            .orderByDesc(AigResultFeedback::getCreateTime);
     }
 
     @Override

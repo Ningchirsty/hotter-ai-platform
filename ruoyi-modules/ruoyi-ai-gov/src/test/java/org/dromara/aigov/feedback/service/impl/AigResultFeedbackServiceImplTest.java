@@ -9,6 +9,7 @@ import org.dromara.aigov.feedback.domain.bo.AigResultFeedbackBo;
 import org.dromara.aigov.feedback.enums.AigFeedbackVerdictEnum;
 import org.dromara.aigov.feedback.mapper.AigResultFeedbackMapper;
 import org.dromara.common.core.exception.ServiceException;
+import org.dromara.common.mybatis.core.page.PageQuery;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -99,6 +100,36 @@ class AigResultFeedbackServiceImplTest {
         assertThrows(ServiceException.class, () -> service.listQueue("CONFIRMED", null, "NO_SUCH"));
         assertThrows(ServiceException.class, () -> service.listQueue("NO_SUCH_VERDICT", null, null));
         verify(feedbackMapper, org.mockito.Mockito.never()).selectList(any());
+    }
+
+    @Test
+    @DisplayName("★ 分页队列：与全量版共用同一份过滤条件（拼错编码仍报错，不静默变成空队列）")
+    void queryQueuePageSharesFilterWithListQueue() {
+        com.baomidou.mybatisplus.extension.plugins.pagination.Page<AigResultFeedback> page =
+            new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(2, 10);
+        page.setRecords(java.util.List.of(new AigResultFeedback()));
+        page.setTotal(23);
+        when(feedbackMapper.selectPage(any(), any())).thenReturn(page);
+
+        // ⚠️ PageQuery 的构造器是 (pageSize, pageNum) —— 顺序不能想当然
+        org.dromara.common.core.domain.PageResult<AigResultFeedback> result =
+            service.queryQueuePage("CONFIRMED", "ADD_CASE", null, new PageQuery(10, 2));
+
+        assertEquals(23, result.getTotal());
+        assertEquals(1, result.getRows().size());
+
+        ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.Wrapper<AigResultFeedback>> captor =
+            ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.Wrapper.class);
+        verify(feedbackMapper).selectPage(any(), captor.capture());
+        String sql = captor.getValue().getSqlSegment();
+        assertTrue(sql.contains("verdict"), "过滤条件里应带上结论：" + sql);
+        assertTrue(sql.contains("action_code"), "过滤条件里应带上后续动作：" + sql);
+
+        // 分页版不能把"筛错了"变成"空队列"：非法编码仍要抛
+        assertThrows(ServiceException.class,
+            () -> service.queryQueuePage("CONFIRMED", "ADD_CASE_X", null, new PageQuery(10, 1)));
+        assertThrows(ServiceException.class,
+            () -> service.queryQueuePage("NO_SUCH_VERDICT", null, null, new PageQuery(10, 1)));
     }
 
     private static AigResultFeedbackBo bo(String reason) {

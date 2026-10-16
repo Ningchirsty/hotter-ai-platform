@@ -3,6 +3,8 @@ package org.dromara.aigov.feedback.service;
 import org.dromara.aigov.feedback.domain.AigResultFeedback;
 import org.dromara.aigov.feedback.domain.bo.AigFeedbackHandleBo;
 import org.dromara.aigov.feedback.domain.bo.AigResultFeedbackBo;
+import org.dromara.common.core.domain.PageResult;
+import org.dromara.common.mybatis.core.page.PageQuery;
 
 import java.util.List;
 
@@ -50,6 +52,21 @@ public interface IAigResultFeedbackService {
      * @return 反馈清单
      */
     List<AigResultFeedback> listQueue(String verdict, String actionCode, String reasonCode);
+
+    /**
+     * 问题队列（**分页**；过滤口径与 {@link #listQueue(String, String, String)} 完全一致）。
+     *
+     * <p><b>为什么要有分页版</b>：队列是"收件箱"，行数只增不减；全量返回在队列长了以后
+     * 既慢又难用（运维得自己找第几页）。页面走这个接口，全量那个留给小批量/兼容场景。</p>
+     *
+     * @param verdict    处理结论过滤（可空=默认 PENDING）
+     * @param actionCode 后续动作过滤（可空=不限）
+     * @param reasonCode 反馈原因过滤（可空=不限）
+     * @param pageQuery  分页参数
+     * @return 分页结果
+     */
+    PageResult<AigResultFeedback> queryQueuePage(String verdict, String actionCode, String reasonCode,
+                                                 PageQuery pageQuery);
 
     /**
      * 处理一条反馈。

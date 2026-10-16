@@ -9,7 +9,9 @@ import org.dromara.aigov.feedback.domain.AigResultFeedback;
 import org.dromara.aigov.feedback.domain.bo.AigFeedbackHandleBo;
 import org.dromara.aigov.feedback.domain.bo.AigResultFeedbackBo;
 import org.dromara.aigov.feedback.service.IAigResultFeedbackService;
+import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.core.domain.R;
+import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.common.redis.annotation.RepeatSubmit;
 import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.common.web.core.BaseController;
@@ -78,6 +80,27 @@ public class AigResultFeedbackController extends BaseController {
                                             @RequestParam(required = false) String actionCode,
                                             @RequestParam(required = false) String reasonCode) {
         return R.ok(feedbackService.listQueue(verdict, actionCode, reasonCode));
+    }
+
+    /**
+     * 问题队列（**分页**；页面走这个）。
+     *
+     * <p>过滤参数与 {@code /queue} 完全一致（服务端共用同一份条件构造），只是多带分页参数。
+     * 队列是"收件箱"、行数只增不减，因此页面不该再全量拉取。</p>
+     *
+     * @param verdict    处理结论过滤（可空=默认 PENDING）
+     * @param actionCode 后续动作过滤（可空=不限）
+     * @param reasonCode 反馈原因过滤（可空=不限）
+     * @param pageQuery  分页参数
+     * @return 分页结果
+     */
+    @SaCheckPermission(AigConstants.PERM_FEEDBACK_QUEUE)
+    @GetMapping("/queue/page")
+    public R<PageResult<AigResultFeedback>> queuePage(@RequestParam(required = false) String verdict,
+                                                      @RequestParam(required = false) String actionCode,
+                                                      @RequestParam(required = false) String reasonCode,
+                                                      PageQuery pageQuery) {
+        return R.ok(feedbackService.queryQueuePage(verdict, actionCode, reasonCode, pageQuery));
     }
 
     /**

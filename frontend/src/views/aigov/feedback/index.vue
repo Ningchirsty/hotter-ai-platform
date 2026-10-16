@@ -30,7 +30,7 @@
         <div class="header">
           <span class="title">反馈问题队列</span>
           <div>
-            <el-select v-model="verdict" style="width: 160px" @change="loadQueue">
+            <el-select v-model="verdict" style="width: 160px" @change="handleFilterChange">
               <el-option
                 v-for="item in QUEUE_FILTERS"
                 :key="item.code"
@@ -38,7 +38,7 @@
                 :value="item.code"
               />
             </el-select>
-            <el-select v-model="actionCode" clearable style="width: 150px" class="ml-2" @change="loadQueue">
+            <el-select v-model="actionCode" clearable style="width: 150px" class="ml-2" @change="handleFilterChange">
               <el-option
                 v-for="item in QUEUE_ACTION_FILTERS"
                 :key="item.code"
@@ -46,7 +46,7 @@
                 :value="item.code"
               />
             </el-select>
-            <el-select v-model="reasonCode" clearable style="width: 150px" class="ml-2" @change="loadQueue">
+            <el-select v-model="reasonCode" clearable style="width: 150px" class="ml-2" @change="handleFilterChange">
               <el-option
                 v-for="item in QUEUE_REASON_FILTERS"
                 :key="item.code"
@@ -113,6 +113,13 @@
           </template>
         </el-table-column>
       </el-table>
+      <pagination
+        v-if="total > 0"
+        v-model:page="query.pageNum"
+        v-model:limit="query.pageSize"
+        :total="total"
+        @pagination="loadQueue"
+      />
     </el-card>
 
     <el-dialog v-model="handleVisible" title="处理反馈" width="480px" append-to-body>
@@ -152,7 +159,7 @@
 </template>
 
 <script setup lang="ts">
-import { getOperationsMetrics, handleFeedback, listFeedbackQueue } from '@/api/aigov/feedback';
+import { getOperationsMetrics, handleFeedback, listFeedbackQueuePage } from '@/api/aigov/feedback';
 import type {
   AigFeedbackHandleForm,
   AigFeedbackVO,
@@ -181,6 +188,9 @@ defineOptions({ name: 'AigFeedback' });
 const metrics = ref<AigOperationsMetricsVO>({});
 const { loading, withLoading } = useLoading(true);
 const rows = ref<AigFeedbackVO[]>([]);
+/** 队列分页（队列会一直增长，页面不该全量拉取） */
+const total = ref(0);
+const query = ref<{ pageNum: number; pageSize: number }>({ pageNum: 1, pageSize: 10 });
 const verdict = ref('');
 const actionCode = ref('');
 const reasonCode = ref('');
@@ -194,10 +204,24 @@ const loadMetrics = async () => {
   metrics.value = res.data || {};
 };
 
+/** 改筛选必须回到第 1 页：否则停在第 3 页时一改筛选就只剩一张空表，看起来像"没有数据" */
+const handleFilterChange = async () => {
+  query.value.pageNum = 1;
+  await loadQueue();
+};
+
 const loadQueue = async () => {
   await withLoading(async () => {
-    const res = await listFeedbackQueue(verdict.value, actionCode.value, reasonCode.value);
-    rows.value = res.data || [];
+    // 队列是"收件箱"、行数只增不减 ⇒ 走分页接口（过滤口径与服务端全量版同一处构造）
+    const res: any = await listFeedbackQueuePage({
+      verdict: verdict.value,
+      actionCode: actionCode.value,
+      reasonCode: reasonCode.value,
+      pageNum: query.pageNum,
+      pageSize: query.pageSize
+    });
+    rows.value = res.data?.rows || [];
+    total.value = res.data?.total || 0;
   });
 };
 
@@ -206,6 +230,7 @@ const clearFilters = async () => {
   verdict.value = '';
   actionCode.value = '';
   reasonCode.value = '';
+  query.pageNum = 1;
   await loadQueue();
 };
 
