@@ -27,6 +27,7 @@
 | `8b0e1d1a` | 能力域/Q2C | **能力声明最低数据等级**：`aig_capability.min_data_level`（ALTER + 重放清单）+ 路由 `max(声明, 调用方)` **只抬不降**（放在路由引擎，所有入口一处生效）+ 生效等级落审计/审批核对 + 「调低/清空」高风险 + **限制级能力的候选变更**需高风险权限（补 Q1C 那半条） |
 | `e57c7a41` | P2/交互规范 | **空态 / 长 ID 折叠 / 缺失的 loading**：新增 `AigEmptyState`（三行式空态）与 `AigLongId`（折叠+复制，纯函数有单测），首批接入 tool / knowledge / feedback / evaluation / audit |
 | `b576cc1e` | P2/交互规范 | 第二批：剩余主表空态（model / route / agent / quota / approval / binding）+ 长 ID 折叠扫尾（feedback 的 5 个 19 位 ID 列、quota 用户ID、approval 单号、binding 四个 ID 列） |
+| `b37045c9` | P2/交互规范 | **危险操作确认审计**（`script/ci/audit-aigov-dangerous-ops.mjs`，评审用不接门禁）+ 补 2 处缺失确认（approval 超时扫描批量改状态、knowledge 解析并索引会覆盖分段与索引） |
 
 > 表里是**有实质内容的提交**；纯文档补记（例如把本表自己补上一行）不逐条登记——它们不改变交付物。
 > `check-aigov-docs.mjs` 会核对**本节**每个提交号都是当前分支 HEAD 的祖先（抄错/被 rebase 掉会红）。
@@ -466,6 +467,24 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src 
 > `servicetoken`(1)、`skill`(2)、`studio`(1)、`task`(3) —— 这些页的次表/子表还没有空态。
 > 其余待办：**分页**（`tool`/`knowledge`/`feedback`/`evaluation` 的后端接口本就整表返回，补分页要连带改后端）、
 > "5 处危险操作无二次确认"里剩下的入口、**各页观感仍需人眼验收**（本仓前端没有 DOM 测试环境）。
+
+**P2 附加：危险操作确认审计（2026-10-16，把口径写死以便复核）**
+
+走读 U10 的"**5 处危险操作无二次确认**"当初**没有留下可复核的清单**（是哪 5 处、按什么口径数）。
+本轮把它做成可复现的审计，并把查出的缺口补上：
+
+- 工具：`script/ci/audit-aigov-dangerous-ops.mjs`（**评审用，刻意不接 CI 门禁**——判据含"命名意图/是否可恢复"这类人工成分，
+  而"弹窗表单 / `modal.prompt` 收原因"同样算确认；硬做成门禁只会不断误报、最后被加废）。
+  口径写在文件头：①危险命名（delete/remove/archive/cancel/revoke/expire/disable/rollback/unbind/clear 前缀）
+  ②函数体里真有写接口调用（且剔除 `modal.confirm` 自身）③函数内是否有确认（含 prompt）。
+- 实测结果：**①危险命名且会写库 = 2 个，缺确认 0 个**；②会写库且无函数内确认、又不属于"弹窗表单提交/辅助函数" = **1 个**，
+  即 `agent#doDownloadArtifact`——**已核实它只是写一条"下发记录"（审计痕迹），不属于需要二次确认的危险动作**。
+- 补上的 2 处确认（原先确属"一次点击就改状态、没有中间那一步"）：
+  · `approval#handleExpireScan`：**批量**把超时未批的单子置为"已超时未批"且不可逆 ⇒ 确认框写清"做哪件事 + 影响什么 + 能不能恢复"，
+    并提示"只想看超时单用状态筛选即可"；
+  · `knowledge#doIndexVersion`：解析并索引会覆盖该版本的分段与索引 ⇒ 确认框说明影响，并写明"已就绪的版本服务端拒绝原地重建，需先新建版本"。
+- 结论（对我们的口径）：**"5 处"这个数现在无法复核**，按上面口径重测后真实缺口是 2 处、已补；这一点如实记下，
+  避免以后有人拿"5 处"当结论继续找。
 
 **验证**（本次实测，2026-10-16）：后端 **1412 tests / 0 failures / 0 errors**；
 前端 **57 files / 572 tests**；`oxlint` **572 files 0/0**；`vite build` 通过；`verify-aigov-v1.mjs` 全绿。
