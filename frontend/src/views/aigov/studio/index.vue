@@ -39,6 +39,15 @@
       </el-form>
 
       <el-table v-loading="loading" border class="data-table" :data="draftList">
+        <template #empty>
+          <AigEmptyState
+            icon="EditPen"
+            title="还没有训练草稿"
+            hint="从零创建或导入一份草稿，改完可以先存半成品（预检只提示不拦保存）。"
+          >
+            <el-button size="small" @click="getList">刷新</el-button>
+          </AigEmptyState>
+        </template>
         <el-table-column label="草稿ID" align="center" prop="draftId" width="180" show-overflow-tooltip />
         <el-table-column label="训练对象编码" align="center" prop="agentCode" min-width="180" show-overflow-tooltip />
         <el-table-column label="状态" align="center" width="110">
@@ -439,6 +448,7 @@ import type {
 import { useLoading } from '@/hooks/async/useLoading';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import modal from '@/plugins/modal';
+import AigEmptyState from '../components/AigEmptyState.vue';
 import { PROMPT_SECTION_LABELS, diffSummary, parseDraftContent, sectionDiff } from './diff';
 import { capabilityReadiness } from '@/views/aigov/capability/presentation';
 import { DIRTY_CHOICES, beforeUnloadShouldWarn, needsGuard, unsavedMessage, type DirtyChoice } from './dirtyGuard';

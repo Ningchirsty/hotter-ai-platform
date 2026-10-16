@@ -98,6 +98,15 @@
       </template>
 
       <el-table v-loading="loading" border class="data-table" :data="taskList">
+        <template #empty>
+          <AigEmptyState
+            icon="Tickets"
+            title="当前筛选下没有任务"
+            hint="任务由业务侧发起；也可以清掉筛选看全部，或按状态/能力缩小范围。"
+          >
+            <el-button size="small" @click="getList">刷新</el-button>
+          </AigEmptyState>
+        </template>
         <el-table-column label="任务号" align="center" prop="taskNo" width="200" show-overflow-tooltip />
         <el-table-column label="类型" align="center" width="150" show-overflow-tooltip>
           <template #default="scope">{{ scope.row.taskTypeLabel || scope.row.taskType }}</template>
@@ -262,6 +271,15 @@
 
         <el-divider content-position="left">事件流（按序号升序）</el-divider>
         <el-table :data="detail.events" border size="small">
+          <template #empty>
+            <AigEmptyState
+              icon="Clock"
+              title="这个任务还没有事件"
+              hint="事件流按发生顺序记录每一步；刚创建的任务可能只有「创建」这一步，稍等或刷新。"
+            >
+              <el-button size="small" @click="handleDetail(detail.task)">刷新</el-button>
+            </AigEmptyState>
+          </template>
           <el-table-column label="#" align="center" prop="sequence" width="60" />
           <el-table-column label="事件" align="center" width="150" show-overflow-tooltip>
             <template #default="scope">{{ scope.row.eventTypeLabel || scope.row.eventType }}</template>
@@ -283,6 +301,15 @@
 
         <el-divider content-position="left">候选结果</el-divider>
         <el-table :data="detail.results" border size="small">
+          <template #empty>
+            <AigEmptyState
+              icon="Files"
+              title="还没有候选结果"
+              hint="任务跑出结果后在这里人工选定交付物（同一任务单选，再次选定会撤回上一次）。"
+            >
+              <el-button size="small" @click="handleDetail(detail.task)">刷新</el-button>
+            </AigEmptyState>
+          </template>
           <el-table-column label="类型" align="center" prop="resultType" width="110" />
           <el-table-column label="资产" align="center" prop="assetId" width="120" />
           <el-table-column label="结构校验" align="center" width="120">
@@ -335,6 +362,7 @@ import { useDateRangeQuery } from '@/hooks/form/useDateRangeQuery';
 import { useSearchReset } from '@/hooks/form/useSearchReset';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import modal from '@/plugins/modal';
+import AigEmptyState from '../components/AigEmptyState.vue';
 import { useDict } from '@/utils/dict';
 import { parseTime } from '@/utils/ruoyi';
 import TaskMirrorPanel from './components/TaskMirrorPanel.vue';

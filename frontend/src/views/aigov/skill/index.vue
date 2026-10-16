@@ -50,6 +50,15 @@
       </template>
 
       <el-table v-loading="loading" border class="data-table" :data="skillList">
+        <template #empty>
+          <AigEmptyState
+            icon="MagicStick"
+            title="还没有 Skill"
+            hint="Skill 是能力之外的「怎么做事」；先登记 Skill，再上传版本并推进发布状态。"
+          >
+            <el-button size="small" @click="getList">刷新</el-button>
+          </AigEmptyState>
+        </template>
         <el-table-column label="Skill编码" align="center" prop="skillCode" width="200" show-overflow-tooltip />
         <el-table-column label="名称" align="center" prop="skillName" width="160" show-overflow-tooltip />
         <el-table-column label="能力" align="center" width="240">
@@ -105,6 +114,15 @@
         实际调用哪个模型由「能力 → 模型绑定」（治理台「模型绑定」页）决定。
       </div>
       <el-table v-loading="versionLoading" border :data="versionList">
+        <template #empty>
+          <AigEmptyState
+            icon="Files"
+            title="这个 Skill 还没有版本"
+            hint="没有版本就无法被 Agent 引用；上传一个版本并推进到已发布。"
+          >
+            <el-button size="small" @click="getList">刷新</el-button>
+          </AigEmptyState>
+        </template>
         <el-table-column label="版本" align="center" prop="version" width="90" />
         <el-table-column label="发布状态" align="center" width="140" prop="releaseStatus" />
         <el-table-column label="通道" align="center" prop="releaseChannel" width="110" />

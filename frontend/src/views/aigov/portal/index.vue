@@ -175,6 +175,15 @@
       </el-form>
 
       <el-table v-loading="loadingTasks" border class="data-table" :data="tasks">
+        <template #empty>
+          <AigEmptyState
+            icon="List"
+            title="你还没有发起过任务"
+            hint="从上面的岗位卡片点「启动」即可发起；只填业务字段，实现概念由模板带出。"
+          >
+            <el-button size="small" @click="getList">刷新</el-button>
+          </AigEmptyState>
+        </template>
         <el-table-column label="任务编号" prop="taskNo" min-width="170" show-overflow-tooltip />
         <el-table-column label="任务类型" prop="taskType" align="center" width="130" />
         <el-table-column label="场景" prop="scenarioCode" min-width="150" show-overflow-tooltip>
@@ -226,6 +235,15 @@
       </template>
 
       <el-table v-loading="loadingArtifacts" border class="data-table" :data="artifacts">
+        <template #empty>
+          <AigEmptyState
+            icon="Picture"
+            title="还没有产出物"
+            hint="任务跑完并复核后，产出物会出现在这里；如果刚跑完看不到，先点上面的「刷新」。"
+          >
+            <el-button size="small" @click="getArtifacts">刷新</el-button>
+          </AigEmptyState>
+        </template>
         <el-table-column label="产物ID" prop="artifactId" align="center" width="180" show-overflow-tooltip />
         <el-table-column label="来源任务" align="center" min-width="170" show-overflow-tooltip>
           <template #default="scope">{{ scope.row.taskNo || scope.row.taskId }}</template>
@@ -416,6 +434,7 @@ import type {
 import { useLoading } from '@/hooks/async/useLoading';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import modal from '@/plugins/modal';
+import AigEmptyState from '../components/AigEmptyState.vue';
 import LaunchFormDrawer from './LaunchFormDrawer.vue';
 import MyQuotaAndApprovals from '../mine/MyQuotaAndApprovals.vue';
 import {

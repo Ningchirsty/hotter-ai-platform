@@ -23,6 +23,15 @@
       </template>
 
       <el-table v-loading="loading" border class="data-table" :data="tokens">
+        <template #empty>
+          <AigEmptyState
+            icon="Key"
+            title="还没有服务令牌"
+            hint="机器调用走服务令牌：签发时选好授权范围（权限码），并记住令牌只在签发那一刻显示一次。"
+          >
+            <el-button size="small" @click="getList">刷新</el-button>
+          </AigEmptyState>
+        </template>
         <el-table-column label="服务名" prop="name" min-width="160" show-overflow-tooltip />
         <el-table-column label="令牌前缀" prop="tokenPrefix" width="170" />
         <el-table-column label="授权范围（权限码）" min-width="240" show-overflow-tooltip>
@@ -148,6 +157,7 @@ import type { AigServiceTokenIssuedVO, AigServiceTokenIssueForm, AigServiceToken
 import { useLoading } from '@/hooks/async/useLoading';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import modal from '@/plugins/modal';
+import AigEmptyState from '../components/AigEmptyState.vue';
 
 defineOptions({ name: 'AigServiceToken' });
 

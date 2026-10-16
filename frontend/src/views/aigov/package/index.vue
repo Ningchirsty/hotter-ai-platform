@@ -57,6 +57,15 @@
       </template>
 
       <el-table v-loading="loading" border class="data-table" :data="packageList">
+        <template #empty>
+          <AigEmptyState
+            icon="Box"
+            title="还没有 Package"
+            hint="Package 是跨环境交付单元：先建 Package，再上传版本（version）并走发布状态流转。"
+          >
+            <el-button size="small" @click="getList">刷新</el-button>
+          </AigEmptyState>
+        </template>
         <el-table-column label="Package编码" align="center" prop="packageCode" width="200" show-overflow-tooltip />
         <el-table-column label="名称" align="center" prop="packageName" width="160" show-overflow-tooltip />
         <el-table-column label="类型" align="center" prop="packageType" width="100" />
@@ -116,6 +125,15 @@
     <!-- 版本：扫描 / 安装 / 账本 -->
     <el-dialog v-model="versionVisible" :title="'版本 · ' + (currentPackage?.packageName || '')" width="1080px" append-to-body>
       <el-table v-loading="versionLoading" border :data="versionList">
+        <template #empty>
+          <AigEmptyState
+            icon="Files"
+            title="这个 Package 还没有版本"
+            hint="版本是真正的交付物；上传后先做完整性扫描，结论通过才能推进发布状态。"
+          >
+            <el-button size="small" @click="getList">刷新</el-button>
+          </AigEmptyState>
+        </template>
         <el-table-column label="版本" align="center" prop="version" width="90" />
         <el-table-column label="发布状态" align="center" prop="releaseStatus" width="120" />
         <el-table-column label="扫描结论" align="center" width="110">
@@ -270,6 +288,7 @@ import { useLoading } from '@/hooks/async/useLoading';
 import { useSearchReset } from '@/hooks/form/useSearchReset';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import modal from '@/plugins/modal';
+import AigEmptyState from '../components/AigEmptyState.vue';
 
 defineOptions({ name: 'AigPackageRegistry' });
 

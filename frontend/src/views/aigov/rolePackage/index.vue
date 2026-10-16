@@ -39,6 +39,15 @@
       </el-form>
 
       <el-table v-loading="loading" border class="data-table" :data="versionList">
+        <template #empty>
+          <AigEmptyState
+            icon="Suitcase"
+            title="还没有岗位包"
+            hint="岗位包决定员工工作台上看到什么；先建岗位与卡片，再校验、发布。"
+          >
+            <el-button size="small" @click="getList">刷新</el-button>
+          </AigEmptyState>
+        </template>
         <el-table-column label="岗位编码" align="center" prop="roleCode" min-width="180" show-overflow-tooltip />
         <el-table-column label="岗位名称" align="center" prop="roleName" min-width="180" show-overflow-tooltip />
         <el-table-column label="版本" align="center" prop="version" width="110" />
@@ -146,6 +155,15 @@
       <template v-for="group in detailGroups" :key="group.code">
         <div class="group-title">{{ group.name }}（{{ group.actions.length }} 张）</div>
         <el-table :data="group.actions" border size="small" class="data-table">
+          <template #empty>
+            <AigEmptyState
+              icon="Grid"
+              title="这个岗位还没有卡片"
+              hint="卡片是员工在门户真正能点的入口；没有卡片时岗位发布了也看不到可做的事。"
+            >
+              <el-button size="small" @click="getList">刷新</el-button>
+            </AigEmptyState>
+          </template>
           <el-table-column label="卡片编码" prop="actionCode" min-width="170" show-overflow-tooltip />
           <el-table-column label="标题" prop="title" min-width="150" show-overflow-tooltip />
           <el-table-column label="启动方式" align="center" width="100">
@@ -380,6 +398,7 @@ import type {
 import { useLoading } from '@/hooks/async/useLoading';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import modal from '@/plugins/modal';
+import AigEmptyState from '../components/AigEmptyState.vue';
 import {
   canDisable,
   groupActionsByCategory,

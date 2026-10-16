@@ -71,6 +71,15 @@
       </template>
 
       <el-table v-loading="loading" border class="data-table" :data="bindingList">
+        <template #empty>
+          <AigEmptyState
+            icon="Link"
+            title="还没有资源绑定"
+            hint="绑定 = 「这个 Agent 版本在什么范围内可以用这些工具/知识」；解绑后用同一范围可以重新绑。"
+          >
+            <el-button size="small" @click="getList">刷新</el-button>
+          </AigEmptyState>
+        </template>
         <el-table-column label="绑定ID" align="center" prop="bindingId" width="150" show-overflow-tooltip />
         <el-table-column label="Agent版本ID" align="center" prop="agentVersionId" width="150" show-overflow-tooltip />
         <el-table-column label="类型" align="center" width="110">
@@ -229,6 +238,7 @@ import { useLoading } from '@/hooks/async/useLoading';
 import { useSearchReset } from '@/hooks/form/useSearchReset';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import modal from '@/plugins/modal';
+import AigEmptyState from '../components/AigEmptyState.vue';
 import {
   bindingDeleteConfirmText,
   declaredHint,

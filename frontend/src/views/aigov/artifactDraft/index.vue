@@ -74,6 +74,15 @@
       </el-tabs>
 
       <el-table v-if="activeKind === 'SKILL'" v-loading="loading" border class="data-table" :data="skillList">
+        <template #empty>
+          <AigEmptyState
+            icon="Document"
+            title="还没有草案"
+            hint="草案生成器产出的内容先落成草案，人工确认后才可提交；没有草案说明还没生成过。"
+          >
+            <el-button size="small" @click="getList">刷新</el-button>
+          </AigEmptyState>
+        </template>
         <el-table-column label="草案编码" prop="draftCode" min-width="180" show-overflow-tooltip />
         <el-table-column label="草案名称" prop="draftName" min-width="150" show-overflow-tooltip />
         <el-table-column label="技能编码" prop="skillCode" min-width="140" show-overflow-tooltip />
@@ -372,6 +381,7 @@ import { useLoading } from '@/hooks/async/useLoading';
 import { useSearchReset } from '@/hooks/form/useSearchReset';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import modal from '@/plugins/modal';
+import AigEmptyState from '../components/AigEmptyState.vue';
 import {
   ARTIFACT_KIND_TABS,
   declarationRows,
