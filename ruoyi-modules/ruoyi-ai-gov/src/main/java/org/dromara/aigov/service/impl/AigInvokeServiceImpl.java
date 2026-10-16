@@ -8,6 +8,7 @@ import org.dromara.aigov.domain.bo.AigInvokeBo;
 import org.dromara.aigov.domain.AigPolicyDecisionLog;
 import org.dromara.aigov.domain.vo.AigInvokeVo;
 import org.dromara.aigov.domain.vo.AigModelVo;
+import org.dromara.aigov.domain.vo.AigQuotaStatusVo;
 import org.dromara.aigov.domain.vo.AigRouteCandidate;
 import org.dromara.aigov.domain.vo.AigRouteDecision;
 import org.dromara.aigov.domain.vo.AigRouteHint;
@@ -113,7 +114,40 @@ public class AigInvokeServiceImpl implements IAigInvokeService {
         AigRouteDecision decision = routeService.decide(bo.getCapabilityCode(), dataLevel, routeHint(bo));
         // dryRun 只做决策预览，不产生审计记录，因此不生成 traceId
         // 同理**不写决策账本**：预检不是决策执行，写进去会让账本无法回答"实际发生过什么"
-        return toVo(null, decision, null, decision.getReason());
+        AigInvokeVo vo = toVo(null, decision, null, decision.getReason());
+        // Q3：补两个**只读**字段，让"预演"能回答真实调用会不会被审批/配额拦。
+        // 刻意全部只读：不写审计、不写决策账本、不动配额计数，且只回调用人自己的额度。
+        fillDryRunGuards(vo, decision);
+        return vo;
+    }
+
+    /**
+     * 给预演结果补上"真实调用时才会遇到的两道闸门"（Q3）。
+     *
+     * <p><b>为什么不复用 {@link #invoke} 的那两段判定</b>：那两段是"判定 + 产生后果"
+     * （写审计、抛异常、耗计数），而预演要的是"只看不碰"。所以这里只读同一份数据：
+     * ①审批需求直接取路由决策里的同一个字段（与真实判定同源）；
+     * ②配额读 {@link IAigUserQuotaService#usage(Long)}（只读视图），**不调用** {@code assertWithinQuota}。
+     * 两者口径因此不会分叉：真实拦截所依据的字段，就是预演下发的字段。</p>
+     *
+     * @param vo       预演结果（写出口）
+     * @param decision 路由决策
+     */
+    private void fillDryRunGuards(AigInvokeVo vo, AigRouteDecision decision) {
+        vo.setWouldRequireApproval(decision.isApprovalRequired());
+        Long callerId = AigAuditRecorder.resolveCallerId(null);
+        if (callerId == null) {
+            // 没有调用人（调度/系统发起）：配额按口径不适用，也就没有"自己的额度"可回。
+            // 这里刻意留空而不是回 0/不限——那会让预演说"额度没问题"，而真实调用是 fail-closed 地
+            // 卡在审批上（无调用人 ⇒ 拿不到任何授权）。
+            return;
+        }
+        try {
+            vo.setQuotaStatus(AigQuotaStatusVo.of(quotaService.usage(callerId)));
+        } catch (Exception e) {
+            // 预演是只读视图：读不到配额不该让整次预演失败（真实调用另有 fail-closed 的判定）
+            log.warn("dryRun 读取调用人配额用量失败，按「未知」处理, callerId={}", callerId, e);
+        }
     }
 
     @Override

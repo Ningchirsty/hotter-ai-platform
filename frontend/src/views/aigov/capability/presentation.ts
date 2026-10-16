@@ -227,10 +227,50 @@ export function hitsForModel(policyHits: string[] | undefined, keyword?: string)
   return policyHits.filter((hit) => hit.includes(needle) || hit.includes(`modelId=${needle}`));
 }
 
-/** 试调助手的固定边界说明（Q3：P0 只用文案讲清，P1 再补只读字段） */
+/** 试调助手的固定边界说明（Q3 已补只读字段，所以这里改写为"预判 ≠ 校验"） */
 export function assistantBoundaryNote(): string {
-  return 'dryRun 只预演路由：不发起模型调用、不写审计、不扣配额；'
-    + '也**不校验调用授权（审批）与人均配额**——那两道在真实调用时才会拦。所以「试调通过」不等于「一定能调」。';
+  return 'dryRun 只预演路由与闸门：不发起模型调用、不写审计、不扣配额；'
+    + '它会预判真实调用是否需要审批、以及你当前的额度状态，'
+    + '但不校验调用授权（是否已获批）——那一道在真实调用时才拦。所以「试调通过」不等于「一定能调」。';
+}
+
+/**
+ * 真实调用时还会遇到的两道闸门（Q3 的只读预判，渲染进第 ⑤ 段）。
+ *
+ * <p><b>为什么"后端没返回"也要说一句</b>：这个字段缺失时如果什么都不说，
+ * 读的人只会把它当成"不需要审批"。而真实情况是"不知道"——两者的处置完全不同。</p>
+ *
+ * @param vo dryRun 返回
+ * @returns 逐行说明（无内容返回空数组）
+ */
+export function realCallGates(vo?: AigInvokeVO): string[] {
+  if (!vo) {
+    return [];
+  }
+  const lines: string[] = [];
+  if (vo.wouldRequireApproval === true) {
+    lines.push('需要调用审批：该能力 × 该数据等级要求审批；预演不查你手上有没有有效授权，请到「调用授权」确认。');
+  } else if (vo.wouldRequireApproval === false) {
+    lines.push('不需要调用审批（该能力 × 该数据等级没有开启审批）。');
+  } else {
+    lines.push('审批需求未知：本次返回里没有这个字段，别把它当成"不需要审批"。');
+  }
+
+  const quota = vo.quotaStatus;
+  if (!quota) {
+    lines.push('配额无法预判：没有调用人（调度/系统发起），或读取额度失败——不要把"读不到"当成"没有限制"。');
+    return lines;
+  }
+  const daily = `今日 ${quota.dailyUsed ?? 0}${quota.dailyLimit === null || quota.dailyLimit === undefined ? '（不限）' : `/${quota.dailyLimit}`}`;
+  const monthly = `本月 ${quota.monthlyUsed ?? 0}${quota.monthlyLimit === null || quota.monthlyLimit === undefined ? '（不限）' : `/${quota.monthlyLimit}`}`;
+  if (!quota.limited) {
+    lines.push(`配额：没有生效中的限制（按人不限）——${daily}；${monthly}。`);
+  } else if (quota.exceeded) {
+    lines.push(`配额已超限：真实调用会被拦下。${daily}；${monthly}。`);
+  } else {
+    lines.push(`配额：还剩 ${quota.remaining ?? '未知'} 次——${daily}；${monthly}。`);
+  }
+  return lines;
 }
 
 /** 助手快捷提问（P0 固定的 4 类） */
@@ -319,9 +359,11 @@ export function walkthroughSections(vo?: AigInvokeVO, options: WalkthroughOption
         : ['没有选中任何模型（转人工或被拒绝）']
     },
     {
-      title: '⑤ 需要人工确认的点',
-      lines:
-        vo?.pendingConfirm && vo.pendingConfirm.length > 0 ? vo.pendingConfirm : ['无']
+      title: '⑤ 真实调用前还会遇到什么（预判）',
+      lines: [
+        ...(vo?.pendingConfirm && vo.pendingConfirm.length > 0 ? vo.pendingConfirm : ['没有必须人工确认的点']),
+        ...realCallGates(vo)
+      ]
     },
     {
       title: '⑥ 边界（必读）',

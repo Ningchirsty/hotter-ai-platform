@@ -65,7 +65,8 @@
         <el-button type="primary" size="small" :loading="loading" @click="ask(draft)">发送</el-button>
       </div>
       <div class="assistant__foot">
-        dryRun 不产生费用、不写审计；也**不校验授权与配额**——真实调用才会拦（详见 ⑥ 边界）。
+        dryRun 不产生费用、不写审计、不扣配额；它会预判「是否需要审批」与「你的额度状态」，
+        但不校验授权是否已获批——真实调用才会拦（详见 ⑥ 边界）。
       </div>
     </template>
   </section>
@@ -92,7 +93,8 @@ import type { AigCapabilityOverviewVO } from '@/api/aigov/capability/overview-ty
  *
  * <p><b>它解决什么</b>：新增能力或改完策略后，"这条链路到底会怎么走"此前只能靠真实调用 + 事后翻审计。
  * 后端 `POST /aigov/invoke/dryRun` 只做路由决策（不调用、不写审计、不扣配额），
- * 本组件把它渲染成对话：四类固定问题 + 假设参数（数据等级/禁止外发/场景）。</p>
+ * 本组件把它渲染成对话：四类固定问题 + 假设参数（数据等级/禁止外发/场景）。
+ * Q3 起 dryRun 还会预判「是否需要审批」与「调用人自己的额度状态」，一并渲染进第 ⑤ 段。</p>
  *
  * <p><b>三类回答的来源</b>：①"会走哪条路"＝`walkthroughSections`（六段式）②"为什么排除了 X"
  * ＝从 `policyHits` 里精确匹配，匹配不到就如实说"本次没有排除它"③"等级=严格会怎样"

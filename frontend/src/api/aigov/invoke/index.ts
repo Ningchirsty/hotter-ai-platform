@@ -7,10 +7,9 @@ import request from '@/utils/request';
  * <p><b>试调是"只看不花钱"的入口</b>：`POST /aigov/invoke/dryRun` 只做路由决策，
  * 不发起模型调用、不写审计、不扣配额。右侧「能力试调助手」就是用它。</p>
  *
- * <p><b>一个必须写进界面的边界</b>：dryRun **不校验调用授权（审批）与人均配额** ——
- * 那两道只在真实调用时拦（见 `AigInvokeServiceImpl.invoke` 的第 6、7 步）。
- * 所以"试调通过"不等于"能调"；助手回答里必须带这句，否则会误导使用者。
- * （P1 会给 dryRun 补 `wouldRequireApproval` / `quotaStatus` 两个只读字段。）</p>
+ * <p><b>Q3 已补两个只读字段</b>：dryRun 现在会预判「真实调用是否需要审批」（`wouldRequireApproval`）
+ * 与「调用人自己的额度状态」（`quotaStatus`）。但**预判 ≠ 校验**：dryRun 仍不去查
+ * 「你手上有没有有效授权」，也不消耗额度。界面必须把这一点写清，否则"试调通过"会被当成"能调"。</p>
  */
 
 /** 调用入参（试调只用前四个；prompt/payload 试调不需要） */
@@ -49,6 +48,27 @@ export interface AigInvokeVO {
   /** 路由逐条判定，含「哪些候选因何被排除」 */
   policyHits?: string[];
   latencyMs?: number;
+  /**
+   * 仅 dryRun 填充：真实调用时是否会被「调用审批」拦下。
+   * 未返回（undefined）表示后端没给这个字段 —— 界面应说"未知"，不能说成"不需要审批"。
+   */
+  wouldRequireApproval?: boolean;
+  /** 仅 dryRun 填充：调用人自己的额度状态（不消耗、不写账） */
+  quotaStatus?: AigQuotaStatusVO;
+}
+
+/** 调用人的额度快照（对齐后端 AigQuotaStatusVo；只读、只回本人的） */
+export interface AigQuotaStatusVO {
+  /** 是否有生效中的限制（配了配额行且至少一条上限非空） */
+  limited?: boolean;
+  /** 当前是否已超限（任一有上限的周期已用 ≥ 上限） */
+  exceeded?: boolean;
+  /** 最紧的那个周期的剩余次数（下限 0）；不限时为 null */
+  remaining?: number | null;
+  dailyLimit?: number | null;
+  dailyUsed?: number;
+  monthlyLimit?: number | null;
+  monthlyUsed?: number;
 }
 
 /** 只做路由决策预览：不真调用、不写审计、不扣配额 */

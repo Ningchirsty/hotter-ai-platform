@@ -21,6 +21,7 @@ import {
   parseTags,
   policySuggestions,
   presetQuestions,
+  realCallGates,
   referenceSummary,
   referenceTypeMeta,
   riskHint,
@@ -132,7 +133,10 @@ describe('capability presentation', () => {
     expect(sections[2].lines[0]).toContain('local-sdxl');
     expect(sections[3].lines).toContain('模型：bluocto-image-v2');
     expect(sections[3].lines.join(' ')).toContain('是否外发：是');
-    expect(sections[4].lines).toEqual(['对外发送前']);
+    // ⑤ 段：人工确认点在前，Q3 的两道闸门预判在后（本次 vo 没带这两个字段 → 必须说"未知"）
+    expect(sections[4].lines[0]).toBe('对外发送前');
+    expect(sections[4].lines.join(' ')).toContain('审批需求未知');
+    expect(sections[4].lines.join(' ')).toContain('配额无法预判');
     expect(sections[5].lines[0]).toBe(assistantBoundaryNote());
   });
 
@@ -144,7 +148,40 @@ describe('capability presentation', () => {
     expect(sections[0].lines.join(' ')).toContain('禁止外发');
     expect(sections[2].lines[0]).toContain('没有候选被排除');
     expect(sections[3].lines[0]).toContain('没有选中任何模型');
-    expect(sections[4].lines).toEqual(['无']);
+    expect(sections[4].lines[0]).toBe('没有必须人工确认的点');
+  });
+
+  it('★ 闸门预判（Q3）：审批需求三态 + 额度四态都要说清，缺失不能当"没有限制"', () => {
+    // 审批：true / false / 未返回 三态各不相同
+    expect(realCallGates({ wouldRequireApproval: true }).join(' ')).toContain('需要调用审批');
+    expect(realCallGates({ wouldRequireApproval: false }).join(' ')).toContain('不需要调用审批');
+    expect(realCallGates({}).join(' ')).toContain('审批需求未知');
+    expect(realCallGates(undefined)).toEqual([]);
+
+    // 额度：已超限 / 有限额还有剩 / 不限 / 读不到
+    const exceeded = realCallGates({
+      wouldRequireApproval: false,
+      quotaStatus: { limited: true, exceeded: true, remaining: 0, dailyLimit: 5, dailyUsed: 5, monthlyLimit: 100, monthlyUsed: 20 }
+    }).join(' ');
+    expect(exceeded).toContain('配额已超限');
+    expect(exceeded).toContain('今日 5/5');
+
+    const left = realCallGates({
+      wouldRequireApproval: false,
+      quotaStatus: { limited: true, exceeded: false, remaining: 2, dailyLimit: 10, dailyUsed: 8, monthlyLimit: 100, monthlyUsed: 95 }
+    }).join(' ');
+    expect(left).toContain('还剩 2 次');
+    expect(left).toContain('本月 95/100');
+
+    const unlimited = realCallGates({
+      wouldRequireApproval: false,
+      quotaStatus: { limited: false, exceeded: false, remaining: null, dailyLimit: null, monthlyLimit: null }
+    }).join(' ');
+    expect(unlimited).toContain('没有生效中的限制');
+
+    const unknown = realCallGates({ wouldRequireApproval: true }).join(' ');
+    expect(unknown).toContain('配额无法预判');
+    expect(unknown).toContain('不要把"读不到"当成"没有限制"');
   });
 
   it('边界说明必须同时提到"不写审计/不扣配额"与"不校验授权与配额"', () => {

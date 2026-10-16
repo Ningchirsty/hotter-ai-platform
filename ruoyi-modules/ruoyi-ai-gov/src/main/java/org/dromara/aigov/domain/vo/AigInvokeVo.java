@@ -105,4 +105,20 @@ public class AigInvokeVo implements Serializable {
      */
     private Long latencyMs;
 
+    /**
+     * <b>仅 {@code dryRun} 填充</b>：这条件路结论在真实调用时是否会被「调用审批」闸门拦下。
+     *
+     * <p>为什么预演必须回答它：审批闸门在真实路径里排在配额之前，且拒绝文案是
+     * "请去提交申请"。如果预演只说"路由选中了某模型"，用的人会以为已经可以调了。</p>
+     */
+    private Boolean wouldRequireApproval;
+
+    /**
+     * <b>仅 {@code dryRun} 填充</b>：调用人自己的配额状态（不消耗、不写任何账）。
+     *
+     * <p>为空有两种含义，且都如实：①没有调用人（调度/系统发起，配额本就不适用）；②读取配额失败（未知）。
+     * 前端应把"未知"与"不限"分开说，不能把读不到当成"没有限制"。</p>
+     */
+    private AigQuotaStatusVo quotaStatus;
+
 }
