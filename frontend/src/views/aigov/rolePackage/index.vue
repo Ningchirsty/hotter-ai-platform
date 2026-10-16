@@ -243,6 +243,15 @@
 
         <el-divider content-position="left">分类（至少一个）</el-divider>
         <el-table :data="editForm.categories" border size="small" class="data-table">
+          <template #empty>
+            <AigEmptyState
+              icon="Files"
+              title="还没有分类"
+              hint="分类决定员工侧怎么分组展示卡片；点下面的「添加一行」先建一个。"
+            >
+              <el-button size="small" @click="getList">刷新</el-button>
+            </AigEmptyState>
+          </template>
           <el-table-column label="分类编码" min-width="200">
             <template #default="scope">
               <el-input v-model="scope.row.code" placeholder="如 DETAIL_PAGE" />
@@ -263,6 +272,15 @@
 
         <el-divider content-position="left">能力卡片（至少一张）</el-divider>
         <el-table :data="editForm.actions" border size="small" class="data-table">
+          <template #empty>
+            <AigEmptyState
+              icon="Grid"
+              title="还没有卡片"
+              hint="卡片是员工在门户真正能点的入口；至少加一张，否则岗位发布了也看不到可做的事。"
+            >
+              <el-button size="small" @click="getList">刷新</el-button>
+            </AigEmptyState>
+          </template>
           <el-table-column label="卡片编码" min-width="170">
             <template #default="scope"><el-input v-model="scope.row.code" /></template>
           </el-table-column>

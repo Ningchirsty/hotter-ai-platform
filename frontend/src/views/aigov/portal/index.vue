@@ -181,7 +181,7 @@
             title="你还没有发起过任务"
             hint="从上面的岗位卡片点「启动」即可发起；只填业务字段，实现概念由模板带出。"
           >
-            <el-button size="small" @click="getList">刷新</el-button>
+            <el-button size="small" @click="getTasks">刷新</el-button>
           </AigEmptyState>
         </template>
         <el-table-column label="任务编号" prop="taskNo" min-width="170" show-overflow-tooltip />
@@ -365,6 +365,15 @@
           </el-button>
         </div>
         <el-table v-loading="loadingAssetPage" :data="assetPage" border class="data-table" size="small">
+          <template #empty>
+            <AigEmptyState
+              icon="FolderOpened"
+              title="这个域下还没有资产"
+              hint="换一个域看看，或先点「刷新索引」（资产来自派生索引，不是任务一跑完就出现）。"
+            >
+              <el-button size="small" :loading="refreshingAssets" @click="getAssets">刷新</el-button>
+            </AigEmptyState>
+          </template>
           <el-table-column label="名称" min-width="200" show-overflow-tooltip>
             <template #default="scope">{{ scope.row.name || '—' }}</template>
           </el-table-column>

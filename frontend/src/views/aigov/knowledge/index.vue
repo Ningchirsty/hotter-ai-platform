@@ -178,6 +178,15 @@
         :title="chunkSummary(chunks)"
       />
       <el-table v-if="chunks.length" :data="chunks" border size="small" max-height="260">
+        <template #empty>
+          <AigEmptyState
+            icon="Document"
+            title="这一版还没有分段"
+            hint="点上面的「上传并解析索引」把原文解析成段落；只登记文档不解析是不会有分段的。"
+          >
+            <el-button size="small" @click="loadVersion">刷新</el-button>
+          </AigEmptyState>
+        </template>
         <el-table-column label="段序" prop="ordinal" width="70" />
         <el-table-column label="定位" prop="locator" width="140" show-overflow-tooltip />
         <el-table-column label="预览（受限长度）" min-width="240" show-overflow-tooltip>
@@ -242,6 +251,15 @@
     >
       <el-alert type="warning" :closable="false" class="mb-2" show-icon :title="referenceSummary(references)" />
       <el-table :data="references" border size="small" max-height="320">
+        <template #empty>
+          <AigEmptyState
+            icon="Link"
+            title="没有 Agent 引用这个集合"
+            hint="引用来自 Agent 版本的声明；空表示目前没有版本用到它（删除前这一句就是依据）。"
+          >
+            <el-button size="small" :loading="referencesLoading" @click="loadReferences">刷新</el-button>
+          </AigEmptyState>
+        </template>
         <el-table-column label="Agent" min-width="200">
           <template #default="{ row }">{{ referenceAgentText(row) }}</template>
         </el-table-column>
@@ -303,6 +321,15 @@
         :title="retrievalModeLabel(retrievalResult.mode) + ' · ' + retrievalSummary(retrievalResult)"
       />
       <el-table v-if="retrievalResult?.citations?.length" :data="retrievalResult.citations" border>
+        <template #empty>
+          <AigEmptyState
+            icon="Search"
+            title="这次检索没有命中片段"
+            hint="换关键词、放宽分段数，或确认这一版已经解析并索引过。"
+          >
+            <el-button size="small" @click="loadVersion">刷新</el-button>
+          </AigEmptyState>
+        </template>
         <el-table-column label="片段" prop="chunkId" width="180" />
         <el-table-column label="来源" prop="sourceName" min-width="160" />
         <el-table-column label="定位" prop="locator" width="120" />

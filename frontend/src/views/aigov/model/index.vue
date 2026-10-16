@@ -763,6 +763,15 @@
         <el-button icon="Refresh" @click="loadAllProviders">刷新</el-button>
       </div>
       <el-table v-loading="providerLoading" border :data="allProviders">
+        <template #empty>
+          <AigEmptyState
+            icon="OfficeBuilding"
+            title="还没有供应商"
+            hint="模型必须先有供应商（密钥引用挂在供应商上）；先去「管理供应商」建一个。"
+          >
+            <el-button size="small" @click="loadAllProviders">刷新</el-button>
+          </AigEmptyState>
+        </template>
         <el-table-column label="供应商名称" align="center" prop="providerName" width="160" show-overflow-tooltip />
         <el-table-column label="标识" align="center" prop="providerKey" width="130" />
         <el-table-column label="说明" align="center" prop="description" show-overflow-tooltip />

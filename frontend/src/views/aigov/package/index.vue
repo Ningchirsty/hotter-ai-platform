@@ -215,6 +215,15 @@
     <!-- 安装账本 -->
     <el-dialog v-model="logVisible" title="安装账本（追加型）" width="820px" append-to-body>
       <el-table v-loading="logLoading" border :data="logList">
+        <template #empty>
+          <AigEmptyState
+            icon="Finished"
+            title="还没有扫描结论"
+            hint="上传版本后会自动做完整性扫描；没有结论说明这一版还没跑过扫描。"
+          >
+            <el-button size="small" @click="getList">刷新</el-button>
+          </AigEmptyState>
+        </template>
         <el-table-column label="动作" align="center" prop="action" width="110" />
         <el-table-column label="结果" align="center" width="100">
           <template #default="scope">
@@ -236,6 +245,15 @@
       <div v-if="disableResult?.disabled?.length">
         <div class="mb-1"><b>已停用</b>（{{ disableResult.disabled.length }} 个）</div>
         <el-table border :data="disableResult.disabled" size="small">
+          <template #empty>
+            <AigEmptyState
+              icon="Remove"
+              title="没有需要停用的对象"
+              hint="这里列出「停用前需要先处理」的对象；列表为空说明可以安全停用。"
+            >
+              <el-button size="small" @click="getList">刷新</el-button>
+            </AigEmptyState>
+          </template>
           <el-table-column label="类型" align="center" prop="targetType" width="150" />
           <el-table-column label="编码" align="center" prop="code" show-overflow-tooltip />
           <el-table-column label="版本" align="center" prop="version" width="120" />
@@ -253,6 +271,15 @@
       <div v-if="disableResult?.skipped?.length" class="mt-3">
         <div class="mb-1"><b>未改动</b>（{{ disableResult.skipped.length }} 个，原因如下）</div>
         <el-table border :data="disableResult.skipped" size="small">
+          <template #empty>
+            <AigEmptyState
+              icon="Sort"
+              title="还没有状态流转记录"
+              hint="每次发布状态变化都会留一行（含原因）；没有记录说明这个 Package 从未流转过。"
+            >
+              <el-button size="small" @click="getList">刷新</el-button>
+            </AigEmptyState>
+          </template>
           <el-table-column label="类型" align="center" prop="targetType" width="150" />
           <el-table-column label="编码" align="center" prop="code" show-overflow-tooltip />
           <el-table-column label="当前状态" align="center" prop="fromStatus" width="120" />

@@ -112,6 +112,15 @@
         灰度达标看调用统计；<b>「三方人工批准」是唯一例外——它是声明式的，平台不核对批准记录</b>。
       </el-alert>
       <el-table v-loading="versionLoading" border :data="versionList">
+        <template #empty>
+          <AigEmptyState
+            icon="Files"
+            title="这个 Agent 还没有版本"
+            hint="版本从训练台提交产生；没有版本就无法被绑定/发布，也不能被工具知识绑定引用。"
+          >
+            <el-button size="small" @click="openVersions(currentAgent)">刷新</el-button>
+          </AigEmptyState>
+        </template>
         <el-table-column label="版本" align="center" prop="version" width="90" />
         <el-table-column label="发布状态" align="center" width="130">
           <template #default="scope">
@@ -238,6 +247,15 @@
                 </el-button>
               </div>
               <el-table v-loading="loadingArtifacts" :data="sandboxArtifacts" size="small" border>
+                <template #empty>
+                  <AigEmptyState
+                    icon="Folder"
+                    title="这个沙箱运行还没有产物"
+                    hint="产物由沙箱作业写出；没有说明这次运行还没产出文件，或产物已被清理。"
+                  >
+                    <el-button size="small" @click="loadSandboxArtifacts">刷新</el-button>
+                  </AigEmptyState>
+                </template>
                 <el-table-column label="路径" prop="path" min-width="200" show-overflow-tooltip />
                 <el-table-column label="字节" prop="bytes" align="center" width="100" />
                 <el-table-column label="SHA-256" align="center" min-width="130" show-overflow-tooltip>

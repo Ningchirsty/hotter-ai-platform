@@ -109,6 +109,15 @@
         class="data-table"
         :data="childList"
       >
+        <template #empty>
+          <AigEmptyState
+            icon="Connection"
+            title="还没有子 Agent 草案"
+            hint="子 Agent 由编排草案拆分而来；先在编排里声明子 Agent，这里才会有可生成的行。"
+          >
+            <el-button size="small" @click="getList">刷新</el-button>
+          </AigEmptyState>
+        </template>
         <el-table-column label="草案编码" prop="draftCode" min-width="180" show-overflow-tooltip />
         <el-table-column label="草案名称" prop="draftName" min-width="150" show-overflow-tooltip />
         <el-table-column label="Agent 编码" prop="agentCode" min-width="150" show-overflow-tooltip />
@@ -129,6 +138,15 @@
       </el-table>
 
       <el-table v-else v-loading="loading" border class="data-table" :data="actionList">
+        <template #empty>
+          <AigEmptyState
+            icon="Document"
+            title="还没有指令草案"
+            hint="指令草案是把「一次动作」落成可提交内容；没有说明还没生成过这一类。"
+          >
+            <el-button size="small" @click="getList">刷新</el-button>
+          </AigEmptyState>
+        </template>
         <el-table-column label="草案编码" prop="draftCode" min-width="180" show-overflow-tooltip />
         <el-table-column label="草案名称" prop="draftName" min-width="150" show-overflow-tooltip />
         <el-table-column label="指令编码" prop="actionCode" min-width="150" show-overflow-tooltip />

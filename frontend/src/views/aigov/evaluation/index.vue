@@ -258,6 +258,15 @@
         </el-form-item>
         <el-form-item label="逐用例结论" required>
           <el-table border size="small" :data="manualCases" style="width: 100%">
+            <template #empty>
+              <AigEmptyState
+                icon="EditPen"
+                title="没有待人工复核的用例"
+                hint="只有「判据里声明了人工复核」的运行结果才会进这里；空表示当前没有要你看的。"
+              >
+                <el-button size="small" @click="loadRuns">刷新</el-button>
+              </AigEmptyState>
+            </template>
             <el-table-column label="用例" align="center" prop="caseCode" width="240" show-overflow-tooltip />
             <el-table-column label="结论" align="center" width="190">
               <template #default="scope">
