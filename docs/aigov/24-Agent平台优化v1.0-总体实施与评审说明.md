@@ -28,6 +28,7 @@
 | `e57c7a41` | P2/交互规范 | **空态 / 长 ID 折叠 / 缺失的 loading**：新增 `AigEmptyState`（三行式空态）与 `AigLongId`（折叠+复制，纯函数有单测），首批接入 tool / knowledge / feedback / evaluation / audit |
 | `b576cc1e` | P2/交互规范 | 第二批：剩余主表空态（model / route / agent / quota / approval / binding）+ 长 ID 折叠扫尾（feedback 的 5 个 19 位 ID 列、quota 用户ID、approval 单号、binding 四个 ID 列） |
 | `b37045c9` | P2/交互规范 | **危险操作确认审计**（`script/ci/audit-aigov-dangerous-ops.mjs`，评审用不接门禁）+ 补 2 处缺失确认（approval 超时扫描批量改状态、knowledge 解析并索引会覆盖分段与索引） |
+| `e9d73d21` | P2/交互规范 | 第三批空态：9 个页面 / 18 张表（artifactDraft / package / portal / resourceBinding / rolePackage / servicetoken / skill / studio / task），`skill` 与 `task` 达到全覆盖 |
 
 > 表里是**有实质内容的提交**；纯文档补记（例如把本表自己补上一行）不逐条登记——它们不改变交付物。
 > `check-aigov-docs.mjs` 会核对**本节**每个提交号都是当前分支 HEAD 的祖先（抄错/被 rebase 掉会红）。
@@ -460,13 +461,17 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src 
 | 首批接入（第 1 批） | `tool`（空态 + `v-loading`）、`knowledge`（集合/文档空态 + 两个 loading）、`feedback`（空态 + loading + 清筛选动作）、`evaluation`（用例/运行空态）、`audit`（空态） | 走读 U10 点名"无 loading / 无空态"的 5 个页面 |
 | 第 2 批接入 | `model`（主表空态）、`route`（主表空态，"无策略即拒绝"写进提示）、`agent`（主表空态，4 张表里补主表）、`quota`（空态 + 用户ID 折叠）、`approval`（空态 + 单号折叠）、`binding`（空态 + 绑定ID/Agent版本ID/公司/品牌 折叠）；**长 ID 折叠另接入** `feedback`（5 个 19 位 ID 列，原本整表都是数字）、`knowledge`（文档ID）、`audit`（traceId） | — |
 
-> **空态覆盖率（2026-10-16 实测，口径＝`<el-table>` 与 `#empty` 出现次数）**：
-> `approval`/`audit`/`binding`/`feedback`/`quota`/`route`/`tool` **1/1 全覆盖**；
-> `model` 1/2、`knowledge` 2/5、`agent` 1/4、`evaluation` 2/3；
-> **尚未接**：`artifactDraft`(3)、`package`(5)、`portal`(5)、`resourceBinding`(1)、`rolePackage`(4)、
-> `servicetoken`(1)、`skill`(2)、`studio`(1)、`task`(3) —— 这些页的次表/子表还没有空态。
+| 第 3 批接入 | `artifactDraft`(主表)、`package`(主表 + 版本表)、`portal`(我的任务 + 产出物)、`resourceBinding`、`rolePackage`(岗位表 + 卡片表)、`servicetoken`、`skill`(主表 + 版本表 **2/2 全覆盖**)、`studio`(草稿表)、`task`(任务表 + 事件流 + 候选结果 **3/3 全覆盖**) | 这一批用**脚本化插入**完成（同一模式套 18 张表，逐页写 spec 保证标题/提示是给这张表写的；脚本在 `.tools/tmp/`，未入库） |
+
+> **空态覆盖率（2026-10-16 实测；口径＝`<el-table>`（注意用 `(?![-\w])`，否则会把 `<el-table-column>` 也算进去）与 `#empty` 出现次数）**：
+> **1/1 全覆盖**：`approval`、`audit`、`binding`、`feedback`、`quota`、`resourceBinding`、`route`、`servicetoken`、`studio`、`tool`；
+> **全覆盖（多表）**：`skill` 2/2、`task` 3/3；
+> **部分覆盖**：`package` 2/5、`portal` 2/5、`rolePackage` 2/4、`evaluation` 2/3、`agent` 1/4、`artifactDraft` 1/3、`knowledge` 2/5、`model` 1/2。
+> **尚未接的 18 张表**基本都是"弹窗里的子表/版本表/扫描结论表"（`agent` 版本·沙箱产物·下载记录、
+> `knowledge` 分段·引用·检索结果、`package` 扫描结论·动作结果·状态流转、`portal` 三个资产分域、
+> `rolePackage` 分类·卡片明细、`artifactDraft` 两张子表、`evaluation` 人工复核、`model` 供应商表）。
 > 其余待办：**分页**（`tool`/`knowledge`/`feedback`/`evaluation` 的后端接口本就整表返回，补分页要连带改后端）、
-> "5 处危险操作无二次确认"里剩下的入口、**各页观感仍需人眼验收**（本仓前端没有 DOM 测试环境）。
+> **各页观感仍需人眼验收**（本仓前端没有 DOM 测试环境）。
 
 **P2 附加：危险操作确认审计（2026-10-16，把口径写死以便复核）**
 
