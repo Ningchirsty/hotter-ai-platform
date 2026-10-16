@@ -2,12 +2,34 @@
 
 > 依据：附件《Agent 平台优化详细设计 v1.0》（2026-10-14）
 > 基线提交：`fe305fc629e9990661097a7a3be86da1fc4714e3`（附件 §1.1 指定；即拉取时的远端 `main`）
-> 工作分支：`feature/aigov-optimization-v1`
+> 工作分支：`feature/aigov-optimization-v1`（A–E，已由 PR #80 以 `aa53daee` **squash 合并进 `main`**，远端分支已删）
+> 能力域重构分支：`feature/aigov-capability-redesign`（基于 `aa53daee`；P0 + Q6 + 训练台能力就绪度，见 §8）
 > 分阶段说明：`19`（A）、`20`（B）、`21`（C）、`22`（D）、`23`（E）
 
 ---
 
-## 1 提交序列（基线之后）
+## 1 提交序列
+
+本分支 `feature/aigov-capability-redesign` 基于 `main` 的 `aa53daee`——它就是**前一分支 `feature/aigov-optimization-v1`（A–E 全量）经 PR #80 squash 合并**的结果。
+
+| 提交 | 阶段 | 内容 |
+| --- | --- | --- |
+| `aa53daee` | 基线 | **PR #80 squash 合并**：A–E 全量（约 82 个提交压成一个；逐条明细见 §1.1） |
+| `b7eba85a` | 能力域/设计 | 走读与改造方案三份 + 界面 demo（走读 24 条问题 / 6 条流程与 12 条断点 / P0 字段级规格）+ `治理台-能力域-demo-v3.html` |
+| `b6e162d2` | 能力域/P0 后端 | 能力概览聚合 `GET /aigov/capability/overview`（筛选下发服务端）+ 候选编辑 `PUT /aigov/binding/{bindId}`（用途归一化、不接受换模型） |
+| `f08c8507` | 能力域/P0 前端 | 能力清单改卡片网格（服务端筛选）+ 详情整页「展开配置详情」+ 试调助手（dryRun 六段式）+ 原始控制台 + 看板 |
+| `c54daacf` | 能力域/文档 | 本文档 §8 交付记录 + §4 数字同步 |
+| `56563b8b` | 能力域/Q6 | **影响面**：`GET /aigov/capability/references`（Agent 版本 / 历史任务 / 训练台草稿三类引用，一次拿全） |
+| `60041e3c` | 能力域/Q6+训练台 | Q6 前端（删除前先查引用再确认、详情「影响面」区块）+ 训练台「所需能力」改能力下拉与就绪度 + 预检补能力事实（不存在/停用＝阻断，缺候选/缺策略＝提醒） |
+
+> 表里是**有实质内容的提交**；纯文档补记（例如把本表自己补上一行）不逐条登记——它们不改变交付物。
+> `check-aigov-docs.mjs` 会核对**本节**每个提交号都是当前分支 HEAD 的祖先（抄错/被 rebase 掉会红）。
+
+### 1.1 已合并分支 `feature/aigov-optimization-v1` 的历史提交（**不在本分支上**）
+
+> ⚠️ 这些提交已被 **PR #80 squash** 进 `main`（= `aa53daee`），远端分支也已删除，因此它们
+> **不是**本分支 HEAD 的祖先。明细保留下来只为可追溯；`check-aigov-docs.mjs` 对这一节只核对
+> "提交对象在仓库里确实存在"（防抄错），**不再要求**祖先关系——那正是它被单独放进 §1.1 的原因。
 
 | 提交 | 阶段 | 内容 |
 | --- | --- | --- |
@@ -65,9 +87,6 @@
 | `f709ee28` | C | **知识解析/嵌入的内部可部署基线**（PDFBox 3 + 内置文本/DOCX 解析 + 哈希嵌入 + 文件向量索引，全部走端口）+ `POST /document-versions/{id}/index` 全链路 + 检索测试 `KEYWORD`/`VECTOR` + 前端入口与模式选择 + 方案文档 `25` |
 | `1e86662e` | 前端/CI | **修 3 处「只有 `vite build` 才会失败」的问题**（`TaskFlowPanel` 的 `./flow` 应为 `../flow`；`ProposalPanel` 与两个 studio 子组件的多根节点）+ 验收脚本新增**前端生产构建**步骤 + `sfcCompile.spec.ts` 复用构建插件守"单根节点" |
 
-> 表里是**有实质内容的提交**；纯文档补记（例如把本表自己补上一行）不逐条登记——它们不改变交付物。
-> `check-aigov-docs.mjs` 会核对表里每个提交号都是当前分支 HEAD 的祖先（抄错/被 rebase 掉会红）。
-
 ---
 
 ## 2 D01–D12 对照
@@ -105,16 +124,20 @@
 
 ## 4 验证汇总
 
-- 后端 `ruoyi-ai-gov`：**1367 tests / 0 failures / 0 errors**（基线 1053 → 新增 314；其中 **13 条**来自能力域重构 P0，见 §10）。
+- 后端 `ruoyi-ai-gov`：**1386 tests / 0 failures / 0 errors**（基线 1053 → 新增 333；其中 **能力域重构 P0 13 条**、
+  **Q6 影响面 5 条**、**训练台能力就绪度预检与能力事实查询 14 条**，见 §8）。
+  > 勘误（2026-10-16）：本节此前记的 **1367** 是 **Q6 影响面提交（`56563b8b`）之前**的数，
+  > 漏计了 Q6 的 5 条（引用服务 4 + 路由烟测 1）。⇒ 以本节为准
+  > （`script/ci/check-aigov-docs.mjs` 是拿本节数字与磁盘报告对账，所以它本来就会把这类漂移报出来）。
   > 各阶段文档（`19`–`23`）里的测试数**是各自增量当时的数**；
   > **以本节为准**——阶段文档只留"本轮新增几条"，不再写会过期的"当前 N"。
   > 另有 `script/ci/check-aigov-docs.mjs` 会**机械核对**本节的测试数与提交号
-  > （类名、SQL 脚本清单、测试数、§1 提交表里的 49 个提交号）。
+  > （类名、SQL 脚本清单、测试数、§1 的提交号是否为 HEAD 祖先、§1.1 历史提交对象是否存在）。
 - **整棵反应堆**（`--full-reactor`，在线，实测 **BUILD SUCCESS / 219s**）：本分支没有把别的模块带坏；
   它同时会跑"每个有测试的模块都必须产出 Surefire 报告"的台账守卫。
   ⚠️ 该模式需要 CI 前置步骤装好的 **ffmpeg/ffprobe**（缺了会是 `ruoyi-ai` 的 4 个媒体用例报
   "图片格式转换服务不可用"——环境前提，不是本分支的回归；见 §7.2）。
-- 前端 `frontend`：**54 files / 546 tests** 全过；`oxlint src` 562 files 0/0；
+- 前端 `frontend`：**54 files / 550 tests** 全过；`oxlint src` 563 files 0/0；
   **生产构建 `vite build --mode production` 通过**（与 CI 的 `pnpm build:prod` 同一条命令）。
   其中 `views/aigov/sfcCompile.spec.ts` 真编译全部 34 个治理层 SFC
   （无 DOM 环境下的最低保证：模板/`<script setup>` 写错会在这里红），
@@ -347,7 +370,7 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src 
 
 ---
 
-## 8 能力域重构 P0（2026-10-15，已实现并自测通过；**未提交、未推送**）
+## 8 能力域重构 P0 + Q6 影响面 + 训练台能力就绪度（2026-10-15/16，**已提交并推送**）
 
 > 背景：平台发布到生产后反馈"能力这块很乱"。走读（后端 / 数据权限菜单 / 前端三路）后确认：
 > **界面乱的根源是流程没有单一入口**。设计与决策见 `docs/aigov/design/` 下三份文档：
@@ -371,11 +394,37 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src 
 所以**试调助手没动一行后端**；P0 后端只加了 1 个只读聚合 + 1 个候选编辑。
 另：`dryRun` **不校验调用授权与配额**（那两道只在真实调用时拦），界面必须写清"试调通过 ≠ 能调"。
 
-**P0 未做（P1/P2，见联动方案 §7–§8）**：影响面与强制确认（Q6）、员工"我的额度/我的申请"（Q5）、
-高风险变更轻量门槛（Q1C）、dryRun 补 `wouldRequireApproval/quotaStatus`（Q3）、
-数据等级取最高 `min_data_level`（Q2C，需一条 ALTER，已定 P1 末尾）——
-以及 22 项交互规范与其余模块按 v3 改写。
+**Q6「影响面」（已拍板：改策略/停用/删除前强制先看谁在用它）**
 
-**验证**：后端 1367 tests / 0 failures（含新增 13 条：概览 6 / 候选编辑 4 / 路由烟测 3）；
-前端 54 files / 546 tests（含新增 15 条展示口径单测）；`oxlint` 562 files 0/0；
+| 层 | 交付 | 文件 |
+| --- | --- | --- |
+| 后端 | 一次请求拿全三类引用：**Agent 版本**（`provider_capability` 与 `config_json` **两处都查**、按版本去重、已发布显式标出）/ **历史任务**（只回计数）/ **训练台草稿**（只回计数）；权限沿用 `capability:list`（**无新权限点**） | `AigCapabilityReferenceVo`、`IAigCapabilityReferenceService`(+Impl)、`AigCapabilityController#references`、`GET /aigov/capability/references?capabilityCode=` |
+| 前端 | 删除前**先查影响面再弹确认框**（查不到引用就**不静默继续**，也不假装"可以安全删"）；确认框逐条列出引用方（>5 条折叠）并给出"停用可恢复"的替代 | `api/aigov/capability/references.ts`、`capability/presentation.ts#deleteConfirmText`、`capability/index.vue#remove` |
+| 前端 | 能力详情「基本信息」页签新增 **影响面区块**（类型标签 + 引用 + 说明 + 手动刷新） | `capability/components/CapabilityDetail.vue` |
+
+**训练台能力就绪度（替代手打编码，并把"能不能跑通"前置）**
+
+| 层 | 交付 | 文件 |
+| --- | --- | --- |
+| 后端 | 预检新增**能力事实**判定并分级：**能力不存在 / 已停用 = 阻断**；**缺候选 / 候选全不健康 / 候选未探测 / 缺策略 / 策略不全 = 提醒**（D07 明确允许草稿先存半成品，所以后者不能拦提交） | `AigStudioCapabilityFacts`（快照）、`AigStudioCapabilityFactsResolver`（查概览，**LIKE 结果里再按编码精确取**）、`AigStudioPrecheck#of(content, facts)` / `evaluate(..., facts)`、`AigStudioDraftServiceImpl#factsFor` |
+| 前端 | 「所需能力」从手打输入框改为**能力下拉**（`filterable` + `allow-create` 保留新建逃生口），下拉项与选中后就地显示就绪度（缺候选/缺策略/停用/未探测），读不到清单时**如实说"没权限核对"**而不是谎报"能力不存在" | `views/aigov/studio/index.vue`、`capability/presentation.ts#capabilityReadiness` |
+| 口径单一 | 就绪度判定**复用能力概览服务**（与治理台卡片同一套"缺候选/缺策略/健康"口径），不在训练台另写一套 | `AigStudioCapabilityFactsResolver` |
+
+**为什么"缺候选/缺策略"只是提醒而不是阻断**：训练台按 D07 的既定语义允许先存半成品（先写 Prompt、后补配置）；
+把它升级成阻断会直接推翻那条语义，而且会逼人先绕开训练台去建能力。提醒里已写清"现在正式调用**一定调不通**"，
+所以既不误导，也不拦人。
+
+**P0/Q6 未做（P1/P2，见联动方案 §7–§8）**：**改策略/停用**的强制确认（删除已做，策略与停用入口尚未接同一套确认框）、
+员工"我的额度/我的申请"（Q5）、高风险变更轻量门槛（Q1C）、dryRun 补 `wouldRequireApproval/quotaStatus`（Q3）、
+数据等级取最高 `min_data_level`（Q2C，需一条 ALTER，已定 P1 末尾）——以及 22 项交互规范与其余模块按 v3 改写。
+
+**验证**（本次实测，2026-10-16）：后端 **1386 tests / 0 failures / 0 errors**
+（本轮新增 14 条：预检能力事实分级 9 + 能力事实查询/精确匹配 5）；
+前端 **54 files / 550 tests**（本轮新增 4 条：就绪度分级 2 + 候选状态口径 2）；`oxlint` **563 files 0/0**；
 `vite build` 清缓存重建通过；`node script/ci/verify-aigov-v1.mjs` 全绿。
+
+**顺带修好的一处"守卫会误报"**：`check-aigov-docs.mjs` 原先要求 §1 表里**每个**提交号都是当前分支 HEAD 的祖先。
+A–E 分支已由 PR #80 **squash 合并**（祖先关系被故意抹掉），这条规则于是会一口气报 54 个"不是祖先"——
+它的出路本来只有一条：把真实历史从文档里删掉。⇒ 改成 **§1 正文（本分支提交）要求祖先关系不变**，
+**§1.1「已合并分支的历史提交」只要求提交对象在仓库里存在**（防抄错的目的一分不减），
+并要求 §1.1 标题必须写明「已合并」——不然等于给祖先检查开后门。

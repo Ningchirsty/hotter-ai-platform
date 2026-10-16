@@ -9,7 +9,9 @@
  *     ① 文档里提到的类，仓库里是否真的还有这个文件；
  *     ② 文档里提到的 SQL 脚本是否存在；含 ALTER 的迁移是否都在发布工作流的重放清单里；
  *     ③ 文档 §4 的测试数是否与"刚跑出来的报告"一致（报告不存在则跳过，并说明原因）；
- *     ④ 文档 §1 提交表里的每个提交号是否真的存在于当前分支（手抄哈希很容易抄错一位）。
+ *     ④ 文档 §1 提交表里的每个提交号是否真的存在于当前分支（手抄哈希很容易抄错一位）；
+ *        §1.1「已合并分支（PR squash）的历史提交」不要求祖先关系（squash 会故意抹掉它），
+ *        但要求提交对象在本仓库里确实存在——"防抄错"这一层不能因为合并方式不同就丢掉。
  *
  * 用法：node script/ci/check-aigov-docs.mjs
  * 退出码：全部通过 0；有任何一条对不上 1。
@@ -166,10 +168,22 @@ if (!existsSync(VITEST_JSON)) {
 }
 
 /** ④ 提交表里的提交号是否真的在分支上（手抄哈希很容易抄错一位） */
-const tableSection = doc.slice(doc.indexOf('## 1 提交序列'), doc.indexOf('## 2 D01–D12 对照'));
-const hashes = new Set([...tableSection.matchAll(/`([0-9a-f]{7,40})`/g)].map((hit) => hit[1]));
+const section1 = doc.slice(doc.indexOf('## 1 提交序列'), doc.indexOf('## 2 D01–D12 对照'));
+// §1 正文 = "本分支的提交"，要求是 HEAD 的祖先；
+// §1.1 = "已合并分支（PR squash 后不再有祖先关系）的历史提交"，只要求对象存在（防抄错）。
+// 之所以分两段：squash 合并会**故意**抹掉祖先关系，此时"必须能在本分支上找到"这条规则
+// 若硬套到历史表上，唯一的出路是把真实历史从文档里删掉——那是用丢证据换绿灯。
+const HISTORY_HEADING = '### 1.1';
+const historyAt = section1.indexOf(HISTORY_HEADING);
+const branchSection = historyAt < 0 ? section1 : section1.slice(0, historyAt);
+const historySection = historyAt < 0 ? '' : section1.slice(historyAt);
+if (historyAt >= 0 && !/已合并/.test(section1.slice(historyAt, section1.indexOf('\n', historyAt)))) {
+  failures.push('§1.1 只能放"已合并分支的历史提交"，标题里必须写明「已合并」（否则等于给祖先检查开后门）');
+}
+const hashesOf = (text) => new Set([...text.matchAll(/`([0-9a-f]{7,40})`/g)].map((hit) => hit[1]));
+
 const unknownHashes = [];
-for (const hash of [...hashes].sort()) {
+for (const hash of [...hashesOf(branchSection)].sort()) {
   // 不只看"对象存在"：还要是 HEAD 的祖先——rebase 掉的分支上仍可能有那些对象，
   // 而评审人要的是"这个提交号能在当前分支上找到"
   const probe = spawnSync('git', ['merge-base', '--is-ancestor', hash, 'HEAD'],
@@ -181,7 +195,21 @@ for (const hash of [...hashes].sort()) {
 if (unknownHashes.length > 0) {
   failures.push(`§1 提交表里有不是当前分支祖先的提交号（抄错、或已被 rebase 掉）：${unknownHashes.join('、')}`);
 } else {
-  notes.push(`④ 提交表：${hashes.size} 个提交号都是当前分支 HEAD 的祖先`);
+  notes.push(`④ 提交表：§1 的 ${hashesOf(branchSection).size} 个提交号都是当前分支 HEAD 的祖先`);
+}
+
+// §1.1：只对"对象是否存在"负责（squash 合并后祖先关系必然不成立，见上面的说明）
+const missingObjects = [];
+for (const hash of [...hashesOf(historySection)].sort()) {
+  const probe = spawnSync('git', ['cat-file', '-e', `${hash}^{commit}`], { cwd: ROOT, stdio: 'ignore' });
+  if (probe.status !== 0) {
+    missingObjects.push(hash);
+  }
+}
+if (missingObjects.length > 0) {
+  failures.push(`§1.1 历史表里的提交号在本仓库里不存在（抄错一位就会这样）：${missingObjects.join('、')}`);
+} else if (historyAt >= 0) {
+  notes.push(`④ 提交表：§1.1 的 ${hashesOf(historySection).size} 个历史提交号对象都存在（squash 合并，不要求祖先关系）`);
 }
 
 /** 结论 */
