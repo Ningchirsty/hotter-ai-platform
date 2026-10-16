@@ -59,7 +59,17 @@
         </div>
       </template>
       <el-alert type="info" :closable="false" show-icon class="mb-2" :title="queueActionHint(actionCode)" />
-      <el-table :data="rows" border>
+      <el-table v-loading="loading" :data="rows" border>
+        <template #empty>
+          <AigEmptyState
+            icon="ChatLineSquare"
+            title="这个筛选条件下没有反馈"
+            hint="反馈由业务侧对结果打分时提交；也可以清掉筛选看全部队列。"
+          >
+            <el-button size="small" @click="clearFilters">清除筛选</el-button>
+            <el-button size="small" @click="loadQueue">刷新</el-button>
+          </AigEmptyState>
+        </template>
         <el-table-column label="反馈ID" prop="feedbackId" width="180" />
         <el-table-column label="任务" prop="taskId" width="180" />
         <el-table-column label="结果" prop="resultId" width="180" />
@@ -139,6 +149,8 @@ import type {
   AigOperationsMetricsVO
 } from '@/api/aigov/feedback/types';
 import modal from '@/plugins/modal';
+import { useLoading } from '@/hooks/async/useLoading';
+import AigEmptyState from '../components/AigEmptyState.vue';
 import {
   ACTION_OPTIONS,
   QUEUE_ACTION_FILTERS,
@@ -156,6 +168,7 @@ import {
 defineOptions({ name: 'AigFeedback' });
 
 const metrics = ref<AigOperationsMetricsVO>({});
+const { loading, withLoading } = useLoading(true);
 const rows = ref<AigFeedbackVO[]>([]);
 const verdict = ref('');
 const actionCode = ref('');
@@ -171,8 +184,18 @@ const loadMetrics = async () => {
 };
 
 const loadQueue = async () => {
-  const res = await listFeedbackQueue(verdict.value, actionCode.value, reasonCode.value);
-  rows.value = res.data || [];
+  await withLoading(async () => {
+    const res = await listFeedbackQueue(verdict.value, actionCode.value, reasonCode.value);
+    rows.value = res.data || [];
+  });
+};
+
+/** 清掉三个筛选并重查（空态里那个按钮要有明确动作，不能只提示"没有数据"） */
+const clearFilters = async () => {
+  verdict.value = '';
+  actionCode.value = '';
+  reasonCode.value = '';
+  await loadQueue();
 };
 
 const openHandle = (row: AigFeedbackVO) => {

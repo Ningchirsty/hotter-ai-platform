@@ -22,7 +22,17 @@
           </div>
         </div>
       </template>
-      <el-table :data="tools" border>
+      <el-table v-loading="loading" :data="tools" border>
+        <template #empty>
+          <AigEmptyState
+            icon="Tools"
+            title="还没有登记任何工具"
+            hint="工具是「登记即可发现、执行另经确认」的对象：先登记定义与版本，Agent 才能声明使用它。"
+          >
+            <el-button type="primary" size="small" @click="createVisible = true">新增工具定义</el-button>
+            <el-button size="small" @click="load">刷新</el-button>
+          </AigEmptyState>
+        </template>
         <el-table-column label="工具编码" prop="toolCode" width="200" />
         <el-table-column label="名称" prop="toolName" min-width="160" />
         <el-table-column label="版本" prop="version" width="100" />
@@ -159,6 +169,8 @@
 import { addToolVersion, createToolDefinition, getToolVersionDetail, listTools } from '@/api/aigov/tool';
 import type { AigToolDefinitionForm, AigToolDetailVO, AigToolVersionForm, AigToolVersionVO } from '@/api/aigov/tool/types';
 import modal from '@/plugins/modal';
+import { useLoading } from '@/hooks/async/useLoading';
+import AigEmptyState from '../components/AigEmptyState.vue';
 import {
   OPERATION_TYPE_OPTIONS,
   confirmationHint,
@@ -178,6 +190,7 @@ import {
 defineOptions({ name: 'AigTool' });
 
 const tools = ref<AigToolVersionVO[]>([]);
+const { loading, withLoading } = useLoading(true);
 const saving = ref(false);
 const definitionVisible = ref(false);
 const versionVisible = ref(false);
@@ -201,8 +214,11 @@ const versionHint = computed(() =>
 );
 
 const load = async () => {
-  const res = await listTools();
-  tools.value = res.data || [];
+  // 慢网下先看到空表会让人以为"没有数据"，所以列表加载要有 loading（走读 §5.5）
+  await withLoading(async () => {
+    const res = await listTools();
+    tools.value = res.data || [];
+  });
 };
 
 /** 契约详情：列表不带 Schema 全文，点开才取（否则"看清单"等于把每份契约都拉一遍） */

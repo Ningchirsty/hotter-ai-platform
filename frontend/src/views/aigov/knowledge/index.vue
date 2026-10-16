@@ -20,7 +20,17 @@
           </div>
         </div>
       </template>
-      <el-table :data="collections" border>
+      <el-table v-loading="collectionsLoading" :data="collections" border>
+        <template #empty>
+          <AigEmptyState
+            icon="Collection"
+            title="还没有知识集合"
+            hint="知识集合是数据等级与组织范围的边界：先建集合，再往里登记文档。"
+          >
+            <el-button type="primary" size="small" @click="createVisible = true">新建知识集合</el-button>
+            <el-button size="small" @click="loadCollections">刷新</el-button>
+          </AigEmptyState>
+        </template>
         <el-table-column label="编码" prop="collectionCode" width="180" />
         <el-table-column label="名称" prop="collectionName" min-width="160" />
         <el-table-column label="数据等级" prop="dataLevel" width="120" />
@@ -56,8 +66,27 @@
           </div>
         </div>
       </template>
-      <el-table :data="documents" border>
-        <el-table-column label="文档ID" prop="documentId" width="180" />
+      <el-table v-loading="documentsLoading" :data="documents" border>
+        <template #empty>
+          <AigEmptyState
+            icon="Document"
+            title="这个集合里还没有文档"
+            hint="登记文档后，还要点「上传并解析索引」才会进入检索；只登记不解析是查不到的。"
+          >
+            <el-button
+              v-hasPermi="['aig:knowledge:document:upload']"
+              type="primary"
+              size="small"
+              :disabled="!currentCollection"
+              @click="openDocument"
+            >
+              登记文档
+            </el-button>
+          </AigEmptyState>
+        </template>
+        <el-table-column label="文档ID" width="200">
+          <template #default="{ row }"><AigLongId :id="row.documentId" :keep="6" /></template>
+        </el-table-column>
         <el-table-column label="文档名" prop="sourceName" min-width="200" />
         <el-table-column label="来源类型" width="120">
           <template #default="{ row }">{{ sourceTypeLabel(row.sourceType) }}</template>
@@ -321,6 +350,8 @@ import type {
   AigKnowledgeRetrievalTestVO
 } from '@/api/aigov/knowledge/types';
 import modal from '@/plugins/modal';
+import AigEmptyState from '../components/AigEmptyState.vue';
+import AigLongId from '../components/AigLongId.vue';
 import {
   DATA_LEVEL_OPTIONS,
   RETRIEVAL_MODE_OPTIONS,
@@ -347,6 +378,9 @@ defineOptions({ name: 'AigKnowledge' });
 const collections = ref<AigKnowledgeCollectionVO[]>([]);
 const documents = ref<AigKnowledgeDocumentVO[]>([]);
 const currentCollection = ref<AigKnowledgeCollectionVO>();
+/** 两个列表各自 loading（走读 §5.5：慢网不能只看到空表） */
+const collectionsLoading = ref(false);
+const documentsLoading = ref(false);
 
 const saving = ref(false);
 const collectionVisible = ref(false);
@@ -416,8 +450,13 @@ const loadChunks = async () => {
 };
 
 const loadCollections = async () => {
-  const res = await listCollections();
-  collections.value = res.data || [];
+  collectionsLoading.value = true;
+  try {
+    const res = await listCollections();
+    collections.value = res.data || [];
+  } finally {
+    collectionsLoading.value = false;
+  }
 };
 
 const loadDocuments = async () => {
@@ -425,8 +464,13 @@ const loadDocuments = async () => {
     documents.value = [];
     return;
   }
-  const res = await listDocuments(currentCollection.value.collectionId);
-  documents.value = res.data || [];
+  documentsLoading.value = true;
+  try {
+    const res = await listDocuments(currentCollection.value.collectionId);
+    documents.value = res.data || [];
+  } finally {
+    documentsLoading.value = false;
+  }
 };
 
 const selectCollection = (row: AigKnowledgeCollectionVO) => {

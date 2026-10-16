@@ -99,15 +99,25 @@
       </template>
 
       <el-table v-loading="loading" border class="data-table" :data="auditList">
+        <template #empty>
+          <AigEmptyState
+            icon="Document"
+            title="当前筛选条件下没有调用记录"
+            hint="审计只记「实际发生过的调用」；如果刚上线，先跑一次调用或放宽时间范围。"
+          >
+            <el-button size="small" @click="resetQuery">清除筛选</el-button>
+            <el-button size="small" @click="getList">刷新</el-button>
+          </AigEmptyState>
+        </template>
         <el-table-column label="traceId" align="center" width="220" show-overflow-tooltip>
           <template #default="scope">
             <!-- 输入快照引用：只存引用不存副本，且不是每次调用都有，
                  因此挂在 traceId 上做提示，而不是单开一列（大多数行为空） -->
             <el-tooltip v-if="scope.row.inputSnapshotRef" placement="top"
                         :content="'输入快照：' + scope.row.inputSnapshotRef">
-              <span class="trace-with-snapshot">{{ scope.row.traceId }}</span>
+              <span class="trace-with-snapshot"><AigLongId :id="scope.row.traceId" :keep="8" /></span>
             </el-tooltip>
-            <span v-else>{{ scope.row.traceId }}</span>
+            <AigLongId v-else :id="scope.row.traceId" :keep="8" />
           </template>
         </el-table-column>
         <el-table-column label="能力" align="center" width="180" show-overflow-tooltip>
@@ -207,6 +217,8 @@ import { useSearchReset } from '@/hooks/form/useSearchReset';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import { useDict } from '@/utils/dict';
 import { parseTime } from '@/utils/ruoyi';
+import AigEmptyState from '../components/AigEmptyState.vue';
+import AigLongId from '../components/AigLongId.vue';
 
 defineOptions({ name: 'AigInvocationAudit' });
 

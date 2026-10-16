@@ -21,6 +21,18 @@
       </template>
 
       <el-table v-loading="loading" border class="data-table" :data="caseList">
+        <template #empty>
+          <AigEmptyState
+            icon="Tickets"
+            title="还没有黄金用例"
+            hint="用例是评测的前提：先定义用例（含输入快照引用与期望结论），才能跑评测。"
+          >
+            <el-button v-hasPermi="['aig:evaluation:define']" type="primary" size="small" @click="openDefine">
+              定义用例
+            </el-button>
+            <el-button size="small" @click="getCases">刷新</el-button>
+          </AigEmptyState>
+        </template>
         <el-table-column label="用例编码" align="center" prop="caseCode" width="240" show-overflow-tooltip />
         <el-table-column label="名称" align="center" prop="caseName" width="200" show-overflow-tooltip />
         <el-table-column label="类型" align="center" prop="caseType" width="110" />
@@ -85,6 +97,15 @@
       </el-alert>
 
       <el-table v-loading="runLoading" border :data="runList">
+        <template #empty>
+          <AigEmptyState
+            icon="DataAnalysis"
+            title="这个用例还没有评测运行记录"
+            hint="运行记录只在真的跑过一次评测后才出现；跑之前请确认用例的输入快照引用已登记。"
+          >
+            <el-button size="small" @click="loadRuns">刷新</el-button>
+          </AigEmptyState>
+        </template>
         <el-table-column label="运行编号" align="center" prop="runNo" width="230" show-overflow-tooltip />
         <el-table-column label="用例" align="center" width="220" show-overflow-tooltip>
           <template #default="scope">{{ caseLabel(scope.row) }}</template>
@@ -329,6 +350,7 @@ import type {
 } from '@/api/aigov/evaluation/types';
 import { useLoading } from '@/hooks/async/useLoading';
 import modal from '@/plugins/modal';
+import AigEmptyState from '../components/AigEmptyState.vue';
 
 defineOptions({ name: 'AigEvaluationConsole' });
 
