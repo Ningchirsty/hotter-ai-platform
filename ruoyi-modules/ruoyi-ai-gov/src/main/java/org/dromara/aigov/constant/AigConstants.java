@@ -52,6 +52,18 @@ public interface AigConstants {
      */
     String PERM_CAPABILITY_REMOVE = "aig:capability:remove";
     /**
+     * 能力域-高风险变更（Q1C 轻量门槛）。
+     *
+     * <p><b>为什么要有单独一个权限点</b>：{@code aig:capability:edit} / {@code aig:route:edit}
+     * 是"能改配置"，而"把外发从禁止改成允许"是"能改变数据出域边界"——两者的后果不是一个量级。
+     * 只有 {@code aig:capability:high-risk} 才允许做高风险变更（放开外发、动限制级/严格级策略、
+     * 停用或删除能力），这样"一个人悄悄放宽外发"至少需要两个权限点同时具备。</p>
+     *
+     * <p><b>为什么不在 {@code @SaCheckPermission} 里判</b>：它只在**部分**请求上是高风险
+     * （同一次策略编辑，收紧不算、放宽才算），注解表达式拿不到"改之前那一行"。</p>
+     */
+    String PERM_CAPABILITY_HIGH_RISK = "aig:capability:high-risk";
+    /**
      * 模型治理-列表
      */
     String PERM_MODEL_LIST = "aig:model:list";

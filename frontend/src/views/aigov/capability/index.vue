@@ -239,6 +239,7 @@ import {
   candidateStateOptions,
   cardSummary,
   deleteConfirmText,
+  disableConfirmText,
   healthMeta,
   issueFilterOptions,
   issueTags,
@@ -286,6 +287,8 @@ const detailCode = ref<string>();
 
 const formVisible = ref(false);
 const saving = ref(false);
+/** 编辑弹窗打开时的原状态（Q1C 只把「启用 → 停用」当高风险迁移） */
+const originalStatus = ref('0');
 const advanced = ref(false);
 const formRef = ref();
 const form = reactive<AigCapabilityForm>({ status: '0' });
@@ -378,6 +381,9 @@ const openEdit = (capability?: AigCapabilityVO) => {
     return;
   }
   Object.assign(form, emptyForm(), capability);
+  // 留一份"改之前的状态"：Q1C 只把「启用 → 停用」这一个迁移当高风险，
+  // 对已停用的能力改个描述不该被要求高风险权限（否则人会觉得权限点是随机拦人的）
+  originalStatus.value = capability.status ?? '0';
   tagSelection.value = parseTags(capability.requiredTags);
   advanced.value = false;
   formVisible.value = true;
@@ -404,6 +410,22 @@ const submit = async () => {
     return;
   }
   form.requiredTags = tagSelection.value.join(',');
+  // Q6 + Q1C：停用是「在跑的能力立刻调不通」，保存前先把引用方列出来
+  if (form.capabilityId && originalStatus.value !== '1' && form.status === '1') {
+    let refs: AigCapabilityReferenceVO[] = [];
+    try {
+      const res = await listCapabilityReferences(form.capabilityCode!);
+      refs = res.data || [];
+    } catch (error: any) {
+      modal.alertError(error?.message || '读取影响面失败：请稍后重试，或先确认没有引用方再停用');
+      return;
+    }
+    try {
+      await modal.confirm(disableConfirmText(form.capabilityName, form.capabilityCode!, refs));
+    } catch {
+      return;
+    }
+  }
   saving.value = true;
   try {
     if (form.capabilityId) {

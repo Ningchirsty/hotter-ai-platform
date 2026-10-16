@@ -9,6 +9,7 @@ import {
   coverageText,
   decisionMeta,
   deleteConfirmText,
+  disableConfirmText,
   excludedHits,
   extractModelToken,
   healthMeta,
@@ -274,6 +275,20 @@ describe('capability presentation', () => {
     expect(many).toContain('删除能力「code_x」？');
 
     const none = deleteConfirmText('某能力', 'code_y', []);
+    expect(none).toContain('没有任何 Agent 版本');
+  });
+
+  it('★ 停用确认框：说明"停用可恢复"与影响面，并写明需要高风险权限点', () => {
+    const withRefs = disableConfirmText('图片生成', 'image_generation', [
+      { refType: 'TASK', count: 3, refLabel: '历史任务 3 条' }
+    ]);
+    expect(withRefs).toContain('停用能力「图片生成」？');
+    expect(withRefs).toContain('这是可逆的');
+    expect(withRefs).toContain('历史任务 3 条');
+    expect(withRefs).toContain('aig:capability:high-risk');
+
+    const none = disableConfirmText(undefined, 'code_z', []);
+    expect(none).toContain('停用能力「code_z」？');
     expect(none).toContain('没有任何 Agent 版本');
   });
 

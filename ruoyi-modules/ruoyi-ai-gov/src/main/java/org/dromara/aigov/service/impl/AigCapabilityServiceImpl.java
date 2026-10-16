@@ -8,6 +8,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.dromara.aigov.domain.AigCapability;
 import org.dromara.aigov.domain.bo.AigCapabilityBo;
 import org.dromara.aigov.domain.vo.AigCapabilityVo;
+import org.dromara.aigov.helper.AigHighRiskChanges;
+import org.dromara.aigov.helper.AigHighRiskGuard;
 import org.dromara.aigov.mapper.AigCapabilityMapper;
 import org.dromara.aigov.service.IAigCapabilityService;
 import org.dromara.common.core.domain.PageResult;
@@ -45,6 +47,11 @@ public class AigCapabilityServiceImpl implements IAigCapabilityService {
      * 能力目录 Mapper。
      */
     private final AigCapabilityMapper capabilityMapper;
+
+    /**
+     * 高风险变更闸门（Q1C）：停用 / 删除能力需要额外权限点。
+     */
+    private final AigHighRiskGuard highRiskGuard;
 
     @Override
     public PageResult<AigCapabilityVo> queryPage(AigCapabilityBo bo, PageQuery pageQuery) {
@@ -95,6 +102,12 @@ public class AigCapabilityServiceImpl implements IAigCapabilityService {
         if (existsCode(code, bo.getCapabilityId())) {
             throw new ServiceException("能力编码已存在：" + code);
         }
+        // Q1C：停用一条正在用的能力 = 它的所有调用立刻被拒，属高风险（且这可逆，所以与删除分开说）。
+        // 只判"启用 → 停用"这一个迁移：对已停用的能力再存一次（改描述）不该被要求高风险权限，
+        // 否则人会觉得这个权限点是随机拦人的。
+        if (AigHighRiskChanges.forCapabilityDisable(exist.getStatus(), bo.getStatus())) {
+            highRiskGuard.assertAllowed("停用一个能力（它当前的调用会立即被拒）");
+        }
         AigCapability entity = BeanUtil.copyProperties(bo, AigCapability.class);
         entity.setCapabilityId(exist.getCapabilityId());
         entity.setCapabilityCode(code);
@@ -104,6 +117,8 @@ public class AigCapabilityServiceImpl implements IAigCapabilityService {
     @Override
     public void remove(Long capabilityId) {
         loadCapability(capabilityId);
+        // Q1C：删除能力不可逆（引用它的 Agent 版本/任务会变成孤儿配置），需要高风险权限
+        highRiskGuard.assertAllowed("删除一个能力（不可逆，且会让引用它的 Agent 版本/任务变成孤儿配置）");
         capabilityMapper.deleteById(capabilityId);
     }
 

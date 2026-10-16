@@ -10,6 +10,8 @@ import org.dromara.aigov.domain.AigCapability;
 import org.dromara.aigov.domain.AigRoutePolicy;
 import org.dromara.aigov.domain.bo.AigRoutePolicyBo;
 import org.dromara.aigov.domain.vo.AigRoutePolicyVo;
+import org.dromara.aigov.helper.AigHighRiskChanges;
+import org.dromara.aigov.helper.AigHighRiskGuard;
 import org.dromara.aigov.mapper.AigCapabilityMapper;
 import org.dromara.aigov.mapper.AigRoutePolicyMapper;
 import org.dromara.aigov.service.IAigRoutePolicyService;
@@ -51,6 +53,11 @@ public class AigRoutePolicyServiceImpl implements IAigRoutePolicyService {
      */
     private final AigCapabilityMapper capabilityMapper;
 
+    /**
+     * 高风险变更闸门（Q1C）：放宽外发 / 动限制级策略 / 删限制行，需要额外权限点。
+     */
+    private final AigHighRiskGuard highRiskGuard;
+
     @Override
     public PageResult<AigRoutePolicyVo> queryPage(AigRoutePolicyBo bo, PageQuery pageQuery) {
         AigRoutePolicyBo query = bo == null ? new AigRoutePolicyBo() : bo;
@@ -86,6 +93,10 @@ public class AigRoutePolicyServiceImpl implements IAigRoutePolicyService {
         if (existsPolicy(capabilityCode, bo.getDataLevel(), null)) {
             throw new ServiceException("该能力在 " + bo.getDataLevel() + " 数据等级下已配置路由策略");
         }
+        // Q1C：新增一条放行外发（或限制级/钉外部部署）的策略 = 放宽数据出界，需要高风险权限
+        if (AigHighRiskChanges.forNewPolicy(bo)) {
+            highRiskGuard.assertAllowed("新增一条会放行外发或作用于限制级/严格级数据的路由策略");
+        }
         AigRoutePolicy entity = BeanUtil.copyProperties(bo, AigRoutePolicy.class);
         entity.setPolicyId(null);
         entity.setCapabilityCode(capabilityCode);
@@ -103,6 +114,12 @@ public class AigRoutePolicyServiceImpl implements IAigRoutePolicyService {
         if (existsPolicy(capabilityCode, dataLevel, bo.getPolicyId())) {
             throw new ServiceException("该能力在 " + dataLevel + " 数据等级下已配置路由策略");
         }
+        // Q1C：判"算不算放宽"必须看改之前那一行——N→Y 只有对比新旧才看得出来。
+        // 收紧（例如把外发关掉）不算高风险：否则这个权限点会变成"改策略都要申请"，
+        // 人就绕到别的入口去了，反而更难管。
+        if (AigHighRiskChanges.forUpdatedPolicy(exist, bo)) {
+            highRiskGuard.assertAllowed("修改一条会放行外发或作用于限制级/严格级数据的路由策略");
+        }
         AigRoutePolicy entity = BeanUtil.copyProperties(bo, AigRoutePolicy.class);
         entity.setPolicyId(exist.getPolicyId());
         entity.setCapabilityCode(capabilityCode);
@@ -112,7 +129,11 @@ public class AigRoutePolicyServiceImpl implements IAigRoutePolicyService {
 
     @Override
     public void remove(Long policyId) {
-        loadPolicy(policyId);
+        AigRoutePolicy exist = loadPolicy(policyId);
+        // Q1C：删掉一条"仅本地/限制级"的策略，效果与放开外发相同——所以删除同样要过闸门
+        if (AigHighRiskChanges.forRemovedPolicy(exist)) {
+            highRiskGuard.assertAllowed("删除一条会放行外发或作用于限制级/严格级数据的路由策略");
+        }
         routePolicyMapper.deleteById(policyId);
     }
 

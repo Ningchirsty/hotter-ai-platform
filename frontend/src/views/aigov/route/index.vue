@@ -277,6 +277,9 @@
 <script setup lang="ts">
 import { listCapability } from '@/api/aigov/capability';
 import type { AigCapabilityVO } from '@/api/aigov/capability/types';
+import { listCapabilityReferences } from '@/api/aigov/capability/references';
+import type { AigCapabilityReferenceVO } from '@/api/aigov/capability/references';
+import { highRiskConfirmText, policyRowRisk, policyUpdateRisk } from './highRisk';
 import type { AigRoutePolicyForm, AigRoutePolicyQuery, AigRoutePolicyVO } from '@/api/aigov/route/types';
 import {
   addRoutePolicy,
@@ -414,6 +417,8 @@ const handleUpdate = async (row?: Partial<AigRoutePolicyVO>) => {
   resetForm();
   const policyId = row?.policyId || ids.value[0];
   const res = await getRoutePolicy(policyId!);
+  // 留一份"改之前那一行"：Q1C 判"算不算放宽"必须对比新旧（N→Y 只有对比才看得出来）
+  originalPolicy.value = res.data;
   Object.assign(form.value, initFormData, {
     policyId: res.data?.policyId,
     capabilityCode: res.data?.capabilityCode,
@@ -428,29 +433,87 @@ const handleUpdate = async (row?: Partial<AigRoutePolicyVO>) => {
   showDialog('修改路由策略');
 };
 
+/**
+ * 编辑中的"改之前那一行"（供高风险判定对比新旧）。
+ */
+const originalPolicy = ref<AigRoutePolicyVO>();
+
+/**
+ * 取影响面（谁在引用这个能力）。**取不到就返回 null**，由调用方中止动作——
+ * 高风险变更宁可让人自己确认一次，也不要在没有影响面时放过去。
+ *
+ * @param capabilityCode 能力编码
+ * @returns 引用清单；读取失败返回 null
+ */
+const loadRefs = async (capabilityCode?: string): Promise<AigCapabilityReferenceVO[] | null> => {
+  if (!capabilityCode) {
+    return [];
+  }
+  try {
+    const res: any = await listCapabilityReferences(capabilityCode);
+    return res.data || [];
+  } catch (error: any) {
+    modal.alertError(error?.message || '读取影响面失败：请稍后重试，或先确认没有引用方再操作');
+    return null;
+  }
+};
+
+/**
+ * 高风险变更前的确认（Q6 + Q1C）：列出影响面 + 说清需要哪个权限点。
+ *
+ * @param title 动作标题
+ * @param capabilityCode 能力编码
+ * @param risk 高风险判定
+ * @returns 用户确认返回 true；取消或取不到影响面返回 false
+ */
+const confirmHighRisk = async (title: string, capabilityCode: string, risk: { highRisk: boolean; reasons: string[] }): Promise<boolean> => {
+  if (!risk.highRisk) {
+    return true;
+  }
+  const refs = await loadRefs(capabilityCode);
+  if (refs === null) {
+    return false;
+  }
+  const name = capabilityOptions.value.find(item => item.capabilityCode === capabilityCode)?.capabilityName;
+  try {
+    await modal.confirm(highRiskConfirmText(title, name, capabilityCode, risk, refs));
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 /** 提交按钮 */
 const submitForm = () => {
   policyFormRef.value?.validate(async (valid: boolean) => {
-    if (valid) {
-      form.value.policyId ? await updateRoutePolicy(form.value) : await addRoutePolicy(form.value);
-      modal.msgSuccess('操作成功');
-      closeDialog();
-      await getList();
+    if (!valid) {
+      return;
     }
+    // Q1C：高风险变更先在界面上把话说清（服务端还有一道闸门，这里是为了不让人白填一遍表单）
+    const risk = form.value.policyId
+      ? policyUpdateRisk(form.value, originalPolicy.value)
+      : policyRowRisk(form.value);
+    if (!(await confirmHighRisk(form.value.policyId ? '保存策略' : '新增策略', form.value.capabilityCode, risk))) {
+      return;
+    }
+    form.value.policyId ? await updateRoutePolicy(form.value) : await addRoutePolicy(form.value);
+    modal.msgSuccess('操作成功');
+    closeDialog();
+    await getList();
   });
 };
 
 /**
- * 列表内快捷切换「允许外发」：开启前必须二次确认（数据出域），
- * 确认后回写策略并重新拉取列表。
+ * 列表内快捷切换「允许外发」：开启前必须二次确认（数据出域）。
+ *
+ * <p>开启外发就是一次高风险变更，所以这里走与保存同一套确认框：**列出引用方 + 说明权限点**。
+ * 只弹一句"数据会出域"是不够的——用的人还得知道"改了会影响谁"、"我有没有这个权限"。</p>
  */
 const beforeAllowExternalChange = async (row: AigRoutePolicyVO): Promise<boolean> => {
   const next = row.allowExternal === 'Y' ? 'N' : 'Y';
   if (next === 'Y') {
-    try {
-      await modal.confirm('开启「允许外发」意味着数据将离开公司可控环境并可能无法撤回，是否确认开启？');
-    } catch {
-      // 用户取消：开关保持原值
+    const risk = policyRowRisk({ ...row, allowExternal: next } as any);
+    if (!(await confirmHighRisk('开启「允许外发」', row.capabilityCode as string, risk))) {
       return false;
     }
   }
@@ -477,7 +540,17 @@ const beforeAllowExternalChange = async (row: AigRoutePolicyVO): Promise<boolean
 /** 删除按钮操作 */
 const handleDelete = async (row?: Partial<AigRoutePolicyVO>) => {
   const policyIds = row?.policyId || ids.value;
-  await modal.confirm('是否确认删除策略编号为"' + policyIds + '"的数据项？');
+  if (row?.policyId) {
+    // 单行：按 Q6 先列出引用方（删掉一条"仅本地/限制级"的策略也可能放宽边界）
+    const refs = await loadRefs(row.capabilityCode as string);
+    if (refs === null) {
+      return;
+    }
+    const risk = policyRowRisk(row as any);
+    await modal.confirm(highRiskConfirmText('删除策略', undefined, row.capabilityCode as string, risk, refs));
+  } else {
+    await modal.confirm('是否确认删除策略编号为"' + policyIds + '"的数据项？删除后该能力×数据等级将回落到默认兜底策略。');
+  }
   await delRoutePolicy(policyIds);
   await getList();
   modal.msgSuccess('删除成功');

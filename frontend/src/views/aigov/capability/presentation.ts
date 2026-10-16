@@ -553,6 +553,37 @@ export function capabilityReadiness(vo?: AigCapabilityOverviewVO): CapabilityRea
 }
 
 /**
+ * 停用前的确认文案（Q6 + Q1C：停用是在跑的能力立刻调不通，所以要说清影响面与权限）。
+ *
+ * @param capabilityName 能力名（可空则用编码）
+ * @param capabilityCode 能力编码
+ * @param refs           引用清单
+ * @returns 确认文案
+ */
+export function disableConfirmText(
+  capabilityName: string | undefined,
+  capabilityCode: string,
+  refs?: { refLabel?: string; refType?: string; count?: number }[]
+): string {
+  const title = capabilityName || capabilityCode;
+  const lines = [`停用能力「${title}」？`, '', '停用后它的所有调用会立即被拒（这是可逆的，随时能重新启用）。'];
+  const list = refs || [];
+  lines.push('', '影响面（谁在用它）：');
+  if (list.length === 0) {
+    lines.push('· 当前没有任何 Agent 版本 / 历史任务 / 训练台草稿引用它。');
+  } else {
+    list.slice(0, 5).forEach((ref) => {
+      lines.push(`· ${ref.refLabel || referenceTypeMeta(ref.refType).label}${ref.count ? `（${ref.count}）` : ''}`);
+    });
+    if (list.length > 5) {
+      lines.push(`· …另有 ${list.length - 5} 类引用`);
+    }
+  }
+  lines.push('', '需要「能力高风险变更」权限点（aig:capability:high-risk）；没有该权限时保存会被服务端拒绝。');
+  return lines.join('\n');
+}
+
+/**
  * 策略配置建议（P0 用规则模板；明确标注"建议，不会自动写入"）。
  *
  * @param vo       dryRun 结果（用来判断当前被什么挡住）
