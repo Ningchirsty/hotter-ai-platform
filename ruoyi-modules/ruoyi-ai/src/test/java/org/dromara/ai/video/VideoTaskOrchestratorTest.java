@@ -487,6 +487,17 @@ class VideoTaskOrchestratorTest {
             base.fixedFieldValidation(), seconds, base.outputNodeId(), base.outputField());
     }
 
+    @Test
+    void executionWindowScalesWithNativeVideoDuration() {
+        var nativeVersion = registry.require("wf-local-video-hunyuan-video-1.5-720p-t2v", true);
+        var runner = orchestrator(900_000);
+        assertEquals(Duration.ofSeconds(900), runner.resolvePollBudget("5 秒", nativeVersion));
+        assertEquals(Duration.ofSeconds(1800), runner.resolvePollBudget("10 秒", nativeVersion));
+        assertEquals(Duration.ofSeconds(3600), runner.resolvePollBudget("20 秒", nativeVersion));
+        assertEquals(Duration.ofSeconds(900), runner.resolvePollBudget("20 秒", registry.peek("wf-t2v-h3")));
+        assertEquals(Duration.ofSeconds(900), runner.resolvePollBudget("20 秒", null));
+    }
+
     private VideoTaskOrchestrator.TaskContext context(String capability, String workflow, String prompt,
                                                       Long image, Long first, Long last) {
         return context(capability, workflow, prompt, H3TemplatePreparer.TIER_1080P, image, first, last);

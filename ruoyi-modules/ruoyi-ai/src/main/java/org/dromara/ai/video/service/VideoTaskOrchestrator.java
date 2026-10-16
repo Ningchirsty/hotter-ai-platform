@@ -356,7 +356,7 @@ public class VideoTaskOrchestrator {
         appendEvent(context, "SUBMITTED",
             workerName == null ? "已提交 ComfyUI" : "已提交 ComfyUI · GPU " + workerName);
 
-        ComfyOutput output = awaitOutput(promptId, context, client);
+        ComfyOutput output = awaitOutput(promptId, context, client, version);
         // 此刻任务已经是 RUNNING（认领时落库）。这之后的每一步（下载成片、落盘、
         // ffprobe、分辨率断言、写素材行）失败，都由外层 execute 统一负责落库。
         return archiveOutput(context, version, output, client);
@@ -583,8 +583,17 @@ public class VideoTaskOrchestrator {
         return Math.min(contractCap, requested * 1000L);
     }
 
-    private ComfyOutput awaitOutput(String promptId, TaskContext context, ComfyClient client) {
-        Instant deadline = Instant.now().plus(pollBudget);
+    /** Longer native clips need a proportional execution window, up to four 5-second units. */
+    public Duration resolvePollBudget(String durationLabel, WorkflowVersion version) {
+        if (version == null || version.fixedFieldValidation() == null
+            || version.fixedFieldValidation().durationControl() == null) return pollBudget;
+        int seconds = H3TemplatePreparer.parseDurationSeconds(durationLabel);
+        int multiplier = Math.max(1, Math.min(4, (seconds + 4) / 5));
+        return pollBudget.multipliedBy(multiplier);
+    }
+
+    private ComfyOutput awaitOutput(String promptId, TaskContext context, ComfyClient client, WorkflowVersion version) {
+        Instant deadline = Instant.now().plus(resolvePollBudget(context.durationLabel(), version));
         while (Instant.now().isBefore(deadline)) {
             ComfyClient.PollResult result = client.poll(promptId);
             switch (result.state()) {
