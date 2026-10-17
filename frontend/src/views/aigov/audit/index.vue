@@ -168,9 +168,10 @@
           <template #default="scope">{{ scope.row.cost ?? '-' }}</template>
         </el-table-column>
         <!-- 用量回执：为空表示该次未拿到用量（图像模型普遍不回执 token），与「用量为零」是两件事 -->
-        <el-table-column label="用量" align="center" width="170" show-overflow-tooltip>
+        <el-table-column label="用量" align="center" min-width="170">
           <template #default="scope">
-            <span v-if="scope.row.usageJson">{{ scope.row.usageJson }}</span>
+            <!-- 原始用量回执默认折叠（走读 §5.5）：列表里摊开一段 JSON 会把结论挤走 -->
+            <AigRawJson v-if="scope.row.usageJson" :text="scope.row.usageJson" :preview-length="40" />
             <span v-else class="usage-absent">未采集</span>
           </template>
         </el-table-column>
@@ -219,6 +220,7 @@ import { useDict } from '@/utils/dict';
 import { parseTime } from '@/utils/ruoyi';
 import AigEmptyState from '../components/AigEmptyState.vue';
 import AigLongId from '../components/AigLongId.vue';
+import AigRawJson from '../components/AigRawJson.vue';
 
 defineOptions({ name: 'AigInvocationAudit' });
 

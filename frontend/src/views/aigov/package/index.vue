@@ -230,7 +230,9 @@
             <el-tag :type="scope.row.result === 'PASS' ? 'success' : 'danger'">{{ scope.row.result }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作人" align="center" prop="operatorId" width="120" show-overflow-tooltip />
+        <el-table-column label="操作人" align="center" width="130">
+          <template #default="scope"><AigLongId :id="scope.row.operatorId" :keep="5" /></template>
+        </el-table-column>
         <el-table-column label="说明" align="center" prop="detail" show-overflow-tooltip />
         <el-table-column label="时间" align="center" prop="operateTime" width="180" />
       </el-table>
@@ -315,6 +317,7 @@ import { useLoading } from '@/hooks/async/useLoading';
 import { useSearchReset } from '@/hooks/form/useSearchReset';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import modal from '@/plugins/modal';
+import AigLongId from '../components/AigLongId.vue';
 import AigEmptyState from '../components/AigEmptyState.vue';
 
 defineOptions({ name: 'AigPackageRegistry' });

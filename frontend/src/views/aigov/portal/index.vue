@@ -244,7 +244,9 @@
             <el-button size="small" @click="getArtifacts">刷新</el-button>
           </AigEmptyState>
         </template>
-        <el-table-column label="产物ID" prop="artifactId" align="center" width="180" show-overflow-tooltip />
+        <el-table-column label="产物ID" align="center" width="180">
+          <template #default="scope"><AigLongId :id="scope.row.artifactId" :keep="6" /></template>
+        </el-table-column>
         <el-table-column label="来源任务" align="center" min-width="170" show-overflow-tooltip>
           <template #default="scope">{{ scope.row.taskNo || scope.row.taskId }}</template>
         </el-table-column>
@@ -443,6 +445,7 @@ import type {
 import { useLoading } from '@/hooks/async/useLoading';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import modal from '@/plugins/modal';
+import AigLongId from '../components/AigLongId.vue';
 import AigEmptyState from '../components/AigEmptyState.vue';
 import LaunchFormDrawer from './LaunchFormDrawer.vue';
 import MyQuotaAndApprovals from '../mine/MyQuotaAndApprovals.vue';

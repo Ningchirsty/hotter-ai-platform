@@ -80,8 +80,12 @@
             <el-button size="small" @click="getList">刷新</el-button>
           </AigEmptyState>
         </template>
-        <el-table-column label="绑定ID" align="center" prop="bindingId" width="150" show-overflow-tooltip />
-        <el-table-column label="Agent版本ID" align="center" prop="agentVersionId" width="150" show-overflow-tooltip />
+        <el-table-column label="绑定ID" align="center" width="150">
+          <template #default="{ row }"><AigLongId :id="row.bindingId" :keep="6" /></template>
+        </el-table-column>
+        <el-table-column label="Agent版本ID" align="center" width="150">
+          <template #default="{ row }"><AigLongId :id="row.agentVersionId" :keep="6" /></template>
+        </el-table-column>
         <el-table-column label="类型" align="center" width="110">
           <template #default="{ row }">
             <el-tag :type="row.resourceType === 'TOOL' ? 'warning' : 'success'" size="small">
@@ -238,6 +242,7 @@ import { useLoading } from '@/hooks/async/useLoading';
 import { useSearchReset } from '@/hooks/form/useSearchReset';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import modal from '@/plugins/modal';
+import AigLongId from '../components/AigLongId.vue';
 import AigEmptyState from '../components/AigEmptyState.vue';
 import {
   bindingDeleteConfirmText,

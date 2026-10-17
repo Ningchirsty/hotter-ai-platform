@@ -124,15 +124,19 @@
         <el-table-column label="版本" align="center" prop="version" width="90" />
         <el-table-column label="发布状态" align="center" width="130">
           <template #default="scope">
-            <el-tag :type="statusTagType(scope.row.releaseStatus)">{{ scope.row.releaseStatus }}</el-tag>
+            <el-tag :type="statusTagType(scope.row.releaseStatus)">{{ releaseStatusLabel(scope.row.releaseStatus) }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="通道" align="center" prop="releaseChannel" width="100" />
         <el-table-column label="外部调用" align="center" width="100">
           <template #default="scope">{{ scope.row.allowExternal === 'Y' ? '允许' : '禁止' }}</template>
         </el-table-column>
-        <el-table-column label="来源Package版本" align="center" prop="packageVersionId" width="170" show-overflow-tooltip />
-        <el-table-column label="最近评测" align="center" prop="evaluationRunId" width="150" show-overflow-tooltip />
+        <el-table-column label="来源Package版本" align="center" width="170">
+          <template #default="{ row }"><AigLongId :id="row.packageVersionId" :keep="6" /></template>
+        </el-table-column>
+        <el-table-column label="最近评测" align="center" width="150">
+          <template #default="{ row }"><AigLongId :id="row.evaluationRunId" :keep="6" /></template>
+        </el-table-column>
         <el-table-column label="操作" align="center" width="140" fixed="right">
           <template #default="scope">
             <el-button
@@ -418,6 +422,7 @@ import { useSearchReset } from '@/hooks/form/useSearchReset';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import modal from '@/plugins/modal';
 import AigEmptyState from '../components/AigEmptyState.vue';
+import AigLongId from '../components/AigLongId.vue';
 import { saveBlob } from '@/utils/save';
 import { artifactSummary, downloadSummary, downloaderLabel, fileNameOf, shortSha } from './sandboxArtifact';
 
@@ -532,6 +537,33 @@ const statusTagType = (status?: string): 'primary' | 'success' | 'info' | 'warni
 };
 
 const isTerminal = (status?: string) => status === 'ARCHIVED';
+
+/**
+ * 发布状态**人话**（走读 §5.5：不再直出 DRAFT/VALIDATED 这类裸枚举）。
+ *
+ * <p>取值与后端 {@code AigReleaseStatusEnum} 一一对应；认不出的原样回显
+ * （宁可显示原始码，也不要把不认识的取值藏起来）。</p>
+ */
+const releaseStatusLabel = (status?: string): string => {
+  switch (status) {
+    case 'DRAFT':
+      return '草稿';
+    case 'VALIDATED':
+      return '已校验';
+    case 'SANDBOX_TESTED':
+      return '沙箱已跑通';
+    case 'CANDIDATE':
+      return '候选（灰度）';
+    case 'STABLE':
+      return '稳定（已发布）';
+    case 'DISABLED':
+      return '已停用';
+    case 'ARCHIVED':
+      return '已归档';
+    default:
+      return status || '未知';
+  }
+};
 
 /** 查询 Agent 清单 */
 const getList = async () => {

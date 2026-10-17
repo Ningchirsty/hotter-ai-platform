@@ -112,7 +112,7 @@
         </el-table-column>
         <el-table-column label="结论" align="center" width="110">
           <template #default="scope">
-            <el-tag :type="runTagType(scope.row.resultStatus)">{{ scope.row.resultStatus }}</el-tag>
+            <el-tag :type="runTagType(scope.row.resultStatus)">{{ runStatusLabel(scope.row.resultStatus) }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="产出方" align="center" width="120">
@@ -418,6 +418,16 @@ const runTagType = (value?: string): 'success' | 'danger' | 'warning' | 'info' |
   if (value === 'FAIL') return 'danger';
   if (value === 'ERROR') return 'warning';
   return 'info';
+};
+
+/** 运行结论**人话**（走读 §5.5：不再直出裸枚举；RUNNING 也要给人看） */
+const runStatusLabel = (value?: string): string => {
+  if (value === 'PASS') return '通过';
+  if (value === 'FAIL') return '未通过';
+  if (value === 'ERROR') return '执行出错';
+  if (value === 'RUNNING') return '执行中';
+  if (value === 'MANUAL') return '待人工复核';
+  return value || '未知';
 };
 
 /**

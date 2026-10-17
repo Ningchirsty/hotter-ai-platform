@@ -311,7 +311,9 @@
             </AigEmptyState>
           </template>
           <el-table-column label="类型" align="center" prop="resultType" width="110" />
-          <el-table-column label="资产" align="center" prop="assetId" width="120" />
+          <el-table-column label="资产" align="center" width="140">
+            <template #default="scope"><AigLongId :id="scope.row.assetId" :keep="6" /></template>
+          </el-table-column>
           <el-table-column label="结构校验" align="center" width="120">
             <template #default="scope">
               <el-tag :type="scope.row.validationResult === 'PASS' ? 'success' : 'danger'">
@@ -362,6 +364,7 @@ import { useDateRangeQuery } from '@/hooks/form/useDateRangeQuery';
 import { useSearchReset } from '@/hooks/form/useSearchReset';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import modal from '@/plugins/modal';
+import AigLongId from '../components/AigLongId.vue';
 import AigEmptyState from '../components/AigEmptyState.vue';
 import { useDict } from '@/utils/dict';
 import { parseTime } from '@/utils/ruoyi';

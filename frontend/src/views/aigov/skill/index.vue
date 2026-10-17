@@ -130,7 +130,9 @@
         <el-table-column label="外部调用" align="center" width="100">
           <template #default="scope">{{ scope.row.allowExternal === 'Y' ? '允许' : '禁止' }}</template>
         </el-table-column>
-        <el-table-column label="来源Package版本" align="center" prop="packageVersionId" show-overflow-tooltip />
+        <el-table-column label="来源Package版本" align="center">
+          <template #default="scope"><AigLongId :id="scope.row.packageVersionId" :keep="6" /></template>
+        </el-table-column>
       </el-table>
     </el-dialog>
   </div>
@@ -142,6 +144,7 @@ import type { AigSkillQuery, AigSkillVO, AigSkillVersionVO } from '@/api/aigov/s
 import { useLoading } from '@/hooks/async/useLoading';
 import { useSearchReset } from '@/hooks/form/useSearchReset';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
+import AigLongId from '../components/AigLongId.vue';
 
 defineOptions({ name: 'AigSkillRegistry' });
 

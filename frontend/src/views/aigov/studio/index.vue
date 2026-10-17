@@ -48,7 +48,9 @@
             <el-button size="small" @click="getList">刷新</el-button>
           </AigEmptyState>
         </template>
-        <el-table-column label="草稿ID" align="center" prop="draftId" width="180" show-overflow-tooltip />
+        <el-table-column label="草稿ID" align="center" width="180">
+          <template #default="scope"><AigLongId :id="scope.row.draftId" :keep="6" /></template>
+        </el-table-column>
         <el-table-column label="训练对象编码" align="center" prop="agentCode" min-width="180" show-overflow-tooltip />
         <el-table-column label="状态" align="center" width="110">
           <template #default="scope">
@@ -448,6 +450,7 @@ import type {
 import { useLoading } from '@/hooks/async/useLoading';
 import { useSearchToggle } from '@/hooks/form/useSearchToggle';
 import modal from '@/plugins/modal';
+import AigLongId from '../components/AigLongId.vue';
 import AigEmptyState from '../components/AigEmptyState.vue';
 import { PROMPT_SECTION_LABELS, diffSummary, parseDraftContent, sectionDiff } from './diff';
 import { capabilityReadiness } from '@/views/aigov/capability/presentation';
