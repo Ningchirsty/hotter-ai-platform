@@ -38,6 +38,7 @@
 | `5aa35c88` | P2/v3 改写 | **工具页 + 岗位包页**：工具页摘要写"共 N 个（**列表不分页，即全量**）"并区分"待接入/需人工确认"两色行；岗位包页摘要 +「只看已发布/只看草稿」，**刻意不做行高亮**（正常分布会被染成噪声） |
 | `cb8ec409` | P2/v3 改写 | **评测页摘要**（跑得过吗：通过/未通过/执行出错/待人工，并点明 FAIL 与 ERROR 处置方向不同）+ **发布状态词表收敛**（共享 `releaseStatus.ts`；`agent` 页去掉本地映射、`knowledge` 引用表版本状态列改胶囊） |
 | `db84a33c` | P2/v3 改写 | **员工工作台摘要**（我的任务到哪了：进行中/已完成/失败取消 +「只看失败」+ 失败行红底；**不做"只看进行中"**——跨三个状态码，单值过滤会漏）+ **Q1C 两个语义按用户确认改写文档定稿** |
+| `855b094f` | 权限/§5.4 | **权限边界正名**：`capability:invoke`/`:trial` 与 `capability:query` 分权、`model:secret` 拆 `:view`/`:edit`（运行期判定同步拆分）、`model:probe` 从 `model:edit` 拆出、能力候选改挂 `capability:candidate:*`、`route:binding`→`route:scenario`、6 处菜单名对齐；幂等种子**按旧权限受众继承授权**（唯一收紧：`aig_viewer` 不再有 `invoke`） |
 
 > 表里是**有实质内容的提交**；纯文档补记（例如把本表自己补上一行）不逐条登记——它们不改变交付物。
 > `check-aigov-docs.mjs` 会核对**本节**每个提交号都是当前分支 HEAD 的祖先（抄错/被 rebase 掉会红）。
@@ -141,9 +142,10 @@
 
 ## 4 验证汇总
 
-- 后端 `ruoyi-ai-gov`：**1420 tests / 0 failures / 0 errors**（基线 1053 → 新增 367；其中 **能力域重构 P0 13 条**、
+- 后端 `ruoyi-ai-gov`：**1423 tests / 0 failures / 0 errors**（基线 1053 → 新增 370；其中 **能力域重构 P0 13 条**、
   **Q6 影响面 5 条**、**训练台能力就绪度预检与能力事实查询 14 条**、**Q3 预演闸门 5 条**、**Q1C 高风险门槛 12 条**、
-  **Q2C 声明等级/生效等级 11 条**、**问题队列分页 1 条**、**Q1C 完整版变更单 7 条**，见 §8）。
+  **Q2C 声明等级/生效等级 11 条**、**问题队列分页 1 条**、**Q1C 完整版变更单 7 条**、
+  **权限边界（secret view/edit）3 条**，见 §8）。
   > 勘误（2026-10-16）：本节此前记的 **1367** 是 **Q6 影响面提交（`56563b8b`）之前**的数，
   > 漏计了 Q6 的 5 条（引用服务 4 + 路由烟测 1）。⇒ 以本节为准
   > （`script/ci/check-aigov-docs.mjs` 是拿本节数字与磁盘报告对账，所以它本来就会把这类漂移报出来）。
@@ -233,6 +235,20 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src
 
 > 设计 §4.3 的「业务训练负责人」「知识维护人」等业务角色应由运维按需新建并单独授权；
 > 本仓当前只有 `aig_admin` / `aig_security` / `aig_viewer`，因此种子只授 `aig_admin`。
+
+**⚠️ 本版必做（顺序不能反）：权限边界种子必须先于新镜像执行**
+
+| 脚本 | 内容 | 为什么必须"先" |
+| --- | --- | --- |
+| `script/sql/aig_permission_boundary.sql` | 权限边界正名（§5.4）：新增 `capability:invoke`/`:trial`/`candidate:*`/`model:secret:view`/`model:probe`，原地改名 `model:secret`→`:edit`、`route:binding`→`route:scenario`，并按"原权限点的受众"继承授权 | 改名的那两条若不在切镜像前执行，**持旧权限的非超管账号在新代码下会 403**（新代码只认新权限串）。脚本幂等，可重复执行；跑完末尾两条 SELECT 会打出新权限行与 `AIG_PERMISSION_BOUNDARY_DONE` |
+
+> 该脚本**刻意不进** `deploy-poc.yml` 的自动重放清单：它写的是 `sys_menu`/`sys_role_menu`，
+> 属**授权变更**（会改变"谁有什么权"），按本仓既定口径由运维显式执行并留记录。
+> 脚本**不让任何人掉权限**——新增权限点按 perms 反查 `sys_role_menu` 继承原受众；
+> **唯一收紧**是 `aig_viewer`（只读角色）不再拥有 `capability:invoke`，这正是本次修复的靶子
+> （只读账号不该能发起计费调用），它仍保留 `capability:trial`（试调不花钱、不外发）。
+> 若你们的 `aig_viewer` 实际承担业务调用，删掉脚本里那句 `and rm.role_id <> 1763100000000000003`
+> 或在页面上补授即可。
 
 ---
 
@@ -544,6 +560,45 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src 
   `agent` 页原来那份页面内映射换掉、`knowledge` 页「引用影响面」表的**版本状态列**从裸枚举改成胶囊。
   理由：同一状态在 Agent/Skill/Package/知识引用四处各写一份，迟早出现"同一状态两页颜色/文案不同"。
 
+**P2 附加：权限边界正名（2026-10-16，用户已授权「做」）**
+
+走读 §4.2 / §5.4 记的那批问题有个共同形状：**权限点按"页面"发，而动作按"按钮"分**。
+于是"能查能力"= "能发起计费调用"，"能查看密钥引用"= "能改密钥"。本轮把授权口径改成按动作分：
+
+| 修正 | 之前（问题） | 现在 | 落点 |
+| --- | --- | --- | --- |
+| 调用与查询分权 | `POST /invoke` 与 `GET /capability/**` 共用 `capability:query` ⇒ 能查就能发起计费调用 | `aig:capability:invoke`（真实调用）/ `aig:capability:trial`（dryRun：只做路由决策，不调模型、不花钱、不写审计）；`capability:query` 只剩"看详情" | `AigInvokeController`、`AigConstants` |
+| 密钥查看/写入分权 | 一个 `aig:model:secret` 同时管读和写，而菜单名写着「查看密钥引用」——名字说只读、实际能改 | `aig:model:secret:view`（下发脱敏引用/端点）/ `:edit`（写、清、批量） | `AigModelController`、`AigPermissionHelper`、`AigModelGovernanceServiceImpl` |
+| 外呼测试独立 | 连通性测试挂在 `model:edit` 上：能改治理属性就顺带能拿密钥对外发请求 | `aig:model:probe`（单模型测试 + 批量健康探测） | `AigModelController` |
+| 候选归位 | 能力↔模型候选挂 `route:{list,add,edit,remove}`（跨域借权） | `aig:capability:candidate:{list,add,edit,remove}` | `AigModelBindingController` |
+| 场景指定更名 | `aig:route:binding` 与另外三种"绑定"撞名 | `aig:route:scenario` | `AigRouteScenarioBindingController`、`ScenarioBindingDialog.vue` |
+| 菜单名对齐 | 「查看密钥引用」实际能改、「治理属性编辑」实际能测连通性等 6 处 | 名称与动作一致（脚本尾部 UPDATE） | `script/sql/aig_permission_boundary.sql` |
+
+**运行期判定也一起拆了，不只是换注解**：`AigModelGovernanceServiceImpl` 原先用 `canViewModelSecret()`
+决定"能不能写"（view 兼任 edit）。现在写侧一律走新的 `canEditModelSecret()`——只换控制器注解的话，
+内部调用与 Service 层直调仍会按 view 放行，等于没改。`api_endpoint` 的三态写入同样按 `:edit` 判定
+（**能看见脱敏端点 ≠ 能改它**）。
+
+**授权不变式（脚本的全部设计都为了这一条）**：新增权限点 = **按 perms 反查 `sys_role_menu`，
+继承"被拆分/更名前那个权限点"的全部角色**；改名用 `update ... where perms=旧值`（`menu_id` 不变
+⇒ 已有授权自动保留）。于是**没有人会因为这次改名掉权限**。唯一例外是**有意收紧**：`aig_viewer`
+不再拥有 `capability:invoke`（仍保留 `trial`）。另外有 `aig_admin` 兜底授权，避免"反查不到受众"时管理员自己也被挡。
+
+**部署顺序是这次唯一的高风险点**：种子必须在**新镜像之前**执行（详见 §5「本版必做」）。
+先切镜像后跑种子 = 持旧权限的非超管在窗口期内全部 403。
+
+| 层 | 交付 | 文件 |
+| --- | --- | --- |
+| 权限点 | 8 个新常量（invoke / trial / candidate×4 / secret:view / probe），删除 `PERM_MODEL_SECRET`、`PERM_ROUTE_BINDING`（改名后的常量是 `PERM_MODEL_SECRET_VIEW`/`_EDIT`、`PERM_ROUTE_SCENARIO`） | `AigConstants` |
+| 种子 | 幂等：`insert ... where not exists`（menu_id 与 perms 双条件）+ 原地改名 + 继承授权 + 菜单名 6 处 | `script/sql/aig_permission_boundary.sql` |
+| 运行期 | `canViewModelSecret()`（读口径）与新增 `canEditModelSecret()`（写口径）split；`saveGovernance`/`createModel`/`updateModelSecret`/`applyProviderSecret` 全改写侧 | `AigPermissionHelper`、`AigModelGovernanceServiceImpl` |
+| 前端 | 12 处 `checkPermi` 与 4 处同源改名（模型页读/写分权限、场景指定改 `route:scenario`）；注释里的旧权限串同步改掉，避免下一个人照着注释写错 | `views/aigov/model/index.vue`、`route/components/ScenarioBindingDialog.vue`、`api/aigov/**` 注释 |
+| 测试 | 新增 3 条：**有 view 无 edit** 时"不得改密钥引用 / 不得登记密钥引用 / 不得登记明文密钥"（且一条都不落库、绝不加密）——写回 view 判定会立刻红 | `AigModelGovernanceServiceImplSecretBoundaryTest` |
+
+> ⚠️ 本轮**没有**做 §5.4 之外更细的拆权（例如 `approval:expire-scan`、服务令牌 scope 映射调用人）：
+> 前者在联动方案里只是"建议"，后者是"要不要给机器身份"的产品口径，都不是授权口径能单方面决定的。
+
+
 
 **P2 附加：展示规范收尾（状态胶囊 / 长 ID / 原始 JSON；2026-10-16）**
 
@@ -576,7 +631,8 @@ cd frontend && ./node_modules/.bin/vitest run && ./node_modules/.bin/oxlint src 
 
 > 踩坑：`PageQuery` 的构造器是 **`(pageSize, pageNum)`**（顺序与直觉相反），测试里写错会静默换页。
 
-**仍未做**：其余页面按 v3 规范改写、弹窗子表空态（18 张）、**Q1C 完整版**（需新表）、**权限边界正名**（§5.4，属授权变更）。
+**仍未做**：其余页面按 v3 规范改写、弹窗子表空态（18 张）、各页观感人眼验收。
+（**Q1C 完整版**已于 `b9956efd` 落地、**权限边界正名**已于 `855b094f` 落地，见上面两节与 §5「本版必做」。）
 
 **P2 附加：危险操作确认审计（2026-10-16，把口径写死以便复核）**
 
