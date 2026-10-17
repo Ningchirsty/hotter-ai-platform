@@ -25,6 +25,9 @@ class NativeVideoOutputProfileTest {
         var preparer = new H3TemplatePreparer(mapper, new VideoTierResolutions());
         int count = 0;
         var manifest = mapper.createArrayNode();
+        var destination = Path.of(System.getProperty("output.acceptance.exportDir",
+            "target/surefire-reports/output-profile-graphs"));
+        Files.createDirectories(destination);
         for (var version : registry.registeredVersions()) {
             if (!H3TemplatePreparer.isNative(version)) continue;
             var fixed = version.fixedFieldValidation();
@@ -65,6 +68,8 @@ class NativeVideoOutputProfileTest {
                     assertEquals(profile.width(), resize.path("inputs").path("width").asInt());
                     assertEquals(profile.height(), resize.path("inputs").path("height").asInt());
                     if ("SUPER_RESOLUTION".equals(profile.mode())) {
+                        assertEquals(control.upscaleModel(), graph.path(control.resizeNodeId() + "_model")
+                            .path("inputs").path("model_name").asText());
                         var upscale = graph.path(control.resizeNodeId() + "_upscale");
                         assertEquals("ImageUpscaleWithModel", upscale.path("class_type").asText());
                         assertEquals(source.path(control.videoNodeId()).path("inputs").path("images"), upscale.path("inputs").path("image"));
@@ -81,11 +86,7 @@ class NativeVideoOutputProfileTest {
                     exported.put("file", fileName);
                     exported.put("seconds", H3TemplatePreparer.parseDurationSeconds(duration));
                     exported.set("profile", mapper.valueToTree(profile));
-                    String directory = System.getProperty("output.acceptance.exportDir");
-                    if (directory != null) {
-                        var destination = Path.of(directory); Files.createDirectories(destination);
-                        mapper.writeValue(destination.resolve(fileName).toFile(), graph);
-                    }
+                    mapper.writeValue(destination.resolve(fileName).toFile(), graph);
                     count++;
                 }
             }
@@ -98,7 +99,9 @@ class NativeVideoOutputProfileTest {
                 new H3TemplatePreparer.H3Fields("非法尺寸", "image.png", "first.png", "last.png", "8K任意档位", "5 秒")));
         }
         assertEquals(630, count);
-        String directory = System.getProperty("output.acceptance.exportDir");
-        if (directory != null) mapper.writeValue(Path.of(directory).resolve("manifest.json").toFile(), Map.of("graphs", manifest, "count", count));
+        String contractSha256 = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+            .digest(Files.readAllBytes(root.resolve("video/workflows/native-workflow-contracts.json"))));
+        mapper.writeValue(destination.resolve("manifest.json").toFile(),
+            Map.of("graphs", manifest, "count", count, "contractSha256", contractSha256));
     }
 }
