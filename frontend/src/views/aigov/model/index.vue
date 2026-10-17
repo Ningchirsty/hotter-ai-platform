@@ -103,11 +103,30 @@
         </div>
       </template>
 
+      <!-- 一屏回答一个问题：这一页的模型能不能用（哪些会被路由排除、哪些从没测过） -->
+      <div class="model-summary">
+        <span class="model-summary__k">共 {{ total }} 个模型</span>
+        <span class="model-summary__sep">·</span>
+        <span class="model-summary__v">本页可用 {{ pageStats.usable }} / {{ pageStats.rows }}</span>
+        <span class="model-summary__sep">·</span>
+        <span :class="['model-summary__v', pageStats.excluded > 0 ? 'is-danger' : '']">
+          本页会被路由排除 {{ pageStats.excluded }}
+        </span>
+        <span class="model-summary__sep">·</span>
+        <span class="model-summary__v">本页未测试/未测 {{ pageStats.untested }}</span>
+        <span class="model-summary__sep">·</span>
+        <span class="model-summary__v">本页已停用 {{ pageStats.disabled }}</span>
+        <span class="model-summary__hint">
+          （指标只统计当前页。「未测试/未测」不等于「不通」——路由仍会放行，别按颜色猜）
+        </span>
+      </div>
+
       <el-table
         v-loading="loading"
         border
         class="data-table"
         :data="modelList"
+        :row-class-name="rowClassName"
         @selection-change="handleSelectionChange"
       >
         <template #empty>
@@ -965,7 +984,7 @@ import AigEmptyState from '../components/AigEmptyState.vue';
 import { useDict } from '@/utils/dict';
 import { checkPermi } from '@/utils/permission';
 import { parseTime } from '@/utils/ruoyi';
-import { describeHealth } from './health';
+import { describeHealth, isExcludedByHealth } from './health';
 
 defineOptions({ name: 'AigModel' });
 
@@ -1043,6 +1062,39 @@ const { resetQuery } = useSearchReset({
  * 因此必须同时认 boolean 与 1/'1'（历史口径）。
  */
 const isOn = (value?: number | string | boolean | null) => value === true || value === 1 || value === '1';
+
+/**
+ * 本页摘要（一屏回答一个问题：**这一页的模型能不能用**）。
+ *
+ * <p>口径一：只统计**当前页**（列表是分页拉取的），所以文字里写"本页"。</p>
+ * <p>口径二：「**未测试/未测**」不算"不通"——后端路由只排除 DOWN/UNHEALTHY，
+ * 对 UNKNOWN/空值仍然放行。把它算进"坏"，就会让人去修一个其实还能用的模型
+ * （{@code health.ts} 里那整段注释讲的就是这个曾经踩过的坑）。</p>
+ */
+const pageStats = computed(() => {
+  const rows = modelList.value;
+  const excluded = rows.filter(row => isExcludedByHealth(row.healthStatus)).length;
+  const disabled = rows.filter(row => !isOn(row.isEnabled)).length;
+  const untested = rows.filter(row => {
+    const value = (row.healthStatus ?? '').trim().toUpperCase();
+    return value === '' || value === 'UNKNOWN';
+  }).length;
+  return {
+    rows: rows.length,
+    excluded,
+    untested,
+    disabled,
+    usable: rows.length - excluded - disabled
+  };
+});
+
+/** 行高亮：会被路由排除的（真故障）给红底；停用的给灰底。其余不涂色，避免"到处都是颜色" */
+const rowClassName = ({ row }: { row: AigModelGovernanceVO }) => {
+  if (isExcludedByHealth(row.healthStatus)) {
+    return 'model-row--excluded';
+  }
+  return isOn(row.isEnabled) ? '' : 'model-row--disabled';
+};
 
 /** 查询模型清单 */
 const getList = async () => {
@@ -1659,5 +1711,41 @@ onMounted(() => {
   line-height: 1.7;
   color: var(--app-text-muted);
   text-align: left;
+}
+
+/* 本页摘要：一屏回答"这一页的模型能不能用" */
+.model-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-size: 13px;
+
+  &__k {
+    color: var(--app-text-muted, #909399);
+  }
+
+  &__sep {
+    color: var(--app-text-muted, #c0c4cc);
+  }
+
+  &__v.is-danger {
+    color: var(--el-color-danger);
+    font-weight: 600;
+  }
+
+  &__hint {
+    color: var(--app-text-muted, #c0c4cc);
+    font-size: 12px;
+  }
+}
+
+/* 只会被路由排除的（真故障）给红底；停用的给灰底 */
+:deep(.model-row--excluded) {
+  background: var(--el-color-danger-light-9);
+}
+
+:deep(.model-row--disabled) {
+  background: var(--el-fill-color-lighter);
 }
 </style>

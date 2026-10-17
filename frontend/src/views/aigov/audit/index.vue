@@ -98,7 +98,31 @@
         </div>
       </template>
 
-      <el-table v-loading="loading" border class="data-table" :data="auditList">
+      <!-- 一屏回答一个问题：这一页的调用有没有出事（失败 / 外发 / 未处理） -->
+      <div class="audit-summary">
+        <span class="audit-summary__k">共 {{ total }} 条调用</span>
+        <span class="audit-summary__sep">·</span>
+        <span :class="['audit-summary__v', pageStats.failed > 0 ? 'is-danger' : '']">
+          本页失败 {{ pageStats.failed }} / {{ pageStats.rows }}
+        </span>
+        <span class="audit-summary__sep">·</span>
+        <span :class="['audit-summary__v', pageStats.external > 0 ? 'is-warn' : '']">
+          本页外发 {{ pageStats.external }}
+        </span>
+        <span class="audit-summary__sep">·</span>
+        <span class="audit-summary__v">本页待人工 {{ pageStats.manual }}</span>
+        <el-button link type="primary" size="small" @click="filterBy({ result: '1' })">只看失败</el-button>
+        <el-button link type="primary" size="small" @click="filterBy({ externalCall: 'Y' })">只看外发</el-button>
+        <span class="audit-summary__hint">（指标只统计当前页；要全局口径请用上方筛选收窄）</span>
+      </div>
+
+      <el-table
+        v-loading="loading"
+        border
+        class="data-table"
+        :data="auditList"
+        :row-class-name="rowClassName"
+      >
         <template #empty>
           <AigEmptyState
             icon="Document"
@@ -268,6 +292,37 @@ const getList = async () => {
   });
 };
 
+/**
+ * 本页摘要（一屏回答一个问题：**这一页的调用有没有出事**）。
+ *
+ * <p>⚠️ 口径是"**本页**"：只统计当前页。写成"全局失败 N 次"就是翻页会变的假数字——
+ * 要在文字里明说，并提供服务端筛选让人把范围收窄。</p>
+ */
+const pageStats = computed(() => {
+  const rows = auditList.value;
+  return {
+    rows: rows.length,
+    failed: rows.filter(row => row.result === '1').length,
+    external: rows.filter(row => row.externalCall === 'Y').length,
+    manual: rows.filter(row => row.manualDecision === 'PENDING').length
+  };
+});
+
+/** 一键筛选（服务端参数，翻页后结论不变） */
+const filterBy = async (patch: Record<string, string | undefined>) => {
+  Object.assign(queryParams.value, patch);
+  queryParams.value.pageNum = 1;
+  await getList();
+};
+
+/** 行高亮：失败优先（红），其次外发（橙）——扫表时先看到"出事的" */
+const rowClassName = ({ row }: { row: AigInvocationAuditVO }) => {
+  if (row.result === '1') {
+    return 'audit-row--failed';
+  }
+  return row.externalCall === 'Y' ? 'audit-row--external' : '';
+};
+
 /** 加载能力下拉用于检索 */
 const getCapabilityOptions = async () => {
   const res = await listCapability({ pageNum: 1, pageSize: 200 });
@@ -303,6 +358,47 @@ onMounted(() => {
   font-size: 12px;
   line-height: 1.4;
   color: var(--el-color-danger);
+}
+
+/* 本页摘要：一屏回答"这一页的调用有没有出事" */
+.audit-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-size: 13px;
+
+  &__k {
+    color: var(--el-text-color-secondary);
+  }
+
+  &__sep {
+    color: var(--el-text-color-placeholder);
+  }
+
+  &__v.is-danger {
+    color: var(--el-color-danger);
+    font-weight: 600;
+  }
+
+  &__v.is-warn {
+    color: var(--el-color-warning);
+    font-weight: 600;
+  }
+
+  &__hint {
+    color: var(--el-text-color-placeholder);
+    font-size: 12px;
+  }
+}
+
+/* 失败优先，其次外发：扫表时先看到"出事的" */
+:deep(.audit-row--failed) {
+  background: var(--el-color-danger-light-9);
+}
+
+:deep(.audit-row--external) {
+  background: var(--el-color-warning-light-9);
 }
 
 /* 「未采集」是正常状态（补列前的历史行、图像模型不回执 token），
