@@ -210,7 +210,10 @@ public class VideoCreationController extends BaseController {
             // 因为 H3 的帧数随时长线性增长、显存与耗时显著上升），所以按时长给出矩阵，
             // 而不是给一个「所有档位通用」的时长列表。
             item.put("supportedDurationsByTier", H3TemplatePreparer.isNative(version)
-                ? Map.of(version.fixedFieldValidation().tier(), List.of(version.fixedFieldValidation().dur())) : tierResolutions == null
+                ? Map.of(version.fixedFieldValidation().tier(),
+                    version.fixedFieldValidation().allowedDurations().isEmpty()
+                        ? List.of(version.fixedFieldValidation().dur())
+                        : version.fixedFieldValidation().allowedDurations()) : tierResolutions == null
                 ? java.util.Map.of()
                 : new java.util.LinkedHashMap<>(tierResolutions.getDurations()));
             // 画面比例与「比例 → 档位」分组：前端据此渲染"先选比例、再选清晰度"。

@@ -356,7 +356,7 @@ public class VideoTaskOrchestrator {
         appendEvent(context, "SUBMITTED",
             workerName == null ? "已提交 ComfyUI" : "已提交 ComfyUI · GPU " + workerName);
 
-        ComfyOutput output = awaitOutput(promptId, context, client);
+        ComfyOutput output = awaitOutput(promptId, context, client, version);
         // 此刻任务已经是 RUNNING（认领时落库）。这之后的每一步（下载成片、落盘、
         // ffprobe、分辨率断言、写素材行）失败，都由外层 execute 统一负责落库。
         return archiveOutput(context, version, output, client);
@@ -460,8 +460,15 @@ public class VideoTaskOrchestrator {
         if (H3TemplatePreparer.isNative(version)) {
             JsonNode expected = registry.nativeOutput(version.workflowCode());
             if (!probe.measured() || expected == null) throw VideoTaskException.invalidContract("原生成片必须通过媒体实测");
-            double seconds = expected.path("durationSeconds").asDouble();
-            if (probe.durationMillis() == null || Math.abs(probe.durationMillis() - seconds * 1000) > 150)
+            boolean selectableDuration = version.fixedFieldValidation() != null
+                && version.fixedFieldValidation().durationControl() != null;
+            double seconds = selectableDuration ? maxDurationMillis / 1000.0
+                : expected.path("durationSeconds").asDouble();
+            long paddingMillis = selectableDuration
+                ? (long) Math.ceil(version.fixedFieldValidation().durationControl().frameStep()
+                    * 1000.0 / version.fixedFieldValidation().durationControl().fps()) + 150 : 150;
+            if (probe.durationMillis() == null || probe.durationMillis() < seconds * 1000 - 150
+                || probe.durationMillis() > seconds * 1000 + paddingMillis)
                 throw VideoTaskException.invalidContract("原生成片时长与受控流程不一致");
             if (expected.path("requiresAudio").asBoolean() && !mediaProbe.hasAudio(storagePath))
                 throw VideoTaskException.invalidContract("此用途要求音轨，成片未检测到音频");
@@ -485,6 +492,12 @@ public class VideoTaskOrchestrator {
                 log.warn("任务 {} 成片时长 {}ms 超过上限 {}ms 且截断未生效",
                     context.taskId(), probe.durationMillis(), maxDurationMillis);
             }
+        }
+        if (H3TemplatePreparer.isNative(version) && version.fixedFieldValidation() != null
+            && version.fixedFieldValidation().durationControl() != null
+            && (!probe.measured() || probe.durationMillis() == null
+                || Math.abs(probe.durationMillis() - maxDurationMillis) > 150)) {
+            throw VideoTaskException.invalidContract("成片未达到所选时长，请检查视频帧数或截断结果");
         }
         if (probe.measured()) {
             // 分辨率断言必须跟随所选档位：这里曾经写死 1920×1080，开放 720P/480P 后
@@ -561,7 +574,8 @@ public class VideoTaskOrchestrator {
      */
     public long resolveDurationCapMillis(String durationLabel, WorkflowVersion version) {
         long contractCap = (version.maxDurationSeconds() == null ? 5 : version.maxDurationSeconds()) * 1000L;
-        if (H3TemplatePreparer.isNative(version)) return contractCap;
+        if (H3TemplatePreparer.isNative(version) && (version.fixedFieldValidation() == null
+            || version.fixedFieldValidation().durationControl() == null)) return contractCap;
         int requested = H3TemplatePreparer.parseDurationSeconds(durationLabel);
         if (requested <= 0) {
             return contractCap;
@@ -569,8 +583,17 @@ public class VideoTaskOrchestrator {
         return Math.min(contractCap, requested * 1000L);
     }
 
-    private ComfyOutput awaitOutput(String promptId, TaskContext context, ComfyClient client) {
-        Instant deadline = Instant.now().plus(pollBudget);
+    /** Frame-sequence attention grows faster than clip length; keep a bounded window per duration tier. */
+    public Duration resolvePollBudget(String durationLabel, WorkflowVersion version) {
+        if (version == null || version.fixedFieldValidation() == null
+            || version.fixedFieldValidation().durationControl() == null) return pollBudget;
+        int seconds = H3TemplatePreparer.parseDurationSeconds(durationLabel);
+        int multiplier = Math.max(1, Math.min(4, (seconds + 4) / 5));
+        return pollBudget.multipliedBy((long) multiplier * multiplier);
+    }
+
+    private ComfyOutput awaitOutput(String promptId, TaskContext context, ComfyClient client, WorkflowVersion version) {
+        Instant deadline = Instant.now().plus(resolvePollBudget(context.durationLabel(), version));
         while (Instant.now().isBefore(deadline)) {
             ComfyClient.PollResult result = client.poll(promptId);
             switch (result.state()) {

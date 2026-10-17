@@ -13,7 +13,7 @@ import java.util.List;
  * @param apiJsonFile       后端受控目录下 API Format JSON 的相对路径
  * @param checksum          模板文件 SHA-256，加载时必须校验
  * @param mapping           字段映射白名单
- * @param fixedFieldValidation 固定值校验（当前 tier/dur 只接受单一档位）
+ * @param fixedFieldValidation 输出档位、时长以及原生节点帧数约束
  * @param maxDurationSeconds 成片时长上限（秒）；超出必须在服务端截断
  * @param outputNodeId      输出节点 ID
  * @param outputField       输出字段名
@@ -55,7 +55,11 @@ public record WorkflowVersion(
      * @param supportedTiers 允许的输出档位集合。契约声明多个时为多档位；
      *                       为空表示沿用旧的单一 {@code tier} 语义
      */
-    public record FixedFieldValidation(String tier, String dur, java.util.Set<String> supportedTiers) {
+    public record FixedFieldValidation(String tier, String dur, java.util.Set<String> supportedTiers,
+                                       java.util.List<String> supportedDurations, DurationControl durationControl) {
+        public FixedFieldValidation(String tier, String dur, java.util.Set<String> supportedTiers) {
+            this(tier, dur, supportedTiers, java.util.List.of(), null);
+        }
 
         /**
          * 该版本允许的输出档位。契约未声明 {@code supportedTiers} 时退化为单一 {@code tier}。
@@ -65,6 +69,25 @@ public record WorkflowVersion(
                 return supportedTiers;
             }
             return tier == null ? java.util.Set.of() : java.util.Set.of(tier);
+        }
+
+        public java.util.List<String> allowedDurations() {
+            return supportedDurations == null ? java.util.List.of() : supportedDurations;
+        }
+    }
+
+    /** Frame grid declared by the reviewed workflow; no model or node guessing at runtime. */
+    public record DurationControl(int fps, int frameStep, int frameOffset) {
+        public DurationControl {
+            if (fps <= 0 || frameStep <= 0 || frameOffset < 0 || frameOffset >= frameStep) {
+                throw new IllegalArgumentException("视频帧数约束无效");
+            }
+        }
+
+        public int frames(int seconds) {
+            if (seconds <= 0 || seconds > 20) throw new IllegalArgumentException("视频时长超出范围");
+            int target = Math.multiplyExact(seconds, fps);
+            return target + Math.floorMod(frameOffset - target, frameStep);
         }
     }
 }

@@ -76,7 +76,7 @@ class VideoTaskSubmissionServiceTest {
         assertEquals(workflow, row.workflowCode());
         JsonNode stored = mapper.readTree(row.inputJson());
         assertEquals(version.fixedFieldValidation().dur(), stored.path("durationLabel").asText());
-        assertEquals(3, row.durationSeconds(), "2.x seconds must never become 204 or 233 seconds");
+        assertEquals(5, row.durationSeconds(), "默认时长必须与工作流的 5 秒档位一致");
         assertFalse(row.prompt().isBlank());
         verify(repository).requireOwnedAsset(10L, "tenant-a", 9L);
         if (code.equals("REFERENCE_STORY")) {

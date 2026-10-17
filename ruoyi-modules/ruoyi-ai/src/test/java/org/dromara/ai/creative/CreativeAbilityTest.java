@@ -138,11 +138,15 @@ class CreativeAbilityTest {
                 "transparentSourcePixels",clear,"opaqueSourcePixels",opaque,"pixelMismatches",mismatches,"hasAlpha",false));
     }
 
-    @Test void nativeVideoDurationRejectsOtherDurationsEvenWithDirectorTierConfig() {
+    @Test void nativeVideoDurationUsesItsOwnAllowedTiersWithDirectorTierConfig() {
         var registry = new WorkflowContractRegistry(ROOT, MAPPER); registry.load();
         var version = registry.peek("wf-local-video-ltx2-5-t2v");
         var preparer = new H3TemplatePreparer(MAPPER, new org.dromara.ai.video.config.VideoTierResolutions());
+        for (String duration : List.of("5 秒", "10 秒", "20 秒")) {
+            assertDoesNotThrow(() -> preparer.validateFields(VideoCapability.T2V, version,
+                new H3TemplatePreparer.H3Fields("scene", null, null, null, version.fixedFieldValidation().tier(), duration)));
+        }
         assertThrows(RuntimeException.class, () -> preparer.validateFields(VideoCapability.T2V, version,
-            new H3TemplatePreparer.H3Fields("scene", null, null, null, version.fixedFieldValidation().tier(), "20 秒")));
+            new H3TemplatePreparer.H3Fields("scene", null, null, null, version.fixedFieldValidation().tier(), "30 秒")));
     }
 }
