@@ -38,6 +38,24 @@
         </el-form-item>
       </el-form>
 
+      <!-- 一屏回答一个问题：员工现在能看到什么（哪些岗位已发布、哪些还是草稿） -->
+      <div class="rp-summary">
+        <span class="rp-summary__k">共 {{ total }} 个岗位</span>
+        <span class="rp-summary__sep">·</span>
+        <span class="rp-summary__v">本页已发布 {{ pageStats.published }}</span>
+        <span class="rp-summary__sep">·</span>
+        <span class="rp-summary__v">本页测试中 {{ pageStats.testing }}</span>
+        <span class="rp-summary__sep">·</span>
+        <span class="rp-summary__v">本页草稿 {{ pageStats.draft }}</span>
+        <span class="rp-summary__sep">·</span>
+        <span :class="['rp-summary__v', pageStats.disabled > 0 ? 'is-danger' : '']">
+          本页已停用 {{ pageStats.disabled }}
+        </span>
+        <el-button link type="primary" size="small" @click="quickFilter('PUBLISHED')">只看已发布</el-button>
+        <el-button link type="primary" size="small" @click="quickFilter('DRAFT')">只看草稿</el-button>
+        <span class="rp-summary__hint">（指标只统计当前页；员工只能看到「已发布」的岗位）</span>
+      </div>
+
       <el-table v-loading="loading" border class="data-table" :data="versionList">
         <template #empty>
           <AigEmptyState
@@ -464,6 +482,30 @@ const { loading, withLoading } = useLoading(true);
 const { showSearch } = useSearchToggle();
 const queryParams = ref<AigRolePackageQuery>({ pageNum: 1, pageSize: 10 });
 
+/**
+ * 本页摘要（一屏回答一个问题：**员工现在能看到什么**）。
+ *
+ * <p>口径是"本页"：只统计当前页，文字里明说。要看全局请用发布状态筛选把范围收窄——
+ * 「员工只能看到已发布的岗位」这件事本身是服务端判定的，摘要只负责让人一眼看清分布。</p>
+ */
+const pageStats = computed(() => {
+  const rows = versionList.value;
+  const count = (status: string) => rows.filter(row => row.releaseStatus === status).length;
+  return {
+    published: count('PUBLISHED'),
+    testing: count('TESTING'),
+    draft: count('DRAFT'),
+    disabled: count('DISABLED')
+  };
+});
+
+/** 一键按发布状态筛选（服务端参数 ⇒ 翻页后结论不变） */
+const quickFilter = async (releaseStatus: string) => {
+  queryParams.value.releaseStatus = releaseStatus;
+  queryParams.value.pageNum = 1;
+  await getList();
+};
+
 const detailVisible = ref(false);
 const detail = ref<AigRoleVersionDetailVO>({ roleVersionId: '', roleId: '' });
 
@@ -729,5 +771,30 @@ onMounted(() => {
 
 .mt-2 {
   margin-top: 12px;
+}
+
+/* 一屏回答一个问题：员工现在能看到什么 */
+.rp-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-size: 13px;
+
+  &__k,
+  &__hint {
+    color: var(--el-text-color-secondary);
+    font-size: 12px;
+  }
+
+  &__sep {
+    color: var(--el-text-color-placeholder);
+  }
+
+  &__v.is-danger {
+    color: var(--el-color-danger);
+    font-weight: 600;
+  }
 }
 </style>

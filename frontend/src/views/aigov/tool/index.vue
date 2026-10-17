@@ -22,7 +22,25 @@
           </div>
         </div>
       </template>
-      <el-table v-loading="loading" :data="tools" border>
+      <!-- 一屏回答一个问题：这一页的工具能不能真执行、要不要人工确认 -->
+      <div class="tool-summary">
+        <span class="tool-summary__k">共 {{ tools.length }} 个工具（列表不分页，即全量）</span>
+        <span class="tool-summary__sep">·</span>
+        <span class="tool-summary__v">可直接执行 {{ toolStats.executable }}</span>
+        <span class="tool-summary__sep">·</span>
+        <span :class="['tool-summary__v', toolStats.confirm > 0 ? 'is-warn' : '']">
+          需人工确认 {{ toolStats.confirm }}
+        </span>
+        <span class="tool-summary__sep">·</span>
+        <span :class="['tool-summary__v', toolStats.pending > 0 ? 'is-info' : '']">
+          已登记待接入 {{ toolStats.pending }}
+        </span>
+        <span class="tool-summary__hint">
+          （「已登记待接入」= 有定义但没有执行实现：能声明、调不通，别在 Agent 里指望它）
+        </span>
+      </div>
+
+      <el-table v-loading="loading" :data="tools" border :row-class-name="rowClassName">
         <template #empty>
           <AigEmptyState
             icon="Tools"
@@ -191,6 +209,26 @@ defineOptions({ name: 'AigTool' });
 
 const tools = ref<AigToolVersionVO[]>([]);
 const { loading, withLoading } = useLoading(true);
+
+/**
+ * 工具清单摘要（一屏回答"能不能真执行、要不要人工确认"）。
+ *
+ * <p>这里的列表**不分页**（接口整表返回，量级是几十），所以指标是全量而非"本页"——
+ * 文案里明说，避免与分页页面的"本页"口径混淆。</p>
+ */
+const toolStats = computed(() => ({
+  executable: tools.value.filter(row => row.executable === true).length,
+  confirm: tools.value.filter(row => row.requiresConfirmation === true).length,
+  pending: tools.value.filter(row => row.executable !== true).length
+}));
+
+/** 行高亮：待接入（灰，能声明调不通）与需人工确认（橙，会改数据/对外发送）不同色 */
+const rowClassName = ({ row }: { row: AigToolVersionVO }) => {
+  if (row.executable !== true) {
+    return 'tool-row--pending';
+  }
+  return row.requiresConfirmation === true ? 'tool-row--confirm' : '';
+};
 const saving = ref(false);
 const definitionVisible = ref(false);
 const versionVisible = ref(false);
@@ -317,5 +355,43 @@ onMounted(() => {
   word-break: break-all;
   font-family: inherit;
   font-size: 12px;
+}
+
+/* 一屏回答一个问题：工具能不能真执行、要不要人工确认 */
+.tool-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-size: 13px;
+
+  &__k,
+  &__hint {
+    color: var(--el-text-color-secondary);
+    font-size: 12px;
+  }
+
+  &__sep {
+    color: var(--el-text-color-placeholder);
+  }
+
+  &__v.is-warn {
+    color: var(--el-color-warning);
+    font-weight: 600;
+  }
+
+  &__v.is-info {
+    color: var(--el-color-info);
+  }
+}
+
+/* 待接入（能声明、调不通）与需人工确认（会改数据/对外发送）分开涂色 */
+:deep(.tool-row--pending) {
+  background: var(--el-fill-color-lighter);
+}
+
+:deep(.tool-row--confirm) {
+  background: var(--el-color-warning-light-9);
 }
 </style>
