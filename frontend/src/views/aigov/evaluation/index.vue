@@ -96,6 +96,22 @@
         {{ evidenceAdminText }}
       </el-alert>
 
+      <!-- 一屏回答一个问题：这一批运行**跑得过吗**（FAIL 是被测对象的问题，ERROR 是环境/用例的问题） -->
+      <div class="eval-summary">
+        <span class="eval-summary__k">共 {{ runList.length }} 次运行（列表不分页，即全量）</span>
+        <span class="eval-summary__sep">·</span>
+        <span class="eval-summary__v">通过 {{ runStats.pass }}</span>
+        <span class="eval-summary__sep">·</span>
+        <span :class="['eval-summary__v', runStats.fail > 0 ? 'is-danger' : '']">未通过 {{ runStats.fail }}</span>
+        <span class="eval-summary__sep">·</span>
+        <span :class="['eval-summary__v', runStats.error > 0 ? 'is-warn' : '']">执行出错 {{ runStats.error }}</span>
+        <span class="eval-summary__sep">·</span>
+        <span class="eval-summary__v">待人工复核 {{ runStats.manual }}</span>
+        <span class="eval-summary__hint">
+          （FAIL 是被测对象的问题；ERROR 是环境或用例本身的问题——两者处置方向不同）
+        </span>
+      </div>
+
       <el-table v-loading="runLoading" border :data="runList">
         <template #empty>
           <AigEmptyState
@@ -431,6 +447,23 @@ const runStatusLabel = (value?: string): string => {
 };
 
 /**
+ * 运行摘要（一屏回答一个问题：这一批运行**跑得过吗**）。
+ *
+ * <p>口径：这一页的运行列表**不分页**（接口整表返回），所以就是全量——文案里明说，
+ * 不要与分页页面那句"本页"混用（含义不同）。</p>
+ */
+const runStats = computed(() => {
+  const rows = runList.value;
+  const count = (status: string) => rows.filter(row => row.resultStatus === status).length;
+  return {
+    pass: count('PASS'),
+    fail: count('FAIL'),
+    error: count('ERROR'),
+    manual: count('MANUAL')
+  };
+});
+
+/**
  * 产出方标签色。
  * ADMIN 用 warning 而不是 success：它不是"更好的结果"，而是"另一类证据"——
  * 机器结论的可信度来自平台判据，人工结论来自一个人签了字，读的人必须一眼分得开。
@@ -646,5 +679,35 @@ onMounted(() => {
   margin-left: 8px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+
+/* 一屏回答一个问题：这一批运行跑得过吗 */
+.eval-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-size: 13px;
+
+  &__k,
+  &__hint {
+    color: var(--el-text-color-secondary);
+    font-size: 12px;
+  }
+
+  &__sep {
+    color: var(--el-text-color-placeholder);
+  }
+
+  &__v.is-danger {
+    color: var(--el-color-danger);
+    font-weight: 600;
+  }
+
+  &__v.is-warn {
+    color: var(--el-color-warning);
+    font-weight: 600;
+  }
 }
 </style>

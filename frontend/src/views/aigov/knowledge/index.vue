@@ -263,7 +263,14 @@
         <el-table-column label="Agent" min-width="200">
           <template #default="{ row }">{{ referenceAgentText(row) }}</template>
         </el-table-column>
-        <el-table-column label="版本状态" prop="releaseStatus" width="130" show-overflow-tooltip />
+        <!-- 版本状态：走共享词表（与 Agent/Skill/Package 页同一套文案与色调），不再直出裸枚举 -->
+        <el-table-column label="版本状态" width="150">
+          <template #default="{ row }">
+            <el-tag size="small" :type="releaseStatusMeta(row.releaseStatus).tone">
+              {{ releaseStatusMeta(row.releaseStatus).label }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="收窄范围" min-width="200">
           <template #default="{ row }">{{ referenceScopeText(row) }}</template>
         </el-table-column>
@@ -379,6 +386,7 @@ import type {
 import modal from '@/plugins/modal';
 import AigEmptyState from '../components/AigEmptyState.vue';
 import AigLongId from '../components/AigLongId.vue';
+import { releaseStatusMeta } from '../components/releaseStatus';
 import {
   DATA_LEVEL_OPTIONS,
   RETRIEVAL_MODE_OPTIONS,
