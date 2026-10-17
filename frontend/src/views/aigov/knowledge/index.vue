@@ -35,7 +35,10 @@
         <el-table-column label="名称" prop="collectionName" min-width="160" />
         <el-table-column label="数据等级" prop="dataLevel" width="120" />
         <el-table-column label="组织范围" prop="orgScope" min-width="140" />
-        <el-table-column label="责任人" prop="ownerId" width="180" />
+        <el-table-column label="责任人" width="180">
+          <!-- 19 位雪花 ID 直出会把列挤成一堆数字，复制也容易少一位（走读 §5.5） -->
+          <template #default="{ row }"><AigLongId :id="row.ownerId" :keep="6" /></template>
+        </el-table-column>
         <el-table-column label="操作" width="200">
           <template #default="{ row }">
             <el-button link type="primary" @click="selectCollection(row)">看文档</el-button>
@@ -135,7 +138,10 @@
             </el-tooltip>
           </template>
         </el-table-column>
-        <el-table-column label="责任人" prop="ownerId" width="180" />
+        <el-table-column label="责任人" width="180">
+          <!-- 19 位雪花 ID 直出会把列挤成一堆数字，复制也容易少一位（走读 §5.5） -->
+          <template #default="{ row }"><AigLongId :id="row.ownerId" :keep="6" /></template>
+        </el-table-column>
         <el-table-column label="操作" width="140">
           <template #default="{ row }">
             <el-button link type="primary" @click="openVersionFor(row)">版本处理</el-button>

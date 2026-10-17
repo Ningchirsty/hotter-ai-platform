@@ -30,7 +30,12 @@
         <div class="header">
           <span class="title">反馈问题队列</span>
           <div>
-            <el-select v-model="verdict" style="width: 160px" @change="handleFilterChange">
+            <el-select
+              v-model="verdict"
+              style="width: 160px"
+              placeholder="待处理（默认）"
+              @change="handleFilterChange"
+            >
               <el-option
                 v-for="item in QUEUE_FILTERS"
                 :key="item.code"
@@ -64,7 +69,7 @@
           <AigEmptyState
             icon="ChatLineSquare"
             title="这个筛选条件下没有反馈"
-            hint="反馈由业务侧对结果打分时提交；也可以清掉筛选看全部队列。"
+            hint="反馈由业务侧对结果打分时提交；清掉筛选会回到「待处理」队列（服务端未传结论时默认只查待处理，不是全部）。"
           >
             <el-button size="small" @click="clearFilters">清除筛选</el-button>
             <el-button size="small" @click="loadQueue">刷新</el-button>

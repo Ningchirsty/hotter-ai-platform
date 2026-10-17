@@ -12,7 +12,7 @@
   "packageManager": "pnpm@10.34.5",
   "type": "module",
   "scripts": {
-    "preview:workflows": "vite --config preview/vite.config.ts",
+    "preview:aigov": "vite --config aigov-preview.vite.config.ts",
     "build:workflows": "vite build --config preview/vite.config.ts",
     "serve:workflows": "vite preview --config preview/vite.config.ts --host 127.0.0.1 --port 5188 --strictPort",
     "test:workflows": "vitest run --config preview/inspiration-vitest.config.mts",

@@ -253,6 +253,9 @@ import CapabilityDetail from './components/CapabilityDetail.vue';
 import ChangeRequestDrawer from '../changeRequest/ChangeRequestDrawer.vue';
 import modal from '@/plugins/modal';
 import { useDict } from '@/utils/dict';
+// 模板里第 61 行的 `v-if="checkPermi([...])"` 需要它：漏了这句会在渲染期抛
+// "checkPermi is not a function"（`v-if` 在渲染阶段求值），整块下拉/按钮渲染不出来。
+import { checkPermi } from '@/utils/permission';
 import {
   candidateChangeNeedsHighRisk,
   candidateStateOptions,
