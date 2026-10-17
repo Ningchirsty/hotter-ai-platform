@@ -107,11 +107,27 @@
         description="开启「允许外发」意味着该能力在该数据等级下可路由到外部模型，数据将离开公司可控环境。限制级资料与人才个人资料默认禁止外发，请勿随意开启。"
       />
 
+      <!-- 一屏回答一个问题：这一页就在回答"哪些策略在放行外发" -->
+      <div class="route-summary">
+        <span class="route-summary__k">共 {{ total }} 条策略</span>
+        <span class="route-summary__sep">·</span>
+        <span :class="['route-summary__v', pageStats.external > 0 ? 'is-danger' : '']">
+          本页允许外发 {{ pageStats.external }} / {{ pageStats.rows }} 条
+        </span>
+        <span class="route-summary__sep">·</span>
+        <span class="route-summary__v">本页需要审批 {{ pageStats.approval }} 条</span>
+        <el-button link type="primary" size="small" @click="filterExternalOnly">只看允许外发</el-button>
+        <span class="route-summary__hint">
+          （指标只统计当前页；要全局口径请用上面的筛选把范围收窄）
+        </span>
+      </div>
+
       <el-table
         v-loading="loading"
         border
         class="data-table"
         :data="policyList"
+        :row-class-name="rowClassName"
         @selection-change="handleSelectionChange"
       >
         <template #empty>
@@ -321,6 +337,33 @@ const { loading, withLoading } = useLoading(true);
 const { showSearch } = useSearchToggle();
 const { ids, single, multiple, handleSelectionChange } = useTableSelection<AigRoutePolicyVO>(item => item.policyId!);
 const total = ref(0);
+
+/**
+ * 本页摘要（一屏回答一个问题：**哪些策略在放行外发**）。
+ *
+ * <p>⚠️ 口径必须是"**本页**"：这里只统计当前页拿到的数据。写成"全局 N 条允许外发"
+ * 就是翻到第 2 页会变的假数字——那正是本项目反复强调的"统计口径不写清，数字就不可复核"。</p>
+ */
+const pageStats = computed(() => {
+  const rows = policyList.value;
+  return {
+    rows: rows.length,
+    external: rows.filter(row => row.allowExternal === 'Y').length,
+    approval: rows.filter(row => row.requireApproval === 'Y').length
+  };
+});
+
+/** 只看允许外发的策略（把风险面一步筛出来；筛选下发服务端，翻页后结论不变） */
+const filterExternalOnly = async () => {
+  queryParams.value.allowExternal = 'Y';
+  queryParams.value.pageNum = 1;
+  await getList();
+};
+
+/** 外发策略的行高亮：表格里一排小开关不容易扫，"哪几行在放行外发"要一眼可见 */
+const rowClassName = ({ row }: { row: AigRoutePolicyVO }) =>
+  row.allowExternal === 'Y' ? 'route-row--external' : '';
+
 /** 场景强制绑定弹窗（独立的 CRUD 组件，权限为 aig:route:binding） */
 const bindingVisible = ref(false);
 const policyFormRef = ref<ElFormInstance>();
@@ -580,6 +623,38 @@ onMounted(() => {
 
 .risk-banner {
   margin-bottom: 12px;
+}
+
+/* 本页摘要：一屏回答"哪些策略在放行外发" */
+.route-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-size: 13px;
+
+  &__k {
+    color: var(--app-text-muted, #909399);
+  }
+
+  &__sep {
+    color: var(--app-text-muted, #c0c4cc);
+  }
+
+  &__v.is-danger {
+    color: var(--el-color-danger);
+    font-weight: 600;
+  }
+
+  &__hint {
+    color: var(--app-text-muted, #c0c4cc);
+    font-size: 12px;
+  }
+}
+
+/* 放行外发的行要一眼扫得出来（表格里一排小开关扫不出来） */
+:deep(.route-row--external) {
+  background: var(--el-color-danger-light-9);
 }
 
 .risk-alert {
