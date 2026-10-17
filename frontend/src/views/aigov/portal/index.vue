@@ -174,7 +174,28 @@
         </el-form-item>
       </el-form>
 
-      <el-table v-loading="loadingTasks" border class="data-table" :data="tasks">
+      <!-- 一屏回答一个问题：**我的任务到哪了**（进行中 / 要你复核 / 出问题的） -->
+      <div class="my-summary">
+        <span class="my-summary__k">共 {{ taskTotal }} 个任务</span>
+        <span class="my-summary__sep">·</span>
+        <span class="my-summary__v">本页进行中 {{ taskPageStats.running }}</span>
+        <span class="my-summary__sep">·</span>
+        <span class="my-summary__v">本页已完成 {{ taskPageStats.succeeded }}</span>
+        <span class="my-summary__sep">·</span>
+        <span :class="['my-summary__v', taskPageStats.failed > 0 ? 'is-danger' : '']">
+          本页失败/取消 {{ taskPageStats.failed }}
+        </span>
+        <el-button link type="primary" size="small" @click="filterFailedTasks">只看失败</el-button>
+        <span class="my-summary__hint">（指标只统计当前页；状态文案以服务端下发的业务状态为准）</span>
+      </div>
+
+      <el-table
+        v-loading="loadingTasks"
+        border
+        class="data-table"
+        :data="tasks"
+        :row-class-name="taskRowClassName"
+      >
         <template #empty>
           <AigEmptyState
             icon="List"
@@ -686,6 +707,34 @@ const getTasks = async () => {
   });
 };
 
+/**
+ * 我的任务摘要（一屏回答"我的任务到哪了"）。
+ *
+ * <p>口径是"本页"：任务列表是分页的，只统计当前页；文字里明说，并提供服务端筛选把范围收窄。</p>
+ * <p>只按**内部状态码**归类（进行中 / 已完成 / 失败取消）；给员工看的措辞仍以服务端下发的
+ * 业务状态为准（如「草稿已生成 待复核」），这里不重复推断。</p>
+ */
+const taskPageStats = computed(() => {
+  const rows = tasks.value;
+  const inCodes = (codes: string[]) => rows.filter(row => codes.includes(row.status || '')).length;
+  return {
+    running: inCodes(['PENDING', 'DISPATCHED', 'RUNNING']),
+    succeeded: inCodes(['SUCCEEDED']),
+    failed: inCodes(['FAILED', 'CANCELED'])
+  };
+});
+
+/** 只看失败/取消（服务端 status 过滤；单码过滤，口径不会含糊） */
+const filterFailedTasks = async () => {
+  taskQuery.value.status = 'FAILED';
+  taskQuery.value.pageNum = 1;
+  await getTasks();
+};
+
+/** 行高亮：失败/取消红底——员工扫表时先看到"卡住的" */
+const taskRowClassName = ({ row }: { row: AigPortalTaskVO }) =>
+  ['FAILED', 'CANCELED'].includes(row.status || '') ? 'my-row--failed' : '';
+
 const getArtifacts = async () => {
   await withArtifactsLoading(async () => {
     const res = await listMyArtifacts(artifactQuery.value);
@@ -1027,5 +1076,35 @@ onMounted(() => {
 
 .mt-3 {
   margin-top: 12px;
+}
+
+/* 一屏回答一个问题：我的任务到哪了 */
+.my-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-size: 13px;
+
+  &__k,
+  &__hint {
+    color: var(--el-text-color-secondary);
+    font-size: 12px;
+  }
+
+  &__sep {
+    color: var(--el-text-color-placeholder);
+  }
+
+  &__v.is-danger {
+    color: var(--el-color-danger);
+    font-weight: 600;
+  }
+}
+
+/* 失败/取消的行给红底：员工扫表先看到"卡住的" */
+:deep(.my-row--failed) {
+  background: var(--el-color-danger-light-9);
 }
 </style>
