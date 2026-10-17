@@ -13,6 +13,7 @@ import org.dromara.aigov.knowledge.domain.bo.AigKnowledgeDocumentBo;
 import org.dromara.aigov.knowledge.domain.bo.AigKnowledgeRetrievalTestBo;
 import org.dromara.aigov.knowledge.domain.vo.AigKnowledgeChunkVo;
 import org.dromara.aigov.knowledge.domain.vo.AigKnowledgeDocumentRegisterVo;
+import org.dromara.aigov.knowledge.domain.vo.AigKnowledgeDocumentStatusVo;
 import org.dromara.aigov.knowledge.domain.vo.AigKnowledgeIndexingVo;
 import org.dromara.aigov.knowledge.domain.vo.AigKnowledgeRetrievalTestVo;
 import org.dromara.aigov.knowledge.enums.AigKnowledgeRetrievalModeEnum;
@@ -231,6 +232,26 @@ public class AigKnowledgeController extends BaseController {
     public R<List<AigAgentResourceReferenceVo>> references(
         @NotNull(message = "集合ID不能为空") @PathVariable Long collectionId) {
         return R.ok(knowledgeService.listReferencingAgents(collectionId));
+    }
+
+    /**
+     * 集合内「文档 + 各自版本」状态（知识中心文档表的状态列与摘要用）。
+     *
+     * <p><b>为什么单独一个接口</b>：文档清单只给文档身份，而"能不能被检索"取决于版本的处置状态；
+     * 两者分在两张表里，页面上就拼不出来——维护人只能手抄版本ID去弹窗里逐个查。
+     * 本接口一次取回集合内全部文档与版本（服务端一次查询，不是按文档 N+1）。</p>
+     *
+     * <p><b>权限沿用 {@code aig:knowledge:document:list}</b>：返回的是文档名/来源类型/版本状态
+     * 这类元数据，**不含分段正文、不含存储引用与原文哈希**；能看文档清单的人就该能看它的处理进度。</p>
+     *
+     * @param collectionId 集合ID
+     * @return 文档状态清单（版本按ID倒序，最新的在前）
+     */
+    @SaCheckPermission(AigConstants.PERM_KNOWLEDGE_DOCUMENT_LIST)
+    @GetMapping("/collections/{collectionId:\\d+}/document-status")
+    public R<List<AigKnowledgeDocumentStatusVo>> documentStatus(
+        @NotNull(message = "集合ID不能为空") @PathVariable Long collectionId) {
+        return R.ok(knowledgeService.listDocumentStatus(collectionId));
     }
 
     /**

@@ -17,6 +17,7 @@ import org.dromara.aigov.knowledge.domain.bo.AigKnowledgeCollectionBo;
 import org.dromara.aigov.knowledge.domain.bo.AigKnowledgeDocumentBo;
 import org.dromara.aigov.knowledge.domain.vo.AigKnowledgeChunkVo;
 import org.dromara.aigov.knowledge.domain.vo.AigKnowledgeDocumentRegisterVo;
+import org.dromara.aigov.knowledge.domain.vo.AigKnowledgeDocumentStatusVo;
 import org.dromara.aigov.knowledge.enums.AigKnowledgeJobStatusEnum;
 import org.dromara.aigov.knowledge.enums.AigKnowledgeSourceTypeEnum;
 import org.dromara.aigov.knowledge.enums.AigKnowledgeStatusEnum;
@@ -32,7 +33,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 知识中心服务实现（设计 §6.4、§8.2）。
@@ -100,6 +103,49 @@ public class AigKnowledgeServiceImpl implements IAigKnowledgeService {
             .eq(AigKnowledgeDocument::getStatus, STATUS_NORMAL)
             .eq(collectionId != null, AigKnowledgeDocument::getCollectionId, collectionId)
             .orderByDesc(AigKnowledgeDocument::getDocumentId));
+    }
+
+    @Override
+    public List<AigKnowledgeDocumentStatusVo> listDocumentStatus(Long collectionId) {
+        if (collectionId == null) {
+            throw new ServiceException("集合ID不能为空");
+        }
+        List<AigKnowledgeDocument> documents = documentMapper.selectList(new LambdaQueryWrapper<AigKnowledgeDocument>()
+            .eq(AigKnowledgeDocument::getStatus, STATUS_NORMAL)
+            .eq(AigKnowledgeDocument::getCollectionId, collectionId)
+            .orderByDesc(AigKnowledgeDocument::getDocumentId));
+        if (documents.isEmpty()) {
+            return new ArrayList<>();
+        }
+        // 一次取回本集合全部文档的版本，再在内存里按文档归组：
+        // 按文档逐条查会变成 N+1（一个集合几十份文档就是几十次查询，且结果之间可能不一致）。
+        List<Long> documentIds = documents.stream().map(AigKnowledgeDocument::getDocumentId).toList();
+        List<AigKnowledgeDocumentVersion> versions = versionMapper.selectList(
+            new LambdaQueryWrapper<AigKnowledgeDocumentVersion>()
+                .in(AigKnowledgeDocumentVersion::getDocumentId, documentIds)
+                .orderByDesc(AigKnowledgeDocumentVersion::getVersionId));
+        Map<Long, List<AigKnowledgeDocumentStatusVo.VersionBrief>> byDocument = new HashMap<>();
+        for (AigKnowledgeDocumentVersion version : versions) {
+            AigKnowledgeDocumentStatusVo.VersionBrief brief = new AigKnowledgeDocumentStatusVo.VersionBrief();
+            brief.setVersionId(version.getVersionId());
+            brief.setVersion(version.getVersion());
+            brief.setStatus(version.getStatus());
+            brief.setEffectiveFrom(version.getEffectiveFrom());
+            brief.setEffectiveTo(version.getEffectiveTo());
+            brief.setCreateTime(version.getCreateTime());
+            byDocument.computeIfAbsent(version.getDocumentId(), key -> new ArrayList<>()).add(brief);
+        }
+        List<AigKnowledgeDocumentStatusVo> rows = new ArrayList<>(documents.size());
+        for (AigKnowledgeDocument document : documents) {
+            AigKnowledgeDocumentStatusVo row = new AigKnowledgeDocumentStatusVo();
+            row.setDocumentId(document.getDocumentId());
+            row.setSourceName(document.getSourceName());
+            row.setSourceType(document.getSourceType());
+            row.setOwnerId(document.getOwnerId());
+            row.setVersions(byDocument.getOrDefault(document.getDocumentId(), new ArrayList<>()));
+            rows.add(row);
+        }
+        return rows;
     }
 
     @Override

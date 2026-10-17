@@ -7,7 +7,13 @@ import {
   chunkExcerptText,
   chunkIndexText,
   chunkSummary,
+  compareVersionId,
+  documentReadiness,
+  documentStatusSummary,
+  documentStatusSummaryText,
   indexingSummary,
+  isNotRetrievable,
+  latestVersion,
   referenceAgentText,
   referenceScopeText,
   referenceSummary,
@@ -18,7 +24,8 @@ import {
   sha256Valid,
   sourceTypeLabel,
   statusLabel,
-  statusTagType
+  statusTagType,
+  versionRetrievable
 } from './presentation';
 
 /**
@@ -163,5 +170,102 @@ describe('knowledge presentation', () => {
     expect(ok).toContain('12 段');
     expect(ok).toContain('pdfbox-3');
     expect(ok).toContain('builtin-hash-ngram-v1');
+  });
+
+  it('最新版本按版本ID取最大：19 位雪花 ID 不能用 Number 比（会丢精度）', () => {
+    // 这两个 ID 只差 1，转 Number 后会相等，比错顺序
+    const a = { versionId: '1763000000000000001', version: '1', status: 'READY' };
+    const b = { versionId: '1763000000000000002', version: '2', status: 'FAILED' };
+    expect(latestVersion([a, b])?.versionId).toBe(b.versionId);
+    expect(latestVersion([b, a])?.versionId).toBe(b.versionId);
+    expect(compareVersionId(a.versionId, b.versionId)).toBe(-1);
+    expect(latestVersion([])).toBeUndefined();
+    expect(latestVersion(undefined)).toBeUndefined();
+  });
+
+  it('★ 能不能被检索：按"所有版本"算，最新版失败但旧版可用时不能说成不可检索', () => {
+    const now = new Date('2026-06-01T00:00:00Z');
+    const ready = { versionId: '10', version: '1', status: 'READY' };
+
+    expect(documentReadiness({ versions: [] }, now).code).toBe('NO_VERSION');
+    expect(documentReadiness(undefined, now).code).toBe('NO_VERSION');
+    expect(documentReadiness({ versions: [ready] }, now).code).toBe('RETRIEVABLE');
+    expect(documentReadiness({ versions: [ready] }, now).label).toBe('可检索');
+
+    // 最新版失败、旧版仍可检索：标红但要说明旧版仍在用
+    const failedLatest = documentReadiness({ versions: [{ versionId: '11', version: '2', status: 'FAILED' }, ready] }, now);
+    expect(failedLatest.code).toBe('FAILED');
+    expect(failedLatest.label).toContain('旧版仍可检索');
+    expect(failedLatest.hint).toContain('旧内容');
+
+    // 最新版失败且没有可用旧版：明确说检索不到
+    const failedOnly = documentReadiness({ versions: [{ versionId: '11', version: '2', status: 'FAILED' }] }, now);
+    expect(failedOnly.code).toBe('FAILED');
+    expect(failedOnly.hint).toContain('检索不到');
+
+    // 处理中
+    expect(documentReadiness({ versions: [{ versionId: '12', version: '3', status: 'PARSING' }] }, now).code).toBe(
+      'IN_PROGRESS'
+    );
+    // 已退役
+    expect(documentReadiness({ versions: [{ versionId: '13', version: '4', status: 'RETIRED' }] }, now).code).toBe(
+      'RETIRED'
+    );
+  });
+
+  it('★ 已就绪但不在有效期：状态是绿的却查不到，必须单独一态说清是有效期问题', () => {
+    const now = new Date('2026-06-01T00:00:00Z');
+    const expired = {
+      versionId: '20',
+      version: '1',
+      status: 'READY',
+      effectiveTo: '2026-05-01T00:00:00Z'
+    };
+    const notYet = {
+      versionId: '21',
+      version: '2',
+      status: 'READY',
+      effectiveFrom: '2026-07-01T00:00:00Z'
+    };
+    const inWindow = {
+      versionId: '22',
+      version: '3',
+      status: 'READY',
+      effectiveFrom: '2026-01-01T00:00:00Z',
+      effectiveTo: '2026-12-31T00:00:00Z'
+    };
+
+    expect(documentReadiness({ versions: [expired] }, now).code).toBe('READY_OUT_OF_WINDOW');
+    expect(documentReadiness({ versions: [expired] }, now).hint).toContain('有效期');
+    expect(documentReadiness({ versions: [notYet] }, now).code).toBe('READY_OUT_OF_WINDOW');
+    expect(documentReadiness({ versions: [inWindow] }, now).code).toBe('RETRIEVABLE');
+    // 闭区间：截止时刻本身仍有效
+    expect(versionRetrievable(inWindow, new Date('2026-12-31T00:00:00Z'))).toBe(true);
+    expect(versionRetrievable(expired, now)).toBe(false);
+  });
+
+  it('文档摘要：分别数出可检索/处理中/失败/还未就绪，并能一句话说清', () => {
+    const now = new Date('2026-06-01T00:00:00Z');
+    const rows = [
+      { documentId: '1', versions: [{ versionId: '11', version: '1', status: 'READY' }] },
+      { documentId: '2', versions: [{ versionId: '12', version: '1', status: 'PARSING' }] },
+      { documentId: '3', versions: [{ versionId: '13', version: '1', status: 'FAILED' }] },
+      { documentId: '4', versions: [] }
+    ];
+    const summary = documentStatusSummary(rows, now);
+    expect(summary).toEqual({ total: 4, retrievable: 1, inProgress: 1, failed: 1, other: 1 });
+    expect(documentStatusSummaryText(summary)).toBe(
+      '共 4 个文档 · 可检索 1 · 处理中 1 · 失败 1 · 还未就绪 1'
+    );
+    expect(documentStatusSummary(undefined, now)).toEqual({
+      total: 0,
+      retrievable: 0,
+      inProgress: 0,
+      failed: 0,
+      other: 0
+    });
+    // 「只看检索不到」的判据与胶囊同一处口径
+    expect(isNotRetrievable(rows[0], now)).toBe(false);
+    expect(isNotRetrievable(rows[2], now)).toBe(true);
   });
 });

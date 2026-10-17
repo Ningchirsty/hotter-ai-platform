@@ -260,3 +260,202 @@ export function referenceSummary(references?: { enabled?: string }[]): string {
   const enabled = list.filter((item) => item.enabled === 'Y').length;
   return `共 ${list.length} 条引用：启用中 ${enabled} 条、已停用 ${list.length - enabled} 条（停用中的不会被采用，但仍保留为使用记录）。`;
 }
+
+/** 版本摘要（文档状态视图里每个文档带的那一小段） */
+export interface VersionBrief {
+  versionId?: string | number;
+  version?: string;
+  status?: string;
+  effectiveFrom?: string;
+  effectiveTo?: string;
+}
+
+/** 文档 + 各自版本的只读视图（与后端 AigKnowledgeDocumentStatusVo 对齐） */
+export interface DocumentStatusRow {
+  documentId?: string | number;
+  sourceName?: string;
+  sourceType?: string;
+  ownerId?: string | number;
+  versions?: VersionBrief[];
+}
+
+/**
+ * 版本ID比较（雪花 ID 是 19 位，**不能转 Number**：超过 2^53 会静默丢精度，比错顺序）。
+ *
+ * 能按数值比就按数值比（用 BigInt），解析不了退回字符串比较——只用于"谁是最新"，
+ * 比错也不会比出错误结论之外的东西，但仍要避免 Number 精度问题。
+ */
+export function compareVersionId(a?: string | number, b?: string | number): number {
+  const left = String(a ?? '');
+  const right = String(b ?? '');
+  if (!left || !right) {
+    return left.localeCompare(right);
+  }
+  try {
+    const diff = BigInt(left) - BigInt(right);
+    return diff === 0n ? 0 : diff > 0n ? 1 : -1;
+  } catch {
+    return left.localeCompare(right);
+  }
+}
+
+/** 最新版本（按版本ID取最大；没有版本返回 undefined） */
+export function latestVersion(versions?: VersionBrief[]): VersionBrief | undefined {
+  const list = versions ?? [];
+  if (!list.length) {
+    return undefined;
+  }
+  return list.reduce((latest, item) => (compareVersionId(item.versionId, latest.versionId) > 0 ? item : latest));
+}
+
+/** 该版本此刻是否会被检索采用（READY + 在有效期内，闭区间；两端为空表示该侧不限） */
+export function versionRetrievable(version?: VersionBrief, now: Date = new Date()): boolean {
+  if (!version || version.status !== 'READY') {
+    return false;
+  }
+  const time = now.getTime();
+  if (version.effectiveFrom) {
+    const from = Date.parse(version.effectiveFrom);
+    if (!Number.isNaN(from) && time < from) {
+      return false;
+    }
+  }
+  if (version.effectiveTo) {
+    const to = Date.parse(version.effectiveTo);
+    if (!Number.isNaN(to) && time > to) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export type ReadinessCode = 'RETRIEVABLE' | 'READY_OUT_OF_WINDOW' | 'FAILED' | 'IN_PROGRESS' | 'RETIRED' | 'NO_VERSION';
+
+export interface Readiness {
+  code: ReadinessCode;
+  label: string;
+  tagType: 'success' | 'danger' | 'warning' | 'info';
+  hint: string;
+}
+
+/**
+ * 一份文档现在**能不能被检索**（这一页要回答的问题）。
+ *
+ * <p>口径必须按"所有版本"算，不能只看最新版本——检索采用的是"任何一个 READY 且在有效期内的版本"。
+ * 于是会出现两种最容易读错的组合，这里分开说清：</p>
+ * <ul>
+ *     <li><b>最新版失败、旧版仍可检索</b>：不能报成"不可检索"（会有人去重跑已经好用的资料），
+ *         也不能报成一片绿（会漏掉刚失败的那一版）。所以标红并点明"旧版仍可检索"。</li>
+ *     <li><b>已就绪但不在有效期</b>：状态是绿的但此刻查不到——标黄并写明是哪一侧越界。</li>
+ * </ul>
+ *
+ * @param row 文档状态行
+ * @param now 判定时刻（默认当前）
+ */
+export function documentReadiness(row: DocumentStatusRow | undefined, now: Date = new Date()): Readiness {
+  const versions = row?.versions ?? [];
+  const latest = latestVersion(versions);
+  if (!latest) {
+    return {
+      code: 'NO_VERSION',
+      label: '未登记版本',
+      tagType: 'info',
+      hint: '只登记了文档、还没产生版本：这种资料一定检索不到。'
+    };
+  }
+  const retrievable = versions.filter((item) => versionRetrievable(item, now));
+  if (latest.status === 'FAILED') {
+    return retrievable.length
+      ? {
+          code: 'FAILED',
+          label: '最新版失败（旧版仍可检索）',
+          tagType: 'danger',
+          hint: `最新版本处理失败，但仍有 ${retrievable.length} 个更早的版本可被检索：修好新版之前，检索用的是旧内容。`
+        }
+      : {
+          code: 'FAILED',
+          label: '处理失败',
+          tagType: 'danger',
+          hint: '最新版本处理失败且没有可用的旧版本：这份资料现在检索不到，需要重新解析并索引。'
+        };
+  }
+  if (retrievable.length) {
+    return {
+      code: 'RETRIEVABLE',
+      label: '可检索',
+      tagType: 'success',
+      hint: `有 ${retrievable.length} 个版本可被检索（状态已就绪且在有效期内）。`
+    };
+  }
+  if (latest.status === 'READY') {
+    return {
+      code: 'READY_OUT_OF_WINDOW',
+      label: '已就绪但不在有效期',
+      tagType: 'warning',
+      hint: '版本状态是「已就绪」，但此刻不在生效区间内（还没开始或已结束），所以检索不到——这是有效期问题，不是处理失败。'
+    };
+  }
+  if (latest.status === 'RETIRED') {
+    return {
+      code: 'RETIRED',
+      label: '已退役',
+      tagType: 'info',
+      hint: '该版本已退役：要恢复可用需要一个新版本重新解析并索引。'
+    };
+  }
+  return {
+    code: 'IN_PROGRESS',
+    label: '处理中（还不能检索）',
+    tagType: 'warning',
+    hint: '版本还在处理管道里；只有跑到「已就绪」的版本才会进检索。'
+  };
+}
+
+/** 文档表格的筛选：只看"现在检索不到"的那些（列表本身是全量，客户端筛不会得出假结论） */
+export function isNotRetrievable(row: DocumentStatusRow | undefined, now: Date = new Date()): boolean {
+  return documentReadiness(row, now).code !== 'RETRIEVABLE';
+}
+
+export interface DocumentStatusSummary {
+  total: number;
+  retrievable: number;
+  inProgress: number;
+  failed: number;
+  other: number;
+}
+
+/** 文档状态汇总（"我登记的资料现在能不能被检索"） */
+export function documentStatusSummary(
+  rows?: DocumentStatusRow[],
+  now: Date = new Date()
+): DocumentStatusSummary {
+  const list = rows ?? [];
+  const summary: DocumentStatusSummary = { total: list.length, retrievable: 0, inProgress: 0, failed: 0, other: 0 };
+  for (const row of list) {
+    const code = documentReadiness(row, now).code;
+    if (code === 'RETRIEVABLE') {
+      summary.retrievable += 1;
+    } else if (code === 'IN_PROGRESS') {
+      summary.inProgress += 1;
+    } else if (code === 'FAILED') {
+      summary.failed += 1;
+    } else {
+      summary.other += 1;
+    }
+  }
+  return summary;
+}
+
+/**
+ * 文档状态汇总的一句话（页面顶部摘要）。
+ *
+ * <p>写明"共 N 个文档 · 可检索 K · 处理中 J · 失败 L · 还未就绪 M"，并把口径点出来：
+ * 这份列表是**整个集合的全量**（不分页），所以数字可以直接当结论用。</p>
+ */
+export function documentStatusSummaryText(summary: DocumentStatusSummary): string {
+  return (
+    `共 ${summary.total} 个文档 · 可检索 ${summary.retrievable} · 处理中 ${summary.inProgress}` +
+    ` · 失败 ${summary.failed} · 还未就绪 ${summary.other}`
+  );
+}
+

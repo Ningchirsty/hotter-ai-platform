@@ -53,6 +53,12 @@
         <div class="header">
           <span class="title">知识文档{{ currentCollection ? '：' + currentCollection.collectionName : '' }}</span>
           <div>
+            <el-switch
+              v-model="onlyNotRetrievable"
+              class="mr-2"
+              active-text="只看检索不到"
+              :disabled="!currentCollection"
+            />
             <el-button
               v-hasPermi="['aig:knowledge:document:upload']"
               type="primary"
@@ -62,18 +68,40 @@
             >
               登记文档
             </el-button>
-            <el-button size="small" class="ml-2" @click="loadDocuments">刷新</el-button>
+            <el-button size="small" class="ml-2" @click="loadDocumentStatus">刷新</el-button>
           </div>
         </div>
       </template>
-      <el-table v-loading="documentsLoading" :data="documents" border>
+      <el-alert
+        v-if="currentCollection"
+        type="info"
+        :closable="false"
+        show-icon
+        class="mb-2"
+        :title="documentStatusSummaryText(documentSummary)"
+        description="口径：这份列表是整个集合的全量（不分页），数字可以直接当结论用。「可检索」= 存在一个已就绪且在有效期内的版本；只看最新版本会读错（旧版可能仍可检索）。"
+      />
+      <el-table
+        v-loading="documentsLoading"
+        :data="visibleDocumentStatus"
+        border
+        :row-class-name="documentRowClass"
+      >
         <template #empty>
           <AigEmptyState
             icon="Document"
-            title="这个集合里还没有文档"
-            hint="登记文档后，还要点「上传并解析索引」才会进入检索；只登记不解析是查不到的。"
+            :title="onlyNotRetrievable ? '这个集合里没有「检索不到」的文档' : '这个集合里还没有文档'"
+            :hint="
+              onlyNotRetrievable
+                ? '当前所有文档都有可被检索的版本；关掉「只看检索不到」可以看全部。'
+                : '登记文档后，还要点「解析并索引」才会进入检索；只登记不解析是查不到的。'
+            "
           >
+            <el-button v-if="onlyNotRetrievable" size="small" @click="onlyNotRetrievable = false">
+              看全部文档
+            </el-button>
             <el-button
+              v-else
               v-hasPermi="['aig:knowledge:document:upload']"
               type="primary"
               size="small"
@@ -91,7 +119,28 @@
         <el-table-column label="来源类型" width="120">
           <template #default="{ row }">{{ sourceTypeLabel(row.sourceType) }}</template>
         </el-table-column>
+        <el-table-column label="最新版本" width="150">
+          <template #default="{ row }">
+            <template v-if="latestVersion(row.versions)">
+              <span>v{{ latestVersion(row.versions)?.version }}</span>
+              <span class="version-count">（共 {{ row.versions?.length || 0 }} 版）</span>
+            </template>
+            <span v-else>—</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="能不能检索" width="200">
+          <template #default="{ row }">
+            <el-tooltip :content="readinessOf(row).hint" placement="top">
+              <el-tag :type="readinessOf(row).tagType">{{ readinessOf(row).label }}</el-tag>
+            </el-tooltip>
+          </template>
+        </el-table-column>
         <el-table-column label="责任人" prop="ownerId" width="180" />
+        <el-table-column label="操作" width="140">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="openVersionFor(row)">版本处理</el-button>
+          </template>
+        </el-table-column>
       </el-table>
     </el-card>
 
@@ -149,10 +198,44 @@
     <!-- 版本处理 -->
     <el-dialog v-model="versionVisible" title="版本处理" width="560px" append-to-body>
       <el-form label-width="110px">
-        <el-form-item label="版本ID" required>
-          <el-input v-model="versionId" @blur="loadVersion" />
+        <el-form-item label="版本" required>
+          <el-select
+            v-if="currentVersions.length"
+            v-model="versionId"
+            style="width: 100%"
+            placeholder="选择要处理的版本"
+            @change="loadVersion"
+          >
+            <el-option
+              v-for="item in currentVersions"
+              :key="item.versionId"
+              :label="'v' + item.version + ' · ' + statusLabel(item.status) + '（' + shortId(item.versionId) + '）'"
+              :value="item.versionId"
+            />
+          </el-select>
+          <el-input
+            v-else
+            v-model="versionId"
+            placeholder="填一个存在的版本ID（本集合的文档还没有版本时用）"
+            @blur="loadVersion"
+          />
         </el-form-item>
       </el-form>
+      <el-alert
+        v-if="currentDocument"
+        type="info"
+        :closable="false"
+        show-icon
+        class="mb-2"
+        :title="
+          '当前文档：' +
+          (currentDocument.sourceName || '') +
+          '（' +
+          currentVersions.length +
+          ' 个版本，最新在前）——' +
+          readinessOf(currentDocument).hint
+        "
+      />
       <el-descriptions v-if="version" :column="1" border>
         <el-descriptions-item label="版本">{{ version.version }}</el-descriptions-item>
         <el-descriptions-item label="状态">
@@ -365,7 +448,7 @@ import {
   indexVersion,
   listCollectionReferences,
   listCollections,
-  listDocuments,
+  listDocumentStatus,
   listVersionChunks,
   registerDocument,
   retrievalTest,
@@ -377,11 +460,12 @@ import type {
   AigKnowledgeCollectionForm,
   AigKnowledgeCollectionVO,
   AigKnowledgeDocumentForm,
-  AigKnowledgeDocumentVO,
+  AigKnowledgeDocumentStatusVO,
   AigKnowledgeDocumentVersionVO,
   AigKnowledgeIndexingVO,
   AigKnowledgeRetrievalTestForm,
-  AigKnowledgeRetrievalTestVO
+  AigKnowledgeRetrievalTestVO,
+  AigKnowledgeVersionBriefVO
 } from '@/api/aigov/knowledge/types';
 import modal from '@/plugins/modal';
 import AigEmptyState from '../components/AigEmptyState.vue';
@@ -395,7 +479,12 @@ import {
   chunkExcerptText,
   chunkIndexText,
   chunkSummary,
+  documentReadiness,
+  documentStatusSummary,
+  documentStatusSummaryText,
   indexingSummary,
+  isNotRetrievable,
+  latestVersion,
   referenceAgentText,
   referenceScopeText,
   referenceSummary,
@@ -411,8 +500,14 @@ import {
 defineOptions({ name: 'AigKnowledge' });
 
 const collections = ref<AigKnowledgeCollectionVO[]>([]);
-const documents = ref<AigKnowledgeDocumentVO[]>([]);
+/** 文档 + 各自版本（状态列与摘要的数据源；一个集合一次取回，不是按文档 N+1） */
+const documentStatus = ref<AigKnowledgeDocumentStatusVO[]>([]);
 const currentCollection = ref<AigKnowledgeCollectionVO>();
+/** 只看"现在检索不到"的文档（列表是全量，客户端筛不会得出假结论） */
+const onlyNotRetrievable = ref(false);
+/** 版本处理弹窗当前指向的文档与其版本（点行进来时用来做下拉，不必手抄版本ID） */
+const currentDocument = ref<AigKnowledgeDocumentStatusVO>();
+const currentVersions = ref<AigKnowledgeVersionBriefVO[]>([]);
 /** 两个列表各自 loading（走读 §5.5：慢网不能只看到空表） */
 const collectionsLoading = ref(false);
 const documentsLoading = ref(false);
@@ -494,23 +589,53 @@ const loadCollections = async () => {
   }
 };
 
-const loadDocuments = async () => {
+const loadDocumentStatus = async () => {
   if (!currentCollection.value?.collectionId) {
-    documents.value = [];
+    documentStatus.value = [];
     return;
   }
   documentsLoading.value = true;
   try {
-    const res = await listDocuments(currentCollection.value.collectionId);
-    documents.value = res.data || [];
+    // 一次拿回"文档 + 各自版本"：文档表要显示"能不能被检索"，而那只取决于版本状态
+    const res = await listDocumentStatus(currentCollection.value.collectionId);
+    documentStatus.value = res.data || [];
   } finally {
     documentsLoading.value = false;
   }
 };
 
+/** 表格数据：默认全量，开启「只看检索不到」时按"检索不到"过滤 */
+const visibleDocumentStatus = computed(() =>
+  onlyNotRetrievable.value ? documentStatus.value.filter(row => isNotRetrievable(row)) : documentStatus.value
+);
+
+/** 摘要（本集合全量口径，写明在页面上） */
+const documentSummary = computed(() => documentStatusSummary(documentStatus.value));
+
+/** 行上现算"能不能检索"（依赖当前时间，不能缓存成一份快照） */
+const readinessOf = (row: AigKnowledgeDocumentStatusVO) => documentReadiness(row);
+
+/** 检索不到/失败的行整行标红：表格里一排胶囊扫不出"哪几份现在用不了" */
+const documentRowClass = ({ row }: { row: AigKnowledgeDocumentStatusVO }) => {
+  const code = readinessOf(row).code;
+  if (code === 'FAILED') {
+    return 'doc-row--failed';
+  }
+  if (code === 'NO_VERSION' || code === 'READY_OUT_OF_WINDOW' || code === 'RETIRED') {
+    return 'doc-row--unusable';
+  }
+  return '';
+};
+
+/** 版本ID 只做展示（下拉里带短号，便于和审计/日志对得上） */
+const shortId = (id?: string | number) => {
+  const text = String(id ?? '');
+  return text.length > 10 ? text.slice(0, 6) + '…' + text.slice(-4) : text;
+};
+
 const selectCollection = (row: AigKnowledgeCollectionVO) => {
   currentCollection.value = row;
-  loadDocuments();
+  loadDocumentStatus();
 };
 
 const openCollection = () => {
@@ -563,7 +688,7 @@ const doRegisterDocument = async () => {
       modal.msgSuccess('已登记（版本 ' + (res.data?.version || '') + '），版本ID ' + (res.data?.versionId || ''));
     }
     documentVisible.value = false;
-    await loadDocuments();
+    await loadDocumentStatus();
   } catch (e: any) {
     modal.alertError(e?.message || '登记失败');
   } finally {
@@ -571,7 +696,25 @@ const doRegisterDocument = async () => {
   }
 };
 
+/** 从文档行进来：版本从该文档的版本列表里挑（不必手抄 19 位版本ID） */
+const openVersionFor = (row: AigKnowledgeDocumentStatusVO) => {
+  currentDocument.value = row;
+  currentVersions.value = row.versions || [];
+  version.value = undefined;
+  resetChunks();
+  const latest = latestVersion(currentVersions.value);
+  versionId.value = latest?.versionId ?? '';
+  versionVisible.value = true;
+  if (versionId.value) {
+    // 自动带出最新版本详情：少一次点击，也避免"选了版本但面板还空着"
+    loadVersion();
+  }
+};
+
 const openVersion = () => {
+  // 顶栏入口：不指向具体文档，退回"手填版本ID"的逃生口
+  currentDocument.value = undefined;
+  currentVersions.value = [];
   versionId.value = '';
   version.value = undefined;
   // 换版本必须清掉上一版的分段：留在屏幕上会让"预览"跟"当前版本ID"对不上，
@@ -735,5 +878,24 @@ onMounted(() => {
   font-size: 12px;
   line-height: 18px;
   color: var(--el-text-color-secondary);
+}
+
+.version-count {
+  margin-left: 4px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.mr-2 {
+  margin-right: 8px;
+}
+
+/* 失败=红底（要重跑处理）；未登记版本/已就绪但不在有效期/已退役=灰底（能查但查不到） */
+:deep(.doc-row--failed) {
+  --el-table-tr-bg-color: var(--el-color-danger-light-9);
+}
+
+:deep(.doc-row--unusable) {
+  --el-table-tr-bg-color: var(--el-color-info-light-9);
 }
 </style>

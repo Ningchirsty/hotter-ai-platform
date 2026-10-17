@@ -9,6 +9,7 @@ import type {
   AigKnowledgeDocumentVO,
   AigKnowledgeDocumentRegisterVO,
   AigKnowledgeDocumentVersionVO,
+  AigKnowledgeDocumentStatusVO,
   AigKnowledgeIndexingVO,
   AigKnowledgeRetrievalTestForm,
   AigKnowledgeRetrievalTestVO
@@ -34,6 +35,16 @@ export function createCollection(data: AigKnowledgeCollectionForm): AxiosPromise
 /** 文档清单（可按集合过滤） */
 export function listDocuments(collectionId?: string | number): AxiosPromise<AigKnowledgeDocumentVO[]> {
   return request({ url: '/aigov/knowledge/documents', method: 'get', params: { collectionId } });
+}
+
+/**
+ * 集合内「文档 + 各自版本」状态（文档表的状态列与摘要）。
+ *
+ * <p>一次请求拿回集合内全部文档与版本（服务端一次查询），比"先拉文档、再逐个查版本"少一轮往返，
+ * 也不会出现"列表里有的文档版本查不到"这种半截状态。</p>
+ */
+export function listDocumentStatus(collectionId: string | number): AxiosPromise<AigKnowledgeDocumentStatusVO[]> {
+  return request({ url: `/aigov/knowledge/collections/${collectionId}/document-status`, method: 'get' });
 }
 
 /** 登记文档与版本（返回重复文件提示） */

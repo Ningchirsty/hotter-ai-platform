@@ -381,4 +381,61 @@ class AigKnowledgeServiceImplTest {
         assertThrows(ServiceException.class, () -> service.registerDocument(documentBo(), 9L));
     }
 
+    @Test
+    @DisplayName("文档状态：一次查询带回全部版本，按文档归组；没有版本的文档给空列表（不是 null）")
+    void listDocumentStatusGroupsVersionsInOneQuery() {
+        AigKnowledgeDocument withVersions = new AigKnowledgeDocument();
+        withVersions.setDocumentId(DOCUMENT_ID);
+        withVersions.setSourceName("产品手册.pdf");
+        AigKnowledgeDocument withoutVersions = new AigKnowledgeDocument();
+        withoutVersions.setDocumentId(DOCUMENT_ID + 1);
+        withoutVersions.setSourceName("空文档.docx");
+        when(documentMapper.selectList(any())).thenReturn(List.of(withVersions, withoutVersions));
+        // 版本表按版本ID倒序返回（服务端排序），含另一份文档的版本 ⇒ 必须各归各的
+        AigKnowledgeDocumentVersion v3 = version(7003L, AigKnowledgeStatusEnum.READY.getCode());
+        v3.setDocumentId(DOCUMENT_ID);
+        v3.setVersion("3");
+        AigKnowledgeDocumentVersion v2 = version(7002L, AigKnowledgeStatusEnum.FAILED.getCode());
+        v2.setDocumentId(DOCUMENT_ID);
+        v2.setVersion("2");
+        AigKnowledgeDocumentVersion other = version(7004L, AigKnowledgeStatusEnum.READY.getCode());
+        other.setDocumentId(DOCUMENT_ID + 1);
+        other.setVersion("1");
+        when(versionMapper.selectList(any())).thenReturn(List.of(other, v3, v2));
+
+        List<org.dromara.aigov.knowledge.domain.vo.AigKnowledgeDocumentStatusVo> rows =
+            service.listDocumentStatus(COLLECTION_ID);
+
+        assertEquals(2, rows.size());
+        // 文档顺序沿用文档清单（按文档ID倒序）——这里只断言"谁拿到几个版本"
+        org.dromara.aigov.knowledge.domain.vo.AigKnowledgeDocumentStatusVo first = rows.stream()
+            .filter(row -> Long.valueOf(DOCUMENT_ID).equals(row.getDocumentId())).findFirst().orElseThrow();
+        assertEquals(2, first.getVersions().size(), "文档 6001 只有 2 个版本（另一份文档的版本不能串过来）");
+        // 服务端按版本ID倒序带回，前端取第一个即"最新版本"
+        assertEquals(7003L, first.getVersions().get(0).getVersionId());
+        assertEquals(AigKnowledgeStatusEnum.READY.getCode(), first.getVersions().get(0).getStatus());
+        org.dromara.aigov.knowledge.domain.vo.AigKnowledgeDocumentStatusVo second = rows.stream()
+            .filter(row -> (DOCUMENT_ID + 1) == row.getDocumentId()).findFirst().orElseThrow();
+        assertEquals(1, second.getVersions().size());
+        // 一次查询取全部版本，不能按文档逐条查（N+1）
+        verify(versionMapper, times(1)).selectList(any());
+    }
+
+    @Test
+    @DisplayName("文档状态：没有文档时直接返回空列表，不再去查版本表")
+    void listDocumentStatusSkipsVersionQueryWhenNoDocuments() {
+        when(documentMapper.selectList(any())).thenReturn(List.of());
+
+        assertEquals(0, service.listDocumentStatus(COLLECTION_ID).size());
+
+        verify(versionMapper, never()).selectList(any());
+    }
+
+    @Test
+    @DisplayName("文档状态：集合ID为空时直接拒绝（否则会按 null 去查全库）")
+    void listDocumentStatusRejectsNullCollection() {
+        assertThrows(ServiceException.class, () -> service.listDocumentStatus(null));
+        verify(documentMapper, never()).selectList(any());
+    }
+
 }

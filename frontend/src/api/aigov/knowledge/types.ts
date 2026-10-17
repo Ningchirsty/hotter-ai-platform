@@ -27,6 +27,32 @@ export interface AigKnowledgeDocumentVO {
   status?: string;
 }
 
+/** 文档状态里的版本摘要（不含原文哈希与存储引用） */
+export interface AigKnowledgeVersionBriefVO {
+  versionId?: string | number;
+  version?: string;
+  /** UPLOADED/SCANNING/PARSING/CHUNKING/INDEXING/READY/FAILED/RETIRED */
+  status?: string;
+  effectiveFrom?: string;
+  effectiveTo?: string;
+  createTime?: string;
+}
+
+/**
+ * 集合内「文档 + 各自全部版本」的只读视图。
+ *
+ * <p>存在的理由：文档表只有文档身份，"能不能被检索"取决于版本的处置状态，
+ * 两者分在两张表里，界面上拼不出来（只能手抄版本ID去弹窗里查）。</p>
+ */
+export interface AigKnowledgeDocumentStatusVO {
+  documentId?: string | number;
+  sourceName?: string;
+  sourceType?: string;
+  ownerId?: string | number;
+  /** 按版本ID倒序（最新的在前）；没有版本时为空数组，不是 null */
+  versions?: AigKnowledgeVersionBriefVO[];
+}
+
 /** 文档版本 */
 export interface AigKnowledgeDocumentVersionVO {
   versionId?: string | number;

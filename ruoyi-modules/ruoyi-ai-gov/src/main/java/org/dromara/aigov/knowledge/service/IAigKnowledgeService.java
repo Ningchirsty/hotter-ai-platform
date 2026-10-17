@@ -44,6 +44,21 @@ public interface IAigKnowledgeService {
     List<org.dromara.aigov.knowledge.domain.AigKnowledgeDocument> listDocuments(Long collectionId);
 
     /**
+     * 列出集合内「文档 + 各自全部版本」（文档表的状态列与摘要用）。
+     *
+     * <p><b>为什么不复用 {@link #listDocuments}</b>：那张表只有文档身份，"能不能被检索"取决于
+     * 版本的处置状态，两者分在两张表里，界面上拼不出来（只能手抄版本ID去别处查）。
+     * 本方法一次查询把集合内的文档与版本一起取回，<b>不做按文档的 N+1 查询</b>。</p>
+     *
+     * <p>版本按版本ID倒序（最新在前）；文档没有版本时 {@code versions} 是空列表而非 null
+     * ——前端据此显示"未登记版本"，而不是把 null 当成"加载失败"。</p>
+     *
+     * @param collectionId 集合ID（必填）
+     * @return 文档状态清单；集合下没有文档时返回空列表
+     */
+    List<org.dromara.aigov.knowledge.domain.vo.AigKnowledgeDocumentStatusVo> listDocumentStatus(Long collectionId);
+
+    /**
      * 登记文档与其一个新版本（处理管道从 {@code UPLOADED} 开始）。
      *
      * <p>命中同哈希的既有版本时只给"重复文件提示"，仍照常建版本——不同业务范围不共享授权。</p>
