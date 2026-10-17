@@ -35,7 +35,7 @@
       }
     ],
     "promptTemplate": "Commercial product motion shot based on the provided image. Action: ${action}. Camera: ${camera}. Keep the product shape and scene coherent. No subtitles, logos or watermark.",
-    "note": "可选择 5 秒、10 秒或 20 秒；此用途不要求音轨。",
+    "note": "此用途不要求音轨；可选时长随输出档位变化。",
     "acceptance": [
       "主体稳定，没有明显变形",
       "动作和镜头符合要求"
