@@ -56,9 +56,15 @@ public record WorkflowVersion(
      *                       为空表示沿用旧的单一 {@code tier} 语义
      */
     public record FixedFieldValidation(String tier, String dur, java.util.Set<String> supportedTiers,
-                                       java.util.List<String> supportedDurations, DurationControl durationControl) {
+                                       java.util.List<String> supportedDurations, DurationControl durationControl,
+                                       java.util.List<OutputProfile> outputProfiles, OutputControl outputControl) {
         public FixedFieldValidation(String tier, String dur, java.util.Set<String> supportedTiers) {
             this(tier, dur, supportedTiers, java.util.List.of(), null);
+        }
+
+        public FixedFieldValidation(String tier, String dur, java.util.Set<String> supportedTiers,
+                                    java.util.List<String> supportedDurations, DurationControl durationControl) {
+            this(tier, dur, supportedTiers, supportedDurations, durationControl, java.util.List.of(), null);
         }
 
         /**
@@ -73,6 +79,46 @@ public record WorkflowVersion(
 
         public java.util.List<String> allowedDurations() {
             return supportedDurations == null ? java.util.List.of() : supportedDurations;
+        }
+
+        public java.util.List<OutputProfile> profiles() {
+            return outputProfiles == null ? java.util.List.of() : outputProfiles;
+        }
+
+        public OutputProfile profileOf(String selectedTier) {
+            return profiles().stream().filter(p -> p.tier().equals(selectedTier)).findFirst().orElse(null);
+        }
+
+        public java.util.List<String> durationsOf(String selectedTier) {
+            OutputProfile profile = profileOf(selectedTier);
+            return profile == null ? allowedDurations() : profile.durations();
+        }
+    }
+
+    /** Public output dimensions and the actual model canvas; legacy profiles preserve existing tasks. */
+    public record OutputProfile(String tier, String ratio, int width, int height,
+                                int generationWidth, int generationHeight, java.util.List<String> durations,
+                                String mode, boolean legacy) {
+        public OutputProfile {
+            if (tier == null || tier.isBlank() || ratio == null || ratio.isBlank()
+                || width <= 0 || height <= 0 || width > 3840 || height > 3840
+                || width % 2 != 0 || height % 2 != 0 || generationWidth <= 0 || generationHeight <= 0
+                || durations == null || durations.isEmpty()
+                || !("NATIVE".equals(mode) || "RESIZED".equals(mode) || "SUPER_RESOLUTION".equals(mode))) {
+                throw new IllegalArgumentException("视频输出规格无效");
+            }
+            durations = java.util.List.copyOf(durations);
+        }
+    }
+
+    /** Explicit native output edge; a 2x latent upsampler receives half-size latent inputs. */
+    public record OutputControl(String videoNodeId, String resizeNodeId, int latentDivisor, int alignment, String upscaleModel) {
+        public OutputControl {
+            if (videoNodeId == null || videoNodeId.isBlank() || resizeNodeId == null || resizeNodeId.isBlank()
+                || videoNodeId.equals(resizeNodeId) || (latentDivisor != 1 && latentDivisor != 2)
+                || alignment < 16 || alignment > 128) {
+                throw new IllegalArgumentException("视频尺寸映射无效");
+            }
         }
     }
 

@@ -150,8 +150,10 @@ public final class H3TemplatePreparer {
                     .frames(parseDurationSeconds(fields.durationLabel())));
             }
             try {
-                return org.dromara.ai.creative.NativeGraph.prepare(mapper, templateContent,
+                var profile = NativeVideoOutput.inputs(version, fields.tier(), input);
+                var graph = org.dromara.ai.creative.NativeGraph.prepare(mapper, templateContent,
                     version.mapping().stream().map(m -> new org.dromara.ai.creative.NativeGraph.Input(m.field(), m.nodeId(), m.inputKey())).toList(), input);
+                return NativeVideoOutput.finish(graph, version, profile);
             } catch (IllegalArgumentException e) { throw VideoTaskException.invalidContract(e.getMessage()); }
         }
 
@@ -443,7 +445,7 @@ public final class H3TemplatePreparer {
         WorkflowVersion.FixedFieldValidation fixed = version.fixedFieldValidation();
         if (fixed != null) {
             java.util.Set<String> allowedTiers = fixed.allowedTiers();
-            if (!allowedTiers.isEmpty() && !allowedTiers.contains(fields.tier())) {
+            if (!allowedTiers.isEmpty() && !allowedTiers.contains(fields.tier()) && fixed.profileOf(fields.tier()) == null) {
                 throw VideoTaskException.invalidContract(
                     "输出档位只支持 " + String.join(" / ", allowedTiers));
             }
@@ -455,10 +457,10 @@ public final class H3TemplatePreparer {
                     throw VideoTaskException.invalidContract(
                         fields.tier() + " 只支持时长 " + String.join(" / ", allowedDurations));
                 }
-            } else if (!fixed.allowedDurations().isEmpty()
-                && !fixed.allowedDurations().contains(fields.durationLabel())) {
+            } else if (!fixed.durationsOf(fields.tier()).isEmpty()
+                && !fixed.durationsOf(fields.tier()).contains(fields.durationLabel())) {
                 throw VideoTaskException.invalidContract(
-                    "视频时长只支持 " + String.join(" / ", fixed.allowedDurations()));
+                    "所选输出规格只支持时长 " + String.join(" / ", fixed.durationsOf(fields.tier())));
             } else if (fixed.allowedDurations().isEmpty()
                 && fixed.dur() != null && !fixed.dur().equals(fields.durationLabel())) {
                 throw VideoTaskException.invalidContract(

@@ -59,13 +59,52 @@
         "verifiedAt": "2026-10-11T16:15:20.914725+00:00",
         "hasAudio": false,
         "supportedTiers": [
-          "验证档位 · 832×480"
+          "流畅 · 480P · 854×480",
+          "标准 · 720P · 1280×720",
+          "高清 · 1080P · 1920×1080",
+          "竖屏 · 流畅 · 480P · 480×854",
+          "竖屏 · 标准 · 720P · 720×1280",
+          "竖屏 · 高清 · 1080P · 1080×1920",
+          "方形 · 流畅 · 480P · 480×480",
+          "方形 · 标准 · 720P · 720×720",
+          "方形 · 高清 · 1080P · 1080×1080"
         ],
         "supportedDurationsByTier": {
-          "验证档位 · 832×480": [
+          "流畅 · 480P · 854×480": [
             "5 秒",
             "10 秒",
             "20 秒"
+          ],
+          "标准 · 720P · 1280×720": [
+            "5 秒",
+            "10 秒"
+          ],
+          "高清 · 1080P · 1920×1080": [
+            "5 秒"
+          ],
+          "竖屏 · 流畅 · 480P · 480×854": [
+            "5 秒",
+            "10 秒",
+            "20 秒"
+          ],
+          "竖屏 · 标准 · 720P · 720×1280": [
+            "5 秒",
+            "10 秒"
+          ],
+          "竖屏 · 高清 · 1080P · 1080×1920": [
+            "5 秒"
+          ],
+          "方形 · 流畅 · 480P · 480×480": [
+            "5 秒",
+            "10 秒",
+            "20 秒"
+          ],
+          "方形 · 标准 · 720P · 720×720": [
+            "5 秒",
+            "10 秒"
+          ],
+          "方形 · 高清 · 1080P · 1080×1080": [
+            "5 秒"
           ]
         },
         "supportedDuration": "5 秒",
@@ -78,7 +117,150 @@
           "pipelineUrl": "https://github.com/Ningchirsty/hotter-ai-platform/actions/runs/38152932194",
           "testedCommit": "c533244221ca8d1aa293d6f9361357fa3b765eb4",
           "taskId": "2109312983630352386"
-        }
+        },
+        "supportedTier": "流畅 · 480P · 854×480",
+        "outputProfiles": [
+          {
+            "tier": "流畅 · 480P · 854×480",
+            "ratio": "16:9 横屏",
+            "width": 854,
+            "height": 480,
+            "generationWidth": 864,
+            "generationHeight": 480,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "标准 · 720P · 1280×720",
+            "ratio": "16:9 横屏",
+            "width": 1280,
+            "height": 720,
+            "generationWidth": 1280,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "高清 · 1080P · 1920×1080",
+            "ratio": "16:9 横屏",
+            "width": 1920,
+            "height": 1080,
+            "generationWidth": 1280,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          },
+          {
+            "tier": "竖屏 · 流畅 · 480P · 480×854",
+            "ratio": "9:16 竖屏",
+            "width": 480,
+            "height": 854,
+            "generationWidth": 480,
+            "generationHeight": 864,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "竖屏 · 标准 · 720P · 720×1280",
+            "ratio": "9:16 竖屏",
+            "width": 720,
+            "height": 1280,
+            "generationWidth": 736,
+            "generationHeight": 1280,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "竖屏 · 高清 · 1080P · 1080×1920",
+            "ratio": "9:16 竖屏",
+            "width": 1080,
+            "height": 1920,
+            "generationWidth": 736,
+            "generationHeight": 1280,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          },
+          {
+            "tier": "方形 · 流畅 · 480P · 480×480",
+            "ratio": "1:1 方形",
+            "width": 480,
+            "height": 480,
+            "generationWidth": 480,
+            "generationHeight": 480,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "方形 · 标准 · 720P · 720×720",
+            "ratio": "1:1 方形",
+            "width": 720,
+            "height": 720,
+            "generationWidth": 736,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "方形 · 高清 · 1080P · 1080×1080",
+            "ratio": "1:1 方形",
+            "width": 1080,
+            "height": 1080,
+            "generationWidth": 736,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          }
+        ],
+        "supportedRatios": [
+          "16:9 横屏",
+          "9:16 竖屏",
+          "1:1 方形"
+        ],
+        "supportedTiersByRatio": {
+          "16:9 横屏": [
+            "流畅 · 480P · 854×480",
+            "标准 · 720P · 1280×720",
+            "高清 · 1080P · 1920×1080"
+          ],
+          "9:16 竖屏": [
+            "竖屏 · 流畅 · 480P · 480×854",
+            "竖屏 · 标准 · 720P · 720×1280",
+            "竖屏 · 高清 · 1080P · 1080×1920"
+          ],
+          "1:1 方形": [
+            "方形 · 流畅 · 480P · 480×480",
+            "方形 · 标准 · 720P · 720×720",
+            "方形 · 高清 · 1080P · 1080×1080"
+          ]
+        },
+        "defaultRatio": "16:9 横屏"
       },
       {
         "workflowCode": "wf-ability-video-product-motion-hun",
@@ -97,13 +279,52 @@
         "verifiedAt": "2026-10-11T16:15:20.914725+00:00",
         "hasAudio": false,
         "supportedTiers": [
-          "验证档位 · 832×480"
+          "流畅 · 480P · 854×480",
+          "标准 · 720P · 1280×720",
+          "高清 · 1080P · 1920×1080",
+          "竖屏 · 流畅 · 480P · 480×854",
+          "竖屏 · 标准 · 720P · 720×1280",
+          "竖屏 · 高清 · 1080P · 1080×1920",
+          "方形 · 流畅 · 480P · 480×480",
+          "方形 · 标准 · 720P · 720×720",
+          "方形 · 高清 · 1080P · 1080×1080"
         ],
         "supportedDurationsByTier": {
-          "验证档位 · 832×480": [
+          "流畅 · 480P · 854×480": [
             "5 秒",
             "10 秒",
             "20 秒"
+          ],
+          "标准 · 720P · 1280×720": [
+            "5 秒",
+            "10 秒"
+          ],
+          "高清 · 1080P · 1920×1080": [
+            "5 秒"
+          ],
+          "竖屏 · 流畅 · 480P · 480×854": [
+            "5 秒",
+            "10 秒",
+            "20 秒"
+          ],
+          "竖屏 · 标准 · 720P · 720×1280": [
+            "5 秒",
+            "10 秒"
+          ],
+          "竖屏 · 高清 · 1080P · 1080×1920": [
+            "5 秒"
+          ],
+          "方形 · 流畅 · 480P · 480×480": [
+            "5 秒",
+            "10 秒",
+            "20 秒"
+          ],
+          "方形 · 标准 · 720P · 720×720": [
+            "5 秒",
+            "10 秒"
+          ],
+          "方形 · 高清 · 1080P · 1080×1080": [
+            "5 秒"
           ]
         },
         "supportedDuration": "5 秒",
@@ -116,7 +337,150 @@
           "pipelineUrl": "https://github.com/Ningchirsty/hotter-ai-platform/actions/runs/38152932194",
           "testedCommit": "c533244221ca8d1aa293d6f9361357fa3b765eb4",
           "taskId": "2109313160843890689"
-        }
+        },
+        "supportedTier": "流畅 · 480P · 854×480",
+        "outputProfiles": [
+          {
+            "tier": "流畅 · 480P · 854×480",
+            "ratio": "16:9 横屏",
+            "width": 854,
+            "height": 480,
+            "generationWidth": 864,
+            "generationHeight": 480,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "标准 · 720P · 1280×720",
+            "ratio": "16:9 横屏",
+            "width": 1280,
+            "height": 720,
+            "generationWidth": 1280,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "高清 · 1080P · 1920×1080",
+            "ratio": "16:9 横屏",
+            "width": 1920,
+            "height": 1080,
+            "generationWidth": 1280,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          },
+          {
+            "tier": "竖屏 · 流畅 · 480P · 480×854",
+            "ratio": "9:16 竖屏",
+            "width": 480,
+            "height": 854,
+            "generationWidth": 480,
+            "generationHeight": 864,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "竖屏 · 标准 · 720P · 720×1280",
+            "ratio": "9:16 竖屏",
+            "width": 720,
+            "height": 1280,
+            "generationWidth": 736,
+            "generationHeight": 1280,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "竖屏 · 高清 · 1080P · 1080×1920",
+            "ratio": "9:16 竖屏",
+            "width": 1080,
+            "height": 1920,
+            "generationWidth": 736,
+            "generationHeight": 1280,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          },
+          {
+            "tier": "方形 · 流畅 · 480P · 480×480",
+            "ratio": "1:1 方形",
+            "width": 480,
+            "height": 480,
+            "generationWidth": 480,
+            "generationHeight": 480,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "方形 · 标准 · 720P · 720×720",
+            "ratio": "1:1 方形",
+            "width": 720,
+            "height": 720,
+            "generationWidth": 736,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "方形 · 高清 · 1080P · 1080×1080",
+            "ratio": "1:1 方形",
+            "width": 1080,
+            "height": 1080,
+            "generationWidth": 736,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          }
+        ],
+        "supportedRatios": [
+          "16:9 横屏",
+          "9:16 竖屏",
+          "1:1 方形"
+        ],
+        "supportedTiersByRatio": {
+          "16:9 横屏": [
+            "流畅 · 480P · 854×480",
+            "标准 · 720P · 1280×720",
+            "高清 · 1080P · 1920×1080"
+          ],
+          "9:16 竖屏": [
+            "竖屏 · 流畅 · 480P · 480×854",
+            "竖屏 · 标准 · 720P · 720×1280",
+            "竖屏 · 高清 · 1080P · 1080×1920"
+          ],
+          "1:1 方形": [
+            "方形 · 流畅 · 480P · 480×480",
+            "方形 · 标准 · 720P · 720×720",
+            "方形 · 高清 · 1080P · 1080×1080"
+          ]
+        },
+        "defaultRatio": "16:9 横屏"
       },
       {
         "workflowCode": "wf-ability-video-product-motion-kand",
@@ -135,13 +499,52 @@
         "verifiedAt": "2026-10-11T16:15:20.914725+00:00",
         "hasAudio": false,
         "supportedTiers": [
-          "验证档位 · 768×512"
+          "流畅 · 480P · 854×480",
+          "标准 · 720P · 1280×720",
+          "高清 · 1080P · 1920×1080",
+          "竖屏 · 流畅 · 480P · 480×854",
+          "竖屏 · 标准 · 720P · 720×1280",
+          "竖屏 · 高清 · 1080P · 1080×1920",
+          "方形 · 流畅 · 480P · 480×480",
+          "方形 · 标准 · 720P · 720×720",
+          "方形 · 高清 · 1080P · 1080×1080"
         ],
         "supportedDurationsByTier": {
-          "验证档位 · 768×512": [
+          "流畅 · 480P · 854×480": [
             "5 秒",
             "10 秒",
             "20 秒"
+          ],
+          "标准 · 720P · 1280×720": [
+            "5 秒",
+            "10 秒"
+          ],
+          "高清 · 1080P · 1920×1080": [
+            "5 秒"
+          ],
+          "竖屏 · 流畅 · 480P · 480×854": [
+            "5 秒",
+            "10 秒",
+            "20 秒"
+          ],
+          "竖屏 · 标准 · 720P · 720×1280": [
+            "5 秒",
+            "10 秒"
+          ],
+          "竖屏 · 高清 · 1080P · 1080×1920": [
+            "5 秒"
+          ],
+          "方形 · 流畅 · 480P · 480×480": [
+            "5 秒",
+            "10 秒",
+            "20 秒"
+          ],
+          "方形 · 标准 · 720P · 720×720": [
+            "5 秒",
+            "10 秒"
+          ],
+          "方形 · 高清 · 1080P · 1080×1080": [
+            "5 秒"
           ]
         },
         "supportedDuration": "5 秒",
@@ -154,7 +557,150 @@
           "pipelineUrl": "https://github.com/Ningchirsty/hotter-ai-platform/actions/runs/38152932194",
           "testedCommit": "c533244221ca8d1aa293d6f9361357fa3b765eb4",
           "taskId": "2109313615477084161"
-        }
+        },
+        "supportedTier": "流畅 · 480P · 854×480",
+        "outputProfiles": [
+          {
+            "tier": "流畅 · 480P · 854×480",
+            "ratio": "16:9 横屏",
+            "width": 854,
+            "height": 480,
+            "generationWidth": 864,
+            "generationHeight": 480,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "标准 · 720P · 1280×720",
+            "ratio": "16:9 横屏",
+            "width": 1280,
+            "height": 720,
+            "generationWidth": 1280,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "高清 · 1080P · 1920×1080",
+            "ratio": "16:9 横屏",
+            "width": 1920,
+            "height": 1080,
+            "generationWidth": 1280,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          },
+          {
+            "tier": "竖屏 · 流畅 · 480P · 480×854",
+            "ratio": "9:16 竖屏",
+            "width": 480,
+            "height": 854,
+            "generationWidth": 480,
+            "generationHeight": 864,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "竖屏 · 标准 · 720P · 720×1280",
+            "ratio": "9:16 竖屏",
+            "width": 720,
+            "height": 1280,
+            "generationWidth": 736,
+            "generationHeight": 1280,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "竖屏 · 高清 · 1080P · 1080×1920",
+            "ratio": "9:16 竖屏",
+            "width": 1080,
+            "height": 1920,
+            "generationWidth": 736,
+            "generationHeight": 1280,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          },
+          {
+            "tier": "方形 · 流畅 · 480P · 480×480",
+            "ratio": "1:1 方形",
+            "width": 480,
+            "height": 480,
+            "generationWidth": 480,
+            "generationHeight": 480,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "方形 · 标准 · 720P · 720×720",
+            "ratio": "1:1 方形",
+            "width": 720,
+            "height": 720,
+            "generationWidth": 736,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "方形 · 高清 · 1080P · 1080×1080",
+            "ratio": "1:1 方形",
+            "width": 1080,
+            "height": 1080,
+            "generationWidth": 736,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          }
+        ],
+        "supportedRatios": [
+          "16:9 横屏",
+          "9:16 竖屏",
+          "1:1 方形"
+        ],
+        "supportedTiersByRatio": {
+          "16:9 横屏": [
+            "流畅 · 480P · 854×480",
+            "标准 · 720P · 1280×720",
+            "高清 · 1080P · 1920×1080"
+          ],
+          "9:16 竖屏": [
+            "竖屏 · 流畅 · 480P · 480×854",
+            "竖屏 · 标准 · 720P · 720×1280",
+            "竖屏 · 高清 · 1080P · 1080×1920"
+          ],
+          "1:1 方形": [
+            "方形 · 流畅 · 480P · 480×480",
+            "方形 · 标准 · 720P · 720×720",
+            "方形 · 高清 · 1080P · 1080×1080"
+          ]
+        },
+        "defaultRatio": "16:9 横屏"
       }
     ],
     "recommendedWorkflowCode": "wf-ability-video-product-motion-wan"
@@ -220,13 +766,52 @@
         "verifiedAt": "2026-10-11T16:15:20.914725+00:00",
         "hasAudio": true,
         "supportedTiers": [
-          "验证档位 · 832×448"
+          "流畅 · 480P · 854×480",
+          "标准 · 720P · 1280×720",
+          "高清 · 1080P · 1920×1080",
+          "竖屏 · 流畅 · 480P · 480×854",
+          "竖屏 · 标准 · 720P · 720×1280",
+          "竖屏 · 高清 · 1080P · 1080×1920",
+          "方形 · 流畅 · 480P · 480×480",
+          "方形 · 标准 · 720P · 720×720",
+          "方形 · 高清 · 1080P · 1080×1080"
         ],
         "supportedDurationsByTier": {
-          "验证档位 · 832×448": [
+          "流畅 · 480P · 854×480": [
             "5 秒",
             "10 秒",
             "20 秒"
+          ],
+          "标准 · 720P · 1280×720": [
+            "5 秒",
+            "10 秒"
+          ],
+          "高清 · 1080P · 1920×1080": [
+            "5 秒"
+          ],
+          "竖屏 · 流畅 · 480P · 480×854": [
+            "5 秒",
+            "10 秒",
+            "20 秒"
+          ],
+          "竖屏 · 标准 · 720P · 720×1280": [
+            "5 秒",
+            "10 秒"
+          ],
+          "竖屏 · 高清 · 1080P · 1080×1920": [
+            "5 秒"
+          ],
+          "方形 · 流畅 · 480P · 480×480": [
+            "5 秒",
+            "10 秒",
+            "20 秒"
+          ],
+          "方形 · 标准 · 720P · 720×720": [
+            "5 秒",
+            "10 秒"
+          ],
+          "方形 · 高清 · 1080P · 1080×1080": [
+            "5 秒"
           ]
         },
         "supportedDuration": "5 秒",
@@ -239,7 +824,150 @@
           "pipelineUrl": "https://github.com/Ningchirsty/hotter-ai-platform/actions/runs/38152932194",
           "testedCommit": "c533244221ca8d1aa293d6f9361357fa3b765eb4",
           "taskId": "2109314145842630658"
-        }
+        },
+        "supportedTier": "流畅 · 480P · 854×480",
+        "outputProfiles": [
+          {
+            "tier": "流畅 · 480P · 854×480",
+            "ratio": "16:9 横屏",
+            "width": 854,
+            "height": 480,
+            "generationWidth": 896,
+            "generationHeight": 512,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "标准 · 720P · 1280×720",
+            "ratio": "16:9 横屏",
+            "width": 1280,
+            "height": 720,
+            "generationWidth": 1280,
+            "generationHeight": 768,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "高清 · 1080P · 1920×1080",
+            "ratio": "16:9 横屏",
+            "width": 1920,
+            "height": 1080,
+            "generationWidth": 1920,
+            "generationHeight": 1088,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "竖屏 · 流畅 · 480P · 480×854",
+            "ratio": "9:16 竖屏",
+            "width": 480,
+            "height": 854,
+            "generationWidth": 512,
+            "generationHeight": 896,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "竖屏 · 标准 · 720P · 720×1280",
+            "ratio": "9:16 竖屏",
+            "width": 720,
+            "height": 1280,
+            "generationWidth": 768,
+            "generationHeight": 1280,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "竖屏 · 高清 · 1080P · 1080×1920",
+            "ratio": "9:16 竖屏",
+            "width": 1080,
+            "height": 1920,
+            "generationWidth": 1088,
+            "generationHeight": 1920,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "方形 · 流畅 · 480P · 480×480",
+            "ratio": "1:1 方形",
+            "width": 480,
+            "height": 480,
+            "generationWidth": 512,
+            "generationHeight": 512,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "方形 · 标准 · 720P · 720×720",
+            "ratio": "1:1 方形",
+            "width": 720,
+            "height": 720,
+            "generationWidth": 768,
+            "generationHeight": 768,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "方形 · 高清 · 1080P · 1080×1080",
+            "ratio": "1:1 方形",
+            "width": 1080,
+            "height": 1080,
+            "generationWidth": 1088,
+            "generationHeight": 1088,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "NATIVE"
+          }
+        ],
+        "supportedRatios": [
+          "16:9 横屏",
+          "9:16 竖屏",
+          "1:1 方形"
+        ],
+        "supportedTiersByRatio": {
+          "16:9 横屏": [
+            "流畅 · 480P · 854×480",
+            "标准 · 720P · 1280×720",
+            "高清 · 1080P · 1920×1080"
+          ],
+          "9:16 竖屏": [
+            "竖屏 · 流畅 · 480P · 480×854",
+            "竖屏 · 标准 · 720P · 720×1280",
+            "竖屏 · 高清 · 1080P · 1080×1920"
+          ],
+          "1:1 方形": [
+            "方形 · 流畅 · 480P · 480×480",
+            "方形 · 标准 · 720P · 720×720",
+            "方形 · 高清 · 1080P · 1080×1080"
+          ]
+        },
+        "defaultRatio": "16:9 横屏"
       },
       {
         "workflowCode": "wf-ability-video-sound-story-h3",
@@ -257,13 +985,52 @@
         "verifiedAt": "2026-10-11T16:15:20.914725+00:00",
         "hasAudio": true,
         "supportedTiers": [
-          "验证档位 · 768×448"
+          "流畅 · 480P · 854×480",
+          "标准 · 720P · 1280×720",
+          "高清 · 1080P · 1920×1080",
+          "竖屏 · 流畅 · 480P · 480×854",
+          "竖屏 · 标准 · 720P · 720×1280",
+          "竖屏 · 高清 · 1080P · 1080×1920",
+          "方形 · 流畅 · 480P · 480×480",
+          "方形 · 标准 · 720P · 720×720",
+          "方形 · 高清 · 1080P · 1080×1080"
         ],
         "supportedDurationsByTier": {
-          "验证档位 · 768×448": [
+          "流畅 · 480P · 854×480": [
             "5 秒",
             "10 秒",
             "20 秒"
+          ],
+          "标准 · 720P · 1280×720": [
+            "5 秒",
+            "10 秒"
+          ],
+          "高清 · 1080P · 1920×1080": [
+            "5 秒"
+          ],
+          "竖屏 · 流畅 · 480P · 480×854": [
+            "5 秒",
+            "10 秒",
+            "20 秒"
+          ],
+          "竖屏 · 标准 · 720P · 720×1280": [
+            "5 秒",
+            "10 秒"
+          ],
+          "竖屏 · 高清 · 1080P · 1080×1920": [
+            "5 秒"
+          ],
+          "方形 · 流畅 · 480P · 480×480": [
+            "5 秒",
+            "10 秒",
+            "20 秒"
+          ],
+          "方形 · 标准 · 720P · 720×720": [
+            "5 秒",
+            "10 秒"
+          ],
+          "方形 · 高清 · 1080P · 1080×1080": [
+            "5 秒"
           ]
         },
         "supportedDuration": "5 秒",
@@ -276,7 +1043,150 @@
           "pipelineUrl": "https://github.com/Ningchirsty/hotter-ai-platform/actions/runs/38152932194",
           "testedCommit": "c533244221ca8d1aa293d6f9361357fa3b765eb4",
           "taskId": "2109314260057722882"
-        }
+        },
+        "supportedTier": "流畅 · 480P · 854×480",
+        "outputProfiles": [
+          {
+            "tier": "流畅 · 480P · 854×480",
+            "ratio": "16:9 横屏",
+            "width": 854,
+            "height": 480,
+            "generationWidth": 864,
+            "generationHeight": 480,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "标准 · 720P · 1280×720",
+            "ratio": "16:9 横屏",
+            "width": 1280,
+            "height": 720,
+            "generationWidth": 1280,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "高清 · 1080P · 1920×1080",
+            "ratio": "16:9 横屏",
+            "width": 1920,
+            "height": 1080,
+            "generationWidth": 1280,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          },
+          {
+            "tier": "竖屏 · 流畅 · 480P · 480×854",
+            "ratio": "9:16 竖屏",
+            "width": 480,
+            "height": 854,
+            "generationWidth": 480,
+            "generationHeight": 864,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "竖屏 · 标准 · 720P · 720×1280",
+            "ratio": "9:16 竖屏",
+            "width": 720,
+            "height": 1280,
+            "generationWidth": 736,
+            "generationHeight": 1280,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "竖屏 · 高清 · 1080P · 1080×1920",
+            "ratio": "9:16 竖屏",
+            "width": 1080,
+            "height": 1920,
+            "generationWidth": 736,
+            "generationHeight": 1280,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          },
+          {
+            "tier": "方形 · 流畅 · 480P · 480×480",
+            "ratio": "1:1 方形",
+            "width": 480,
+            "height": 480,
+            "generationWidth": 480,
+            "generationHeight": 480,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "方形 · 标准 · 720P · 720×720",
+            "ratio": "1:1 方形",
+            "width": 720,
+            "height": 720,
+            "generationWidth": 736,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "方形 · 高清 · 1080P · 1080×1080",
+            "ratio": "1:1 方形",
+            "width": 1080,
+            "height": 1080,
+            "generationWidth": 736,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          }
+        ],
+        "supportedRatios": [
+          "16:9 横屏",
+          "9:16 竖屏",
+          "1:1 方形"
+        ],
+        "supportedTiersByRatio": {
+          "16:9 横屏": [
+            "流畅 · 480P · 854×480",
+            "标准 · 720P · 1280×720",
+            "高清 · 1080P · 1920×1080"
+          ],
+          "9:16 竖屏": [
+            "竖屏 · 流畅 · 480P · 480×854",
+            "竖屏 · 标准 · 720P · 720×1280",
+            "竖屏 · 高清 · 1080P · 1080×1920"
+          ],
+          "1:1 方形": [
+            "方形 · 流畅 · 480P · 480×480",
+            "方形 · 标准 · 720P · 720×720",
+            "方形 · 高清 · 1080P · 1080×1080"
+          ]
+        },
+        "defaultRatio": "16:9 横屏"
       }
     ],
     "recommendedWorkflowCode": "wf-ability-video-sound-story-ltx"
@@ -341,13 +1251,52 @@
         "verifiedAt": "2026-10-11T16:15:20.914725+00:00",
         "hasAudio": false,
         "supportedTiers": [
-          "验证档位 · 832×480"
+          "流畅 · 480P · 854×480",
+          "标准 · 720P · 1280×720",
+          "高清 · 1080P · 1920×1080",
+          "竖屏 · 流畅 · 480P · 480×854",
+          "竖屏 · 标准 · 720P · 720×1280",
+          "竖屏 · 高清 · 1080P · 1080×1920",
+          "方形 · 流畅 · 480P · 480×480",
+          "方形 · 标准 · 720P · 720×720",
+          "方形 · 高清 · 1080P · 1080×1080"
         ],
         "supportedDurationsByTier": {
-          "验证档位 · 832×480": [
+          "流畅 · 480P · 854×480": [
             "5 秒",
             "10 秒",
             "20 秒"
+          ],
+          "标准 · 720P · 1280×720": [
+            "5 秒",
+            "10 秒"
+          ],
+          "高清 · 1080P · 1920×1080": [
+            "5 秒"
+          ],
+          "竖屏 · 流畅 · 480P · 480×854": [
+            "5 秒",
+            "10 秒",
+            "20 秒"
+          ],
+          "竖屏 · 标准 · 720P · 720×1280": [
+            "5 秒",
+            "10 秒"
+          ],
+          "竖屏 · 高清 · 1080P · 1080×1920": [
+            "5 秒"
+          ],
+          "方形 · 流畅 · 480P · 480×480": [
+            "5 秒",
+            "10 秒",
+            "20 秒"
+          ],
+          "方形 · 标准 · 720P · 720×720": [
+            "5 秒",
+            "10 秒"
+          ],
+          "方形 · 高清 · 1080P · 1080×1080": [
+            "5 秒"
           ]
         },
         "supportedDuration": "5 秒",
@@ -360,7 +1309,150 @@
           "pipelineUrl": "https://github.com/Ningchirsty/hotter-ai-platform/actions/runs/38152932194",
           "testedCommit": "c533244221ca8d1aa293d6f9361357fa3b765eb4",
           "taskId": "2109314374281203714"
-        }
+        },
+        "supportedTier": "流畅 · 480P · 854×480",
+        "outputProfiles": [
+          {
+            "tier": "流畅 · 480P · 854×480",
+            "ratio": "16:9 横屏",
+            "width": 854,
+            "height": 480,
+            "generationWidth": 864,
+            "generationHeight": 480,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "标准 · 720P · 1280×720",
+            "ratio": "16:9 横屏",
+            "width": 1280,
+            "height": 720,
+            "generationWidth": 1280,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "高清 · 1080P · 1920×1080",
+            "ratio": "16:9 横屏",
+            "width": 1920,
+            "height": 1080,
+            "generationWidth": 1280,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          },
+          {
+            "tier": "竖屏 · 流畅 · 480P · 480×854",
+            "ratio": "9:16 竖屏",
+            "width": 480,
+            "height": 854,
+            "generationWidth": 480,
+            "generationHeight": 864,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "竖屏 · 标准 · 720P · 720×1280",
+            "ratio": "9:16 竖屏",
+            "width": 720,
+            "height": 1280,
+            "generationWidth": 736,
+            "generationHeight": 1280,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "竖屏 · 高清 · 1080P · 1080×1920",
+            "ratio": "9:16 竖屏",
+            "width": 1080,
+            "height": 1920,
+            "generationWidth": 736,
+            "generationHeight": 1280,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          },
+          {
+            "tier": "方形 · 流畅 · 480P · 480×480",
+            "ratio": "1:1 方形",
+            "width": 480,
+            "height": 480,
+            "generationWidth": 480,
+            "generationHeight": 480,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "方形 · 标准 · 720P · 720×720",
+            "ratio": "1:1 方形",
+            "width": 720,
+            "height": 720,
+            "generationWidth": 736,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "方形 · 高清 · 1080P · 1080×1080",
+            "ratio": "1:1 方形",
+            "width": 1080,
+            "height": 1080,
+            "generationWidth": 736,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          }
+        ],
+        "supportedRatios": [
+          "16:9 横屏",
+          "9:16 竖屏",
+          "1:1 方形"
+        ],
+        "supportedTiersByRatio": {
+          "16:9 横屏": [
+            "流畅 · 480P · 854×480",
+            "标准 · 720P · 1280×720",
+            "高清 · 1080P · 1920×1080"
+          ],
+          "9:16 竖屏": [
+            "竖屏 · 流畅 · 480P · 480×854",
+            "竖屏 · 标准 · 720P · 720×1280",
+            "竖屏 · 高清 · 1080P · 1080×1920"
+          ],
+          "1:1 方形": [
+            "方形 · 流畅 · 480P · 480×480",
+            "方形 · 标准 · 720P · 720×720",
+            "方形 · 高清 · 1080P · 1080×1080"
+          ]
+        },
+        "defaultRatio": "16:9 横屏"
       },
       {
         "workflowCode": "wf-ability-video-photo-animation-kand",
@@ -379,13 +1471,52 @@
         "verifiedAt": "2026-10-11T16:15:20.914725+00:00",
         "hasAudio": false,
         "supportedTiers": [
-          "验证档位 · 768×512"
+          "流畅 · 480P · 854×480",
+          "标准 · 720P · 1280×720",
+          "高清 · 1080P · 1920×1080",
+          "竖屏 · 流畅 · 480P · 480×854",
+          "竖屏 · 标准 · 720P · 720×1280",
+          "竖屏 · 高清 · 1080P · 1080×1920",
+          "方形 · 流畅 · 480P · 480×480",
+          "方形 · 标准 · 720P · 720×720",
+          "方形 · 高清 · 1080P · 1080×1080"
         ],
         "supportedDurationsByTier": {
-          "验证档位 · 768×512": [
+          "流畅 · 480P · 854×480": [
             "5 秒",
             "10 秒",
             "20 秒"
+          ],
+          "标准 · 720P · 1280×720": [
+            "5 秒",
+            "10 秒"
+          ],
+          "高清 · 1080P · 1920×1080": [
+            "5 秒"
+          ],
+          "竖屏 · 流畅 · 480P · 480×854": [
+            "5 秒",
+            "10 秒",
+            "20 秒"
+          ],
+          "竖屏 · 标准 · 720P · 720×1280": [
+            "5 秒",
+            "10 秒"
+          ],
+          "竖屏 · 高清 · 1080P · 1080×1920": [
+            "5 秒"
+          ],
+          "方形 · 流畅 · 480P · 480×480": [
+            "5 秒",
+            "10 秒",
+            "20 秒"
+          ],
+          "方形 · 标准 · 720P · 720×720": [
+            "5 秒",
+            "10 秒"
+          ],
+          "方形 · 高清 · 1080P · 1080×1080": [
+            "5 秒"
           ]
         },
         "supportedDuration": "5 秒",
@@ -398,7 +1529,150 @@
           "pipelineUrl": "https://github.com/Ningchirsty/hotter-ai-platform/actions/runs/38152932194",
           "testedCommit": "c533244221ca8d1aa293d6f9361357fa3b765eb4",
           "taskId": "2109314488311746562"
-        }
+        },
+        "supportedTier": "流畅 · 480P · 854×480",
+        "outputProfiles": [
+          {
+            "tier": "流畅 · 480P · 854×480",
+            "ratio": "16:9 横屏",
+            "width": 854,
+            "height": 480,
+            "generationWidth": 864,
+            "generationHeight": 480,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "标准 · 720P · 1280×720",
+            "ratio": "16:9 横屏",
+            "width": 1280,
+            "height": 720,
+            "generationWidth": 1280,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "高清 · 1080P · 1920×1080",
+            "ratio": "16:9 横屏",
+            "width": 1920,
+            "height": 1080,
+            "generationWidth": 1280,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          },
+          {
+            "tier": "竖屏 · 流畅 · 480P · 480×854",
+            "ratio": "9:16 竖屏",
+            "width": 480,
+            "height": 854,
+            "generationWidth": 480,
+            "generationHeight": 864,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "竖屏 · 标准 · 720P · 720×1280",
+            "ratio": "9:16 竖屏",
+            "width": 720,
+            "height": 1280,
+            "generationWidth": 736,
+            "generationHeight": 1280,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "竖屏 · 高清 · 1080P · 1080×1920",
+            "ratio": "9:16 竖屏",
+            "width": 1080,
+            "height": 1920,
+            "generationWidth": 736,
+            "generationHeight": 1280,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          },
+          {
+            "tier": "方形 · 流畅 · 480P · 480×480",
+            "ratio": "1:1 方形",
+            "width": 480,
+            "height": 480,
+            "generationWidth": 480,
+            "generationHeight": 480,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "方形 · 标准 · 720P · 720×720",
+            "ratio": "1:1 方形",
+            "width": 720,
+            "height": 720,
+            "generationWidth": 736,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "方形 · 高清 · 1080P · 1080×1080",
+            "ratio": "1:1 方形",
+            "width": 1080,
+            "height": 1080,
+            "generationWidth": 736,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          }
+        ],
+        "supportedRatios": [
+          "16:9 横屏",
+          "9:16 竖屏",
+          "1:1 方形"
+        ],
+        "supportedTiersByRatio": {
+          "16:9 横屏": [
+            "流畅 · 480P · 854×480",
+            "标准 · 720P · 1280×720",
+            "高清 · 1080P · 1920×1080"
+          ],
+          "9:16 竖屏": [
+            "竖屏 · 流畅 · 480P · 480×854",
+            "竖屏 · 标准 · 720P · 720×1280",
+            "竖屏 · 高清 · 1080P · 1080×1920"
+          ],
+          "1:1 方形": [
+            "方形 · 流畅 · 480P · 480×480",
+            "方形 · 标准 · 720P · 720×720",
+            "方形 · 高清 · 1080P · 1080×1080"
+          ]
+        },
+        "defaultRatio": "16:9 横屏"
       },
       {
         "workflowCode": "wf-ability-video-photo-animation-ltx",
@@ -417,13 +1691,52 @@
         "verifiedAt": "2026-10-11T16:15:20.914725+00:00",
         "hasAudio": true,
         "supportedTiers": [
-          "验证档位 · 832×448"
+          "流畅 · 480P · 854×480",
+          "标准 · 720P · 1280×720",
+          "高清 · 1080P · 1920×1080",
+          "竖屏 · 流畅 · 480P · 480×854",
+          "竖屏 · 标准 · 720P · 720×1280",
+          "竖屏 · 高清 · 1080P · 1080×1920",
+          "方形 · 流畅 · 480P · 480×480",
+          "方形 · 标准 · 720P · 720×720",
+          "方形 · 高清 · 1080P · 1080×1080"
         ],
         "supportedDurationsByTier": {
-          "验证档位 · 832×448": [
+          "流畅 · 480P · 854×480": [
             "5 秒",
             "10 秒",
             "20 秒"
+          ],
+          "标准 · 720P · 1280×720": [
+            "5 秒",
+            "10 秒"
+          ],
+          "高清 · 1080P · 1920×1080": [
+            "5 秒"
+          ],
+          "竖屏 · 流畅 · 480P · 480×854": [
+            "5 秒",
+            "10 秒",
+            "20 秒"
+          ],
+          "竖屏 · 标准 · 720P · 720×1280": [
+            "5 秒",
+            "10 秒"
+          ],
+          "竖屏 · 高清 · 1080P · 1080×1920": [
+            "5 秒"
+          ],
+          "方形 · 流畅 · 480P · 480×480": [
+            "5 秒",
+            "10 秒",
+            "20 秒"
+          ],
+          "方形 · 标准 · 720P · 720×720": [
+            "5 秒",
+            "10 秒"
+          ],
+          "方形 · 高清 · 1080P · 1080×1080": [
+            "5 秒"
           ]
         },
         "supportedDuration": "5 秒",
@@ -436,7 +1749,150 @@
           "pipelineUrl": "https://github.com/Ningchirsty/hotter-ai-platform/actions/runs/38152932194",
           "testedCommit": "c533244221ca8d1aa293d6f9361357fa3b765eb4",
           "taskId": "2109315018631155714"
-        }
+        },
+        "supportedTier": "流畅 · 480P · 854×480",
+        "outputProfiles": [
+          {
+            "tier": "流畅 · 480P · 854×480",
+            "ratio": "16:9 横屏",
+            "width": 854,
+            "height": 480,
+            "generationWidth": 896,
+            "generationHeight": 512,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "标准 · 720P · 1280×720",
+            "ratio": "16:9 横屏",
+            "width": 1280,
+            "height": 720,
+            "generationWidth": 1280,
+            "generationHeight": 768,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "高清 · 1080P · 1920×1080",
+            "ratio": "16:9 横屏",
+            "width": 1920,
+            "height": 1080,
+            "generationWidth": 1920,
+            "generationHeight": 1088,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "竖屏 · 流畅 · 480P · 480×854",
+            "ratio": "9:16 竖屏",
+            "width": 480,
+            "height": 854,
+            "generationWidth": 512,
+            "generationHeight": 896,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "竖屏 · 标准 · 720P · 720×1280",
+            "ratio": "9:16 竖屏",
+            "width": 720,
+            "height": 1280,
+            "generationWidth": 768,
+            "generationHeight": 1280,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "竖屏 · 高清 · 1080P · 1080×1920",
+            "ratio": "9:16 竖屏",
+            "width": 1080,
+            "height": 1920,
+            "generationWidth": 1088,
+            "generationHeight": 1920,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "方形 · 流畅 · 480P · 480×480",
+            "ratio": "1:1 方形",
+            "width": 480,
+            "height": 480,
+            "generationWidth": 512,
+            "generationHeight": 512,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "方形 · 标准 · 720P · 720×720",
+            "ratio": "1:1 方形",
+            "width": 720,
+            "height": 720,
+            "generationWidth": 768,
+            "generationHeight": 768,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "方形 · 高清 · 1080P · 1080×1080",
+            "ratio": "1:1 方形",
+            "width": 1080,
+            "height": 1080,
+            "generationWidth": 1088,
+            "generationHeight": 1088,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "NATIVE"
+          }
+        ],
+        "supportedRatios": [
+          "16:9 横屏",
+          "9:16 竖屏",
+          "1:1 方形"
+        ],
+        "supportedTiersByRatio": {
+          "16:9 横屏": [
+            "流畅 · 480P · 854×480",
+            "标准 · 720P · 1280×720",
+            "高清 · 1080P · 1920×1080"
+          ],
+          "9:16 竖屏": [
+            "竖屏 · 流畅 · 480P · 480×854",
+            "竖屏 · 标准 · 720P · 720×1280",
+            "竖屏 · 高清 · 1080P · 1080×1920"
+          ],
+          "1:1 方形": [
+            "方形 · 流畅 · 480P · 480×480",
+            "方形 · 标准 · 720P · 720×720",
+            "方形 · 高清 · 1080P · 1080×1080"
+          ]
+        },
+        "defaultRatio": "16:9 横屏"
       }
     ],
     "recommendedWorkflowCode": "wf-ability-video-photo-animation-wan"
@@ -501,13 +1957,52 @@
         "verifiedAt": "2026-10-11T16:15:20.914725+00:00",
         "hasAudio": false,
         "supportedTiers": [
-          "验证档位 · 832×480"
+          "流畅 · 480P · 854×480",
+          "标准 · 720P · 1280×720",
+          "高清 · 1080P · 1920×1080",
+          "竖屏 · 流畅 · 480P · 480×854",
+          "竖屏 · 标准 · 720P · 720×1280",
+          "竖屏 · 高清 · 1080P · 1080×1920",
+          "方形 · 流畅 · 480P · 480×480",
+          "方形 · 标准 · 720P · 720×720",
+          "方形 · 高清 · 1080P · 1080×1080"
         ],
         "supportedDurationsByTier": {
-          "验证档位 · 832×480": [
+          "流畅 · 480P · 854×480": [
             "5 秒",
             "10 秒",
             "20 秒"
+          ],
+          "标准 · 720P · 1280×720": [
+            "5 秒",
+            "10 秒"
+          ],
+          "高清 · 1080P · 1920×1080": [
+            "5 秒"
+          ],
+          "竖屏 · 流畅 · 480P · 480×854": [
+            "5 秒",
+            "10 秒",
+            "20 秒"
+          ],
+          "竖屏 · 标准 · 720P · 720×1280": [
+            "5 秒",
+            "10 秒"
+          ],
+          "竖屏 · 高清 · 1080P · 1080×1920": [
+            "5 秒"
+          ],
+          "方形 · 流畅 · 480P · 480×480": [
+            "5 秒",
+            "10 秒",
+            "20 秒"
+          ],
+          "方形 · 标准 · 720P · 720×720": [
+            "5 秒",
+            "10 秒"
+          ],
+          "方形 · 高清 · 1080P · 1080×1080": [
+            "5 秒"
           ]
         },
         "supportedDuration": "5 秒",
@@ -520,7 +2015,150 @@
           "pipelineUrl": "https://github.com/Ningchirsty/hotter-ai-platform/actions/runs/38152932194",
           "testedCommit": "c533244221ca8d1aa293d6f9361357fa3b765eb4",
           "taskId": "2109315132632338433"
-        }
+        },
+        "supportedTier": "流畅 · 480P · 854×480",
+        "outputProfiles": [
+          {
+            "tier": "流畅 · 480P · 854×480",
+            "ratio": "16:9 横屏",
+            "width": 854,
+            "height": 480,
+            "generationWidth": 864,
+            "generationHeight": 480,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "标准 · 720P · 1280×720",
+            "ratio": "16:9 横屏",
+            "width": 1280,
+            "height": 720,
+            "generationWidth": 1280,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "高清 · 1080P · 1920×1080",
+            "ratio": "16:9 横屏",
+            "width": 1920,
+            "height": 1080,
+            "generationWidth": 1280,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          },
+          {
+            "tier": "竖屏 · 流畅 · 480P · 480×854",
+            "ratio": "9:16 竖屏",
+            "width": 480,
+            "height": 854,
+            "generationWidth": 480,
+            "generationHeight": 864,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "竖屏 · 标准 · 720P · 720×1280",
+            "ratio": "9:16 竖屏",
+            "width": 720,
+            "height": 1280,
+            "generationWidth": 736,
+            "generationHeight": 1280,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "竖屏 · 高清 · 1080P · 1080×1920",
+            "ratio": "9:16 竖屏",
+            "width": 1080,
+            "height": 1920,
+            "generationWidth": 736,
+            "generationHeight": 1280,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          },
+          {
+            "tier": "方形 · 流畅 · 480P · 480×480",
+            "ratio": "1:1 方形",
+            "width": 480,
+            "height": 480,
+            "generationWidth": 480,
+            "generationHeight": 480,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "方形 · 标准 · 720P · 720×720",
+            "ratio": "1:1 方形",
+            "width": 720,
+            "height": 720,
+            "generationWidth": 736,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "方形 · 高清 · 1080P · 1080×1080",
+            "ratio": "1:1 方形",
+            "width": 1080,
+            "height": 1080,
+            "generationWidth": 736,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          }
+        ],
+        "supportedRatios": [
+          "16:9 横屏",
+          "9:16 竖屏",
+          "1:1 方形"
+        ],
+        "supportedTiersByRatio": {
+          "16:9 横屏": [
+            "流畅 · 480P · 854×480",
+            "标准 · 720P · 1280×720",
+            "高清 · 1080P · 1920×1080"
+          ],
+          "9:16 竖屏": [
+            "竖屏 · 流畅 · 480P · 480×854",
+            "竖屏 · 标准 · 720P · 720×1280",
+            "竖屏 · 高清 · 1080P · 1080×1920"
+          ],
+          "1:1 方形": [
+            "方形 · 流畅 · 480P · 480×480",
+            "方形 · 标准 · 720P · 720×720",
+            "方形 · 高清 · 1080P · 1080×1080"
+          ]
+        },
+        "defaultRatio": "16:9 横屏"
       },
       {
         "workflowCode": "wf-ability-video-scene-clip-hun",
@@ -538,13 +2176,52 @@
         "verifiedAt": "2026-10-11T16:15:20.914725+00:00",
         "hasAudio": false,
         "supportedTiers": [
-          "验证档位 · 832×480"
+          "流畅 · 480P · 854×480",
+          "标准 · 720P · 1280×720",
+          "高清 · 1080P · 1920×1080",
+          "竖屏 · 流畅 · 480P · 480×854",
+          "竖屏 · 标准 · 720P · 720×1280",
+          "竖屏 · 高清 · 1080P · 1080×1920",
+          "方形 · 流畅 · 480P · 480×480",
+          "方形 · 标准 · 720P · 720×720",
+          "方形 · 高清 · 1080P · 1080×1080"
         ],
         "supportedDurationsByTier": {
-          "验证档位 · 832×480": [
+          "流畅 · 480P · 854×480": [
             "5 秒",
             "10 秒",
             "20 秒"
+          ],
+          "标准 · 720P · 1280×720": [
+            "5 秒",
+            "10 秒"
+          ],
+          "高清 · 1080P · 1920×1080": [
+            "5 秒"
+          ],
+          "竖屏 · 流畅 · 480P · 480×854": [
+            "5 秒",
+            "10 秒",
+            "20 秒"
+          ],
+          "竖屏 · 标准 · 720P · 720×1280": [
+            "5 秒",
+            "10 秒"
+          ],
+          "竖屏 · 高清 · 1080P · 1080×1920": [
+            "5 秒"
+          ],
+          "方形 · 流畅 · 480P · 480×480": [
+            "5 秒",
+            "10 秒",
+            "20 秒"
+          ],
+          "方形 · 标准 · 720P · 720×720": [
+            "5 秒",
+            "10 秒"
+          ],
+          "方形 · 高清 · 1080P · 1080×1080": [
+            "5 秒"
           ]
         },
         "supportedDuration": "5 秒",
@@ -557,7 +2234,150 @@
           "pipelineUrl": "https://github.com/Ningchirsty/hotter-ai-platform/actions/runs/38152932194",
           "testedCommit": "c533244221ca8d1aa293d6f9361357fa3b765eb4",
           "taskId": "2109315272218775553"
-        }
+        },
+        "supportedTier": "流畅 · 480P · 854×480",
+        "outputProfiles": [
+          {
+            "tier": "流畅 · 480P · 854×480",
+            "ratio": "16:9 横屏",
+            "width": 854,
+            "height": 480,
+            "generationWidth": 864,
+            "generationHeight": 480,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "标准 · 720P · 1280×720",
+            "ratio": "16:9 横屏",
+            "width": 1280,
+            "height": 720,
+            "generationWidth": 1280,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "高清 · 1080P · 1920×1080",
+            "ratio": "16:9 横屏",
+            "width": 1920,
+            "height": 1080,
+            "generationWidth": 1280,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          },
+          {
+            "tier": "竖屏 · 流畅 · 480P · 480×854",
+            "ratio": "9:16 竖屏",
+            "width": 480,
+            "height": 854,
+            "generationWidth": 480,
+            "generationHeight": 864,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "竖屏 · 标准 · 720P · 720×1280",
+            "ratio": "9:16 竖屏",
+            "width": 720,
+            "height": 1280,
+            "generationWidth": 736,
+            "generationHeight": 1280,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "竖屏 · 高清 · 1080P · 1080×1920",
+            "ratio": "9:16 竖屏",
+            "width": 1080,
+            "height": 1920,
+            "generationWidth": 736,
+            "generationHeight": 1280,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          },
+          {
+            "tier": "方形 · 流畅 · 480P · 480×480",
+            "ratio": "1:1 方形",
+            "width": 480,
+            "height": 480,
+            "generationWidth": 480,
+            "generationHeight": 480,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "方形 · 标准 · 720P · 720×720",
+            "ratio": "1:1 方形",
+            "width": 720,
+            "height": 720,
+            "generationWidth": 736,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "方形 · 高清 · 1080P · 1080×1080",
+            "ratio": "1:1 方形",
+            "width": 1080,
+            "height": 1080,
+            "generationWidth": 736,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          }
+        ],
+        "supportedRatios": [
+          "16:9 横屏",
+          "9:16 竖屏",
+          "1:1 方形"
+        ],
+        "supportedTiersByRatio": {
+          "16:9 横屏": [
+            "流畅 · 480P · 854×480",
+            "标准 · 720P · 1280×720",
+            "高清 · 1080P · 1920×1080"
+          ],
+          "9:16 竖屏": [
+            "竖屏 · 流畅 · 480P · 480×854",
+            "竖屏 · 标准 · 720P · 720×1280",
+            "竖屏 · 高清 · 1080P · 1080×1920"
+          ],
+          "1:1 方形": [
+            "方形 · 流畅 · 480P · 480×480",
+            "方形 · 标准 · 720P · 720×720",
+            "方形 · 高清 · 1080P · 1080×1080"
+          ]
+        },
+        "defaultRatio": "16:9 横屏"
       },
       {
         "workflowCode": "wf-ability-video-scene-clip-kand",
@@ -575,13 +2395,52 @@
         "verifiedAt": "2026-10-11T16:15:20.914725+00:00",
         "hasAudio": false,
         "supportedTiers": [
-          "验证档位 · 832×480"
+          "流畅 · 480P · 854×480",
+          "标准 · 720P · 1280×720",
+          "高清 · 1080P · 1920×1080",
+          "竖屏 · 流畅 · 480P · 480×854",
+          "竖屏 · 标准 · 720P · 720×1280",
+          "竖屏 · 高清 · 1080P · 1080×1920",
+          "方形 · 流畅 · 480P · 480×480",
+          "方形 · 标准 · 720P · 720×720",
+          "方形 · 高清 · 1080P · 1080×1080"
         ],
         "supportedDurationsByTier": {
-          "验证档位 · 832×480": [
+          "流畅 · 480P · 854×480": [
             "5 秒",
             "10 秒",
             "20 秒"
+          ],
+          "标准 · 720P · 1280×720": [
+            "5 秒",
+            "10 秒"
+          ],
+          "高清 · 1080P · 1920×1080": [
+            "5 秒"
+          ],
+          "竖屏 · 流畅 · 480P · 480×854": [
+            "5 秒",
+            "10 秒",
+            "20 秒"
+          ],
+          "竖屏 · 标准 · 720P · 720×1280": [
+            "5 秒",
+            "10 秒"
+          ],
+          "竖屏 · 高清 · 1080P · 1080×1920": [
+            "5 秒"
+          ],
+          "方形 · 流畅 · 480P · 480×480": [
+            "5 秒",
+            "10 秒",
+            "20 秒"
+          ],
+          "方形 · 标准 · 720P · 720×720": [
+            "5 秒",
+            "10 秒"
+          ],
+          "方形 · 高清 · 1080P · 1080×1080": [
+            "5 秒"
           ]
         },
         "supportedDuration": "5 秒",
@@ -594,7 +2453,150 @@
           "pipelineUrl": "https://github.com/Ningchirsty/hotter-ai-platform/actions/runs/38152932194",
           "testedCommit": "c533244221ca8d1aa293d6f9361357fa3b765eb4",
           "taskId": "2109315701900054530"
-        }
+        },
+        "supportedTier": "流畅 · 480P · 854×480",
+        "outputProfiles": [
+          {
+            "tier": "流畅 · 480P · 854×480",
+            "ratio": "16:9 横屏",
+            "width": 854,
+            "height": 480,
+            "generationWidth": 864,
+            "generationHeight": 480,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "标准 · 720P · 1280×720",
+            "ratio": "16:9 横屏",
+            "width": 1280,
+            "height": 720,
+            "generationWidth": 1280,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "高清 · 1080P · 1920×1080",
+            "ratio": "16:9 横屏",
+            "width": 1920,
+            "height": 1080,
+            "generationWidth": 1280,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          },
+          {
+            "tier": "竖屏 · 流畅 · 480P · 480×854",
+            "ratio": "9:16 竖屏",
+            "width": 480,
+            "height": 854,
+            "generationWidth": 480,
+            "generationHeight": 864,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "竖屏 · 标准 · 720P · 720×1280",
+            "ratio": "9:16 竖屏",
+            "width": 720,
+            "height": 1280,
+            "generationWidth": 736,
+            "generationHeight": 1280,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "竖屏 · 高清 · 1080P · 1080×1920",
+            "ratio": "9:16 竖屏",
+            "width": 1080,
+            "height": 1920,
+            "generationWidth": 736,
+            "generationHeight": 1280,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          },
+          {
+            "tier": "方形 · 流畅 · 480P · 480×480",
+            "ratio": "1:1 方形",
+            "width": 480,
+            "height": 480,
+            "generationWidth": 480,
+            "generationHeight": 480,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "方形 · 标准 · 720P · 720×720",
+            "ratio": "1:1 方形",
+            "width": 720,
+            "height": 720,
+            "generationWidth": 736,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "方形 · 高清 · 1080P · 1080×1080",
+            "ratio": "1:1 方形",
+            "width": 1080,
+            "height": 1080,
+            "generationWidth": 736,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          }
+        ],
+        "supportedRatios": [
+          "16:9 横屏",
+          "9:16 竖屏",
+          "1:1 方形"
+        ],
+        "supportedTiersByRatio": {
+          "16:9 横屏": [
+            "流畅 · 480P · 854×480",
+            "标准 · 720P · 1280×720",
+            "高清 · 1080P · 1920×1080"
+          ],
+          "9:16 竖屏": [
+            "竖屏 · 流畅 · 480P · 480×854",
+            "竖屏 · 标准 · 720P · 720×1280",
+            "竖屏 · 高清 · 1080P · 1080×1920"
+          ],
+          "1:1 方形": [
+            "方形 · 流畅 · 480P · 480×480",
+            "方形 · 标准 · 720P · 720×720",
+            "方形 · 高清 · 1080P · 1080×1080"
+          ]
+        },
+        "defaultRatio": "16:9 横屏"
       }
     ],
     "recommendedWorkflowCode": "wf-ability-video-scene-clip-wan"
@@ -652,13 +2654,52 @@
         "verifiedAt": "2026-10-11T16:15:20.914725+00:00",
         "hasAudio": false,
         "supportedTiers": [
-          "验证档位 · 832×480"
+          "流畅 · 480P · 854×480",
+          "标准 · 720P · 1280×720",
+          "高清 · 1080P · 1920×1080",
+          "竖屏 · 流畅 · 480P · 480×854",
+          "竖屏 · 标准 · 720P · 720×1280",
+          "竖屏 · 高清 · 1080P · 1080×1920",
+          "方形 · 流畅 · 480P · 480×480",
+          "方形 · 标准 · 720P · 720×720",
+          "方形 · 高清 · 1080P · 1080×1080"
         ],
         "supportedDurationsByTier": {
-          "验证档位 · 832×480": [
+          "流畅 · 480P · 854×480": [
             "5 秒",
             "10 秒",
             "20 秒"
+          ],
+          "标准 · 720P · 1280×720": [
+            "5 秒",
+            "10 秒"
+          ],
+          "高清 · 1080P · 1920×1080": [
+            "5 秒"
+          ],
+          "竖屏 · 流畅 · 480P · 480×854": [
+            "5 秒",
+            "10 秒",
+            "20 秒"
+          ],
+          "竖屏 · 标准 · 720P · 720×1280": [
+            "5 秒",
+            "10 秒"
+          ],
+          "竖屏 · 高清 · 1080P · 1080×1920": [
+            "5 秒"
+          ],
+          "方形 · 流畅 · 480P · 480×480": [
+            "5 秒",
+            "10 秒",
+            "20 秒"
+          ],
+          "方形 · 标准 · 720P · 720×720": [
+            "5 秒",
+            "10 秒"
+          ],
+          "方形 · 高清 · 1080P · 1080×1080": [
+            "5 秒"
           ]
         },
         "supportedDuration": "5 秒",
@@ -671,7 +2712,150 @@
           "pipelineUrl": "https://github.com/Ningchirsty/hotter-ai-platform/actions/runs/38152932194",
           "testedCommit": "c533244221ca8d1aa293d6f9361357fa3b765eb4",
           "taskId": "2109316257620168706"
-        }
+        },
+        "supportedTier": "流畅 · 480P · 854×480",
+        "outputProfiles": [
+          {
+            "tier": "流畅 · 480P · 854×480",
+            "ratio": "16:9 横屏",
+            "width": 854,
+            "height": 480,
+            "generationWidth": 864,
+            "generationHeight": 480,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "标准 · 720P · 1280×720",
+            "ratio": "16:9 横屏",
+            "width": 1280,
+            "height": 720,
+            "generationWidth": 1280,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "高清 · 1080P · 1920×1080",
+            "ratio": "16:9 横屏",
+            "width": 1920,
+            "height": 1080,
+            "generationWidth": 1280,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          },
+          {
+            "tier": "竖屏 · 流畅 · 480P · 480×854",
+            "ratio": "9:16 竖屏",
+            "width": 480,
+            "height": 854,
+            "generationWidth": 480,
+            "generationHeight": 864,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "竖屏 · 标准 · 720P · 720×1280",
+            "ratio": "9:16 竖屏",
+            "width": 720,
+            "height": 1280,
+            "generationWidth": 736,
+            "generationHeight": 1280,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "竖屏 · 高清 · 1080P · 1080×1920",
+            "ratio": "9:16 竖屏",
+            "width": 1080,
+            "height": 1920,
+            "generationWidth": 736,
+            "generationHeight": 1280,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          },
+          {
+            "tier": "方形 · 流畅 · 480P · 480×480",
+            "ratio": "1:1 方形",
+            "width": 480,
+            "height": 480,
+            "generationWidth": 480,
+            "generationHeight": 480,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "方形 · 标准 · 720P · 720×720",
+            "ratio": "1:1 方形",
+            "width": 720,
+            "height": 720,
+            "generationWidth": 736,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "方形 · 高清 · 1080P · 1080×1080",
+            "ratio": "1:1 方形",
+            "width": 1080,
+            "height": 1080,
+            "generationWidth": 736,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          }
+        ],
+        "supportedRatios": [
+          "16:9 横屏",
+          "9:16 竖屏",
+          "1:1 方形"
+        ],
+        "supportedTiersByRatio": {
+          "16:9 横屏": [
+            "流畅 · 480P · 854×480",
+            "标准 · 720P · 1280×720",
+            "高清 · 1080P · 1920×1080"
+          ],
+          "9:16 竖屏": [
+            "竖屏 · 流畅 · 480P · 480×854",
+            "竖屏 · 标准 · 720P · 720×1280",
+            "竖屏 · 高清 · 1080P · 1080×1920"
+          ],
+          "1:1 方形": [
+            "方形 · 流畅 · 480P · 480×480",
+            "方形 · 标准 · 720P · 720×720",
+            "方形 · 高清 · 1080P · 1080×1080"
+          ]
+        },
+        "defaultRatio": "16:9 横屏"
       },
       {
         "workflowCode": "wf-ability-video-keyframe-transition-ltx",
@@ -691,13 +2875,52 @@
         "verifiedAt": "2026-10-11T16:15:20.914725+00:00",
         "hasAudio": true,
         "supportedTiers": [
-          "验证档位 · 832×480"
+          "流畅 · 480P · 854×480",
+          "标准 · 720P · 1280×720",
+          "高清 · 1080P · 1920×1080",
+          "竖屏 · 流畅 · 480P · 480×854",
+          "竖屏 · 标准 · 720P · 720×1280",
+          "竖屏 · 高清 · 1080P · 1080×1920",
+          "方形 · 流畅 · 480P · 480×480",
+          "方形 · 标准 · 720P · 720×720",
+          "方形 · 高清 · 1080P · 1080×1080"
         ],
         "supportedDurationsByTier": {
-          "验证档位 · 832×480": [
+          "流畅 · 480P · 854×480": [
             "5 秒",
             "10 秒",
             "20 秒"
+          ],
+          "标准 · 720P · 1280×720": [
+            "5 秒",
+            "10 秒"
+          ],
+          "高清 · 1080P · 1920×1080": [
+            "5 秒"
+          ],
+          "竖屏 · 流畅 · 480P · 480×854": [
+            "5 秒",
+            "10 秒",
+            "20 秒"
+          ],
+          "竖屏 · 标准 · 720P · 720×1280": [
+            "5 秒",
+            "10 秒"
+          ],
+          "竖屏 · 高清 · 1080P · 1080×1920": [
+            "5 秒"
+          ],
+          "方形 · 流畅 · 480P · 480×480": [
+            "5 秒",
+            "10 秒",
+            "20 秒"
+          ],
+          "方形 · 标准 · 720P · 720×720": [
+            "5 秒",
+            "10 秒"
+          ],
+          "方形 · 高清 · 1080P · 1080×1080": [
+            "5 秒"
           ]
         },
         "supportedDuration": "5 秒",
@@ -710,7 +2933,150 @@
           "pipelineUrl": "https://github.com/Ningchirsty/hotter-ai-platform/actions/runs/38152932194",
           "testedCommit": "c533244221ca8d1aa293d6f9361357fa3b765eb4",
           "taskId": "2109316409462362113"
-        }
+        },
+        "supportedTier": "流畅 · 480P · 854×480",
+        "outputProfiles": [
+          {
+            "tier": "流畅 · 480P · 854×480",
+            "ratio": "16:9 横屏",
+            "width": 854,
+            "height": 480,
+            "generationWidth": 864,
+            "generationHeight": 480,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "标准 · 720P · 1280×720",
+            "ratio": "16:9 横屏",
+            "width": 1280,
+            "height": 720,
+            "generationWidth": 1280,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "高清 · 1080P · 1920×1080",
+            "ratio": "16:9 横屏",
+            "width": 1920,
+            "height": 1080,
+            "generationWidth": 1920,
+            "generationHeight": 1088,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "竖屏 · 流畅 · 480P · 480×854",
+            "ratio": "9:16 竖屏",
+            "width": 480,
+            "height": 854,
+            "generationWidth": 480,
+            "generationHeight": 864,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "竖屏 · 标准 · 720P · 720×1280",
+            "ratio": "9:16 竖屏",
+            "width": 720,
+            "height": 1280,
+            "generationWidth": 736,
+            "generationHeight": 1280,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "竖屏 · 高清 · 1080P · 1080×1920",
+            "ratio": "9:16 竖屏",
+            "width": 1080,
+            "height": 1920,
+            "generationWidth": 1088,
+            "generationHeight": 1920,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "方形 · 流畅 · 480P · 480×480",
+            "ratio": "1:1 方形",
+            "width": 480,
+            "height": 480,
+            "generationWidth": 480,
+            "generationHeight": 480,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "方形 · 标准 · 720P · 720×720",
+            "ratio": "1:1 方形",
+            "width": 720,
+            "height": 720,
+            "generationWidth": 736,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "方形 · 高清 · 1080P · 1080×1080",
+            "ratio": "1:1 方形",
+            "width": 1080,
+            "height": 1080,
+            "generationWidth": 1088,
+            "generationHeight": 1088,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "NATIVE"
+          }
+        ],
+        "supportedRatios": [
+          "16:9 横屏",
+          "9:16 竖屏",
+          "1:1 方形"
+        ],
+        "supportedTiersByRatio": {
+          "16:9 横屏": [
+            "流畅 · 480P · 854×480",
+            "标准 · 720P · 1280×720",
+            "高清 · 1080P · 1920×1080"
+          ],
+          "9:16 竖屏": [
+            "竖屏 · 流畅 · 480P · 480×854",
+            "竖屏 · 标准 · 720P · 720×1280",
+            "竖屏 · 高清 · 1080P · 1080×1920"
+          ],
+          "1:1 方形": [
+            "方形 · 流畅 · 480P · 480×480",
+            "方形 · 标准 · 720P · 720×720",
+            "方形 · 高清 · 1080P · 1080×1080"
+          ]
+        },
+        "defaultRatio": "16:9 横屏"
       },
       {
         "workflowCode": "wf-ability-video-keyframe-transition-h3",
@@ -730,13 +3096,52 @@
         "verifiedAt": "2026-10-11T16:15:20.914725+00:00",
         "hasAudio": true,
         "supportedTiers": [
-          "验证档位 · 768×448"
+          "流畅 · 480P · 854×480",
+          "标准 · 720P · 1280×720",
+          "高清 · 1080P · 1920×1080",
+          "竖屏 · 流畅 · 480P · 480×854",
+          "竖屏 · 标准 · 720P · 720×1280",
+          "竖屏 · 高清 · 1080P · 1080×1920",
+          "方形 · 流畅 · 480P · 480×480",
+          "方形 · 标准 · 720P · 720×720",
+          "方形 · 高清 · 1080P · 1080×1080"
         ],
         "supportedDurationsByTier": {
-          "验证档位 · 768×448": [
+          "流畅 · 480P · 854×480": [
             "5 秒",
             "10 秒",
             "20 秒"
+          ],
+          "标准 · 720P · 1280×720": [
+            "5 秒",
+            "10 秒"
+          ],
+          "高清 · 1080P · 1920×1080": [
+            "5 秒"
+          ],
+          "竖屏 · 流畅 · 480P · 480×854": [
+            "5 秒",
+            "10 秒",
+            "20 秒"
+          ],
+          "竖屏 · 标准 · 720P · 720×1280": [
+            "5 秒",
+            "10 秒"
+          ],
+          "竖屏 · 高清 · 1080P · 1080×1920": [
+            "5 秒"
+          ],
+          "方形 · 流畅 · 480P · 480×480": [
+            "5 秒",
+            "10 秒",
+            "20 秒"
+          ],
+          "方形 · 标准 · 720P · 720×720": [
+            "5 秒",
+            "10 秒"
+          ],
+          "方形 · 高清 · 1080P · 1080×1080": [
+            "5 秒"
           ]
         },
         "supportedDuration": "5 秒",
@@ -749,7 +3154,150 @@
           "pipelineUrl": "https://github.com/Ningchirsty/hotter-ai-platform/actions/runs/38152932194",
           "testedCommit": "c533244221ca8d1aa293d6f9361357fa3b765eb4",
           "taskId": "2109316523476127746"
-        }
+        },
+        "supportedTier": "流畅 · 480P · 854×480",
+        "outputProfiles": [
+          {
+            "tier": "流畅 · 480P · 854×480",
+            "ratio": "16:9 横屏",
+            "width": 854,
+            "height": 480,
+            "generationWidth": 864,
+            "generationHeight": 480,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "标准 · 720P · 1280×720",
+            "ratio": "16:9 横屏",
+            "width": 1280,
+            "height": 720,
+            "generationWidth": 1280,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "高清 · 1080P · 1920×1080",
+            "ratio": "16:9 横屏",
+            "width": 1920,
+            "height": 1080,
+            "generationWidth": 1280,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          },
+          {
+            "tier": "竖屏 · 流畅 · 480P · 480×854",
+            "ratio": "9:16 竖屏",
+            "width": 480,
+            "height": 854,
+            "generationWidth": 480,
+            "generationHeight": 864,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "竖屏 · 标准 · 720P · 720×1280",
+            "ratio": "9:16 竖屏",
+            "width": 720,
+            "height": 1280,
+            "generationWidth": 736,
+            "generationHeight": 1280,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "竖屏 · 高清 · 1080P · 1080×1920",
+            "ratio": "9:16 竖屏",
+            "width": 1080,
+            "height": 1920,
+            "generationWidth": 736,
+            "generationHeight": 1280,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          },
+          {
+            "tier": "方形 · 流畅 · 480P · 480×480",
+            "ratio": "1:1 方形",
+            "width": 480,
+            "height": 480,
+            "generationWidth": 480,
+            "generationHeight": 480,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "方形 · 标准 · 720P · 720×720",
+            "ratio": "1:1 方形",
+            "width": 720,
+            "height": 720,
+            "generationWidth": 736,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "方形 · 高清 · 1080P · 1080×1080",
+            "ratio": "1:1 方形",
+            "width": 1080,
+            "height": 1080,
+            "generationWidth": 736,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          }
+        ],
+        "supportedRatios": [
+          "16:9 横屏",
+          "9:16 竖屏",
+          "1:1 方形"
+        ],
+        "supportedTiersByRatio": {
+          "16:9 横屏": [
+            "流畅 · 480P · 854×480",
+            "标准 · 720P · 1280×720",
+            "高清 · 1080P · 1920×1080"
+          ],
+          "9:16 竖屏": [
+            "竖屏 · 流畅 · 480P · 480×854",
+            "竖屏 · 标准 · 720P · 720×1280",
+            "竖屏 · 高清 · 1080P · 1080×1920"
+          ],
+          "1:1 方形": [
+            "方形 · 流畅 · 480P · 480×480",
+            "方形 · 标准 · 720P · 720×720",
+            "方形 · 高清 · 1080P · 1080×1080"
+          ]
+        },
+        "defaultRatio": "16:9 横屏"
       }
     ],
     "recommendedWorkflowCode": "wf-ability-video-keyframe-transition-wan"
@@ -815,13 +3363,52 @@
         "verifiedAt": "2026-10-11T16:15:20.914725+00:00",
         "hasAudio": true,
         "supportedTiers": [
-          "验证档位 · 864×480"
+          "流畅 · 480P · 854×480",
+          "标准 · 720P · 1280×720",
+          "高清 · 1080P · 1920×1080",
+          "竖屏 · 流畅 · 480P · 480×854",
+          "竖屏 · 标准 · 720P · 720×1280",
+          "竖屏 · 高清 · 1080P · 1080×1920",
+          "方形 · 流畅 · 480P · 480×480",
+          "方形 · 标准 · 720P · 720×720",
+          "方形 · 高清 · 1080P · 1080×1080"
         ],
         "supportedDurationsByTier": {
-          "验证档位 · 864×480": [
+          "流畅 · 480P · 854×480": [
             "5 秒",
             "10 秒",
             "20 秒"
+          ],
+          "标准 · 720P · 1280×720": [
+            "5 秒",
+            "10 秒"
+          ],
+          "高清 · 1080P · 1920×1080": [
+            "5 秒"
+          ],
+          "竖屏 · 流畅 · 480P · 480×854": [
+            "5 秒",
+            "10 秒",
+            "20 秒"
+          ],
+          "竖屏 · 标准 · 720P · 720×1280": [
+            "5 秒",
+            "10 秒"
+          ],
+          "竖屏 · 高清 · 1080P · 1080×1920": [
+            "5 秒"
+          ],
+          "方形 · 流畅 · 480P · 480×480": [
+            "5 秒",
+            "10 秒",
+            "20 秒"
+          ],
+          "方形 · 标准 · 720P · 720×720": [
+            "5 秒",
+            "10 秒"
+          ],
+          "方形 · 高清 · 1080P · 1080×1080": [
+            "5 秒"
           ]
         },
         "supportedDuration": "5 秒",
@@ -834,7 +3421,150 @@
           "pipelineUrl": "https://github.com/Ningchirsty/hotter-ai-platform/actions/runs/38152932194",
           "testedCommit": "c533244221ca8d1aa293d6f9361357fa3b765eb4",
           "taskId": "2109316637447950338"
-        }
+        },
+        "supportedTier": "流畅 · 480P · 854×480",
+        "outputProfiles": [
+          {
+            "tier": "流畅 · 480P · 854×480",
+            "ratio": "16:9 横屏",
+            "width": 854,
+            "height": 480,
+            "generationWidth": 864,
+            "generationHeight": 480,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "标准 · 720P · 1280×720",
+            "ratio": "16:9 横屏",
+            "width": 1280,
+            "height": 720,
+            "generationWidth": 1280,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "高清 · 1080P · 1920×1080",
+            "ratio": "16:9 横屏",
+            "width": 1920,
+            "height": 1080,
+            "generationWidth": 1280,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          },
+          {
+            "tier": "竖屏 · 流畅 · 480P · 480×854",
+            "ratio": "9:16 竖屏",
+            "width": 480,
+            "height": 854,
+            "generationWidth": 480,
+            "generationHeight": 864,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "竖屏 · 标准 · 720P · 720×1280",
+            "ratio": "9:16 竖屏",
+            "width": 720,
+            "height": 1280,
+            "generationWidth": 736,
+            "generationHeight": 1280,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "竖屏 · 高清 · 1080P · 1080×1920",
+            "ratio": "9:16 竖屏",
+            "width": 1080,
+            "height": 1920,
+            "generationWidth": 736,
+            "generationHeight": 1280,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          },
+          {
+            "tier": "方形 · 流畅 · 480P · 480×480",
+            "ratio": "1:1 方形",
+            "width": 480,
+            "height": 480,
+            "generationWidth": 480,
+            "generationHeight": 480,
+            "durations": [
+              "5 秒",
+              "10 秒",
+              "20 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "方形 · 标准 · 720P · 720×720",
+            "ratio": "1:1 方形",
+            "width": 720,
+            "height": 720,
+            "generationWidth": 736,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒",
+              "10 秒"
+            ],
+            "mode": "NATIVE"
+          },
+          {
+            "tier": "方形 · 高清 · 1080P · 1080×1080",
+            "ratio": "1:1 方形",
+            "width": 1080,
+            "height": 1080,
+            "generationWidth": 736,
+            "generationHeight": 736,
+            "durations": [
+              "5 秒"
+            ],
+            "mode": "SUPER_RESOLUTION"
+          }
+        ],
+        "supportedRatios": [
+          "16:9 横屏",
+          "9:16 竖屏",
+          "1:1 方形"
+        ],
+        "supportedTiersByRatio": {
+          "16:9 横屏": [
+            "流畅 · 480P · 854×480",
+            "标准 · 720P · 1280×720",
+            "高清 · 1080P · 1920×1080"
+          ],
+          "9:16 竖屏": [
+            "竖屏 · 流畅 · 480P · 480×854",
+            "竖屏 · 标准 · 720P · 720×1280",
+            "竖屏 · 高清 · 1080P · 1080×1920"
+          ],
+          "1:1 方形": [
+            "方形 · 流畅 · 480P · 480×480",
+            "方形 · 标准 · 720P · 720×720",
+            "方形 · 高清 · 1080P · 1080×1080"
+          ]
+        },
+        "defaultRatio": "16:9 横屏"
       }
     ],
     "recommendedWorkflowCode": "wf-ability-video-reference-story-h3"

@@ -12,6 +12,17 @@ export type VideoCapabilityCode = 'I2V' | 'T2V' | 'FL2V' | 'R2V';
 /** 任务状态（与后端 video_task.status 一致） */
 export type VideoTaskStatus = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELED' | 'TIMEOUT';
 
+export interface VideoOutputProfile {
+  tier: string;
+  ratio: string;
+  width: number;
+  height: number;
+  generationWidth: number;
+  generationHeight: number;
+  durations: string[];
+  mode: 'NATIVE' | 'RESIZED' | 'SUPER_RESOLUTION';
+}
+
 /**
  * 可提交工作流视图。
  *
@@ -55,6 +66,7 @@ export interface VideoWorkflowVO {
   supportedTiersByRatio?: Record<string, string[]> | null;
   /** 默认比例（服务端给第一个），用于前端初始选中。 */
   defaultRatio?: string | null;
+  outputProfiles?: VideoOutputProfile[] | null;
 }
 
 /** 素材（上传素材或任务成片） */

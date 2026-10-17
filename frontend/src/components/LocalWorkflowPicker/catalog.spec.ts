@@ -41,10 +41,39 @@ describe('31 个工作流目录和提交边界', () => {
       expect(option.supportedDuration).toBe('5 秒');
       expect(option.maxDurationSeconds).toBe(20);
       for (const tier of option.supportedTiers) {
-        expect(option.supportedDurationsByTier[tier]).toEqual(['5 秒', '10 秒', '20 秒']);
-        expect(option.supportedDurationsByTier[tier]).toEqual(backend.fixedFieldValidation.supportedDurations);
+        const profile = backend.fixedFieldValidation.outputProfiles.find((p: any) => p.tier === tier);
+        expect(option.supportedDurationsByTier[tier]).toEqual(profile.durations);
+        expect(option.supportedDurationsByTier[tier]).toContain('5 秒');
       }
     }
+  });
+
+  it('每个本地视频模型及用途的三个比例、三档尺寸与后端契约一致且不泄漏节点配置', () => {
+    const contract = JSON.parse(readFileSync(new URL('../../../../script/video/workflows/native-workflow-contracts.json', import.meta.url), 'utf8'));
+    const bindings = contract.capabilities.flatMap((c: any) => c.workflows);
+    const abilities = JSON.parse(readFileSync(new URL('../../views/video/abilities.json', import.meta.url), 'utf8'));
+    const serverAbilities = JSON.parse(readFileSync(new URL('../../../../script/video/workflows/abilities.json', import.meta.url), 'utf8'));
+    expect(abilities).toEqual(serverAbilities);
+    const options = [...video, ...abilities.flatMap((a: any) => a.workflows)];
+    expect(options).toHaveLength(35);
+    for (const option of options) {
+      const fixed = bindings.find((w: any) => w.workflowCode === option.workflowCode).fixedFieldValidation;
+      expect(option.supportedRatios).toEqual(['16:9 横屏', '9:16 竖屏', '1:1 方形']);
+      expect(option.outputProfiles).toHaveLength(9);
+      expect(option.supportedTiers).toEqual(fixed.supportedTiers);
+      expect(option.outputProfiles).toEqual(fixed.outputProfiles.filter((p: any) => !p.legacy).map(({ legacy, ...p }: any) => p));
+      for (const ratio of option.supportedRatios) {
+        expect(option.supportedTiersByRatio[ratio]).toHaveLength(3);
+      }
+      for (const profile of option.outputProfiles) {
+        expect(profile.tier.length).toBeLessThanOrEqual(32);
+        expect(profile.tier).toContain(`${profile.width}×${profile.height}`);
+        expect(option.supportedDurationsByTier[profile.tier]).toEqual(profile.durations);
+        const shortEdge = Math.min(profile.width, profile.height);
+        expect(profile.durations).toEqual(shortEdge === 480 ? ['5 秒', '10 秒', '20 秒'] : shortEdge === 720 ? ['5 秒', '10 秒'] : ['5 秒']);
+      }
+    }
+    expect(JSON.stringify(options)).not.toMatch(/nodeId|videoNodeId|resizeNodeId|class_type|apiJsonFile|safetensors/);
   });
 
   it('提交必须匹配媒体、能力、模型、版本和服务器发布许可', () => {
