@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import image from '../../views/image/abilities.json';
 import video from '../../views/video/abilities.json';
 import { abilityDefaults, abilityRequest, compileAbility, type CreativeAbility } from './types';
-import { localCreationModels, localModelWorkflow } from './model-selection';
+import { localCreationModels, localModelWorkflow, preferredLocalWorkflow } from './model-selection';
 import type { LocalWorkflowOption } from '../LocalWorkflowPicker/types';
 import imageCatalogData from '../../views/image/local-workflows.json';
 import videoCatalogData from '../../views/video/local-workflows.json';
@@ -124,5 +124,28 @@ describe('模型优先的本地创作选择', () => {
     expect(localModelWorkflow(models, 'QWEN21', 'wf-t2i-qwen21', ['wf-t2i-qwen21'])).toBe('wf-t2i-qwen21');
     const invalidAbility = { ...imageAbilities[0], workflows: [videoAbilities[0].workflows[0]] };
     expect(localCreationModels('image', [invalidAbility], [], IMAGE_MODULES)).toEqual([]);
+  });
+
+  it('视频通用入口优先选择已发布且支持完整输出规格的版本，旧任务仍保留在目录中', () => {
+    const native = videoCatalog.find(item => item.modelCode === 'H3' && item.capabilityCode === 'I2V')!;
+    const legacy = { ...native, workflowCode: 'wf-i2v-h3', outputProfiles: undefined, verifiedAt: undefined, version: '' };
+    const options = [legacy, native];
+    const published = options.map(item => item.workflowCode);
+    const models = localCreationModels('video', [], options, VIDEO_MODULES);
+    expect(preferredLocalWorkflow(options, legacy.workflowCode, published)).toBe(native);
+    expect(localModelWorkflow(models, 'H3', legacy.workflowCode, published)).toBe(native.workflowCode);
+    expect(preferredLocalWorkflow(options, native.workflowCode, published)).toBe(native);
+    expect(models[0].choices[0].workflows).toContain(legacy);
+    expect(native.supportedRatios).toContain('1:1 方形');
+  });
+
+  it('完整规格版本未发布时保留可用旧版，图像旧版选择不受视频升级影响', () => {
+    const native = videoCatalog.find(item => item.modelCode === 'H3' && item.capabilityCode === 'I2V')!;
+    const legacy = { ...native, workflowCode: 'wf-i2v-h3', outputProfiles: undefined };
+    expect(preferredLocalWorkflow([legacy, native], legacy.workflowCode, [legacy.workflowCode])).toBe(legacy);
+    expect(preferredLocalWorkflow([legacy, native], 'another-model', [legacy.workflowCode])).toBe(legacy);
+    const imageLegacy = { ...imageCatalog[0], workflowCode: 'legacy-image', outputProfiles: undefined };
+    expect(preferredLocalWorkflow([imageLegacy, imageCatalog[0]], imageLegacy.workflowCode,
+      [imageLegacy.workflowCode, imageCatalog[0].workflowCode])).toBe(imageLegacy);
   });
 });

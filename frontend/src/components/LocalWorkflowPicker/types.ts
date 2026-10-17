@@ -13,6 +13,10 @@ export interface LocalWorkflowOption {
   fps?: number;
   sizes?: Array<{ label: string; width: number; height: number }>;
   supportedTiers?: string[];
+  outputProfiles?: import('@/api/video/types').VideoOutputProfile[];
+  supportedRatios?: string[];
+  supportedTiersByRatio?: Record<string, string[]>;
+  defaultRatio?: string;
 }
 
 export interface RegisteredWorkflow {

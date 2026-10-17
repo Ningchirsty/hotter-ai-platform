@@ -16,6 +16,16 @@ export interface LocalCreationModel {
   choices: LocalCreationChoice[];
 }
 
+/** New video creations use a published version with output profiles; old task IDs stay resolvable. */
+export function preferredLocalWorkflow(workflows: LocalWorkflowOption[], currentCode: string,
+  publishedCodes: string[] = []): LocalWorkflowOption | undefined {
+  const current = workflows.find(item => item.workflowCode === currentCode);
+  const published = workflows.filter(item => publishedCodes.includes(item.workflowCode));
+  const profiledVideo = published.find(item => item.media === 'video' && item.outputProfiles?.length);
+  if (current?.media === 'video' && !current.outputProfiles?.length && profiledVideo) return profiledVideo;
+  return current ?? profiledVideo ?? published[0] ?? workflows[0];
+}
+
 const families: Record<string, string> = {
   QWEN21: 'Qwen', QWEN2512: 'Qwen', ZIMAGE: 'Z-Image', FLUX4B: 'FLUX',
   KREA: 'Krea', IDEOGRAM: 'Ideogram', WAN: 'Wan', H3: 'MiniMax',
@@ -64,7 +74,5 @@ export function localModelWorkflow(models: LocalCreationModel[], modelCode: stri
   const previous = models.flatMap(item => item.choices).find(item => item.workflows.some(w => w.workflowCode === currentCode));
   const choice = target.choices.find(item => item.key === previous?.key) ?? target.choices[0];
   if (!choice) return undefined;
-  return choice.workflows.find(item => item.workflowCode === currentCode)?.workflowCode
-    ?? choice.workflows.find(item => publishedCodes.includes(item.workflowCode))?.workflowCode
-    ?? choice.workflows[0]?.workflowCode;
+  return preferredLocalWorkflow(choice.workflows, currentCode, publishedCodes)?.workflowCode;
 }

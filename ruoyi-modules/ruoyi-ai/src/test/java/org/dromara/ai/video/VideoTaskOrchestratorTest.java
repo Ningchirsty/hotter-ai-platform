@@ -122,8 +122,9 @@ class VideoTaskOrchestratorTest {
         WorkflowVersion version = registry.require(code, true);
         probe.measured = true;
         probe.audioAvailable = true;
-        probe.width = 768;
-        probe.height = 448;
+        int[] expectedSize = registry.nativeOutputSize(code, version.fixedFieldValidation().tier());
+        probe.width = expectedSize[0];
+        probe.height = expectedSize[1];
         probe.durationMillis = Math.round(version.fixedFieldValidation().durationControl().frames(seconds) / 24.0 * 1000);
         var context = new VideoTaskOrchestrator.TaskContext(1L, "000000", 100L, 10L,
             "T2V", code, "茶壶轻柔冒出蒸汽", version.fixedFieldValidation().tier(),
@@ -496,6 +497,43 @@ class VideoTaskOrchestratorTest {
         assertEquals(Duration.ofSeconds(14400), runner.resolvePollBudget("20 秒", nativeVersion));
         assertEquals(Duration.ofSeconds(900), runner.resolvePollBudget("20 秒", registry.peek("wf-t2v-h3")));
         assertEquals(Duration.ofSeconds(900), runner.resolvePollBudget("20 秒", null));
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 4, 8})
+    void nativeArchiveChecksTheSelectedOutputProfileRatherThanTheOldSingleSize(int profileIndex) {
+        String code = "wf-local-ready-minimaxh3-turbo-t2v-av";
+        var version = registry.require(code, true);
+        var profile = version.fixedFieldValidation().profiles().get(profileIndex);
+        probe.measured = true; probe.audioAvailable = true;
+        probe.width = profile.width(); probe.height = profile.height(); probe.durationMillis = 5167L;
+        var context = new VideoTaskOrchestrator.TaskContext(1L, "000000", 100L, 10L,
+            "T2V", code, "新规格成片", profile.tier(), "5 秒", null, null, null, false, System::nanoTime, new AtomicInteger(0));
+        var result = orchestrator(2000).execute(context);
+        assertEquals(profile.width(), result.output().width());
+        assertEquals(profile.height(), result.output().height());
+    }
+
+    @Test
+    void nativeArchiveRejectsAnOldLandscapeClipForTheSelectedPortraitSize() {
+        String code = "wf-local-ready-minimaxh3-turbo-t2v-av";
+        var version = registry.require(code, true);
+        var profile = version.fixedFieldValidation().profiles().stream().filter(p -> p.ratio().startsWith("9:16")).findFirst().orElseThrow();
+        probe.measured = true; probe.audioAvailable = true; probe.width = 768; probe.height = 448; probe.durationMillis = 5167L;
+        var context = new VideoTaskOrchestrator.TaskContext(1L, "000000", 100L, 10L,
+            "T2V", code, "竖屏请求不能接收横屏成片", profile.tier(), "5 秒", null, null, null, false, System::nanoTime, new AtomicInteger(0));
+        assertThrows(VideoTaskException.class, () -> orchestrator(2000).execute(context));
+    }
+
+    @Test
+    void executionWindowAccountsForTheActualGenerationCanvasAndRemainsBounded() {
+        var version = registry.require("wf-local-video-hunyuan-video-1.5-720p-t2v", true);
+        var nativeTier = version.fixedFieldValidation().profiles().stream().filter(p -> p.height() == 720 && !p.legacy()).findFirst().orElseThrow();
+        var runner = orchestrator(900_000);
+        assertTrue(runner.resolvePollBudget("20 秒", nativeTier.tier(), version).compareTo(Duration.ofHours(4)) >= 0);
+        assertTrue(runner.resolvePollBudget("20 秒", nativeTier.tier(), version).compareTo(Duration.ofHours(24)) <= 0);
+        var oldTier = version.fixedFieldValidation().profiles().stream().filter(p -> p.legacy()).findFirst().orElseThrow();
+        assertEquals(Duration.ofHours(4), runner.resolvePollBudget("20 秒", oldTier.tier(), version));
     }
 
     private VideoTaskOrchestrator.TaskContext context(String capability, String workflow, String prompt,

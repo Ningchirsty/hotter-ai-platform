@@ -118,6 +118,17 @@ public class WorkflowContractRegistry {
         return size == null ? null : size.clone();
     }
 
+    public int[] nativeOutputSize(String workflowCode, String tier) {
+        WorkflowVersion version = byCode.get(workflowCode);
+        if (version != null && version.fixedFieldValidation() != null
+            && !version.fixedFieldValidation().profiles().isEmpty()) {
+            var profile = version.fixedFieldValidation().profileOf(tier);
+            if (profile == null) throw VideoTaskException.invalidContract("输出规格未配置");
+            return new int[]{profile.width(), profile.height()};
+        }
+        return nativeOutputSize(workflowCode);
+    }
+
     public JsonNode nativeOutput(String workflowCode) {
         JsonNode output = nativeOutputs.get(workflowCode);
         return output == null ? null : output.deepCopy();
@@ -136,7 +147,8 @@ public class WorkflowContractRegistry {
         WorkflowVersion.FixedFieldValidation fixed = fixedNode.isObject()
             ? new WorkflowVersion.FixedFieldValidation(
                 fixedNode.path("tier").asText(null), fixedNode.path("dur").asText(null),
-                readSupportedTiers(fixedNode), readSupportedDurations(fixedNode), readDurationControl(fixedNode))
+                readSupportedTiers(fixedNode), readSupportedDurations(fixedNode), readDurationControl(fixedNode),
+                readOutputProfiles(fixedNode), readOutputControl(fixedNode))
             : null;
         JsonNode outputRule = binding.path("outputRule");
         Integer maxDuration = outputRule.hasNonNull("maxDurationSeconds")
@@ -193,6 +205,29 @@ public class WorkflowContractRegistry {
         JsonNode control = fixedNode.path("durationControl");
         return control.isObject() ? new WorkflowVersion.DurationControl(control.path("fps").asInt(),
             control.path("frameStep").asInt(), control.path("frameOffset").asInt()) : null;
+    }
+
+    private List<WorkflowVersion.OutputProfile> readOutputProfiles(JsonNode fixedNode) {
+        List<WorkflowVersion.OutputProfile> result = new ArrayList<>();
+        java.util.Set<String> tiers = new java.util.HashSet<>();
+        for (JsonNode profile : fixedNode.path("outputProfiles")) {
+            String tier = profile.path("tier").asText();
+            if (!tiers.add(tier)) throw new IllegalArgumentException("视频输出档位重复");
+            List<String> durations = new ArrayList<>();
+            for (JsonNode duration : profile.path("durations")) durations.add(duration.asText());
+            result.add(new WorkflowVersion.OutputProfile(tier, profile.path("ratio").asText(),
+                profile.path("width").asInt(), profile.path("height").asInt(),
+                profile.path("generationWidth").asInt(), profile.path("generationHeight").asInt(),
+                durations, profile.path("mode").asText(), profile.path("legacy").asBoolean()));
+        }
+        return List.copyOf(result);
+    }
+
+    private WorkflowVersion.OutputControl readOutputControl(JsonNode fixedNode) {
+        JsonNode control = fixedNode.path("outputControl");
+        return control.isObject() ? new WorkflowVersion.OutputControl(control.path("videoNodeId").asText(),
+            control.path("resizeNodeId").asText(), control.path("latentDivisor").asInt(),
+            control.path("alignment").asInt(), control.path("upscaleModel").asText(null)) : null;
     }
 
     private void register(WorkflowVersion version) {

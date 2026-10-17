@@ -502,7 +502,7 @@ public class VideoTaskOrchestrator {
         if (probe.measured()) {
             // 分辨率断言必须跟随所选档位：这里曾经写死 1920×1080，开放 720P/480P 后
             // 把已经生成并落盘的 720P 成片误判为不合规，任务卡在 RUNNING、成片被丢弃。
-            int[] expected = H3TemplatePreparer.isNative(version) ? registry.nativeOutputSize(version.workflowCode()) : preparer.expectedOutputSize(context.tier());
+            int[] expected = H3TemplatePreparer.isNative(version) ? registry.nativeOutputSize(version.workflowCode(), context.tier()) : preparer.expectedOutputSize(context.tier());
             if (expected == null) {
                 log.warn("任务 {} 档位 {} 未配置目标分辨率，跳过分辨率断言",
                     context.taskId(), context.tier());
@@ -592,8 +592,19 @@ public class VideoTaskOrchestrator {
         return pollBudget.multipliedBy((long) multiplier * multiplier);
     }
 
+    public Duration resolvePollBudget(String durationLabel, String tier, WorkflowVersion version) {
+        Duration budget = resolvePollBudget(durationLabel, version);
+        if (version == null || version.fixedFieldValidation() == null) return budget;
+        var profile = version.fixedFieldValidation().profileOf(tier);
+        int[] baseline = registry.nativeOutputSize(version.workflowCode());
+        if (profile == null || profile.legacy() || baseline == null) return budget;
+        double ratio = profile.generationWidth() * (double) profile.generationHeight() / (baseline[0] * (double) baseline[1]);
+        long multiplier = Math.max(1, Math.min(36, (long) Math.ceil(ratio * ratio)));
+        return Duration.ofMillis(Math.min(Duration.ofHours(24).toMillis(), budget.multipliedBy(multiplier).toMillis()));
+    }
+
     private ComfyOutput awaitOutput(String promptId, TaskContext context, ComfyClient client, WorkflowVersion version) {
-        Instant deadline = Instant.now().plus(resolvePollBudget(context.durationLabel(), version));
+        Instant deadline = Instant.now().plus(resolvePollBudget(context.durationLabel(), context.tier(), version));
         while (Instant.now().isBefore(deadline)) {
             ComfyClient.PollResult result = client.poll(promptId);
             switch (result.state()) {

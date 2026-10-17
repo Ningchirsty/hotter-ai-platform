@@ -173,12 +173,18 @@
                   :key="item"
                   type="button"
                   :class="{ active: values[field] === item }"
+                  :aria-pressed="values[field] === item"
                   :disabled="field === 'tier' && !ratioTiers.includes(item)"
                   @click="selectChoice(field, item)"
                 >
                   {{ item }}
                 </button>
               </div>
+              <p v-if="field === 'tier' && selectedOutputProfile" class="workflow-note" aria-label="所选输出尺寸">
+                输出尺寸：{{ selectedOutputProfile.width }} × {{ selectedOutputProfile.height }}
+                · {{ selectedOutputProfile.mode === 'SUPER_RESOLUTION' ? 'AI 超分' : selectedOutputProfile.mode === 'RESIZED' ? '放大输出' : '原生生成' }}
+                <span v-if="selectedOutputProfile.mode === 'RESIZED'">，细节以生成画面为准。</span>
+              </p>
               <p v-if="field === 'dur'" class="workflow-note">
                 {{ optionsFor('dur').length === 1 ? '当前输出档位仅开放此时长。' : '可选择当前输出档位支持的时长。' }}
               </p>
@@ -857,9 +863,10 @@ const supportedTiers = computed<string[]>(() => {
 const tiersByRatio = computed<Record<string, string[]>>(() => {
   const fromServer = currentWorkflow.value?.supportedTiersByRatio;
   if (fromServer && Object.keys(fromServer).length) return fromServer;
-  const groups: Record<string, string[]> = { '16:9 横屏': [], '9:16 竖屏': [] };
+  const groups: Record<string, string[]> = { '16:9 横屏': [], '9:16 竖屏': [], '1:1 方形': [] };
   for (const tier of supportedTiers.value) {
     if (tier.startsWith('竖屏')) groups['9:16 竖屏'].push(tier);
+    else if (tier.startsWith('方形')) groups['1:1 方形'].push(tier);
     else groups['16:9 横屏'].push(tier);
   }
   return Object.fromEntries(Object.entries(groups).filter(([, list]) => list.length));
@@ -874,6 +881,7 @@ const supportedRatios = computed<string[]>(() => {
 
 /** 当前选中的画面比例（仅展示用状态，不随任务提交）。 */
 const selectedRatio = ref<string>('');
+const selectedOutputProfile = computed(() => currentWorkflow.value?.outputProfiles?.find(profile => profile.tier === values.tier));
 
 /** 当前比例下的档位；分组缺失时退回全部受支持档位。 */
 const ratioTiers = computed<string[]>(() => {

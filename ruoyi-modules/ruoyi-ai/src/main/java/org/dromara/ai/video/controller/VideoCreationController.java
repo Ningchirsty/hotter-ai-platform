@@ -209,13 +209,15 @@ public class VideoCreationController extends BaseController {
             // 各档位允许的时长。时长与档位互相约束（长时长只在低分辨率档位开放，
             // 因为 H3 的帧数随时长线性增长、显存与耗时显著上升），所以按时长给出矩阵，
             // 而不是给一个「所有档位通用」的时长列表。
-            item.put("supportedDurationsByTier", H3TemplatePreparer.isNative(version)
-                ? Map.of(version.fixedFieldValidation().tier(),
-                    version.fixedFieldValidation().allowedDurations().isEmpty()
-                        ? List.of(version.fixedFieldValidation().dur())
-                        : version.fixedFieldValidation().allowedDurations()) : tierResolutions == null
-                ? java.util.Map.of()
-                : new java.util.LinkedHashMap<>(tierResolutions.getDurations()));
+            java.util.Map<String, java.util.List<String>> durationsByTier = new java.util.LinkedHashMap<>();
+            if (H3TemplatePreparer.isNative(version)) {
+                var fixed = version.fixedFieldValidation();
+                for (String tier : fixed.allowedTiers()) {
+                    var durations = fixed.durationsOf(tier);
+                    durationsByTier.put(tier, durations.isEmpty() ? List.of(fixed.dur()) : durations);
+                }
+            } else if (tierResolutions != null) durationsByTier.putAll(tierResolutions.getDurations());
+            item.put("supportedDurationsByTier", durationsByTier);
             // 画面比例与「比例 → 档位」分组：前端据此渲染"先选比例、再选清晰度"。
             //
             // 比例不是新的提交字段：档位才是这套模块里唯一的输出旋钮——它已被契约声明、
@@ -225,7 +227,14 @@ public class VideoCreationController extends BaseController {
             java.util.Set<String> allowedTiers = version.fixedFieldValidation() == null
                 ? java.util.Set.of() : version.fixedFieldValidation().allowedTiers();
             java.util.Map<String, java.util.List<String>> byRatio = new java.util.LinkedHashMap<>();
-            if (tierResolutions != null) {
+            var profiles = version.fixedFieldValidation() == null ? List.<WorkflowVersion.OutputProfile>of()
+                : version.fixedFieldValidation().profiles().stream().filter(p -> !p.legacy()).toList();
+            item.put("outputProfiles", profiles);
+            if (!profiles.isEmpty()) {
+                for (var profile : profiles) {
+                    byRatio.computeIfAbsent(profile.ratio(), ignored -> new ArrayList<>()).add(profile.tier());
+                }
+            } else if (tierResolutions != null) {
                 for (String ratio : tierResolutions.ratioNames()) {
                     java.util.List<String> tiers = tierResolutions.tiersOf(ratio).stream()
                         .filter(tier -> allowedTiers.isEmpty() || allowedTiers.contains(tier))

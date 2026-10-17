@@ -2,6 +2,7 @@
 import workflows from './workflow-fixtures.json';
 import imageAbilities from '../src/views/image/abilities.json';
 import videoAbilities from '../src/views/video/abilities.json';
+import videoCatalog from '../src/views/video/local-workflows.json';
 export const listImageAbilities = () => ok(imageAbilities);
 export const listVideoAbilities = () => ok(videoAbilities);
 export const createImageAbilityTask = (...args: unknown[]) => blocked(...args);
@@ -14,7 +15,12 @@ const noMedia = async (..._args: unknown[]): Promise<string> => {
   throw new Error('界面样例没有实际产出文件；正式环境由原有鉴权接口读取。');
 };
 export const extractErrorMessage = async (error: unknown) => (error instanceof Error ? error.message : undefined);
-export const listVideoWorkflows = () => ok(workflows.video);
+// Public metadata only. Generation stays blocked by the preview entrypoint and API above.
+export const listVideoWorkflows = () => ok([...workflows.video,
+  ...[...videoCatalog, ...videoAbilities.flatMap(ability => ability.workflows)].map(workflow => ({
+    ...workflow, status: workflow.verifiedAt ? 'PUBLISHED' : 'DRAFT',
+    submittable: Boolean(workflow.verifiedAt), testable: false
+  }))]);
 export const listImageWorkflows = () => ok(workflows.image);
 const videoTasks = ['SUCCEEDED', 'RUNNING', 'QUEUED', 'FAILED'].map((status, i) => ({
   id: 'preview-video-' + i,

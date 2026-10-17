@@ -45,7 +45,7 @@
 import { computed, ref } from 'vue';
 import { matchRegisteredWorkflow, type LocalWorkflowOption, type RegisteredWorkflow } from '../LocalWorkflowPicker/types';
 import type { CreativeAbility } from './types';
-import { localCreationModels, localModelWorkflow, type LocalCreationChoice } from './model-selection';
+import { localCreationModels, localModelWorkflow, preferredLocalWorkflow, type LocalCreationChoice } from './model-selection';
 const props = defineProps<{ media: 'image' | 'video'; abilities: CreativeAbility[]; catalog: LocalWorkflowOption[];
   general: Array<{ code: string; name: string; desc: string }>; registry: RegisteredWorkflow[]; modelValue: string; busy?: boolean; hideWorkflowSettings?: boolean }>();
 const emit = defineEmits<{ choose: [workflowCode: string] }>();
@@ -66,8 +66,7 @@ function chooseModel(code: string) {
   if (workflow) chooseWorkflow(workflow);
 }
 function chooseChoice(choice: LocalCreationChoice) {
-  const workflow = choice.workflows.find(item => item.workflowCode === props.modelValue)
-    ?? choice.workflows.find(item => publishedCodes.value.includes(item.workflowCode)) ?? choice.workflows[0];
+  const workflow = preferredLocalWorkflow(choice.workflows, props.modelValue, publishedCodes.value);
   if (workflow) chooseWorkflow(workflow.workflowCode);
 }
 function chooseWorkflow(code: string) {
