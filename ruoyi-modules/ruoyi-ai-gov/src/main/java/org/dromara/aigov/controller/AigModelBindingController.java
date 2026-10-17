@@ -46,7 +46,7 @@ public class AigModelBindingController {
      * @param pageQuery 分页参数
      * @return 绑定分页结果
      */
-    @SaCheckPermission(AigConstants.PERM_ROUTE_LIST)
+    @SaCheckPermission(AigConstants.PERM_CAPABILITY_CANDIDATE_LIST)
     @GetMapping("/list")
     public R<PageResult<AigCapabilityModelVo>> list(@Validated({Default.class, QueryGroup.class}) AigCapabilityModelBo bo,
                                                     PageQuery pageQuery) {
@@ -59,7 +59,7 @@ public class AigModelBindingController {
      * @param bo 绑定参数
      * @return 新增的绑定ID
      */
-    @SaCheckPermission(AigConstants.PERM_ROUTE_ADD)
+    @SaCheckPermission(AigConstants.PERM_CAPABILITY_CANDIDATE_ADD)
     @RepeatSubmit
     @PostMapping
     public R<Long> add(@Validated({Default.class, AddGroup.class}) @RequestBody AigCapabilityModelBo bo) {
@@ -73,7 +73,7 @@ public class AigModelBindingController {
      * @param bo     绑定参数（usageType / priority / status / remark）
      * @return 操作结果
      */
-    @SaCheckPermission(AigConstants.PERM_ROUTE_EDIT)
+    @SaCheckPermission(AigConstants.PERM_CAPABILITY_CANDIDATE_EDIT)
     @RepeatSubmit
     @PutMapping("/{bindId}")
     public R<Void> update(@NotNull(message = "主键不能为空")
@@ -89,7 +89,7 @@ public class AigModelBindingController {
      * @param bindId 绑定ID
      * @return 操作结果
      */
-    @SaCheckPermission(AigConstants.PERM_ROUTE_REMOVE)
+    @SaCheckPermission(AigConstants.PERM_CAPABILITY_CANDIDATE_REMOVE)
     @RepeatSubmit
     @DeleteMapping("/{bindId}")
     public R<Void> remove(@NotNull(message = "主键不能为空")

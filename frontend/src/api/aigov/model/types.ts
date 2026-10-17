@@ -2,7 +2,7 @@
  * AI 模型治理类型定义（对齐后端 AigModelGovernanceVo / AigModelGovernanceBo）
  *
  * 模型主数据来自 snail-ai 的 sai_model_config；
- * apiEndpoint / secretRef 仅在具备 aig:model:secret 权限时由后端下发，
+ * apiEndpoint / secretRef 仅在具备 aig:model:secret:view 权限时由后端下发，
  * 且 secretRef 只是「引用文本」，绝不含明文密钥。
  *
  * 模型密钥（sai_model_config.api_key）**只写不读**：
@@ -34,7 +34,7 @@ export interface AigModelGovernanceVO extends BaseEntity {
   isDefault?: number | string;
   /** 是否启用（1启用 0停用） */
   isEnabled?: number | string;
-  /** 端点：仅 aig:model:secret 权限时下发 */
+  /** 端点：仅 aig:model:secret:view 权限时下发 */
   apiEndpoint?: string;
   /** 是否已配置模型密钥（布尔位，由后端在 SQL 内算好，不含密钥原值） */
   keyConfigured?: boolean;
@@ -46,7 +46,7 @@ export interface AigModelGovernanceVO extends BaseEntity {
   dataLevelMax?: string;
   /** 可用状态：CANDIDATE/TRIAL/GRAY/PRODUCTION/SUSPENDED/RETIRED */
   lifecycleStatus?: string;
-  /** 密钥引用：仅 aig:model:secret 权限时下发，禁止出现明文密钥 */
+  /** 密钥引用：仅 aig:model:secret:view 权限时下发，禁止出现明文密钥 */
   secretRef?: string;
   /** 输入限制：文本长度/文件类型/图片视频大小/并发 */
   inputLimits?: string;
@@ -206,7 +206,7 @@ export interface AigModelTestResult {
  * 编辑模型主数据表单（PUT /aigov/model/base）
  *
  * 只改 sai_model_config 的主数据白名单列，**不含密钥**（密钥走 PUT /aigov/model/secret）。
- * apiEndpoint 对无 aig:model:secret 权限的账号是脱敏的：这类账号应不下发该字段，
+ * apiEndpoint 对无 aig:model:secret:view 权限的账号是脱敏的：这类账号应不下发该字段，
  * 后端也会忽略它，避免把已有端点清空。
  */
 export interface AigModelBaseForm {
@@ -236,7 +236,7 @@ export interface AigModelCreateForm {
   modelType?: string;
   adapterKey?: string;
   apiEndpoint?: string;
-  /** 明文 API 密钥（可选）：由后端加密落库，非空时额外要求 aig:model:secret */
+  /** 明文 API 密钥（可选）：由后端加密落库，非空时额外要求 aig:model:secret:edit */
   apiKey?: string;
   description?: string;
   scope?: string;

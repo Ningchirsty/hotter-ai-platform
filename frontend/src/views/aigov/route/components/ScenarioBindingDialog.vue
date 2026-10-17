@@ -48,9 +48,9 @@
     </el-form>
 
     <div class="binding-toolbar">
-      <el-button v-hasPermi="['aig:route:binding']" type="primary" icon="Plus" @click="handleAdd">新增绑定</el-button>
+      <el-button v-hasPermi="['aig:route:scenario']" type="primary" icon="Plus" @click="handleAdd">新增绑定</el-button>
       <el-button
-        v-hasPermi="['aig:route:binding']"
+        v-hasPermi="['aig:route:scenario']"
         type="danger"
         plain
         icon="Delete"
@@ -85,10 +85,10 @@
       <el-table-column label="备注" align="center" prop="remark" show-overflow-tooltip />
       <el-table-column label="操作" width="150" align="center" class-name="small-padding fixed-width">
         <template #default="scope">
-          <el-button v-hasPermi="['aig:route:binding']" link type="primary" icon="Edit" @click="handleUpdate(scope.row)">
+          <el-button v-hasPermi="['aig:route:scenario']" link type="primary" icon="Edit" @click="handleUpdate(scope.row)">
             修改
           </el-button>
-          <el-button v-hasPermi="['aig:route:binding']" link type="danger" icon="Delete" @click="handleDelete(scope.row)">
+          <el-button v-hasPermi="['aig:route:scenario']" link type="danger" icon="Delete" @click="handleDelete(scope.row)">
             删除
           </el-button>
         </template>

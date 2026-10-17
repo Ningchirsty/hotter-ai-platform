@@ -42,7 +42,7 @@ public class AigInvokeController {
      * @param bo             调用入参
      * @return 调用结果
      */
-    @SaCheckPermission(AigConstants.PERM_CAPABILITY_QUERY)
+    @SaCheckPermission(AigConstants.PERM_CAPABILITY_INVOKE)
     @RepeatSubmit
     @PostMapping("/{capabilityCode}")
     public R<AigInvokeVo> invoke(@PathVariable("capabilityCode") String capabilityCode,
@@ -63,7 +63,7 @@ public class AigInvokeController {
      * @param bo 调用入参
      * @return 决策结果
      */
-    @SaCheckPermission(AigConstants.PERM_CAPABILITY_QUERY)
+    @SaCheckPermission(AigConstants.PERM_CAPABILITY_TRIAL)
     @PostMapping("/dryRun")
     public R<AigInvokeVo> dryRun(@Validated({Default.class}) @RequestBody AigInvokeBo bo) {
         return R.ok(invokeService.dryRun(bo));

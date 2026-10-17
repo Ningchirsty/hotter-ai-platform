@@ -49,7 +49,7 @@ import java.util.regex.Pattern;
  * {@link #updateModelSecret}，且写入前一律经 {@link AigModelSecretCipher} 加密成
  * snail-ai 可解的 SM4 密文；<b>读</b>只暴露布尔位 {@code keyConfigured}，
  * 任何响应都不返回密钥原值。{@code api_endpoint} 与 {@code secretRef} 仅在当前用户
- * 具备 {@code aig:model:secret} 权限时下发，其余情况统一置空。</p>
+ * 具备 {@code aig:model:secret:view} 权限时下发，其余情况统一置空。</p>
  *
  * @author ai-gov
  */
@@ -107,7 +107,7 @@ public class AigModelGovernanceServiceImpl implements IAigModelGovernanceService
     private final AigModelGovernanceMapper modelGovernanceMapper;
 
     /**
-     * 权限工具（aig:model:secret）。
+     * 权限工具（{@code aig:model:secret:view} 读、{@code aig:model:secret:edit} 写）。
      */
     private final AigPermissionHelper permissionHelper;
 
@@ -152,11 +152,12 @@ public class AigModelGovernanceServiceImpl implements IAigModelGovernanceService
         if (modelViewMapper.selectModelById(bo.getModelId()) == null) {
             throw new ServiceException("模型不存在：" + bo.getModelId());
         }
-        // 写侧授权校验：读得到才写得了。仅有 aig:model:edit 而无 aig:model:secret 的账号
-        // 读不到 secretRef，就不得通过本接口改写密钥引用（否则可把引用指向自控 KMS 或他人凭据）。
+        // 写侧授权校验：写密钥/端点要 aig:model:secret:edit，不是 :view。
+        // 仅有 aig:model:edit 的账号读不到 secretRef，就不得通过本接口改写密钥引用
+        // （否则可把引用指向自控 KMS 或他人凭据）。
         // 注意：前端「无权限时不下发 secretRef」不构成保障，直接 curl 必须同样被拒。
-        if (StringUtils.isNotBlank(bo.getSecretRef()) && !permissionHelper.canViewModelSecret()) {
-            throw new ServiceException("无权修改密钥引用（aig:model:secret）");
+        if (StringUtils.isNotBlank(bo.getSecretRef()) && !permissionHelper.canEditModelSecret()) {
+            throw new ServiceException("无权修改密钥引用（aig:model:secret:edit）");
         }
         checkSecretRef(bo.getSecretRef());
         AigModelGovernance existing = findExisting(bo);
@@ -204,20 +205,20 @@ public class AigModelGovernanceServiceImpl implements IAigModelGovernanceService
         if (modelConfigMapper.countProvider(bo.getProviderId()) == 0) {
             throw new ServiceException("供应商不存在：" + bo.getProviderId());
         }
-        // 4. 密钥引用与 saveGovernance 同一口径：有值需 aig:model:secret，且禁止明文
+        // 4. 密钥引用与 saveGovernance 同一口径：有值需 aig:model:secret:edit，且禁止明文
         if (StringUtils.isNotBlank(bo.getSecretRef())) {
-            if (!permissionHelper.canViewModelSecret()) {
-                throw new ServiceException("无权登记密钥引用（aig:model:secret）");
+            if (!permissionHelper.canEditModelSecret()) {
+                throw new ServiceException("无权登记密钥引用（aig:model:secret:edit）");
             }
             checkSecretRef(bo.getSecretRef());
         }
-        // 4b. 明文密钥：与密钥引用同为凭据，写它同样需要 aig:model:secret。
+        // 4b. 明文密钥：与密钥引用同为凭据，写它同样需要 aig:model:secret:edit。
         //     就地加密——明文只在本方法栈内存活，后续入库/Mapper/日志拿到的都是密文。
         //     encrypt() 在「未启用」或「未配置密钥」时会抛错，不会静默跳过。
         String encryptedApiKey = null;
         if (StringUtils.isNotBlank(bo.getApiKey())) {
-            if (!permissionHelper.canViewModelSecret()) {
-                throw new ServiceException("无权登记模型密钥（aig:model:secret）");
+            if (!permissionHelper.canEditModelSecret()) {
+                throw new ServiceException("无权登记模型密钥（aig:model:secret:edit）");
             }
             encryptedApiKey = secretCipher.encrypt(bo.getApiKey());
         }
@@ -278,11 +279,11 @@ public class AigModelGovernanceServiceImpl implements IAigModelGovernanceService
             throw new ServiceException("模型标识已存在：" + bo.getModelKey());
         }
         // api_endpoint 有三态，必须分开处理（XML 里 null 表示「本次不改」）：
-        //   · 无 aig:model:secret → 该列对这类账号是脱敏的（读不到），一律忽略，避免误清空；
+        //   · 无 aig:model:secret:edit → 不得写该列，一律忽略（即便 :view 能看见，也不代表能改）；
         //   · 有权限但请求里没带该字段（null）→ 视为「本次不改」，不能顺手清掉；
         //   · 有权限且带了值 → 按给的值写；空串视为「显式清空」。
         // 注意不能用 isBlank 判空：那会把「未提供」也当成「清空」。
-        if (!permissionHelper.canViewModelSecret()) {
+        if (!permissionHelper.canEditModelSecret()) {
             bo.setApiEndpoint(null);
         } else if (bo.getApiEndpoint() != null) {
             bo.setApiEndpoint(bo.getApiEndpoint().trim());
@@ -307,8 +308,8 @@ public class AigModelGovernanceServiceImpl implements IAigModelGovernanceService
         }
         // 服务层再校验一次：控制器上的 @SaCheckPermission 只覆盖 HTTP 入口，
         // 而本方法是接口公开能力，内部调用同样不得绕过。
-        if (!permissionHelper.canViewModelSecret()) {
-            throw new ServiceException("无权修改模型密钥（aig:model:secret）");
+        if (!permissionHelper.canEditModelSecret()) {
+            throw new ServiceException("无权修改模型密钥（aig:model:secret:edit）");
         }
         if (Boolean.TRUE.equals(bo.getClearKey())) {
             int rows = modelConfigMapper.updateModelApiKey(bo.getModelId(), null);
@@ -335,8 +336,8 @@ public class AigModelGovernanceServiceImpl implements IAigModelGovernanceService
         }
         // 服务层再校验一次：控制器上的 @SaCheckPermission 只覆盖 HTTP 入口，
         // 而本方法是接口公开能力，内部调用同样不得绕过。
-        if (!permissionHelper.canViewModelSecret()) {
-            throw new ServiceException("无权修改模型密钥（aig:model:secret）");
+        if (!permissionHelper.canEditModelSecret()) {
+            throw new ServiceException("无权修改模型密钥（aig:model:secret:edit）");
         }
         if (modelConfigMapper.countProvider(bo.getProviderId()) <= 0) {
             throw new ServiceException("供应商不存在：" + bo.getProviderId());
@@ -510,7 +511,7 @@ public class AigModelGovernanceServiceImpl implements IAigModelGovernanceService
     }
 
     /**
-     * 无 {@code aig:model:secret} 权限时清空端点与密钥引用。
+     * 无 {@code aig:model:secret:view} 权限时清空端点与密钥引用（只影响下发，不影响写侧判定）。
      *
      * @param rows 模型视图列表
      */

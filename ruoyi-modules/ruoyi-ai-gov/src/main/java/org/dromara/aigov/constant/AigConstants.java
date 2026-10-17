@@ -64,6 +64,41 @@ public interface AigConstants {
      */
     String PERM_CAPABILITY_HIGH_RISK = "aig:capability:high-risk";
     /**
+     * 能力目录-<b>真实调用</b>（会真的调模型、产生费用与审计）。
+     *
+     * <p><b>为什么要从 {@code capability:query} 里拆出来</b>：原先 {@code POST /aigov/invoke}
+     * 用的是"能查能力"的权限——**能查能力就等于能发起计费调用**。这两个能力的后果不是一个量级
+     * （一个只读，一个花钱且可能外发数据）。拆开后 {@code query} 回到"只看详情"的含义。</p>
+     */
+    String PERM_CAPABILITY_INVOKE = "aig:capability:invoke";
+    /**
+     * 能力目录-<b>试调</b>（{@code dryRun}：只做路由决策，不调模型、不花钱、不写审计）。
+     *
+     * <p>与 {@link #PERM_CAPABILITY_INVOKE} 分开：试调是"上线前预演"，风险远低于真实调用，
+     * 只读岗位（如安全/查看者）应当可以用它来核对链路，而**不该**具备真实调用能力。</p>
+     */
+    String PERM_CAPABILITY_TRIAL = "aig:capability:trial";
+    /**
+     * 能力×模型候选-列表
+     *
+     * <p><b>为什么从 {@code route:*} 迁过来</b>：候选是"给能力挂哪个模型"，它的归属是**能力域**；
+     * 挂在路由权限下会让"能配路由"与"能改候选"绑死，而这两件事的审批口径并不相同
+     * （候选变更在限制级/严格级能力上另有高风险门槛）。</p>
+     */
+    String PERM_CAPABILITY_CANDIDATE_LIST = "aig:capability:candidate:list";
+    /**
+     * 能力×模型候选-新增
+     */
+    String PERM_CAPABILITY_CANDIDATE_ADD = "aig:capability:candidate:add";
+    /**
+     * 能力×模型候选-修改（用途 / 优先级 / 启停）
+     */
+    String PERM_CAPABILITY_CANDIDATE_EDIT = "aig:capability:candidate:edit";
+    /**
+     * 能力×模型候选-删除
+     */
+    String PERM_CAPABILITY_CANDIDATE_REMOVE = "aig:capability:candidate:remove";
+    /**
      * 模型治理-列表
      */
     String PERM_MODEL_LIST = "aig:model:list";
@@ -80,9 +115,28 @@ public interface AigConstants {
      */
     String PERM_MODEL_EDIT = "aig:model:edit";
     /**
-     * 模型治理-密钥引用查看（控制 secretRef / api_endpoint 下发）
+     * 模型治理-<b>查看</b>密钥引用 / 端点（脱敏读：控制 secretRef / api_endpoint 下发）。
+     *
+     * <p><b>为什么从 {@code model:secret} 拆成 view + edit</b>：原先"看脱敏引用"与"写/清密钥"
+     * 共用一个权限点，而菜单名叫「查看密钥引用」——名字说只读、实际能改。拆开后：
+     * {@code view} 只决定"能不能看到端点与引用"，{@code edit} 才允许写入/清除明文。</p>
      */
-    String PERM_MODEL_SECRET = "aig:model:secret";
+    String PERM_MODEL_SECRET_VIEW = "aig:model:secret:view";
+    /**
+     * 模型治理-<b>写入/清除</b>密钥（含供应商维度批量）。
+     *
+     * <p>「批量不是权限降级的理由」：它覆盖面更大，所以与逐模型录入要求同一个权限点
+     * （原先这条注释就写在 {@code AigModelController#applyProviderSecret} 上）。</p>
+     */
+    String PERM_MODEL_SECRET_EDIT = "aig:model:secret:edit";
+    /**
+     * 模型治理-<b>连通性测试/批量探测</b>。
+     *
+     * <p><b>为什么从 {@code model:edit} 拆出来</b>：这个动作会带着平台侧密钥**真的对外发一次请求**。
+     * 它既不是"改配置"，也不该由"能改治理属性"顺带获得——排障的人需要它，而"能编辑模型"的人未必该
+     * 拿着密钥去外呼。拆开后按需授权，口径才说得清。</p>
+     */
+    String PERM_MODEL_PROBE = "aig:model:probe";
     /**
      * 路由策略-列表
      */
@@ -104,12 +158,17 @@ public interface AigConstants {
      */
     String PERM_ROUTE_REMOVE = "aig:route:remove";
     /**
-     * 场景强制绑定-维护（新增/修改/删除）
+     * 场景指定-维护（新增/修改/删除）。
+     *
      * <p>与 {@code aig:route:edit} 分开：路由策略管的是「能不能外发」这类治理口径，
-     * 场景绑定只决定「在已允许的候选里先试谁」。把两者合成一个权限，等于让
+     * 场景指定只决定「在已允许的候选里先试谁」。把两者合成一个权限，等于让
      * 「改首选供应商」的人顺带获得「开外发」的能力。</p>
+     *
+     * <p><b>更名说明</b>：原值 {@code aig:route:binding} 里的 "binding" 与本仓另外三种"绑定"
+     * （能力↔模型、Agent↔组织、版本↔工具/知识）撞名，是走读里点名的"一个词四种含义"之一；
+     * 这里按设计 §5.4 改为 {@code route:scenario}（场景指定），菜单名同步改为「场景指定」。</p>
      */
-    String PERM_ROUTE_BINDING = "aig:route:binding";
+    String PERM_ROUTE_SCENARIO = "aig:route:scenario";
     /**
      * 调用审计-列表
      */

@@ -364,7 +364,7 @@ const filterExternalOnly = async () => {
 const rowClassName = ({ row }: { row: AigRoutePolicyVO }) =>
   row.allowExternal === 'Y' ? 'route-row--external' : '';
 
-/** 场景强制绑定弹窗（独立的 CRUD 组件，权限为 aig:route:binding） */
+/** 场景强制绑定弹窗（独立的 CRUD 组件，权限为 aig:route:scenario） */
 const bindingVisible = ref(false);
 const policyFormRef = ref<ElFormInstance>();
 const queryFormRef = ref<ElFormInstance>();

@@ -50,7 +50,7 @@ public class AigRouteScenarioBindingController {
      * @param pageQuery 分页参数
      * @return 绑定分页结果
      */
-    @SaCheckPermission(AigConstants.PERM_ROUTE_LIST)
+    @SaCheckPermission(AigConstants.PERM_ROUTE_SCENARIO)
     @GetMapping("/list")
     public R<PageResult<AigRouteScenarioBindingVo>> list(
         @Validated({Default.class, QueryGroup.class}) AigRouteScenarioBindingBo bo, PageQuery pageQuery) {
@@ -76,7 +76,7 @@ public class AigRouteScenarioBindingController {
      * @param bo 绑定参数
      * @return 新增的绑定ID
      */
-    @SaCheckPermission(AigConstants.PERM_ROUTE_BINDING)
+    @SaCheckPermission(AigConstants.PERM_ROUTE_SCENARIO)
     @RepeatSubmit
     @PostMapping
     public R<Long> add(@Validated({Default.class, AddGroup.class}) @RequestBody AigRouteScenarioBindingBo bo) {
@@ -89,7 +89,7 @@ public class AigRouteScenarioBindingController {
      * @param bo 绑定参数
      * @return 操作结果
      */
-    @SaCheckPermission(AigConstants.PERM_ROUTE_BINDING)
+    @SaCheckPermission(AigConstants.PERM_ROUTE_SCENARIO)
     @RepeatSubmit
     @PutMapping
     public R<Void> edit(@Validated({Default.class, EditGroup.class}) @RequestBody AigRouteScenarioBindingBo bo) {
@@ -103,7 +103,7 @@ public class AigRouteScenarioBindingController {
      * @param bindId 绑定ID
      * @return 操作结果
      */
-    @SaCheckPermission(AigConstants.PERM_ROUTE_BINDING)
+    @SaCheckPermission(AigConstants.PERM_ROUTE_SCENARIO)
     @RepeatSubmit
     @DeleteMapping("/{bindId}")
     public R<Void> remove(@NotNull(message = "主键不能为空")

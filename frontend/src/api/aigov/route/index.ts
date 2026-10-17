@@ -55,7 +55,7 @@ export function delRoutePolicy(policyId: string | number | Array<string | number
 
 // ------------------------------------------------------------------ 场景强制绑定
 // 语义只收紧：命中绑定后候选被收窄为「仅指定供应商」，不会放宽任何治理口径。
-// 因此它在界面上与路由策略放在同一页，但权限独立（aig:route:binding）。
+// 因此它在界面上与路由策略放在同一页，但权限独立（aig:route:scenario）。
 
 // 查询场景强制绑定列表
 export function listScenarioBinding(

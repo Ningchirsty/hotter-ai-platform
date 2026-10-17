@@ -137,7 +137,7 @@ public class AigModelController {
      * @param modelId 模型ID
      * @return 测试结果（不含密钥）
      */
-    @SaCheckPermission(AigConstants.PERM_MODEL_EDIT)
+    @SaCheckPermission(AigConstants.PERM_MODEL_PROBE)
     @PostMapping("/{modelId}/test")
     public R<AigModelTestVo> testConnection(@NotNull(message = "主键不能为空")
                                             @PathVariable("modelId") Long modelId) {
@@ -173,7 +173,7 @@ public class AigModelController {
      *
      * @return 已受理的提示（真正结果在治理表与日志里）
      */
-    @SaCheckPermission(AigConstants.PERM_MODEL_EDIT)
+    @SaCheckPermission(AigConstants.PERM_MODEL_PROBE)
     @PostMapping("/health-probe/run")
     public R<String> runHealthProbe() {
         // 四种结局分开回答，不合并成一个"false"：运维需要知道到底是"已在跑"还是"开关关着"
@@ -237,7 +237,7 @@ public class AigModelController {
      * @param bo 密钥参数（{@code clearKey=true} 时清除已有密钥）
      * @return 影响行数
      */
-    @SaCheckPermission(AigConstants.PERM_MODEL_SECRET)
+    @SaCheckPermission(AigConstants.PERM_MODEL_SECRET_EDIT)
     @Log(title = "AI模型密钥", businessType = BusinessType.UPDATE, excludeParamNames = {"apiKey"})
     @RepeatSubmit
     @PutMapping("/secret")
@@ -260,7 +260,7 @@ public class AigModelController {
      * @param bo 批量密钥参数（{@code clearKey=true} 时清除；{@code modelIds} 为空表示整个供应商）
      * @return 实际影响的模型行数
      */
-    @SaCheckPermission(AigConstants.PERM_MODEL_SECRET)
+    @SaCheckPermission(AigConstants.PERM_MODEL_SECRET_EDIT)
     @Log(title = "AI模型密钥", businessType = BusinessType.UPDATE, excludeParamNames = {"apiKey"})
     @RepeatSubmit
     @PutMapping("/secret/batch")

@@ -189,7 +189,7 @@
         <!--
           模型密钥状态：后端只回布尔位（在 SQL 内算好），密钥原值永不进入前端。
           不挂 v-hasPermi —— 它是「治理属性齐全但密钥为空」这类静默失败的告警，
-          有列表权限的人本就该看见；能否「配置」密钥另由 aig:model:secret 控制。
+          有列表权限的人本就该看见；能否「配置」密钥另由 aig:model:secret:view / :edit 控制。
         -->
         <el-table-column label="模型密钥" align="center" width="110">
           <template #default="scope">
@@ -198,16 +198,16 @@
             <el-tag v-else type="info">未知</el-tag>
           </template>
         </el-table-column>
-        <!-- 端点与密钥引用：仅 aig:model:secret 授权可见，无权限时该列不渲染 -->
+        <!-- 端点与密钥引用：仅 aig:model:secret:view / :edit 授权可见，无权限时该列不渲染 -->
         <el-table-column
-          v-hasPermi="['aig:model:secret']"
+          v-hasPermi="['aig:model:secret:view']"
           label="API 端点"
           align="center"
           prop="apiEndpoint"
           width="200"
           show-overflow-tooltip
         />
-        <el-table-column v-hasPermi="['aig:model:secret']" label="密钥引用" align="center" width="200">
+        <el-table-column v-hasPermi="['aig:model:secret:view']" label="密钥引用" align="center" width="200">
           <template #default="scope">
             <span>{{ scope.row.secretRef || '-' }}</span>
           </template>
@@ -241,7 +241,7 @@
           <template #default="scope">
             <el-tooltip content="测试连接" placement="top">
               <el-button
-                v-hasPermi="['aig:model:edit']"
+                v-hasPermi="['aig:model:probe']"
                 link
                 type="primary"
                 icon="Connection"
@@ -269,7 +269,7 @@
             </el-tooltip>
             <el-tooltip content="配置模型密钥" placement="top">
               <el-button
-                v-hasPermi="['aig:model:secret']"
+                v-hasPermi="['aig:model:secret:edit']"
                 link
                 type="primary"
                 icon="Key"
@@ -346,8 +346,8 @@
             </el-form-item>
           </el-col>
         </el-row>
-        <!-- 密钥引用：仅 aig:model:secret 授权可见；无权限时字段不渲染且不参与提交 -->
-        <el-form-item v-hasPermi="['aig:model:secret']" label="密钥引用" prop="secretRef">
+        <!-- 密钥引用：仅 aig:model:secret:view / :edit 授权可见；无权限时字段不渲染且不参与提交 -->
+        <el-form-item v-hasPermi="['aig:model:secret:edit']" label="密钥引用" prop="secretRef">
           <el-input v-model="form.secretRef" placeholder="如 kms://ai/qwen，只填引用不填明文" />
           <div class="form-tip">仅登记引用地址（受支持 scheme：kms:// vault:// env:// sm:// secret://）；真正的密钥请用「配置模型密钥」录入。</div>
         </el-form-item>
@@ -506,8 +506,8 @@
         <el-form-item label="接口地址" prop="apiEndpoint">
           <el-input v-model="createForm.apiEndpoint" placeholder="本地部署可留空；非本地部署建议填写" />
         </el-form-item>
-        <!-- 模型密钥：仅 aig:model:secret 授权可见；明文只提交一次，后端加密落库 -->
-        <el-form-item v-hasPermi="['aig:model:secret']" label="API 密钥" prop="apiKey">
+        <!-- 模型密钥：仅 aig:model:secret:view / :edit 授权可见；明文只提交一次，后端加密落库 -->
+        <el-form-item v-hasPermi="['aig:model:secret:edit']" label="API 密钥" prop="apiKey">
           <el-input
             v-model="createForm.apiKey"
             type="password"
@@ -561,8 +561,8 @@
             </el-form-item>
           </el-col>
         </el-row>
-        <!-- 密钥引用：仅 aig:model:secret 授权可见；无权限时字段不渲染且不参与提交 -->
-        <el-form-item v-hasPermi="['aig:model:secret']" label="密钥引用" prop="secretRef">
+        <!-- 密钥引用：仅 aig:model:secret:view / :edit 授权可见；无权限时字段不渲染且不参与提交 -->
+        <el-form-item v-hasPermi="['aig:model:secret:edit']" label="密钥引用" prop="secretRef">
           <el-input v-model="createForm.secretRef" placeholder="如 kms://ai/qwen，只填引用不填明文" />
           <div class="form-tip">仅登记引用地址（受支持 scheme：kms:// vault:// env:// sm:// secret://）；真正的密钥请用「配置模型密钥」录入。</div>
         </el-form-item>
@@ -688,8 +688,8 @@
             </el-form-item>
           </el-col>
         </el-row>
-        <!-- 接口地址：无 aig:model:secret 时读不到该列，故不渲染也不下发，避免把已配端点清空 -->
-        <el-form-item v-if="checkPermi(['aig:model:secret'])" label="接口地址" prop="apiEndpoint">
+        <!-- 接口地址：无 aig:model:secret:view 时读不到该列，故不渲染也不下发，避免把已配端点清空 -->
+        <el-form-item v-if="checkPermi(['aig:model:secret:edit'])" label="接口地址" prop="apiEndpoint">
           <el-input v-model="baseForm.apiEndpoint" placeholder="本地部署可留空" />
         </el-form-item>
         <el-row :gutter="16">
@@ -810,7 +810,7 @@
             <!-- 批量配密钥：同一家供应商下的模型通常共用一把 Key，逐个模型录入
                  要求把同一串明文粘贴 N 次，漏贴一次从列表上也看不出来 -->
             <el-button
-              v-hasPermi="['aig:model:secret']"
+              v-hasPermi="['aig:model:secret:edit']"
               link
               type="primary"
               icon="Key"
@@ -1153,8 +1153,8 @@ const submitForm = () => {
   modelFormRef.value?.validate(async (valid: boolean) => {
     if (valid) {
       const payload: AigModelGovernanceForm = { ...form.value };
-      // 无 aig:model:secret 权限时不下发密钥引用字段，避免覆盖已有引用
-      if (!checkPermi(['aig:model:secret'])) {
+      // 无 aig:model:secret:edit 权限时不下发密钥引用字段，避免覆盖已有引用
+      if (!checkPermi(['aig:model:secret:edit'])) {
         delete payload.secretRef;
       }
       await updateModelGovernance(payload);
@@ -1247,8 +1247,8 @@ const submitCreate = () => {
     const payload: AigModelCreateForm = { ...createForm.value };
     payload.validFrom = validRange.value?.[0];
     payload.validTo = validRange.value?.[1];
-    // 无 aig:model:secret 权限时不下发密钥引用与明文密钥（后端亦会拒绝，双保险）
-    if (!checkPermi(['aig:model:secret'])) {
+    // 无 aig:model:secret:edit 权限时不下发密钥引用与明文密钥（后端亦会拒绝，双保险）
+    if (!checkPermi(['aig:model:secret:edit'])) {
       delete payload.secretRef;
       delete payload.apiKey;
     }
@@ -1319,9 +1319,9 @@ const submitBase = () => {
       return;
     }
     const payload: AigModelBaseForm = { ...baseForm.value };
-    // 无 aig:model:secret 权限时不下发接口地址：该列对这类账号是脱敏的（读不到），
+    // 无 aig:model:secret:edit 权限时不下发接口地址：该列对这类账号是脱敏的（读不到），
     // 照常下发就会把已配端点清空。后端也会忽略它，属于双保险。
-    if (!checkPermi(['aig:model:secret'])) {
+    if (!checkPermi(['aig:model:secret:edit'])) {
       delete payload.apiEndpoint;
     }
     baseSubmitting.value = true;

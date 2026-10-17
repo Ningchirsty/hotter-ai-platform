@@ -94,7 +94,7 @@ class AigModelGovernanceServiceImplBatchSecretTest {
      * 放行权限、放行存在性校验，并给出该供应商名下的模型ID。
      */
     private void stubProviderWithModels() {
-        when(permissionHelper.canViewModelSecret()).thenReturn(true);
+        when(permissionHelper.canEditModelSecret()).thenReturn(true);
         when(modelConfigMapper.countProvider(PROVIDER_ID)).thenReturn(1);
         when(modelConfigMapper.selectModelIdsByProvider(PROVIDER_ID)).thenReturn(OWNED_IDS);
         when(secretCipher.encrypt(PLAIN_KEY)).thenReturn(CIPHER_KEY);
@@ -162,7 +162,7 @@ class AigModelGovernanceServiceImplBatchSecretTest {
     @Test
     @DisplayName("modelIds 含别家供应商的模型：整批拒绝，一行都不写")
     void rejectsForeignModelIdsAsWholeBatch() {
-        when(permissionHelper.canViewModelSecret()).thenReturn(true);
+        when(permissionHelper.canEditModelSecret()).thenReturn(true);
         when(modelConfigMapper.countProvider(PROVIDER_ID)).thenReturn(1);
         when(modelConfigMapper.selectModelIdsByProvider(PROVIDER_ID)).thenReturn(OWNED_IDS);
         AigModelSecretBatchBo bo = bo(PROVIDER_ID, List.of(11L, FOREIGN_ID));
@@ -180,7 +180,7 @@ class AigModelGovernanceServiceImplBatchSecretTest {
     @Test
     @DisplayName("clearKey=true：写入 null 清除，且完全不加密")
     void clearKeyWritesNullAndNeverEncrypts() {
-        when(permissionHelper.canViewModelSecret()).thenReturn(true);
+        when(permissionHelper.canEditModelSecret()).thenReturn(true);
         when(modelConfigMapper.countProvider(PROVIDER_ID)).thenReturn(1);
         when(modelConfigMapper.selectModelIdsByProvider(PROVIDER_ID)).thenReturn(OWNED_IDS);
         when(modelConfigMapper.updateModelApiKeyBatch(OWNED_IDS, null)).thenReturn(3);
@@ -201,7 +201,7 @@ class AigModelGovernanceServiceImplBatchSecretTest {
     @Test
     @DisplayName("非 clear 且密钥为空：拒绝而非静默清空")
     void rejectsBlankKeyInsteadOfSilentlyClearing() {
-        when(permissionHelper.canViewModelSecret()).thenReturn(true);
+        when(permissionHelper.canEditModelSecret()).thenReturn(true);
         when(modelConfigMapper.countProvider(PROVIDER_ID)).thenReturn(1);
         when(modelConfigMapper.selectModelIdsByProvider(PROVIDER_ID)).thenReturn(OWNED_IDS);
         AigModelSecretBatchBo bo = bo(PROVIDER_ID, null);
@@ -214,9 +214,9 @@ class AigModelGovernanceServiceImplBatchSecretTest {
     }
 
     @Test
-    @DisplayName("无 aig:model:secret 权限：拒绝且不触库")
+    @DisplayName("无 aig:model:secret:edit 权限：拒绝且不触库")
     void rejectsWithoutSecretPermission() {
-        when(permissionHelper.canViewModelSecret()).thenReturn(false);
+        when(permissionHelper.canEditModelSecret()).thenReturn(false);
         AigModelSecretBatchBo bo = bo(PROVIDER_ID, null);
         bo.setApiKey(PLAIN_KEY);
 
@@ -230,7 +230,7 @@ class AigModelGovernanceServiceImplBatchSecretTest {
     @Test
     @DisplayName("供应商下没有任何模型：拒绝而不是「成功写了 0 行」")
     void rejectsWhenProviderHasNoModels() {
-        when(permissionHelper.canViewModelSecret()).thenReturn(true);
+        when(permissionHelper.canEditModelSecret()).thenReturn(true);
         when(modelConfigMapper.countProvider(PROVIDER_ID)).thenReturn(1);
         when(modelConfigMapper.selectModelIdsByProvider(PROVIDER_ID)).thenReturn(List.of());
         AigModelSecretBatchBo bo = bo(PROVIDER_ID, null);
@@ -245,7 +245,7 @@ class AigModelGovernanceServiceImplBatchSecretTest {
     @Test
     @DisplayName("供应商不存在：拒绝且不触库")
     void rejectsMissingProvider() {
-        when(permissionHelper.canViewModelSecret()).thenReturn(true);
+        when(permissionHelper.canEditModelSecret()).thenReturn(true);
         when(modelConfigMapper.countProvider(PROVIDER_ID)).thenReturn(0);
         AigModelSecretBatchBo bo = bo(PROVIDER_ID, null);
         bo.setApiKey(PLAIN_KEY);
@@ -262,7 +262,7 @@ class AigModelGovernanceServiceImplBatchSecretTest {
         assertThrows(ServiceException.class, () -> service.applyProviderSecret(bo(null, null)));
 
         verifyNoInteractions(modelConfigMapper);
-        verify(permissionHelper, never()).canViewModelSecret();
+        verify(permissionHelper, never()).canEditModelSecret();
     }
 
 }

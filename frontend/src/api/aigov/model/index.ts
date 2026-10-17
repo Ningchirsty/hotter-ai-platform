@@ -15,7 +15,7 @@ import type {
 } from './types';
 
 // 查询模型清单（以 snail-ai 的 sai_model_config 为主表，左连治理属性）
-// apiEndpoint / secretRef 由后端按 aig:model:secret 权限决定是否下发
+// apiEndpoint / secretRef 由后端按 aig:model:secret:view 权限决定是否下发
 export function listModel(query: AigModelQuery): AxiosPromise<PageResult<AigModelGovernanceVO>> {
   return request({
     url: '/aigov/model/list',
@@ -93,7 +93,7 @@ export function createModel(data: AigModelCreateForm) {
 }
 
 // 编辑模型主数据（PUT /aigov/model/base）
-// 只改主数据白名单列，不含密钥；apiEndpoint 对无 aig:model:secret 的账号应不下发。
+// 只改主数据白名单列，不含密钥；apiEndpoint 对无 aig:model:secret:view 的账号应不下发。
 export function updateModelBase(data: AigModelBaseForm) {
   return request({
     url: '/aigov/model/base',
@@ -115,7 +115,7 @@ export function updateModelSecret(data: AigModelSecretForm) {
 
 // 供应商维度批量写入/清除模型密钥（PUT /aigov/model/secret/batch）
 // 语义与单个模型完全一致，只是作用范围扩到「该供应商下的一组模型」。
-// 权限同样是 aig:model:secret —— 批量覆盖面更大，没有理由放宽。
+// 权限同样是 aig:model:secret:edit —— 批量覆盖面更大，没有理由放宽。
 // 返回值是实际影响的行数，界面可直接据此提示「已写入 N 个模型」。
 export function applyProviderSecret(data: AigModelSecretBatchForm): AxiosPromise<number> {
   return request({
